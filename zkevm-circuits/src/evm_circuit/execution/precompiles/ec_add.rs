@@ -1,28 +1,15 @@
-use std::ops::Neg;
-
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, or, split_u256, sum, Expr};
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::{
-        bn256::{Fq, G1Affine},
-        group::cofactor::CofactorCurveAffine,
-        CurveAffine,
-    },
-    plonk::{Error, Expression},
-};
+use eth_types::{Field, ToLittleEndian, ToScalar};
+use gadgets::util::Expr;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
-            math_gadget::{IsEqualGadget, IsZeroGadget},
-            pow_of_two_expr, rlc, CachedRegion, Cell, Word,
+            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder, rlc,
+            CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -30,110 +17,14 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-struct AddToExprGadget<F> {
-    carry_lo: Cell<F>,
-    carry_hi: Cell<F>,
-}
-
-impl<F: Field> AddToExprGadget<F> {
-    fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        a: &Word<F>,
-        b: &Word<F>,
-        c_lo: Expression<F>,
-        c_hi: Expression<F>,
-    ) -> Self {
-        // since we have only 2 addends.
-        let carry_lo = cb.query_bool();
-        let carry_hi = cb.query_bool();
-
-        let (a_lo, a_hi) = (
-            from_bytes::expr(&a.cells[0x00..0x10]),
-            from_bytes::expr(&a.cells[0x10..0x20]),
-        );
-        let (b_lo, b_hi) = (
-            from_bytes::expr(&b.cells[0x00..0x10]),
-            from_bytes::expr(&b.cells[0x10..0x20]),
-        );
-
-        cb.require_equal(
-            "sum_lo check",
-            sum::expr([a_lo, b_lo]),
-            c_lo + carry_lo.expr() * pow_of_two_expr(128),
-        );
-        cb.require_equal(
-            "sum_hi check",
-            sum::expr([a_hi, b_hi]) + carry_lo.expr(),
-            c_hi + carry_hi.expr() * pow_of_two_expr(128),
-        );
-
-        Self { carry_lo, carry_hi }
-    }
-
-    fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        a: U256,
-        b: U256,
-        c_lo: U256,
-        c_hi: U256,
-    ) -> Result<(), Error> {
-        let (addends_lo, addends_hi): (Vec<_>, Vec<_>) = [a, b].iter().map(split_u256).unzip();
-
-        let sum_of_addends_lo = addends_lo
-            .into_iter()
-            .fold(U256::zero(), |acc, addend_lo| acc + addend_lo);
-        let sum_of_addends_hi = addends_hi
-            .into_iter()
-            .fold(U256::zero(), |acc, addend_hi| acc + addend_hi);
-
-        let carry_lo = (sum_of_addends_lo - c_lo) >> 128;
-        self.carry_lo.assign(
-            region,
-            offset,
-            Value::known(
-                carry_lo
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
-
-        let carry_hi = (sum_of_addends_hi + carry_lo - c_hi) >> 128;
-        self.carry_hi.assign(
-            region,
-            offset,
-            Value::known(
-                carry_hi
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
-
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct EcAddGadget<F> {
     // EC points: P, Q, R
     point_p_x_rlc: Cell<F>,
-    point_p_y: Word<F>,
+    point_p_y_rlc: Cell<F>,
     point_q_x_rlc: Cell<F>,
-    point_q_y: Word<F>,
+    point_q_y_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
-
-    // Whether P == (0, 0) or Q == (0, 0)
-    p_x_is_zero: IsZeroGadget<F>,
-    p_y_is_zero: IsZeroGadget<F>,
-    q_x_is_zero: IsZeroGadget<F>,
-    q_y_is_zero: IsZeroGadget<F>,
-
-    // Whether P == -Q, i.e. P + Q == Infinity
-    p_x_eq_q_x: IsEqualGadget<F>,
-    q_is_neg_p: Cell<F>,
-    p_y_add_q_y: AddToExprGadget<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -151,109 +42,20 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256Add;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (point_p_x_rlc, point_p_y, point_q_x_rlc, point_q_y, point_r_x_rlc, point_r_y_rlc) = (
+        let (
+            point_p_x_rlc,
+            point_p_y_rlc,
+            point_q_x_rlc,
+            point_q_y_rlc,
+            point_r_x_rlc,
+            point_r_y_rlc,
+        ) = (
             cb.query_cell_phase2(),
-            cb.query_keccak_rlc(),
-            cb.query_cell_phase2(),
-            cb.query_keccak_rlc(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
-        );
-
-        let p_x_is_zero = IsZeroGadget::construct(cb, "ecAdd(P_x)", point_p_x_rlc.expr());
-        let p_y_is_zero = IsZeroGadget::construct(cb, "ecAdd(P_y)", point_p_y.expr());
-        let q_x_is_zero = IsZeroGadget::construct(cb, "ecAdd(Q_x)", point_q_x_rlc.expr());
-        let q_y_is_zero = IsZeroGadget::construct(cb, "ecAdd(Q_y)", point_q_y.expr());
-        let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
-        let q_is_zero = and::expr([q_x_is_zero.expr(), q_y_is_zero.expr()]);
-
-        let q_is_neg_p = cb.query_bool();
-        let p_x_eq_q_x = IsEqualGadget::construct(cb, point_p_x_rlc.expr(), point_q_x_rlc.expr());
-
-        // P == Infinity && Q == Infinity.
-        cb.condition(and::expr([p_is_zero.expr(), q_is_zero.expr()]), |cb| {
-            cb.require_zero("if P == 0 && Q == 0 then R_x == 0", point_r_x_rlc.expr());
-            cb.require_zero("if P == 0 && Q == 0 then R_y == 0", point_r_y_rlc.expr());
-        });
-
-        // P == Infinity && Q != Infinity.
-        cb.condition(
-            and::expr([p_is_zero.expr(), not::expr(q_is_zero.expr())]),
-            |cb| {
-                cb.require_equal(
-                    "if P == 0 then R_x == Q_x",
-                    point_r_x_rlc.expr(),
-                    point_q_x_rlc.expr(),
-                );
-                cb.require_equal(
-                    "if P == 0 then R_y == Q_y",
-                    point_r_y_rlc.expr(),
-                    point_q_y.expr(),
-                );
-            },
-        );
-
-        // Q == Infinity && P != Infinity.
-        cb.condition(
-            and::expr([q_is_zero.expr(), not::expr(p_is_zero.expr())]),
-            |cb| {
-                cb.require_equal(
-                    "if Q == 0 then R_x == P_x",
-                    point_r_x_rlc.expr(),
-                    point_p_x_rlc.expr(),
-                );
-                cb.require_equal(
-                    "if Q == 0 then R_y == P_y",
-                    point_r_y_rlc.expr(),
-                    point_p_y.expr(),
-                );
-            },
-        );
-
-        // P != Infinity && Q != Infinity && P + Q == Infinity.
-        let p_y_add_q_y = cb.condition(
-            and::expr([
-                not::expr(p_is_zero.expr()),
-                not::expr(q_is_zero.expr()),
-                q_is_neg_p.expr(),
-            ]),
-            |cb| {
-                let p_y_add_q_y = AddToExprGadget::construct(
-                    cb,
-                    &point_p_y,
-                    &point_q_y,
-                    // $field::MODULUS=0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47
-                    // modulus_lo = 201385395114098847380338600778089168199
-                    // modulus_hi = 64323764613183177041862057485226039389
-                    Expression::Constant(F::from_u128(201385395114098847380338600778089168199)),
-                    Expression::Constant(F::from_u128(64323764613183177041862057485226039389)),
-                );
-                cb.require_equal("P == -Q", p_x_eq_q_x.expr(), 1.expr());
-                cb.require_zero("if P == -Q then R_x == 0", point_r_x_rlc.expr());
-                cb.require_zero("if P == -Q then R_y == 0", point_r_y_rlc.expr());
-                p_y_add_q_y
-            },
-        );
-
-        // P != Infinity && Q != Infinity && P + Q != Infinity.
-        cb.condition(
-            not::expr(or::expr([
-                p_is_zero.expr(),
-                q_is_zero.expr(),
-                q_is_neg_p.expr(),
-            ])),
-            |cb| {
-                cb.ecc_table_lookup(
-                    u64::from(PrecompileCalls::Bn128Add).expr(),
-                    point_p_x_rlc.expr(),
-                    point_p_y.expr(),
-                    point_q_x_rlc.expr(),
-                    point_q_y.expr(),
-                    0.expr(), // input_rlc
-                    point_r_x_rlc.expr(),
-                    point_r_y_rlc.expr(),
-                );
-            },
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
@@ -274,6 +76,19 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
+        cb.condition(is_success.expr(), |cb| {
+            cb.ecc_table_lookup(
+                u64::from(PrecompileCalls::Bn128Add).expr(),
+                point_p_x_rlc.expr(),
+                point_p_y_rlc.expr(),
+                point_q_x_rlc.expr(),
+                point_q_y_rlc.expr(),
+                0.expr(), // input_rlc
+                point_r_x_rlc.expr(),
+                point_r_y_rlc.expr(),
+            );
+        });
+
         let restore_context = RestoreContextGadget::construct(
             cb,
             is_success.expr(),
@@ -286,20 +101,11 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
 
         Self {
             point_p_x_rlc,
-            point_p_y,
+            point_p_y_rlc,
             point_q_x_rlc,
-            point_q_y,
+            point_q_y_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
-
-            p_x_is_zero,
-            p_y_is_zero,
-            q_x_is_zero,
-            q_y_is_zero,
-
-            q_is_neg_p,
-            p_x_eq_q_x,
-            p_y_add_q_y,
 
             is_success,
             callee_address,
@@ -323,64 +129,11 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::EcAdd(aux_data)) = &step.aux_data {
             let keccak_rand = region.challenges().keccak_input();
-            // P_x and Q_x
-            let mut x_rlc = vec![];
-            for (col, is_zero_gadget, word_value) in [
-                (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
-                (&self.point_q_x_rlc, &self.q_x_is_zero, aux_data.q_x),
-            ] {
-                let rlc_val = keccak_rand.map(|r| rlc::value(&word_value.to_le_bytes(), r));
-                col.assign(region, offset, rlc_val)?;
-                is_zero_gadget.assign_value(region, offset, rlc_val)?;
-                x_rlc.push(rlc_val);
-            }
-            self.p_x_eq_q_x
-                .assign_value(region, offset, x_rlc[0], x_rlc[1])?;
-
-            // P_y and Q_y
-            for (col, is_zero_gadget, word_value) in [
-                (&self.point_p_y, &self.p_y_is_zero, aux_data.p_y),
-                (&self.point_q_y, &self.q_y_is_zero, aux_data.q_y),
-            ] {
-                col.assign(region, offset, Some(word_value.to_le_bytes()))?;
-                is_zero_gadget.assign_value(
-                    region,
-                    offset,
-                    keccak_rand.map(|r| rlc::value(&word_value.to_le_bytes(), r)),
-                )?;
-            }
-            let (p_is_identity, q_is_identity, q_is_neg_p) = {
-                let p_x = Fq::from_bytes(&aux_data.p_x.to_le_bytes()).unwrap();
-                let p_y = Fq::from_bytes(&aux_data.p_y.to_le_bytes()).unwrap();
-                let point_p = G1Affine::from_xy(p_x, p_y).unwrap();
-                let q_x = Fq::from_bytes(&aux_data.q_x.to_le_bytes()).unwrap();
-                let q_y = Fq::from_bytes(&aux_data.q_y.to_le_bytes()).unwrap();
-                let point_q = G1Affine::from_xy(q_x, q_y).unwrap();
-
-                // P != Identity && Q != Identity && P == -Q
-                let p_is_identity: bool = point_p.is_identity().into();
-                let q_is_identity: bool = point_q.is_identity().into();
-                (p_is_identity, q_is_identity, point_q.eq(&point_p.neg()))
-            };
-            self.q_is_neg_p
-                .assign(region, offset, Value::known(F::from(q_is_neg_p as u64)))?;
-            if !p_is_identity && !q_is_identity && q_is_neg_p {
-                let (modulus_lo, modulus_hi) = (
-                    U256::from(201385395114098847380338600778089168199u128),
-                    U256::from(64323764613183177041862057485226039389u128),
-                );
-                self.p_y_add_q_y.assign(
-                    region,
-                    offset,
-                    aux_data.p_y,
-                    aux_data.q_y,
-                    modulus_lo,
-                    modulus_hi,
-                )?;
-            }
-
-            // R_x and R_y
             for (col, word_value) in [
+                (&self.point_p_x_rlc, aux_data.p_x),
+                (&self.point_p_y_rlc, aux_data.p_y),
+                (&self.point_q_x_rlc, aux_data.q_x),
+                (&self.point_q_y_rlc, aux_data.q_y),
                 (&self.point_r_x_rlc, aux_data.r_x),
                 (&self.point_r_y_rlc, aux_data.r_y),
             ] {

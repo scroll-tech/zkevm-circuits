@@ -2,7 +2,7 @@
 
 use std::{
     marker::PhantomData,
-    ops::{Add, Mul, Neg},
+    ops::{Add, Mul},
 };
 
 use crate::{

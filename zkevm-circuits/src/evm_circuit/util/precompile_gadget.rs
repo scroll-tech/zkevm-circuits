@@ -4,7 +4,7 @@ use gadgets::util::{not, or, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Expression};
 
 use crate::evm_circuit::{
-    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
+    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
     step::ExecutionState,
 };
 
@@ -155,11 +155,11 @@ impl<F: Field> PrecompileGadget<F> {
             }),
             Box::new(|_cb| { /* Modexp */ }),
             Box::new(|cb| {
-                let (p_x_rlc, p_y, q_x_rlc, q_y, r_x_rlc, r_y_rlc) = (
+                let (p_x_rlc, p_y_rlc, q_x_rlc, q_y_rlc, r_x_rlc, r_y_rlc) = (
                     cb.query_cell_phase2(),
-                    cb.query_keccak_rlc::<N_BYTES_WORD>(),
                     cb.query_cell_phase2(),
-                    cb.query_keccak_rlc::<N_BYTES_WORD>(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                 );
@@ -175,9 +175,9 @@ impl<F: Field> PrecompileGadget<F> {
                     "input bytes (RLC) = [ p_x | p_y | q_x | q_y ]",
                     padding_gadget.padded_rlc(),
                     (p_x_rlc.expr() * r_pow_96)
-                        + (p_y.expr() * r_pow_64)
+                        + (p_y_rlc.expr() * r_pow_64)
                         + (q_x_rlc.expr() * r_pow_32.expr())
-                        + q_y.expr(),
+                        + q_y_rlc.expr(),
                 );
                 // RLC of output bytes always equals RLC of result elliptic curve point R.
                 cb.require_equal(
