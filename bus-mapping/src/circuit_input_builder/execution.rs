@@ -583,9 +583,9 @@ impl EcAddOp {
         Self { p, q, r }
     }
 
-    /// Returns true if P == Q == Infinity.
-    pub fn is_zero(&self) -> bool {
-        self.p.is_identity().into() && self.q.is_identity().into()
+    /// A check on the op to tell the ECC Circuit whether or not to skip the op.
+    pub fn skip_by_ecc_circuit(&self) -> bool {
+        false
     }
 }
 
@@ -610,8 +610,8 @@ impl Default for EcMulOp {
 }
 
 impl EcMulOp {
-    /// Returns true if P == Infinity or s == 0.
-    pub fn is_zero(&self) -> bool {
+    /// A check on the op to tell the ECC Circuit whether or not to skip the op.
+    pub fn skip_by_ecc_circuit(&self) -> bool {
         self.p.is_identity().into() || self.s.is_zero().into()
     }
 }
@@ -662,8 +662,8 @@ impl EcPairingOp {
             .collect::<Vec<u8>>()
     }
 
-    /// Returns if all inputs to the pairing op are Infinity.
-    pub fn is_zero(&self) -> bool {
+    /// A check on the op to tell the ECC Circuit whether or not to skip the op.
+    pub fn skip_by_ecc_circuit(&self) -> bool {
         self.inputs[0].0.is_identity().into()
             && self.inputs[1].0.is_identity().into()
             && self.inputs[2].0.is_identity().into()
