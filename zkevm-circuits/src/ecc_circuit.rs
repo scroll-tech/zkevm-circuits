@@ -64,6 +64,11 @@ pub struct EccCircuitConfig<F: Field> {
     /// Lookup table for I/Os to the EcAdd, EcMul and EcPairing operations.
     ecc_table: EccTable,
 
+    /// Number of limbs to represent Fp.
+    num_limbs: usize,
+    /// Number of bits per limb.
+    limb_bits: usize,
+
     _marker: PhantomData<F>,
 }
 
@@ -77,16 +82,17 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
-        // TODO: verify args to the configure method.
+        let num_limbs = 3;
+        let limb_bits = 88;
         let fp_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
-            &[30, 1], // num advice
-            &[17],    // num lookup advice
-            1,        // num fixed
-            13,       // lookup bits
-            88,       // limb bits
-            3,        // num limbs
+            &[30], // num advice
+            &[17], // num lookup advice
+            1,     // num fixed
+            13,    // lookup bits
+            limb_bits,
+            num_limbs,
             modulus::<Fq>(),
             0,
             LOG_TOTAL_NUM_ROWS as usize, // k
@@ -99,6 +105,8 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
         Self {
             fp_config,
             ecc_table,
+            num_limbs,
+            limb_bits,
             _marker: PhantomData,
         }
     }
@@ -114,7 +122,7 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
 /// operations, which means a witness that exceeds the pre-allocated number of cells for any of the
 /// operations will be invalid.
 #[derive(Clone, Debug, Default)]
-pub struct EccCircuit<F: Field> {
+pub struct EccCircuit<F: Field, const XI_0: i64> {
     /// Maximum number of EcAdd operations supported in one instance of the ECC Circuit.
     pub max_add_ops: usize,
     /// Maximum number of scalar multiplication operations supported in one instance of the ECC
@@ -133,7 +141,7 @@ pub struct EccCircuit<F: Field> {
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> EccCircuit<F> {
+impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
     pub(crate) fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -160,16 +168,20 @@ impl<F: Field> EccCircuit<F> {
         let keccak_powers = std::iter::successors(Some(Value::known(F::one())), |coeff| {
             Some(challenges.keccak_input() * coeff)
         })
-        .take(192)
+        .take(4 * 192)
         .map(|x| QuantumCell::Witness(x))
         .collect_vec();
 
         let ecc_chip = EccChip::<F, FpConfig<F, Fq>>::construct(config.fp_config.clone());
-        let fr_chip =
-            FpConfig::<F, Fr>::construct(config.fp_config.range.clone(), 88, 3, modulus::<Fr>());
+        let fr_chip = FpConfig::<F, Fr>::construct(
+            config.fp_config.range.clone(),
+            config.limb_bits,
+            config.num_limbs,
+            modulus::<Fr>(),
+        );
         let pairing_chip = PairingChip::construct(config.fp_config.clone());
         let fp12_chip =
-            Fp12Chip::<F, FpConfig<F, Fq>, Fq12, 9>::construct(config.fp_config.clone());
+            Fp12Chip::<F, FpConfig<F, Fq>, Fq12, XI_0>::construct(config.fp_config.clone());
 
         let mut first_pass = SKIP_FIRST_PASS;
 
@@ -186,7 +198,7 @@ impl<F: Field> EccCircuit<F> {
                 macro_rules! assign_ec_op {
                     ($op_type:ident, $ops:expr, $n_ops:expr, $assign_fn:ident) => {
                         $ops.iter()
-                            .filter(|op| !op.is_zero())
+                            .filter(|op| !op.skip_by_ecc_circuit())
                             .chain(std::iter::repeat(&$op_type::default()))
                             .take($n_ops)
                             .map(|op| {
@@ -305,12 +317,13 @@ impl<F: Field> EccCircuit<F> {
                         config.ecc_table.arg2_rlc,
                         idx,
                     );
-                    // s
-                    ec_mul_assigned.scalar_s.rlc.copy_advice(
-                        &mut region,
-                        config.ecc_table.arg3_rlc,
-                        idx,
-                    );
+                    // Scalar s
+                    ec_mul_assigned
+                        .scalar_s
+                        .decomposed
+                        .scalar
+                        .native
+                        .copy_advice(&mut region, config.ecc_table.arg3_rlc, idx);
                     // R_x
                     ec_mul_assigned.point_r.x_rlc.copy_advice(
                         &mut region,
@@ -388,22 +401,77 @@ impl<F: Field> EccCircuit<F> {
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         _fr_chip: &FpConfig<F, Fr>,
         _pairing_chip: &PairingChip<F>,
-        _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, 9>,
+        _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
         powers_of_rand: &[QuantumCell<F>],
         op: &EcAddOp,
     ) -> EcAddAssigned<F> {
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
         let point_q = self.assign_g1(ctx, ecc_chip, op.q, powers_of_rand);
         let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
-        let point_r_got = ecc_chip.sum::<G1Affine>(
+
+        // We follow the approach mentioned below to handle many edge cases for the points P, Q and
+        // R so that we can maintain the same fixed and permutation columns and reduce the overall
+        // validation process from the EVM Circuit.
+        //
+        // To check the validity of P + Q == R, we check:
+        // r + P + Q - R == r
+        // where r is a random point on the curve.
+        //
+        // We cover cases such as:
+        // - P == (0, 0) and/or Q == (0, 0)
+        // - P == -Q, i.e. P + Q == R == (0, 0)
+
+        let rand_point = ecc_chip.load_random_point::<G1Affine>(ctx);
+
+        // check if P == (0, 0), Q == (0, 0), R == (0, 0)
+        let p_x_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_p.decomposed.ec_point.x);
+        let p_y_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_p.decomposed.ec_point.y);
+        let q_x_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_q.decomposed.ec_point.x);
+        let q_y_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_q.decomposed.ec_point.y);
+        let r_x_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_r.decomposed.ec_point.x);
+        let r_y_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_r.decomposed.ec_point.y);
+        let point_p_is_zero = ecc_chip.field_chip.range().gate().and(
             ctx,
-            [
-                point_p.decomposed.ec_point.clone(),
-                point_q.decomposed.ec_point.clone(),
-            ]
-            .into_iter(),
+            QuantumCell::Existing(p_x_is_zero),
+            QuantumCell::Existing(p_y_is_zero),
         );
-        ecc_chip.assert_equal(ctx, &point_r.decomposed.ec_point, &point_r_got);
+        let point_q_is_zero = ecc_chip.field_chip.range().gate().and(
+            ctx,
+            QuantumCell::Existing(q_x_is_zero),
+            QuantumCell::Existing(q_y_is_zero),
+        );
+        let point_r_is_zero = ecc_chip.field_chip.range().gate().and(
+            ctx,
+            QuantumCell::Existing(r_x_is_zero),
+            QuantumCell::Existing(r_y_is_zero),
+        );
+
+        // sum1 = if P == (0, 0) then r else r + P
+        let sum1 = ecc_chip.add_unequal(ctx, &rand_point, &point_p.decomposed.ec_point, true);
+        let sum1 = ecc_chip.select(ctx, &rand_point, &sum1, &point_p_is_zero);
+
+        // sum2 = if Q == (0, 0) then sum1 else sum1 + Q
+        let sum2 = ecc_chip.add_unequal(ctx, &sum1, &point_q.decomposed.ec_point, true);
+        let sum2 = ecc_chip.select(ctx, &sum1, &sum2, &point_q_is_zero);
+
+        // sum3 = if R == (0, 0) then sum2 else sum2 - R
+        let sum3 = ecc_chip.sub_unequal(ctx, &sum2, &point_r.decomposed.ec_point, true);
+        let sum3 = ecc_chip.select(ctx, &sum2, &sum3, &point_r_is_zero);
+
+        ecc_chip.assert_equal(ctx, &rand_point, &sum3);
+
         EcAddAssigned {
             point_p,
             point_q,
@@ -418,12 +486,12 @@ impl<F: Field> EccCircuit<F> {
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         fr_chip: &FpConfig<F, Fr>,
         _pairing_chip: &PairingChip<F>,
-        _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, 9>,
+        _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
         powers_of_rand: &[QuantumCell<F>],
         op: &EcMulOp,
     ) -> EcMulAssigned<F> {
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
-        let scalar_s = self.assign_fr(ctx, fr_chip, op.s, powers_of_rand);
+        let scalar_s = self.assign_fr(ctx, fr_chip, op.s);
         let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
         let point_r_got = ecc_chip.scalar_mult(
             ctx,
@@ -447,7 +515,7 @@ impl<F: Field> EccCircuit<F> {
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         _fr_chip: &FpConfig<F, Fr>,
         pairing_chip: &PairingChip<F>,
-        fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, 9>,
+        fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
         powers_of_rand: &[QuantumCell<F>],
         op: &EcPairingOp,
     ) -> EcPairingAssigned<F> {
@@ -539,7 +607,7 @@ impl<F: Field> EccCircuit<F> {
         let success = {
             let gt = {
                 let gt = pairing_chip.multi_miller_loop(ctx, pairs);
-                fp12_chip.final_exp(ctx, &gt)
+                pairing_chip.final_exp(ctx, &gt)
             };
             // whether pairing check was successful.
             let one = fp12_chip.load_constant(ctx, Fq12::one());
@@ -634,29 +702,14 @@ impl<F: Field> EccCircuit<F> {
         ctx: &mut Context<F>,
         fr_chip: &FpConfig<F, Fr>,
         s: Fr,
-        powers_of_rand: &[QuantumCell<F>],
     ) -> ScalarAssigned<F> {
         let scalar = fr_chip.load_private(ctx, FpConfig::<F, Fr>::fe_to_witness(&Value::known(s)));
-        let cells = s
-            .to_bytes()
-            .iter()
-            .map(|&x| QuantumCell::Witness(Value::known(F::from(u64::from(x)))))
-            .collect_vec();
-        let decomposed = ScalarDecomposed {
-            scalar,
-            cells: cells.clone(),
-        };
-        ScalarAssigned {
-            decomposed,
-            rlc: fr_chip
-                .range
-                .gate
-                .inner_product(ctx, cells, powers_of_rand.iter().cloned()),
-        }
+        let decomposed = ScalarDecomposed { scalar };
+        ScalarAssigned { decomposed }
     }
 }
 
-impl<F: Field> SubCircuit<F> for EccCircuit<F> {
+impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
     type Config = EccCircuitConfig<F>;
 
     fn new_from_block(block: &Block<F>) -> Self {

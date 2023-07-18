@@ -405,7 +405,7 @@ pub struct SuperCircuit<
     /// Sig Circuit
     pub sig_circuit: SigCircuit<F>,
     /// Ecc Circuit
-    pub ecc_circuit: EccCircuit<F>,
+    pub ecc_circuit: EccCircuit<F, 9>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit

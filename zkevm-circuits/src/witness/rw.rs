@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
@@ -214,7 +215,8 @@ pub enum Rw {
         is_write: bool,
         call_id: usize,
         memory_address: u64,
-        byte: u8,
+        value: Word,
+        value_prev: Word,
     },
     /// TxLog
     TxLog {
@@ -403,9 +405,12 @@ impl Rw {
         }
     }
 
-    pub fn memory_value(&self) -> u8 {
+    /// Return the memory word read or written, and its value before the operation.
+    pub fn memory_word_pair(&self) -> (Word, Word) {
         match self {
-            Self::Memory { byte, .. } => *byte,
+            Self::Memory {
+                value, value_prev, ..
+            } => (*value, *value_prev),
             _ => unreachable!("{:?}", self),
         }
     }
@@ -635,12 +640,13 @@ impl Rw {
                 field_tag, value, ..
             } => match field_tag {
                 TxLogFieldTag::Topic => rlc::value(&value.to_le_bytes(), randomness),
+                TxLogFieldTag::Data => rlc::value(&value.to_le_bytes(), randomness),
                 _ => value.to_scalar().unwrap(),
             },
 
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
-            Self::Memory { byte, .. } => F::from(u64::from(*byte)),
+            Self::Memory { value, .. } => rlc::value(&value.to_le_bytes(), randomness),
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
     }
@@ -669,6 +675,9 @@ impl Rw {
             Self::AccountStorage { value_prev, .. } => {
                 Some(rlc::value(&value_prev.to_le_bytes(), randomness))
             }
+            Self::Memory { value_prev, .. } => {
+                Some(rlc::value(&value_prev.to_le_bytes(), randomness))
+            }
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
                 Some(F::from(*is_warm_prev as u64))
@@ -676,7 +685,6 @@ impl Rw {
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
-            | Self::Memory { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
@@ -864,7 +872,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     memory_address: u64::from_le_bytes(
                         op.op().address().to_le_bytes()[..8].try_into().unwrap(),
                     ),
-                    byte: op.op().value(),
+                    value: op.op().value(),
+                    value_prev: op.op().value_prev(),
                 })
                 .collect(),
         );

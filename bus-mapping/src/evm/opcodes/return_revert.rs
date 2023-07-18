@@ -1,12 +1,18 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder,
+        NumberOrHash,
+    },
     evm::opcodes::ExecStep,
-    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    operation::{AccountField, AccountOp, CallContextField},
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
+use eth_types::{
+    bytecode::BytecodeElement, evm_types::memory::MemoryWordRange, Bytecode, GethExecStep, ToWord,
+    Word, H256,
+};
 use ethers_core::utils::keccak256;
 
 #[derive(Debug, Copy, Clone)]
@@ -151,21 +157,21 @@ impl Opcode for ReturnRevert {
                 state.call_context_read(&mut exec_step, call.call_id, field, value.into());
             }
 
-            let callee_memory = state.call_ctx()?.memory.clone();
-            let caller_ctx = state.caller_ctx_mut()?;
-            caller_ctx.return_data = callee_memory
+            let return_data = state
+                .call_ctx()?
+                .memory
                 .0
                 .get(offset..offset + length)
                 .unwrap_or_default()
                 .to_vec();
+
+            state.caller_ctx_mut()?.return_data = return_data;
 
             let return_data_length = usize::try_from(call.return_data_length).unwrap();
             let copy_length = std::cmp::min(return_data_length, length);
             if copy_length > 0 {
                 // reconstruction
                 let return_offset = call.return_data_offset.try_into().unwrap();
-                caller_ctx.memory.0[return_offset..return_offset + copy_length]
-                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
                     state,
@@ -201,6 +207,7 @@ struct Destination {
     length: usize,
 }
 
+// handle non root & non create case
 fn handle_copy(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,
@@ -208,24 +215,46 @@ fn handle_copy(
     destination: Destination,
 ) -> Result<(), Error> {
     let copy_length = std::cmp::min(source.length, destination.length);
-    let bytes: Vec<_> = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length]
-        .iter()
-        .map(|byte| (*byte, false))
-        .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _is_code)) in bytes.iter().enumerate() {
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
-        state.push_op(
-            step,
-            RW::WRITE,
-            MemoryOp::new(destination.id, (destination.offset + i).into(), *byte),
-        );
+
+    let mut src_range = MemoryWordRange::align_range(source.offset, copy_length);
+    let mut dst_range = MemoryWordRange::align_range(destination.offset, copy_length);
+    src_range.ensure_equal_length(&mut dst_range);
+
+    let src_data = state.call_ctx()?.memory.read_chunk(src_range);
+    let dst_data_prev = state.caller_ctx()?.memory.read_chunk(dst_range);
+    let dst_data = {
+        // Copy src_data into dst_data
+        let mut dst_data = dst_data_prev.clone();
+        dst_data[dst_range.shift().0..dst_range.shift().0 + copy_length]
+            .copy_from_slice(&src_data[src_range.shift().0..src_range.shift().0 + copy_length]);
+        dst_data
+    };
+
+    let mut src_chunk_index = src_range.start_slot().0;
+    let mut dst_chunk_index = dst_range.start_slot().0;
+
+    // memory word read from src
+    for write_chunk in dst_data.chunks(32) {
+        // read memory
+        state.memory_read_word(step, src_chunk_index.into())?;
+
+        // write memory
+        let write_word = Word::from_big_endian(write_chunk);
+        state.memory_write_caller(step, dst_chunk_index.into(), write_word)?;
+
+        dst_chunk_index += 32;
+        src_chunk_index += 32;
     }
+
+    // memory word write to destination
+    let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+        .source(src_data.as_slice())
+        .build();
+    let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+        .source(dst_data.as_slice())
+        .build();
 
     state.push_copy(
         step,
@@ -239,7 +268,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Number(destination.id),
             dst_addr: destination.offset.try_into().unwrap(),
             log_id: None,
-            bytes,
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(dst_data_prev)),
         },
     );
 
@@ -252,6 +281,7 @@ struct AccountCodeInfo {
     size: usize,
 }
 
+// handle return in create.
 fn handle_create(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,
@@ -262,20 +292,35 @@ fn handle_create(
     let code_hash = CodeDB::hash(&values);
     let size = values.len();
     let dst_id = NumberOrHash::Hash(code_hash);
-    let bytes: Vec<_> = Bytecode::from(values)
-        .code
-        .iter()
-        .map(|element| (element.value, element.is_code))
-        .collect();
+    let bytes = Bytecode::from(values).code;
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _)) in bytes.iter().enumerate() {
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
+    let dst_range = MemoryWordRange::align_range(source.offset, source.length);
+
+    let memory = state.call_ctx_mut()?.memory.read_chunk(dst_range);
+
+    // collect all bytecode to memory with padding word
+    let create_slot_len = dst_range.full_length().0;
+
+    let mut chunk_index = dst_range.start_slot().0;
+    // memory word writes to destination word
+    for _ in 0..create_slot_len / 32 {
+        // read memory
+        state.memory_read_word(step, chunk_index.into())?;
+        chunk_index += 32;
     }
+
+    let copy_steps = CopyEventStepsBuilder::new()
+        .source(bytes.as_slice())
+        .read_offset(0)
+        .write_offset(dst_range.shift())
+        .step_length(dst_range.full_length())
+        .length(source.length)
+        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| {
+            memory.get(idx).copied().unwrap_or(0)
+        })
+        .mapper(|v: &BytecodeElement| (v.value, v.is_code))
+        .build();
 
     state.push_copy(
         step,
@@ -289,7 +334,7 @@ fn handle_create(
             dst_id,
             dst_addr: 0,
             log_id: None,
-            bytes,
+            copy_bytes: CopyBytes::new(copy_steps, None, None),
         },
     );
 
@@ -305,7 +350,10 @@ mod return_tests {
     use crate::mock::BlockData;
     use eth_types::{bytecode, geth_types::GethData, word};
     use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
         TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
     };
 
@@ -332,11 +380,12 @@ mod return_tests {
             STOP
         };
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();
@@ -390,11 +439,12 @@ mod return_tests {
             STOP
         };
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();

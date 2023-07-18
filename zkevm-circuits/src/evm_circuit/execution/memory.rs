@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::N_BYTES_MEMORY_WORD_SIZE,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -11,21 +11,34 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsEqualGadget,
-            memory_gadget::MemoryExpansionGadget,
-            not, CachedRegion, MemoryAddress, Word,
+            memory_gadget::{MemoryExpansionGadget, MemoryMask, MemoryWordAddress},
+            not, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::Error;
 
+// MemoryGadget handles mload/mstore/mstore8 op codes gadget
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,
-    address: MemoryAddress<F>,
+    address: MemoryWordAddress<F>,
+    mask: MemoryMask<F>,
+    // consider move to MemoryWordAddress ?
+    /// The value poped from or pushed to the stack.
     value: Word<F>,
+    /// The left memory word read or written.
+    value_left: Word<F>,
+    /// The left memory word before the write.
+    value_left_prev: Word<F>,
+    /// The right memory word read or written.
+    value_right: Word<F>,
+    /// The right memory word before the write.
+    value_right_prev: Word<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
@@ -41,7 +54,14 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         // In successful case the address must be in 5 bytes
         let address = cb.query_word_rlc();
+        let address_word = MemoryWordAddress::construct(cb, address.clone());
         let value = cb.query_word_rlc();
+        let value_left = cb.query_word_rlc();
+        let value_left_prev = cb.query_word_rlc();
+        let value_right = cb.query_word_rlc();
+        let value_right_prev = cb.query_word_rlc();
+        // Optimization possible: MSTORE does not need the value bytes, only the RLC. MSTORE8 does
+        // not need the right value. So we could repurpose the same cells.
 
         // Check if this is an MLOAD
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -59,6 +79,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             [from_bytes::expr(&address.cells) + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
+        let mask = MemoryMask::construct(cb, &address_word.shift_bits(), is_mstore8.expr());
+
+        // Check the unchanged part of the memory words, i.e. the bytes that are not overwritten.
+        mask.require_left_equal(cb, &value_left, &value_left_prev);
+        mask.require_right_equal(cb, &value_right, &value_right_prev);
+
         // Stack operations
         // Pop the address from the stack
         cb.stack_pop(address.expr());
@@ -70,24 +96,33 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             value.expr(),
         );
 
+        // Read or update the left word.
+        cb.memory_lookup(
+            is_store.clone(),
+            address_word.addr_left(),
+            value_left.expr(),
+            value_left_prev.expr(),
+            None,
+        );
+
         cb.condition(is_mstore8.expr(), |cb| {
-            cb.memory_lookup(
-                1.expr(),
-                from_bytes::expr(&address.cells),
-                value.cells[0].expr(),
-                None,
-            );
+            // Check the byte that is written.
+            let first_byte = value.cells[0].expr();
+            mask.require_equal_unaligned_byte(cb, first_byte, &value_left);
         });
 
         cb.condition(is_not_mstore8, |cb| {
-            for idx in 0..32 {
-                cb.memory_lookup(
-                    is_store.clone(),
-                    from_bytes::expr(&address.cells) + idx.expr(),
-                    value.cells[31 - idx].expr(),
-                    None,
-                );
-            }
+            // Check the bytes that are read or written from the left and right words.
+            mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
+
+            // Read or update the right word.
+            cb.memory_lookup(
+                is_store.clone(),
+                address_word.addr_right(),
+                value_right.expr(),
+                value_right_prev.expr(),
+                None,
+            );
         });
 
         // State transition
@@ -98,7 +133,8 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // - `memory_size` needs to be set to `next_memory_size`
         let gas_cost = OpcodeId::MLOAD.constant_gas_cost().expr() + memory_expansion.gas_cost();
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
+            //TODO: update rw_counter
+            rw_counter: Delta(4.expr() - is_mstore8.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
             gas_left: Delta(-gas_cost),
@@ -109,11 +145,16 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         Self {
             same_context,
-            address,
+            address: address_word,
             value,
+            value_left,
+            value_left_prev,
+            value_right,
+            value_right_prev,
             memory_expansion,
             is_mload,
             is_mstore8,
+            mask,
         }
     }
 
@@ -122,7 +163,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        _tx: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -133,15 +174,9 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // Inputs/Outputs
         let [address, value] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-        self.address.assign(
-            region,
-            offset,
-            Some(
-                address.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        let address = address.as_u64();
+
+        self.address.assign(region, offset, address)?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
@@ -160,14 +195,35 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             F::from(OpcodeId::MSTORE8.as_u64()),
         )?;
 
+        let shift = address % 32;
+        self.mask
+            .assign(region, offset, shift, is_mstore8 == F::one())?;
+
         // Memory expansion
         self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
-            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [address + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 
+        // assign value_left value_right word
+        let (value_left, value_left_prev) = block.rws[step.rw_indices[2]].memory_word_pair();
+        let (value_right, value_right_prev) = if is_mstore8 == F::one() {
+            (U256::zero(), U256::zero())
+        } else {
+            block.rws[step.rw_indices[3]].memory_word_pair()
+        };
+
+        self.value_left
+            .assign(region, offset, Some(value_left.to_le_bytes()))?;
+        self.value_left_prev
+            .assign(region, offset, Some(value_left_prev.to_le_bytes()))?;
+
+        self.value_right
+            .assign(region, offset, Some(value_right.to_le_bytes()))?;
+        self.value_right_prev
+            .assign(region, offset, Some(value_right_prev.to_le_bytes()))?;
         Ok(())
     }
 }
@@ -180,6 +236,7 @@ mod test {
         evm_types::{GasCost, OpcodeId},
         Word,
     };
+    use log::trace;
     use mock::test_ctx::{helpers::*, TestContext};
     use std::iter;
 
@@ -212,6 +269,8 @@ mod test {
 
     #[test]
     fn memory_gadget_simple() {
+        let val = Word::from_big_endian(&(1..33).collect::<Vec<_>>());
+        trace!("value is {val}");
         test_ok(
             OpcodeId::MSTORE,
             Word::from(0x12FFFF),

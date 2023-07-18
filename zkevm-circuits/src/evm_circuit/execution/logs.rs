@@ -42,6 +42,7 @@ pub(crate) struct LogGadget<F> {
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
     copy_rwc_inc: Cell<F>,
+
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
@@ -261,13 +262,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, Value::known(F::from(is_persistent)))?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
-        // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
-        // log writes when `is_persistent` is true.
+
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                ((msize + msize) * U256::from(is_persistent))
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
@@ -444,7 +444,7 @@ mod test {
         let topic_count = topics.len();
         let cur_op_code = log_codes[topic_count];
 
-        let mut mstart = 0x00usize;
+        let mut mstart = 0x20usize;
         let mut msize = 0x10usize;
         // first log op code
         let mut code = Bytecode::default();

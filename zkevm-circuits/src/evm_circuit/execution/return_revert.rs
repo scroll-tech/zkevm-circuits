@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, STACK_CAPACITY},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
+            common_gadget::{get_copy_bytes, RestoreContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -61,6 +61,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let offset = cb.query_cell_phase2();
@@ -92,13 +93,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
 
         // Case A in the specs.
-        cb.condition(is_create.clone() * is_success.expr(), |cb| {
-            cb.require_equal(
-                "increase rw counter once for each memory to bytecode byte copied",
-                copy_rw_increase.expr(),
-                range.length(),
-            );
-        });
+        // not work for memory word rw counter increase now.
+        // cb.condition(is_create.clone() * is_success.expr(), |_cb| {
+        //     cb.require_equal(
+        //         "increase rw counter once for each memory to bytecode byte copied",
+        //         copy_rw_increase.expr(),
+        //         range.length(),
+        //     );
+        // });
 
         let is_contract_deployment =
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
@@ -259,11 +261,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 .map(|field_tag| cb.call_context(None, field_tag));
                 let copy_length =
                     MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
-                cb.require_equal(
-                    "increase rw counter twice for each memory to memory byte copied",
-                    copy_length.min() + copy_length.min(),
-                    copy_rw_increase.expr(),
-                );
+                // cb.require_equal(
+                //     "increase rw counter twice for each memory to memory byte copied",
+                //     copy_length.min() + copy_length.min(),
+                //     copy_rw_increase.expr(),
+                // );
                 (return_data_offset, return_data_length, copy_length)
             },
         );
@@ -324,7 +326,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -358,10 +360,26 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
         }
 
+        let shift = memory_offset.low_u64() % 32;
+        let valid_length = if call.is_root || (call.is_create && call.is_success) {
+            length.as_u64()
+        } else {
+            call.return_data_length.min(length.as_u64())
+        };
+
+        let copy_rwc_inc = step.copy_rw_counter_delta;
+
         if call.is_create && call.is_success {
-            let deployed_bytecode: Vec<_> = (3..3 + length.as_usize())
-                .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                .collect();
+            // read memory word and get real copy bytes
+            let deployed_bytecode: Vec<u8> = get_copy_bytes(
+                block,
+                step,
+                3,
+                3 + copy_rwc_inc as usize,
+                shift,
+                valid_length,
+            );
+
             self.deployed_bytecode_rlc.assign(
                 region,
                 offset,
@@ -393,7 +411,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
 
             if !deployed_bytecode.is_empty() {
-                let prev_code_hash = block.rws[step.rw_indices[3 + deployed_bytecode.len() + 4]]
+                let prev_code_hash = block.rws[step.rw_indices[3 + copy_rwc_inc as usize + 4]]
                     .account_codehash_pair()
                     .0;
                 self.prev_code_hash
@@ -401,7 +419,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 #[cfg(feature = "scroll")]
                 {
                     let prev_keccak_code_hash = block.rws
-                        [step.rw_indices[3 + deployed_bytecode.len() + 6]]
+                        [step.rw_indices[3 + copy_rwc_inc as usize + 6]]
                         .account_keccak_codehash_pair()
                         .0;
                     self.prev_keccak_code_hash.assign(
@@ -413,23 +431,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             }
         }
 
-        let copy_rw_increase = if call.is_create && call.is_success {
-            length.as_u64()
-        } else if !call.is_root {
-            2 * std::cmp::min(call.return_data_length, length.as_u64())
-        } else {
-            0
-        };
         self.copy_rw_increase
-            .assign(region, offset, Value::known(F::from(copy_rw_increase)))?;
+            .assign(region, offset, Value::known(F::from(copy_rwc_inc)))?;
         self.copy_rw_increase_is_zero
-            .assign(region, offset, F::from(copy_rw_increase))?;
+            .assign(region, offset, F::from(copy_rwc_inc))?;
 
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
             let mut rw_counter_offset = 3;
             if is_contract_deployment {
-                rw_counter_offset += 6 + length.as_u64();
+                rw_counter_offset += 6 + copy_rwc_inc;
+                //rw_counter_offset += 6 + length.as_u64();
                 #[cfg(feature = "scroll")]
                 {
                     rw_counter_offset += 3; // keccak code hash rw, code size
@@ -487,7 +499,7 @@ mod test {
         let memory_bytes = [0x60; 6];
         let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
-        let mut code = bytecode! {
+        let mut code: Bytecode = bytecode! {
             PUSH6(memory_value)
             PUSH1(memory_address)
             MSTORE

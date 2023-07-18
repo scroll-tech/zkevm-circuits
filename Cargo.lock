@@ -5471,6 +5471,7 @@ dependencies = [
  "num",
  "num-bigint",
  "once_cell",
+ "paste",
  "poseidon-circuit",
  "pretty_assertions",
  "rand",

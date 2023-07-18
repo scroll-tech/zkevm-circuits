@@ -21,7 +21,7 @@ fn run<F: Field>(
     mul_ops: Vec<EcMulOp>,
     pairing_ops: Vec<EcPairingOp>,
 ) {
-    let circuit = EccCircuit::<F> {
+    let circuit = EccCircuit::<F, 9> {
         max_add_ops: max_ec_ops.ec_add,
         max_mul_ops: max_ec_ops.ec_mul,
         max_pairing_ops: max_ec_ops.ec_pairing,
@@ -33,7 +33,7 @@ fn run<F: Field>(
 
     let prover = match MockProver::run(k, &circuit, vec![]) {
         Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
+        Err(e) => panic!("{e:#?}"),
     };
     assert_eq!(prover.verify(), Ok(()));
 }
@@ -123,7 +123,7 @@ fn variadic_size_check() {
 
     let mut rng = rand::thread_rng();
 
-    let circuit = EccCircuit::<Fr> {
+    let circuit = EccCircuit::<Fr, 9> {
         max_add_ops: 10,
         max_mul_ops: 10,
         max_pairing_ops: 4,
@@ -134,7 +134,7 @@ fn variadic_size_check() {
     };
     let prover1 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
 
-    let circuit = EccCircuit::<Fr> {
+    let circuit = EccCircuit::<Fr, 9> {
         max_add_ops: 10,
         max_mul_ops: 10,
         max_pairing_ops: 4,
