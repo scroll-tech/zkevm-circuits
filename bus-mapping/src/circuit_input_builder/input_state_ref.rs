@@ -1896,12 +1896,13 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((vec![], vec![], vec![]));
         }
 
+        let last_callee_memory = self.call()?.last_callee_memory.clone();
         let call_ctx = self.call_ctx_mut()?;
         let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
             src_addr.into().0,
             dst_addr.into().0,
             copy_length,
-            &call_ctx.return_data,
+            &last_callee_memory.0,
             &mut call_ctx.memory,
         );
         let read_slot_bytes = self.call()?.last_callee_memory.read_chunk(src_range);
