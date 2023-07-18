@@ -124,8 +124,8 @@ impl Default for CircuitsParams {
             max_keccak_rows: 0,
             max_rlp_rows: 1000,
             max_ec_ops: PrecompileEcParams {
-                ec_add: 10,
-                ec_mul: 10,
+                ec_add: 50,
+                ec_mul: 50,
                 ec_pairing: 2,
             },
         }

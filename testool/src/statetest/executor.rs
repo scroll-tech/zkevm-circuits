@@ -333,9 +333,9 @@ pub fn run_test(
             max_inner_blocks: 64,
             max_rlp_rows: 6000,
             max_ec_ops: PrecompileEcParams {
-                ec_add: 10,
-                ec_mul: 10,
-                ec_pairing: 4,
+                ec_add: 50,
+                ec_mul: 50,
+                ec_pairing: 2,
             },
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -366,9 +366,9 @@ pub fn run_test(
             max_inner_blocks: 64,
             max_rlp_rows: 512,
             max_ec_ops: PrecompileEcParams {
-                ec_add: 10,
-                ec_mul: 10,
-                ec_pairing: 4,
+                ec_add: 50,
+                ec_mul: 50,
+                ec_pairing: 2,
             },
         };
         let (k, circuit, instance, _builder) =

@@ -1013,7 +1013,7 @@ impl EcMulOp {
             r: r_specified,
         }
     }
-  
+
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
         self.p.is_identity().into() || self.s.is_zero().into()
