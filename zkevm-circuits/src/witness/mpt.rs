@@ -65,6 +65,10 @@ pub struct MptUpdates {
 pub struct MptUpdateRow<F>(pub(crate) [F; 7]);
 
 impl MptUpdates {
+    pub(crate) fn len(&self) -> usize {
+        self.updates.len()
+    }
+
     pub(crate) fn old_root(&self) -> Word {
         self.old_root
     }
