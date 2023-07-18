@@ -11,7 +11,7 @@ use crate::{
 
 use super::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs};
 
-impl<F: Field> Circuit<F> for EccCircuit<F> {
+impl<F: Field, const XI_0: i64> Circuit<F> for EccCircuit<F, XI_0> {
     type Config = (EccCircuitConfig<F>, Challenges<Challenge>);
     type FloorPlanner = SimpleFloorPlanner;
 

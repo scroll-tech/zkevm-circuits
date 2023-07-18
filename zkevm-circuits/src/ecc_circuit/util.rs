@@ -18,12 +18,10 @@ pub struct G1Assigned<F: Field> {
 
 pub struct ScalarDecomposed<F: Field> {
     pub scalar: CRTInteger<F>,
-    pub cells: Vec<QuantumCell<F>>,
 }
 
 pub struct ScalarAssigned<F: Field> {
     pub decomposed: ScalarDecomposed<F>,
-    pub rlc: AssignedValue<F>,
 }
 
 pub struct G2Decomposed<F: Field> {
