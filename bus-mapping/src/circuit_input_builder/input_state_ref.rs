@@ -8,6 +8,7 @@ use super::{
 #[cfg(feature = "scroll")]
 use crate::util::KECCAK_CODE_HASH_ZERO;
 use crate::{
+    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
     error::{
         get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
         InsufficientBalanceError, NonceUintOverflowError,
@@ -23,15 +24,18 @@ use crate::{
     Error,
 };
 use eth_types::{
+    bytecode::BytecodeElement,
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
-        MAX_CODE_SIZE,
+        gas_utils::memory_expansion_gas_cost,
+        memory::{MemoryRange, MemoryWordRange},
+        Gas, GasCost, Memory, MemoryAddress, MemoryRef, OpcodeId, StackAddress, MAX_CODE_SIZE,
     },
     sign_types::SignData,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
-use std::cmp::max;
+use log::trace;
+use std::{cmp::max, iter::repeat};
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -219,15 +223,36 @@ impl<'a> CircuitInputStateRef<'a> {
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
     /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by one.
-    pub fn memory_read(
+    pub fn memory_read_word(
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress,
-        value: u8,
-    ) -> Result<(), Error> {
+    ) -> Result<Word, Error> {
+        let mem = &self.call_ctx()?.memory;
+        let value = mem.read_word(address);
+
         let call_id = self.call()?.call_id;
         self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
-        Ok(())
+        Ok(value)
+    }
+
+    /// Push a read type [`MemoryOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by one.
+    pub fn memory_read_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress,
+    ) -> Result<Word, Error> {
+        let mem = &self.caller_ctx()?.memory;
+        let value = mem.read_word(address);
+
+        let caller_id = self.call()?.caller_id;
+        self.push_op(step, RW::READ, MemoryOp::new(caller_id, address, value));
+        Ok(value)
     }
 
     /// Push a write type [`MemoryOp`] into the
@@ -236,15 +261,55 @@ impl<'a> CircuitInputStateRef<'a> {
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
     /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
-    pub fn memory_write(
+    pub fn memory_write_word(
         &mut self,
         step: &mut ExecStep,
-        address: MemoryAddress,
-        value: u8,
-    ) -> Result<(), Error> {
+        address: MemoryAddress, //Caution: make sure this address = slot passing
+        value: Word,
+    ) -> Result<Vec<u8>, Error> {
+        assert_eq!(address.0 % 32, 0);
+        let mem = &mut self.call_ctx_mut()?.memory;
+        let value_prev = mem.read_word(address);
+        let value_prev_bytes = value_prev.to_be_bytes();
+
+        let value_bytes = value.to_be_bytes();
+        mem.write_chunk(address, &value_bytes);
+
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
-        Ok(())
+        self.push_op(
+            step,
+            RW::WRITE,
+            MemoryOp::new_write(call_id, address, value, value_prev),
+        );
+        Ok(value_prev_bytes.to_vec())
+    }
+
+    /// Push a write type [`MemoryOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn memory_write_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress, //Caution: make sure this address = slot passing
+        value: Word,
+    ) -> Result<Vec<u8>, Error> {
+        let mem = &mut self.caller_ctx_mut()?.memory;
+        let value_prev = mem.read_word(address);
+        let value_prev_bytes = value_prev.to_be_bytes();
+
+        let value_bytes = value.to_be_bytes();
+        mem.write_chunk(address, &value_bytes);
+
+        let call_id = self.call()?.caller_id;
+        self.push_op(
+            step,
+            RW::WRITE,
+            MemoryOp::new_write(call_id, address, value, value_prev),
+        );
+        Ok(value_prev_bytes.to_vec())
     }
 
     /// Push a write type [`StackOp`] into the
@@ -551,10 +616,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut sender_balance_prev = sender_account.balance;
         debug_assert!(
             sender_account.balance >= value + fee.unwrap_or_default(),
-            "invalid amount balance {:?} value {:?} fee {:?}",
-            sender_balance_prev,
-            value,
-            fee
+            "invalid amount balance {sender_balance_prev:?} value {value:?} fee {fee:?}",
         );
         if let Some(fee) = fee {
             let sender_balance = sender_balance_prev - fee;
@@ -751,9 +813,10 @@ impl<'a> CircuitInputStateRef<'a> {
         let current_call = self.call_ctx().expect("current call not found");
         let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                current_call
-                    .memory
-                    .read_chunk(call.call_data_offset.into(), call.call_data_length.into())
+                current_call.memory.read_chunk(MemoryRange::new_with_length(
+                    call.call_data_offset,
+                    call.call_data_length,
+                ))
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
@@ -917,6 +980,7 @@ impl<'a> CircuitInputStateRef<'a> {
             return_data_length,
             last_callee_return_data_offset: 0,
             last_callee_return_data_length: 0,
+            last_callee_memory: Memory::default(),
         };
 
         Ok(call)
@@ -1048,6 +1112,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let step = &geth_steps[0];
         // handle return_data
+        let callee_memory = self.call_ctx()?.memory.clone();
         let (return_data_offset, return_data_length) = {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
@@ -1063,7 +1128,6 @@ impl<'a> CircuitInputStateRef<'a> {
                             )
                         };
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
-                        let callee_memory = self.call_ctx()?.memory.clone();
                         let caller_ctx = self.caller_ctx_mut()?;
                         caller_ctx.return_data.resize(length, 0);
                         if length != 0 {
@@ -1112,9 +1176,10 @@ impl<'a> CircuitInputStateRef<'a> {
         if call_success_create {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
-            let code = call_ctx
-                .memory
-                .read_chunk(offset.low_u64().into(), length.low_u64().into());
+            let code = call_ctx.memory.read_chunk(MemoryRange::new_with_length(
+                offset.low_u64(),
+                length.low_u64(),
+            ));
             let keccak_code_hash = H256(keccak256(&code));
             let code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
@@ -1142,6 +1207,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 caller.last_callee_return_data_length = return_data_length;
                 caller.last_callee_return_data_offset = return_data_offset;
             }
+            caller.last_callee_memory = callee_memory;
         }
 
         // If current call has caller_ctx (has caller)
@@ -1584,58 +1650,299 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         exec_step: &mut ExecStep,
         bytecode: &Bytecode,
+        src_addr: impl Into<MemoryAddress>,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
+    ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
+        let copy_length = copy_length.into().0;
+        if copy_length == 0 {
+            return Ok((vec![], vec![]));
+        }
+
+        let src_addr = src_addr.into().0;
+        let (_, range, slot_bytes) = combine_copy_slot_bytes(
+            src_addr,
+            dst_addr.into().0,
+            copy_length,
+            &bytecode.code,
+            &mut self.call_ctx_mut()?.memory,
+        );
+
+        let copy_steps = CopyEventStepsBuilder::new()
+            .source(&bytecode.code[..])
+            .mapper(|code: &BytecodeElement| (code.value, code.is_code))
+            .padding_byte_getter(|_: &[BytecodeElement], idx| slot_bytes[idx])
+            .read_offset(src_addr)
+            .write_offset(range.shift())
+            .step_length(range.full_length())
+            .length(copy_length)
+            .build();
+        let mut prev_bytes: Vec<u8> = vec![];
+        self.write_chunks(
+            exec_step,
+            &slot_bytes,
+            range.start_slot().0,
+            range.full_length().0,
+            &mut prev_bytes,
+        )?;
+
+        Ok((copy_steps, prev_bytes))
+    }
+
+    pub(crate) fn gen_copy_steps_for_precompile_calldata(
+        &mut self,
+        exec_step: &mut ExecStep,
         src_addr: u64,
-        dst_addr: u64,
-        src_addr_end: u64,
-        bytes_left: u64,
-    ) -> Result<Vec<(u8, bool)>, Error> {
-        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-        for idx in 0..bytes_left {
-            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
-            let step = if addr < src_addr_end {
-                let code = bytecode.code.get(addr as usize).unwrap();
-                (code.value, code.is_code)
-            } else {
-                (0, false)
-            };
-            copy_steps.push(step);
-            self.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
+        copy_length: u64,
+    ) -> Result<CopyEventSteps, Error> {
+        if copy_length == 0 {
+            return Ok(vec![]);
+        }
+
+        let range = MemoryWordRange::align_range(src_addr, copy_length);
+        let slot_bytes = &self.caller_ctx()?.memory.read_chunk(range);
+
+        let copy_steps = CopyEventStepsBuilder::memory_range(range)
+            .source(slot_bytes.as_slice())
+            .build();
+
+        let mut chunk_index = range.start_slot().0;
+        for chunk in slot_bytes.chunks(32) {
+            let value = self.memory_read_caller(exec_step, chunk_index.into())?;
+            debug_assert_eq!(Word::from_big_endian(chunk), value);
+            chunk_index += 32;
         }
 
         Ok(copy_steps)
     }
 
-    /// Generate copy steps for call data.
-    pub(crate) fn gen_copy_steps_for_call_data(
+    pub(crate) fn gen_copy_steps_for_precompile_callee_memory(
         &mut self,
         exec_step: &mut ExecStep,
-        src_addr: u64,
-        dst_addr: u64,
-        src_addr_end: u64,
-        bytes_left: u64,
-    ) -> Result<Vec<(u8, bool)>, Error> {
-        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-        for idx in 0..bytes_left {
-            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
-            let value = if addr < src_addr_end {
-                let byte =
-                    self.call_ctx()?.call_data[(addr - self.call()?.call_data_offset) as usize];
-                if !self.call()?.is_root {
-                    self.push_op(
-                        exec_step,
-                        RW::READ,
-                        MemoryOp::new(self.call()?.caller_id, addr.into(), byte),
-                    );
-                }
-                byte
-            } else {
-                0
-            };
-            copy_steps.push((value, false));
-            self.memory_write(exec_step, (dst_addr + idx).into(), value)?;
+        result: &[u8],
+    ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
+        if result.is_empty() {
+            return Ok((vec![], vec![]));
         }
 
-        Ok(copy_steps)
+        let range = MemoryWordRange::align_range(0, result.len());
+        let copy_steps = CopyEventStepsBuilder::memory_range(range)
+            .source(result)
+            .build();
+
+        let mut prev_bytes = vec![];
+        self.write_chunks(exec_step, result, 0, range.full_length().0, &mut prev_bytes)?;
+
+        Ok((copy_steps, prev_bytes))
+    }
+
+    pub(crate) fn gen_copy_steps_for_precompile_returndata(
+        &mut self,
+        exec_step: &mut ExecStep,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
+        result: &[u8],
+    ) -> Result<(CopyEventSteps, CopyEventSteps, CopyEventPrevBytes), Error> {
+        let copy_length = copy_length.into().0;
+        if copy_length == 0 {
+            return Ok((vec![], vec![], vec![]));
+        }
+        assert!(copy_length <= result.len());
+
+        let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
+            0,
+            dst_addr.into().0,
+            copy_length,
+            result,
+            &mut self.caller_ctx_mut()?.memory,
+        );
+
+        let read_slot_bytes = MemoryRef(result).read_chunk(src_range);
+        debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
+
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
+
+        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(write_slot_bytes.as_slice())
+            .build();
+
+        let mut src_chunk_index = src_range.start_slot().0;
+        let mut dst_chunk_index = dst_range.start_slot().0;
+
+        let mut prev_bytes = vec![];
+        for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
+        {
+            let value = self.memory_read_word(exec_step, src_chunk_index.into())?;
+            debug_assert_eq!(Word::from_big_endian(read_chunk), value);
+            src_chunk_index += 32;
+
+            let mut prev_bytes_write = self.memory_write_caller(
+                exec_step,
+                dst_chunk_index.into(),
+                Word::from_big_endian(write_chunk),
+            )?;
+            prev_bytes.append(&mut prev_bytes_write);
+            dst_chunk_index += 32;
+        }
+
+        Ok((read_steps, write_steps, prev_bytes))
+    }
+
+    /// Generate copy steps for call data.
+    pub(crate) fn gen_copy_steps_for_call_data_root(
+        &mut self,
+        exec_step: &mut ExecStep,
+        src_addr: impl Into<MemoryAddress>,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
+    ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
+        assert!(self.call()?.is_root);
+
+        let copy_length = copy_length.into().0;
+        if copy_length == 0 {
+            return Ok((vec![], vec![]));
+        }
+
+        let call_ctx = self.call_ctx_mut()?;
+        let (_, range, slot_bytes) = combine_copy_slot_bytes(
+            src_addr.into().0,
+            dst_addr.into().0,
+            copy_length,
+            &call_ctx.call_data,
+            &mut call_ctx.memory,
+        );
+
+        let copy_steps = CopyEventStepsBuilder::memory_range(range)
+            .source(slot_bytes.as_slice())
+            .build();
+        let chunk_index = range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
+        self.write_chunks(
+            exec_step,
+            &slot_bytes,
+            chunk_index,
+            range.full_length().0,
+            &mut prev_bytes,
+        )?;
+
+        Ok((copy_steps, prev_bytes))
+    }
+
+    pub(crate) fn gen_copy_steps_for_call_data_non_root(
+        &mut self,
+        exec_step: &mut ExecStep,
+        src_addr: impl Into<MemoryAddress>,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
+    ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
+        assert!(!self.call()?.is_root);
+
+        let copy_length = copy_length.into().0;
+        if copy_length == 0 {
+            return Ok((vec![], vec![], vec![]));
+        }
+
+        let call_ctx = self.call_ctx_mut()?;
+        let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
+            src_addr.into().0,
+            dst_addr.into().0,
+            copy_length,
+            &call_ctx.call_data,
+            &mut call_ctx.memory,
+        );
+
+        let read_slot_bytes = self.caller_ctx()?.memory.read_chunk(src_range);
+        debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
+
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
+        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(write_slot_bytes.as_slice())
+            .build();
+
+        let mut src_chunk_index = src_range.start_slot().0;
+        let mut dst_chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
+        // memory word reads from source and writes to destination word
+        for write_chunk in write_slot_bytes.chunks(32) {
+            self.memory_read_caller(exec_step, src_chunk_index.into())?;
+
+            src_chunk_index += 32;
+            self.write_chunk_for_copy_step(
+                exec_step,
+                write_chunk,
+                dst_chunk_index,
+                &mut prev_bytes,
+            )?;
+
+            dst_chunk_index += 32;
+        }
+
+        Ok((read_steps, write_steps, prev_bytes))
+    }
+
+    pub(crate) fn gen_copy_steps_for_return_data(
+        &mut self,
+        exec_step: &mut ExecStep,
+        src_addr: impl Into<MemoryAddress>,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
+    ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
+        let copy_length = copy_length.into().0;
+        if copy_length == 0 {
+            return Ok((vec![], vec![], vec![]));
+        }
+
+        let call_ctx = self.call_ctx_mut()?;
+        let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
+            src_addr.into().0,
+            dst_addr.into().0,
+            copy_length,
+            &call_ctx.return_data,
+            &mut call_ctx.memory,
+        );
+        let read_slot_bytes = self.call()?.last_callee_memory.read_chunk(src_range);
+
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
+        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(write_slot_bytes.as_slice())
+            .build();
+
+        let mut src_chunk_index = src_range.start_slot().0;
+        let mut dst_chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
+        // memory word reads from source and writes to destination word
+        let last_callee_id = self.call()?.last_callee_id;
+        for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
+        {
+            self.push_op(
+                exec_step,
+                RW::READ,
+                MemoryOp::new(
+                    last_callee_id,
+                    src_chunk_index.into(),
+                    Word::from_big_endian(read_chunk),
+                ),
+            );
+            trace!("read chunk: {last_callee_id} {src_chunk_index} {read_chunk:?}");
+            src_chunk_index += 32;
+
+            self.write_chunk_for_copy_step(
+                exec_step,
+                write_chunk,
+                dst_chunk_index,
+                &mut prev_bytes,
+            )?;
+
+            dst_chunk_index += 32;
+        }
+
+        Ok((read_steps, write_steps, prev_bytes))
     }
 
     pub(crate) fn gen_copy_steps_for_log(
@@ -1643,33 +1950,137 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
         src_addr: u64,
         bytes_left: u64,
-    ) -> Result<Vec<(u8, bool)>, Error> {
-        // Get memory data
-        let mem = self
-            .call_ctx()?
-            .memory
-            .read_chunk(src_addr.into(), bytes_left.into());
+    ) -> Result<(CopyEventSteps, CopyEventSteps), Error> {
+        if bytes_left == 0 {
+            return Ok((vec![], vec![]));
+        }
 
-        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-        for (idx, byte) in mem.iter().enumerate() {
-            let addr = src_addr + idx as u64;
+        let src_range = MemoryWordRange::align_range(src_addr, bytes_left);
 
-            // Read memory
-            self.memory_read(exec_step, (addr as usize).into(), *byte)?;
+        // Read the aligned memory content.
+        let memory = &self.call_ctx()?.memory;
+        let read_slot_bytes = memory.read_chunk(src_range);
 
-            copy_steps.push((*byte, false));
+        // Read the actual log data and pad it with zeros.
+        let mut log_slot_bytes =
+            memory.read_chunk(MemoryRange::new_with_length(src_addr, bytes_left));
+        log_slot_bytes.resize(src_range.full_length().0, 0);
 
-            // Write log
+        let mut chunk_index = src_range.start_slot().0;
+        // memory word writes to destination word
+        for chunk in log_slot_bytes.chunks(32) {
+            let dest_word = Word::from_big_endian(chunk);
+            // read memory
+            self.memory_read_word(exec_step, chunk_index.into())?;
+            // write log
+            // TODO: this write an empty log slot when memory was not aligned. Should we skip it?
             self.tx_log_write(
                 exec_step,
                 self.tx_ctx.id(),
                 self.tx_ctx.log_id + 1,
                 TxLogField::Data,
-                idx,
-                Word::from(*byte),
+                chunk_index - src_range.start_slot().0,
+                dest_word,
             )?;
+            chunk_index += 32;
         }
 
-        Ok(copy_steps)
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
+
+        let write_steps = CopyEventStepsBuilder::memory()
+            .source(log_slot_bytes.as_slice())
+            .read_offset(0)
+            .write_offset(0)
+            .step_length(log_slot_bytes.len())
+            .length(bytes_left)
+            .build();
+
+        Ok((read_steps, write_steps))
     }
+
+    /// write work chunk to RW table and add prev bytes
+    pub(crate) fn write_chunk_for_copy_step(
+        &mut self,
+        exec_step: &mut ExecStep,
+        write_chunk: &[u8],
+        dst_chunk_index: usize,
+        prev_bytes: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        assert_eq!(write_chunk.len(), 32);
+        let write_word = Word::from_big_endian(write_chunk);
+        let mut prev_bytes_write =
+            self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
+        prev_bytes.append(&mut prev_bytes_write);
+        let call_id = self.call()?.call_id;
+        trace!("write chunk: {call_id} {dst_chunk_index} {write_chunk:?}");
+
+        Ok(())
+    }
+
+    // write all chunks to memroy word and add prev bytes
+    pub(crate) fn write_chunks(
+        &mut self,
+        exec_step: &mut ExecStep,
+        chunks: &[u8],
+        chunk_index: usize,
+        full_length: usize,
+        result: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        assert!(full_length >= chunks.len() && full_length % 32 == 0);
+        let padding: Vec<_> = repeat(0).take(full_length - chunks.len()).collect();
+
+        let mut chunk_index = chunk_index;
+        for chunk in [chunks, &padding].concat().chunks(32) {
+            self.write_chunk_for_copy_step(exec_step, chunk, chunk_index, result)?;
+            chunk_index += 32;
+        }
+
+        Ok(())
+    }
+}
+
+// Return source range, destination range and destination slot bytes.
+fn combine_copy_slot_bytes(
+    src_addr: usize,
+    dst_addr: usize,
+    copy_length: usize,
+    src_data: &[impl Into<u8> + Clone],
+    dst_memory: &mut Memory,
+) -> (MemoryWordRange, MemoryWordRange, Vec<u8>) {
+    let mut src_range = MemoryWordRange::align_range(src_addr, copy_length);
+    let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
+    src_range.ensure_equal_length(&mut dst_range);
+
+    // Extend call memory.
+    dst_memory.extend_for_range(dst_addr.into(), copy_length.into());
+    let dst_begin_slot = dst_range.start_slot().0;
+    let dst_end_slot = dst_range.end_slot().0;
+
+    let src_data_length = src_data.len();
+    let src_addr = src_addr.min(src_data_length);
+    let src_copy_end = src_addr + copy_length;
+    let src_addr_end = src_copy_end.min(src_data_length);
+    let dst_copy_end = dst_addr + copy_length;
+    let dst_addr_end = dst_end_slot.min(dst_memory.len());
+
+    // Combine the destination slot bytes.
+    let bytes_to_copy: Vec<_> = src_data[src_addr..src_addr_end]
+        .iter()
+        .cloned()
+        .map(Into::into)
+        .collect();
+    let copy_padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
+    let end_padding_bytes = repeat(0).take(dst_end_slot - dst_addr_end);
+    let slot_bytes: Vec<u8> = dst_memory[dst_begin_slot..dst_addr]
+        .iter()
+        .cloned()
+        .chain(bytes_to_copy)
+        .chain(copy_padding_bytes)
+        .chain(dst_memory[dst_copy_end..dst_addr_end].iter().cloned())
+        .chain(end_padding_bytes)
+        .collect();
+
+    (src_range, dst_range, slot_bytes)
 }
