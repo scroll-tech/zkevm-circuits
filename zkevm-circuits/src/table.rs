@@ -30,12 +30,15 @@ use gadgets::{
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
-    halo2curves::bn256::{Fq, Fr},
+    halo2curves::bn256::Fq,
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
 use std::iter::repeat;
+
+#[cfg(test)]
+use halo2_proofs::plonk::FirstPhase;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -2310,20 +2313,32 @@ impl<F: Field> LookupTable<F> for SigTable {
     }
 }
 
-/// 1. EcAdd: (arg1_rlc, arg2_rlc) + (arg3_rlc, arg4_rlc) = (output1_rlc, output2_rlc)
-/// 2. EcMul: (arg1_rlc, arg2_rlc) . arg3_rlc = (output1_rlc, output2_rlc)
+/// 1. if EcAdd(P, Q) == R then:
+///     (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc, output2_rlc).
+///
+///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
+///           arg3_rlc = rlc(Q.x), arg4_rlc = rlc(Q.x),
+///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
+///
+/// 2. if EcMul(P, s) == R then:
+///     (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
+///
+///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
+///           arg3_rlc = s
+///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
+///
 /// 3. EcPairing:
-///    - arg*_rlc == 0
+///    - arg*_rlc <- 0
 ///    - input_rlc <- RLC over all input bytes
-///    - output1_rlc <- success
+///    - output1_rlc <- success {0, 1}
 #[derive(Clone, Copy, Debug)]
 pub struct EccTable {
     /// Since the current design of the ECC circuit reserves fixed number of rows for EcAdd, EcMul
     /// and EcPairing ops respectively, we already know the `op_type` for each row.
     pub op_type: Column<Fixed>,
 
-    ///
-    pub dummy_adv: Column<Advice>,
+    #[cfg(test)]
+    pub(crate) _phase_1_column: Column<Advice>,
 
     /// Advice column for input argument 1= RLC(input_bytes[0..32]).
     pub arg1_rlc: Column<Advice>,
@@ -2346,7 +2361,8 @@ impl<F: Field> LookupTable<F> for EccTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.op_type.into(),
-            self.dummy_adv.into(),
+            #[cfg(test)]
+            self._phase_1_column.into(),
             self.arg1_rlc.into(),
             self.arg2_rlc.into(),
             self.arg3_rlc.into(),
@@ -2360,7 +2376,8 @@ impl<F: Field> LookupTable<F> for EccTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("op_type"),
-            String::from("dummy_adv"),
+            #[cfg(test)]
+            String::from("_phase_1_column"),
             String::from("arg1_rlc"),
             String::from("arg2_rlc"),
             String::from("arg3_rlc"),
@@ -2388,9 +2405,19 @@ impl<F: Field> LookupTable<F> for EccTable {
 impl EccTable {
     /// Construct the ECC table.
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        #[cfg(test)]
+        let _phase_1_column = {
+            let column = meta.advice_column_in(FirstPhase);
+            meta.enable_equality(column);
+            column
+        };
+
         Self {
             op_type: meta.fixed_column(),
-            dummy_adv: meta.advice_column(),
+
+            #[cfg(test)]
+            _phase_1_column,
+
             arg1_rlc: meta.advice_column_in(SecondPhase),
             arg2_rlc: meta.advice_column_in(SecondPhase),
             arg3_rlc: meta.advice_column_in(SecondPhase),
@@ -2415,9 +2442,6 @@ impl EccTable {
         let fq_to_value = |fq: Fq, randomness: Value<F>| -> Value<F> {
             randomness.map(|r| rlc::value(fq.to_bytes().iter(), r))
         };
-        let fr_to_value = |fr: Fr, randomness: Value<F>| -> Value<F> {
-            randomness.map(|r| rlc::value(fr.to_bytes().iter(), r))
-        };
 
         let keccak_rand = challenges.keccak_input();
 
@@ -2430,6 +2454,7 @@ impl EccTable {
         {
             assignments.push([
                 Value::known(F::from(u64::from(PrecompileCalls::Bn128Add))),
+                #[cfg(test)]
                 Value::known(F::one()),
                 fq_to_value(add_op.p.x, keccak_rand),
                 fq_to_value(add_op.p.y, keccak_rand),
@@ -2450,10 +2475,11 @@ impl EccTable {
         {
             assignments.push([
                 Value::known(F::from(u64::from(PrecompileCalls::Bn128Mul))),
+                #[cfg(test)]
                 Value::known(F::one()),
                 fq_to_value(mul_op.p.x, keccak_rand),
                 fq_to_value(mul_op.p.y, keccak_rand),
-                fr_to_value(mul_op.s, keccak_rand),
+                Value::known(mul_op.s.into()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 fq_to_value(mul_op.r.x, keccak_rand),
@@ -2470,12 +2496,13 @@ impl EccTable {
         {
             assignments.push([
                 Value::known(F::from(u64::from(PrecompileCalls::Bn128Pairing))),
+                #[cfg(test)]
                 Value::known(F::one()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
-                keccak_rand.map(|r| rlc::value(&pairing_op.to_bytes(), r)),
+                keccak_rand.map(|r| rlc::value(&pairing_op.to_bytes_le(), r)),
                 Value::known(
                     pairing_op
                         .output

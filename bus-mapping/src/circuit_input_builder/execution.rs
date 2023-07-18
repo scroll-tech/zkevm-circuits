@@ -1031,18 +1031,18 @@ impl Default for EcPairingOp {
 }
 
 impl EcPairingOp {
-    /// Returns the uncompressed byte representation of inputs to the EcPairingOp.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    /// Returns the uncompressed little-endian byte representation of inputs to the EcPairingOp.
+    pub fn to_bytes_le(&self) -> Vec<u8> {
         self.inputs
             .iter()
             .flat_map(|i| {
                 std::iter::empty()
-                    .chain(i.0.x.to_bytes().iter().rev())
-                    .chain(i.0.y.to_bytes().iter().rev())
-                    .chain(i.1.x.c0.to_bytes().iter().rev())
-                    .chain(i.1.x.c1.to_bytes().iter().rev())
-                    .chain(i.1.y.c0.to_bytes().iter().rev())
-                    .chain(i.1.y.c1.to_bytes().iter().rev())
+                    .chain(i.0.x.to_bytes().iter())
+                    .chain(i.0.y.to_bytes().iter())
+                    .chain(i.1.x.c0.to_bytes().iter())
+                    .chain(i.1.x.c1.to_bytes().iter())
+                    .chain(i.1.y.c0.to_bytes().iter())
+                    .chain(i.1.y.c1.to_bytes().iter())
                     .cloned()
                     .collect::<Vec<u8>>()
             })
