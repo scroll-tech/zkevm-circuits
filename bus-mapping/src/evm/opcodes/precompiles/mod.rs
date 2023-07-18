@@ -1,7 +1,7 @@
 use eth_types::{GethExecStep, ToWord, Word};
 
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent},
+    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
     operation::CallContextField,
     precompile::PrecompileCalls,
     Error,
