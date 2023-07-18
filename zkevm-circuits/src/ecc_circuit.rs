@@ -87,7 +87,7 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
         let fp_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
-            &[30], // num advice
+            &[33], // num advice
             &[17], // num lookup advice
             1,     // num fixed
             13,    // lookup bits

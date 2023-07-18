@@ -106,8 +106,8 @@ fn test_ecc_circuit() {
     run::<Fr>(
         LOG_TOTAL_NUM_ROWS,
         PrecompileEcParams {
-            ec_add: 10,
-            ec_mul: 10,
+            ec_add: 50,
+            ec_mul: 50,
             ec_pairing: 2,
         },
         gen(&mut rng, 9),
@@ -124,22 +124,22 @@ fn variadic_size_check() {
     let mut rng = rand::thread_rng();
 
     let circuit = EccCircuit::<Fr, 9> {
-        max_add_ops: 10,
-        max_mul_ops: 10,
-        max_pairing_ops: 4,
-        add_ops: gen(&mut rng, 9),
-        mul_ops: gen(&mut rng, 8),
-        pairing_ops: gen(&mut rng, 3),
+        max_add_ops: 50,
+        max_mul_ops: 50,
+        max_pairing_ops: 2,
+        add_ops: gen(&mut rng, 25),
+        mul_ops: gen(&mut rng, 20),
+        pairing_ops: gen(&mut rng, 2),
         _marker: PhantomData,
     };
     let prover1 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
 
     let circuit = EccCircuit::<Fr, 9> {
-        max_add_ops: 10,
-        max_mul_ops: 10,
-        max_pairing_ops: 4,
-        add_ops: gen(&mut rng, 7),
-        mul_ops: gen(&mut rng, 6),
+        max_add_ops: 50,
+        max_mul_ops: 50,
+        max_pairing_ops: 2,
+        add_ops: gen(&mut rng, 20),
+        mul_ops: gen(&mut rng, 15),
         pairing_ops: gen(&mut rng, 1),
         _marker: PhantomData,
     };
