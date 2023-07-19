@@ -15,6 +15,9 @@ use crate::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 
+mod ec_add;
+pub use ec_add::EcAddGadget;
+
 mod ecrecover;
 pub use ecrecover::EcrecoverGadget;
 

@@ -154,7 +154,38 @@ impl<F: Field> PrecompileGadget<F> {
                 });
             }),
             Box::new(|_cb| { /* Modexp */ }),
-            Box::new(|_cb| { /* Bn128Add */ }),
+            Box::new(|cb| {
+                let (p_x_rlc, p_y_rlc, q_x_rlc, q_y_rlc, r_x_rlc, r_y_rlc) = (
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                );
+                let (r_pow_32, r_pow_64, r_pow_96) = {
+                    let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+                    let r_pow_16 = challenges[15].clone();
+                    let r_pow_32 = r_pow_16.square();
+                    let r_pow_64 = r_pow_32.expr().square();
+                    let r_pow_96 = r_pow_64.expr() * r_pow_32.expr();
+                    (r_pow_32, r_pow_64, r_pow_96)
+                };
+                cb.require_equal(
+                    "input bytes (RLC) = [ p_x | p_y | q_x | q_y ]",
+                    padding_gadget.padded_rlc(),
+                    (p_x_rlc.expr() * r_pow_96)
+                        + (p_y_rlc.expr() * r_pow_64)
+                        + (q_x_rlc.expr() * r_pow_32.expr())
+                        + q_y_rlc.expr(),
+                );
+                // RLC of output bytes always equals RLC of result elliptic curve point R.
+                cb.require_equal(
+                    "output bytes (RLC) = [ r_x | r_y ]",
+                    output_bytes_rlc.expr(),
+                    r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
+                );
+            }),
             Box::new(|cb| {
                 let (p_x_rlc, p_y_rlc, _scalar_s_rlc, scalar_s_raw_rlc, r_x_rlc, r_y_rlc) = (
                     cb.query_cell_phase2(),
