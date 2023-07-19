@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod test {
-    use {zkevm_circuits::evm_circuit::test::rand_bytes, zkevm_circuits::test_util::CircuitTestBuilder};
+    use zkevm_circuits::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
     use mock::{
