@@ -2,7 +2,7 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
+    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, PrecompileEvent, Transaction,
     TransactionContext,
 };
 #[cfg(feature = "scroll")]
@@ -30,7 +30,6 @@ use eth_types::{
         memory::{MemoryRange, MemoryWordRange},
         Gas, GasCost, Memory, MemoryAddress, MemoryRef, OpcodeId, StackAddress, MAX_CODE_SIZE,
     },
-    sign_types::SignData,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
@@ -1379,9 +1378,9 @@ impl<'a> CircuitInputStateRef<'a> {
         self.block.add_exp_event(event)
     }
 
-    /// Push an ecrecover event to the state.
-    pub fn push_ecrecover(&mut self, event: SignData) {
-        self.block.add_ecrecover_event(event)
+    /// Push an event representing auxiliary data for a precompile call to the state.
+    pub fn push_precompile_event(&mut self, event: PrecompileEvent) {
+        self.block.add_precompile_event(event)
     }
 
     pub(crate) fn get_step_err(

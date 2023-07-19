@@ -1,13 +1,15 @@
 //! Block-related utility module
 
 use super::{
-    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+    execution::{ExecState, PrecompileEvent, PrecompileEvents},
+    transaction::Transaction,
+    CircuitsParams, CopyEvent, ExecStep, ExpEvent,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{sign_types::SignData, Address, Hash, ToWord, Word};
+use eth_types::{Address, Hash, ToWord, Word};
 use std::collections::{BTreeMap, HashMap};
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -153,8 +155,6 @@ pub struct Block {
     pub code: HashMap<Hash, Vec<u8>>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
-    /// IO to/from the precompile Ecrecover calls.
-    pub ecrecover_events: Vec<SignData>,
     /// Block-wise steps
     pub block_steps: BlockSteps,
     /// Exponentiation events in the block.
@@ -163,6 +163,8 @@ pub struct Block {
     pub circuits_params: CircuitsParams,
     /// chain id
     pub chain_id: u64,
+    /// IO to/from the precompiled contract calls.
+    pub precompile_events: PrecompileEvents,
 }
 
 impl Block {
@@ -248,8 +250,8 @@ impl Block {
     pub fn add_exp_event(&mut self, event: ExpEvent) {
         self.exp_events.push(event);
     }
-    /// Push an ecrecover event to the block.
-    pub fn add_ecrecover_event(&mut self, event: SignData) {
-        self.ecrecover_events.push(event);
+    /// Push a precompile event to the block.
+    pub fn add_precompile_event(&mut self, event: PrecompileEvent) {
+        self.precompile_events.events.push(event);
     }
 }
