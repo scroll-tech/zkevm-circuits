@@ -170,19 +170,19 @@ impl Circuit<Fr> for AggregationCircuit {
             #[cfg(feature = "skip_first_pass")]
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-            // stores accumulators for all snarks, including the padded ones
-            let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
-            // stores public inputs for all snarks, including the padded ones
-            let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
-
-            layouter.assign_region(
+            let (accumulator_instances, snark_inputs) = layouter.assign_region(
                 || "aggregation",
-                |region| {
+                |region| -> Result<(Vec<AssignedValue<Fr>>, Vec<AssignedValue<Fr>>), Error> {
                     #[cfg(feature = "skip_first_pass")]
                     if first_pass {
                         first_pass = false;
                         return Ok(());
                     }
+
+                    // stores accumulators for all snarks, including the padded ones
+                    let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
+                    // stores public inputs for all snarks, including the padded ones
+                    let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
                     let ctx = Context::new(
                         region,
                         ContextParams {
@@ -228,7 +228,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
                     loader.ctx_mut().print_stats(&["Range"]);
 
-                    Ok(())
+                    Ok((accumulator_instances, snark_inputs))
                 },
             )?;
 
