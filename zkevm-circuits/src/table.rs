@@ -2387,6 +2387,19 @@ impl<F: Field> LookupTable<F> for EccTable {
             String::from("output2_rlc"),
         ]
     }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_fixed(self.op_type, Rotation::cur()),
+            meta.query_advice(self.arg1_rlc, Rotation::cur()),
+            meta.query_advice(self.arg2_rlc, Rotation::cur()),
+            meta.query_advice(self.arg3_rlc, Rotation::cur()),
+            meta.query_advice(self.arg4_rlc, Rotation::cur()),
+            meta.query_advice(self.input_rlc, Rotation::cur()),
+            meta.query_advice(self.output1_rlc, Rotation::cur()),
+            meta.query_advice(self.output2_rlc, Rotation::cur()),
+        ]
+    }
 }
 
 impl EccTable {

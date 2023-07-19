@@ -166,11 +166,46 @@ impl EcrecoverAuxData {
     }
 }
 
+/// Auxiliary data for EcAdd, i.e. P + Q = R
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EcAddAuxData {
+    /// x co-ordinate of the first point.
+    pub p_x: Word,
+    /// y co-ordinate of the first point.
+    pub p_y: Word,
+    /// x co-ordinate of the second point.
+    pub q_x: Word,
+    /// y co-ordinate of the second point.
+    pub q_y: Word,
+    /// x co-ordinate of the result point.
+    pub r_x: Word,
+    /// y co-ordinate of the result point.
+    pub r_y: Word,
+}
+
+impl EcAddAuxData {
+    /// Create a new instance of ecrecover auxiliary data.
+    pub fn new(input: &[u8], output: &[u8]) -> Self {
+        assert_eq!(input.len(), 128);
+        assert_eq!(output.len(), 64);
+        Self {
+            p_x: Word::from_big_endian(&input[0x00..0x20]),
+            p_y: Word::from_big_endian(&input[0x20..0x40]),
+            q_x: Word::from_big_endian(&input[0x40..0x60]),
+            q_y: Word::from_big_endian(&input[0x60..0x80]),
+            r_x: Word::from_big_endian(&output[0x00..0x20]),
+            r_y: Word::from_big_endian(&output[0x20..0x40]),
+        }
+    }
+}
+
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
     /// Ecrecover.
     Ecrecover(EcrecoverAuxData),
+    /// EcAdd.
+    EcAdd(EcAddAuxData),
 }
 
 impl Default for PrecompileAuxData {

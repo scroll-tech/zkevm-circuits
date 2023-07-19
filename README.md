@@ -31,10 +31,8 @@ To learn about internal mechanics, please refer to [specification](https://githu
 ```
 # install packages
 # install Golang: https://go.dev/doc/install
-```
 
-To run the same tests as the CI
-```
+# To run the same tests as the CI
 make test-all
 ```
 
