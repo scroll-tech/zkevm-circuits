@@ -7,24 +7,23 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
+#[cfg(not(feature = "disable_proof_aggregation"))]
+use snark_verifier::{
+    loader::halo2::{
+        halo2_ecc::halo2_base::{AssignedValue, Context, ContextParams},
+        Halo2Loader,
+    },
+    pcs::kzg::{Bdfg21, Kzg},
+};
 use snark_verifier::{
     loader::native::NativeLoader,
     pcs::kzg::{KzgAccumulator, KzgSuccinctVerifyingKey},
     util::arithmetic::fe_to_limbs,
 };
-use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
-use zkevm_circuits::util::Challenges;
-
-#[cfg(not(feature = "disable_proof_aggregation"))]
-use snark_verifier::{
-    loader::halo2::{
-        halo2_ecc::halo2_base::{self, AssignedValue, Context, ContextParams},
-        Halo2Loader,
-    },
-    pcs::kzg::{Bdfg21, Kzg},
-};
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier_sdk::{aggregate, flatten_accumulator};
+use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
+use zkevm_circuits::util::Challenges;
 
 use crate::{
     batch::BatchHash,
@@ -168,6 +167,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 .load_lookup_table(&mut layouter)
                 .expect("load range lookup table");
 
+            #[cfg(feature = "skip_first_pass")]
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
             // stores accumulators for all snarks, including the padded ones
@@ -178,6 +178,7 @@ impl Circuit<Fr> for AggregationCircuit {
             layouter.assign_region(
                 || "aggregation",
                 |region| {
+                    #[cfg(feature = "skip_first_pass")]
                     if first_pass {
                         first_pass = false;
                         return Ok(());
@@ -356,6 +357,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
+        log::trace!("number of valid snarks: {:?}", num_valid_snarks.value());
         #[cfg(not(feature = "disable_pi_aggregation"))]
         layouter.constrain_instance(
             num_valid_snarks.cell(),

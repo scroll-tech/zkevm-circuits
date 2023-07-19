@@ -31,3 +31,5 @@ print-trace = [ "ark-std/print-trace" ]
 disable_proof_aggregation = []
 # This feature is useful for unit tests where we check the SAT of proof aggregation circuit
 disable_pi_aggregation = []
+# skip the first pass of the layouter
+skip_first_pass = []

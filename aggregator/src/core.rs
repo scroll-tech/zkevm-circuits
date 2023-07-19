@@ -5,14 +5,13 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::Rng;
+#[cfg(feature = "skip_first_pass")]
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier::{
     loader::{
-        halo2::halo2_ecc::{
-            halo2_base,
-            halo2_base::{
-                gates::{flex_gate::FlexGateConfig, GateInstructions},
-                AssignedValue, Context, ContextParams, QuantumCell,
-            },
+        halo2::halo2_ecc::halo2_base::{
+            gates::{flex_gate::FlexGateConfig, GateInstructions},
+            AssignedValue, Context, ContextParams, QuantumCell,
         },
         native::NativeLoader,
     },
@@ -164,6 +163,7 @@ pub(crate) fn extract_hash_cells(
     ),
     Error,
 > {
+    #[cfg(feature = "skip_first_pass")]
     let mut is_first_time = true;
     let num_rows = 1 << LOG_DEGREE;
 
@@ -192,17 +192,14 @@ pub(crate) fn extract_hash_cells(
     let mut preimage_indices_iter = preimage_indices.iter();
     let mut digest_indices_iter = digest_indices.iter();
 
-    let mut hash_input_cells = vec![];
-    let mut hash_output_cells = vec![];
-    let mut data_rlc_cells = vec![];
-
     let mut cur_preimage_index = preimage_indices_iter.next();
     let mut cur_digest_index = digest_indices_iter.next();
 
-    layouter
+    let (hash_input_cells, hash_output_cells, data_rlc_cells) = layouter
         .assign_region(
             || "assign keccak rows",
             |mut region| {
+                #[cfg(feature = "skip_first_pass")]
                 if is_first_time {
                     is_first_time = false;
                     let offset = witness.len() - 1;
@@ -212,6 +209,10 @@ pub(crate) fn extract_hash_cells(
                 // ====================================================
                 // Step 1. Extract the hash cells
                 // ====================================================
+                let mut hash_input_cells = vec![];
+                let mut hash_output_cells = vec![];
+                let mut data_rlc_cells = vec![];
+
                 let timer = start_timer!(|| "assign row");
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row = keccak_config.set_row(&mut region, offset, keccak_row)?;
@@ -241,7 +242,7 @@ pub(crate) fn extract_hash_cells(
                     .keccak_table
                     .annotate_columns_in_region(&mut region);
                 keccak_config.annotate_circuit(&mut region);
-                Ok(())
+                Ok((hash_input_cells, hash_output_cells, data_rlc_cells))
             },
         )
         .map_err(|e| Error::AssertionFailure(format!("assign keccak rows: {e}")))?;
@@ -259,12 +260,14 @@ fn copy_constraints(
     layouter: &mut impl Layouter<Fr>,
     hash_input_cells: &[AssignedCell<Fr, Fr>],
 ) -> Result<(), Error> {
+    #[cfg(feature = "skip_first_pass")]
     let mut is_first_time = true;
 
     layouter
         .assign_region(
             || "assign keccak rows",
             |mut region| {
+                #[cfg(feature = "skip_first_pass")]
                 if is_first_time {
                     is_first_time = false;
                     return Ok(());
@@ -389,18 +392,29 @@ pub(crate) fn conditional_constraints(
     data_rlc_cells: &[AssignedCell<Fr, Fr>],
     num_of_valid_chunks: usize,
 ) -> Result<AssignedValue<Fr>, Error> {
-    let mut chunk_is_valid_cells = vec![];
-    let mut data_hash_flag_cells = vec![];
-    let mut num_of_valid_chunk_cell = vec![];
+    #[cfg(feature = "skip_first_pass")]
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-    layouter
+
+    let (chunk_is_valid_cells, data_hash_flag_cells, number_of_valid_snarks) = layouter
         .assign_region(
             || "aggregation",
-            |region| {
+            |region| -> Result<
+                (
+                    Vec<AssignedValue<Fr>>,
+                    Vec<AssignedValue<Fr>>,
+                    AssignedValue<Fr>,
+                ),
+                halo2_proofs::plonk::Error,
+            > {
+                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(());
                 }
+                let mut chunk_is_valid_cells = vec![];
+                // let mut data_hash_flag_cells = vec![];
+                // let mut num_of_valid_chunk_cell = vec![];
+
                 let mut ctx = Context::new(
                     region,
                     ContextParams {
@@ -415,7 +429,7 @@ pub(crate) fn conditional_constraints(
                 chunk_is_valid_cells.extend_from_slice(
                     chunk_is_valid(flex_gate, &mut ctx, &number_of_valid_snarks).as_slice(),
                 );
-                num_of_valid_chunk_cell.push(number_of_valid_snarks);
+                // num_of_valid_chunk_cell.push(number_of_valid_snarks);
 
                 // #valid snarks | offset of data hash | flags
                 // 1,2,3,4       | 0                   | 1, 0, 0
@@ -433,19 +447,30 @@ pub(crate) fn conditional_constraints(
                     QuantumCell::Existing(not_flag1),
                     QuantumCell::Existing(flag2),
                 );
-
+                log::trace!(
+                    "flags: {:?} {:?} {:?}",
+                    flag1.value(),
+                    flag2.value(),
+                    flag3.value()
+                );
                 // flag3 is !flag2 and is omitted
-                data_hash_flag_cells = vec![flag1, flag2, flag3];
-                Ok(())
+                let data_hash_flag_cells = vec![flag1, flag2, flag3];
+                Ok((
+                    chunk_is_valid_cells,
+                    data_hash_flag_cells,
+                    number_of_valid_snarks,
+                ))
             },
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
 
+    #[cfg(feature = "skip_first_pass")]
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
     layouter
         .assign_region(
             || "aggregation",
             |mut region| {
+                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(());
@@ -668,7 +693,7 @@ pub(crate) fn conditional_constraints(
             },
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
-    Ok(num_of_valid_chunk_cell[0])
+    Ok(number_of_valid_snarks)
 }
 
 /// generate a string of binary cells indicating

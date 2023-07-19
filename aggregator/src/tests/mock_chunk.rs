@@ -8,6 +8,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, FirstPhase, Instance, Selector},
     poly::Rotation,
 };
+#[cfg(feature = "skip_first_pass")]
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier_sdk::CircuitExt;
 
@@ -136,17 +137,18 @@ impl Circuit<Fr> for MockChunkCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        #[cfg(feature = "skip_first_pass")]
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-        let mut cells = vec![];
-
-        layouter.assign_region(
+        let cells = layouter.assign_region(
             || "mock circuit",
-            |mut region| {
+            |mut region| -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(());
                 }
 
+                let mut cells = vec![];
                 let acc_len = if self.is_fresh { 0 } else { ACC_LEN };
                 let mut index = 0;
                 for (_i, byte) in iter::repeat(0)
@@ -159,7 +161,7 @@ impl Circuit<Fr> for MockChunkCircuit {
                         .unwrap();
                     cells.push(cell)
                 }
-                Ok(())
+                Ok(cells)
             },
         )?;
 

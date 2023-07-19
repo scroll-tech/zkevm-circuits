@@ -39,7 +39,7 @@ pub(crate) fn get_num_rows_per_round() -> usize {
 /// - the indices of the rows that contain the output digest
 pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     // precomputed data for MAX_AGG_SNARKS == 10
-    if MAX_AGG_SNARKS == 10 && preimages.len() == 10 {
+    if MAX_AGG_SNARKS == 10 && preimages.len() == 12 {
         log::info!("use pre-computed indices");
         let preimage_indices = vec![
             12, 13, 14, 15, 16, 17, 18, 19, 24, 25, 26, 27, 28, 29, 30, 31, 36, 37, 38, 39, 40, 41,

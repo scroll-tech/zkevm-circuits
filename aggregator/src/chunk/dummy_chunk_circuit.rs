@@ -1,10 +1,12 @@
 use std::iter;
 
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
 };
+
+#[cfg(feature = "skip_first_pass")]
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier_sdk::CircuitExt;
 
@@ -74,16 +76,18 @@ impl Circuit<Fr> for DummyChunkHashCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        #[cfg(feature = "skip_first_pass")]
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-        let mut cells = vec![];
-        layouter.assign_region(
+        let cells = layouter.assign_region(
             || "dummy chunk circuit",
-            |mut region| {
+            |mut region| -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(());
                 }
 
+                let mut cells = vec![];
                 for (index, element) in self.instance().iter().enumerate() {
                     cells.push(region.assign_advice(
                         || "public input",
@@ -93,7 +97,7 @@ impl Circuit<Fr> for DummyChunkHashCircuit {
                     )?);
                 }
 
-                Ok(())
+                Ok(cells)
             },
         )?;
 
