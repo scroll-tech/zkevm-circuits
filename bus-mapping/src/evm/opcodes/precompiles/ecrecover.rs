@@ -45,7 +45,17 @@ pub(crate) fn handle(
             };
             assert_eq!(aux_data.recovered_addr, sign_data.get_addr());
             state.push_precompile_event(PrecompileEvent::Ecrecover(sign_data));
+        } else {
+            log::warn!(
+                "could not recover pubkey. ecrecover aux_data={:?}",
+                aux_data
+            );
         }
+    } else {
+        log::warn!(
+            "invalid recoveryId for ecrecover. sig_v={:?}",
+            aux_data.sig_v
+        );
     }
 
     exec_step.aux_data = Some(PrecompileAuxData::Ecrecover(aux_data));

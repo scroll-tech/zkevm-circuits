@@ -942,6 +942,12 @@ impl EcAddOp {
     }
 
     /// Creates a new EcAdd op given input and output bytes from a precompile call.
+    ///
+    /// Note: At the moment we are handling invalid/erroneous cases for precompiled contract calls
+    /// via a dummy gadget ErrorPrecompileFailure. So we expect the input bytes to be valid, i.e.
+    /// points P and Q are valid points on the curve. In the near future, we should ideally handle
+    /// invalid inputs within the respective precompile call's gadget. And then this function will
+    /// be fallible, since we would handle invalid inputs as well.
     pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
         let fq_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<Fq> {
             buf.copy_from_slice(bytes);
