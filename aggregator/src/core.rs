@@ -189,12 +189,6 @@ pub(crate) fn extract_hash_cells(
     // extract the indices of the rows for which the preimage and the digest cells lie in
     let (preimage_indices, digest_indices) = get_indices(preimages);
 
-    let mut preimage_indices_iter = preimage_indices.iter();
-    let mut digest_indices_iter = digest_indices.iter();
-
-    let mut cur_preimage_index = preimage_indices_iter.next();
-    let mut cur_digest_index = digest_indices_iter.next();
-
     let (hash_input_cells, hash_output_cells, data_rlc_cells) = layouter
         .assign_region(
             || "assign keccak rows",
@@ -206,6 +200,13 @@ pub(crate) fn extract_hash_cells(
                     keccak_config.set_row(&mut region, offset, &witness[offset])?;
                     return Ok(());
                 }
+
+                let mut preimage_indices_iter = preimage_indices.iter();
+                let mut digest_indices_iter = digest_indices.iter();
+            
+                let mut cur_preimage_index = preimage_indices_iter.next();
+                let mut cur_digest_index = digest_indices_iter.next();
+
                 // ====================================================
                 // Step 1. Extract the hash cells
                 // ====================================================
@@ -214,6 +215,7 @@ pub(crate) fn extract_hash_cells(
                 let mut data_rlc_cells = vec![];
 
                 let timer = start_timer!(|| "assign row");
+                log::trace!("witness length: {}", witness.len());
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row = keccak_config.set_row(&mut region, offset, keccak_row)?;
 

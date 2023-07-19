@@ -165,7 +165,7 @@ impl Circuit<Fr> for MockChunkCircuit {
             },
         )?;
 
-        println!("cells len: {}", cells.len());
+        log::trace!("MockChunkCircuit PI len: {}", cells.len());
         for (i, cell) in cells.into_iter().enumerate() {
             layouter.constrain_instance(cell.cell(), config.instance, i)?;
         }
