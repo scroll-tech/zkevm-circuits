@@ -48,7 +48,7 @@ pub struct EcMulGadget<F> {
         RandomLinearCombination<F, 32>, // mod by FR_N
     ),
     n: RandomLinearCombination<F, 32>, // modulus
-    modword: ModGadget<F>,
+    modword: ModGadget<F, false>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -82,9 +82,9 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         );
 
         let (s_raw, s_modded, n) = (
-            cb.query_word_rlc(),
-            cb.query_word_rlc(),
-            cb.query_word_rlc(),
+            cb.query_keccak_rlc(),
+            cb.query_keccak_rlc(),
+            cb.query_keccak_rlc(),
         );
         // k * n + s_modded = s_raw
         let modword = ModGadget::construct(cb, [&s_raw, &n, &s_modded]);
