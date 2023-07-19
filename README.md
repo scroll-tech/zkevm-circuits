@@ -36,6 +36,26 @@ To learn about internal mechanics, please refer to [specification](https://githu
 make test-all
 ```
 
+To run integration test
+```
+cargo test --release --workspace
+```
+
+To run single unit test by a single file
+```
+cargo test --test file_name (do not ending with '.rs')
+```
+
+To run rust format check
+```
+cargo fmt -- --check tests/filename.rs
+```
+
+To automatically format your rust code
+```
+cargo fmt -- tests/filename.rs
+```
+
 ### Run Benchmarks
 
 There are currently several benchmarks to run in the workspace in regards to the circuits.
