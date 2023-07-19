@@ -13,7 +13,7 @@ pub mod table;
 pub(crate) mod util;
 
 #[cfg(any(feature = "test", test))]
-pub(crate) mod test;
+pub mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use self::EvmCircuit as TestEvmCircuit;
 
