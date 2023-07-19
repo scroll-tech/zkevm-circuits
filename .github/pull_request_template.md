@@ -1,57 +1,39 @@
-### Description
+## Description
 
-[_PR description_]
+Add any other context or screenshots about the pull request here.
 
-### Issue Link
+## Changes
 
-[_link issue here_]
+Describe in detail the changes that have been made.
 
-### Type of change
+- Change 1
+- Change 2
+- ...
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
+## Test Plan
 
-### Contents
+Outline the steps you took to test the changes and the results.
 
-- [_item_]
+- Test 1
+  - Steps: ...
+  - Expected result: ...
+- Test 2
+  - Steps: ...
+  - Expected result: ...
+- ...
 
-### Rationale
+## TODOs
 
-[_design decisions and extended information_]
+List any outstanding work that still needs to be done.
 
-### How Has This Been Tested?
+- TODO 1
+- TODO 2
+- ...
 
-[_explanation_]
 
-<hr>
 
-## How to fill a PR description 
+## Linked Issues
 
-Please give a concise description of your PR.
+Link to any related issues that are relevant to this PR. Use the "Closes" keyword if this PR will close any of those issues once merged.
 
-The target readers could be future developers, reviewers, and auditors. By reading your description, they should easily understand the changes proposed in this pull request.
-
-MUST: Reference the issue to resolve
-
-### Single responsability
-
-Is RECOMMENDED to create single responsibility commits, but not mandatory.
-
-Anyway, you MUST enumerate the changes in a unitary way, e.g.
-
-```
-This PR contains:
-- Cleanup of xxxx, yyyy
-- Changed xxxx to yyyy in order to bla bla
-- Added xxxx function to ...
-- Refactored ....
-```
-
-### Design choices
-
-RECOMMENDED to:
-- What types of design choices did you face?
-- What decisions you have made?
-- Any valuable information that could help reviewers to think critically
+- Closes #...
