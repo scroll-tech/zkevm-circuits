@@ -1014,7 +1014,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let [output_bytes_end, output_bytes_word_count] =
                 // Correspond to this check in bus-mapping.
                 // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L387>
-                if cd_length.is_zero() || precompile_return_length.is_zero() {
+                if precompile_return_length.is_zero() {
                     [0; 2]
                 } else {
                     let end = precompile_return_length.as_usize();
@@ -1025,7 +1025,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
                 // Correspond to this check in bus-mapping.
                 // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L416>
-                if cd_length.is_zero() || precompile_return_length.is_zero() || rd_length.is_zero()
+                if min(precompile_return_length, rd_length).is_zero()
                 {
                     [0; 3]
                 } else {

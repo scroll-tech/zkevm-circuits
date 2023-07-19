@@ -1,7 +1,10 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use gadgets::util::{and, not, or, Expr};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 use crate::{
     evm_circuit::{
@@ -11,7 +14,7 @@ use crate::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, ModGadget},
-            CachedRegion, Cell, RandomLinearCombination,
+            rlc, CachedRegion, Cell, RandomLinearCombination,
         },
     },
     table::CallContextFieldTag,
@@ -116,7 +119,16 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                     u64::from(PrecompileCalls::Bn128Mul).expr(),
                     point_p_x_rlc.expr(),
                     point_p_y_rlc.expr(),
-                    scalar_s_rlc.expr(),
+                    // we know that `s_modded` fits in the scalar field. So we don't compute an RLC
+                    // of that value. Instead we use the native value.
+                    rlc::expr(
+                        &s_modded
+                            .cells
+                            .iter()
+                            .map(Expr::expr)
+                            .collect::<Vec<Expression<F>>>(),
+                        256.expr(),
+                    ),
                     0.expr(),
                     0.expr(),
                     point_r_x_rlc.expr(),
