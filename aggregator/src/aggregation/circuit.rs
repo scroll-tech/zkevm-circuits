@@ -242,42 +242,48 @@ impl Circuit<Fr> for AggregationCircuit {
         let challenges = challenge.values(&layouter);
 
         let timer = start_timer!(|| "load aux table");
-        config
-            .keccak_circuit_config
-            .load_aux_tables(&mut layouter)?;
-        end_timer!(timer);
 
-        let timer = start_timer!(|| "extract hash");
-        // orders:
-        // - batch_public_input_hash
-        // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
-        // - batch_data_hash_preimage
-        let preimages = self.batch_hash.extract_hash_preimages();
-        assert_eq!(
-            preimages.len(),
-            MAX_AGG_SNARKS + 2,
-            "error extracting preimages"
-        );
-        end_timer!(timer);
+        #[cfg(not(feature = "disable_pi_aggregation"))]
+        let (hash_digest_cells, num_valid_snarks) = {
+            config
+                .keccak_circuit_config
+                .load_aux_tables(&mut layouter)?;
+            end_timer!(timer);
 
-        let timer = start_timer!(|| ("assign hash cells").to_string());
-        let (hash_digest_cells, num_valid_snarks) = assign_batch_hashes(
-            &config,
-            &mut layouter,
-            challenges,
-            &preimages,
-            self.batch_hash.number_of_valid_chunks,
-        )
-        .map_err(|_e| Error::ConstraintSystemFailure)?;
+            let timer = start_timer!(|| "extract hash");
+            // orders:
+            // - batch_public_input_hash
+            // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
+            // - batch_data_hash_preimage
+            let preimages = self.batch_hash.extract_hash_preimages();
+            assert_eq!(
+                preimages.len(),
+                MAX_AGG_SNARKS + 2,
+                "error extracting preimages"
+            );
+            end_timer!(timer);
 
+            let timer = start_timer!(|| ("assign hash cells").to_string());
+            let (hash_digest_cells, num_valid_snarks) = assign_batch_hashes(
+                &config,
+                &mut layouter,
+                challenges,
+                &preimages,
+                self.batch_hash.number_of_valid_chunks,
+            )
+            .map_err(|_e| Error::ConstraintSystemFailure)?;
+            end_timer!(timer);
+            (hash_digest_cells, num_valid_snarks)
+        };
+        #[cfg(not(feature = "disable_pi_aggregation"))]
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells(&hash_digest_cells);
-        end_timer!(timer);
 
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
         // ==============================================
+        #[cfg(not(feature = "disable_pi_aggregation"))]
         for (i, chunk) in chunk_pi_hash_digests.iter().enumerate() {
             let hash = self.batch_hash.chunks_with_padding[i].public_input_hash();
             for j in 0..4 {
@@ -290,7 +296,10 @@ impl Circuit<Fr> for AggregationCircuit {
                 }
             }
         }
-        #[cfg(not(feature = "disable_proof_aggregation"))]
+        #[cfg(all(
+            not(feature = "disable_proof_aggregation"),
+            not(feature = "disable_pi_aggregation")
+        ))]
         {
             layouter.assign_region(
                 || "aggregation",
@@ -330,6 +339,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 layouter.constrain_instance(v.cell(), config.instance, i)?;
             }
         }
+        #[cfg(not(feature = "disable_pi_aggregation"))]
         // public input hash
         for i in 0..4 {
             for j in 0..8 {
@@ -346,6 +356,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
+        #[cfg(not(feature = "disable_pi_aggregation"))]
         layouter.constrain_instance(
             num_valid_snarks.cell(),
             config.instance,

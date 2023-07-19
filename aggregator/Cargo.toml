@@ -29,3 +29,5 @@ default = [ ]
 print-trace = [ "ark-std/print-trace" ]
 # This feature is useful for unit tests where we check the SAT of pi aggregation circuit
 disable_proof_aggregation = []
+# This feature is useful for unit tests where we check the SAT of proof aggregation circuit
+disable_pi_aggregation = []
