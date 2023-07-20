@@ -341,6 +341,13 @@ mod test {
     }
 
     #[test]
+    fn calldatacopy_gadget_offset_zero() {
+        test_root_ok(0, 0, 0x00.into(), 0x40.into());
+        test_internal_ok(0, 0, 0, 0x10.into(), 0x00.into());
+        test_internal_ok(0, 0, 0, 0x10.into(), 0xA0.into());
+    }
+
+    ≈
     fn calldatacopy_gadget_out_of_bound() {
         test_root_ok(0x40, 40, 0x20.into(), 0x40.into());
         test_internal_ok(0x40, 0x20, 10, 0x28.into(), 0xA0.into());
