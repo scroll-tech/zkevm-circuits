@@ -151,6 +151,12 @@ mod tests {
 
         try_test!(
             LtWordTestContainer<Fr>,
+            vec![WORD_LOW_MAX, WORD_LOW_MAX],
+            false,
+        );
+
+        try_test!(
+            LtWordTestContainer<Fr>,
             vec![WORD_HIGH_MAX, WORD_LOW_MAX],
             false,
         );

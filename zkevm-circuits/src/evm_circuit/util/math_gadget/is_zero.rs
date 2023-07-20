@@ -138,4 +138,9 @@ mod tests {
             false,
         );
     }
+
+    #[test]
+    fn test_00_is_not_zero() {
+        try_test!(IsZeroGadgetTestContainer<Fr>, vec![Word::from(00)], true);
+    }
 }
