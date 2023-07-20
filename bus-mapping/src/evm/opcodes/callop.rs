@@ -272,7 +272,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 state.call_ctx_mut()?.memory.extend_at_least(result.len());
 
                 // mutate the caller memory.
-                state.call_ctx_mut()?.memory.extend_at_least(result.len());
                 let length = min(result.len(), ret_length);
                 if length > 0 {
                     {

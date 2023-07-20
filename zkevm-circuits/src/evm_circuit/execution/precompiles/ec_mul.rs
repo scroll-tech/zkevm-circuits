@@ -1,5 +1,5 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, or, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -9,13 +9,12 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_WORD,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, ModGadget},
-            rlc, CachedRegion, Cell, RandomLinearCombination,
+            rlc, CachedRegion, Cell, Word,
         },
     },
     table::CallContextFieldTag,
@@ -43,9 +42,9 @@ pub struct EcMulGadget<F> {
     // Two Words (s_raw, scalar_s) that satisfies
     // k * FR_N + scalar_s = s_raw
     // Used for proving correct modulo by Fr
-    scalar_s_raw: RandomLinearCombination<F, N_BYTES_WORD>, // raw
-    scalar_s: RandomLinearCombination<F, N_BYTES_WORD>,     // mod by FR_N
-    n: RandomLinearCombination<F, N_BYTES_WORD>,            // modulus
+    scalar_s_raw: Word<F>, // raw
+    scalar_s: Word<F>,     // mod by FR_N
+    n: Word<F>,            // modulus
     modword: ModGadget<F, false>,
 
     is_success: Cell<F>,
@@ -212,7 +211,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 col.assign(region, offset, region.keccak_rlc(&word_value.to_le_bytes()))?;
             }
 
-            let n = Word::from_little_endian(&FR_N);
+            let n = U256::from_little_endian(&FR_N);
             for (col, word_value) in [(&self.scalar_s_raw, aux_data.s_raw), (&self.n, n)] {
                 col.assign(region, offset, Some(word_value.to_le_bytes()))?;
             }
