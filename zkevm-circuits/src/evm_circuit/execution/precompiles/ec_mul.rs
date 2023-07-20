@@ -9,6 +9,7 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_WORD,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -31,7 +32,6 @@ const FR_N: [u8; 32] = [
 pub struct EcMulGadget<F> {
     point_p_x_rlc: Cell<F>,
     point_p_y_rlc: Cell<F>,
-    scalar_s_rlc: Cell<F>,
     scalar_s_raw_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
@@ -40,14 +40,12 @@ pub struct EcMulGadget<F> {
     p_y_is_zero: IsZeroGadget<F>,
     s_is_zero: IsZeroGadget<F>,
 
-    // Two Words (s_raw, s_modded) that satisfies
-    // k * FR_N + s_modded = s_raw
+    // Two Words (s_raw, scalar_s) that satisfies
+    // k * FR_N + scalar_s = s_raw
     // Used for proving correct modulo by Fr
-    s_mod_pair: (
-        RandomLinearCombination<F, 32>, // raw
-        RandomLinearCombination<F, 32>, // mod by FR_N
-    ),
-    n: RandomLinearCombination<F, 32>, // modulus
+    scalar_s_raw: RandomLinearCombination<F, N_BYTES_WORD>, // raw
+    scalar_s: RandomLinearCombination<F, N_BYTES_WORD>,     // mod by FR_N
+    n: RandomLinearCombination<F, N_BYTES_WORD>,            // modulus
     modword: ModGadget<F, false>,
 
     is_success: Cell<F>,
@@ -65,15 +63,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (
-            point_p_x_rlc,
-            point_p_y_rlc,
-            scalar_s_rlc,
-            scalar_s_raw_rlc,
-            point_r_x_rlc,
-            point_r_y_rlc,
-        ) = (
-            cb.query_cell_phase2(),
+        let (point_p_x_rlc, point_p_y_rlc, scalar_s_raw_rlc, point_r_x_rlc, point_r_y_rlc) = (
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -81,19 +71,19 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_cell_phase2(),
         );
 
-        let (s_raw, s_modded, n) = (
+        let (scalar_s_raw, scalar_s, n) = (
             cb.query_keccak_rlc(),
             cb.query_keccak_rlc(),
             cb.query_keccak_rlc(),
         );
-        // k * n + s_modded = s_raw
-        let modword = ModGadget::construct(cb, [&s_raw, &n, &s_modded]);
+        // k * n + scalar_s = s_raw
+        let modword = ModGadget::construct(cb, [&scalar_s_raw, &n, &scalar_s]);
 
         // Conditions for dealing with infinity/empty points and zero/empty scalar
         let p_x_is_zero = IsZeroGadget::construct(cb, "ecMul(P_x)", point_p_x_rlc.expr());
         let p_y_is_zero = IsZeroGadget::construct(cb, "ecMul(P_y)", point_p_y_rlc.expr());
         let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
-        let s_is_zero = IsZeroGadget::construct(cb, "ecMul(s)", scalar_s_rlc.expr());
+        let s_is_zero = IsZeroGadget::construct(cb, "ecMul(s)", scalar_s.expr());
 
         cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
             cb.require_equal(
@@ -109,8 +99,11 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         });
 
         // Make sure the correct modulo test is done on actual lookup inputs
-        cb.condition(1.expr(), |_| scalar_s_raw_rlc.expr() - s_raw.expr());
-        cb.condition(1.expr(), |_| scalar_s_rlc.expr() - s_modded.expr());
+        cb.require_equal(
+            "Scalar s (raw 32-bytes) equality",
+            scalar_s_raw_rlc.expr(),
+            scalar_s_raw.expr(),
+        );
 
         cb.condition(
             not::expr(or::expr([p_is_zero.expr(), s_is_zero.expr()])),
@@ -119,10 +112,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                     u64::from(PrecompileCalls::Bn128Mul).expr(),
                     point_p_x_rlc.expr(),
                     point_p_y_rlc.expr(),
-                    // we know that `s_modded` fits in the scalar field. So we don't compute an RLC
+                    // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
                     // of that value. Instead we use the native value.
                     rlc::expr(
-                        &s_modded
+                        &scalar_s
                             .cells
                             .iter()
                             .map(Expr::expr)
@@ -168,7 +161,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         Self {
             point_p_x_rlc,
             point_p_y_rlc,
-            scalar_s_rlc,
             scalar_s_raw_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
@@ -177,7 +169,8 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             p_y_is_zero,
             s_is_zero,
 
-            s_mod_pair: (s_raw, s_modded),
+            scalar_s_raw,
+            scalar_s,
             n,
             modword,
 
@@ -205,7 +198,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             for (col, is_zero_gadget, word_value) in [
                 (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
                 (&self.point_p_y_rlc, &self.p_y_is_zero, aux_data.p_y),
-                (&self.scalar_s_rlc, &self.s_is_zero, aux_data.s),
             ] {
                 let rlc_val = region.keccak_rlc(&word_value.to_le_bytes());
                 col.assign(region, offset, rlc_val)?;
@@ -221,13 +213,16 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             }
 
             let n = Word::from_little_endian(&FR_N);
-            for (col, word_value) in [
-                (&self.s_mod_pair.0, aux_data.s_raw),
-                (&self.s_mod_pair.1, aux_data.s),
-                (&self.n, n),
-            ] {
+            for (col, word_value) in [(&self.scalar_s_raw, aux_data.s_raw), (&self.n, n)] {
                 col.assign(region, offset, Some(word_value.to_le_bytes()))?;
             }
+            self.scalar_s
+                .assign(region, offset, Some(aux_data.s.to_le_bytes()))?;
+            self.s_is_zero.assign_value(
+                region,
+                offset,
+                region.keccak_rlc(&aux_data.s.to_le_bytes()),
+            )?;
 
             let (k, _) = aux_data.s_raw.div_mod(n);
             self.modword

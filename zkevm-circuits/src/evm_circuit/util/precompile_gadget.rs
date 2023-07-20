@@ -187,8 +187,7 @@ impl<F: Field> PrecompileGadget<F> {
                 );
             }),
             Box::new(|cb| {
-                let (p_x_rlc, p_y_rlc, _scalar_s_rlc, scalar_s_raw_rlc, r_x_rlc, r_y_rlc) = (
-                    cb.query_cell_phase2(),
+                let (p_x_rlc, p_y_rlc, scalar_s_raw_rlc, r_x_rlc, r_y_rlc) = (
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
