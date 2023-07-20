@@ -443,7 +443,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_calldata",
-                tag_bits.value_equals(CallData, Rotation::cur())(meta),
+                is_data(meta),
                 meta.query_advice(is_calldata, Rotation::cur()),
             );
 
@@ -455,7 +455,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_caller_address",
-                tag_bits.value_equals(CallerAddress, Rotation::cur())(meta),
+                is_caller_addr(meta),
                 meta.query_advice(is_caller_address, Rotation::cur()),
             );
 
@@ -467,7 +467,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_chain_id",
-                tag_bits.value_equals(ChainID, Rotation::cur())(meta),
+                is_chain_id_expr(meta),
                 meta.query_advice(is_chain_id, Rotation::cur()),
             );
 
