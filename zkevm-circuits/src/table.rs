@@ -2479,6 +2479,7 @@ impl EccTable {
                 Value::known(F::one()),
                 fq_to_value(mul_op.p.x, keccak_rand),
                 fq_to_value(mul_op.p.y, keccak_rand),
+                // no need to RLC the scalar s, since it will fit within the scalar field.
                 Value::known(mul_op.s.into()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
