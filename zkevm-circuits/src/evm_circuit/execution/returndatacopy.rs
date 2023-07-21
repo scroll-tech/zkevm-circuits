@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -10,12 +10,12 @@ use crate::{
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::RangeCheckGadget,
+            math_gadget::{AddWordsGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            CachedRegion, Cell, MemoryAddress,
+            sum, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -42,6 +42,10 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     /// Holds the memory address for the offset in return data from where we
     /// read.
     data_offset: MemoryAddress<F>,
+    /// check overflow is not true
+    is_data_offset_within_u64: IsZeroGadget<F>,
+    /// sum of data offset + size
+    // sum: AddWordsGadget<F, 2, false>,
     /// Opcode RETURNDATACOPY has a dynamic gas cost:
     /// gas_code = static_gas * minimum_word_size + memory_expansion_cost
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -94,6 +98,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             CallContextFieldTag::LastCalleeReturnDataLength,
             return_data_size.expr(),
         );
+
+        // Check if `data_offset` is Uint64 overflow.
+        let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
+        let is_data_offset_within_u64 =
+            IsZeroGadget::construct(cb, "data_offset not overflow", data_offset_larger_u64);
+        cb.require_true("data_offset not overflow", is_data_offset_within_u64.expr());
 
         // 3. contraints for copy: copy overflow check
         // i.e., offset + size <= return_data_size
@@ -160,6 +170,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             return_data_size,
             dst_memory_addr,
             data_offset,
+            is_data_offset_within_u64,
             memory_expansion,
             memory_copier_gas,
             copy_rwc_inc,
@@ -253,6 +264,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
+
+        let data_offset_overflow = data_offset.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+
+        self.is_data_offset_within_u64
+            .assign(region, offset, F::from(data_offset_overflow))?;
 
         self.in_bound_check.assign(
             region,
