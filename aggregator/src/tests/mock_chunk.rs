@@ -13,107 +13,59 @@ use snark_verifier_sdk::CircuitExt;
 
 use crate::{
     constants::{ACC_LEN, DIGEST_LEN},
-    ChunkHash, LOG_DEGREE,
+    ChunkHash, RlcConfig, LOG_DEGREE,
 };
 
 /// This config is used to compute RLCs for bytes.
 /// It requires a phase 2 column
 #[derive(Debug, Clone, Copy)]
 pub struct MockConfig {
-    pub(crate) phase_1_column: Column<Advice>,
-    pub(crate) _selector: Selector,
+    pub(crate) rlc_config: RlcConfig,
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements); if not fresh
     /// - batch_public_input_hash (32 elements)
     pub(crate) instance: Column<Instance>,
 }
 
-impl MockConfig {
-    pub(crate) fn load_private(
-        &self,
-        region: &mut Region<Fr>,
-        f: &Fr,
-        offset: &mut usize,
-    ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        let res = region.assign_advice(
-            || "load private",
-            self.phase_1_column,
-            *offset,
-            || Value::known(*f),
-        );
-        *offset += 1;
-        res
-    }
-
-    pub(crate) fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
-        let selector = meta.complex_selector();
-
-        // CS requires existence of at least one phase 1 column if we operate on phase 2 columns.
-        // This column is not really used.
-        let phase_1_column = {
-            let column = meta.advice_column_in(FirstPhase);
-            meta.enable_equality(column);
-            column
-        };
-
-        let instance = meta.instance_column();
-        meta.enable_equality(instance);
-
-        // phase_2_column | advice
-        // ---------------|-------
-        // a              | q
-        // b              | 0
-        // c              | 0
-        // d              | 0
-        //
-        // constraint: q*(a*b+c-d) = 0
-
-        meta.create_gate("rlc_gate", |meta| {
-            let a = meta.query_advice(phase_1_column, Rotation(0));
-            let b = meta.query_advice(phase_1_column, Rotation(1));
-            let c = meta.query_advice(phase_1_column, Rotation(2));
-            let d = meta.query_advice(phase_1_column, Rotation(3));
-            let q = meta.query_selector(selector);
-            vec![q * (a * b + c - d)]
-        });
-        Self {
-            phase_1_column,
-            _selector: selector,
-            instance,
-        }
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy)]
 /// A mock chunk circuit
 ///
 /// This mock chunk circuit simulates a zkEVM circuit.
-/// It's public inputs consists of 64 elements:
-/// - data hash
+/// It's public inputs consists of 32 elements:
 /// - public input hash
 pub(crate) struct MockChunkCircuit {
-    pub(crate) is_fresh: bool,
-    pub(crate) _chain_id: u64,
+    // This circuit has an accumulator if it has already gone through compression
+    pub(crate) has_accumulator: bool,
+    pub(crate) is_padding: bool,
     pub(crate) chunk: ChunkHash,
 }
 
 impl MockChunkCircuit {
     #[allow(dead_code)]
-    pub(crate) fn new(is_fresh: bool, chain_id: u64, chunk: ChunkHash) -> Self {
+    pub(crate) fn new(has_accumulator: bool, chunk: ChunkHash) -> Self {
         MockChunkCircuit {
-            is_fresh,
-            _chain_id: chain_id,
+            has_accumulator,
+            is_padding: chunk.is_padding,
             chunk,
         }
     }
 }
 
 impl MockChunkCircuit {
-    pub(crate) fn random<R: rand::RngCore>(r: &mut R, is_fresh: bool) -> Self {
+    pub(crate) fn random<R: rand::RngCore>(
+        r: &mut R,
+        has_accumulator: bool,
+        is_padding: bool,
+    ) -> Self {
+        let chunk = ChunkHash::mock_random_chunk_hash_for_testing(r);
         Self {
-            is_fresh,
-            _chain_id: 0,
-            chunk: ChunkHash::mock_random_chunk_hash_for_testing(r),
+            has_accumulator,
+            is_padding,
+            chunk: if is_padding {
+                ChunkHash::mock_padded_chunk_hash_for_testing(&chunk)
+            } else {
+                chunk
+            },
         }
     }
 }
@@ -128,7 +80,14 @@ impl Circuit<Fr> for MockChunkCircuit {
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         meta.set_minimum_degree(4);
-        MockConfig::configure(meta)
+        let rlc_config = RlcConfig::configure(meta);
+        let instance = meta.instance_column();
+        meta.enable_equality(instance);
+
+        MockConfig {
+            rlc_config,
+            instance,
+        }
     }
 
     fn synthesize(
@@ -137,29 +96,30 @@ impl Circuit<Fr> for MockChunkCircuit {
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-        let mut cells = vec![];
 
-        layouter.assign_region(
+        let cells = layouter.assign_region(
             || "mock circuit",
-            |mut region| {
+            |mut region| -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(());
                 }
-
-                let acc_len = if self.is_fresh { 0 } else { ACC_LEN };
+                let mut cells = vec![];
                 let mut index = 0;
+                let acc_len = if self.has_accumulator { ACC_LEN } else { 0 };
+
                 for (_i, byte) in iter::repeat(0)
                     .take(acc_len)
                     .chain(self.chunk.public_input_hash().as_bytes().iter().copied())
                     .enumerate()
                 {
-                    let cell = config
+                    let cell = config.rlc_config
                         .load_private(&mut region, &Fr::from(byte as u64), &mut index)
                         .unwrap();
                     cells.push(cell)
                 }
-                Ok(())
+                Ok(cells)
             },
         )?;
 
@@ -173,13 +133,13 @@ impl Circuit<Fr> for MockChunkCircuit {
 impl CircuitExt<Fr> for MockChunkCircuit {
     /// 32 elements from digest
     fn num_instance(&self) -> Vec<usize> {
-        let acc_len = if self.is_fresh { 0 } else { ACC_LEN };
+        let acc_len = if self.has_accumulator { ACC_LEN } else { 0 };
         vec![DIGEST_LEN + acc_len]
     }
 
     /// return vec![data hash | public input hash]
     fn instances(&self) -> Vec<Vec<Fr>> {
-        let acc_len = if self.is_fresh { 0 } else { ACC_LEN };
+        let acc_len = if self.has_accumulator { ACC_LEN } else { 0 };
         vec![iter::repeat(0)
             .take(acc_len)
             .chain(self.chunk.public_input_hash().as_bytes().iter().copied())
@@ -190,16 +150,16 @@ impl CircuitExt<Fr> for MockChunkCircuit {
 
 #[test]
 fn test_mock_chunk_prover() {
+    test_mock_chunk_prover_helper(true, true);
+    test_mock_chunk_prover_helper(true, false);
+    test_mock_chunk_prover_helper(false, true);
+    test_mock_chunk_prover_helper(false, false);
+}
+
+fn test_mock_chunk_prover_helper(hash_accumulator: bool, is_padding: bool) {
     let mut rng = test_rng();
 
-    let circuit = MockChunkCircuit::random(&mut rng, true);
-    let instance = circuit.instances();
-
-    let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();
-
-    mock_prover.assert_satisfied_par();
-
-    let circuit = MockChunkCircuit::random(&mut rng, false);
+    let circuit = MockChunkCircuit::random(&mut rng, hash_accumulator, is_padding);
     let instance = circuit.instances();
 
     let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();

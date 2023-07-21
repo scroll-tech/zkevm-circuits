@@ -23,7 +23,7 @@ pub struct ChunkHash {
     /// the data hash of this chunk
     pub(crate) data_hash: H256,
     /// if the chunk is a padded chunk
-    pub(crate) is_padded: bool,
+    pub(crate) is_padding: bool,
 }
 
 impl ChunkHash {
@@ -44,7 +44,24 @@ impl ChunkHash {
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
-            is_padded: false,
+            is_padding: false,
+        }
+    }
+
+    /// Build a padded chunk from previous one
+    #[cfg(test)]
+    pub(crate) fn mock_padded_chunk_hash_for_testing(previous_chunk: &Self) -> Self {
+        assert!(
+            !previous_chunk.is_padding,
+            "previous chunk is padded already"
+        );
+        Self {
+            chain_id: previous_chunk.chain_id,
+            prev_state_root: previous_chunk.post_state_root,
+            post_state_root: previous_chunk.post_state_root,
+            withdraw_root: previous_chunk.withdraw_root,
+            data_hash: [0u8; 32].into(),
+            is_padding: true,
         }
     }
 

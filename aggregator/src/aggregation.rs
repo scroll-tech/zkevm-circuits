@@ -5,6 +5,6 @@ mod config;
 /// config for RLC circuit
 mod rlc;
 
-// pub use circuit::AggregationCircuit;
-// pub use config::AggregationConfig;
+pub use circuit::AggregationCircuit;
+pub use config::AggregationConfig;
 pub(crate) use rlc::RlcConfig;
