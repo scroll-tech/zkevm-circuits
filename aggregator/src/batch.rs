@@ -70,7 +70,7 @@ impl BatchHash {
             if chunks_with_padding[i + 1].is_padding {
                 assert_eq!(chunks_with_padding[i + 1].data_hash, [0; 32].into());
                 assert_eq!(
-                    chunks_with_padding[i].prev_state_root,
+                    chunks_with_padding[i + 1].prev_state_root,
                     chunks_with_padding[i + 1].post_state_root
                 );
                 assert_eq!(

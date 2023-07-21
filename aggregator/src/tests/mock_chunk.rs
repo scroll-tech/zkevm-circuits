@@ -114,7 +114,8 @@ impl Circuit<Fr> for MockChunkCircuit {
                     .chain(self.chunk.public_input_hash().as_bytes().iter().copied())
                     .enumerate()
                 {
-                    let cell = config.rlc_config
+                    let cell = config
+                        .rlc_config
                         .load_private(&mut region, &Fr::from(byte as u64), &mut index)
                         .unwrap();
                     cells.push(cell)
@@ -130,6 +131,7 @@ impl Circuit<Fr> for MockChunkCircuit {
         Ok(())
     }
 }
+
 impl CircuitExt<Fr> for MockChunkCircuit {
     /// 32 elements from digest
     fn num_instance(&self) -> Vec<usize> {
