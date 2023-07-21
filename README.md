@@ -29,31 +29,36 @@ To learn about internal mechanics, please refer to [specification](https://githu
 ### Run Tests
 
 ```
-# install packages
-# install Golang: https://go.dev/doc/install
+# Install packages
+# Install Golang: https://go.dev/doc/install
 
-# To run the same tests as the CI
+# Run the same tests as the CI
 make test-all
-```
 
-To run integration test
-```
+# Run integration test
 cargo test --release --workspace
-```
 
-To run single unit test by a single file
-```
+# Run single unit test by a single file
 cargo test --test file_name (do not ending with '.rs')
-```
 
-To run rust format check
-```
+# Run format check
 cargo fmt -- --check tests/filename.rs
+
+# Format code
+cargo fmt -- tests/filename.rs
 ```
 
-To automatically format your rust code
+### Merge Changes from Original Repo
+
 ```
-cargo fmt -- tests/filename.rs
+# Fetch latest changes
+git remote add upstream https://github.com/scroll-tech/zkevm-circuits.git
+git fetch upstream
+git checkout develop
+git merge upstream/develop
+
+# Then we can create a new branch and file a PR for the latest changes
+git checkout -b new-branch
 ```
 
 ### Run Benchmarks
