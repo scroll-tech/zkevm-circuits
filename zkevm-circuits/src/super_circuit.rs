@@ -240,6 +240,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
+                u8_table: rlp_circuit.range256_table.clone(),
                 rlp_table,
                 sig_table,
                 challenges: challenges_expr.clone(),

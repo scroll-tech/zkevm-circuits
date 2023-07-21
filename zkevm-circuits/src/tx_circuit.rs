@@ -31,7 +31,7 @@ use gadgets::{
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{Chip, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -58,6 +58,7 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::{Fixed, TableColumn};
 
 use crate::{
+    rlp_circuit_fsm::Range256Table,
     table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID},
     util::rlc_be_bytes,
     witness::{
@@ -149,6 +150,7 @@ pub struct TxCircuitConfig<F: Field> {
     block_table: BlockTable,
     rlp_table: RlpTable,
     keccak_table: KeccakTable,
+    u8_table: Range256Table,
 
     _marker: PhantomData<F>,
 }
@@ -163,6 +165,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// RlpTable
     pub rlp_table: RlpTable,
+    /// Range256 Table
+    pub u8_table: Range256Table,
     /// SigTable
     pub sig_table: SigTable,
     /// Challenges
@@ -176,11 +180,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
     fn new(
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
-            tx_table,
+            tx_table
             block_table,
             keccak_table,
             rlp_table,
             sig_table,
+            u8_table,
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -688,6 +693,30 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.query_advice(cum_num_txs, Rotation::cur()),
         );
 
+        meta.lookup("tx_id is in u16", |meta| {
+            let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+
+            vec![(q_enable * tx_id, u16_table)]
+        });
+
+        meta.lookup("cum_num_txs is in u16", |meta| {
+            let cum_num_txs = meta.query_advice(cum_num_txs, Rotation::cur());
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+
+            vec![(q_enable * cum_num_txs, u16_table)]
+        });
+
+        for diff in tx_id_cmp_cum_num_txs.lt_chip.config().diff {
+            meta.lookup_any("comparator diff must be in u8", |meta| {
+                let q_enable = meta.query_fixed(q_enable, Rotation::cur());
+                let diff = meta.query_advice(diff, Rotation::cur());
+                let u8_table = u8_table.table_exprs(meta);
+
+                vec![(q_enable * diff, u8_table[0].clone())]
+            });
+        }
+
         meta.create_gate("tx_id <= cum_num_txs", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -895,6 +924,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_table,
             keccak_table,
             rlp_table,
+            u8_table,
             is_tag_block_num,
             _marker: PhantomData,
         }

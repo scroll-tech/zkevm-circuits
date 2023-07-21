@@ -5,6 +5,7 @@ use super::get_sign_data;
 pub use super::TxCircuit;
 
 use crate::{
+    rlp_circuit_fsm::Range256Table,
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
@@ -63,6 +64,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
                 keccak_table: keccak_table.clone(),
             },
         );
+        let u8_table = Range256Table::construct(meta);
         let tx_config = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
@@ -71,6 +73,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
                 tx_table,
                 keccak_table,
                 rlp_table,
+                u8_table,
                 challenges,
             },
         );
@@ -155,6 +158,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                     keccak_table: keccak_table.clone(),
                 },
             );
+            let u8_table = Range256Table::construct(meta);
             let tx_config = TxCircuitConfig::new(
                 meta,
                 TxCircuitConfigArgs {
@@ -163,6 +167,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                     tx_table,
                     keccak_table,
                     rlp_table,
+                    u8_table,
                     challenges,
                 },
             );
@@ -215,6 +220,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                 .collect(),
             &challenges,
         )?;
+        config.tx_config.u8_table.load(&mut layouter)?;
 
         self.tx_circuit
             .assign_dev_block_table(config.tx_config.clone(), &mut layouter)?;

@@ -317,7 +317,7 @@ pub struct RlpCircuitConfig<F> {
     /// ROM table
     rom_table: RlpFsmRomTable,
     /// Range256 table
-    range256_table: Range256Table,
+    pub(crate) range256_table: Range256Table,
 }
 
 impl<F: Field> RlpCircuitConfig<F> {
