@@ -10,6 +10,7 @@ use ethers_core::utils::keccak256;
 /// - state root after this chunk
 /// - the withdraw root of this chunk
 /// - the data hash of this chunk
+/// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
 pub struct ChunkHash {
     /// Chain identifier
     pub(crate) chain_id: u64,
@@ -21,6 +22,8 @@ pub struct ChunkHash {
     pub(crate) withdraw_root: H256,
     /// the data hash of this chunk
     pub(crate) data_hash: H256,
+    /// if the chunk is a padded chunk
+    pub(crate) is_padded: bool,
 }
 
 impl ChunkHash {
@@ -41,6 +44,7 @@ impl ChunkHash {
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
+            is_padded: false,
         }
     }
 
