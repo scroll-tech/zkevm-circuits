@@ -26,7 +26,7 @@ pub struct ChunkHash {
 impl ChunkHash {
     /// Sample a chunk hash from random (for testing)
     #[cfg(test)]
-    pub(crate) fn mock_chunk_hash<R: rand::RngCore>(r: &mut R) -> Self {
+    pub(crate) fn mock_random_chunk_hash_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
         let mut prev_state_root = [0u8; 32];
         r.fill_bytes(&mut prev_state_root);
         let mut post_state_root = [0u8; 32];

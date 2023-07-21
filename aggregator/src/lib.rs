@@ -1,3 +1,5 @@
+/// proof aggregation
+mod aggregation;
 // This module implements `Chunk` related data types.
 // A chunk is a list of blocks.
 mod chunk;
@@ -9,6 +11,8 @@ mod constants;
 mod core;
 /// Parameters for compression circuit
 mod param;
+/// utilities
+mod util;
 
 #[cfg(test)]
 mod tests;

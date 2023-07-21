@@ -16,7 +16,7 @@ pub struct ConfigParams {
 }
 
 impl ConfigParams {
-    pub(crate) fn _aggregation_param() -> Self {
+    pub(crate) fn aggregation_param() -> Self {
         Self {
             strategy: FpStrategy::Simple,
             degree: 23,
