@@ -1543,7 +1543,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         code_address,
                         step.gas.0,
                     );
-                    return Ok(Some(ExecError::PrecompileFailed));
+                    return Ok(None); //Ok(Some(ExecError::PrecompileFailed));
                 }
             }
 
