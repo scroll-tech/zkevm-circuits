@@ -6,7 +6,9 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{
+        self, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent, PrecompileEvents,
+    },
     Error,
 };
 use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
@@ -50,8 +52,6 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
-    /// IO to/from precompile Ecrecover calls.
-    pub ecrecover_events: Vec<SignData>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Withdraw root
@@ -64,6 +64,8 @@ pub struct Block<F> {
     pub mpt_updates: MptUpdates,
     /// Chain ID
     pub chain_id: u64,
+    /// IO to/from precompile calls.
+    pub precompile_events: PrecompileEvents,
 }
 
 /// ...
@@ -118,7 +120,7 @@ impl<F: Field> Block<F> {
             })
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
-        signatures.extend_from_slice(&self.ecrecover_events);
+        signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
         if padding {
             let max_verif = self.circuits_params.max_txs;
             signatures.resize(
@@ -127,6 +129,21 @@ impl<F: Field> Block<F> {
             )
         }
         signatures
+    }
+
+    /// Get EcAdd operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_add_ops(&self) -> Vec<EcAddOp> {
+        self.precompile_events.get_ec_add_events()
+    }
+
+    /// Get EcMul operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_mul_ops(&self) -> Vec<EcMulOp> {
+        self.precompile_events.get_ec_mul_events()
+    }
+
+    /// Get EcPairing operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_pairing_ops(&self) -> Vec<EcPairingOp> {
+        self.precompile_events.get_ec_pairing_events()
     }
 }
 
@@ -447,7 +464,6 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        ecrecover_events: block.ecrecover_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params
@@ -459,6 +475,7 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
+        precompile_events: block.precompile_events.clone(),
     })
 }
 

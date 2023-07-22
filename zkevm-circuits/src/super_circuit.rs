@@ -62,12 +62,12 @@ use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
 use crate::{
     bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs},
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
+    ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    table::SigTable,
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block},
@@ -81,8 +81,8 @@ use crate::util::Challenges;
 use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable,
-        PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, TxTable,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, MptTable,
+        PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable, TxTable,
     },
 };
 
@@ -118,6 +118,7 @@ pub struct SuperCircuitConfig<F: Field> {
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     sig_circuit: SigCircuitConfig<F>,
+    ecc_circuit: EccCircuitConfig<F>,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
     #[cfg(feature = "poseidon-codehash")]
@@ -192,6 +193,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "keccak table");
         let sig_table = SigTable::construct(meta);
         log_circuit_info(meta, "sig table");
+        let ecc_table = EccTable::construct(meta);
+        log_circuit_info(meta, "ecc table");
         let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         log_circuit_info(meta, "power of randomness table");
 
@@ -303,6 +306,15 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         );
         log_circuit_info(meta, "sig circuit");
 
+        let ecc_circuit = EccCircuitConfig::new(
+            meta,
+            EccCircuitConfigArgs {
+                ecc_table,
+                challenges: challenges_expr.clone(),
+            },
+        );
+        log_circuit_info(meta, "ecc circuit");
+
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
@@ -328,6 +340,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 keccak_table,
                 exp_table,
                 sig_table,
+                ecc_table,
                 pow_of_rand_table,
             },
         );
@@ -355,6 +368,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             tx_circuit,
             exp_circuit,
             sig_circuit,
+            ecc_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
@@ -390,6 +404,8 @@ pub struct SuperCircuit<
     pub poseidon_circuit: PoseidonCircuit<F>,
     /// Sig Circuit
     pub sig_circuit: SigCircuit<F>,
+    /// Ecc Circuit
+    pub ecc_circuit: EccCircuit<F, 9>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit
@@ -494,6 +510,7 @@ impl<
         let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
         let sig_circuit = SigCircuit::new_from_block(block);
+        let ecc_circuit = EccCircuit::new_from_block(block);
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(block);
         SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS> {
@@ -508,6 +525,7 @@ impl<
             poseidon_circuit,
             rlp_circuit,
             sig_circuit,
+            ecc_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }

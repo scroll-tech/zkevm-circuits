@@ -32,7 +32,7 @@ pub(crate) struct MulModGadget<F> {
     a_reduced: util::Word<F>,
     d: util::Word<F>,
     e: util::Word<F>,
-    modword: ModGadget<F>,
+    modword: ModGadget<F, true>,
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,
     n_is_zero: IsZeroGadget<F>,

@@ -21,8 +21,8 @@ pub use crate::witness;
 use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, PowOfRandTable,
-        RwTable, SigTable, TxTable,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
+        PowOfRandTable, RwTable, SigTable, TxTable,
     },
     util::{SubCircuit, SubCircuitConfig},
 };
@@ -49,6 +49,7 @@ pub struct EvmCircuitConfig<F> {
     keccak_table: KeccakTable,
     exp_table: ExpTable,
     sig_table: SigTable,
+    ecc_table: EccTable,
     pow_of_rand_table: PowOfRandTable,
 }
 
@@ -72,6 +73,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub exp_table: ExpTable,
     /// SigTable
     pub sig_table: SigTable,
+    /// Ecc Table.
+    pub ecc_table: EccTable,
     // Power of Randomness Table.
     pub pow_of_rand_table: PowOfRandTable,
 }
@@ -100,6 +103,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             keccak_table,
             exp_table,
             sig_table,
+            ecc_table,
             pow_of_rand_table,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -118,6 +122,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &keccak_table,
             &exp_table,
             &sig_table,
+            &ecc_table,
             &pow_of_rand_table,
         ));
 
@@ -133,6 +138,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         keccak_table.annotate_columns(meta);
         exp_table.annotate_columns(meta);
         sig_table.annotate_columns(meta);
+        ecc_table.annotate_columns(meta);
         pow_of_rand_table.annotate_columns(meta);
 
         Self {
@@ -147,6 +153,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             keccak_table,
             exp_table,
             sig_table,
+            ecc_table,
             pow_of_rand_table,
         }
     }
@@ -425,6 +432,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let keccak_table = KeccakTable::construct(meta);
         let exp_table = ExpTable::construct(meta);
         let sig_table = SigTable::construct(meta);
+        let ecc_table = EccTable::construct(meta);
         let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         (
             EvmCircuitConfig::new(
@@ -439,6 +447,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     keccak_table,
                     exp_table,
                     sig_table,
+                    ecc_table,
                     pow_of_rand_table,
                 },
             ),
@@ -487,6 +496,14 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .sig_table
             .dev_load(&mut layouter, block, &challenges)?;
+        config.ecc_table.dev_load(
+            &mut layouter,
+            block.circuits_params.max_ec_ops,
+            &block.get_ec_add_ops(),
+            &block.get_ec_mul_ops(),
+            &block.get_ec_pairing_ops(),
+            &challenges,
+        )?;
         config
             .pow_of_rand_table
             .dev_load(&mut layouter, &challenges)?;
@@ -674,8 +691,10 @@ mod evm_circuit_stats {
             LOOKUP_CONFIG[7].1,
             sig_table,
             LOOKUP_CONFIG[8].1,
+            ecc_table,
+            LOOKUP_CONFIG[9].1,
             pow_of_rand_table,
-            LOOKUP_CONFIG[9].1
+            LOOKUP_CONFIG[10].1
         );
     }
 

@@ -1,6 +1,9 @@
 //! Execution step related module.
 
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    ops::{Add, Mul},
+};
 
 use crate::{
     circuit_input_builder::CallContext,
@@ -11,10 +14,19 @@ use crate::{
 };
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
+    sign_types::SignData,
     GethExecStep, Word, H256,
 };
+use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
-use halo2_proofs::plonk::Expression;
+use halo2_proofs::{
+    arithmetic::{CurveAffine, Field},
+    halo2curves::{
+        bn256::{Fq, Fr, G1Affine, G2Affine},
+        group::cofactor::CofactorCurveAffine,
+    },
+    plonk::Expression,
+};
 use strum::IntoEnumIterator;
 
 /// An execution step of the EVM.
@@ -814,5 +826,287 @@ impl Default for ExpEvent {
                 d: 4.into(),
             }],
         }
+    }
+}
+
+/// I/Os from all precompiled contract calls in a block.
+#[derive(Clone, Debug, Default)]
+pub struct PrecompileEvents {
+    /// All events.
+    pub events: Vec<PrecompileEvent>,
+}
+
+impl PrecompileEvents {
+    /// Get all ecrecover events.
+    pub fn get_ecrecover_events(&self) -> Vec<SignData> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::Ecrecover(sign_data) = e {
+                    Some(sign_data)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
+    /// Get all EcAdd events.
+    pub fn get_ec_add_events(&self) -> Vec<EcAddOp> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::EcAdd(op) = e {
+                    Some(op)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
+    /// Get all EcMul events.
+    pub fn get_ec_mul_events(&self) -> Vec<EcMulOp> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::EcMul(op) = e {
+                    Some(op)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
+    /// Get all EcPairing events.
+    pub fn get_ec_pairing_events(&self) -> Vec<EcPairingOp> {
+        self.events
+            .iter()
+            .cloned()
+            .filter_map(|e| {
+                if let PrecompileEvent::EcPairing(op) = e {
+                    Some(*op)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
+/// I/O from a precompiled contract call.
+#[derive(Clone, Debug)]
+pub enum PrecompileEvent {
+    /// Represents the I/O from Ecrecover call.
+    Ecrecover(SignData),
+    /// Represents the I/O from EcAdd call.
+    EcAdd(EcAddOp),
+    /// Represents the I/O from EcMul call.
+    EcMul(EcMulOp),
+    /// Represents the I/O from EcPairing call.
+    EcPairing(Box<EcPairingOp>),
+}
+
+impl Default for PrecompileEvent {
+    fn default() -> Self {
+        Self::Ecrecover(SignData::default())
+    }
+}
+
+/// EcAdd operation: P + Q = R
+#[derive(Clone, Debug)]
+pub struct EcAddOp {
+    /// First EC point.
+    pub p: G1Affine,
+    /// Second EC point.
+    pub q: G1Affine,
+    /// Addition of the first and second EC points.
+    pub r: G1Affine,
+}
+
+impl Default for EcAddOp {
+    fn default() -> Self {
+        let p = G1Affine::generator();
+        let q = G1Affine::generator();
+        let r = p.add(q).into();
+        Self { p, q, r }
+    }
+}
+
+impl EcAddOp {
+    /// Creates a new EcAdd op given the inputs and output.
+    pub fn new(p: G1Affine, q: G1Affine, r: G1Affine) -> Self {
+        assert_eq!(p.add(q), r.into());
+        Self { p, q, r }
+    }
+
+    /// Creates a new EcAdd op given input and output bytes from a precompile call.
+    ///
+    /// Note: At the moment we are handling invalid/erroneous cases for precompiled contract calls
+    /// via a dummy gadget ErrorPrecompileFailure. So we expect the input bytes to be valid, i.e.
+    /// points P and Q are valid points on the curve. In the near future, we should ideally handle
+    /// invalid inputs within the respective precompile call's gadget. And then this function will
+    /// be fallible, since we would handle invalid inputs as well.
+    pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
+        let fq_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<Fq> {
+            buf.copy_from_slice(bytes);
+            buf.reverse();
+            Fq::from_bytes(buf)
+        };
+
+        let g1_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<G1Affine> {
+            fq_from_slice(buf, &bytes[0x00..0x20]).and_then(|x| {
+                fq_from_slice(buf, &bytes[0x20..0x40]).and_then(|y| G1Affine::from_xy(x, y))
+            })
+        };
+
+        assert_eq!(input.len(), 128);
+        assert_eq!(output.len(), 64);
+
+        let mut buf = [0u8; 32];
+        let point_p = g1_from_slice(&mut buf, &input[0x00..0x40]).unwrap();
+        let point_q = g1_from_slice(&mut buf, &input[0x40..0x80]).unwrap();
+        let point_r_got = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
+        assert_eq!(G1Affine::from(point_p.add(&point_q)), point_r_got);
+        Self {
+            p: point_p,
+            q: point_q,
+            r: point_r_got,
+        }
+    }
+
+    /// A check on the op to tell the ECC Circuit whether or not to skip the op.
+    pub fn skip_by_ecc_circuit(&self) -> bool {
+        false
+    }
+}
+
+/// EcMul operation: s.P = R
+#[derive(Clone, Debug)]
+pub struct EcMulOp {
+    /// EC point.
+    pub p: G1Affine,
+    /// Scalar.
+    pub s: Fr,
+    /// Result for s.P = R.
+    pub r: G1Affine,
+}
+
+impl Default for EcMulOp {
+    fn default() -> Self {
+        let p = G1Affine::generator();
+        let s = Fr::one();
+        let r = p.mul(s).into();
+        Self { p, s, r }
+    }
+}
+
+impl EcMulOp {
+    /// Creates a new EcMul op given the inputs and output.
+    pub fn new(p: G1Affine, s: Fr, r: G1Affine) -> Self {
+        assert_eq!(p.mul(s), r.into());
+        Self { p, s, r }
+    }
+
+    /// Creates a new EcMul op given input and output bytes from a precompile call.    
+    pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
+        let copy_bytes = |buf: &mut [u8; 32], bytes: &[u8]| {
+            buf.copy_from_slice(bytes);
+            buf.reverse();
+        };
+
+        assert_eq!(input.len(), 96);
+        assert_eq!(output.len(), 64);
+
+        let mut buf = [0u8; 32];
+
+        let p: G1Affine = {
+            copy_bytes(&mut buf, &input[0x00..0x20]);
+            Fq::from_bytes(&buf).and_then(|x| {
+                copy_bytes(&mut buf, &input[0x20..0x40]);
+                Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
+            })
+        }
+        .unwrap();
+
+        let s = Fr::from_raw(Word::from_big_endian(&input[0x40..0x60]).0);
+
+        let r_specified: G1Affine = {
+            copy_bytes(&mut buf, &output[0x00..0x20]);
+            Fq::from_bytes(&buf).and_then(|x| {
+                copy_bytes(&mut buf, &output[0x20..0x40]);
+                Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
+            })
+        }
+        .unwrap();
+
+        assert_eq!(G1Affine::from(p.mul(s)), r_specified);
+
+        Self {
+            p,
+            s,
+            r: r_specified,
+        }
+    }
+
+    /// A check on the op to tell the ECC Circuit whether or not to skip the op.
+    pub fn skip_by_ecc_circuit(&self) -> bool {
+        self.p.is_identity().into() || self.s.is_zero().into()
+    }
+}
+
+/// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
+/// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of inputs.
+pub const N_PAIRING_PER_OP: usize = 4;
+
+/// EcPairing operation
+#[derive(Clone, Debug)]
+pub struct EcPairingOp {
+    /// tuples of G1 and G2 points.
+    pub inputs: [(G1Affine, G2Affine); N_PAIRING_PER_OP],
+    /// Result from the pairing check.
+    pub output: Word,
+}
+
+impl Default for EcPairingOp {
+    fn default() -> Self {
+        Self {
+            inputs: [
+                (G1Affine::generator(), G2Affine::generator()),
+                (G1Affine::identity(), G2Affine::generator()),
+                (G1Affine::identity(), G2Affine::generator()),
+                (G1Affine::identity(), G2Affine::generator()),
+            ],
+            output: Word::zero(),
+        }
+    }
+}
+
+impl EcPairingOp {
+    /// Returns the uncompressed little-endian byte representation of inputs to the EcPairingOp.
+    pub fn to_bytes_le(&self) -> Vec<u8> {
+        self.inputs
+            .iter()
+            .flat_map(|i| {
+                std::iter::empty()
+                    .chain(i.0.x.to_bytes().iter())
+                    .chain(i.0.y.to_bytes().iter())
+                    .chain(i.1.x.c0.to_bytes().iter())
+                    .chain(i.1.x.c1.to_bytes().iter())
+                    .chain(i.1.y.c0.to_bytes().iter())
+                    .chain(i.1.y.c1.to_bytes().iter())
+                    .cloned()
+                    .collect::<Vec<u8>>()
+            })
+            .collect::<Vec<u8>>()
+    }
+
+    /// A check on the op to tell the ECC Circuit whether or not to skip the op.
+    pub fn skip_by_ecc_circuit(&self) -> bool {
+        self.inputs[0].0.is_identity().into()
+            && self.inputs[1].0.is_identity().into()
+            && self.inputs[2].0.is_identity().into()
+            && self.inputs[3].0.is_identity().into()
     }
 }

@@ -321,7 +321,7 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     }
 }
 
-pub(crate) type BoxedClosure<F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>)>;
+pub(crate) type BoxedClosure<'a, F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) + 'a>;
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
@@ -1379,6 +1379,35 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 sig_r_rlc: sig_r_rlc.expr(),
                 sig_s_rlc: sig_s_rlc.expr(),
                 recovered_addr: recovered_addr.expr(),
+            },
+        );
+    }
+
+    // Ecc Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ecc_table_lookup(
+        &mut self,
+        op_type: Expression<F>,
+        arg1_rlc: Expression<F>,
+        arg2_rlc: Expression<F>,
+        arg3_rlc: Expression<F>,
+        arg4_rlc: Expression<F>,
+        input_rlc: Expression<F>,
+        output1_rlc: Expression<F>,
+        output2_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "ecc table",
+            Lookup::EccTable {
+                op_type,
+                arg1_rlc,
+                arg2_rlc,
+                arg3_rlc,
+                arg4_rlc,
+                input_rlc,
+                output1_rlc,
+                output2_rlc,
             },
         );
     }
