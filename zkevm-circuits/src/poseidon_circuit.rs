@@ -43,6 +43,7 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
                 poseidon_table.input0,
                 poseidon_table.input1,
                 poseidon_table.control,
+                poseidon_table.domain_spec,
                 poseidon_table.heading_mark,
             ],
         );
@@ -60,18 +61,18 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         #[allow(unused_mut)]
         let mut poseidon_table_data: PoseidonHashTable<F> = PoseidonHashTable::default();
         // without any feature we just synthesis an empty poseidon circuit
-        #[cfg(feature = "zktrie")]
-        {
-            let triples = get_storage_poseidon_witness(block);
-            if triples.len() > max_hashes {
-                log::error!(
-                    "poseidon max_hashes: {:?} not enough. {:?} needed by zktrie proof",
-                    max_hashes,
-                    triples.len()
-                );
-            }
-            poseidon_table_data.constant_inputs_with_check(&triples);
+//        #[cfg(feature = "zktrie")]
+//        {
+        let mpt_hashes = get_storage_poseidon_witness(block);
+        if mpt_hashes.len() > max_hashes {
+            log::error!(
+                "poseidon max_hashes: {:?} not enough. {:?} needed by zktrie proof",
+                max_hashes,
+                mpt_hashes.len()
+            );
         }
+        poseidon_table_data.fixed_inputs(&mpt_hashes);
+//        }
         #[cfg(feature = "poseidon-codehash")]
         {
             use crate::bytecode_circuit::bytecode_unroller::unroll_to_hash_input_default;
@@ -94,7 +95,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let acc = 0;
-        #[cfg(feature = "zktrie")]
+        //#[cfg(feature = "zktrie")]
         let acc = {
             let mut cnt = acc;
             cnt += get_storage_poseidon_witness(block).len();
@@ -165,8 +166,7 @@ impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
     }
 }
 
-#[cfg(feature = "zktrie")]
-fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> Vec<(F, F, F)> {
+fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> Vec<([F;2], F, Option<F>)> {
     use itertools::Itertools;
     use mpt_zktrie::mpt_circuits::{gadgets::mpt_update::hash_traces, types::Proof};
     hash_traces(
@@ -180,7 +180,7 @@ fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> V
             .collect_vec(),
     )
     .into_iter()
-    .unique_by(|(a, b, c)| (a.to_bytes(), b.to_bytes(), c.to_bytes()))
-    .map(|(a, b, c)| (a.into(), b.into(), c.into()))
+    .unique_by(|(inp, domain, hash)| (inp.map(|f|f.to_bytes()), domain.to_bytes(), hash.to_bytes()))
+    .map(|(inp, domain, hash)| (inp.map(F::from), domain.into(), Some(F::from(hash))))
     .collect()
 }

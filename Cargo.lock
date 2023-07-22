@@ -2194,7 +2194,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4#9d129125bd792e906c30e56386424bc3ab5920ba"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4_new_hash_scheme#47fbcad1fe4dad8d8aa8e58fb08f435e2bee0ec1"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -3491,11 +3491,14 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0619#50015b7cfbd5fe3263ec683cb291396c1b99cd1f"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git#1652d54bf7ca9d8f286b53fe077d9efefdcf6d5f"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",
  "lazy_static",
+ "log",
+ "rand",
+ "rand_xorshift",
  "thiserror",
 ]
 
@@ -5490,8 +5493,8 @@ dependencies = [
 
 [[package]]
 name = "zktrie"
-version = "0.1.2"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#1a5562f663a81ff903383db69dc6c9404b63e69d"
+version = "0.2.0"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.6_candidate#239d6b9a5bcde72d2316e08f622070f44a7b6f1c"
 dependencies = [
  "gobuild 0.1.0-alpha.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
