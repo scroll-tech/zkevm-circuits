@@ -25,14 +25,19 @@ lazy_static! {
 static FILED_ERROR_READ: &str = "invalid input field";
 static FILED_ERROR_OUT: &str = "output field fail";
 
-extern "C" fn hash_scheme(a: *const u8, b: *const u8, domain: *const u8, out: *mut u8) -> *const i8 {
+extern "C" fn hash_scheme(
+    a: *const u8,
+    b: *const u8,
+    domain: *const u8,
+    out: *mut u8,
+) -> *const i8 {
     use std::slice;
     let a: [u8; 32] =
         TryFrom::try_from(unsafe { slice::from_raw_parts(a, 32) }).expect("length specified");
     let b: [u8; 32] =
         TryFrom::try_from(unsafe { slice::from_raw_parts(b, 32) }).expect("length specified");
     let domain: [u8; 32] =
-        TryFrom::try_from(unsafe { slice::from_raw_parts(domain, 32) }).expect("length specified");        
+        TryFrom::try_from(unsafe { slice::from_raw_parts(domain, 32) }).expect("length specified");
     let out = unsafe { slice::from_raw_parts_mut(out, 32) };
 
     let fa = Fr::from_bytes(&a);
@@ -207,7 +212,8 @@ where
                         ..Default::default()
                     });
                 }
-                NODE_TYPE_MIDDLE_0 | NODE_TYPE_MIDDLE_1 | NODE_TYPE_MIDDLE_2 | NODE_TYPE_MIDDLE_3 => {
+                NODE_TYPE_MIDDLE_0 | NODE_TYPE_MIDDLE_1 | NODE_TYPE_MIDDLE_2
+                | NODE_TYPE_MIDDLE_3 => {
                     let mut buf: [u8; 32] = [0; 32];
                     rd.read_exact(&mut buf)?;
                     let left = U256::from_big_endian(&buf);

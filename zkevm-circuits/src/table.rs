@@ -814,7 +814,7 @@ pub struct PoseidonTable {
     /// control
     pub control: Column<Advice>,
     /// domain spec
-    pub domain_spec: Column<Advice>,    
+    pub domain_spec: Column<Advice>,
     /// heading_mark
     pub heading_mark: Column<Advice>,
 }

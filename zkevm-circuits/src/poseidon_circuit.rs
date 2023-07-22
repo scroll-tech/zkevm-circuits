@@ -61,8 +61,8 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         #[allow(unused_mut)]
         let mut poseidon_table_data: PoseidonHashTable<F> = PoseidonHashTable::default();
         // without any feature we just synthesis an empty poseidon circuit
-//        #[cfg(feature = "zktrie")]
-//        {
+        //        #[cfg(feature = "zktrie")]
+        //        {
         let mpt_hashes = get_storage_poseidon_witness(block);
         if mpt_hashes.len() > max_hashes {
             log::error!(
@@ -72,7 +72,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             );
         }
         poseidon_table_data.fixed_inputs(&mpt_hashes);
-//        }
+        //        }
         #[cfg(feature = "poseidon-codehash")]
         {
             use crate::bytecode_circuit::bytecode_unroller::unroll_to_hash_input_default;
@@ -166,7 +166,9 @@ impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
     }
 }
 
-fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> Vec<([F;2], F, Option<F>)> {
+fn get_storage_poseidon_witness<F: Field>(
+    block: &crate::witness::Block<F>,
+) -> Vec<([F; 2], F, Option<F>)> {
     use itertools::Itertools;
     use mpt_zktrie::mpt_circuits::{gadgets::mpt_update::hash_traces, types::Proof};
     hash_traces(
@@ -180,7 +182,13 @@ fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> V
             .collect_vec(),
     )
     .into_iter()
-    .unique_by(|(inp, domain, hash)| (inp.map(|f|f.to_bytes()), domain.to_bytes(), hash.to_bytes()))
+    .unique_by(|(inp, domain, hash)| {
+        (
+            inp.map(|f| f.to_bytes()),
+            domain.to_bytes(),
+            hash.to_bytes(),
+        )
+    })
     .map(|(inp, domain, hash)| (inp.map(F::from), domain.into(), Some(F::from(hash))))
     .collect()
 }
