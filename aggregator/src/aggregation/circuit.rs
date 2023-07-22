@@ -304,7 +304,7 @@ impl Circuit<Fr> for AggregationCircuit {
         {
             layouter.assign_region(
                 || "aggregation",
-                |mut region| {
+                |mut region| -> Result<(), Error> {
                     for i in 0..MAX_AGG_SNARKS {
                         for j in 0..4 {
                             for k in 0..8 {

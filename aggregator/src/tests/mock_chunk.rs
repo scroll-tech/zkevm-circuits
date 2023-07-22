@@ -124,7 +124,7 @@ impl Circuit<Fr> for MockChunkCircuit {
             },
         )?;
 
-        println!("cells len: {}", cells.len());
+        log::trace!("cells len: {}", cells.len());
         for (i, cell) in cells.into_iter().enumerate() {
             layouter.constrain_instance(cell.cell(), config.instance, i)?;
         }
@@ -139,7 +139,7 @@ impl CircuitExt<Fr> for MockChunkCircuit {
         vec![DIGEST_LEN + acc_len]
     }
 
-    /// return vec![data hash | public input hash]
+    /// return vec![acc | public input hash]
     fn instances(&self) -> Vec<Vec<Fr>> {
         let acc_len = if self.has_accumulator { ACC_LEN } else { 0 };
         vec![iter::repeat(0)

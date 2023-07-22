@@ -191,7 +191,14 @@ pub(crate) fn extract_hash_cells(
     let (hash_input_cells, hash_output_cells, data_rlc_cells) = layouter
         .assign_region(
             || "assign keccak rows",
-            |mut region| {
+            |mut region| -> Result<
+                (
+                    Vec<AssignedCell<Fr, Fr>>,
+                    Vec<AssignedCell<Fr, Fr>>,
+                    Vec<AssignedCell<Fr, Fr>>,
+                ),
+                halo2_proofs::plonk::Error,
+            > {
                 #[cfg(feature = "skip_first_pass")]
                 if is_first_time {
                     is_first_time = false;
@@ -267,7 +274,7 @@ fn copy_constraints(
     layouter
         .assign_region(
             || "assign keccak rows",
-            |mut region| {
+            |mut region| -> Result<(), halo2_proofs::plonk::Error> {
                 #[cfg(feature = "skip_first_pass")]
                 if is_first_time {
                     is_first_time = false;
@@ -470,7 +477,7 @@ pub(crate) fn conditional_constraints(
     layouter
         .assign_region(
             || "aggregation",
-            |mut region| {
+            |mut region| -> Result<(), halo2_proofs::plonk::Error> {
                 #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;

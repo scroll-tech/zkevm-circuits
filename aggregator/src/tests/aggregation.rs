@@ -21,10 +21,9 @@ fn test_aggregation_circuit() {
     // This set up requires one round of keccak for chunk's data hash
     let circuit = build_new_aggregation_circuit(2);
     let instance = circuit.instances();
-    let mock_prover = MockProver::<Fr>::run(23, &circuit, instance).unwrap();
+    let mock_prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
 }
-
 
 /// - Test full proof generation and verification.
 /// - Test a same pk can be used for various number of chunk proofs.
@@ -43,6 +42,8 @@ fn test_aggregation_circuit_full() {
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(25, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
+
+    log::trace!("finished mock proving");
 
     let mut rng = test_rng();
     let param = gen_srs(25);
@@ -72,7 +73,6 @@ fn test_aggregation_circuit_full() {
     ));
     log::trace!("finished verification for circuit");
 }
-
 
 fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
     // inner circuit: Mock circuit
