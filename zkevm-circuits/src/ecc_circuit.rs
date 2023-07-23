@@ -47,6 +47,12 @@ use util::{
 
 use self::util::LOG_TOTAL_NUM_ROWS;
 
+macro_rules! log_context_cursor {
+    ($ctx: ident) => {{
+        log::trace!("Ctx cell pos: {:?}", $ctx.advice_alloc);
+    }}
+}
+
 /// Arguments accepted to configure the EccCircuitConfig.
 #[derive(Clone, Debug)]
 pub struct EccCircuitConfigArgs<F: Field> {
@@ -405,9 +411,15 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_rand: &[QuantumCell<F>],
         op: &EcAddOp,
     ) -> EcAddAssigned<F> {
+        log::trace!("[ECC] ==> EcAdd Assignmnet START:");
+        log_context_cursor!(ctx);
+
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
         let point_q = self.assign_g1(ctx, ecc_chip, op.q, powers_of_rand);
         let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+
+        log::trace!("[ECC] EcAdd Inputs Assigned:");
+        log_context_cursor!(ctx);
 
         // We follow the approach mentioned below to handle many edge cases for the points P, Q and
         // R so that we can maintain the same fixed and permutation columns and reduce the overall
@@ -472,6 +484,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 
         ecc_chip.assert_equal(ctx, &rand_point, &sum3);
 
+        log::trace!("[ECC] EcAdd Assignmnet END:");
+        log_context_cursor!(ctx);
         EcAddAssigned {
             point_p,
             point_q,
@@ -490,9 +504,16 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_rand: &[QuantumCell<F>],
         op: &EcMulOp,
     ) -> EcMulAssigned<F> {
+        log::trace!("[ECC] ==> EcMul Assignmnet START:");
+        log_context_cursor!(ctx);
+
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
         let scalar_s = self.assign_fr(ctx, fr_chip, op.s);
         let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+
+        log::trace!("[ECC] EcMul Inputs Assigned:");
+        log_context_cursor!(ctx);
+
         let point_r_got = ecc_chip.scalar_mult(
             ctx,
             &point_p.decomposed.ec_point,
@@ -501,6 +522,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             4, // TODO: window bits?
         );
         ecc_chip.assert_equal(ctx, &point_r.decomposed.ec_point, &point_r_got);
+
+        log::trace!("[ECC] EcMul Assignmnet END:");
+        log_context_cursor!(ctx);
+
         EcMulAssigned {
             point_p,
             scalar_s,
@@ -519,6 +544,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_rand: &[QuantumCell<F>],
         op: &EcPairingOp,
     ) -> EcPairingAssigned<F> {
+        log::trace!("[ECC] ==> EcPairing Assignment START:");
+        log_context_cursor!(ctx);
+
         let g1s = op
             .inputs
             .iter()
@@ -544,6 +572,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 }
             })
             .collect_vec();
+        
+        log::trace!("[ECC] EcPairing g1s Assigned:");
+        log_context_cursor!(ctx);
+
         let g2s = op
             .inputs
             .iter()
@@ -582,6 +614,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             })
             .collect_vec();
 
+        log::trace!("[ECC] EcPairing g2s Assigned:");
+        log_context_cursor!(ctx);
+
         // RLC over the entire input bytes.
         let input_cells = std::iter::empty()
             .chain(g1s.iter().map(|g1| g1.decomposed.x_cells.clone()))
@@ -597,6 +632,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             input_cells,
             powers_of_rand.iter().cloned(),
         );
+
+        log::trace!("[ECC] EcPairing Inputs RLC Assigned:");
+        log_context_cursor!(ctx);
 
         let pairs = g1s
             .iter()
@@ -621,6 +659,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 op.output.to_scalar().expect("EcPairing output = {0, 1}"),
             )),
         );
+
+        log::trace!("[ECC] EcPairingAssignment END:");
+        log_context_cursor!(ctx);
 
         EcPairingAssigned {
             g1s,
