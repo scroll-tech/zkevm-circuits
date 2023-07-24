@@ -16,7 +16,7 @@ use bus_mapping::{
     util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
-use gadgets::util::{and, not};
+use gadgets::util::{and, not, sum};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -320,6 +320,8 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
         self.push_constraint(name, constraint);
     }
 }
+
+pub(crate) type BoxedClosure<'a, F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) + 'a>;
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
@@ -749,7 +751,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         tag: RwTableTag,
         values: RwValues<F>,
     ) {
-        let name = format!("rw lookup {}", name);
+        let name = format!("rw lookup {name}");
         self.add_lookup(
             &name,
             Lookup::Rw {
@@ -810,7 +812,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         if let Some(reversion_info) = reversion_info {
             let reversible_write_counter_inc_selector = self.condition_expr();
             self.condition(not::expr(reversion_info.is_persistent()), |cb| {
-                let name = format!("{} with reversion", name);
+                let name = format!("{name} with reversion");
                 cb.rw_lookup_with_counter(
                     &name,
                     reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
@@ -1205,8 +1207,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn memory_lookup(
         &mut self,
         is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
+        memory_address: Expression<F>, // slot
+        value: Expression<F>,
+        value_prev: Expression<F>,
         call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
@@ -1218,8 +1221,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 memory_address,
                 0.expr(),
                 0.expr(),
-                byte,
-                0.expr(),
+                value,
+                value_prev,
                 0.expr(),
                 0.expr(),
             ),
@@ -1331,6 +1334,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 rwc_inc: rwc_inc.clone(),
             },
         );
+
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
     }
 
@@ -1375,6 +1379,35 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 sig_r_rlc: sig_r_rlc.expr(),
                 sig_s_rlc: sig_s_rlc.expr(),
                 recovered_addr: recovered_addr.expr(),
+            },
+        );
+    }
+
+    // Ecc Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ecc_table_lookup(
+        &mut self,
+        op_type: Expression<F>,
+        arg1_rlc: Expression<F>,
+        arg2_rlc: Expression<F>,
+        arg3_rlc: Expression<F>,
+        arg4_rlc: Expression<F>,
+        input_rlc: Expression<F>,
+        output1_rlc: Expression<F>,
+        output2_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "ecc table",
+            Lookup::EccTable {
+                op_type,
+                arg1_rlc,
+                arg2_rlc,
+                arg3_rlc,
+                arg4_rlc,
+                input_rlc,
+                output1_rlc,
+                output2_rlc,
             },
         );
     }
@@ -1439,6 +1472,53 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         let ret = constraint(self);
         self.conditions.pop();
         ret
+    }
+
+    /// Constraints the next step, given mutually exclusive conditions to determine the next state
+    /// and constrain it using the provided respective constraint. This mechanism is specifically
+    /// used for constraining the internal states for precompile calls. Each precompile call
+    /// expects a different cell layout, but since the next state can be at the most one precompile
+    /// state, we can re-use cells assigned across all those conditions.
+    pub(crate) fn constrain_mutually_exclusive_next_step(
+        &mut self,
+        conditions: Vec<Expression<F>>,
+        next_states: Vec<ExecutionState>,
+        constraints: Vec<BoxedClosure<F>>,
+    ) {
+        assert_eq!(conditions.len(), constraints.len());
+        assert_eq!(conditions.len(), next_states.len());
+        self.require_boolean(
+            "at the most one condition is true from mutually exclusive conditions",
+            sum::expr(&conditions),
+        );
+
+        // record the heights of all columns (for the next step) as we begin cell assignment.
+        let start_heights = self.next.cell_manager.get_heights();
+
+        let mut max_end_heights: Vec<usize> = vec![0usize; start_heights.len()];
+        for ((&next_state, condition), constraint) in next_states
+            .iter()
+            .zip(conditions.into_iter())
+            .zip(constraints.into_iter())
+        {
+            // constraint the next step.
+            self.constrain_next_step(next_state, Some(condition), constraint);
+
+            // get the column heights at the end of querying cells in the above constraints.
+            let end_heights = self.next.cell_manager.get_heights();
+            for (max_end_height, end_height) in max_end_heights.iter_mut().zip(end_heights.iter()) {
+                if end_height > max_end_height {
+                    *max_end_height = *end_height;
+                }
+            }
+
+            // reset the column heights of the next step before proceeding to the next mutually
+            // exclusive condition/constraint/next_state.
+            self.next.cell_manager.reset_heights_to(&start_heights);
+        }
+
+        // reset height of next step to the maximum heights of each column.
+        self.next.cell_manager.reset_heights_to(&max_end_heights);
     }
 
     /// This function needs to be used with extra precaution. You need to make
@@ -1547,7 +1627,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 self.in_next_step = in_next_step;
 
                 // Require the stored value to equal the value of the expression
-                let name = format!("{} (stored expression)", name);
+                let name = format!("{name} (stored expression)");
                 self.push_constraint(
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),

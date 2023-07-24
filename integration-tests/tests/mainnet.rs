@@ -1,5 +1,5 @@
 use bus_mapping::{
-    circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams},
+    circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams, PrecompileEcParams},
     Error::JSONRpcError,
 };
 use halo2_proofs::{
@@ -33,6 +33,11 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_exp_steps: 1000,
     max_evm_rows: 0,
     max_rlp_rows: 33000,
+    max_ec_ops: PrecompileEcParams {
+        ec_add: 10,
+        ec_mul: 10,
+        ec_pairing: 4,
+    },
 };
 
 #[tokio::test]
@@ -56,6 +61,7 @@ async fn test_mock_prove_tx() {
         max_exp_steps: 5000,
         max_evm_rows: 0,
         max_rlp_rows: 42000,
+        ..Default::default()
     };
 
     let cli = BuilderClient::new(cli, params).await.unwrap();
@@ -123,6 +129,7 @@ async fn test_circuit_all_block() {
             max_exp_steps: 100_000,
             max_evm_rows: 0,
             max_rlp_rows: 2_070_000,
+            ..Default::default()
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let builder = cli.gen_inputs(block_num).await;

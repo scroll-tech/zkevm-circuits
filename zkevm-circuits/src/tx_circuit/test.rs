@@ -212,7 +212,6 @@ fn tx_circuit_l1_msg_tx() {
     );
 }
 
-#[cfg(feature = "reject-eip2718")]
 #[test]
 fn tx_circuit_bad_address() {
     const MAX_TXS: usize = 1;

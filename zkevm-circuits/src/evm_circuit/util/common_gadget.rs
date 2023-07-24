@@ -391,13 +391,15 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
+        prev_code_hash: Expression<F>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
         value: Word<F>,
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let sender_sub_fee =
             UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
-        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, "", value.expr());
         // If receiver doesn't exist, create it
         cb.condition(
             or::expr([
@@ -405,21 +407,34 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 must_create.clone(),
             ]),
             |cb| {
+                cb.account_read(
+                    receiver_address.clone(),
+                    AccountFieldTag::CodeHash,
+                    prev_code_hash.expr(),
+                );
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash_rlc(),
-                    0.expr(),
+                    prev_code_hash.expr(),
                     Some(reversion_info),
                 );
                 #[cfg(feature = "scroll")]
-                cb.account_write(
-                    receiver_address.clone(),
-                    AccountFieldTag::KeccakCodeHash,
-                    cb.empty_keccak_hash_rlc(),
-                    0.expr(),
-                    Some(reversion_info),
-                );
+                {
+                    cb.account_read(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        prev_keccak_code_hash.expr(),
+                    );
+
+                    cb.account_write(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        cb.empty_keccak_hash_rlc(),
+                        prev_keccak_code_hash.expr(),
+                        Some(reversion_info),
+                    );
+                }
             },
         );
         // Skip transfer if value == 0
@@ -457,7 +472,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
+        ) * if cfg!(feature = "scroll") {4.expr()} else {2.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -537,7 +552,7 @@ impl<F: Field> TransferGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, "", value.expr());
         // If receiver doesn't exist, create it
         cb.condition(
             or::expr([
@@ -545,6 +560,15 @@ impl<F: Field> TransferGadget<F> {
                 must_create.clone(),
             ]),
             |cb| {
+                // TODO: if we use create opcode to deploy a new contract at an address where eth
+                // balanace is not 0, it will not work well.
+                // We need to merge `TransferGadget` with `TransferWithGasFeeGadget` later
+                // similar to bus mapping.
+                cb.account_read(
+                    receiver_address.clone(),
+                    AccountFieldTag::CodeHash,
+                    0.expr(),
+                );
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
@@ -553,13 +577,20 @@ impl<F: Field> TransferGadget<F> {
                     Some(reversion_info),
                 );
                 #[cfg(feature = "scroll")]
-                cb.account_write(
-                    receiver_address.clone(),
-                    AccountFieldTag::KeccakCodeHash,
-                    cb.empty_keccak_hash_rlc(),
-                    0.expr(),
-                    Some(reversion_info),
-                );
+                {
+                    cb.account_read(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        0.expr(),
+                    );
+                    cb.account_write(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        cb.empty_keccak_hash_rlc(),
+                        0.expr(),
+                        Some(reversion_info),
+                    );
+                }
             },
         );
         // Skip transfer if value == 0
@@ -602,7 +633,7 @@ impl<F: Field> TransferGadget<F> {
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
+        ) * if cfg!(feature = "scroll") {4.expr()} else {2.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -717,12 +748,12 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         });
 
         // Recomposition of random linear combination to integer
-        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
+        let gas_is_u64 = IsZeroGadget::construct(cb, "", sum::expr(&gas_word.cells[N_BYTES_GAS..]));
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
         // construct common gadget
-        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
+        let value_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&value.cells));
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
@@ -737,7 +768,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         );
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_code_hash_rlc());
-        let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
+        let callee_not_exists = IsZeroGadget::construct(cb, "", phase2_callee_code_hash.expr());
 
         Self {
             is_success,
@@ -912,7 +943,7 @@ impl<F: Field> SstoreGasGadget<F> {
         let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
         let original_eq_prev =
             IsEqualGadget::construct(cb, original_value.expr(), value_prev.expr());
-        let original_is_zero = IsZeroGadget::construct(cb, original_value.expr());
+        let original_is_zero = IsZeroGadget::construct(cb, "", original_value.expr());
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -1206,7 +1237,8 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word_rlc();
-        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+        let not_overflow =
+            IsZeroGadget::construct(cb, "", sum::expr(&original.cells[VALID_BYTES..]));
 
         Self {
             original,
@@ -1252,4 +1284,35 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     pub(crate) fn not_overflow(&self) -> Expression<F> {
         self.not_overflow.expr()
     }
+}
+
+/// get real copy bytes from rw memory words according to shift and copy size
+pub(crate) fn get_copy_bytes<F: Field>(
+    block: &Block<F>,
+    step: &ExecStep,
+    begin_rw_index: usize,
+    end_rw_index: usize,
+    shift: u64,
+    copy_size: u64,
+) -> Vec<u8> {
+    // read real copy bytes from padded memory words
+    let padded_bytes: Vec<u8> = (begin_rw_index..end_rw_index)
+        .map(|i| {
+            let mut bytes = block.rws[step.rw_indices[i]]
+                .memory_word_pair()
+                .0
+                .to_le_bytes();
+            bytes.reverse();
+            bytes
+        })
+        .into_iter()
+        .flatten()
+        .collect();
+    let values: Vec<u8> = if copy_size == 0 {
+        vec![0; 0]
+    } else {
+        padded_bytes[shift as usize..(shift + copy_size) as usize].to_vec()
+    };
+
+    values
 }

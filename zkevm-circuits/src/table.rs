@@ -14,7 +14,13 @@ use crate::{
         RwRow, Transaction,
     },
 };
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
+use bus_mapping::{
+    circuit_input_builder::{
+        CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEcParams,
+    },
+    precompile::PrecompileCalls,
+};
 use core::iter::once;
 use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
@@ -24,10 +30,15 @@ use gadgets::{
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
+    halo2curves::bn256::Fq,
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+
 use std::iter::repeat;
+
+#[cfg(test)]
+use halo2_proofs::plonk::FirstPhase;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -226,9 +237,7 @@ impl TxTable {
         let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
-            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
-            sum_txs_calldata,
-            max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={sum_txs_calldata}, max_calldata={max_calldata}",
         );
 
         fn assign_row<F: Field>(
@@ -242,20 +251,20 @@ impl TxTable {
         ) -> Result<(), Error> {
             for (index, column) in advice_columns.iter().enumerate() {
                 region.assign_advice(
-                    || format!("tx table {} row {}", msg, offset),
+                    || format!("tx table {msg} row {offset}"),
                     *column,
                     offset,
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
             }
             region.assign_fixed(
-                || format!("tx table q_enable row {}", offset),
+                || format!("tx table q_enable row {offset}"),
                 q_enable,
                 offset,
                 || Value::known(F::one()),
             )?;
             region.assign_fixed(
-                || format!("tx table {} row {}", msg, offset),
+                || format!("tx table {msg} row {offset}"),
                 *tag,
                 offset,
                 || row[1],
@@ -995,7 +1004,7 @@ impl PoseidonTable {
                             F::from_u128(HASHABLE_DOMAIN_SPEC * control_len as u128);
 
                         region.assign_fixed(
-                            || format!("poseidon table row {}", offset),
+                            || format!("poseidon table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
@@ -1011,7 +1020,7 @@ impl PoseidonTable {
                                 }))),
                         ) {
                             region.assign_advice(
-                                || format!("poseidon table row {}", offset),
+                                || format!("poseidon table row {offset}"),
                                 *column,
                                 offset,
                                 || value,
@@ -1114,14 +1123,14 @@ impl BytecodeTable {
                 for bytecode in bytecodes.clone() {
                     for row in bytecode.table_assignments(challenges) {
                         region.assign_fixed(
-                            || format!("bytecode table row {}", offset),
+                            || format!("bytecode table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("bytecode table row {}", offset),
+                                || format!("bytecode table row {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1251,14 +1260,14 @@ impl BlockTable {
                     cum_num_txs += num_txs;
                     for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
                         region.assign_fixed(
-                            || format!("block table row {}", offset),
+                            || format!("block table row {offset}"),
                             self.tag,
                             offset,
                             || row[0],
                         )?;
                         for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                             region.assign_advice(
-                                || format!("block table row {}", offset),
+                                || format!("block table row {offset}"),
                                 *column,
                                 offset,
                                 || *value,
@@ -1378,7 +1387,7 @@ impl KeccakTable {
             .iter()
             .zip(values.iter())
         {
-            region.assign_advice(|| format!("assign {}", offset), column, offset, || *value)?;
+            region.assign_advice(|| format!("assign {offset}"), column, offset, || *value)?;
         }
         Ok(())
     }
@@ -1415,14 +1424,14 @@ impl KeccakTable {
                 for input in inputs.clone() {
                     for row in Self::assignments(input, challenges) {
                         region.assign_fixed(
-                            || format!("keccak table row {}", offset),
+                            || format!("keccak table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("keccak table row {}", offset),
+                                || format!("keccak table row {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1472,8 +1481,12 @@ pub struct CopyTable {
     /// The end of the source buffer for the copy event.  Any data read from an
     /// address greater than or equal to this value will be 0.
     pub src_addr_end: Column<Advice>,
-    /// The number of bytes left to be copied.
-    pub bytes_left: Column<Advice>,
+    /// The number of non-masked bytes left to be copied.
+    pub real_bytes_left: Column<Advice>,
+    /// mask indicates the byte is actual coped or padding to memory word
+    pub value_wrod_rlc: Column<Advice>, // TODO: rm
+    /// mask indicates the byte is actual coped or padding to memory word
+    //pub mask: Column<Advice>,
     /// An accumulator value in the RLC representation. This is used for
     /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
     /// Having an additional column for the `rlc_acc` simplifies the lookup
@@ -1490,7 +1503,21 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 5];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
+
+/// CopyThread is the state used while generating rows of the copy table.
+struct CopyThread<F: Field> {
+    tag: CopyDataType,
+    is_rw: bool,
+    id: Value<F>,
+    front_mask: bool,
+    addr: u64,
+    addr_end: u64,
+    bytes_left: u64,
+    value_acc: Value<F>,
+    word_rlc: Value<F>,
+    word_rlc_prev: Value<F>,
+}
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1502,7 +1529,8 @@ impl CopyTable {
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
-            bytes_left: meta.advice_column(),
+            real_bytes_left: meta.advice_column(),
+            value_wrod_rlc: meta.advice_column(), // TODO: rm
             rlc_acc: meta.advice_column_in(SecondPhase),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
@@ -1514,35 +1542,85 @@ impl CopyTable {
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
+        assert!(copy_event.src_addr_end >= copy_event.src_addr);
+
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = {
             let values = copy_event
+                .copy_bytes
                 .bytes
                 .iter()
-                .map(|(value, _)| *value)
+                .filter(|(_, _, mask)| !mask)
+                .map(|(value, _, _)| *value)
                 .collect::<Vec<u8>>();
+
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         };
-        let mut value_acc = Value::known(F::zero());
-        for (step_idx, (is_read_step, copy_step)) in copy_event
-            .bytes
-            .iter()
-            .flat_map(|(value, is_code)| {
+
+        let read_steps = copy_event.copy_bytes.bytes.iter();
+        let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
+            read_steps.zip(write_steps.iter())
+        } else {
+            read_steps.zip(copy_event.copy_bytes.bytes.iter())
+        };
+
+        let prev_write_bytes: Vec<u8> = copy_event
+            .copy_bytes
+            .bytes_write_prev
+            .clone()
+            .unwrap_or(vec![]);
+
+        let mut rw_counter = copy_event.rw_counter_start();
+        let mut rwc_inc_left = copy_event.rw_counter_delta();
+
+        let mut reader = CopyThread {
+            tag: copy_event.src_type,
+            is_rw: copy_event.is_source_rw(),
+            id: number_or_hash_to_field(&copy_event.src_id, challenges.evm_word()),
+            front_mask: true,
+            addr: copy_event.src_addr,
+            addr_end: copy_event.src_addr_end,
+            bytes_left: copy_event.copy_length(),
+            value_acc: Value::known(F::zero()),
+            word_rlc: Value::known(F::zero()),
+            word_rlc_prev: Value::known(F::zero()),
+        };
+
+        let mut writer = CopyThread {
+            tag: copy_event.dst_type,
+            is_rw: copy_event.is_destination_rw(),
+            id: number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word()),
+            front_mask: true,
+            addr: copy_event.dst_addr,
+            addr_end: copy_event.dst_addr + copy_event.full_length(),
+            bytes_left: reader.bytes_left,
+            value_acc: Value::known(F::zero()),
+            word_rlc: Value::known(F::zero()),
+            word_rlc_prev: Value::known(F::zero()),
+        };
+
+        for (step_idx, (is_read_step, mut copy_step)) in copy_steps
+            .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
-                    value: *value,
+                    value: read_step.0,
+                    prev_value: read_step.0,
+                    mask: read_step.2,
                     is_code: if copy_event.src_type == CopyDataType::Bytecode {
-                        Some(*is_code)
+                        Some(read_step.1)
                     } else {
                         None
                     },
                 };
                 let write_step = CopyStep {
-                    value: *value,
+                    value: write_step.0,
+                    // Will overwrite if previous values are given.
+                    prev_value: write_step.0,
+                    mask: write_step.2,
                     is_code: if copy_event.dst_type == CopyDataType::Bytecode {
-                        Some(*is_code)
+                        Some(write_step.1)
                     } else {
                         None
                     },
@@ -1551,105 +1629,112 @@ impl CopyTable {
             })
             .enumerate()
         {
-            // is_first
-            let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
-            // is last
-            let is_last = if step_idx == copy_event.bytes.len() * 2 - 1 {
-                Value::known(F::one())
-            } else {
-                Value::known(F::zero())
-            };
-
-            // id
-            let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id, challenges.evm_word())
-            } else {
-                number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word())
-            };
-
-            // tag binary bumber chip
-            let tag = if is_read_step {
-                copy_event.src_type
-            } else {
-                copy_event.dst_type
-            };
-
-            // addr
-            let copy_step_addr: u64 =
-                if is_read_step {
-                    copy_event.src_addr
-                } else {
-                    copy_event.dst_addr
-                } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
-
-            let addr = if tag == CopyDataType::TxLog {
-                Value::known(
-                    build_tx_log_address(
-                        copy_step_addr,
-                        TxLogFieldTag::Data,
-                        copy_event.log_id.unwrap(),
-                    )
-                    .to_scalar()
-                    .unwrap(),
-                )
-            } else {
-                Value::known(F::from(copy_step_addr))
-            };
-
-            // bytes_left
-            let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
-            // value
-            let value = Value::known(F::from(copy_step.value as u64));
-            // value_acc
-            if is_read_step {
-                value_acc = value_acc * challenges.keccak_input() + value;
+            // re-assign with correct `prev_value` in copy_step
+            if !is_read_step && !prev_write_bytes.is_empty() {
+                copy_step.prev_value = *prev_write_bytes.get(step_idx / 2).unwrap();
             }
-            // is_pad
-            let is_pad = Value::known(F::from(
-                is_read_step && copy_step_addr >= copy_event.src_addr_end,
-            ));
+            let copy_step = copy_step;
+
+            let thread = if is_read_step {
+                &mut reader
+            } else {
+                &mut writer
+            };
+
+            let is_first = step_idx == 0;
+            let is_last = step_idx as u64 == copy_event.full_length() * 2 - 1;
+
+            let is_pad = is_read_step && thread.addr >= thread.addr_end;
+
+            let value = Value::known(F::from(copy_step.value as u64));
+            let value_or_pad = if is_pad {
+                Value::known(F::zero())
+            } else {
+                value
+            };
+            let value_prev = Value::known(F::from(copy_step.prev_value as u64));
+
+            if !copy_step.mask {
+                thread.front_mask = false;
+                thread.value_acc = thread.value_acc * challenges.keccak_input() + value_or_pad;
+            }
+            if (step_idx / 2) % 32 == 0 {
+                // reset
+                thread.word_rlc = Value::known(F::zero());
+                thread.word_rlc_prev = Value::known(F::zero());
+            }
+            thread.word_rlc = thread.word_rlc * challenges.evm_word() + value;
+            thread.word_rlc_prev = if is_read_step {
+                thread.word_rlc // Reader does not change the word.
+            } else {
+                thread.word_rlc_prev * challenges.evm_word() + value_prev
+            };
+
+            let word_index = (step_idx as u64 / 2) % 32;
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
 
+            // For LOG, format the address including the log_id.
+            let addr = if thread.tag == CopyDataType::TxLog {
+                build_tx_log_address(thread.addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
+                    .to_scalar()
+                    .unwrap()
+            } else {
+                F::from(thread.addr)
+            };
+
             assignments.push((
-                tag,
+                thread.tag,
                 [
-                    (is_first, "is_first"),
-                    (id, "id"),
-                    (addr, "addr"),
-                    (
-                        Value::known(F::from(copy_event.src_addr_end)),
-                        "src_addr_end",
-                    ),
-                    (Value::known(F::from(bytes_left)), "bytes_left"),
+                    (Value::known(F::from(is_first)), "is_first"),
+                    (thread.id, "id"),
+                    (Value::known(addr), "addr"),
+                    (Value::known(F::from(thread.addr_end)), "src_addr_end"),
+                    (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
                     (
                         match (copy_event.src_type, copy_event.dst_type) {
+                            (CopyDataType::Precompile(_), _) => rlc_acc,
+                            (_, CopyDataType::Precompile(_)) => rlc_acc,
                             (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
+                            (CopyDataType::TxCalldata, CopyDataType::Bytecode) => rlc_acc,
                             (_, CopyDataType::RlcAcc) => rlc_acc,
-                            (CopyDataType::Memory, CopyDataType::Precompile(_)) => rlc_acc,
-                            (CopyDataType::Precompile(_), CopyDataType::Memory) => rlc_acc,
                             _ => Value::known(F::zero()),
                         },
                         "rlc_acc",
                     ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter(step_idx))),
-                        "rw_counter",
-                    ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
-                        "rwc_inc_left",
-                    ),
+                    (Value::known(F::from(rw_counter)), "rw_counter"),
+                    (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
                 ],
                 [
-                    (is_last, "is_last"),
+                    (Value::known(F::from(is_last)), "is_last"),
                     (value, "value"),
-                    (value_acc, "value_acc"),
-                    (is_pad, "is_pad"),
+                    (value_prev, "value_prev"),
+                    (thread.word_rlc, "value_word_rlc"),
+                    (thread.word_rlc_prev, "value_word_rlc_prev"),
+                    (thread.value_acc, "value_acc"),
+                    (Value::known(F::from(is_pad)), "is_pad"),
                     (is_code, "is_code"),
+                    (Value::known(F::from(copy_step.mask)), "mask"),
+                    (Value::known(F::from(thread.front_mask)), "front_mask"),
+                    (Value::known(F::from(word_index)), "word_index"),
                 ],
             ));
+
+            // Increment the address.
+            if !thread.front_mask {
+                thread.addr += 1;
+            }
+            // Decrement the number of steps left.
+            if !copy_step.mask {
+                thread.bytes_left -= 1;
+            }
+            // Update the RW counter.
+            let is_word_end = (step_idx / 2) % 32 == 31;
+            if is_word_end && thread.is_rw {
+                rw_counter += 1;
+                rwc_inc_left -= 1;
+            }
         }
         assignments
     }
@@ -1686,14 +1771,14 @@ impl CopyTable {
                 for copy_event in block.copy_events.iter() {
                     for (tag, row, _) in Self::assignments(copy_event, *challenges) {
                         region.assign_fixed(
-                            || format!("q_enable at row: {}", offset),
+                            || format!("q_enable at row: {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("{} at row: {}", label, offset),
+                                || format!("{label} at row: {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1718,7 +1803,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.id.into(),
             self.addr.into(),
             self.src_addr_end.into(),
-            self.bytes_left.into(),
+            self.real_bytes_left.into(),
             self.rlc_acc.into(),
             self.rw_counter.into(),
             self.rwc_inc_left.into(),
@@ -1732,7 +1817,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("id"),
             String::from("addr"),
             String::from("src_addr_end"),
-            String::from("bytes_left"),
+            String::from("real_bytes_left"),
             String::from("rlc_acc"),
             String::from("rw_counter"),
             String::from("rwc_inc_left"),
@@ -1750,7 +1835,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.addr, Rotation::cur()), // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
-            meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            meta.query_advice(self.real_bytes_left, Rotation::cur()), // real_length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
@@ -1881,14 +1966,14 @@ impl ExpTable {
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
                         region.assign_fixed(
-                            || format!("exponentiation table row {}", offset),
+                            || format!("exponentiation table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("exponentiation table row {}", offset),
+                                || format!("exponentiation table row {offset}"),
                                 column,
                                 offset,
                                 || Value::known(value),
@@ -1900,7 +1985,7 @@ impl ExpTable {
                             F::zero()
                         };
                         region.assign_fixed(
-                            || format!("exponentiation table row {}", offset),
+                            || format!("exponentiation table row {offset}"),
                             self.is_step,
                             offset,
                             || Value::known(is_step),
@@ -1912,14 +1997,14 @@ impl ExpTable {
                 // pad an empty row
                 let row = [F::from_u128(0); 5];
                 region.assign_fixed(
-                    || format!("exponentiation table row {}", offset),
+                    || format!("exponentiation table row {offset}"),
                     self.q_enable,
                     offset,
                     || Value::known(F::one()),
                 )?;
                 for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
-                        || format!("exponentiation table row {}", offset),
+                        || format!("exponentiation table row {offset}"),
                         *column,
                         offset,
                         || Value::known(value),
@@ -2238,6 +2323,236 @@ impl<F: Field> LookupTable<F> for SigTable {
             meta.query_advice(self.sig_s_rlc, Rotation::cur()),
             meta.query_advice(self.recovered_addr, Rotation::cur()),
         ]
+    }
+}
+
+/// 1. if EcAdd(P, Q) == R then:
+///     (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc, output2_rlc).
+///
+///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
+///           arg3_rlc = rlc(Q.x), arg4_rlc = rlc(Q.x),
+///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
+///
+/// 2. if EcMul(P, s) == R then:
+///     (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
+///
+///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
+///           arg3_rlc = s
+///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
+///
+/// 3. EcPairing:
+///    - arg*_rlc <- 0
+///    - input_rlc <- RLC over all input bytes
+///    - output1_rlc <- success {0, 1}
+#[derive(Clone, Copy, Debug)]
+pub struct EccTable {
+    /// Since the current design of the ECC circuit reserves fixed number of rows for EcAdd, EcMul
+    /// and EcPairing ops respectively, we already know the `op_type` for each row.
+    pub op_type: Column<Fixed>,
+
+    #[cfg(test)]
+    pub(crate) _phase_1_column: Column<Advice>,
+
+    /// Advice column for input argument 1= RLC(input_bytes[0..32]).
+    pub arg1_rlc: Column<Advice>,
+    /// Advice column for input argument 2= RLC(input_bytes[32..64]).
+    pub arg2_rlc: Column<Advice>,
+    /// Advice column for input argument 3= RLC(input_bytes[64..96]).
+    pub arg3_rlc: Column<Advice>,
+    /// Advice column for input argument 4= RLC(input_bytes[96..128]).
+    pub arg4_rlc: Column<Advice>,
+    /// Advice column for RLC of all input bytes= RLC(input_bytes).
+    pub input_rlc: Column<Advice>,
+
+    /// Advice column for output 1= RLC(output_bytes[0..32]).
+    pub output1_rlc: Column<Advice>,
+    /// Advice column for output 2= RLC(output_bytes[32..64]).
+    pub output2_rlc: Column<Advice>,
+}
+
+impl<F: Field> LookupTable<F> for EccTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.op_type.into(),
+            #[cfg(test)]
+            self._phase_1_column.into(),
+            self.arg1_rlc.into(),
+            self.arg2_rlc.into(),
+            self.arg3_rlc.into(),
+            self.arg4_rlc.into(),
+            self.input_rlc.into(),
+            self.output1_rlc.into(),
+            self.output2_rlc.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("op_type"),
+            #[cfg(test)]
+            String::from("_phase_1_column"),
+            String::from("arg1_rlc"),
+            String::from("arg2_rlc"),
+            String::from("arg3_rlc"),
+            String::from("arg4_rlc"),
+            String::from("input_rlc"),
+            String::from("output1_rlc"),
+            String::from("output2_rlc"),
+        ]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_fixed(self.op_type, Rotation::cur()),
+            meta.query_advice(self.arg1_rlc, Rotation::cur()),
+            meta.query_advice(self.arg2_rlc, Rotation::cur()),
+            meta.query_advice(self.arg3_rlc, Rotation::cur()),
+            meta.query_advice(self.arg4_rlc, Rotation::cur()),
+            meta.query_advice(self.input_rlc, Rotation::cur()),
+            meta.query_advice(self.output1_rlc, Rotation::cur()),
+            meta.query_advice(self.output2_rlc, Rotation::cur()),
+        ]
+    }
+}
+
+impl EccTable {
+    /// Construct the ECC table.
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        #[cfg(test)]
+        let _phase_1_column = {
+            let column = meta.advice_column_in(FirstPhase);
+            meta.enable_equality(column);
+            column
+        };
+
+        Self {
+            op_type: meta.fixed_column(),
+
+            #[cfg(test)]
+            _phase_1_column,
+
+            arg1_rlc: meta.advice_column_in(SecondPhase),
+            arg2_rlc: meta.advice_column_in(SecondPhase),
+            arg3_rlc: meta.advice_column_in(SecondPhase),
+            arg4_rlc: meta.advice_column_in(SecondPhase),
+            input_rlc: meta.advice_column_in(SecondPhase),
+            output1_rlc: meta.advice_column_in(SecondPhase),
+            output2_rlc: meta.advice_column_in(SecondPhase),
+        }
+    }
+
+    /// Load witness in the ECC table. Note: for dev purposes.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        params: PrecompileEcParams,
+        add_ops: &[EcAddOp],
+        mul_ops: &[EcMulOp],
+        pairing_ops: &[EcPairingOp],
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        let mut assignments = Vec::with_capacity(params.ec_add + params.ec_mul + params.ec_pairing);
+        let fq_to_value = |fq: Fq, randomness: Value<F>| -> Value<F> {
+            randomness.map(|r| rlc::value(fq.to_bytes().iter(), r))
+        };
+
+        let keccak_rand = challenges.keccak_input();
+
+        // assign EcAdd
+        for add_op in add_ops
+            .iter()
+            .filter(|add_op| !add_op.skip_by_ecc_circuit())
+            .chain(std::iter::repeat(&EcAddOp::default()))
+            .take(params.ec_add)
+        {
+            assignments.push([
+                Value::known(F::from(u64::from(PrecompileCalls::Bn128Add))),
+                #[cfg(test)]
+                Value::known(F::one()),
+                fq_to_value(add_op.p.x, keccak_rand),
+                fq_to_value(add_op.p.y, keccak_rand),
+                fq_to_value(add_op.q.x, keccak_rand),
+                fq_to_value(add_op.q.y, keccak_rand),
+                Value::known(F::zero()),
+                fq_to_value(add_op.r.x, keccak_rand),
+                fq_to_value(add_op.r.y, keccak_rand),
+            ]);
+        }
+
+        // assign EcMul
+        for mul_op in mul_ops
+            .iter()
+            .filter(|mul_op| !mul_op.skip_by_ecc_circuit())
+            .chain(std::iter::repeat(&EcMulOp::default()))
+            .take(params.ec_mul)
+        {
+            assignments.push([
+                Value::known(F::from(u64::from(PrecompileCalls::Bn128Mul))),
+                #[cfg(test)]
+                Value::known(F::one()),
+                fq_to_value(mul_op.p.x, keccak_rand),
+                fq_to_value(mul_op.p.y, keccak_rand),
+                // no need to RLC the scalar s, since it will fit within the scalar field.
+                Value::known(mul_op.s.into()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                fq_to_value(mul_op.r.x, keccak_rand),
+                fq_to_value(mul_op.r.y, keccak_rand),
+            ]);
+        }
+
+        // assign EcPairing
+        for pairing_op in pairing_ops
+            .iter()
+            .filter(|pairing_op| !pairing_op.skip_by_ecc_circuit())
+            .chain(std::iter::repeat(&EcPairingOp::default()))
+            .take(params.ec_pairing)
+        {
+            assignments.push([
+                Value::known(F::from(u64::from(PrecompileCalls::Bn128Pairing))),
+                #[cfg(test)]
+                Value::known(F::one()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                keccak_rand.map(|r| rlc::value(&pairing_op.to_bytes_le(), r)),
+                Value::known(
+                    pairing_op
+                        .output
+                        .to_scalar()
+                        .expect("EcPairing output = {0, 1}"),
+                ),
+                Value::known(F::zero()),
+            ]);
+        }
+
+        layouter.assign_region(
+            || "ecc table dev load",
+            |mut region| {
+                for (i, row) in assignments.iter().enumerate() {
+                    region.assign_fixed(
+                        || format!("ecc table row = {i}, op_type"),
+                        self.op_type,
+                        i,
+                        || row[0],
+                    )?;
+                    for (&column, &value) in <EccTable as LookupTable<F>>::advice_columns(self)
+                        .iter()
+                        .zip_eq(row.iter().skip(1))
+                    {
+                        region.assign_advice(
+                            || format!("ecc table row = {i}, column = {column:?}"),
+                            column,
+                            i,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 

@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // first default this condition, if use will re-construct with real condition
         // value
-        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
+        let is_condition_zero = IsZeroGadget::construct(cb, "", phase2_condition.expr());
 
         // Pop the value from the stack
         cb.stack_pop(dest.original_word());

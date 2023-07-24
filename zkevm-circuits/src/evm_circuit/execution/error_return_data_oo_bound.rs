@@ -67,14 +67,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
         // Check if `data_offset` is Uint64 overflow.
         let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
-        let is_data_offset_within_u64 = IsZeroGadget::construct(cb, data_offset_larger_u64);
+        let is_data_offset_within_u64 = IsZeroGadget::construct(cb, "", data_offset_larger_u64);
 
         // Check if `remainder_end` is Uint64 overflow.
         let sum = AddWordsGadget::construct(cb, [data_offset, size], remainder_end.clone());
         let is_end_u256_overflow = sum.carry().as_ref().unwrap();
 
         let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
-        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, remainder_end_larger_u64);
+        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, "", remainder_end_larger_u64);
 
         // check if `remainder_end` exceeds return data length.
         let is_remainder_end_exceed_len = LtGadget::construct(

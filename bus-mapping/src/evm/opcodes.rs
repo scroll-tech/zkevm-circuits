@@ -1,6 +1,8 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
     error::{
         ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError,
         NonceUintOverflowError, OogError,
@@ -17,7 +19,7 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    evm_unimplemented, GethExecStep, GethExecTrace, ToAddress, ToWord, Word,
+    evm_unimplemented, Bytecode, GethExecStep, GethExecTrace, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
 
@@ -379,10 +381,10 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
-    if memory_enabled {
-        let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
-        if check_level >= 1 {
+    let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
+    if check_level >= 1 {
+        let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
+        if memory_enabled {
             #[allow(clippy::collapsible_else_if)]
             if state.call_ctx()?.memory != geth_steps[0].memory {
                 log::error!(
@@ -552,6 +554,7 @@ pub fn gen_begin_tx_ops(
         GasCost::TX.as_u64()
     } + call_data_gas_cost
         + init_code_gas_cost;
+    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee
@@ -569,29 +572,31 @@ pub fn gen_begin_tx_ops(
             && !callee_account.code_hash.eq(&CodeDB::empty_code_hash()))
             || !callee_account.nonce.is_zero())
     {
-        unimplemented!("deployment collision");
+        unimplemented!(
+            "deployment collision at {:?}, account {:?}",
+            call.address,
+            callee_account
+        );
     }
-    let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
-        (true, _) => (call.code_hash.to_word(), false),
-        (_, true) => {
-            debug_assert_eq!(
-                callee_account.code_hash, call.code_hash,
-                "callee account's code hash: {:?}, call's code hash: {:?}",
-                callee_account.code_hash, call.code_hash
-            );
-            (
-                call.code_hash.to_word(),
-                call.code_hash == CodeDB::empty_code_hash(),
-            )
-        }
-        (_, false) => (Word::zero(), true),
+    let account_code_hash = if callee_exists {
+        callee_account.code_hash.to_word()
+    } else {
+        Word::zero()
     };
-    if !is_precompile && !call.is_create() {
+    // call_code is code being executed
+    let call_code_hash = call.code_hash.to_word();
+    if !state.tx.is_create() && !account_code_hash.is_zero() {
+        debug_assert_eq!(account_code_hash, call_code_hash);
+    }
+    let account_code_hash_is_empty_or_zero =
+        account_code_hash.is_zero() || account_code_hash == CodeDB::empty_code_hash().to_word();
+
+    if !is_precompile {
         state.account_read(
             &mut exec_step,
             call.address,
             AccountField::CodeHash,
-            callee_code_hash,
+            account_code_hash,
         );
     }
 
@@ -616,6 +621,7 @@ pub fn gen_begin_tx_ops(
     // to the Keccak circuit, so that the BeginTxGadget can do a lookup to the
     // Keccak table and verify the contract address.
     if state.tx.is_create() {
+        // 1. add RLP-bytes for contract address to keccak circuit.
         state.block.sha3_inputs.push({
             let mut stream = ethers_core::utils::rlp::RlpStream::new();
             stream.begin_list(2);
@@ -623,10 +629,42 @@ pub fn gen_begin_tx_ops(
             stream.append(&nonce_prev);
             stream.out().to_vec()
         });
+        // 2. add init code to keccak circuit.
+        let init_code = state.tx.input.as_slice();
+        let length = init_code.len();
+        state.block.sha3_inputs.push(init_code.to_vec());
+        // 3. add init code to copy circuit.
+        let code_hash = CodeDB::hash(init_code);
+        let bytes = Bytecode::from(init_code.to_vec())
+            .code
+            .iter()
+            .map(|element| (element.value, element.is_code, false))
+            .collect::<Vec<(u8, bool, bool)>>();
+
+        let rw_counter_start = state.block_ctx.rwc;
+        state.push_copy(
+            &mut exec_step,
+            CopyEvent {
+                src_addr: 0,
+                src_addr_end: length as u64,
+                src_type: CopyDataType::TxCalldata,
+                src_id: NumberOrHash::Number(state.tx_ctx.id()),
+                dst_addr: 0,
+                dst_type: CopyDataType::Bytecode,
+                dst_id: NumberOrHash::Hash(code_hash),
+                log_id: None,
+                rw_counter_start,
+                copy_bytes: CopyBytes::new(bytes, None, None),
+            },
+        );
     }
 
     // There are 4 branches from here.
-    match (call.is_create(), is_precompile, is_empty_code_hash) {
+    match (
+        call.is_create(),
+        is_precompile,
+        account_code_hash_is_empty_or_zero,
+    ) {
         // 1. Creation transaction.
         (true, _, _) => {
             state.push_op_reversible(
@@ -696,7 +734,7 @@ pub fn gen_begin_tx_ops(
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                     (CallContextField::IsRoot, 1.into()),
                     (CallContextField::IsCreate, call.is_create().to_word()),
-                    (CallContextField::CodeHash, callee_code_hash),
+                    (CallContextField::CodeHash, call_code_hash),
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
@@ -704,11 +742,23 @@ pub fn gen_begin_tx_ops(
         }
     }
 
-    exec_step.gas_cost = if geth_trace.struct_logs.is_empty() {
+    let real_gas_cost = if geth_trace.struct_logs.is_empty() {
         GasCost(geth_trace.gas.0)
     } else {
         GasCost(state.tx.gas - geth_trace.struct_logs[0].gas.0)
     };
+    if is_precompile {
+        // FIXME after we implement all precompiles
+        if exec_step.gas_cost != real_gas_cost {
+            log::warn!(
+                "change begin tx precompile gas from {:?} to {real_gas_cost:?}, step {exec_step:?}",
+                exec_step.gas_cost
+            );
+            exec_step.gas_cost = real_gas_cost;
+        }
+    } else {
+        debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+    }
 
     log::trace!("begin_tx_step: {:?}", exec_step);
     state.tx.steps_mut().push(exec_step);

@@ -1,7 +1,7 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     mock::BlockData,
 };
 use eth_types::{geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, U256, U64};
@@ -332,6 +332,11 @@ pub fn run_test(
             max_keccak_rows: 0,
             max_inner_blocks: 64,
             max_rlp_rows: 6000,
+            max_ec_ops: PrecompileEcParams {
+                ec_add: 50,
+                ec_mul: 50,
+                ec_pairing: 2,
+            },
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
@@ -360,6 +365,11 @@ pub fn run_test(
             max_keccak_rows: 0,
             max_inner_blocks: 64,
             max_rlp_rows: 512,
+            max_ec_ops: PrecompileEcParams {
+                ec_add: 50,
+                ec_mul: 50,
+                ec_pairing: 2,
+            },
         };
         let (k, circuit, instance, _builder) =
             SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 64, 0x100>::build(geth_data, circuits_params)

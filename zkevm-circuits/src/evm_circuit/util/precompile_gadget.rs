@@ -9,7 +9,7 @@ use crate::evm_circuit::{
 };
 
 use super::{
-    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+    constraint_builder::{BoxedClosure, ConstrainBuilderCommon, EVMConstraintBuilder},
     math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
     CachedRegion, Cell,
 };
@@ -78,8 +78,30 @@ impl<F: Field> PrecompileGadget<F> {
             );
         });
 
-        cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
+        let conditions = vec![
+            address.value_equals(PrecompileCalls::Ecrecover),
+            address.value_equals(PrecompileCalls::Sha256),
+            address.value_equals(PrecompileCalls::Ripemd160),
+            address.value_equals(PrecompileCalls::Identity),
+            address.value_equals(PrecompileCalls::Modexp),
+            address.value_equals(PrecompileCalls::Bn128Add),
+            address.value_equals(PrecompileCalls::Bn128Mul),
+            address.value_equals(PrecompileCalls::Bn128Pairing),
+            address.value_equals(PrecompileCalls::Blake2F),
+        ];
+        let next_states = vec![
+            ExecutionState::PrecompileEcrecover,
+            ExecutionState::PrecompileSha256,
+            ExecutionState::PrecompileRipemd160,
+            ExecutionState::PrecompileIdentity,
+            ExecutionState::PrecompileBigModExp,
+            ExecutionState::PrecompileBn256Add,
+            ExecutionState::PrecompileBn256ScalarMul,
+            ExecutionState::PrecompileBn256Pairing,
+            ExecutionState::PrecompileBlake2f,
+        ];
+        let constraints: Vec<BoxedClosure<F>> = vec![
+            Box::new(|cb| {
                 let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
@@ -114,52 +136,89 @@ impl<F: Field> PrecompileGadget<F> {
                 cb.condition(not::expr(recovered.expr()), |cb| {
                     cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
                 });
-            });
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Sha256), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileSha256, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Ripemd160), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileRipemd160, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Identity), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileIdentity, None, |_cb| {});
-            cb.condition(is_success, |cb| {
-                cb.require_equal(
-                    "input and output bytes are the same",
-                    input_bytes_rlc,
-                    output_bytes_rlc,
+            }),
+            Box::new(|_cb| { /* Sha256 */ }),
+            Box::new(|_cb| { /* Ripemd160 */ }),
+            Box::new(|cb| {
+                cb.condition(is_success, |cb| {
+                    cb.require_equal(
+                        "input and output bytes are the same",
+                        input_bytes_rlc.expr(),
+                        output_bytes_rlc.expr(),
+                    );
+                    cb.require_equal(
+                        "input length and precompile return length are the same",
+                        cd_length,
+                        precompile_return_length,
+                    );
+                });
+            }),
+            Box::new(|_cb| { /* Modexp */ }),
+            Box::new(|cb| {
+                let (p_x_rlc, p_y_rlc, q_x_rlc, q_y_rlc, r_x_rlc, r_y_rlc) = (
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
                 );
+                let (r_pow_32, r_pow_64, r_pow_96) = {
+                    let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+                    let r_pow_16 = challenges[15].clone();
+                    let r_pow_32 = r_pow_16.square();
+                    let r_pow_64 = r_pow_32.expr().square();
+                    let r_pow_96 = r_pow_64.expr() * r_pow_32.expr();
+                    (r_pow_32, r_pow_64, r_pow_96)
+                };
                 cb.require_equal(
-                    "input length and precompile return length are the same",
-                    cd_length,
-                    precompile_return_length,
+                    "input bytes (RLC) = [ p_x | p_y | q_x | q_y ]",
+                    padding_gadget.padded_rlc(),
+                    (p_x_rlc.expr() * r_pow_96)
+                        + (p_y_rlc.expr() * r_pow_64)
+                        + (q_x_rlc.expr() * r_pow_32.expr())
+                        + q_y_rlc.expr(),
                 );
-            });
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Modexp), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBigModExp, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Bn128Add), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBn256Add, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Bn128Mul), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBn256ScalarMul, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Bn128Pairing), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBn256Pairing, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Blake2F), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBlake2f, None, |_cb| {});
-        });
+                // RLC of output bytes always equals RLC of result elliptic curve point R.
+                cb.require_equal(
+                    "output bytes (RLC) = [ r_x | r_y ]",
+                    output_bytes_rlc.expr(),
+                    r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
+                );
+            }),
+            Box::new(|cb| {
+                let (p_x_rlc, p_y_rlc, scalar_s_raw_rlc, r_x_rlc, r_y_rlc) = (
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                );
+                let (r_pow_32, r_pow_64) = {
+                    let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+                    let r_pow_16 = challenges[15].clone();
+                    let r_pow_32 = r_pow_16.square();
+                    let r_pow_64 = r_pow_32.expr().square();
+                    (r_pow_32, r_pow_64)
+                };
+                cb.require_equal(
+                    "input bytes (RLC) = [ p_x | p_y | s ]",
+                    padding_gadget.padded_rlc(),
+                    (p_x_rlc.expr() * r_pow_64)
+                        + (p_y_rlc.expr() * r_pow_32.expr())
+                        + scalar_s_raw_rlc.expr(),
+                );
+                // RLC of output bytes always equals RLC of result elliptic curve point R.
+                cb.require_equal(
+                    "output bytes (RLC) = [ r_x | r_y ]",
+                    output_bytes_rlc.expr(),
+                    r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
+                );
+            }),
+            Box::new(|_cb| { /* Bn128Pairing */ }),
+            Box::new(|_cb| { /* Blake2F */ }),
+        ];
+        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self {
             address,
@@ -202,7 +261,7 @@ impl<F: Field> PaddingGadget<F> {
         cd_len: Expression<F>,
         input_len: Expression<F>,
     ) -> Self {
-        let is_cd_len_zero = IsZeroGadget::construct(cb, cd_len.expr());
+        let is_cd_len_zero = IsZeroGadget::construct(cb, "", cd_len.expr());
         let padded_rlc = cb.query_cell_phase2();
         let power_of_rand = cb.query_cell_phase2();
 

@@ -416,6 +416,12 @@ impl<F: FieldExt> CellManager<F> {
         }
     }
 
+    pub(crate) fn reset_heights_to(&mut self, heights: &[usize]) {
+        for (column, &height) in self.columns.iter_mut().zip_eq(heights.iter()) {
+            column.height = height;
+        }
+    }
+
     pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
         let mut cells = Vec::with_capacity(count);
         while cells.len() < count {
@@ -464,7 +470,7 @@ impl<F: FieldExt> CellManager<F> {
             Some(index) => index,
             // If we reach this case, it means that all the columns of cell_type have assignments
             // taking self.height rows, so there's no more space.
-            None => panic!("not enough cells for query: {:?}", cell_type),
+            None => panic!("not enough cells for query: {cell_type:?}"),
         }
     }
 
@@ -474,6 +480,10 @@ impl<F: FieldExt> CellManager<F> {
             .map(|column| column.height)
             .max()
             .unwrap()
+    }
+
+    pub(crate) fn get_heights(&self) -> Vec<usize> {
+        self.columns().iter().map(|column| column.height).collect()
     }
 
     /// Returns a map of CellType -> (width, height, num_cells)
@@ -570,6 +580,40 @@ pub(crate) mod from_bytes {
         for byte in bytes.iter() {
             value += F::from(*byte as u64) * multiplier;
             multiplier *= F::from(256);
+        }
+        value
+    }
+}
+
+/// Decodes a field element from its binary representation
+pub(crate) mod from_bits {
+    use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bits: &[E]) -> Expression<F> {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = 0.expr();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value = value + bit.expr() * multiplier;
+            multiplier *= F::from(2);
+        }
+        value
+    }
+
+    pub(crate) fn value<F: FieldExt>(bits: &[bool]) -> F {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = F::zero();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value += F::from(*bit as u64) * multiplier;
+            multiplier *= F::from(2);
         }
         value
     }

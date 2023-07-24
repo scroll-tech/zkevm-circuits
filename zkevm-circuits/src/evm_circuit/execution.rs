@@ -1,9 +1,9 @@
 use super::{
     param::{
-        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
-        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS,
-        TX_TABLE_LOOKUPS,
+        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, ECC_TABLE_LOOKUPS,
+        EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS,
+        N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS,
+        SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
     EvmCircuitExports,
@@ -203,7 +203,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
-use precompiles::{EcrecoverGadget, IdentityGadget};
+use precompiles::{EcAddGadget, EcMulGadget, EcrecoverGadget, IdentityGadget};
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -353,10 +353,8 @@ pub(crate) struct ExecutionConfig<F> {
     precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
     precompile_modexp_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBigModExp }>>,
-    precompile_bn128add_gadget:
-        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Add }>>,
-    precompile_bn128mul_gadget:
-        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256ScalarMul }>>,
+    precompile_bn128add_gadget: Box<EcAddGadget<F>>,
+    precompile_bn128mul_gadget: Box<EcMulGadget<F>>,
     precompile_bn128pairing_gadget:
         Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Pairing }>>,
     precompile_blake2f_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBlake2f }>>,
@@ -378,6 +376,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
+        ecc_table: &dyn LookupTable<F>,
         pow_of_rand_table: &dyn LookupTable<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
@@ -653,6 +652,7 @@ impl<F: Field> ExecutionConfig<F> {
             keccak_table,
             exp_table,
             sig_table,
+            ecc_table,
             pow_of_rand_table,
             &challenges,
             &cell_manager,
@@ -910,13 +910,14 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
+        ecc_table: &dyn LookupTable<F>,
         pow_of_rand_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
-                let name = format!("{:?}", table);
+                let name = format!("{table:?}");
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
@@ -928,6 +929,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
                         Table::Sig => sig_table,
+                        Table::Ecc => ecc_table,
                         Table::PowOfRand => pow_of_rand_table,
                     }
                     .table_exprs(meta);
@@ -1229,6 +1231,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
+            ("EVM_lookup_ecc", ECC_TABLE_LOOKUPS),
             ("EVM_lookup_pow_of_rand", POW_OF_RAND_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
@@ -1239,7 +1242,7 @@ impl<F: Field> ExecutionConfig<F> {
         let mut index = 0;
         for col in self.advices {
             let (name, length) = groups[group_index];
-            region.name_column(|| format!("{}_{}", name, index), col);
+            region.name_column(|| format!("{name}_{index}"), col);
             index += 1;
             if index >= length {
                 index = 0;
@@ -1549,7 +1552,6 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
-        //}
         Ok(())
     }
 
