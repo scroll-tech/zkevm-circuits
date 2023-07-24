@@ -4,18 +4,17 @@ use crate::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{CommonReturnDataCopyGadget, SameContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget, },
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            sum, CachedRegion, Cell, MemoryAddress, or,
+            or, sum, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -41,14 +40,7 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     dst_memory_addr: MemoryAddressGadget<F>,
     /// Holds the memory address for the offset in return data from where we
     /// read.
-    //data_offset: MemoryAddress<F>,
-    /// check overflow is not true
-    is_data_offset_within_u64: IsZeroGadget<F>,
-    /// sum of data offset + size
-    sum: AddWordsGadget<F, 2, false>,
-
-    is_remainder_end_within_u64: IsZeroGadget<F>,
-    is_remainder_end_exceed_len: LtGadget<F, N_BYTES_U64>,
+    check_overflow_gadget: CommonReturnDataCopyGadget<F>,
     /// Opcode RETURNDATACOPY has a dynamic gas cost:
     /// gas_code = static_gas * minimum_word_size + memory_expansion_cost
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -70,22 +62,23 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         let dest_offset = cb.query_cell_phase2();
         //let data_offset_word = cb.query_word_rlc();
-        let data_offset: crate::evm_circuit::util::RandomLinearCombination<F, 32> = cb.query_word_rlc();
+        let return_data_size: Cell<F> = cb.query_cell();
 
-        let size_word: crate::evm_circuit::util::RandomLinearCombination<F, 32> = cb.query_word_rlc();
-        let size: crate::evm_circuit::util::RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> = cb.query_word_rlc();
-
-        let remainder_end = cb.query_word_rlc();
+        let size: crate::evm_circuit::util::RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> =
+            cb.query_word_rlc();
+        // enusre no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
+        // state
+        let check_overflow_gadget =
+            CommonReturnDataCopyGadget::construct(cb, return_data_size.expr(), false.expr());
 
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
-        cb.stack_pop(data_offset.clone().expr());
-        cb.stack_pop(size_word.clone().expr());
+        cb.stack_pop(check_overflow_gadget.data_offset().expr());
+        cb.stack_pop(size.clone().expr());
 
         // 2. Add lookup constraint in the call context for the returndatacopy field.
         let last_callee_id = cb.query_cell();
         let return_data_offset = cb.query_cell();
-        let return_data_size = cb.query_cell();
         cb.call_context_lookup(
             false.expr(),
             None,
@@ -105,44 +98,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             return_data_size.expr(),
         );
 
-        // Check if `data_offset` is Uint64 overflow.
-        let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
-        let is_data_offset_within_u64 =
-            IsZeroGadget::construct(cb, "data_offset not overflow", data_offset_larger_u64);
-        cb.require_true("data_offset not overflow", is_data_offset_within_u64.expr());
-        let sum = AddWordsGadget::construct(cb, [data_offset.clone(), size_word.clone()], remainder_end.clone());
-        let is_end_u256_overflow = sum.carry().as_ref().unwrap();
-        let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
-        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, "", remainder_end_larger_u64);
-
-        // check if `remainder_end` exceeds return data length.
-        let is_remainder_end_exceed_len = LtGadget::construct(
-            cb,
-            return_data_size.expr(),
-            from_bytes::expr(&remainder_end.cells[..N_BYTES_U64]),
-        );
-
-        // enusre no other errors occur, otherwise go to `ErrorReturnDataOutOfBound` state
-        cb.require_zero(
-            "None of [data_offset > u64::MAX, data_offset + size > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
-            or::expr([
-                // data_offset > u64::MAX
-                not::expr(is_data_offset_within_u64.expr()),
-                // data_offset + size > U256::MAX
-                is_end_u256_overflow.expr(),
-                // remainder_end > u64::MAX
-                not::expr(is_remainder_end_within_u64.expr()),
-                // remainder_end > return_data_length
-                is_remainder_end_exceed_len.expr(),
-            ]));
-        
-        // 3. contraints for copy: copy overflow check
-    
-
         // 4. memory copy
         // Construct memory address in the destination (memory) to which we copy memory.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_offset, size.clone());
-        cb.require_equal("size_word = size", size_word.clone().expr(), size.expr());
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
         // memory.
@@ -160,7 +118,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 CopyDataType::Memory.expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                return_data_offset.expr() + from_bytes::expr(&data_offset.cells[..N_BYTES_U64]),
+                return_data_offset.expr()
+                    + from_bytes::expr(&check_overflow_gadget.data_offset().cells[..N_BYTES_U64]),
                 return_data_offset.expr() + return_data_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
@@ -195,15 +154,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             return_data_offset,
             return_data_size,
             dst_memory_addr,
-            //data_offset,
-            is_data_offset_within_u64,
-            sum,
-            is_remainder_end_within_u64,
-            is_remainder_end_exceed_len,
+            check_overflow_gadget,
             memory_expansion,
             memory_copier_gas,
             copy_rwc_inc,
-            //in_bound_check,
         }
     }
 
@@ -220,16 +174,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         let [dest_offset, data_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
-
-        // self.data_offset.assign(
-        //     region,
-        //     offset,
-        //     Some(
-        //         data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-        //             .try_into()
-        //             .unwrap(),
-        //     ),
-        // )?;
 
         let [last_callee_id, return_data_offset, return_data_size] = [
             (3, CallContextFieldTag::LastCalleeId),
@@ -294,31 +238,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             ),
         )?;
 
-        let data_offset_overflow = data_offset.to_le_bytes()[N_BYTES_U64..]
-            .iter()
-            .fold(0, |acc, val| acc + u64::from(*val));
-        println!("come to returndatacopy assign");
-        self.is_data_offset_within_u64
-             .assign(region, offset, F::from(data_offset_overflow))?;
-        
-        let remainder_end = data_offset.overflowing_add(size).0;
-        self.sum
-                .assign(region, offset, [data_offset, size], remainder_end)?;
-        let remainder_end_overflow = remainder_end.to_le_bytes()[N_BYTES_U64..]
-            .iter()
-            .fold(0, |acc, val| acc + u64::from(*val));
-        self.is_remainder_end_within_u64
-            .assign(region, offset, F::from(remainder_end_overflow))?;
-
-        // check if it exceeds last callee return data length
-        let remainder_end_u64 = remainder_end.low_u64();
-        let return_length: F = return_data_size.to_scalar().unwrap();
-        self.is_remainder_end_exceed_len.assign(
-            region,
-            offset,
-            return_length,
-            F::from(remainder_end_u64),
-        )?;
+        self.check_overflow_gadget
+            .assign(region, offset, data_offset, size, return_data_size)?;
 
         Ok(())
     }
@@ -428,7 +349,7 @@ mod test {
     #[test]
     fn returndatacopy_gadget_overflow_offset_and_zero_length() {
         test_ok_internal(0, 0x20, 0, 0x20, Word::MAX);
+        test_ok_internal(0, 0x10, 0x10, 0x10, 0x20.into());
+        test_ok_internal(0, 0x10, 0x10, 0, 0x2000000.into());
     }
-    //     test_ok_internal(0, 0x10, 0x10, 0x10, 0x20.into());
-    //     test_ok_internal(0, 0x10, 0x10, 0, 0x2000000.into());
 }
