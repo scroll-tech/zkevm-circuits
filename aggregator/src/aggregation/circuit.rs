@@ -314,7 +314,12 @@ impl Circuit<Fr> for AggregationCircuit {
                                 snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k]
                                     .value()
                                     .map(|x| t2 = *x);
-                                assert_eq!(t1, t2);
+                                log::trace!(
+                                    "{}-th snark: {:?} {:?}",
+                                    i,
+                                    chunk_pi_hash_digests[i][j * 8 + k].value(),
+                                    snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].value()
+                                );
 
                                 region.constrain_equal(
                                     chunk_pi_hash_digests[i][j * 8 + k].cell(),

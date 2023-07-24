@@ -25,7 +25,7 @@ fn test_aggregation_circuit() {
     mock_prover.assert_satisfied_par();
 }
 
-/// - Test full proof generation and verification.
+/// - Test aggregation proof generation and verification.
 /// - Test a same pk can be used for various number of chunk proofs.
 #[ignore = "it takes too much time"]
 #[test]
