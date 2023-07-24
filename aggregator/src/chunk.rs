@@ -8,7 +8,7 @@ use ethers_core::utils::keccak256;
 /// A ChunkHash consists of 4 hashes, representing the changes incurred by this chunk of blocks:
 /// - state root before this chunk
 /// - state root after this chunk
-/// - the withdraw root of this chunk
+/// - the withdraw root after this chunk
 /// - the data hash of this chunk
 /// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
 pub struct ChunkHash {
@@ -18,7 +18,7 @@ pub struct ChunkHash {
     pub(crate) prev_state_root: H256,
     /// state root after this chunk
     pub(crate) post_state_root: H256,
-    /// the withdraw root of this chunk
+    /// the withdraw root after this chunk
     pub(crate) withdraw_root: H256,
     /// the data hash of this chunk
     pub(crate) data_hash: H256,

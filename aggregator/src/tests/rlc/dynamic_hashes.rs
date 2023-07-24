@@ -15,7 +15,11 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuitConfig},
 };
 
-use crate::{aggregation::RlcConfig, constants::LOG_DEGREE, util::capacity};
+use crate::{
+    aggregation::RlcConfig,
+    constants::{LOG_DEGREE, ROWS_PER_ROUND},
+    util::keccak_round_capacity,
+};
 
 #[derive(Default, Debug, Clone)]
 struct DynamicHashCircuit {
@@ -90,7 +94,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
         let witness = multi_keccak(
             &[hash_preimage.clone()],
             challenge,
-            capacity(1 << LOG_DEGREE),
+            keccak_round_capacity(1 << LOG_DEGREE),
         )
         .unwrap();
 
@@ -106,7 +110,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
                         config
                             .keccak_circuit_config
                             .set_row(&mut region, offset, keccak_row)?;
-                    if offset % 300 == 0 && data_rlc_cells.len() < 4 {
+                    if offset % ROWS_PER_ROUND == 0 && data_rlc_cells.len() < 4 {
                         // second element is data rlc
                         data_rlc_cells.push(row[1].clone());
                     }

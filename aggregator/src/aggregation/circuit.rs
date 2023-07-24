@@ -75,7 +75,7 @@ impl AggregationCircuit {
 
             assert_eq!(snark_hash_bytes.len(), ACC_LEN + DIGEST_LEN);
 
-            for i in 0..32 {
+            for i in 0..DIGEST_LEN {
                 // for each snark,
                 //  first 12 elements are accumulator
                 //  next 32 elements are public_input_hash

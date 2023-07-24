@@ -12,13 +12,13 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
 
 use crate::{
     aggregation::RlcConfig,
-    constants::{DIGEST_LEN, MAX_AGG_SNARKS, ROUND_LEN},
+    constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS},
     DEFAULT_KECCAK_ROWS, NUM_ROUNDS,
 };
 
 use std::env::var;
 
-pub(crate) fn capacity(num_rows: usize) -> Option<usize> {
+pub(crate) fn keccak_round_capacity(num_rows: usize) -> Option<usize> {
     if num_rows > 0 {
         // Subtract two for unusable rows
         Some(num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
@@ -328,10 +328,10 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
         //  which consists of 12 Keccak rows for each of 24 + 1 Keccak cicuit rounds
         //  digest only happens at the end of the last input chunk with
         //  4 Keccak circuit rounds, so 48 Keccak rows, and 300 - 48 = 256
-        let num_rounds = 1 + preimage.len() / 136;
+        let num_rounds = 1 + preimage.len() / INPUT_LEN_PER_ROUND;
         let mut preimage_padded = preimage.clone();
-        preimage_padded.resize(136 * num_rounds, 0);
-        for (i, round) in preimage_padded.chunks(136).enumerate() {
+        preimage_padded.resize(INPUT_LEN_PER_ROUND * num_rounds, 0);
+        for (i, round) in preimage_padded.chunks(INPUT_LEN_PER_ROUND).enumerate() {
             // indices for preimages
             for (j, _chunk) in round.chunks(8).into_iter().enumerate() {
                 for k in 0..8 {
@@ -351,7 +351,12 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     }
     // last hash is for data_hash and has various length, so we output all the possible cells
     for _i in 0..3 {
-        for (j, _) in (0..136).into_iter().chunks(8).into_iter().enumerate() {
+        for (j, _) in (0..INPUT_LEN_PER_ROUND)
+            .into_iter()
+            .chunks(8)
+            .into_iter()
+            .enumerate()
+        {
             for k in 0..8 {
                 preimage_indices.push(round_ctr * 300 + j * 12 + k + 12)
             }
@@ -485,14 +490,15 @@ pub(crate) fn parse_hash_preimage_cells(
     Vec<&[AssignedCell<Fr, Fr>]>,
     &[AssignedCell<Fr, Fr>],
 ) {
-    let batch_pi_hash_preimage = &hash_input_cells[0..ROUND_LEN * 2];
+    let batch_pi_hash_preimage = &hash_input_cells[0..INPUT_LEN_PER_ROUND * 2];
     let mut chunk_pi_hash_preimages = vec![];
     for i in 0..MAX_AGG_SNARKS {
-        chunk_pi_hash_preimages
-            .push(&hash_input_cells[ROUND_LEN * 2 * (i + 1)..ROUND_LEN * 2 * (i + 2)]);
+        chunk_pi_hash_preimages.push(
+            &hash_input_cells[INPUT_LEN_PER_ROUND * 2 * (i + 1)..INPUT_LEN_PER_ROUND * 2 * (i + 2)],
+        );
     }
     let potential_batch_data_hash_preimage =
-        &hash_input_cells[ROUND_LEN * 2 * (MAX_AGG_SNARKS + 1)..];
+        &hash_input_cells[INPUT_LEN_PER_ROUND * 2 * (MAX_AGG_SNARKS + 1)..];
 
     (
         batch_pi_hash_preimage,

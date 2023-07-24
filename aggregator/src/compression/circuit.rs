@@ -13,7 +13,6 @@ use snark_verifier::{
     loader::{
         halo2::{
             halo2_ecc::halo2_base::{
-                self,
                 halo2_proofs::{
                     halo2curves::bn256::{Bn256, Fr},
                     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
@@ -104,6 +103,8 @@ impl Circuit<Fr> for CompressionCircuit {
             .range()
             .load_lookup_table(&mut layouter)
             .expect("load range lookup table");
+
+        #[cfg(feature = "skip_first_pass")]
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
         let instances = layouter.assign_region(

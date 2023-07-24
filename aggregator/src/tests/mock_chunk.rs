@@ -95,6 +95,7 @@ impl Circuit<Fr> for MockChunkCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        #[cfg(feature = "skip_first_pass")]
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
         let cells = layouter.assign_region(

@@ -34,11 +34,12 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE, MAX_AGG_SNARKS, MAX_KECCAK_ROUNDS, ROUND_LEN,
+        CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
+        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
     },
     util::{
-        assert_conditional_equal, assert_equal, assert_exist, assigned_value_to_cell, capacity,
-        get_indices, is_smaller_than, parse_hash_digest_cells, parse_hash_preimage_cells,
+        assert_conditional_equal, assert_equal, assert_exist, assigned_value_to_cell, get_indices,
+        is_smaller_than, keccak_round_capacity, parse_hash_digest_cells, parse_hash_preimage_cells,
     },
     AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
     PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
@@ -184,7 +185,7 @@ pub(crate) fn extract_hash_cells(
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
-    let witness = multi_keccak(preimages, challenges, capacity(num_rows))
+    let witness = multi_keccak(preimages, challenges, keccak_round_capacity(num_rows))
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
     end_timer!(timer);
 
@@ -240,7 +241,8 @@ pub(crate) fn extract_hash_cells(
                         hash_output_cells.push(row.last().unwrap().clone()); // sage unwrap
                         cur_digest_index = digest_indices_iter.next();
                     }
-                    if offset % 300 == 0 && offset / 300 < MAX_AGG_SNARKS * 2 + 6 {
+                    if offset % ROWS_PER_ROUND == 0 && offset / ROWS_PER_ROUND <= MAX_KECCAK_ROUNDS
+                    {
                         // second column is data rlc
                         data_rlc_cells.push(row[1].clone());
                         // third column is hash len
@@ -250,7 +252,10 @@ pub(crate) fn extract_hash_cells(
                 end_timer!(timer);
 
                 // sanity
-                assert_eq!(hash_input_cells.len(), MAX_KECCAK_ROUNDS * ROUND_LEN);
+                assert_eq!(
+                    hash_input_cells.len(),
+                    MAX_KECCAK_ROUNDS * INPUT_LEN_PER_ROUND
+                );
                 assert_eq!(hash_output_cells.len(), (MAX_AGG_SNARKS + 4) * DIGEST_LEN);
 
                 keccak_config
@@ -338,7 +343,7 @@ fn copy_constraints(
                 // PREV_STATE_ROOT_INDEX, POST_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
                 // used below are byte positions for
                 // prev_state_root, post_state_root, withdraw_root
-                for i in 0..32 {
+                for i in 0..DIGEST_LEN {
                     // 2.1 chunk[0].prev_state_root
                     // sanity check
                     assert_equal(
@@ -373,7 +378,7 @@ fn copy_constraints(
 
                 // 4  chunks are continuous: they are linked via the state roots
                 for i in 0..MAX_AGG_SNARKS - 1 {
-                    for j in 0..32 {
+                    for j in 0..DIGEST_LEN {
                         // sanity check
                         assert_equal(
                             &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j],
@@ -507,7 +512,6 @@ pub(crate) fn conditional_constraints(
                     return Ok(());
                 }
                 let mut offset = 0;
-                let zero_cell = rlc_config.load_private(&mut region, &Fr::zero(), &mut offset)?;
 
                 let chunk_is_valid_cells = chunk_is_valid_cells
                     .iter()

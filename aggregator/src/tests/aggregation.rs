@@ -18,10 +18,16 @@ use super::mock_chunk::MockChunkCircuit;
 fn test_aggregation_circuit() {
     env_logger::init();
 
+    #[cfg(not(feature = "disable_proof_aggregation"))]
+    let k = 25;
+
+    #[cfg(feature = "disable_proof_aggregation")]
+    let k = 19;
+
     // This set up requires one round of keccak for chunk's data hash
     let circuit = build_new_aggregation_circuit(2);
     let instance = circuit.instances();
-    let mock_prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
+    let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
 }
 
