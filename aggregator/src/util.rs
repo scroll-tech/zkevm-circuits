@@ -416,7 +416,14 @@ pub(crate) fn assert_exist<F: Field>(
     b1.value().map(|f| t2 = *f);
     b2.value().map(|f| t3 = *f);
     b3.value().map(|f| t4 = *f);
-    assert!(t1 == t2 || t1 == t3 || t1 == t4)
+    assert!(
+        t1 == t2 || t1 == t3 || t1 == t4,
+        "t1: {:?}\nt2: {:?}\nt3: {:?}\nt4: {:?}\n",
+        t1,
+        t2,
+        t3,
+        t4
+    )
 }
 
 #[inline]

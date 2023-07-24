@@ -158,7 +158,7 @@ impl RlcConfig {
 
         a.copy_advice(|| "a", region, self.phase_2_column, *offset)?;
         b.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
-        c.copy_advice(|| "b", region, self.phase_2_column, *offset + 2)?;
+        c.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
         let d = region.assign_advice(
             || "d",
             self.phase_2_column,

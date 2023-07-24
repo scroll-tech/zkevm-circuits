@@ -99,6 +99,8 @@ impl AggregationConfig {
         meta.enable_equality(columns.last().unwrap().advice);
         // enable equality for the data RLC column
         meta.enable_equality(keccak_circuit_config.keccak_table.input_rlc);
+        // enable equality for the input data len column
+        meta.enable_equality(keccak_circuit_config.keccak_table.input_len);
 
         // Instance column stores public input column
         // - the accumulator

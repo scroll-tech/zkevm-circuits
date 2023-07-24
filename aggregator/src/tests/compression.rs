@@ -20,7 +20,7 @@ use crate::{
     CompressionCircuit,
 };
 
-// #[ignore = "it takes too much time"]
+#[ignore = "it takes too much time"]
 #[test]
 fn test_mock_compression() {
     env_logger::init();

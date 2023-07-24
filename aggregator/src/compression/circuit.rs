@@ -106,7 +106,7 @@ impl Circuit<Fr> for CompressionCircuit {
             .expect("load range lookup table");
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-        let instance = layouter.assign_region(
+        let instances = layouter.assign_region(
             || "compression circuit",
             |region| -> Result<Vec<Cell>, Error> {
                 #[cfg(feature = "skip_first_pass")]
