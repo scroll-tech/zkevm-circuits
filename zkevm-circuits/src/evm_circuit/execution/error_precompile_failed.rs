@@ -49,6 +49,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::STATICCALL.expr());
 
         // constrain op code
+        // NOTE: this precompile gadget is for dummy use at the moment, the real error handling for
+        // precompile will be done in each precompile gadget in the future. won't add step
+        // state transition constraint here as well.
         cb.require_true(
             "opcode is one of [call, callcode, staticcall, delegatecall]",
             sum::expr(vec![
@@ -118,7 +121,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        println!("precompile happens in opcode {}", opcode);
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
 

@@ -78,7 +78,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let length = cb.query_word_rlc();
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
-        let range: MemoryAddressGadget<F> = MemoryAddressGadget::construct(cb, offset, length);
+        let range = MemoryAddressGadget::construct(cb, offset, length);
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
         cb.require_boolean("is_success is boolean", is_success.expr());
