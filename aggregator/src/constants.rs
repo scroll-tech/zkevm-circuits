@@ -57,7 +57,9 @@ pub(crate) const BITS: usize = 88;
 /// If the input size is less than this, dummy snarks
 /// will be padded.
 // TODO: update me(?)
-pub const MAX_AGG_SNARKS: usize = 10;
+// gupeng
+// pub const MAX_AGG_SNARKS: usize = 10;
+pub const MAX_AGG_SNARKS: usize = 2;
 
 /// The number of keccak rounds is the sum of
 /// - batch public input hash: 2 rounds
