@@ -60,7 +60,7 @@ impl ChunkHash {
             prev_state_root: previous_chunk.post_state_root,
             post_state_root: previous_chunk.post_state_root,
             withdraw_root: previous_chunk.withdraw_root,
-            data_hash: [0u8; 32].into(),
+            data_hash: keccak256([]).into(),
             is_padding: true,
         }
     }
