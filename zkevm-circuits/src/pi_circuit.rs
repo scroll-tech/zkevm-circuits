@@ -1411,12 +1411,7 @@ impl<F: Field> PiCircuit<F> {
         max_inner_blocks: usize,
         block: &Block<F>,
     ) -> Self {
-        let chain_id = block
-            .context
-            .ctxs
-            .iter()
-            .next()
-            .map_or(0, |(_k, v)| v.chain_id);
+        let chain_id = block.chain_id;
         let public_data = PublicData {
             chain_id,
             transactions: block.txs.clone(),

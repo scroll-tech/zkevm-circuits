@@ -817,7 +817,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let (caller_balance_pair, callee_balance_pair) =
             if is_call && is_precheck_ok && !value.is_zero() {
                 if !callee_exists {
-                    rw_offset += 1;
+                    rw_offset += 2; // codehash read and write
+                    #[cfg(feature = "scroll")]
+                    {
+                        rw_offset += 2; // keccak codehash read and write
+                    }
                 }
                 let caller_balance_pair =
                     block.rws[step.rw_indices[18 + rw_offset]].account_balance_pair();
@@ -1181,7 +1185,10 @@ mod test {
     };
 
     use itertools::Itertools;
-    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     use rayon::prelude::{ParallelBridge, ParallelIterator};
     use std::default::Default;
@@ -1550,6 +1557,28 @@ mod test {
             },
             callee(callee_bytecode),
         );
+    }
+
+    #[test]
+    fn call_non_exist_with_value() {
+        let callee_code = bytecode! {
+            .op_call(0xc350, 0xff, 0x13, 0x0, 0x0, 0x0, 0x0)
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(callee_code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 500,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]

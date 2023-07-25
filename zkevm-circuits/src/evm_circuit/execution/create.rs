@@ -640,17 +640,27 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         if is_precheck_ok == 1 && !is_address_collision {
             /*
-            14 + rw_offset: read code_hash
-            15/16 + rw_offset: write code_hash inside transfer
-            17/18 + rw_offset: write keccak_code_hash inside transfer
+            rws:
+                ...
+                read code_hash // 14 + rw_offset
+                if creation needed:
+                    code_hash read // 15 + rw_offset
+                    code_hash write // 16 + rw_offset
+                    rw_offset += 2
+                    if feature = "scroll"
+                        keccak_code_hash read // 15 + rw_offset
+                        keecak_code_hash write // 16 + rw_offset
+                        rw_offset += 2
+                caller balance // 15 + rw_offset
+                callee balance // 16 + rw_offset
              */
-            rw_offset += 1;
+            rw_offset += 2;
             #[cfg(feature = "scroll")]
             {
                 rw_offset += 2; // Read Write empty Keccak code hash.
             }
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                let account_balance_pair = [16, 17]
+                let account_balance_pair = [15, 16]
                     .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
                 rw_offset += 2;
                 account_balance_pair
@@ -696,7 +706,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
-                block.rws[step.rw_indices[23 + rw_offset]]
+                block.rws[step.rw_indices[22 + rw_offset]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
