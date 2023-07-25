@@ -32,29 +32,14 @@ impl RlcConfig {
         f: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<(), Error> {
-        self.selector.enable(region, *offset)?;
-
-        region.assign_advice(
-            || "a",
-            self.phase_2_column,
+        let zero = region.assign_fixed(
+            || "enforce 0",
+            self.fixed,
             *offset,
             || Value::known(Fr::zero()),
         )?;
-        region.assign_advice(
-            || "b",
-            self.phase_2_column,
-            *offset + 1,
-            || Value::known(Fr::zero()),
-        )?;
-        f.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
-        region.assign_advice(
-            || "d",
-            self.phase_2_column,
-            *offset + 3,
-            || Value::known(Fr::zero()),
-        )?;
-        *offset += 4;
-        Ok(())
+        *offset += 1;
+        region.constrain_equal(f.cell(), zero.cell())
     }
 
     /// Enforce res = a + b
@@ -69,12 +54,8 @@ impl RlcConfig {
         self.selector.enable(region, *offset)?;
 
         a.copy_advice(|| "a", region, self.phase_2_column, *offset)?;
-        region.assign_advice(
-            || "b",
-            self.phase_2_column,
-            *offset + 1,
-            || Value::known(Fr::one()),
-        )?;
+        let one = region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::one()))?;
+        one.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
         b.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
         let d = region.assign_advice(
             || "d",
@@ -103,12 +84,9 @@ impl RlcConfig {
             *offset,
             || a.value() - b.value(),
         )?;
-        region.assign_advice(
-            || "b",
-            self.phase_2_column,
-            *offset + 1,
-            || Value::known(Fr::one()),
-        )?;
+
+        let one = region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::one()))?;
+        one.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
         b.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
         a.copy_advice(|| "d", region, self.phase_2_column, *offset + 3)?;
         *offset += 4;
@@ -128,12 +106,9 @@ impl RlcConfig {
 
         a.copy_advice(|| "a", region, self.phase_2_column, *offset)?;
         b.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
-        region.assign_advice(
-            || "c",
-            self.phase_2_column,
-            *offset + 2,
-            || Value::known(Fr::zero()),
-        )?;
+        let zero =
+            region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::zero()))?;
+        zero.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
         let d = region.assign_advice(
             || "d",
             self.phase_2_column,
@@ -178,7 +153,7 @@ impl RlcConfig {
         a: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        let one = self.load_private(region, &Fr::one(), offset)?;
+        let one = region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::one()))?;
         self.sub(region, &one, a, offset)
     }
 

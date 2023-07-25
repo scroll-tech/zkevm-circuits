@@ -1,6 +1,6 @@
 use halo2_proofs::{
     halo2curves::bn256::Fr,
-    plonk::{Advice, Column, ConstraintSystem, SecondPhase, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Fixed, SecondPhase, Selector},
     poly::Rotation,
 };
 
@@ -16,6 +16,7 @@ pub struct RlcConfig {
     pub(crate) _phase_1_column: Column<Advice>,
     pub(crate) phase_2_column: Column<Advice>,
     pub(crate) selector: Selector,
+    pub(crate) fixed: Column<Fixed>,
 }
 
 impl RlcConfig {
@@ -33,6 +34,9 @@ impl RlcConfig {
 
         let phase_2_column = meta.advice_column_in(SecondPhase);
         meta.enable_equality(phase_2_column);
+
+        let fixed = meta.fixed_column();
+        meta.enable_equality(fixed);
 
         // phase_2_column | advice
         // ---------------|-------
@@ -56,6 +60,7 @@ impl RlcConfig {
             _phase_1_column,
             phase_2_column,
             selector,
+            fixed,
         }
     }
 }
