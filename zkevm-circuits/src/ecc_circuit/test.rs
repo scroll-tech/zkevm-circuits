@@ -79,10 +79,10 @@ impl GenRand for EcPairingOp {
         let point_d = G2Affine::generator();
         Self {
             inputs: [
-                (point_p_negated, point_q),
-                (point_s, point_t),
-                (point_a_negated, point_b),
-                (point_c, point_d),
+                (point_p_negated, point_q, true),
+                (point_s, point_t, true),
+                (point_a_negated, point_b, true),
+                (point_c, point_d, true),
             ],
             output: 1u64.into(),
         }

@@ -17,7 +17,7 @@ use crate::{
 use bus_mapping::{
     circuit_input_builder::{
         CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEcParams,
+        PrecompileEcParams, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
     },
     precompile::PrecompileCalls,
 };
@@ -2503,7 +2503,7 @@ impl EccTable {
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
-                keccak_rand.map(|r| rlc::value(&pairing_op.to_bytes_le(), r)),
+                keccak_rand.map(|r| rlc::value(pairing_op.to_bytes_be().iter().rev(), r)),
                 Value::known(
                     pairing_op
                         .output
@@ -2610,7 +2610,8 @@ impl PowOfRandTable {
             || "power of randomness table",
             |mut region| {
                 let pows_of_rand =
-                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r)).take(128);
+                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r))
+                        .take(N_PAIRING_PER_OP * N_BYTES_PER_PAIR);
 
                 for (idx, pow_of_rand) in pows_of_rand.enumerate() {
                     region.assign_fixed(
