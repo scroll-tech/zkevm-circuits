@@ -68,7 +68,7 @@ impl BatchHash {
                 chunks_with_padding[i + 1].chain_id,
             );
             if chunks_with_padding[i + 1].is_padding {
-                assert_eq!(chunks_with_padding[i + 1].data_hash, keccak256([]));
+                assert_eq!(chunks_with_padding[i + 1].data_hash, keccak256([]).into());
                 assert_eq!(
                     chunks_with_padding[i + 1].prev_state_root,
                     chunks_with_padding[i + 1].post_state_root
