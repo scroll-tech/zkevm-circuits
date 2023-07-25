@@ -793,6 +793,24 @@ pub(crate) fn chunk_is_valid(
         let is_valid = is_smaller_than(gate, ctx, &value, num_of_valid_chunks);
         res.push(is_valid);
     }
+    // constrain the chunks are ordered with real ones at the beginning. that is,
+    // - if res[i] == 1, res[i+1] is not enforced
+    // - if res[i] == 0, res[i+1] must be 0
+    // In the end we constrain
+    //  (1-res[i])*res[i+1] == 0 => res[i+1] == res[i]*res[i+1]
+    // res[i] are already enforced to be binary via is_smaller_than()
+    for i in 0..MAX_AGG_SNARKS - 1 {
+        let right = gate.mul(
+            ctx,
+            QuantumCell::Existing(res[i]),
+            QuantumCell::Existing(res[i + 1]),
+        );
+        gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(res[i + 1]),
+            QuantumCell::Existing(right),
+        );
+    }
 
     // safe unwrap
     res.try_into().unwrap()
