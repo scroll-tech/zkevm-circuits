@@ -1060,11 +1060,15 @@ impl EcMulOp {
 /// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of inputs.
 pub const N_PAIRING_PER_OP: usize = 4;
 
+/// The number of bytes taken to represent a pair (G1, G2).
+pub const N_BYTES_PER_PAIR: usize = 192;
+
 /// EcPairing operation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingOp {
-    /// tuples of G1 and G2 points.
-    pub inputs: [(G1Affine, G2Affine); N_PAIRING_PER_OP],
+    /// tuples of G1 and G2 points, with a marker whether or not the pair was provided from EVM or
+    /// an appended `(G1::identity, G2::generator)` by zkEVM implementation.
+    pub inputs: [(G1Affine, G2Affine, bool); N_PAIRING_PER_OP],
     /// Result from the pairing check.
     pub output: Word,
 }
@@ -1073,10 +1077,10 @@ impl Default for EcPairingOp {
     fn default() -> Self {
         Self {
             inputs: [
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::generator()),
+                (G1Affine::generator(), G2Affine::generator(), true),
+                (G1Affine::identity(), G2Affine::generator(), true),
+                (G1Affine::identity(), G2Affine::generator(), true),
+                (G1Affine::identity(), G2Affine::generator(), true),
             ],
             output: Word::zero(),
         }
@@ -1084,29 +1088,84 @@ impl Default for EcPairingOp {
 }
 
 impl EcPairingOp {
-    /// Returns the uncompressed little-endian byte representation of inputs to the EcPairingOp.
-    pub fn to_bytes_le(&self) -> Vec<u8> {
+    /// Returns the uncompressed big-endian byte representation of inputs to the EcPairingOp.
+    pub fn to_bytes_be(&self) -> Vec<u8> {
         self.inputs
             .iter()
-            .flat_map(|i| {
+            .flat_map(|(g1, g2, _)| {
                 std::iter::empty()
-                    .chain(i.0.x.to_bytes().iter())
-                    .chain(i.0.y.to_bytes().iter())
-                    .chain(i.1.x.c0.to_bytes().iter())
-                    .chain(i.1.x.c1.to_bytes().iter())
-                    .chain(i.1.y.c0.to_bytes().iter())
-                    .chain(i.1.y.c1.to_bytes().iter())
+                    .chain(g1.x.to_bytes().iter().rev())
+                    .chain(g1.y.to_bytes().iter().rev())
+                    .chain(g2.x.c0.to_bytes().iter().rev())
+                    .chain(g2.x.c1.to_bytes().iter().rev())
+                    .chain(g2.y.c0.to_bytes().iter().rev())
+                    .chain(g2.y.c1.to_bytes().iter().rev())
                     .cloned()
                     .collect::<Vec<u8>>()
             })
             .collect::<Vec<u8>>()
     }
 
+    /// Returns the uncompressed big-endian byte representation of EVM inputs to the ecPairing
+    /// call.
+    pub fn to_evm_bytes_be(&self) -> Vec<u8> {
+        self.inputs
+            .iter()
+            .filter(|(_, _, is_evm)| *is_evm)
+            .flat_map(|(g1, mut g2, _)| {
+                if g1.is_identity().into() && g2.eq(&G2Affine::generator()) {
+                    g2 = G2Affine::identity();
+                }
+                std::iter::empty()
+                    .chain(g1.x.to_bytes().iter().rev())
+                    .chain(g1.y.to_bytes().iter().rev())
+                    .chain(g2.x.c0.to_bytes().iter().rev())
+                    .chain(g2.x.c1.to_bytes().iter().rev())
+                    .chain(g2.y.c0.to_bytes().iter().rev())
+                    .chain(g2.y.c1.to_bytes().iter().rev())
+                    .cloned()
+                    .collect::<Vec<u8>>()
+            })
+            .collect()
+    }
+
+    /// Number of pairs provided from EVM input to the ecPairing call.
+    pub fn n_evm_pairs(&self) -> usize {
+        self.inputs.iter().filter(|(_, _, is_evm)| *is_evm).count()
+    }
+
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
-        self.inputs[0].0.is_identity().into()
-            && self.inputs[1].0.is_identity().into()
-            && self.inputs[2].0.is_identity().into()
-            && self.inputs[3].0.is_identity().into()
+        false
+    }
+
+    /// Get bytes for valid pairs padded to EVM inputs.
+    pub fn padded_pairs<F: eth_types::Field, const N: usize>() -> Vec<u8> {
+        let g1 = G1Affine::identity();
+        let g2 = G2Affine::generator();
+        let pairs = [(g1, g2); N];
+        pairs
+            .iter()
+            .flat_map(|(g1, g2)| {
+                std::iter::empty()
+                    .chain(g1.x.to_bytes().iter().rev())
+                    .chain(g1.y.to_bytes().iter().rev())
+                    .chain(g2.x.c0.to_bytes().iter().rev())
+                    .chain(g2.x.c1.to_bytes().iter().rev())
+                    .chain(g2.y.c0.to_bytes().iter().rev())
+                    .chain(g2.y.c1.to_bytes().iter().rev())
+                    .cloned()
+                    .collect::<Vec<u8>>()
+            })
+            .collect()
+    }
+
+    /// Get expressions for valid pairs padded to EVM inputs.
+    pub fn padded_pairs_exprs<F: eth_types::Field, const N: usize>() -> Vec<Expression<F>> {
+        Self::padded_pairs::<F, N>()
+            .iter()
+            .rev()
+            .map(|&b| Expression::Constant(F::from(b as u64)))
+            .collect()
     }
 }
