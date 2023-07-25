@@ -1185,7 +1185,10 @@ mod test {
     };
 
     use itertools::Itertools;
-    use mock::{test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0}, TestContext};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     use rayon::prelude::{ParallelBridge, ParallelIterator};
     use std::default::Default;
@@ -1568,7 +1571,7 @@ mod test {
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
         )
-            .unwrap();
+        .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
