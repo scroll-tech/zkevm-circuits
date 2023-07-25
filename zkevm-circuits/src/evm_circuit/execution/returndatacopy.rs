@@ -38,8 +38,7 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     /// The data is copied to memory. To verify this
     /// copy operation we need the MemoryAddressGadget.
     dst_memory_addr: MemoryAddressGadget<F>,
-    /// Holds the memory address for the offset in return data from where we
-    /// read.
+    /// check if overflow
     check_overflow_gadget: CommonReturnDataCopyGadget<F>,
     /// Opcode RETURNDATACOPY has a dynamic gas cost:
     /// gas_code = static_gas * minimum_word_size + memory_expansion_cost
@@ -77,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
         cb.stack_pop(check_overflow_gadget.data_offset().expr());
-        cb.stack_pop(size.clone().expr());
+        cb.stack_pop(size.expr());
 
         // 2. Add lookup constraint in the call context for the returndatacopy field.
         let last_callee_id = cb.query_cell();
@@ -103,7 +102,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         // 4. memory copy
         // Construct memory address in the destination (memory) to which we copy memory.
-        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_offset, size.clone());
+        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_offset, size);
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
         // memory.

@@ -1291,10 +1291,13 @@ pub(crate) struct CommonReturnDataCopyGadget<F> {
     is_data_offset_within_u64: IsZeroGadget<F>,
     /// sum of data offset + size
     sum: AddWordsGadget<F, 2, false>,
+    // remainder_end = (data_offset + size) mod U256
     is_remainder_end_within_u64: IsZeroGadget<F>,
+    // when remainder end is within Uint64, check if it exceeds return data size.
     is_remainder_end_exceed_len: LtGadget<F, N_BYTES_U64>,
 }
 
+/// common gadget for successful and error cases of returndatacopy
 impl<F: Field> CommonReturnDataCopyGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
@@ -1310,11 +1313,8 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
         let is_data_offset_within_u64 =
             IsZeroGadget::construct(cb, "data_offset not overflow", data_offset_larger_u64);
 
-        let sum: AddWordsGadget<F, 2, false> = AddWordsGadget::construct(
-            cb,
-            [data_offset.clone(), size_word.clone()],
-            remainder_end.clone(),
-        );
+        let sum: AddWordsGadget<F, 2, false> =
+            AddWordsGadget::construct(cb, [data_offset, size_word], remainder_end.clone());
 
         // Need to check if `data_offset + size` is U256 overflow via `AddWordsGadget` carry. If
         // yes, it should be also an error of return data out of bound.
