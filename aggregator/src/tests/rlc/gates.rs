@@ -6,6 +6,7 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use zkevm_circuits::util::Challenges;
 
 use crate::{aggregation::RlcConfig, util::rlc};
 
@@ -28,7 +29,8 @@ impl Circuit<Fr> for ArithTestCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        RlcConfig::configure(meta)
+        let challenges = Challenges::construct(meta);
+        RlcConfig::configure(meta, challenges)
     }
 
     fn synthesize(

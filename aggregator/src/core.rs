@@ -628,10 +628,8 @@ pub(crate) fn conditional_constraints(
                 //        chunk[i].postStateRoot ||
                 //        chunk[i].withdrawRoot  ||
                 //        chunk[i].datahash)
-                let mut randomness = Fr::default();
-                challenges.keccak_input().map(|x| randomness = x);
                 let challenge_cell =
-                    rlc_config.load_private(&mut region, &randomness, &mut offset)?;
+                    rlc_config.read_challenge(&mut region, challenges, &mut offset)?;
 
                 let flags = chunk_is_valid_cells
                     .iter()

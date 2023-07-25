@@ -43,11 +43,12 @@ impl Circuit<Fr> for DynamicHashCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+        let challenges = Challenges::construct(meta);
+
         // RLC configuration
-        let rlc_config = RlcConfig::configure(meta);
+        let rlc_config = RlcConfig::configure(meta, challenges);
 
         // hash config
-        let challenges = Challenges::construct(meta);
         // hash configuration for aggregation circuit
         let keccak_circuit_config = {
             let keccak_table = KeccakTable::construct(meta);

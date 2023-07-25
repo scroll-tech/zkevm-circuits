@@ -1,8 +1,9 @@
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     halo2curves::bn256::Fr,
-    plonk::Error,
+    plonk::{Challenge, Error},
 };
+use zkevm_circuits::util::Challenges;
 
 use crate::constants::LOG_DEGREE;
 
@@ -23,6 +24,24 @@ impl RlcConfig {
         );
         *offset += 1;
         res
+    }
+
+    pub(crate) fn read_challenge(
+        &self,
+        region: &mut Region<Fr>,
+        challenge_value: Challenges<Value<Fr>>,
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        let challenge_value = challenge_value.keccak_input();
+        let challenge_cell = region.assign_advice(
+            || "assign challenge",
+            self.phase_2_column,
+            *offset,
+            || challenge_value,
+        )?;
+        self.enable_challenge.enable(region, *offset)?;
+        *offset += 1;
+        Ok(challenge_cell)
     }
 
     /// Enforce the element in f is a zero element.

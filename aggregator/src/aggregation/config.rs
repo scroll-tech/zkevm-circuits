@@ -68,13 +68,13 @@ impl AggregationConfig {
         );
 
         // RLC configuration
-        let rlc_config = RlcConfig::configure(meta);
+        let rlc_config = RlcConfig::configure(meta, challenges);
 
         // hash configuration for aggregation circuit
         let keccak_circuit_config = {
             let keccak_table = KeccakTable::construct(meta);
-            let challenges_exprs = challenges.exprs(meta);
 
+            let challenges_exprs = challenges.exprs(meta);
             let keccak_circuit_config_args = KeccakCircuitConfigArgs {
                 keccak_table,
                 challenges: challenges_exprs,
