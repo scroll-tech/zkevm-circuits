@@ -684,6 +684,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         value_prev: prev_keccak_code_hash,
                     },
                 )?;
+                // TODO: set code size to 0?
             }
         }
         if value.is_zero() {

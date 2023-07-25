@@ -817,7 +817,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let (caller_balance_pair, callee_balance_pair) =
             if is_call && is_precheck_ok && !value.is_zero() {
                 if !callee_exists {
-                    rw_offset += 1;
+                    rw_offset += 2; // codehash read and write
+                    #[cfg(feature = "scroll")]
+                    {
+                        rw_offset += 2; // keccak codehash read and write
+                    }
                 }
                 let caller_balance_pair =
                     block.rws[step.rw_indices[18 + rw_offset]].account_balance_pair();
