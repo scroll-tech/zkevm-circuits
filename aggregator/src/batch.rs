@@ -1,5 +1,7 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
+use std::ops::IndexMut;
+
 use eth_types::{Field, H256};
 use ethers_core::utils::keccak256;
 use itertools::Itertools;
@@ -37,13 +39,15 @@ impl BatchHash {
             "input chunk slice does not match MAX_AGG_SNARKS"
         );
 
-        let number_of_valid_chunks = chunks_with_padding
+        let number_of_valid_chunks = match chunks_with_padding
             .iter()
             .enumerate()
-            .find_or_last(|(_index, chunk)| chunk.is_padding)
-            .unwrap()
-            .0
-            + 1;
+            .find(|(_index, chunk)| chunk.is_padding)
+        {
+            Some((index, _)) => index,
+            None => MAX_AGG_SNARKS,
+        };
+
         assert_ne!(
             number_of_valid_chunks, 0,
             "input chunk slice does not contain real chunks"
