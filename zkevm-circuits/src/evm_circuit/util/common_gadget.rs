@@ -1315,6 +1315,9 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
             [data_offset.clone(), size_word.clone()],
             remainder_end.clone(),
         );
+
+        // Need to check if `data_offset + size` is U256 overflow via `AddWordsGadget` carry. If
+        // yes, it should be also an error of return data out of bound.
         let is_end_u256_overflow = sum.carry().as_ref().unwrap();
         let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
         let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, "", remainder_end_larger_u64);

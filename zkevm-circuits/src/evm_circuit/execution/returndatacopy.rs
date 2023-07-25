@@ -14,7 +14,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            or, sum, CachedRegion, Cell, MemoryAddress,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -22,7 +22,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -61,16 +61,19 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let opcode = cb.query_cell();
 
         let dest_offset = cb.query_cell_phase2();
-        //let data_offset_word = cb.query_word_rlc();
         let return_data_size: Cell<F> = cb.query_cell();
 
-        let size: crate::evm_circuit::util::RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> =
-            cb.query_word_rlc();
+        let size: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> = cb.query_word_rlc();
         // enusre no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
         // state
         let check_overflow_gadget =
             CommonReturnDataCopyGadget::construct(cb, return_data_size.expr(), false.expr());
-
+        // in normal case, size = CommonReturnDataCopyGadget::size
+        cb.require_equal(
+            "size = CommonReturnDataCopyGadget::size",
+            size.expr(),
+            check_overflow_gadget.size().expr(),
+        );
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
         cb.stack_pop(check_overflow_gadget.data_offset().expr());

@@ -58,7 +58,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         );
 
         // Check if `data_offset` is Uint64 overflow.
-
         // Need to check if `data_offset + size` is U256 overflow via `AddWordsGadget` carry. If
         // yes, it should be also an error of return data out of bound.
 
