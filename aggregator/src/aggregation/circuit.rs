@@ -7,6 +7,8 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
+#[cfg(feature = "skip_first_pass")]
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
     loader::halo2::{
@@ -146,6 +148,7 @@ impl Circuit<Fr> for AggregationCircuit {
         (config, challenges)
     }
 
+    #[allow(clippy::type_complexity)]
     fn synthesize(
         &self,
         config: Self::Config,
@@ -362,6 +365,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
+        #[cfg(not(feature = "disable_pi_aggregation"))]
         log::trace!("number of valid snarks: {:?}", num_valid_snarks.value());
         #[cfg(not(feature = "disable_pi_aggregation"))]
         layouter.constrain_instance(

@@ -417,6 +417,7 @@ fn copy_constraints(
 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
 // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 pub(crate) fn conditional_constraints(
     rlc_config: &RlcConfig,
     flex_gate: &FlexGateConfig<Fr>,
