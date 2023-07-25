@@ -449,8 +449,6 @@ pub(crate) fn conditional_constraints(
                     return Ok(());
                 }
                 let mut chunk_is_valid_cells = vec![];
-                // let mut data_hash_flag_cells = vec![];
-                // let mut num_of_valid_chunk_cell = vec![];
 
                 let mut ctx = Context::new(
                     region,

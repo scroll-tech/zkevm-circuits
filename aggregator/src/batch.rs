@@ -42,7 +42,8 @@ impl BatchHash {
             .enumerate()
             .find_or_last(|(_index, chunk)| chunk.is_padding)
             .unwrap()
-            .0;
+            .0
+            + 1;
         assert_ne!(
             number_of_valid_chunks, 0,
             "input chunk slice does not contain real chunks"
