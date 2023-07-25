@@ -996,13 +996,60 @@ pub struct EcMulOp {
 impl Default for EcMulOp {
     fn default() -> Self {
         let p = G1Affine::generator();
-        let s = Fr::from_raw([2, 0, 0, 0]);
+        let s = Fr::one();
         let r = p.mul(s).into();
         Self { p, s, r }
     }
 }
 
 impl EcMulOp {
+    /// Creates a new EcMul op given the inputs and output.
+    pub fn new(p: G1Affine, s: Fr, r: G1Affine) -> Self {
+        assert_eq!(p.mul(s), r.into());
+        Self { p, s, r }
+    }
+
+    /// Creates a new EcMul op given input and output bytes from a precompile call.    
+    pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
+        let copy_bytes = |buf: &mut [u8; 32], bytes: &[u8]| {
+            buf.copy_from_slice(bytes);
+            buf.reverse();
+        };
+
+        assert_eq!(input.len(), 96);
+        assert_eq!(output.len(), 64);
+
+        let mut buf = [0u8; 32];
+
+        let p: G1Affine = {
+            copy_bytes(&mut buf, &input[0x00..0x20]);
+            Fq::from_bytes(&buf).and_then(|x| {
+                copy_bytes(&mut buf, &input[0x20..0x40]);
+                Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
+            })
+        }
+        .unwrap();
+
+        let s = Fr::from_raw(Word::from_big_endian(&input[0x40..0x60]).0);
+
+        let r_specified: G1Affine = {
+            copy_bytes(&mut buf, &output[0x00..0x20]);
+            Fq::from_bytes(&buf).and_then(|x| {
+                copy_bytes(&mut buf, &output[0x20..0x40]);
+                Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
+            })
+        }
+        .unwrap();
+
+        assert_eq!(G1Affine::from(p.mul(s)), r_specified);
+
+        Self {
+            p,
+            s,
+            r: r_specified,
+        }
+    }
+
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
         self.p.is_identity().into() || self.s.is_zero().into()

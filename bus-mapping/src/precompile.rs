@@ -4,6 +4,8 @@ use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, Precompiles};
 use strum::EnumIter;
 
+use crate::circuit_input_builder::EcMulOp;
+
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
     Precompiles::berlin()
@@ -199,6 +201,41 @@ impl EcAddAuxData {
     }
 }
 
+/// Auxiliary data for EcMul, i.e. s * P = R
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EcMulAuxData {
+    /// x co-ordinate of the point.
+    pub p_x: Word,
+    /// y co-ordinate of the point.
+    pub p_y: Word,
+    /// scalar.
+    pub s: Word,
+    /// unmodulated scalar
+    pub s_raw: Word,
+    /// x co-ordinate of the result point.
+    pub r_x: Word,
+    /// y co-ordinate of the result point.
+    pub r_y: Word,
+}
+
+impl EcMulAuxData {
+    /// Create a new instance of EcMul auxiliary data.
+    pub fn new(input: &[u8], output: &[u8]) -> Self {
+        assert_eq!(input.len(), 96);
+        assert_eq!(output.len(), 64);
+        let ec_mul_op = EcMulOp::new_from_bytes(input, output);
+
+        Self {
+            p_x: Word::from_big_endian(&input[0x00..0x20]),
+            p_y: Word::from_big_endian(&input[0x20..0x40]),
+            s: Word::from_little_endian(&ec_mul_op.s.to_bytes()),
+            s_raw: Word::from_big_endian(&input[0x40..0x60]),
+            r_x: Word::from_big_endian(&output[0x00..0x20]),
+            r_y: Word::from_big_endian(&output[0x20..0x40]),
+        }
+    }
+}
+
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
@@ -206,6 +243,8 @@ pub enum PrecompileAuxData {
     Ecrecover(EcrecoverAuxData),
     /// EcAdd.
     EcAdd(EcAddAuxData),
+    /// EcMul.
+    EcMul(EcMulAuxData),
 }
 
 impl Default for PrecompileAuxData {
