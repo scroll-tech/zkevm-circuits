@@ -1,6 +1,8 @@
 use crate::{get_client, GenDataOutput};
 use bus_mapping::{
-    circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{
+        BuilderClient, CircuitInputBuilder, CircuitsParams, PrecompileEcParams,
+    },
     mock::BlockData,
 };
 use eth_types::geth_types::GethData;
@@ -61,8 +63,14 @@ const MAX_EVM_ROWS: usize = 10000;
 pub const MAX_INNER_BLOCKS: usize = 64;
 /// MAX_EXP_STEPS
 const MAX_EXP_STEPS: usize = 1000;
-
+/// MAX_KECCAK_ROWS
 const MAX_KECCAK_ROWS: usize = 15000;
+/// Max number of EcAdd ops.
+const MAX_EC_ADD: usize = 10;
+/// Max number of EcMul ops.
+const MAX_EC_MUL: usize = 10;
+/// Max number of EcPairing ops.
+const MAX_EC_PAIRING: usize = 4;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
@@ -76,6 +84,11 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_exp_steps: MAX_EXP_STEPS,
     max_keccak_rows: MAX_KECCAK_ROWS,
     max_rlp_rows: MAX_RLP_ROWS,
+    max_ec_ops: PrecompileEcParams {
+        ec_add: MAX_EC_ADD,
+        ec_mul: MAX_EC_MUL,
+        ec_pairing: MAX_EC_PAIRING,
+    },
 };
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;

@@ -96,6 +96,7 @@ impl OperationContainer {
         match op_enum {
             OpEnum::Memory(op) => {
                 self.memory.push(Operation::new(rwc, rw, op));
+                //TODO: use new Target type i.e. MemoryWord
                 OperationRef::from((Target::Memory, self.memory.len() - 1))
             }
             OpEnum::Stack(op) => {
@@ -169,7 +170,7 @@ impl OperationContainer {
 
     /// Returns a sorted vector of all of the [`MemoryOp`]s contained inside of
     /// the container.
-    pub fn sorted_memory(&self) -> Vec<Operation<MemoryOp>> {
+    pub fn sorted_memory_word(&self) -> Vec<Operation<MemoryOp>> {
         self.memory.iter().sorted().cloned().collect()
     }
 
@@ -208,7 +209,7 @@ mod container_test {
         let memory_operation = Operation::new(
             global_counter.inc_pre(),
             RW::WRITE,
-            MemoryOp::new(1, MemoryAddress::from(1), 1),
+            MemoryOp::new(1, MemoryAddress::from(1), 1.into()),
         );
         let storage_operation = Operation::new(
             global_counter.inc_pre(),
@@ -227,7 +228,10 @@ mod container_test {
         let storage_ref = operation_container.insert(storage_operation.clone());
 
         assert_eq!(operation_container.sorted_stack()[0], stack_operation);
-        assert_eq!(operation_container.sorted_memory()[0], memory_operation);
+        assert_eq!(
+            operation_container.sorted_memory_word()[0],
+            memory_operation
+        );
         assert_eq!(operation_container.sorted_storage()[0], storage_operation);
         assert_eq!(stack_ref, OperationRef::from((Target::Stack, 0)));
         assert_eq!(memory_ref, OperationRef::from((Target::Memory, 0)));

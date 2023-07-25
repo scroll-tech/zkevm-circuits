@@ -19,6 +19,12 @@ pub struct BytecodeElement {
     pub is_code: bool,
 }
 
+impl From<BytecodeElement> for u8 {
+    fn from(element: BytecodeElement) -> Self {
+        element.value
+    }
+}
+
 /// EVM Bytecode
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Bytecode {

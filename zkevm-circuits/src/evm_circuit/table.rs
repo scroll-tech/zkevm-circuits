@@ -144,6 +144,7 @@ pub(crate) enum Table {
     Keccak,
     Exp,
     Sig,
+    Ecc,
     PowOfRand,
 }
 
@@ -301,6 +302,16 @@ pub(crate) enum Lookup<F> {
         sig_s_rlc: Expression<F>,
         recovered_addr: Expression<F>,
     },
+    EccTable {
+        op_type: Expression<F>,
+        arg1_rlc: Expression<F>,
+        arg2_rlc: Expression<F>,
+        arg3_rlc: Expression<F>,
+        arg4_rlc: Expression<F>,
+        input_rlc: Expression<F>,
+        output1_rlc: Expression<F>,
+        output2_rlc: Expression<F>,
+    },
     PowOfRandTable {
         exponent: Expression<F>,
         pow_of_rand: Expression<F>,
@@ -325,6 +336,7 @@ impl<F: Field> Lookup<F> {
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
             Self::SigTable { .. } => Table::Sig,
+            Self::EccTable { .. } => Table::Ecc,
             Self::PowOfRandTable { .. } => Table::PowOfRand,
             Self::Conditional(_, lookup) => lookup.table(),
         }
@@ -461,6 +473,25 @@ impl<F: Field> Lookup<F> {
                 sig_r_rlc.clone(),
                 sig_s_rlc.clone(),
                 recovered_addr.clone(),
+            ],
+            Self::EccTable {
+                op_type,
+                arg1_rlc,
+                arg2_rlc,
+                arg3_rlc,
+                arg4_rlc,
+                input_rlc,
+                output1_rlc,
+                output2_rlc,
+            } => vec![
+                op_type.expr(),
+                arg1_rlc.expr(),
+                arg2_rlc.expr(),
+                arg3_rlc.expr(),
+                arg4_rlc.expr(),
+                input_rlc.expr(),
+                output1_rlc.expr(),
+                output2_rlc.expr(),
             ],
             Self::PowOfRandTable {
                 exponent,
