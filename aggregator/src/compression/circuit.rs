@@ -9,6 +9,8 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
+#[cfg(feature = "skip_first_pass")]
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier::{
     loader::{
         halo2::{
@@ -113,7 +115,7 @@ impl Circuit<Fr> for CompressionCircuit {
                 #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
-                    return Ok(());
+                    return Ok(vec![]);
                 }
                 let mut instances = vec![];
                 let ctx = Context::new(

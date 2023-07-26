@@ -209,7 +209,7 @@ pub(crate) fn extract_hash_cells(
                     is_first_time = false;
                     let offset = witness.len() - 1;
                     keccak_config.set_row(&mut region, offset, &witness[offset])?;
-                    return Ok(());
+                    return Ok((vec![], vec![], vec![], vec![]));
                 }
 
                 let mut preimage_indices_iter = preimage_indices.iter();
@@ -439,14 +439,14 @@ pub(crate) fn conditional_constraints(
                 (
                     Vec<AssignedValue<Fr>>,
                     Vec<AssignedValue<Fr>>,
-                    AssignedValue<Fr>,
+                    Vec<AssignedValue<Fr>>,
                 ),
                 halo2_proofs::plonk::Error,
             > {
                 #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
-                    return Ok(());
+                    return Ok((vec![], vec![], vec![]));
                 }
                 let mut chunk_is_valid_cells = vec![];
 
@@ -493,7 +493,7 @@ pub(crate) fn conditional_constraints(
                 Ok((
                     chunk_is_valid_cells,
                     data_hash_flag_cells,
-                    number_of_valid_snarks,
+                    vec![number_of_valid_snarks],
                 ))
             },
         )
@@ -715,7 +715,7 @@ pub(crate) fn conditional_constraints(
                 let number_of_valid_snarks_cell = assigned_value_to_cell(
                     rlc_config,
                     &mut region,
-                    &number_of_valid_snarks,
+                    &number_of_valid_snarks[0],
                     &mut offset,
                 )?;
                 let data_hash_inputs = rlc_config.mul(
@@ -775,7 +775,7 @@ pub(crate) fn conditional_constraints(
             },
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
-    Ok(number_of_valid_snarks)
+    Ok(number_of_valid_snarks[0])
 }
 
 /// generate a string of binary cells indicating

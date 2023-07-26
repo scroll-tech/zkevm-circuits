@@ -107,7 +107,7 @@ impl Circuit<Fr> for MockChunkCircuit {
                 #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
-                    return Ok(());
+                    return Ok(vec![]);
                 }
                 let mut cells = vec![];
                 let mut index = 0;

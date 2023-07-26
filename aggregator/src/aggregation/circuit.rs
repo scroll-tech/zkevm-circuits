@@ -179,7 +179,7 @@ impl Circuit<Fr> for AggregationCircuit {
                     #[cfg(feature = "skip_first_pass")]
                     if first_pass {
                         first_pass = false;
-                        return Ok(());
+                        return Ok((vec![], vec![]));
                     }
 
                     // stores accumulators for all snarks, including the padded ones
@@ -305,9 +305,18 @@ impl Circuit<Fr> for AggregationCircuit {
             not(feature = "disable_pi_aggregation")
         ))]
         {
+            #[cfg(feature = "skip_first_pass")]
+            let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+
             layouter.assign_region(
                 || "aggregation",
                 |mut region| -> Result<(), Error> {
+                    #[cfg(feature = "skip_first_pass")]
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
+
                     for i in 0..MAX_AGG_SNARKS {
                         for j in 0..4 {
                             for k in 0..8 {
