@@ -510,6 +510,7 @@ pub(crate) fn conditional_constraints(
                     first_pass = false;
                     return Ok(());
                 }
+                rlc_config.init(&mut region)?;
                 let mut offset = 0;
 
                 let chunk_is_valid_cells = chunk_is_valid_cells

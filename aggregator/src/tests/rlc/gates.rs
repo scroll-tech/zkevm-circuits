@@ -41,6 +41,8 @@ impl Circuit<Fr> for ArithTestCircuit {
         layouter.assign_region(
             || "test field circuit",
             |mut region| -> Result<(), Error> {
+                config.init(&mut region)?;
+
                 let mut offset = 0;
 
                 let f1 = config.load_private(&mut region, &self.f1, &mut offset)?;
