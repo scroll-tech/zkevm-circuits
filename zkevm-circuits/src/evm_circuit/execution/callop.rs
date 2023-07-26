@@ -447,7 +447,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // +15 call context lookups for precompile.
                 let rw_counter_delta = 33.expr()
                     + is_call.expr() * 1.expr()
-                    + transfer_rwc_delta
+                    + transfer_rwc_delta.expr()
                     + is_callcode.expr()
                     + is_delegatecall.expr() * 2.expr()
                     + precompile_input_rws.expr()
@@ -464,7 +464,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(precompile_output_rws.expr()),
-                    reversible_write_counter: To(0.expr()),
+                    reversible_write_counter: Delta(transfer_rwc_delta.expr()),
                     ..StepStateTransition::default()
                 });
 
@@ -739,6 +739,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        println!("reversible_write_counter={} reversible_write_counter_delta={}", step.reversible_write_counter, step.reversible_write_counter_delta);
         let opcode = step.opcode.unwrap();
         let is_call = opcode == OpcodeId::CALL;
         let is_callcode = opcode == OpcodeId::CALLCODE;
@@ -1631,6 +1632,30 @@ mod test_precompiles {
         TestContext,
     };
     use paste::paste;
+
+
+    #[test]
+    fn call_precompile_with_value() {
+        let callee_code = bytecode! {
+            .op_call(0xc350, 0x4, 0x13, 0x0, 0x0, 0x0, 0x0)
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(callee_code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+            .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 500,
+                ..Default::default()
+            })
+            .run();
+    }
+
 
     fn test_precompile_inner(arg: PrecompileCallArgs, call_op: &OpcodeId) {
         let code = arg.with_call_op(*call_op);
