@@ -520,12 +520,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         op: &EcPairingOp,
     ) -> EcPairingAssigned<F> {
         let g1s = op
-            .inputs
+            .pairs
             .iter()
-            .map(|i| {
-                let (x_cells, y_cells) = self.decompose_g1(i.0);
+            .map(|pair| {
+                let (x_cells, y_cells) = self.decompose_g1(pair.g1_point);
                 let decomposed = G1Decomposed {
-                    ec_point: pairing_chip.load_private_g1(ctx, Value::known(i.0)),
+                    ec_point: pairing_chip.load_private_g1(ctx, Value::known(pair.g1_point)),
                     x_cells: x_cells.clone(),
                     y_cells: y_cells.clone(),
                 };
@@ -545,12 +545,13 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             })
             .collect_vec();
         let g2s = op
-            .inputs
+            .pairs
             .iter()
-            .map(|i| {
-                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] = self.decompose_g2(i.1);
+            .map(|pair| {
+                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
+                    self.decompose_g2(pair.g2_point);
                 let decomposed = G2Decomposed {
-                    ec_point: pairing_chip.load_private_g2(ctx, Value::known(i.1)),
+                    ec_point: pairing_chip.load_private_g2(ctx, Value::known(pair.g2_point)),
                     x_c0_cells: x_c0_cells.clone(),
                     x_c1_cells: x_c1_cells.clone(),
                     y_c0_cells: y_c0_cells.clone(),

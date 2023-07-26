@@ -37,8 +37,8 @@ use ethers_core::{
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp, EcMulOp,
-    EcPairingOp, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash, PrecompileEvent,
-    PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
+    EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 use hex::decode_to_slice;
 

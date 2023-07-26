@@ -5,7 +5,9 @@ use halo2_proofs::halo2curves::{
 };
 
 use crate::{
-    circuit_input_builder::{EcPairingOp, PrecompileEvent, N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
+    circuit_input_builder::{
+        EcPairingOp, EcPairingPair, PrecompileEvent, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
+    },
     precompile::{EcPairingAuxData, PrecompileAuxData},
 };
 
@@ -26,18 +28,18 @@ pub(crate) fn opt_data(
         debug_assert_eq!(pairing_check, 1);
     }
 
-    let aux_data = if let Some(input) = input_bytes {
+    let (op, aux_data) = if let Some(input) = input_bytes {
         debug_assert!(
             input.len() % N_BYTES_PER_PAIR == 0
                 && input.len() <= N_PAIRING_PER_OP * N_BYTES_PER_PAIR
         );
         // process input bytes.
-        let mut pairs = input
+        let (mut ecc_pairs, mut evm_pairs): (Vec<EcPairingPair>, Vec<EcPairingPair>) = input
             .chunks_exact(N_BYTES_PER_PAIR)
             .map(|chunk| {
                 // process 192 bytes chunk at a time.
                 // process g1.
-                let g1 = {
+                let g1_point = {
                     let g1_x =
                         Fq::from_bytes(&U256::from_big_endian(&chunk[0x00..0x20]).to_le_bytes())
                             .unwrap();
@@ -47,7 +49,7 @@ pub(crate) fn opt_data(
                     G1Affine { x: g1_x, y: g1_y }
                 };
                 // process g2.
-                let g2 = {
+                let g2_point = {
                     let g2_x1 =
                         Fq::from_bytes(&U256::from_big_endian(&chunk[0x40..0x60]).to_le_bytes())
                             .unwrap();
@@ -71,39 +73,47 @@ pub(crate) fn opt_data(
                         },
                     }
                 };
-                if g1.is_identity().into() && g2.is_identity().into() {
-                    (g1, G2Affine::generator(), true)
-                } else {
-                    (g1, g2, true)
-                }
+
+                let evm_circuit_pair = EcPairingPair { g1_point, g2_point };
+                let ecc_circuit_pair =
+                    if g1_point.is_identity().into() || g2_point.is_identity().into() {
+                        EcPairingPair::ecc_padding()
+                    } else {
+                        evm_circuit_pair
+                    };
+                (ecc_circuit_pair, evm_circuit_pair)
             })
-            .collect::<Vec<(G1Affine, G2Affine, bool)>>();
-        // pad with placeholder pairs.
-        pairs.resize(
-            N_PAIRING_PER_OP,
-            (G1Affine::identity(), G2Affine::generator(), false),
-        );
-        EcPairingAuxData(EcPairingOp {
-            inputs: <[_; N_PAIRING_PER_OP]>::try_from(pairs)
-                .expect("pairs.len() <= N_PAIRING_PER_OP"),
-            output: pairing_check.into(),
-        })
+            .unzip();
+        ecc_pairs.resize(N_PAIRING_PER_OP, EcPairingPair::ecc_padding());
+        evm_pairs.resize(N_PAIRING_PER_OP, EcPairingPair::evm_padding());
+        (
+            EcPairingOp {
+                pairs: <[_; N_PAIRING_PER_OP]>::try_from(ecc_pairs).unwrap(),
+                output: pairing_check.into(),
+            },
+            EcPairingAuxData(EcPairingOp {
+                pairs: <[_; N_PAIRING_PER_OP]>::try_from(evm_pairs).unwrap(),
+                output: pairing_check.into(),
+            }),
+        )
     } else {
         // if no input bytes.
-        let ec_pairing_op = EcPairingOp {
-            inputs: [
-                (G1Affine::identity(), G2Affine::generator(), false),
-                (G1Affine::identity(), G2Affine::generator(), false),
-                (G1Affine::identity(), G2Affine::generator(), false),
-                (G1Affine::identity(), G2Affine::generator(), false),
-            ],
-            output: pairing_check.into(),
-        };
-        EcPairingAuxData(ec_pairing_op)
+        let ecc_pairs = [EcPairingPair::ecc_padding(); N_PAIRING_PER_OP];
+        let evm_pairs = [EcPairingPair::evm_padding(); N_PAIRING_PER_OP];
+        (
+            EcPairingOp {
+                pairs: ecc_pairs,
+                output: pairing_check.into(),
+            },
+            EcPairingAuxData(EcPairingOp {
+                pairs: evm_pairs,
+                output: pairing_check.into(),
+            }),
+        )
     };
 
     (
-        Some(PrecompileEvent::EcPairing(Box::new(aux_data.0.clone()))),
+        Some(PrecompileEvent::EcPairing(Box::new(op))),
         Some(PrecompileAuxData::EcPairing(Box::new(aux_data))),
     )
 }
