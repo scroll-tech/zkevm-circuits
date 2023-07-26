@@ -584,14 +584,21 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .collect_vec();
 
         // RLC over the entire input bytes.
-        let input_cells = std::iter::empty()
-            .chain(g1s.iter().map(|g1| g1.decomposed.x_cells.clone()))
-            .chain(g1s.iter().map(|g1| g1.decomposed.y_cells.clone()))
-            .chain(g2s.iter().map(|g2| g2.decomposed.x_c0_cells.clone()))
-            .chain(g2s.iter().map(|g2| g2.decomposed.x_c1_cells.clone()))
-            .chain(g2s.iter().map(|g2| g2.decomposed.y_c0_cells.clone()))
-            .chain(g2s.iter().map(|g2| g2.decomposed.y_c1_cells.clone()))
-            .flatten()
+        let input_cells = g1s
+            .iter()
+            .zip_eq(g2s.iter())
+            .flat_map(|(g1, g2)| {
+                std::iter::empty()
+                    .chain(g1.decomposed.x_cells.iter().rev())
+                    .chain(g1.decomposed.y_cells.iter().rev())
+                    .chain(g2.decomposed.x_c0_cells.iter().rev())
+                    .chain(g2.decomposed.x_c1_cells.iter().rev())
+                    .chain(g2.decomposed.y_c0_cells.iter().rev())
+                    .chain(g2.decomposed.y_c1_cells.iter().rev())
+                    .cloned()
+                    .rev()
+                    .collect::<Vec<QuantumCell<F>>>()
+            })
             .collect::<Vec<QuantumCell<F>>>();
         let input_rlc = pairing_chip.fp_chip.range.gate.inner_product(
             ctx,
