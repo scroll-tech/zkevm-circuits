@@ -18,8 +18,11 @@ pub use state::ZktrieState;
 /// Used to store withdraw proof
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct WithdrawProof {
+    /// state root after a block
     pub state_root: U256,
+    /// account proof for withdraw bridge contract
     pub account_proof: Vec<Vec<u8>>,
+    /// storage proof for withdraw bridge contract, withdraw root storage key
     pub storage_proof: Vec<Vec<u8>>,
 }
 
