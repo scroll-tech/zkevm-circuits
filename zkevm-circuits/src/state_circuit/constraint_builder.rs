@@ -150,10 +150,6 @@ impl<F: Field> ConstraintBuilder<F> {
         // When at least one of the keys (tag, id, address, field_tag, or storage_key)
         // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
-            cb.require_zero(
-                "first access reads don't change value",
-                q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
-            );
             // FIXME
             // precompile should be warm
             // https://github.com/scroll-tech/zkevm-circuits/issues/343
@@ -165,6 +161,10 @@ impl<F: Field> ConstraintBuilder<F> {
                         + q.tag_matches(RwTableTag::TxAccessListAccountStorage),
                 ),
                 |cb| {
+                    cb.require_zero(
+                        "first access reads don't change value",
+                        q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
+                    );
                     cb.require_equal(
                         "value_prev column is initial_value for first access",
                         q.value_prev_column(),
