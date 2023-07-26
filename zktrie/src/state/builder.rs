@@ -209,6 +209,7 @@ where
                 NODE_TYPE_EMPTY => {
                     return Ok(Self {
                         path,
+                        path_type,
                         ..Default::default()
                     });
                 }
