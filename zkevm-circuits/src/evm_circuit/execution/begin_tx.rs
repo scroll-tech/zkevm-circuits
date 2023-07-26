@@ -426,7 +426,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
                 rw_counter: Delta(
-                    31.expr()
+                    22.expr()
                         + tx_l1_fee.rw_delta()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr(),
@@ -480,7 +480,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - a TxL1FeeGadget
                 //   - a TransferWithGasFeeGadget
                 rw_counter: Delta(
-                    16.expr()
+                    7.expr()
                         + tx_l1_fee.rw_delta()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
@@ -531,7 +531,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - a TxL1FeeGadget
                     //   - a TransferWithGasFeeGadget
                     rw_counter: Delta(
-                        17.expr()
+                        8.expr()
                             + tx_l1_fee.rw_delta()
                             + transfer_with_gas_fee.rw_delta()
                             + SHANGHAI_RW_DELTA.expr(),
@@ -672,7 +672,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
-        rws.offset_add(19);
+        rws.offset_add(10);
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
