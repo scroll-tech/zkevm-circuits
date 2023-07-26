@@ -14,7 +14,7 @@ use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, Constr
 pub fn constrain_tag<F: Field>(
     meta: &mut ConstraintSystem<F>,
     q_enable: Column<Fixed>,
-    tag: BinaryNumberConfig<CopyDataType, 4>,
+    tag: &BinaryNumberConfig<CopyDataType, 4>,
     is_precompiled: Column<Advice>,
     is_tx_calldata: Column<Advice>,
     is_bytecode: Column<Advice>,
@@ -85,17 +85,22 @@ pub fn constrain_must_terminate<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
     q_enable: Column<Fixed>,
-    is_last: Expression<F>,
+    tag: &BinaryNumberConfig<CopyDataType, 4>,
 ) {
-    // Prevent an event from spilling into the rows where constraints are disabled.
-    // This also ensures that eventually is_last=1, because eventually q_enable=0.
-    cb.require_zero(
-        "the next row is enabled",
-        and::expr([
-            not::expr(is_last),
-            not::expr(meta.query_fixed(q_enable, NEXT_ROW)),
-        ]),
-    );
+    // If an event has started (tag != Padding on reader and writer rows), require q_enable=1 at the
+    // next step. This prevents querying rows where constraints are disabled.
+    //
+    // The tag is then copied to the next step by constrain_forward_parameters. Eventually,
+    // q_enable=0. By that point the tag must have switched to Padding, which is only possible with
+    // is_last=1. This guarantees that all the final conditions are checked.
+    let is_event = tag.value(CURRENT)(meta) - tag.constant_expr::<F>(CopyDataType::Padding);
+    cb.condition(is_event, |cb| {
+        cb.require_equal(
+            "the next step is enabled",
+            meta.query_fixed(q_enable, NEXT_STEP),
+            1.expr(),
+        );
+    });
 }
 
 /// Copy the parameters of the event through all rows of the event.

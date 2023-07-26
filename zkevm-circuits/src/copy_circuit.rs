@@ -57,6 +57,11 @@ const NEXT_ROW: Rotation = Rotation(1);
 /// The next step, processing the next byte. This connects reader-to-reader or writer-to-writer.
 const NEXT_STEP: Rotation = Rotation(2);
 
+// Rows to enable but not use, that can be queried safely by the last event.
+const UNUSED_ROWS: usize = 2;
+// Rows to disable, so they do not query into Halo2 reserved rows.
+const DISABLED_ROWS: usize = 2;
+
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
 pub struct CopyCircuitConfig<F> {
@@ -208,7 +213,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         constrain_tag(
             meta,
             q_enable,
-            tag,
+            &tag,
             is_precompiled,
             is_tx_calldata,
             is_bytecode,
@@ -238,7 +243,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             constrain_first_last(cb, is_reader.expr(), is_first.expr(), is_last.expr());
 
-            constrain_must_terminate(cb, meta, q_enable, is_last.expr());
+            constrain_must_terminate(cb, meta, q_enable, &tag);
 
             constrain_forward_parameters(cb, meta, is_continue.expr(), id, tag, src_addr_end);
 
@@ -627,15 +632,13 @@ impl<F: Field> CopyCircuitConfig<F> {
     ) -> Result<(), Error> {
         let copy_rows_needed = copy_events
             .iter()
-            .map(|c| c.copy_bytes.bytes.len() * 2)
+            .map(|c| c.full_length() as usize * 2)
             .sum::<usize>();
-
-        // The `+ 2` is used to take into account the two extra empty copy rows needed
-        // to satisfy the queries at `NEXT_STEP`.
         assert!(
-            copy_rows_needed + 2 <= max_copy_rows,
+            copy_rows_needed + DISABLED_ROWS + UNUSED_ROWS <= max_copy_rows,
             "copy rows not enough {copy_rows_needed} vs {max_copy_rows}"
         );
+        let filler_rows = max_copy_rows - copy_rows_needed - DISABLED_ROWS;
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let is_src_end_chip = IsEqualChip::construct(self.is_src_end.clone());
@@ -662,7 +665,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         "offset is {} before {}th copy event(bytes len: {}): {:?}",
                         offset,
                         ev_idx,
-                        copy_event.copy_bytes.bytes.len(),
+                        copy_event.full_length(),
                         {
                             let mut copy_event = copy_event.clone();
                             copy_event.copy_bytes.bytes.clear();
@@ -681,7 +684,19 @@ impl<F: Field> CopyCircuitConfig<F> {
                     log::trace!("offset after {}th copy event: {}", ev_idx, offset);
                 }
 
-                for _ in 0..max_copy_rows - copy_rows_needed - 2 {
+                for _ in 0..filler_rows {
+                    self.assign_padding_row(
+                        &mut region,
+                        &mut offset,
+                        true,
+                        &tag_chip,
+                        &is_src_end_chip,
+                        &lt_word_end_chip,
+                    )?;
+                }
+                assert_eq!(offset % 2, 0, "enabled rows must come in pairs");
+
+                for _ in 0..DISABLED_ROWS {
                     self.assign_padding_row(
                         &mut region,
                         &mut offset,
@@ -691,23 +706,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &lt_word_end_chip,
                     )?;
                 }
-
-                self.assign_padding_row(
-                    &mut region,
-                    &mut offset,
-                    true,
-                    &tag_chip,
-                    &is_src_end_chip,
-                    &lt_word_end_chip,
-                )?;
-                self.assign_padding_row(
-                    &mut region,
-                    &mut offset,
-                    true,
-                    &tag_chip,
-                    &is_src_end_chip,
-                    &lt_word_end_chip,
-                )?;
 
                 Ok(())
             },
@@ -719,7 +717,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: &mut usize,
-        is_last_two: bool,
+        enabled: bool,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
         is_src_end_chip: &IsEqualChip<F>,
         lt_word_end_chip: &IsEqualChip<F>,
@@ -729,13 +727,11 @@ impl<F: Field> CopyCircuitConfig<F> {
             || "q_enable",
             self.q_enable,
             *offset,
-            || Value::known(F::from(!is_last_two)),
+            || Value::known(F::from(enabled)),
         )?;
-        if !is_last_two {
-            // q_step
-            if *offset % 2 == 0 {
-                self.q_step.enable(region, *offset)?;
-            }
+        // q_step
+        if enabled && *offset % 2 == 0 {
+            self.q_step.enable(region, *offset)?;
         }
 
         // is_first
@@ -1012,9 +1008,10 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
             block
                 .copy_events
                 .iter()
-                .map(|c| c.copy_bytes.bytes.len() * 2)
+                .map(|c| c.full_length() as usize * 2)
                 .sum::<usize>()
-                + 2,
+                + UNUSED_ROWS
+                + DISABLED_ROWS,
             block.circuits_params.max_copy_rows,
         )
     }
