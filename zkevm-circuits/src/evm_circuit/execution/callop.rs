@@ -1582,6 +1582,47 @@ mod test {
             .run();
     }
 
+    // minimal testool case: returndatasize_bug_d0_g0_v0
+    #[test]
+    fn test_oog_call_with_inner_sstore() {
+        let (addr_a, addr_b, addr_c) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1], mock::MOCK_ACCOUNTS[2]);
+        let code_a = bytecode! {
+            .op_call(1, addr_b, 50000, 0, 0, 0, 0)
+        };
+
+        let code_b = bytecode! {
+            .op_call(10, 1, 50000, 0, 0, 0, 0)
+            .op_sstore(0, 0)
+        };
+
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(addr_a)
+                    .balance(word!("0x0de0b6b3a7640000"))
+                    .code(code_a);
+                accs[1]
+                    .address(addr_b)
+                    .code(code_b);
+                accs[2]
+                    .address(addr_c)
+                    .balance(word!("0x6400000000"));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[2].address)
+                    .to(accs[0].address)
+                    .gas(word!("0x0a00000000"));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        ).unwrap();
+
+        println!("{:?}", ctx.geth_traces[0].struct_logs);
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run()
+    }
+
     #[test]
     fn callop_error_depth() {
         let callee_code = bytecode! {
