@@ -35,7 +35,7 @@ use zkevm_circuits::{
 use crate::{
     constants::{
         CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
-        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
+        MAX_KECCAK_ROUNDS, RLC_CHIP_NUM_ROWS, ROWS_PER_ROUND,
     },
     util::{
         assert_conditional_equal, assert_equal, assert_exist, assigned_value_to_cell, get_indices,
@@ -304,6 +304,8 @@ fn copy_constraints(
             |mut region| -> Result<(), halo2_proofs::plonk::Error> {
                 #[cfg(feature = "skip_first_pass")]
                 if is_first_time {
+                    // this region only use copy constraints and do not affect the shape of the
+                    // layouter
                     is_first_time = false;
                     return Ok(());
                 }
@@ -445,6 +447,7 @@ pub(crate) fn conditional_constraints(
             > {
                 #[cfg(feature = "skip_first_pass")]
                 if first_pass {
+                    // halo2-lib: directly skip; on action required.
                     first_pass = false;
                     return Ok((vec![], vec![], vec![]));
                 }
@@ -508,6 +511,8 @@ pub(crate) fn conditional_constraints(
                 #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
+                    let mut offset = RLC_CHIP_NUM_ROWS;
+                    rlc_config.load_private(&mut region, &Fr::zero(), &mut offset)?;
                     return Ok(());
                 }
                 rlc_config.init(&mut region)?;
@@ -771,6 +776,7 @@ pub(crate) fn conditional_constraints(
                 // sanity check
                 assert_equal(&data_hash_inputs, &data_hash_inputs_rec);
                 region.constrain_equal(data_hash_inputs.cell(), data_hash_inputs_rec.cell())?;
+                log::trace!("rlc chip uses {} rows", offset);
                 Ok(())
             },
         )

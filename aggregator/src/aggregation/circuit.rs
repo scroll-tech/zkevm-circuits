@@ -178,6 +178,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 |region| -> Result<(Vec<AssignedValue<Fr>>, Vec<AssignedValue<Fr>>), Error> {
                     #[cfg(feature = "skip_first_pass")]
                     if first_pass {
+                        // halo2-lib: directly skip; on action required.
                         first_pass = false;
                         return Ok((vec![], vec![]));
                     }
@@ -308,11 +309,14 @@ impl Circuit<Fr> for AggregationCircuit {
             #[cfg(feature = "skip_first_pass")]
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
+            // todo: remove layouter assign region
             layouter.assign_region(
                 || "aggregation",
                 |mut region| -> Result<(), Error> {
                     #[cfg(feature = "skip_first_pass")]
                     if first_pass {
+                        // this region only use copy constraints and do not affect the shape of the
+                        // layouter
                         first_pass = false;
                         return Ok(());
                     }
