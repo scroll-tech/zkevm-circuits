@@ -687,11 +687,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let callee_exists = is_precompile || !account_code_hash.is_zero();
         let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
         if (!callee_exists && !tx.value.is_zero()) || tx.is_create {
-            rws.next();
+            rws.next(); // codehash read
             account_code_hash = rws.next().account_codehash_pair().1;
             #[cfg(feature = "scroll")]
             {
-                rws.next();
+                rws.next(); // keccak codehash read
                 let account_keccak_code_hash = rws.next().account_keccak_codehash_pair().1;
                 self.account_keccak_code_hash.assign(
                     region,

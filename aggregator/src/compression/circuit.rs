@@ -37,7 +37,7 @@ use super::config::CompressionConfig;
 ///
 /// It re-exposes same public inputs from the input snark.
 /// All this circuit does is to reduce the proof size.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CompressionCircuit {
     pub(crate) svk: KzgSuccinctVerifyingKey<G1Affine>,
     pub(crate) snark: SnarkWitness,

@@ -76,6 +76,9 @@ impl Opcode for ReturnRevert {
                 state.call_context_read(&mut exec_step, call.call_id, field, value);
             }
 
+            // the 'nonce' field has already been set to 1 inside 'create' or 'begin_tx',
+            // so here account should not be empty.
+            // TODO: optimize this later.
             let account = state.sdb.get_account(&call.address).1.clone();
             let prev_code_hash = if account.is_empty() {
                 Word::zero()
