@@ -102,6 +102,8 @@ impl Circuit<Fr> for DynamicHashCircuit {
         layouter.assign_region(
             || "mock circuit",
             |mut region| -> Result<(), Error> {
+                config.rlc_config.init(&mut region)?;
+
                 // ==============================
                 // keccak part
                 // ==============================

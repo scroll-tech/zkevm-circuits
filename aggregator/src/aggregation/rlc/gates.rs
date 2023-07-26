@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::{AssignedCell, Region, Value},
+    circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
     halo2curves::bn256::Fr,
     plonk::{Challenge, Error},
 };
@@ -10,6 +10,31 @@ use crate::constants::LOG_DEGREE;
 use super::RlcConfig;
 
 impl RlcConfig {
+    /// initialize the chip with fixed 0 and 1 cells
+    pub(crate) fn init(&self, region: &mut Region<Fr>) -> Result<(), Error> {
+        region.assign_fixed(|| "const zero", self.fixed, 0, || Value::known(Fr::zero()))?;
+        region.assign_fixed(|| "const one", self.fixed, 1, || Value::known(Fr::one()))?;
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn zero_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 0,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn one_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 1,
+            column: self.fixed.into(),
+        }
+    }
+
     pub(crate) fn load_private(
         &self,
         region: &mut Region<Fr>,
@@ -51,14 +76,8 @@ impl RlcConfig {
         f: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<(), Error> {
-        let zero = region.assign_fixed(
-            || "enforce 0",
-            self.fixed,
-            *offset,
-            || Value::known(Fr::zero()),
-        )?;
-        *offset += 1;
-        region.constrain_equal(f.cell(), zero.cell())
+        let zero_cell = self.zero_cell(f.cell().region_index);
+        region.constrain_equal(f.cell(), zero_cell)
     }
 
     /// Enforce res = a + b
@@ -71,10 +90,16 @@ impl RlcConfig {
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         self.selector.enable(region, *offset)?;
+        let one_cell = self.one_cell(a.cell().region_index);
 
         a.copy_advice(|| "a", region, self.phase_2_column, *offset)?;
-        let one = region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::one()))?;
-        one.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
+        let one = region.assign_advice(
+            || "c",
+            self.phase_2_column,
+            *offset + 1,
+            || Value::known(Fr::one()),
+        )?;
+        region.constrain_equal(one.cell(), one_cell)?;
         b.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
         let d = region.assign_advice(
             || "d",
@@ -96,6 +121,7 @@ impl RlcConfig {
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         self.selector.enable(region, *offset)?;
+        let one_cell = self.one_cell(a.cell().region_index);
 
         let res = region.assign_advice(
             || "a",
@@ -103,9 +129,13 @@ impl RlcConfig {
             *offset,
             || a.value() - b.value(),
         )?;
-
-        let one = region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::one()))?;
-        one.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
+        let one = region.assign_advice(
+            || "b",
+            self.phase_2_column,
+            *offset + 1,
+            || Value::known(Fr::one()),
+        )?;
+        region.constrain_equal(one.cell(), one_cell)?;
         b.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
         a.copy_advice(|| "d", region, self.phase_2_column, *offset + 3)?;
         *offset += 4;
@@ -122,12 +152,17 @@ impl RlcConfig {
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         self.selector.enable(region, *offset)?;
+        let zero_cell = self.zero_cell(a.cell().region_index);
 
         a.copy_advice(|| "a", region, self.phase_2_column, *offset)?;
         b.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
-        let zero =
-            region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::zero()))?;
-        zero.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
+        let zero = region.assign_advice(
+            || "b",
+            self.phase_2_column,
+            *offset + 2,
+            || Value::known(Fr::zero()),
+        )?;
+        region.constrain_equal(zero.cell(), zero_cell)?;
         let d = region.assign_advice(
             || "d",
             self.phase_2_column,
@@ -172,7 +207,9 @@ impl RlcConfig {
         a: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        let one = region.assign_fixed(|| "one", self.fixed, *offset, || Value::known(Fr::one()))?;
+        let one_cell = self.one_cell(a.cell().region_index);
+        let one = self.load_private(region, &Fr::one(), offset)?;
+        region.constrain_equal(one_cell, one.cell())?;
         self.sub(region, &one, a, offset)
     }
 
