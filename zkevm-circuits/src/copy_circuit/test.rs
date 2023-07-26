@@ -62,7 +62,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
 }
 
 fn gen_calldatacopy_data() -> CircuitInputBuilder {
-    let length = 0x0fffusize;
+    let length = 512 / 2 - 32;
     let code = bytecode! {
         PUSH32(Word::from(length))
         PUSH32(Word::from(0x00))
@@ -87,9 +87,9 @@ fn gen_calldatacopy_data() -> CircuitInputBuilder {
     let mut builder = BlockData::new_from_geth_data_with_params(
         block.clone(),
         CircuitsParams {
-            max_rws: 8192,
-            max_copy_rows: 8192 + 2,
-            max_calldata: 5000,
+            max_rws: 512,
+            max_copy_rows: 512,
+            max_calldata: 512,
             ..Default::default()
         },
     )
@@ -173,9 +173,9 @@ fn gen_returndatacopy_data() -> CircuitInputBuilder {
     let mut builder = BlockData::new_from_geth_data_with_params(
         block.clone(),
         CircuitsParams {
-            max_rws: 8192,
-            max_copy_rows: 8192 + 2,
-            max_calldata: 5000,
+            max_rws: 512,
+            max_copy_rows: 512,
+            max_calldata: 512,
             ..Default::default()
         },
     )
@@ -224,14 +224,14 @@ fn gen_extcodecopy_data() -> CircuitInputBuilder {
 }
 
 fn gen_sha3_data() -> CircuitInputBuilder {
-    let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
+    let (code, _) = gen_sha3_code(0x20, 512 - 32, MemoryKind::EqualToSize);
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     let mut builder = BlockData::new_from_geth_data_with_params(
         block.clone(),
         CircuitsParams {
-            max_rws: 2000,
-            max_copy_rows: 0x250 * 2 + 2,
+            max_rws: 1024,
+            max_copy_rows: 1024,
             ..Default::default()
         },
     )
@@ -308,7 +308,7 @@ fn gen_return_data() -> CircuitInputBuilder {
 fn copy_circuit_valid_calldatacopy() {
     let builder = gen_calldatacopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-    assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
+    assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
 }
 
 #[test]
@@ -322,7 +322,7 @@ fn copy_circuit_valid_codecopy() {
 fn copy_circuit_valid_returndatacopy() {
     let builder = gen_returndatacopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-    assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
+    assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
 }
 
 #[test]
@@ -373,7 +373,7 @@ fn copy_circuit_invalid_calldatacopy() {
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
     assert_error_matches(
-        test_copy_circuit_from_block(14, block),
+        test_copy_circuit_from_block(10, block),
         vec!["Memory word lookup", "Tx calldata lookup"],
     );
 }
