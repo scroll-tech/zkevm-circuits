@@ -10,6 +10,18 @@ macro_rules! impl_from_usize_wrappers {
     };
 }
 
+macro_rules! impl_partial_eq_wrappers {
+    ($implemented:ty, ($($implementor:ty),*)) => {
+        $(
+        impl PartialEq<$implementor> for $implemented {
+            fn eq(&self, other: &$implementor) -> bool {
+                self.0 as $implementor == *other
+            }
+        }
+        )*
+    };
+}
+
 // ----------------------------------- //
 //            Ops traits               //
 // ----------------------------------- //

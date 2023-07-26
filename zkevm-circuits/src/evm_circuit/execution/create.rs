@@ -7,7 +7,7 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            common_gadget::TransferGadget,
+            common_gadget::{get_copy_bytes, TransferGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -34,6 +34,7 @@ use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+use log::trace;
 use std::iter::once;
 
 /// Gadget for CREATE and CREATE2 opcodes
@@ -68,6 +69,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     code_hash_previous: Cell<F>,
     // if code_hash_previous is zero, then no collision
     not_address_collision: IsZeroGadget<F>,
+    copy_rwc_inc: Cell<F>,
 }
 
 impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<F>
@@ -82,6 +84,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let callee_call_id = cb.curr.state.rw_counter.clone();
         let code_hash_previous = cb.query_cell();
         let opcode = cb.query_cell();
+        let copy_rwc_inc = cb.query_cell();
+
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         cb.require_equal(
@@ -156,7 +160,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 0.expr(),
                 init_code.length(),
                 init_code_rlc.expr(),
-                init_code.length(),
+                //init_code.length(),
+                copy_rwc_inc.expr(),
             );
             (init_code_rlc, keccak_code_hash)
         });
@@ -501,6 +506,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             keccak_output,
             code_hash_previous,
             not_address_collision,
+            copy_rwc_inc,
         }
     }
 
@@ -530,15 +536,28 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             U256::zero()
         };
         rw_offset += usize::from(is_create2);
-        let values: Vec<_> = (4..4 + init_code_length.as_usize())
-            .map(|i| block.rws[step.rw_indices[i + rw_offset]].memory_value())
-            .collect();
-        let copy_rw_increase = init_code_length.as_usize();
+
+        let shift = init_code_start.low_u64() % 32;
+        let copy_rwc_inc: u64 = step.copy_rw_counter_delta;
+
+        let values: Vec<u8> = get_copy_bytes(
+            block,
+            step,
+            4 + rw_offset,
+            4 + rw_offset + copy_rwc_inc as usize,
+            shift,
+            init_code_length.as_u64(),
+        );
         let keccak_code_hash = keccak256(&values);
 
         let init_code_address =
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
+        trace!(
+            "initcode keccak {:?} keccak_rlc {:?}",
+            keccak_code_hash,
+            region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>())
+        );
         self.init_code_rlc.assign(
             region,
             offset,
@@ -565,7 +584,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        rw_offset += copy_rw_increase;
+        rw_offset += copy_rwc_inc as usize;
         let tx_access_rw = block.rws[step.rw_indices[7 + rw_offset]];
         self.was_warm.assign(
             region,
@@ -621,17 +640,27 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         if is_precheck_ok == 1 && !is_address_collision {
             /*
-            14 + rw_offset: read code_hash
-            15/16 + rw_offset: write code_hash inside transfer
-            17/18 + rw_offset: write keccak_code_hash inside transfer
+            rws:
+                ...
+                read code_hash // 14 + rw_offset
+                if creation needed:
+                    code_hash read // 15 + rw_offset
+                    code_hash write // 16 + rw_offset
+                    rw_offset += 2
+                    if feature = "scroll"
+                        keccak_code_hash read // 15 + rw_offset
+                        keecak_code_hash write // 16 + rw_offset
+                        rw_offset += 2
+                caller balance // 15 + rw_offset
+                callee balance // 16 + rw_offset
              */
-            rw_offset += 1;
+            rw_offset += 2;
             #[cfg(feature = "scroll")]
             {
                 rw_offset += 2; // Read Write empty Keccak code hash.
             }
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                let account_balance_pair = [16, 17]
+                let account_balance_pair = [15, 16]
                     .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
                 rw_offset += 2;
                 account_balance_pair
@@ -677,7 +706,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
-                block.rws[step.rw_indices[23 + rw_offset]]
+                block.rws[step.rw_indices[22 + rw_offset]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
@@ -729,6 +758,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
         )?;
 
+        self.copy_rwc_inc.assign(
+            region,
+            offset,
+            Value::known(
+                (copy_rwc_inc)
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
+
         Ok(())
     }
 }
@@ -752,7 +791,8 @@ mod test {
     fn run_test_circuits(ctx: TestContext<2, 1>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
-                max_rws: 300000, // TODO: try smaller value?
+                max_rws: 70_000,
+                max_copy_rows: 140_000,
                 ..Default::default()
             })
             .run();
@@ -794,8 +834,8 @@ mod test {
             code.append(&bytecode! {PUSH1(45)}); // salt;
         }
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH1(initialization_bytes.len()) // length
+            PUSH1(32 - initialization_bytes.len()) // offset
             PUSH2(value) // value
         });
         code.write_op(if is_create2 {
@@ -876,6 +916,7 @@ mod test {
         {
             let init_code = initialization_bytecode(*is_success);
             let root_code = creater_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
+
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),

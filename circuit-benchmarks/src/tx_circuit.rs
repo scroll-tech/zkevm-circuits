@@ -57,6 +57,7 @@ mod tests {
             max_exp_steps: 100_000,
             max_evm_rows: 4_000_000,
             max_rlp_rows: 4_000_000,
+            ..Default::default()
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let (builder, _) = cli.gen_inputs(block_num).await.unwrap();

@@ -1,27 +1,28 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget,
-            constraint_builder::EVMConstraintBuilder,
-            math_gadget::IsEqualGadget,
-            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            CachedRegion, Cell,
+            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, from_bytes,
+            math_gadget::IsEqualGadget, memory_gadget::MemoryWordAddress, CachedRegion, Cell,
+            RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for code store oog and max code size exceed
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidCreationCodeGadget<F> {
     opcode: Cell<F>,
-    memory_address: MemoryAddressGadget<F>,
+    memory_address: MemoryWordAddress<F>,
+    length: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>,
+    value_left: Word<F>,
     first_byte: Cell<F>,
     is_first_byte_invalid: IsEqualGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
@@ -34,19 +35,29 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+
         let first_byte = cb.query_cell();
 
-        let offset = cb.query_cell_phase2();
+        //let address = cb.query_word_rlc();
+
+        let offset = cb.query_word_rlc();
         let length = cb.query_word_rlc();
+        let value_left = cb.query_word_rlc();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
-        let memory_address = MemoryAddressGadget::construct(cb, offset, length);
-        // lookup memory for first byte
-        cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
-
+        let address_word = MemoryWordAddress::construct(cb, offset.clone());
+        // lookup memory for first word
+        cb.memory_lookup(
+            0.expr(),
+            address_word.addr_left(),
+            value_left.expr(),
+            value_left.expr(),
+            None,
+        );
+        // let first_byte = value_left.cells[address_word.shift()];
         // constrain first byte is 0xef
         let is_first_byte_invalid = IsEqualGadget::construct(cb, first_byte.expr(), 0xef.expr());
 
@@ -59,15 +70,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             cb,
             opcode.expr(),
             5.expr(),
-            memory_address.offset(),
-            memory_address.length(),
+            from_bytes::expr(&offset.cells[..N_BYTES_MEMORY_ADDRESS]),
+            from_bytes::expr(&length.cells[..N_BYTES_MEMORY_ADDRESS]),
         );
 
         Self {
             opcode,
-            first_byte,
             is_first_byte_invalid,
-            memory_address,
+            first_byte,
+            memory_address: address_word,
+            length,
+            value_left,
             common_error_gadget,
         }
     }
@@ -87,16 +100,31 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         self.memory_address
-            .assign(region, offset, memory_offset, length)?;
+            .assign(region, offset, memory_offset.as_u64())?;
 
-        let byte = block.rws[step.rw_indices[2]].memory_value();
+        self.length.assign(
+            region,
+            offset,
+            Some(
+                length.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
+                    .try_into()
+                    .unwrap(),
+            ),
+        )?;
+
+        let word_left = block.rws[step.rw_indices[2]].memory_word_pair().0;
+        self.value_left
+            .assign(region, offset, Some(word_left.to_le_bytes()))?;
+
+        let bytes = word_left.to_le_bytes();
+        let first_byte: u8 = bytes[0];
 
         self.first_byte
-            .assign(region, offset, Value::known(F::from(byte as u64)))?;
+            .assign(region, offset, Value::known(F::from(first_byte as u64)))?;
         self.is_first_byte_invalid.assign(
             region,
             offset,
-            F::from(byte as u64),
+            F::from(first_byte as u64),
             F::from(0xef_u64),
         )?;
 

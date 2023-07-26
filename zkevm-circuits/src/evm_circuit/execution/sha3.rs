@@ -7,7 +7,7 @@ use crate::evm_circuit::{
     param::N_BYTES_MEMORY_WORD_SIZE,
     step::ExecutionState,
     util::{
-        common_gadget::SameContextGadget,
+        common_gadget::{get_copy_bytes, SameContextGadget},
         constraint_builder::{
             ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
         },
@@ -125,18 +125,27 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
+        let shift = memory_offset.low_u64() % 32;
+        let copy_rwc_inc = step.copy_rw_counter_delta;
+
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                size.to_scalar()
+                copy_rwc_inc
+                    .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
 
-        let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
-            .collect();
+        let values: Vec<u8> = get_copy_bytes(
+            block,
+            step,
+            3,
+            3 + (copy_rwc_inc as usize),
+            shift,
+            size.as_u64(),
+        );
 
         let rlc_acc = region
             .challenges()

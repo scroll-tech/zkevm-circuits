@@ -1,10 +1,14 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, ExecStep,
+        NumberOrHash,
     },
     Error,
 };
-use eth_types::{GethExecStep, Word, U256};
+use eth_types::{
+    evm_types::memory::{MemoryRange, MemoryWordRange},
+    GethExecStep, Word, U256,
+};
 use ethers_core::utils::keccak256;
 
 use super::Opcode;
@@ -37,13 +41,16 @@ impl Opcode for Sha3 {
                 .extend_at_least(offset.as_usize() + size.as_usize());
         }
 
-        let memory = state
+        let sha3_input = state
             .call_ctx()?
             .memory
-            .read_chunk(offset.low_u64().into(), size.as_usize().into());
+            .read_chunk(MemoryRange::new_with_length(
+                offset.low_u64(),
+                size.low_u64(),
+            ));
 
         // keccak-256 hash of the given data in memory.
-        let sha3 = keccak256(&memory);
+        let sha3 = keccak256(&sha3_input);
         debug_assert_eq!(Word::from_big_endian(&sha3), expected_sha3);
         state.stack_write(
             &mut exec_step,
@@ -53,14 +60,25 @@ impl Opcode for Sha3 {
 
         // Memory read operations
         let rw_counter_start = state.block_ctx.rwc;
-        let mut steps = Vec::with_capacity(size.as_usize());
-        for (i, byte) in memory.iter().enumerate() {
-            // Read step
-            state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
-            steps.push((*byte, false));
-        }
-        state.block.sha3_inputs.push(memory);
 
+        let copy_steps = if size.as_usize() != 0 {
+            let dst_range = MemoryWordRange::align_range(offset.low_u64(), size.low_u64());
+            let mem = state.call_ctx()?.memory.read_chunk(dst_range);
+            // Read step
+            let mut chunk_index = dst_range.start_slot().0;
+            for _ in 0..dst_range.word_count() {
+                state.memory_read_word(&mut exec_step, chunk_index.into())?;
+                chunk_index += 32;
+            }
+
+            CopyEventStepsBuilder::memory_range(dst_range)
+                .source(mem.as_slice())
+                .build()
+        } else {
+            vec![]
+        };
+
+        state.block.sha3_inputs.push(sha3_input);
         let call_id = state.call()?.call_id;
         state.push_copy(
             &mut exec_step,
@@ -77,7 +95,7 @@ impl Opcode for Sha3 {
                 dst_id: NumberOrHash::Number(call_id),
                 log_id: None,
                 rw_counter_start,
-                bytes: steps,
+                copy_bytes: CopyBytes::new(copy_steps, None, None),
             },
         );
 
@@ -87,7 +105,12 @@ impl Opcode for Sha3 {
 
 #[cfg(any(feature = "test", test))]
 pub mod sha3_tests {
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Bytecode, Word};
+    use eth_types::{
+        bytecode,
+        evm_types::{memory::MemoryWordRange, Memory, OpcodeId},
+        geth_types::GethData,
+        Bytecode, Word,
+    };
     use ethers_core::utils::keccak256;
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
@@ -172,11 +195,11 @@ pub mod sha3_tests {
 
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
         let (code, memory) = gen_sha3_code(offset, size, mem_kind);
-        let memory_len = memory.len();
 
         // The memory that is hashed.
         let mut memory_view = memory
-            .into_iter()
+            .iter()
+            .copied()
             .skip(offset)
             .take(size)
             .collect::<Vec<u8>>();
@@ -233,23 +256,29 @@ pub mod sha3_tests {
             ]
         );
 
-        // Memory reads.
         // Initial memory_len bytes are the memory writes from MSTORE instruction, so we
         // skip them.
+        let memory = Memory(memory);
+        let dst_range = MemoryWordRange::align_range(offset, size);
         assert_eq!(
-            (memory_len..(memory_len + size))
-                .map(|idx| &builder.block.container.memory[idx])
+            builder
+                .block
+                .container
+                .memory
+                .iter()
+                .rev()
+                .take(dst_range.word_count())
+                .rev()
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
             {
                 let mut memory_ops = Vec::with_capacity(size);
-                (0..size).for_each(|idx| {
-                    let value = memory_view[idx];
-                    memory_ops.push((
-                        RW::READ,
-                        MemoryOp::new(call_id, (offset + idx).into(), value),
-                    ));
-                });
+                let mut chunk_index = dst_range.start_slot().0;
+                for _ in 0..dst_range.word_count() {
+                    let word = memory.read_word(chunk_index.into());
+                    memory_ops.push((RW::READ, MemoryOp::new(call_id, chunk_index.into(), word)));
+                    chunk_index += 32;
+                }
                 memory_ops
             },
         );
@@ -258,11 +287,16 @@ pub mod sha3_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), size);
+        //assert_eq!(copy_events[0].bytes.len(), size);
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
-            assert_eq!(Some(value), memory_view.get(idx));
-            assert!(!is_code);
+        let mut mask_count = 0;
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
+            if !is_mask {
+                assert_eq!(Some(value), memory_view.get(idx - mask_count));
+                assert!(!is_code);
+            } else {
+                mask_count += 1;
+            }
         }
     }
 
