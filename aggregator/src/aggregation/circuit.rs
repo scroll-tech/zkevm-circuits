@@ -406,7 +406,14 @@ impl CircuitExt<Fr> for AggregationCircuit {
             .iter()
             .map(|gate| gate.q_enable)
             .into_iter()
-            .chain([config.0.rlc_config.selector].iter().cloned())
+            .chain(
+                [
+                    config.0.rlc_config.selector,
+                    config.0.rlc_config.enable_challenge,
+                ]
+                .iter()
+                .cloned(),
+            )
             .collect()
     }
 }
