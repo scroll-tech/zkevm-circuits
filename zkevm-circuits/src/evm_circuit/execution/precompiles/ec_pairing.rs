@@ -130,6 +130,57 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             + ecc_circuit_input_rlcs[2].expr() * rand_pow_192.expr()
             + ecc_circuit_input_rlcs[3].expr();
 
+        // Equality checks for EVM input bytes to ecPairing call.
+        cb.condition(n_pairs_cmp.value_equals(0usize), |cb| {
+            cb.require_zero("ecPairing: evm_input_rlc == 0", evm_input_rlc.expr());
+        });
+        cb.condition(n_pairs_cmp.value_equals(1usize), |cb| {
+            cb.require_equal(
+                "ecPairing: evm_input_rlc for 1 pair",
+                evm_input_rlc.expr(),
+                evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr(),
+            );
+        });
+        cb.condition(n_pairs_cmp.value_equals(2usize), |cb| {
+            cb.require_equal(
+                "ecPairing: evm_input_rlc for 2 pairs",
+                evm_input_rlc.expr(),
+                (evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr())
+                    * rand_pow_192.expr()
+                    + evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
+                    + evm_input_g2_rlc[1].expr(),
+            );
+        });
+        cb.condition(n_pairs_cmp.value_equals(3usize), |cb| {
+            cb.require_equal(
+                "ecPairing: evm_input_rlc for 3 pairs",
+                evm_input_rlc.expr(),
+                (evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr())
+                    * rand_pow_384.expr()
+                    + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
+                        + evm_input_g2_rlc[1].expr())
+                        * rand_pow_192.expr()
+                    + evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
+                    + evm_input_g2_rlc[2].expr(),
+            );
+        });
+        cb.condition(n_pairs_cmp.value_equals(4usize), |cb| {
+            cb.require_equal(
+                "ecPairing: evm_input_rlc for 4 pairs",
+                evm_input_rlc.expr(),
+                (evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr())
+                    * rand_pow_576.expr()
+                    + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
+                        + evm_input_g2_rlc[1].expr())
+                        * rand_pow_384.expr()
+                    + (evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
+                        + evm_input_g2_rlc[2].expr())
+                        * rand_pow_192.expr()
+                    + evm_input_g1_rlc[3].expr() * rand_pow_128.expr()
+                    + evm_input_g2_rlc[3].expr(),
+            );
+        });
+
         // validate successful call to the precompile ecPairing.
         cb.condition(is_success.expr(), |cb| {
             // Covers the following cases:
@@ -146,9 +197,6 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                 output.expr(),
                 0.expr(),
             );
-            cb.condition(n_pairs_cmp.value_equals(0usize), |cb| {
-                cb.require_zero("ecPairing: evm_input_rlc == 0", evm_input_rlc.expr());
-            });
             cb.require_equal(
                 "ecPairing: n_pairs * N_BYTES_PER_PAIR == call_data_length",
                 n_pairs.expr() * N_BYTES_PER_PAIR.expr(),
