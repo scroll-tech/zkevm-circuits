@@ -952,6 +952,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             let tag = tag_expr(meta);
 
             constrain_eq!(meta, cb, state, DecodeTagStart.expr());
+            constrain_eq!(meta, cb, tx_id, 1.expr());
             constrain_eq!(meta, cb, byte_idx, 1.expr());
             cb.require_zero(
                 "tag == TxType or tag == BeginList",
