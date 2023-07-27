@@ -103,7 +103,7 @@ pub(crate) fn extract_accumulators_and_proof(
 // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
 #[allow(clippy::type_complexity)]
 pub(crate) fn assign_batch_hashes(
-    config: &AggregationConfig,
+    config: &mut AggregationConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     preimages: &[Vec<u8>],
@@ -129,7 +129,7 @@ pub(crate) fn assign_batch_hashes(
     // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
     // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
     let num_valid_snarks = conditional_constraints(
-        &config.rlc_config,
+        &mut config.rlc_config,
         // config.flex_gate(),
         layouter,
         challenges,
@@ -408,7 +408,7 @@ fn copy_constraints(
 // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn conditional_constraints(
-    rlc_config: &RlcConfig,
+    rlc_config: &mut RlcConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     hash_input_cells: &[AssignedCell<Fr, Fr>],
@@ -456,29 +456,20 @@ pub(crate) fn conditional_constraints(
                 // 5,6,7,8       | 32                  | 0, 1, 0
                 // 9,10          | 64                  | 0, 0, 1
 
-                let four = {
-                    let four = rlc_config.load_private(&mut region, &Fr::from(4), &mut offset)?;
-                    let four_cell = rlc_config.four_cell(four.cell().region_index);
-                    region.constrain_equal(four_cell, four.cell())?;
-                    four
-                };
-                let eight = {
-                    let eight = rlc_config.load_private(&mut region, &Fr::from(8), &mut offset)?;
-                    let eight_cell = rlc_config.eight_cell(eight.cell().region_index);
-                    region.constrain_equal(eight_cell, eight.cell())?;
-                    eight
-                };
+                let four = &rlc_config.fixed_cells[3];
+                let eight = &rlc_config.fixed_cells[4];
+
                 let flag1 = rlc_config.is_smaller_than(
                     &mut region,
                     &num_of_valid_snarks_cell[0],
-                    &four,
+                    four,
                     &mut offset,
                 )?;
                 let not_flag1 = rlc_config.not(&mut region, &flag1, &mut offset)?;
                 let not_flag3 = rlc_config.is_smaller_than(
                     &mut region,
                     &num_of_valid_snarks_cell[0],
-                    &eight,
+                    eight,
                     &mut offset,
                 )?;
                 let flag3 = rlc_config.not(&mut region, &not_flag3, &mut offset)?;
@@ -660,13 +651,11 @@ pub(crate) fn conditional_constraints(
 
                 // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
                 // that means the data_hash length is 32 * number_of_valid_snarks
-                let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
-                let const32_cell = rlc_config.thirty_two_cell(const32.cell().region_index);
-                region.constrain_equal(const32.cell(), const32_cell)?;
+                let const32 = &rlc_config.fixed_cells[5];
                 let data_hash_inputs = rlc_config.mul(
                     &mut region,
                     &num_of_valid_snarks_cell[0],
-                    &const32,
+                    const32,
                     &mut offset,
                 )?;
 

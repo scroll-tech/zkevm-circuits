@@ -1,4 +1,5 @@
 use halo2_proofs::{
+    circuit::AssignedCell,
     halo2curves::bn256::Fr,
     plonk::{Advice, Column, ConstraintSystem, Fixed, SecondPhase, Selector},
     poly::Rotation,
@@ -10,7 +11,7 @@ use zkevm_circuits::util::Challenges;
 
 /// This config is used to compute RLCs for bytes.
 /// It requires a phase 2 column
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RlcConfig {
     #[cfg(test)]
     // Test requires a phase 1 column before proceed to phase 2.
@@ -19,6 +20,8 @@ pub struct RlcConfig {
     pub(crate) selector: Selector,
     pub(crate) fixed: Column<Fixed>,
     pub(crate) enable_challenge: Selector,
+    // fixed cells storing 0, 1, 2, 4, 8, 32
+    pub(crate) fixed_cells: Vec<AssignedCell<Fr, Fr>>,
 }
 
 impl RlcConfig {
@@ -73,6 +76,7 @@ impl RlcConfig {
             selector,
             fixed,
             enable_challenge,
+            fixed_cells: vec![],
         }
     }
 }

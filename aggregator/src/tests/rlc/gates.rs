@@ -38,7 +38,7 @@ impl Circuit<Fr> for ArithTestCircuit {
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        mut config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let mut rng = test_rng();

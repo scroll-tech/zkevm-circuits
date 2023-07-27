@@ -77,7 +77,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let (config, challenges) = config;
+        let (mut config, challenges) = config;
 
         config
             .keccak_circuit_config

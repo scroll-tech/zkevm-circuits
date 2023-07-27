@@ -154,7 +154,7 @@ impl Circuit<Fr> for AggregationCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let (config, challenge) = config;
+        let (mut config, challenge) = config;
 
         let witness_time = start_timer!(|| "synthesize | Aggregation Circuit");
 
@@ -266,7 +266,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
             let timer = start_timer!(|| ("assign hash cells").to_string());
             let (hash_digest_cells, num_valid_snarks) = assign_batch_hashes(
-                &config,
+                &mut config,
                 &mut layouter,
                 challenges,
                 &preimages,
