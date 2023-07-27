@@ -8,7 +8,7 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-use bus_mapping::circuit_input_builder::ModExpEvent;
+use bus_mapping::circuit_input_builder::BigModExp;
 use eth_types::{Field, Word};
 
 //use misc_precompiled_circuit::value_for_assign;
@@ -47,7 +47,7 @@ impl ModExpCircuitConfig {
         region: &mut Region<F>,
         table_offset: usize,
         mut calc_offset: usize,
-        event: &ModExpEvent,
+        event: &BigModExp,
         modexp_chip: &ModExpChip<F>,
         range_check_chip: &mut RangeCheckChip<F>,
     ) -> Result<usize, Error> {
@@ -129,7 +129,7 @@ const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 9291;
 
 /// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
-pub struct ModExpCircuit<F: Field>(Vec<ModExpEvent>, std::marker::PhantomData<F>);
+pub struct ModExpCircuit<F: Field>(Vec<BigModExp>, std::marker::PhantomData<F>);
 
 impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
     type Config = ModExpCircuitConfig;
@@ -142,7 +142,7 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let event_limit = block.circuits_params.max_keccak_rows / MODEXPCONFIG_EACH_CHIP_ROWS;
-        let mut exp_events = block.modexp_events.clone();
+        let mut exp_events = block.get_big_modexp();
         assert!(
             exp_events.len() <= event_limit,
             "no enough rows for modexp circuit, expected {}, limit {}",
@@ -155,9 +155,10 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let exp_events = block.get_big_modexp();
         (
-            block.modexp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS,
-            (block.modexp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS)
+            exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS,
+            (exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS)
                 .max(block.circuits_params.max_keccak_rows),
         )
     }
@@ -238,7 +239,7 @@ mod test {
         let exp = Word::from(2u128);
         let modulus = Word::from(7u128);
         let (_, result) = base.pow(exp).div_mod(modulus);
-        let event1 = ModExpEvent {
+        let event1 = BigModExp {
             base,
             exponent: exp,
             modulus,
@@ -255,7 +256,7 @@ mod test {
         let exp = Word::from(2u128);
         let modulus = Word::from(7u128);
         let (_, result) = base.pow(exp).div_mod(modulus);
-        let event1 = ModExpEvent {
+        let event1 = BigModExp {
             base,
             exponent: exp,
             modulus,
@@ -271,7 +272,7 @@ mod test {
         let exp = Word::from(2u128);
         let modulus = Word::from(7u128);
         let (_, result) = base.pow(exp).div_mod(modulus);
-        let event1 = ModExpEvent {
+        let event1 = BigModExp {
             base,
             exponent: exp,
             modulus,

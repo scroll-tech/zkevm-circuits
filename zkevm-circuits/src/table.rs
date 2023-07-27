@@ -2632,7 +2632,7 @@ impl ModExpTable {
             |mut region| {
                 let mut offset = 0usize;
 
-                for event in &block.modexp_events {
+                for event in &block.get_big_modexp() {
                     for i in 0..4 {
                         region.assign_fixed(
                             || format!("modexp table head {}", offset + i),

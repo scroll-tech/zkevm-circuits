@@ -897,14 +897,14 @@ impl PrecompileEvents {
     pub fn get_modexp_events(&self) -> Vec<BigModExp> {
         self.events
             .iter()
-            .cloned()
             .filter_map(|e| {
                 if let PrecompileEvent::ModExp(op) = e {
-                    Some(*op)
+                    Some(op)
                 } else {
                     None
                 }
             })
+            .cloned()
             .collect()
     }    
 }

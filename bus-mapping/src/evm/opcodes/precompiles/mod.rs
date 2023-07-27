@@ -1,7 +1,7 @@
 use eth_types::{GethExecStep, ToWord, Word};
 
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep, ModExpEvent},
+    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
     operation::CallContextField,
     precompile::PrecompileCalls,
     Error,
@@ -11,11 +11,13 @@ mod ec_add;
 mod ec_mul;
 mod ec_pairing;
 mod ecrecover;
+mod modexp;
 
 use ec_add::opt_data as opt_data_ec_add;
 use ec_mul::opt_data as opt_data_ec_mul;
 use ec_pairing::opt_data as opt_data_ec_pairing;
 use ecrecover::opt_data as opt_data_ecrecover;
+use modexp::opt_data as opt_data_modexp;
 
 type InOutRetData = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
 

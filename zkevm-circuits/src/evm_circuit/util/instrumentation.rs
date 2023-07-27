@@ -108,6 +108,7 @@ impl Instrument {
                     }
                     CellType::Lookup(Table::ModExp) => {
                         report.modexp_table = data_entry;
+                    }
                     CellType::Lookup(Table::Ecc) => {
                         report.ecc_table = data_entry;
                     }

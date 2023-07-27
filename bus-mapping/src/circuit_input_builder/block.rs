@@ -254,8 +254,4 @@ impl Block {
     pub fn add_precompile_event(&mut self, event: PrecompileEvent) {
         self.precompile_events.events.push(event);
     }
-    /// Push an modexp event to the block.
-    pub fn add_modexp_event(&mut self, event: ModExpEvent) {
-        self.modexp_events.push(event);
-    }
 }
