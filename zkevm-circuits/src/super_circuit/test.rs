@@ -61,12 +61,12 @@ fn test_super_circuit<
     >::build_from_witness_block(block)
     .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
-    // prover.assert_satisfied_par();
-    // let res = prover.verify_par();
-    // if let Err(err) = res {
-    //     error!("Verification failures: {:#?}", err);
-    //     panic!("Failed verification");
-    // }
+    prover.assert_satisfied_par();
+    let res = prover.verify_par();
+    if let Err(err) = res {
+        error!("Verification failures: {:#?}", err);
+        panic!("Failed verification");
+    }
 }
 
 fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {

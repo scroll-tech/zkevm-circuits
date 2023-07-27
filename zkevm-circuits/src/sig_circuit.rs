@@ -15,7 +15,8 @@ mod dev;
 mod test;
 
 use crate::{
-    evm_circuit::util::{not, rlc},
+    evm_circuit::{EvmCircuit, util::{not, rlc}},
+    keccak_circuit::KeccakCircuit,
     sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
@@ -41,6 +42,7 @@ use halo2_ecc::{
 
 mod ecdsa;
 mod utils;
+use keccak256::keccak_arith::Keccak;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) use utils::*;
 
@@ -234,10 +236,8 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
 
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
-    fn min_num_rows_block(_block: &crate::witness::Block<F>) -> (usize, usize) {
-        // let row_num = Self::min_num_rows(block.circuits_params.max_txs);
-        // (row_num, row_num)
-        let n: usize = (1 << LOG_TOTAL_NUM_ROWS) - 256;
+    fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
+        let n = Self::min_num_rows(block.circuits_params.max_txs);
         (n, n)
     }
 }
@@ -254,12 +254,22 @@ impl<F: Field> SigCircuit<F> {
 
     /// Return the minimum number of rows required to prove an input of a
     /// particular size.
-    /// TODO: minus 256?
     pub fn min_num_rows(num_verif: usize) -> usize {
+        // SigCircuit can't determine usable rows independently.
+        // Instead, the blinding area is determined by other advise columns with most counts of rotation queries
+        // This value is typically determined by either the Keccak or EVM circuit. 
+
         // the cells are allocated vertically, i.e., given a TOTAL_NUM_ROWS * NUM_ADVICE
         // matrix, the allocator will try to use all the cells in the first column, then
         // the second column, etc.
-        let row_num = 1 << LOG_TOTAL_NUM_ROWS;
+
+        let max_blinding_factor = [
+            KeccakCircuit::<F>::unusable_rows(),
+            EvmCircuit::<F>::unusable_rows(),
+            // may include additional other subcircuits here
+        ].iter().max().unwrap() - 1;
+
+        let row_num = (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3);
         let col_num = calc_required_advices(num_verif);
         if num_verif * CELLS_PER_SIG > col_num * row_num {
             log::error!(
