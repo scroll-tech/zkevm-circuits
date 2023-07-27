@@ -496,7 +496,11 @@ impl<
             EvmCircuit::<Fr>::unusable_rows(),
             StateCircuit::<Fr>::unusable_rows(),
             TxCircuit::<Fr>::unusable_rows(),
-            PiCircuit::<Fr>::unusable_rows(),
+
+            // TODO: The PiCircuit unusable_rows fn is not implemented 
+            // and returns the arbitrary default number, causing overflow
+            // PiCircuit::<Fr>::unusable_rows(),
+
             BytecodeCircuit::<Fr>::unusable_rows(),
             CopyCircuit::<Fr>::unusable_rows(),
             ExpCircuit::<Fr>::unusable_rows(),

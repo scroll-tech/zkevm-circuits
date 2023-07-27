@@ -206,8 +206,8 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 
 // High memory usage test.  Run in serial with:
 // `cargo test [...] serial_ -- --ignored --test-threads 1`
-#[ignore]
-#[cfg(feature = "scroll")]
+// #[ignore]
+// #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_1tx_1max_tx() {
     let block = block_1tx();

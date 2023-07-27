@@ -767,6 +767,19 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         }
     }
 
+    /// Returns number of unusable rows of the SubCircuit, which should be
+    /// `meta.blinding_factors() + 1`.
+    fn unusable_rows() -> usize {
+        [
+            KeccakCircuit::<F>::unusable_rows(),
+            EvmCircuit::<F>::unusable_rows(),
+            // may include additional subcircuits here
+        ]
+        .into_iter()
+        .max()
+        .unwrap()
+    }
+
     fn synthesize_sub(
         &self,
         config: &Self::Config,
@@ -783,11 +796,7 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         // Instead, the blinding area is determined by other advise columns with most counts of rotation queries
         // This value is typically determined by either the Keccak or EVM circuit. 
 
-        let max_blinding_factor = [
-            KeccakCircuit::<F>::unusable_rows(),
-            EvmCircuit::<F>::unusable_rows(),
-            // may include additional subcircuits here
-        ].iter().max().unwrap() - 1;
+        let max_blinding_factor = Self::unusable_rows() - 1;
 
         // same formula as halo2-lib's FlexGate
         let row_num = (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3);
