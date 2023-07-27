@@ -5,7 +5,7 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
+use snark_verifier::loader::halo2::halo2_ecc::{halo2_base, halo2_base::utils::fs::gen_srs};
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use zkevm_circuits::{
     keccak_circuit::{
@@ -99,9 +99,16 @@ impl Circuit<Fr> for DynamicHashCircuit {
         )
         .unwrap();
 
+        let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+
         layouter.assign_region(
             || "mock circuit",
             |mut region| -> Result<(), Error> {
+                if first_pass {
+                    first_pass = false;
+                    return Ok(());
+                }
+
                 config.rlc_config.init(&mut region)?;
 
                 // ==============================
