@@ -5,10 +5,8 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::Rng;
-#[cfg(feature = "skip_first_pass")]
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier::{
-    loader::native::NativeLoader,
+    loader::{halo2::halo2_ecc::halo2_base, native::NativeLoader},
     pcs::{
         kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
@@ -160,7 +158,6 @@ pub(crate) fn extract_hash_cells(
     ),
     Error,
 > {
-    #[cfg(feature = "skip_first_pass")]
     let mut is_first_time = true;
     let num_rows = 1 << LOG_DEGREE;
 
@@ -198,7 +195,6 @@ pub(crate) fn extract_hash_cells(
                 ),
                 halo2_proofs::plonk::Error,
             > {
-                #[cfg(feature = "skip_first_pass")]
                 if is_first_time {
                     is_first_time = false;
                     let offset = witness.len() - 1;
@@ -289,14 +285,12 @@ fn copy_constraints(
     layouter: &mut impl Layouter<Fr>,
     hash_input_cells: &[AssignedCell<Fr, Fr>],
 ) -> Result<(), Error> {
-    #[cfg(feature = "skip_first_pass")]
     let mut is_first_time = true;
 
     layouter
         .assign_region(
             || "assign keccak rows",
             |mut region| -> Result<(), halo2_proofs::plonk::Error> {
-                #[cfg(feature = "skip_first_pass")]
                 if is_first_time {
                     // this region only use copy constraints and do not affect the shape of the
                     // layouter
@@ -423,14 +417,12 @@ pub(crate) fn conditional_constraints(
     hash_input_len_cells: &[AssignedCell<Fr, Fr>],
     num_of_valid_chunks: usize,
 ) -> Result<AssignedCell<Fr, Fr>, Error> {
-    #[cfg(feature = "skip_first_pass")]
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
     let num_of_valid_snarks_cell = layouter
         .assign_region(
             || "rlc conditional constraints",
             |mut region| -> Result<Vec<AssignedCell<Fr, Fr>>, halo2_proofs::plonk::Error> {
-                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(vec![]);

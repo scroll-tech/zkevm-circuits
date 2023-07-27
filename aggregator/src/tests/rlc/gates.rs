@@ -43,12 +43,10 @@ impl Circuit<Fr> for ArithTestCircuit {
     ) -> Result<(), Error> {
         let mut rng = test_rng();
 
-        #[cfg(feature = "skip_first_pass")]
         let mut first_pass = true;
         layouter.assign_region(
             || "test field circuit",
             |mut region| -> Result<(), Error> {
-                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(());

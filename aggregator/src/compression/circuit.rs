@@ -9,17 +9,19 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
-#[cfg(feature = "skip_first_pass")]
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
+
 use snark_verifier::{
     loader::{
         halo2::{
-            halo2_ecc::halo2_base::{
-                halo2_proofs::{
-                    halo2curves::bn256::{Bn256, Fr},
-                    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+            halo2_ecc::{
+                halo2_base,
+                halo2_base::{
+                    halo2_proofs::{
+                        halo2curves::bn256::{Bn256, Fr},
+                        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+                    },
+                    Context, ContextParams,
                 },
-                Context, ContextParams,
             },
             Halo2Loader,
         },
@@ -106,13 +108,11 @@ impl Circuit<Fr> for CompressionCircuit {
             .load_lookup_table(&mut layouter)
             .expect("load range lookup table");
 
-        #[cfg(feature = "skip_first_pass")]
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
         let instances = layouter.assign_region(
             || "compression circuit",
             |region| -> Result<Vec<Cell>, Error> {
-                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(vec![]);

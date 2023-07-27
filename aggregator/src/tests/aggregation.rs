@@ -13,7 +13,6 @@ use crate::{
 
 use super::mock_chunk::MockChunkCircuit;
 
-// #[cfg(feature = "disable_proof_aggregation")]
 #[test]
 fn test_aggregation_circuit() {
     env_logger::init();

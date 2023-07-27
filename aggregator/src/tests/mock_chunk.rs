@@ -7,7 +7,7 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 };
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base::SKIP_FIRST_PASS;
 use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::util::Challenges;
 
@@ -98,13 +98,11 @@ impl Circuit<Fr> for MockChunkCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        #[cfg(feature = "skip_first_pass")]
-        let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+        let mut first_pass = SKIP_FIRST_PASS;
 
         let cells = layouter.assign_region(
             || "mock circuit",
             |mut region| -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
-                #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
                     return Ok(vec![]);

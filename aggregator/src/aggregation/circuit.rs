@@ -7,7 +7,8 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
-#[cfg(feature = "skip_first_pass")]
+
+#[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
@@ -170,13 +171,11 @@ impl Circuit<Fr> for AggregationCircuit {
                 .load_lookup_table(&mut layouter)
                 .expect("load range lookup table");
 
-            #[cfg(feature = "skip_first_pass")]
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
             let (accumulator_instances, snark_inputs) = layouter.assign_region(
                 || "aggregation",
                 |region| -> Result<(Vec<AssignedValue<Fr>>, Vec<AssignedValue<Fr>>), Error> {
-                    #[cfg(feature = "skip_first_pass")]
                     if first_pass {
                         // halo2-lib: directly skip; on action required.
                         first_pass = false;
@@ -248,7 +247,6 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        #[cfg(not(feature = "disable_pi_aggregation"))]
         let (hash_digest_cells, num_valid_snarks) = {
             config
                 .keccak_circuit_config
@@ -280,7 +278,6 @@ impl Circuit<Fr> for AggregationCircuit {
             end_timer!(timer);
             (hash_digest_cells, num_valid_snarks)
         };
-        #[cfg(not(feature = "disable_pi_aggregation"))]
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells(&hash_digest_cells);
@@ -288,7 +285,6 @@ impl Circuit<Fr> for AggregationCircuit {
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
         // ==============================================
-        #[cfg(not(feature = "disable_pi_aggregation"))]
         for (i, chunk) in chunk_pi_hash_digests.iter().enumerate() {
             let hash = self.batch_hash.chunks_with_padding[i].public_input_hash();
             for j in 0..4 {
@@ -301,53 +297,48 @@ impl Circuit<Fr> for AggregationCircuit {
                 }
             }
         }
-        #[cfg(all(
-            not(feature = "disable_proof_aggregation"),
-            not(feature = "disable_pi_aggregation")
-        ))]
-        {
-            #[cfg(feature = "skip_first_pass")]
-            let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-            layouter.assign_region(
-                || "aggregation",
-                |mut region| -> Result<(), Error> {
-                    #[cfg(feature = "skip_first_pass")]
-                    if first_pass {
-                        // this region only use copy constraints and do not affect the shape of the
-                        // layouter
-                        first_pass = false;
-                        return Ok(());
-                    }
+        #[cfg(not(feature = "disable_proof_aggregation"))]
+        let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-                    for i in 0..MAX_AGG_SNARKS {
-                        for j in 0..4 {
-                            for k in 0..8 {
-                                let mut t1 = Fr::default();
-                                let mut t2 = Fr::default();
-                                chunk_pi_hash_digests[i][j * 8 + k].value().map(|x| t1 = *x);
-                                snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k]
-                                    .value()
-                                    .map(|x| t2 = *x);
-                                log::trace!(
-                                    "{}-th snark: {:?} {:?}",
-                                    i,
-                                    chunk_pi_hash_digests[i][j * 8 + k].value(),
-                                    snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].value()
-                                );
+        #[cfg(not(feature = "disable_proof_aggregation"))]
+        layouter.assign_region(
+            || "aggregation",
+            |mut region| -> Result<(), Error> {
+                if first_pass {
+                    // this region only use copy constraints and do not affect the shape of the
+                    // layouter
+                    first_pass = false;
+                    return Ok(());
+                }
 
-                                region.constrain_equal(
-                                    chunk_pi_hash_digests[i][j * 8 + k].cell(),
-                                    snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].cell(),
-                                )?;
-                            }
+                for i in 0..MAX_AGG_SNARKS {
+                    for j in 0..4 {
+                        for k in 0..8 {
+                            let mut t1 = Fr::default();
+                            let mut t2 = Fr::default();
+                            chunk_pi_hash_digests[i][j * 8 + k].value().map(|x| t1 = *x);
+                            snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k]
+                                .value()
+                                .map(|x| t2 = *x);
+                            log::trace!(
+                                "{}-th snark: {:?} {:?}",
+                                i,
+                                chunk_pi_hash_digests[i][j * 8 + k].value(),
+                                snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].value()
+                            );
+
+                            region.constrain_equal(
+                                chunk_pi_hash_digests[i][j * 8 + k].cell(),
+                                snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].cell(),
+                            )?;
                         }
                     }
+                }
 
-                    Ok(())
-                },
-            )?;
-        }
+                Ok(())
+            },
+        )?;
 
         // ==============================================
         // step 4: assert public inputs to the aggregator circuit are correct
@@ -360,7 +351,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 layouter.constrain_instance(v.cell(), config.instance, i)?;
             }
         }
-        #[cfg(not(feature = "disable_pi_aggregation"))]
+
         // public input hash
         for i in 0..4 {
             for j in 0..8 {
@@ -377,9 +368,9 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
-        #[cfg(not(feature = "disable_pi_aggregation"))]
+
         log::trace!("number of valid snarks: {:?}", num_valid_snarks.value());
-        #[cfg(not(feature = "disable_pi_aggregation"))]
+
         layouter.constrain_instance(
             num_valid_snarks.cell(),
             config.instance,
