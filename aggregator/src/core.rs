@@ -289,7 +289,7 @@ fn copy_constraints(
 
     layouter
         .assign_region(
-            || "assign keccak rows",
+            || "copy constraints",
             |mut region| -> Result<(), halo2_proofs::plonk::Error> {
                 if is_first_time {
                     // this region only use copy constraints and do not affect the shape of the

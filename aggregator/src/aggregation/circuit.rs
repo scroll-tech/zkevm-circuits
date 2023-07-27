@@ -40,7 +40,6 @@ use super::AggregationConfig;
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct AggregationCircuit {
     pub(crate) svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
@@ -177,7 +176,6 @@ impl Circuit<Fr> for AggregationCircuit {
                 || "aggregation",
                 |region| -> Result<(Vec<AssignedValue<Fr>>, Vec<AssignedValue<Fr>>), Error> {
                     if first_pass {
-                        // halo2-lib: directly skip; on action required.
                         first_pass = false;
                         return Ok((vec![], vec![]));
                     }
@@ -303,7 +301,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         #[cfg(not(feature = "disable_proof_aggregation"))]
         layouter.assign_region(
-            || "aggregation",
+            || "pi checks",
             |mut region| -> Result<(), Error> {
                 if first_pass {
                     // this region only use copy constraints and do not affect the shape of the

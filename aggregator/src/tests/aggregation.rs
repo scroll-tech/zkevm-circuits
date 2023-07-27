@@ -34,7 +34,7 @@ fn test_aggregation_circuit_full() {
     env_logger::init();
     let process_id = process::id();
 
-    let dir = format!("data/{}", process_id);
+    let dir = format!("data/{process_id}",);
     let path = Path::new(dir.as_str());
     fs::create_dir(path).unwrap();
 

@@ -198,7 +198,7 @@ fn test_hash_circuit() {
     const LEN: usize = 100;
     let a = (0..LEN).map(|x| x as u8).collect::<Vec<u8>>();
     let circuit = DynamicHashCircuit { inputs: a };
-    let prover = MockProver::run(LOG_DEGREE as u32, &circuit, vec![]).unwrap();
+    let prover = MockProver::run(LOG_DEGREE, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par();
     println!("circuit satisfied");
 }
@@ -206,13 +206,13 @@ fn test_hash_circuit() {
 #[ignore = "it takes too much time"]
 #[test]
 fn test_dynamic_hash_circuit() {
-    let params = gen_srs(LOG_DEGREE as u32);
+    let params = gen_srs(LOG_DEGREE);
     let mut rng = test_rng();
     const LEN: usize = 100;
 
     let a = (0..LEN).map(|x| x as u8).collect::<Vec<u8>>();
     let circuit = DynamicHashCircuit { inputs: a };
-    let prover = MockProver::run(LOG_DEGREE as u32, &circuit, vec![]).unwrap();
+    let prover = MockProver::run(LOG_DEGREE, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par();
     println!("circuit satisfied");
 

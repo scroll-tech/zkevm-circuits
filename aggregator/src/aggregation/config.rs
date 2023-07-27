@@ -93,7 +93,7 @@ impl AggregationConfig {
             "cell manager configuration does not match the hard coded setup"
         );
 
-        // enabling equality for preimage and digest columns
+        // enabling equality for preimage column
         meta.enable_equality(columns[6].advice);
         // enable equality for the digest column
         meta.enable_equality(columns.last().unwrap().advice);

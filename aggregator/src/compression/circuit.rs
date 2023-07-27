@@ -9,7 +9,6 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
-
 use snark_verifier::{
     loader::{
         halo2::{
