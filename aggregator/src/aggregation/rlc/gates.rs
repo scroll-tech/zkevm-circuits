@@ -14,6 +14,7 @@ impl RlcConfig {
     pub(crate) fn init(&self, region: &mut Region<Fr>) -> Result<(), Error> {
         region.assign_fixed(|| "const zero", self.fixed, 0, || Value::known(Fr::zero()))?;
         region.assign_fixed(|| "const one", self.fixed, 1, || Value::known(Fr::one()))?;
+        region.assign_fixed(|| "const two", self.fixed, 2, || Value::known(Fr::from(2)))?;
         Ok(())
     }
 
@@ -31,6 +32,15 @@ impl RlcConfig {
         Cell {
             region_index,
             row_offset: 1,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn two_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 2,
             column: self.fixed.into(),
         }
     }
@@ -275,5 +285,35 @@ impl RlcConfig {
             )?;
         }
         Ok(())
+    }
+
+    // decompose a field element into 254 bits of boolean
+    pub(crate) fn decomposition(
+        &self,
+        region: &mut Region<Fr>,
+        input: &AssignedCell<Fr, Fr>,
+        offset: &usize,
+    ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+        let res = vec![];
+        // todo!()
+        Ok(res)
+    }
+
+    // return a boolean if a is smaller than b
+    pub(crate) fn is_smaller_than(
+        &self,
+        region: &mut Region<Fr>,
+        a: &AssignedCell<Fr, Fr>,
+        b: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        // FIXME
+        let mut a_tmp = Fr::default();
+        let mut b_tmp = Fr::default();
+        a.value().map(|x| a_tmp = *x);
+        b.value().map(|x| b_tmp = *x);
+
+        let res_val = if a_tmp < b_tmp { Fr::one() } else { Fr::zero() };
+        self.load_private(region, &res_val, offset)
     }
 }
