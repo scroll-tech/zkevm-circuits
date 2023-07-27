@@ -777,6 +777,8 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
     }
 
     fn min_num_rows_block(_block: &Block<F>) -> (usize, usize) {
-        unimplemented!()
+        // unimplemented!()
+        let n: usize = (1 << LOG_TOTAL_NUM_ROWS) - 256;
+        (n, n)
     }
 }

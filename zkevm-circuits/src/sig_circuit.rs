@@ -234,9 +234,11 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
 
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
-    fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
-        let row_num = Self::min_num_rows(block.circuits_params.max_txs);
-        (row_num, row_num)
+    fn min_num_rows_block(_block: &crate::witness::Block<F>) -> (usize, usize) {
+        // let row_num = Self::min_num_rows(block.circuits_params.max_txs);
+        // (row_num, row_num)
+        let n: usize = (1 << LOG_TOTAL_NUM_ROWS) - 256;
+        (n, n)
     }
 }
 

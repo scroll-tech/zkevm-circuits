@@ -296,25 +296,6 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         #[cfg(feature = "zktrie")]
         log_circuit_info(meta, "zktrie circuit");
 
-        let sig_circuit = SigCircuitConfig::new(
-            meta,
-            SigCircuitConfigArgs {
-                keccak_table: keccak_table.clone(),
-                sig_table,
-                challenges: challenges_expr.clone(),
-            },
-        );
-        log_circuit_info(meta, "sig circuit");
-
-        let ecc_circuit = EccCircuitConfig::new(
-            meta,
-            EccCircuitConfigArgs {
-                ecc_table,
-                challenges: challenges_expr.clone(),
-            },
-        );
-        log_circuit_info(meta, "ecc circuit");
-
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
@@ -331,13 +312,13 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
-                challenges: challenges_expr,
+                challenges: challenges_expr.clone(),
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table,
                 block_table: block_table.clone(),
                 copy_table,
-                keccak_table,
+                keccak_table: keccak_table.clone(),
                 exp_table,
                 sig_table,
                 ecc_table,
@@ -345,6 +326,28 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             },
         );
         log_circuit_info(meta, "evm circuit");
+
+        // Sig Circuit and ECC Circuit use halo2-lib's vertifcal assignments gates
+        // and need to be configured after Circuits with higher counts of unique rotation queries (ex. Keccak, EVM)
+        // to avoid assigning advice values into blinding area. 
+        let sig_circuit = SigCircuitConfig::new(
+            meta,
+            SigCircuitConfigArgs {
+                keccak_table: keccak_table,
+                sig_table,
+                challenges: challenges_expr.clone(),
+            },
+        );
+        log_circuit_info(meta, "sig circuit");
+
+        let ecc_circuit = EccCircuitConfig::new(
+            meta,
+            EccCircuitConfigArgs {
+                ecc_table,
+                challenges: challenges_expr,
+            },
+        );
+        log_circuit_info(meta, "ecc circuit");
 
         #[cfg(feature = "onephase")]
         if meta.max_phase() != 0 {
@@ -443,6 +446,8 @@ impl<
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
         let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
+        let sig = SigCircuit::min_num_rows_block(block);
+        let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
         let mpt = MptCircuit::<Fr>::min_num_rows_block(block);
 
@@ -457,6 +462,8 @@ impl<
             exp,
             pi,
             poseidon,
+            sig,
+            ecc,
             #[cfg(feature = "zktrie")]
             mpt,
         ];
