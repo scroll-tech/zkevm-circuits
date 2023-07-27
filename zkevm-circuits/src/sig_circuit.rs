@@ -265,9 +265,10 @@ impl<F: Field> SigCircuit<F> {
         let max_blinding_factor = [
             KeccakCircuit::<F>::unusable_rows(),
             EvmCircuit::<F>::unusable_rows(),
-            // may include additional other subcircuits here
+            // may include additional subcircuits here
         ].iter().max().unwrap() - 1;
 
+        // same formula as halo2-lib's FlexGate
         let row_num = (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3);
         let col_num = calc_required_advices(num_verif);
         if num_verif * CELLS_PER_SIG > col_num * row_num {

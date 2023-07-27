@@ -32,6 +32,8 @@ use itertools::Itertools;
 use log::error;
 
 use crate::{
+    keccak_circuit::KeccakCircuit,
+    evm_circuit::EvmCircuit,
     table::{EccTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Block,
@@ -777,8 +779,19 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
     }
 
     fn min_num_rows_block(_block: &Block<F>) -> (usize, usize) {
-        // unimplemented!()
-        let n: usize = (1 << LOG_TOTAL_NUM_ROWS) - 256;
-        (n, n)
+        // EccCircuit can't determine usable rows independently.
+        // Instead, the blinding area is determined by other advise columns with most counts of rotation queries
+        // This value is typically determined by either the Keccak or EVM circuit. 
+
+        let max_blinding_factor = [
+            KeccakCircuit::<F>::unusable_rows(),
+            EvmCircuit::<F>::unusable_rows(),
+            // may include additional subcircuits here
+        ].iter().max().unwrap() - 1;
+
+        // same formula as halo2-lib's FlexGate
+        let row_num = (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3);
+
+        (row_num, row_num)
     }
 }
