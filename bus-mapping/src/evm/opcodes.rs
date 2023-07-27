@@ -22,7 +22,6 @@ use eth_types::{
     evm_unimplemented, Bytecode, GethExecStep, GethExecTrace, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
-use revm_precompile::Precompiles;
 
 use crate::util::CHECK_MEM_STRICT;
 
@@ -513,8 +512,8 @@ pub fn gen_begin_tx_ops(
     )?;
 
     // Add precompile contract address to access list
-    for address in Precompiles::berlin().addresses() {
-        let address = eth_types::Address::from(address);
+    for address in 1..=9 {
+        let address = eth_types::Address::from_low_u64_be(address);
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,

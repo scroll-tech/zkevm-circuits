@@ -35,6 +35,8 @@ const SHANGHAI_RW_DELTA: u8 = 1;
 #[cfg(not(feature = "shanghai"))]
 const SHANGHAI_RW_DELTA: u8 = 0;
 
+const PRECOMPILE_COUNT: usize = 9;
+
 use gadgets::util::select;
 
 #[derive(Clone, Debug)]
@@ -83,6 +85,7 @@ pub(crate) struct BeginTxGadget<F> {
     // coinbase, and may be duplicate.
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
     is_coinbase_warm: Cell<F>,
+    precompile_warm: [Cell<F>; PRECOMPILE_COUNT],
     tx_l1_fee: TxL1FeeGadget<F>,
 }
 
@@ -223,6 +226,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
+
+        let precompile_warm = array_init::array_init(|_| cb.query_bool());
+        for addr in 1..=PRECOMPILE_COUNT {
+            cb.account_access_list_write(
+                tx_id.expr(),
+                addr.expr(),
+                1.expr(),
+                precompile_warm[addr - 1].expr(),
+                None,
+            ); // rwc_delta += 1
+        }
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -406,6 +420,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Precompile) x9
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -429,7 +444,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     22.expr()
                         + tx_l1_fee.rw_delta()
                         + transfer_with_gas_fee.rw_delta()
-                        + SHANGHAI_RW_DELTA.expr(),
+                        + SHANGHAI_RW_DELTA.expr()
+                        + PRECOMPILE_COUNT.expr(),
                 ),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
@@ -474,6 +490,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Precompile) x9
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -484,6 +501,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         + tx_l1_fee.rw_delta()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
+                        + PRECOMPILE_COUNT.expr()
                         // TRICKY:
                         // Process the reversion only for Precompile in begin TX. Since no
                         // associated opcodes could process reversion afterwards
@@ -524,6 +542,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x9
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -534,7 +553,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         8.expr()
                             + tx_l1_fee.rw_delta()
                             + transfer_with_gas_fee.rw_delta()
-                            + SHANGHAI_RW_DELTA.expr(),
+                            + SHANGHAI_RW_DELTA.expr()
+                            + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
@@ -582,6 +602,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x9
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -604,7 +625,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         21.expr()
                             + tx_l1_fee.rw_delta()
                             + transfer_with_gas_fee.rw_delta()
-                            + SHANGHAI_RW_DELTA.expr(),
+                            + SHANGHAI_RW_DELTA.expr()
+                            + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
@@ -656,6 +678,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_caller_callee_equal,
             coinbase,
             is_coinbase_warm,
+            precompile_warm,
             tx_l1_fee,
         }
     }
@@ -673,6 +696,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let mut rws = StepRws::new(block, step);
         rws.offset_add(10);
+
+        for precompile_warm_cell in self.precompile_warm.iter() {
+            let is_precompile_warm = rws.next().tx_access_list_value_pair().1;
+            precompile_warm_cell.assign(
+                region,
+                offset,
+                Value::known(F::from(is_precompile_warm as u64)),
+            )?;
+        }
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
