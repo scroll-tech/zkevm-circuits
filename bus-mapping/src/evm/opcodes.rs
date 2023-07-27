@@ -511,6 +511,19 @@ pub fn gen_begin_tx_ops(
         nonce_prev,
     )?;
 
+    // Add precompile contract address to access list
+    for address in 1..=9 {
+        let address = eth_types::Address::from_low_u64_be(address);
+        let is_warm_prev = !state.sdb.add_account_to_access_list(address);
+        state.tx_accesslist_account_write(
+            &mut exec_step,
+            state.tx_ctx.id(),
+            address,
+            true,
+            is_warm_prev,
+        )?;
+    }
+
     // Add caller, callee and coinbase (only for Shanghai) to access list.
     #[cfg(feature = "shanghai")]
     let accessed_addresses = [
