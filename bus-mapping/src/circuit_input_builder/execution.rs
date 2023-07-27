@@ -1060,23 +1060,100 @@ impl EcMulOp {
 /// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of inputs.
 pub const N_PAIRING_PER_OP: usize = 4;
 
+/// The number of bytes taken to represent a pair (G1, G2).
+pub const N_BYTES_PER_PAIR: usize = 192;
+
+/// Pair of (G1, G2).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct EcPairingPair {
+    /// G1 point.
+    pub g1_point: G1Affine,
+    /// G2 point.
+    pub g2_point: G2Affine,
+}
+
+impl EcPairingPair {
+    /// Returns the big-endian representation of the G1 point in the pair.
+    pub fn g1_bytes_be(&self) -> Vec<u8> {
+        std::iter::empty()
+            .chain(self.g1_point.x.to_bytes().iter().rev())
+            .chain(self.g1_point.y.to_bytes().iter().rev())
+            .cloned()
+            .collect()
+    }
+
+    /// Returns the big-endian representation of the G2 point in the pair.
+    pub fn g2_bytes_be(&self) -> Vec<u8> {
+        std::iter::empty()
+            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.x.c1.to_bytes().iter().rev())
+            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.y.c1.to_bytes().iter().rev())
+            .cloned()
+            .collect()
+    }
+
+    /// Returns the uncompressed big-endian byte representation of the (G1, G2) pair.
+    pub fn to_bytes_be(&self) -> Vec<u8> {
+        std::iter::empty()
+            .chain(self.g1_point.x.to_bytes().iter().rev())
+            .chain(self.g1_point.y.to_bytes().iter().rev())
+            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.x.c1.to_bytes().iter().rev())
+            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.y.c1.to_bytes().iter().rev())
+            .cloned()
+            .collect()
+    }
+
+    /// Create a new pair.
+    pub fn new(g1_point: G1Affine, g2_point: G2Affine) -> Self {
+        Self { g1_point, g2_point }
+    }
+
+    /// Padding pair for ECC circuit. The pairing check is done with a constant number
+    /// `N_PAIRING_PER_OP` of (G1, G2) pairs. The ECC circuit under the hood uses halo2-lib to
+    /// compute the multi-miller loop, which allows `(G1::Infinity, G2::Generator)` pair to skip
+    /// the loop for that pair. So in case the EVM inputs are less than `N_PAIRING_PER_OP` we pad
+    /// the ECC Circuit inputs by this pair. Any EVM input of `(G1::Infinity, G2)` or
+    /// `(G1, G2::Infinity)` is also transformed into `(G1::Infinity, G2::Generator)`.
+    pub fn ecc_padding() -> Self {
+        Self {
+            g1_point: G1Affine::identity(),
+            g2_point: G2Affine::generator(),
+        }
+    }
+
+    /// Padding pair for EVM circuit. The pairing check is done with a constant number
+    /// `N_PAIRING_PER_OP` of (G1, G2) pairs. In case EVM inputs are less in number, we pad them
+    /// with `(G1::Infinity, G2::Infinity)` for simplicity.
+    pub fn evm_padding() -> Self {
+        Self {
+            g1_point: G1Affine::identity(),
+            g2_point: G2Affine::identity(),
+        }
+    }
+}
+
 /// EcPairing operation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingOp {
-    /// tuples of G1 and G2 points.
-    pub inputs: [(G1Affine, G2Affine); N_PAIRING_PER_OP],
+    /// tuples of G1 and G2 points supplied to the ECC circuit.
+    pub pairs: [EcPairingPair; N_PAIRING_PER_OP],
     /// Result from the pairing check.
     pub output: Word,
 }
 
 impl Default for EcPairingOp {
     fn default() -> Self {
+        let g1_point = G1Affine::generator();
+        let g2_point = G2Affine::generator();
         Self {
-            inputs: [
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::generator()),
+            pairs: [
+                EcPairingPair { g1_point, g2_point },
+                EcPairingPair { g1_point, g2_point },
+                EcPairingPair { g1_point, g2_point },
+                EcPairingPair { g1_point, g2_point },
             ],
             output: Word::zero(),
         }
@@ -1084,29 +1161,16 @@ impl Default for EcPairingOp {
 }
 
 impl EcPairingOp {
-    /// Returns the uncompressed little-endian byte representation of inputs to the EcPairingOp.
-    pub fn to_bytes_le(&self) -> Vec<u8> {
-        self.inputs
+    /// Returns the uncompressed big-endian byte representation of inputs to the EcPairingOp.
+    pub fn to_bytes_be(&self) -> Vec<u8> {
+        self.pairs
             .iter()
-            .flat_map(|i| {
-                std::iter::empty()
-                    .chain(i.0.x.to_bytes().iter())
-                    .chain(i.0.y.to_bytes().iter())
-                    .chain(i.1.x.c0.to_bytes().iter())
-                    .chain(i.1.x.c1.to_bytes().iter())
-                    .chain(i.1.y.c0.to_bytes().iter())
-                    .chain(i.1.y.c1.to_bytes().iter())
-                    .cloned()
-                    .collect::<Vec<u8>>()
-            })
+            .flat_map(|pair| pair.to_bytes_be())
             .collect::<Vec<u8>>()
     }
 
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
-        self.inputs[0].0.is_identity().into()
-            && self.inputs[1].0.is_identity().into()
-            && self.inputs[2].0.is_identity().into()
-            && self.inputs[3].0.is_identity().into()
+        false
     }
 }

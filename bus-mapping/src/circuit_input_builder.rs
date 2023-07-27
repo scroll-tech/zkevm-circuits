@@ -37,8 +37,8 @@ use ethers_core::{
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp, EcMulOp,
-    EcPairingOp, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash, PrecompileEvent,
-    PrecompileEvents,
+    EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 use hex::decode_to_slice;
 
@@ -116,7 +116,7 @@ impl Default for CircuitsParams {
             max_inner_blocks: 64,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
-            max_copy_rows: 1000,
+            max_copy_rows: 2000,
             max_mpt_rows: 1000,
             max_exp_steps: 1000,
             max_bytecode: 512,

@@ -4,7 +4,7 @@ use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, Precompiles};
 use strum::EnumIter;
 
-use crate::circuit_input_builder::EcMulOp;
+use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
 
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
@@ -236,6 +236,10 @@ impl EcMulAuxData {
     }
 }
 
+/// Auxiliary data for EcPairing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EcPairingAuxData(pub EcPairingOp);
+
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
@@ -245,6 +249,8 @@ pub enum PrecompileAuxData {
     EcAdd(EcAddAuxData),
     /// EcMul.
     EcMul(EcMulAuxData),
+    /// EcPairing.
+    EcPairing(Box<EcPairingAuxData>),
 }
 
 impl Default for PrecompileAuxData {
