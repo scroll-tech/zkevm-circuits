@@ -85,7 +85,6 @@ pub(crate) struct BeginTxGadget<F> {
     // coinbase, and may be duplicate.
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
     is_coinbase_warm: Cell<F>,
-    precompile_warm: [Cell<F>; PRECOMPILE_COUNT],
     tx_l1_fee: TxL1FeeGadget<F>,
 }
 
@@ -227,15 +226,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
-        let precompile_warm = array_init::array_init(|_| cb.query_bool());
         for addr in 1..=PRECOMPILE_COUNT {
-            cb.account_access_list_write(
-                tx_id.expr(),
-                addr.expr(),
-                1.expr(),
-                precompile_warm[addr - 1].expr(),
-                None,
-            );
+            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), 0.expr(), None);
         } // rwc_delta += PRECOMPILE_COUNT
 
         // Prepare access list of caller and callee
@@ -253,7 +245,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             1.expr(),
             // No extra constraint being used here.
             // Correctness will be enforced in build_tx_access_list_account_constraints
-            is_caller_callee_equal.expr(),
+            select::expr(
+                is_precompile.expr(),
+                1.expr(),
+                is_caller_callee_equal.expr(),
+            ),
             None,
         ); // rwc_delta += 1
 
@@ -678,7 +674,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_caller_callee_equal,
             coinbase,
             is_coinbase_warm,
-            precompile_warm,
             tx_l1_fee,
         }
     }
@@ -695,16 +690,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
-        rws.offset_add(10);
-
-        for precompile_warm_cell in self.precompile_warm.iter() {
-            let is_precompile_warm = rws.next().tx_access_list_value_pair().1;
-            precompile_warm_cell.assign(
-                region,
-                offset,
-                Value::known(F::from(is_precompile_warm as u64)),
-            )?;
-        }
+        rws.offset_add(10 + PRECOMPILE_COUNT);
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
