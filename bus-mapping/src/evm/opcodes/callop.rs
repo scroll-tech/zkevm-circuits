@@ -13,7 +13,7 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        Gas, GasCost, OpcodeId,
+        Gas, GasCost, OpcodeId, GAS_STIPEND_CALL_WITH_VALUE,
     },
     GethExecStep, ToWord, Word,
 };
@@ -461,7 +461,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 state.handle_return(&mut precompile_step, geth_steps, true)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                debug_assert_eq!(
+                    real_cost
+                        + if has_value && !callee_exists {
+                            GAS_STIPEND_CALL_WITH_VALUE
+                        } else {
+                            0
+                        },
+                    gas_cost + contract_gas_cost
+                );
                 exec_step.gas_cost = GasCost(gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
