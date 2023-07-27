@@ -41,20 +41,20 @@ use super::AggregationConfig;
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
 #[derive(Clone)]
 pub struct AggregationCircuit {
-    pub(crate) svk: KzgSuccinctVerifyingKey<G1Affine>,
+    pub svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit
     // it is padded already so it will have a fixed length of MAX_AGG_SNARKS
-    pub(crate) snarks_with_padding: Vec<SnarkWitness>,
+    pub snarks_with_padding: Vec<SnarkWitness>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
     // - the batch's public_input_hash (32 elements)
     // - the number of snarks that is aggregated (1 element)
-    pub(crate) flattened_instances: Vec<Fr>,
+    pub flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
-    pub(crate) as_proof: Value<Vec<u8>>,
+    pub as_proof: Value<Vec<u8>>,
     // batch hash circuit for which the snarks are generated
     // the chunks in this batch are also padded already
-    pub(crate) batch_hash: BatchHash,
+    pub batch_hash: BatchHash,
 }
 
 impl AggregationCircuit {
