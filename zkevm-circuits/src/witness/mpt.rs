@@ -10,9 +10,21 @@ use mpt_zktrie::{
     state,
     state::witness::WitnessGenerator,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub use state::ZktrieState;
+
+/// Used to store withdraw proof
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct WithdrawProof {
+    /// state root after a block
+    pub state_root: U256,
+    /// account proof for withdraw bridge contract
+    pub account_proof: Vec<Vec<u8>>,
+    /// storage proof for withdraw bridge contract, withdraw root storage key
+    pub storage_proof: Vec<Vec<u8>>,
+}
 
 /// An MPT update whose validity is proved by the MptCircuit
 #[derive(Debug, Clone)]
@@ -56,6 +68,9 @@ pub struct MptUpdates {
     old_root: Word,
     new_root: Word,
     updates: BTreeMap<Key, MptUpdate>,
+    /// TODO: is here the best place for this?
+    /// Withdraw proof after this block
+    pub withdraw_proof: WithdrawProof,
     pub(crate) smt_traces: Vec<SMTTrace>,
     pub(crate) proof_types: Vec<MPTProofType>,
 }
@@ -135,6 +150,20 @@ impl MptUpdates {
             );
             wit_gen.dump();
         }
+
+        // generate withdraw proof
+        let address = *bus_mapping::l2_predeployed::message_queue::ADDRESS;
+        let key = *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT;
+        let account_proof = wit_gen.account_proof(address);
+        let storage_proof = wit_gen.storage_proof(address, key);
+        // TODO: add withdraw_root to WithdrawProof?
+        let withdraw_proof = WithdrawProof {
+            state_root: self.new_root,
+            account_proof,
+            storage_proof,
+        };
+        log::debug!("withdraw proof {withdraw_proof:?}");
+        self.withdraw_proof = withdraw_proof;
     }
 
     fn fill_state_roots_from_generator(
@@ -176,6 +205,7 @@ impl MptUpdates {
             self.old_root,
             self.new_root
         );
+
         wit_gen
     }
 
