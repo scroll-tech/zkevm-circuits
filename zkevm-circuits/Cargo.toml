@@ -28,6 +28,7 @@ mpt-zktrie = { path = "../zktrie" }
 keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.78"
 
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0619", features=['short']}
@@ -58,8 +59,6 @@ itertools = "0.10.1"
 mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
 cli-table = "0.4"
-serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.78"
 paste = "1.0"
 
 [features]

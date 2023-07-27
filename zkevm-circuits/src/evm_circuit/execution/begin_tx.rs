@@ -35,6 +35,8 @@ const SHANGHAI_RW_DELTA: u8 = 1;
 #[cfg(not(feature = "shanghai"))]
 const SHANGHAI_RW_DELTA: u8 = 0;
 
+const PRECOMPILE_COUNT: usize = 9;
+
 use gadgets::util::select;
 
 #[derive(Clone, Debug)]
@@ -224,6 +226,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
+        for addr in 1..=PRECOMPILE_COUNT {
+            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), 0.expr(), None);
+        } // rwc_delta += PRECOMPILE_COUNT
+
         // Prepare access list of caller and callee
         cb.account_access_list_write(
             tx_id.expr(),
@@ -239,7 +245,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             1.expr(),
             // No extra constraint being used here.
             // Correctness will be enforced in build_tx_access_list_account_constraints
-            is_caller_callee_equal.expr(),
+            select::expr(
+                is_precompile.expr(),
+                1.expr(),
+                is_caller_callee_equal.expr(),
+            ),
             None,
         ); // rwc_delta += 1
 
@@ -406,6 +416,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -429,7 +440,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     22.expr()
                         + tx_l1_fee.rw_delta()
                         + transfer_with_gas_fee.rw_delta()
-                        + SHANGHAI_RW_DELTA.expr(),
+                        + SHANGHAI_RW_DELTA.expr()
+                        + PRECOMPILE_COUNT.expr(),
                 ),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
@@ -474,6 +486,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -484,6 +497,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         + tx_l1_fee.rw_delta()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
+                        + PRECOMPILE_COUNT.expr()
                         // TRICKY:
                         // Process the reversion only for Precompile in begin TX. Since no
                         // associated opcodes could process reversion afterwards
@@ -524,6 +538,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -534,7 +549,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         8.expr()
                             + tx_l1_fee.rw_delta()
                             + transfer_with_gas_fee.rw_delta()
-                            + SHANGHAI_RW_DELTA.expr(),
+                            + SHANGHAI_RW_DELTA.expr()
+                            + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
@@ -582,6 +598,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -604,7 +621,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         21.expr()
                             + tx_l1_fee.rw_delta()
                             + transfer_with_gas_fee.rw_delta()
-                            + SHANGHAI_RW_DELTA.expr(),
+                            + SHANGHAI_RW_DELTA.expr()
+                            + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
@@ -672,7 +690,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
-        rws.offset_add(10);
+        rws.offset_add(10 + PRECOMPILE_COUNT);
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
