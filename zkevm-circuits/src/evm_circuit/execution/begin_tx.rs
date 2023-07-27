@@ -227,13 +227,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         for addr in 1..=PRECOMPILE_COUNT {
-            cb.account_access_list_write(
-                tx_id.expr(),
-                addr.expr(),
-                1.expr(),
-                0.expr(),
-                None,
-            );
+            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), 0.expr(), None);
         } // rwc_delta += PRECOMPILE_COUNT
 
         // Prepare access list of caller and callee
