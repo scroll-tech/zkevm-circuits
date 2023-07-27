@@ -464,7 +464,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(precompile_output_rws.expr()),
-                    reversible_write_counter: Delta(transfer_rwc_delta.expr()),
+                    reversible_write_counter: To(0.expr()),
                     ..StepStateTransition::default()
                 });
 
