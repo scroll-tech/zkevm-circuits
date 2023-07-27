@@ -309,7 +309,6 @@ impl Circuit<Fr> for AggregationCircuit {
             #[cfg(feature = "skip_first_pass")]
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-            // todo: remove layouter assign region
             layouter.assign_region(
                 || "aggregation",
                 |mut region| -> Result<(), Error> {

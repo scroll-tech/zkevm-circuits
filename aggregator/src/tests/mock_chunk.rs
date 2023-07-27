@@ -33,6 +33,7 @@ pub struct MockConfig {
 /// This mock chunk circuit simulates a zkEVM circuit.
 /// It's public inputs consists of 32 elements:
 /// - public input hash
+#[allow(dead_code)]
 pub(crate) struct MockChunkCircuit {
     // This circuit has an accumulator if it has already gone through compression
     pub(crate) has_accumulator: bool,

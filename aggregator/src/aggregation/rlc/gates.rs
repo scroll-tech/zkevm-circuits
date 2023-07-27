@@ -5,7 +5,7 @@ use halo2_proofs::{
 };
 use zkevm_circuits::util::Challenges;
 
-use crate::constants::LOG_DEGREE;
+use crate::{constants::LOG_DEGREE, util::assert_equal};
 
 use super::RlcConfig;
 
@@ -50,7 +50,6 @@ impl RlcConfig {
     }
 
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn two_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
@@ -128,6 +127,17 @@ impl RlcConfig {
     ) -> Result<(), Error> {
         let zero_cell = self.zero_cell(f.cell().region_index);
         region.constrain_equal(f.cell(), zero_cell)
+    }
+
+    /// Enforce the element in f is a binary element.
+    pub(crate) fn enforce_binary(
+        &self,
+        region: &mut Region<Fr>,
+        f: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<(), Error> {
+        let f2 = self.mul(region, f, f, offset)?;
+        region.constrain_equal(f.cell(), f2.cell())
     }
 
     /// Enforce res = a + b
@@ -327,19 +337,69 @@ impl RlcConfig {
         Ok(())
     }
 
-    // decompose a field element into 254 bits of boolean
+    // decompose a field element into 254 bits of boolean cells
     pub(crate) fn decomposition(
         &self,
         region: &mut Region<Fr>,
         input: &AssignedCell<Fr, Fr>,
-        offset: &usize,
+        offset: &mut usize,
     ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
-        let res = vec![];
-        // todo!()
-        Ok(res)
+        let mut input_element = Fr::default();
+        input.value().map(|&x| input_element = x);
+
+        let bits = input_element
+            .to_bytes()
+            .iter()
+            .flat_map(byte_to_bits_le)
+            .collect::<Vec<_>>();
+        // sanity check
+        {
+            let mut reconstructed = Fr::zero();
+            bits.iter().rev().for_each(|bit| {
+                reconstructed *= Fr::from(2);
+                reconstructed += Fr::from(*bit as u64);
+            });
+            assert_eq!(reconstructed, input_element);
+        }
+
+        let bit_cells = bits
+            .iter()
+            .take(254) // hard coded for BN curve
+            .map(|&bit| {
+                let cell = self.load_private(region, &Fr::from(bit as u64), offset)?;
+                self.enforce_binary(region, &cell, offset)?;
+                Ok(cell)
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let mut acc = {
+            let zero = self.load_private(region, &Fr::from(0), offset)?;
+            let zero_cell = self.zero_cell(zero.cell().region_index);
+            region.constrain_equal(zero_cell, zero.cell())?;
+            zero
+        };
+
+        let two = {
+            let two = self.load_private(region, &Fr::from(2), offset)?;
+            let two_cell = self.two_cell(two.cell().region_index);
+            region.constrain_equal(two_cell, two.cell())?;
+            two
+        };
+
+        for bit in bit_cells.iter().rev() {
+            acc = self.mul_add(region, &acc, &two, bit, offset)?;
+        }
+
+        // sanity check
+        assert_equal(&acc, input);
+
+        region.constrain_equal(acc.cell(), input.cell())?;
+
+        Ok(bit_cells)
     }
 
     // return a boolean if a is smaller than b
+    // requires that both a and b are smallish
     pub(crate) fn is_smaller_than(
         &self,
         region: &mut Region<Fr>,
@@ -347,13 +407,21 @@ impl RlcConfig {
         b: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        // FIXME
-        let mut a_tmp = Fr::default();
-        let mut b_tmp = Fr::default();
-        a.value().map(|x| a_tmp = *x);
-        b.value().map(|x| b_tmp = *x);
-
-        let res_val = if a_tmp < b_tmp { Fr::one() } else { Fr::zero() };
-        self.load_private(region, &res_val, offset)
+        // when a and b are both small (as in our use case)
+        // if a < b, (a-b) will under flow and the highest bit of (a-b) be one
+        // else,  the highest bit of (a-b) be zero
+        let sub = self.sub(region, a, b, offset)?;
+        let bits = self.decomposition(region, &sub, offset)?;
+        Ok(bits[253].clone())
     }
+}
+#[inline]
+fn byte_to_bits_le(byte: &u8) -> Vec<u8> {
+    let mut res = vec![];
+    let mut t = *byte;
+    for _ in 0..8 {
+        res.push(t & 1);
+        t >>= 1;
+    }
+    res
 }

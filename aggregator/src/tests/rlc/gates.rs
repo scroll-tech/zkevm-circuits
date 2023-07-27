@@ -1,11 +1,14 @@
 //! Tests the RLC gates
 
+use ark_std::test_rng;
 use halo2_proofs::{
+    arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use rand::RngCore;
 use zkevm_circuits::util::Challenges;
 
 use crate::{aggregation::RlcConfig, util::rlc};
@@ -38,9 +41,19 @@ impl Circuit<Fr> for ArithTestCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        let mut rng = test_rng();
+
+        #[cfg(feature = "skip_first_pass")]
+        let mut first_pass = true;
         layouter.assign_region(
             || "test field circuit",
             |mut region| -> Result<(), Error> {
+                #[cfg(feature = "skip_first_pass")]
+                if first_pass {
+                    first_pass = false;
+                    return Ok(());
+                }
+
                 config.init(&mut region)?;
 
                 let mut offset = 0;
@@ -124,6 +137,38 @@ impl Circuit<Fr> for ArithTestCircuit {
                         config.rlc_with_flag(&mut region, &inputs, &f5, &flag, &mut offset)?;
                     region.constrain_equal(res.cell(), res_rec.cell())?;
                 }
+                // unit test: decomposition
+                {
+                    for _ in 0..10 {
+                        let tmp = Fr::random(&mut rng);
+                        let tmp = config.load_private(&mut region, &tmp, &mut offset)?;
+                        config.decomposition(&mut region, &tmp, &mut offset)?;
+                    }
+                }
+                // unit test: is smaller than
+                {
+                    for _ in 0..10 {
+                        let a = Fr::from(rng.next_u64());
+                        let b = Fr::from(rng.next_u64());
+                        let c = if a < b { Fr::one() } else { Fr::zero() };
+                        let a = config.load_private(&mut region, &a, &mut offset)?;
+                        let b = config.load_private(&mut region, &b, &mut offset)?;
+                        let c = config.load_private(&mut region, &c, &mut offset)?;
+                        let c_rec = config.is_smaller_than(&mut region, &a, &b, &mut offset)?;
+                        region.constrain_equal(c.cell(), c_rec.cell())?;
+                    }
+
+                    // equality check
+                    let a = Fr::from(rng.next_u64());
+                    let b = a;
+                    let c = Fr::zero();
+                    let a = config.load_private(&mut region, &a, &mut offset)?;
+                    let b = config.load_private(&mut region, &b, &mut offset)?;
+                    let c = config.load_private(&mut region, &c, &mut offset)?;
+                    let c_rec = config.is_smaller_than(&mut region, &a, &b, &mut offset)?;
+                    region.constrain_equal(c.cell(), c_rec.cell())?;
+                }
+
                 Ok(())
             },
         )?;
@@ -133,7 +178,7 @@ impl Circuit<Fr> for ArithTestCircuit {
 
 #[test]
 fn test_field_ops() {
-    let k = 10;
+    let k = 16;
 
     let f1 = Fr::from(3);
     let f2 = Fr::from(4);
