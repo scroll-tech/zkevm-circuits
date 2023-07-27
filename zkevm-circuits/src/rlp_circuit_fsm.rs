@@ -254,8 +254,6 @@ pub struct RlpCircuitConfig<F> {
     /// When the tag occupies several bytes, this index denotes the
     /// incremental index of the byte within this tag instance.
     tag_idx: Column<Advice>,
-    /// The length of bytes that hold this tag's value.
-    tag_length: Column<Advice>,
     /// The accumulated value of the tag's bytes up to `tag_idx`.
     tag_value_acc: Column<Advice>,
     /// The depth at this row. Since RLP encoded data can be nested, we use
@@ -314,6 +312,8 @@ pub struct RlpCircuitConfig<F> {
     depth_check: IsEqualConfig<F>,
     /// Check for depth == 1
     depth_eq_one: IsEqualConfig<F>,
+    /// Check for byte_value == 0
+    byte_value_is_zero: IsZeroConfig<F>,
 
     /// Internal tables
     /// Data table
@@ -335,6 +335,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
         let (tx_id, format) = (rlp_table.tx_id, rlp_table.format);
+        let tag_length = rlp_table.tag_length;
         let q_enabled = rlp_table.q_enable;
         let (
             q_first,
@@ -349,7 +350,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_list,
             max_length,
             tag_idx,
-            tag_length,
             depth,
             is_tag_begin,
             is_tag_end,
@@ -359,7 +359,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         ) = (
             meta.fixed_column(),
             meta.fixed_column(),
-            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -811,6 +810,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta| meta.query_advice(format, Rotation::cur()),
             |meta| meta.query_advice(format, Rotation::next()),
         );
+        let byte_value_is_zero = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enabled, Rotation::cur()),
+            byte_value,
+            |meta| meta.advice_column(),
+        );
 
         // constrain diff belong to range256 table for each comparator
         let mut diffs = vec![];
@@ -920,6 +925,9 @@ impl<F: Field> RlpCircuitConfig<F> {
         let tag_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag_idx, Rotation::cur());
         let tag_value_acc_expr =
             |meta: &mut VirtualCells<F>| meta.query_advice(tag_value_acc, Rotation::cur());
+        let tag_bytes_rlc_expr = |meta: &mut VirtualCells<F>| {
+            meta.query_advice(rlp_table.tag_bytes_rlc, Rotation::cur())
+        };
         let is_tag_next_end_expr =
             |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::next());
         let is_tag_end_expr =
@@ -981,6 +989,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                     // is_list = false, tag_value_acc = byte_value
                     constrain_eq!(meta, cb, is_list, false);
                     constrain_eq!(meta, cb, rlp_table.tag_value, byte_value_expr);
+                    constrain_eq!(meta, cb, rlp_table.tag_bytes_rlc, byte_value_expr);
+                    constrain_eq!(meta, cb, rlp_table.tag_length, 1);
 
                     // state transitions.
                     update_state!(meta, cb, tag, tag_next_expr(meta));
@@ -997,6 +1007,8 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                     constrain_eq!(meta, cb, is_list, false);
                     constrain_eq!(meta, cb, rlp_table.tag_value, 0);
+                    constrain_eq!(meta, cb, rlp_table.tag_bytes_rlc, 0);
+                    constrain_eq!(meta, cb, rlp_table.tag_length, 0);
 
                     // state transitions.
                     update_state!(meta, cb, tag, tag_next_expr(meta));
@@ -1149,6 +1161,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 update_state!(meta, cb, tag_idx, 1);
                 update_state!(meta, cb, tag_length, byte_value_expr(meta) - 0x80.expr());
                 update_state!(meta, cb, tag_value_acc, byte_value_next_expr(meta));
+                update_state!(meta, cb, rlp_table.tag_bytes_rlc, byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::Bytes);
 
                 // depth is unchanged.
@@ -1173,7 +1186,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             let b = select::expr(
                 mlen_lt_0x20,
                 256.expr(),
-                select::expr(mlen_eq_0x20, evm_word_rand, keccak_input_rand),
+                select::expr(mlen_eq_0x20, evm_word_rand, keccak_input_rand.expr()),
             );
 
             // Bytes => Bytes
@@ -1185,6 +1198,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 update_state!(meta, cb, tag_idx, tag_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, tag_value_acc,
                     tag_value_acc_expr(meta) * b.expr() + byte_value_next_expr(meta));
+                update_state!(meta, cb, rlp_table.tag_bytes_rlc,
+                    tag_bytes_rlc_expr(meta) * keccak_input_rand.expr() + byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::Bytes);
 
                 // depth, tag_length unchanged.
@@ -1286,6 +1301,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // state transition.
                 update_state!(meta, cb, tag_length, tag_value_acc_expr(meta));
                 update_state!(meta, cb, tag_idx, 1);
+                update_state!(meta, cb, rlp_table.tag_bytes_rlc, byte_value_next_expr(meta));
+                update_state!(meta, cb, tag_value_acc, byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::Bytes);
 
                 // depth is unchanged.
@@ -1459,7 +1476,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             bytes_rlc,
             gas_cost_acc,
             tag_idx,
-            tag_length,
             tag_value_acc,
             is_list,
             max_length,
@@ -1493,6 +1509,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             tlength_lte_mlength,
             depth_check,
             depth_eq_one,
+            byte_value_is_zero,
 
             // internal tables
             data_table,
@@ -1545,6 +1562,18 @@ impl<F: Field> RlpCircuitConfig<F> {
             || witness.rlp_table.tag_value,
         )?;
         region.assign_advice(
+            || "rlp_table.tag_bytes_rlc",
+            self.rlp_table.tag_bytes_rlc,
+            row,
+            || witness.rlp_table.tag_bytes_rlc,
+        )?;
+        region.assign_advice(
+            || "rlp_table.tag_length",
+            self.rlp_table.tag_length,
+            row,
+            || Value::known(F::from(witness.rlp_table.tag_length as u64)),
+        )?;
+        region.assign_advice(
             || "rlp_table.is_output",
             self.rlp_table.is_output,
             row,
@@ -1593,12 +1622,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             self.tag_idx,
             row,
             || Value::known(F::from(witness.state_machine.tag_idx as u64)),
-        )?;
-        region.assign_advice(
-            || "sm.tag_length",
-            self.tag_length,
-            row,
-            || Value::known(F::from(witness.state_machine.tag_length as u64)),
         )?;
         region.assign_advice(
             || "sm.depth",
@@ -1710,13 +1733,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             region,
             row,
             F::from(witness.state_machine.tag_idx as u64),
-            F::from(witness.state_machine.tag_length as u64),
+            F::from(witness.rlp_table.tag_length as u64),
         )?;
         let tlength_lte_mlength_chip = ComparatorChip::construct(self.tlength_lte_mlength.clone());
         tlength_lte_mlength_chip.assign(
             region,
             row,
-            F::from(witness.state_machine.tag_length as u64),
+            F::from(witness.rlp_table.tag_length as u64),
             F::from(witness.state_machine.max_length as u64),
         )?;
 
@@ -1776,6 +1799,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         for (chip, lhs, rhs) in byte_value_checks {
             chip.assign(region, row, lhs, rhs)?;
         }
+        let bv_chip = IsZeroChip::construct(self.byte_value_is_zero.clone());
+        bv_chip.assign(region, row, Value::known(byte_value))?;
 
         Ok(())
     }

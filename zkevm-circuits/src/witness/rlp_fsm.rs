@@ -511,6 +511,12 @@ pub struct RlpTable<F: FieldExt> {
     pub rlp_tag: RlpTag,
     /// The tag's value
     pub tag_value: Value<F>,
+    /// RLC of the tag's big-endian bytes
+    pub tag_bytes_rlc: Value<F>,
+    /// Length of the tag's big-endian bytes
+    /// Note that we use (tag_bytes_rlc, tag_length) to identify
+    /// the tag's dynamic-sized big-endian bytes
+    pub tag_length: usize,
     /// If current row is for output
     pub is_output: bool,
     /// If current tag's value is None.
@@ -536,8 +542,6 @@ pub struct StateMachine<F: FieldExt> {
     pub byte_value: u8,
     /// The index of the actual bytes of tag
     pub tag_idx: usize,
-    /// The length of the actual bytes of tag
-    pub tag_length: usize,
     /// The accumulated value of bytes up to `tag_idx` of tag
     /// In most cases, RlpTable.tag_value == StateMachine.tag_value_acc.
     /// However, for RlpTag::Len, we have
@@ -581,4 +585,5 @@ pub(crate) struct SmState<F: Field> {
     pub(crate) tag_idx: usize,
     pub(crate) tag_length: usize,
     pub(crate) tag_value_acc: Value<F>,
+    pub(crate) tag_bytes_rlc: Value<F>,
 }
