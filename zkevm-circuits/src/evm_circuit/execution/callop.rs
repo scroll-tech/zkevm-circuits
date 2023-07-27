@@ -1618,8 +1618,6 @@ mod test {
         )
         .unwrap();
 
-        println!("{:?}", ctx.geth_traces[0].struct_logs);
-
         CircuitTestBuilder::new_from_test_ctx(ctx).run()
     }
 
