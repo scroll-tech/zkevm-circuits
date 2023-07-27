@@ -235,8 +235,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 1.expr(),
                 precompile_warm[addr - 1].expr(),
                 None,
-            ); // rwc_delta += 1
-        }
+            );
+        } // rwc_delta += PRECOMPILE_COUNT
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -420,7 +420,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
-                //   - Write TxAccessListAccount (Precompile) x9
+                //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -490,7 +490,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
-                //   - Write TxAccessListAccount (Precompile) x9
+                //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -542,7 +542,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
-                    //   - Write TxAccessListAccount (Precompile) x9
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) only for Shanghai
@@ -602,7 +602,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
-                    //   - Write TxAccessListAccount (Precompile) x9
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) only for Shanghai
