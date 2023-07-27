@@ -42,7 +42,6 @@ use halo2_ecc::{
 
 mod ecdsa;
 mod utils;
-use keccak256::keccak_arith::Keccak;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) use utils::*;
 
