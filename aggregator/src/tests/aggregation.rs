@@ -18,11 +18,7 @@ use super::mock_chunk::MockChunkCircuit;
 fn test_aggregation_circuit() {
     env_logger::init();
 
-    #[cfg(not(feature = "disable_proof_aggregation"))]
-    let k = 25;
-
-    #[cfg(feature = "disable_proof_aggregation")]
-    let k = 19;
+    let k = 20;
 
     // This set up requires one round of keccak for chunk's data hash
     let circuit = build_new_aggregation_circuit(2);
@@ -52,7 +48,7 @@ fn test_aggregation_circuit_full() {
     log::trace!("finished mock proving");
 
     let mut rng = test_rng();
-    let param = gen_srs(25);
+    let param = gen_srs(20);
 
     let pk = gen_pk(&param, &circuit, None);
     log::trace!("finished pk generation for circuit");
