@@ -76,7 +76,7 @@ impl Circuit<Fr> for ArithTestCircuit {
                 }
                 // unit test: enforce_zero
                 {
-                    config.enforce_zero(&mut region, &f7, &mut offset)?;
+                    config.enforce_zero(&mut region, &f7)?;
                 }
                 // unit test: not gate
                 {

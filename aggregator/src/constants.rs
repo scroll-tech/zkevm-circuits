@@ -58,10 +58,6 @@ pub(crate) const BITS: usize = 88;
 /// will be padded.
 // TODO: update me(?)
 pub const MAX_AGG_SNARKS: usize = 10;
-// 2 snarks -> 2020 rows
-// 4 snarks -> 3670 rows
-// 10 snarks -> 8536 rows
-pub(crate) const RLC_CHIP_NUM_ROWS: usize = MAX_AGG_SNARKS * 811 + 426;
 
 /// The number of keccak rounds is the sum of
 /// - batch public input hash: 2 rounds

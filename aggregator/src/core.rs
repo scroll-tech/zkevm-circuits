@@ -8,13 +8,7 @@ use rand::Rng;
 #[cfg(feature = "skip_first_pass")]
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier::{
-    loader::{
-        halo2::halo2_ecc::halo2_base::{
-            gates::{flex_gate::FlexGateConfig, GateInstructions},
-            AssignedValue, Context, ContextParams, QuantumCell,
-        },
-        native::NativeLoader,
-    },
+    loader::native::NativeLoader,
     pcs::{
         kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
@@ -35,11 +29,11 @@ use zkevm_circuits::{
 use crate::{
     constants::{
         CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
-        MAX_KECCAK_ROUNDS, RLC_CHIP_NUM_ROWS, ROWS_PER_ROUND,
+        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
     },
     util::{
-        assert_conditional_equal, assert_equal, assert_exist, assigned_value_to_cell, get_indices,
-        is_smaller_than, keccak_round_capacity, parse_hash_digest_cells, parse_hash_preimage_cells,
+        assert_conditional_equal, assert_equal, assert_exist, get_indices, keccak_round_capacity,
+        parse_hash_digest_cells, parse_hash_preimage_cells,
     },
     AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
     PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
@@ -419,10 +413,8 @@ fn copy_constraints(
 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
 // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::type_complexity)]
 pub(crate) fn conditional_constraints(
     rlc_config: &RlcConfig,
-    // flex_gate: &FlexGateConfig<Fr>,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     hash_input_cells: &[AssignedCell<Fr, Fr>],
@@ -434,72 +426,6 @@ pub(crate) fn conditional_constraints(
     #[cfg(feature = "skip_first_pass")]
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-    // let (chunk_is_valid_cells, data_hash_flag_cells, number_of_valid_snarks) = layouter
-    //     .assign_region(
-    //         || "aggregation",
-    //         |region| -> Result<
-    //             (
-    //                 Vec<AssignedValue<Fr>>,
-    //                 Vec<AssignedValue<Fr>>,
-    //                 Vec<AssignedValue<Fr>>,
-    //             ),
-    //             halo2_proofs::plonk::Error,
-    //         > { #[cfg(feature = "skip_first_pass")] if first_pass { // halo2-lib: directly skip;
-    //         > on action required. first_pass = false; return Ok((vec![], vec![], vec![])); } let
-    //         > mut chunk_is_valid_cells = vec![];
-
-    //             let mut ctx = Context::new(
-    //                 region,
-    //                 ContextParams {
-    //                     max_rows: flex_gate.max_rows,
-    //                     num_context_ids: 1,
-    //                     fixed_columns: flex_gate.constants.clone(),
-    //                 },
-    //             );
-
-    //             let number_of_valid_snarks = flex_gate
-    //                 .load_witness(&mut ctx, Value::known(Fr::from(num_of_valid_chunks as u64)));
-    //             chunk_is_valid_cells.extend_from_slice(
-    //                 chunk_is_valid(flex_gate, &mut ctx, &number_of_valid_snarks).as_slice(),
-    //             );
-    //             // num_of_valid_chunk_cell.push(number_of_valid_snarks);
-
-    //             // #valid snarks | offset of data hash | flags
-    //             // 1,2,3,4       | 0                   | 1, 0, 0
-    //             // 5,6,7,8       | 32                  | 0, 1, 0
-    //             // 9,10          | 64                  | 0, 0, 1
-
-    //             let four = flex_gate.load_constant(&mut ctx, Fr::from(4));
-    //             let eight = flex_gate.load_constant(&mut ctx, Fr::from(8));
-    //             let flag1 = is_smaller_than(flex_gate, &mut ctx, &number_of_valid_snarks, &four);
-    //             let not_flag1 = flex_gate.not(&mut ctx, QuantumCell::Existing(flag1));
-    //             let flag2 = is_smaller_than(flex_gate, &mut ctx, &number_of_valid_snarks,
-    // &eight);             let flag3 = flex_gate.not(&mut ctx, QuantumCell::Existing(flag2));
-    //             let flag2 = flex_gate.mul(
-    //                 &mut ctx,
-    //                 QuantumCell::Existing(not_flag1),
-    //                 QuantumCell::Existing(flag2),
-    //             );
-    //             log::trace!(
-    //                 "flags: {:?} {:?} {:?}",
-    //                 flag1.value(),
-    //                 flag2.value(),
-    //                 flag3.value()
-    //             );
-    //             // flag3 is !flag2 and is omitted
-    //             let data_hash_flag_cells = vec![flag1, flag2, flag3];
-    //             Ok((
-    //                 chunk_is_valid_cells,
-    //                 data_hash_flag_cells,
-    //                 vec![number_of_valid_snarks],
-    //             ))
-    //         },
-    //     )
-    //     .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
-
-    #[cfg(feature = "skip_first_pass")]
-    let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-
     let num_of_valid_snarks_cell = layouter
         .assign_region(
             || "rlc conditional constraints",
@@ -507,13 +433,10 @@ pub(crate) fn conditional_constraints(
                 #[cfg(feature = "skip_first_pass")]
                 if first_pass {
                     first_pass = false;
-                    // let mut offset = RLC_CHIP_NUM_ROWS;
-                    // rlc_config.load_private(&mut region, &Fr::zero(), &mut offset)?;
                     return Ok(vec![]);
                 }
 
                 rlc_config.init(&mut region)?;
-
                 let mut offset = 0;
 
                 // ====================================================
@@ -541,12 +464,18 @@ pub(crate) fn conditional_constraints(
                 // 5,6,7,8       | 32                  | 0, 1, 0
                 // 9,10          | 64                  | 0, 0, 1
 
-                // FIXME: load 4/8 from constant
-                let two_cell = rlc_config.two_cell(num_of_valid_snarks_cell[0].cell().region_index);
-                let two = rlc_config.load_private(&mut region, &Fr::from(2), &mut offset)?;
-                region.constrain_equal(two_cell, two.cell())?;
-                let four = rlc_config.add(&mut region, &two, &two, &mut offset)?;
-                let eight = rlc_config.add(&mut region, &four, &four, &mut offset)?;
+                let four = {
+                    let four = rlc_config.load_private(&mut region, &Fr::from(4), &mut offset)?;
+                    let four_cell = rlc_config.four_cell(four.cell().region_index);
+                    region.constrain_equal(four_cell, four.cell())?;
+                    four
+                };
+                let eight = {
+                    let eight = rlc_config.load_private(&mut region, &Fr::from(8), &mut offset)?;
+                    let eight_cell = rlc_config.eight_cell(eight.cell().region_index);
+                    region.constrain_equal(eight_cell, eight.cell())?;
+                    eight
+                };
                 let flag1 = rlc_config.is_smaller_than(
                     &mut region,
                     &num_of_valid_snarks_cell[0],
@@ -715,7 +644,7 @@ pub(crate) fn conditional_constraints(
                 )?;
                 let t1t2 = rlc_config.mul(&mut region, &t1, &t2, &mut offset)?;
                 let t1t2t3 = rlc_config.mul(&mut region, &t1t2, &t3, &mut offset)?;
-                rlc_config.enforce_zero(&mut region, &t1t2t3, &mut offset)?;
+                rlc_config.enforce_zero(&mut region, &t1t2t3)?;
 
                 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
                 for (i, chunk_hash_input) in chunk_pi_hash_preimages.iter().enumerate() {
@@ -733,14 +662,15 @@ pub(crate) fn conditional_constraints(
                             &mut offset,
                         )?;
 
-                        rlc_config.enforce_zero(&mut region, &res, &mut offset)?;
+                        rlc_config.enforce_zero(&mut region, &res)?;
                     }
                 }
 
                 // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
                 // that means the data_hash length is 32 * number_of_valid_snarks
-                // FIXME: load from fixed column
                 let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
+                let const32_cell = rlc_config.thirty_two_cell(const32.cell().region_index);
+                region.constrain_equal(const32.cell(), const32_cell)?;
                 let data_hash_inputs = rlc_config.mul(
                     &mut region,
                     &num_of_valid_snarks_cell[0],

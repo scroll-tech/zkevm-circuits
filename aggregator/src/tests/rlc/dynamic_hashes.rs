@@ -182,9 +182,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
                     .rlc_config
                     .mul(&mut region, &tmp, &tmp3, &mut offset)?;
 
-                config
-                    .rlc_config
-                    .enforce_zero(&mut region, &tmp, &mut offset)?;
+                config.rlc_config.enforce_zero(&mut region, &tmp)?;
 
                 Ok(())
             },

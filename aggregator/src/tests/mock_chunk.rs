@@ -2,11 +2,10 @@ use std::iter;
 
 use ark_std::test_rng;
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     dev::MockProver,
     halo2curves::bn256::Fr,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, FirstPhase, Instance, Selector},
-    poly::Rotation,
+    plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier_sdk::CircuitExt;

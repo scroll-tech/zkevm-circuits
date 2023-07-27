@@ -1,13 +1,13 @@
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Region},
-    halo2curves::{bn256::Fr, FieldExt},
+    halo2curves::bn256::Fr,
     plonk::Error,
 };
 use itertools::Itertools;
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
     gates::{flex_gate::FlexGateConfig, GateInstructions},
-    AssignedValue, Context, QuantumCell,
+    AssignedValue, Context,
 };
 
 use crate::{
@@ -433,22 +433,6 @@ fn is_ascending(a: &[usize]) -> bool {
     a.windows(2).all(|w| w[0] <= w[1])
 }
 
-/// Input values a and b, return a boolean cell a < b
-pub(crate) fn is_smaller_than<F: FieldExt>(
-    gate_config: &FlexGateConfig<F>,
-    ctx: &mut Context<F>,
-    a: &AssignedValue<F>,
-    b: &AssignedValue<F>,
-) -> AssignedValue<F> {
-    // compute bit decomposition of a - b
-    // if a < b there will be a wraparound and therefore the last bit will be 1
-    // else the last bit will be 0
-    let c = gate_config.sub(ctx, QuantumCell::Existing(*a), QuantumCell::Existing(*b));
-    let c_bits = gate_config.num_to_bits(ctx, &c, 254);
-
-    *c_bits.last().unwrap() // safe unwrap
-}
-
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn assigned_cell_to_value(
@@ -464,6 +448,7 @@ pub(crate) fn assigned_cell_to_value(
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(crate) fn assigned_value_to_cell(
     config: &RlcConfig,
     region: &mut Region<Fr>,

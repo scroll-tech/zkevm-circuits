@@ -1,7 +1,7 @@
 use halo2_proofs::{
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
     halo2curves::bn256::Fr,
-    plonk::{Challenge, Error},
+    plonk::Error,
 };
 use zkevm_circuits::util::Challenges;
 
@@ -15,6 +15,19 @@ impl RlcConfig {
         region.assign_fixed(|| "const zero", self.fixed, 0, || Value::known(Fr::zero()))?;
         region.assign_fixed(|| "const one", self.fixed, 1, || Value::known(Fr::one()))?;
         region.assign_fixed(|| "const two", self.fixed, 2, || Value::known(Fr::from(2)))?;
+        region.assign_fixed(|| "const four", self.fixed, 3, || Value::known(Fr::from(4)))?;
+        region.assign_fixed(
+            || "const eight",
+            self.fixed,
+            4,
+            || Value::known(Fr::from(8)),
+        )?;
+        region.assign_fixed(
+            || "const thirty two",
+            self.fixed,
+            5,
+            || Value::known(Fr::from(32)),
+        )?;
         Ok(())
     }
 
@@ -37,10 +50,38 @@ impl RlcConfig {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn two_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
             row_offset: 2,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn four_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 3,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn eight_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 4,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 5,
             column: self.fixed.into(),
         }
     }
@@ -84,7 +125,6 @@ impl RlcConfig {
         &self,
         region: &mut Region<Fr>,
         f: &AssignedCell<Fr, Fr>,
-        offset: &mut usize,
     ) -> Result<(), Error> {
         let zero_cell = self.zero_cell(f.cell().region_index);
         region.constrain_equal(f.cell(), zero_cell)
