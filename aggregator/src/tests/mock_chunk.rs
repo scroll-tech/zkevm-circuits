@@ -18,7 +18,7 @@ use crate::{
 
 /// This config is used to compute RLCs for bytes.
 /// It requires a phase 2 column
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MockConfig {
     pub(crate) rlc_config: RlcConfig,
     /// Instance for public input; stores

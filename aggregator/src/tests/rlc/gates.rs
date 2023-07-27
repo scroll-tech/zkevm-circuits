@@ -38,11 +38,11 @@ impl Circuit<Fr> for ArithTestCircuit {
 
     fn synthesize(
         &self,
-        mut config: Self::Config,
+        config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let mut rng = test_rng();
-        config.init(&mut layouter)?;
+
         let mut first_pass = true;
         layouter.assign_region(
             || "test field circuit",
@@ -51,6 +51,8 @@ impl Circuit<Fr> for ArithTestCircuit {
                     first_pass = false;
                     return Ok(());
                 }
+
+                config.init(&mut region)?;
 
                 let mut offset = 0;
 
