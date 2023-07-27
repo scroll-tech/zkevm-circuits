@@ -1111,7 +1111,12 @@ impl EcPairingPair {
         Self { g1_point, g2_point }
     }
 
-    /// Padding pair for ECC circuit.
+    /// Padding pair for ECC circuit. The pairing check is done with a constant number
+    /// `N_PAIRING_PER_OP` of (G1, G2) pairs. The ECC circuit under the hood uses halo2-lib to
+    /// compute the multi-miller loop, which allows `(G1::Infinity, G2::Generator)` pair to skip
+    /// the loop for that pair. So in case the EVM inputs are less than `N_PAIRING_PER_OP` we pad
+    /// the ECC Circuit inputs by this pair. Any EVM input of `(G1::Infinity, G2)` or
+    /// `(G1, G2::Infinity)` is also transformed into `(G1::Infinity, G2::Generator)`.
     pub fn ecc_padding() -> Self {
         Self {
             g1_point: G1Affine::identity(),
@@ -1119,7 +1124,9 @@ impl EcPairingPair {
         }
     }
 
-    /// Padding pair for EVM circuit.
+    /// Padding pair for EVM circuit. The pairing check is done with a constant number
+    /// `N_PAIRING_PER_OP` of (G1, G2) pairs. In case EVM inputs are less in number, we pad them
+    /// with `(G1::Infinity, G2::Infinity)` for simplicity.
     pub fn evm_padding() -> Self {
         Self {
             g1_point: G1Affine::identity(),
