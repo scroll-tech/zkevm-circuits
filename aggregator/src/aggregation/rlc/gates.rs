@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::{AssignedCell, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::Fr,
     plonk::Error,
 };
@@ -11,43 +11,62 @@ use super::RlcConfig;
 
 impl RlcConfig {
     /// initialize the chip with fixed values storing 0, 1, 2, 4, 8, 32
-    pub(crate) fn init(&mut self, region: &mut Region<Fr>) -> Result<(), Error> {
-        self.fixed_cells.push(region.assign_fixed(
-            || "const zero",
-            self.fixed,
-            0,
-            || Value::known(Fr::zero()),
-        )?);
-        self.fixed_cells.push(region.assign_fixed(
-            || "const one",
-            self.fixed,
-            1,
-            || Value::known(Fr::one()),
-        )?);
-        self.fixed_cells.push(region.assign_fixed(
-            || "const two",
-            self.fixed,
-            2,
-            || Value::known(Fr::from(2)),
-        )?);
-        self.fixed_cells.push(region.assign_fixed(
-            || "const four",
-            self.fixed,
-            3,
-            || Value::known(Fr::from(4)),
-        )?);
-        self.fixed_cells.push(region.assign_fixed(
-            || "const eight",
-            self.fixed,
-            4,
-            || Value::known(Fr::from(8)),
-        )?);
-        self.fixed_cells.push(region.assign_fixed(
-            || "const thirty two",
-            self.fixed,
-            5,
-            || Value::known(Fr::from(32)),
-        )?);
+    pub(crate) fn init(&mut self, layouter: &mut impl Layouter<Fr>) -> Result<(), Error> {
+        log::trace!("initializing");
+        let mut is_first_time = true;
+
+        self.fixed_cells = layouter.assign_region(
+            || "fixed cells",
+            |mut region| -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+                if is_first_time {
+                    is_first_time = false;
+                    return Ok(vec![]);
+                }
+
+                Ok(vec![
+                    region.assign_fixed(
+                        || "const zero",
+                        self.fixed,
+                        0,
+                        || Value::known(Fr::zero()),
+                    )?,
+                    region.assign_fixed(
+                        || "const one",
+                        self.fixed,
+                        1,
+                        || Value::known(Fr::one()),
+                    )?,
+                    region.assign_fixed(
+                        || "const two",
+                        self.fixed,
+                        2,
+                        || Value::known(Fr::from(2)),
+                    )?,
+                    region.assign_fixed(
+                        || "const four",
+                        self.fixed,
+                        3,
+                        || Value::known(Fr::from(4)),
+                    )?,
+                    region.assign_fixed(
+                        || "const eight",
+                        self.fixed,
+                        4,
+                        || Value::known(Fr::from(8)),
+                    )?,
+                    region.assign_fixed(
+                        || "const thirty two",
+                        self.fixed,
+                        5,
+                        || Value::known(Fr::from(32)),
+                    )?,
+                ])
+            },
+        )?;
+        for (i, e) in self.fixed_cells.iter().enumerate() {
+            log::trace!("{}th fixed cell: {:?}", i, e.value());
+        }
+
         Ok(())
     }
 

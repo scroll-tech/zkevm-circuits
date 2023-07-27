@@ -99,6 +99,8 @@ impl Circuit<Fr> for DynamicHashCircuit {
         )
         .unwrap();
 
+        config.rlc_config.init(&mut layouter)?;
+
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
         layouter.assign_region(
@@ -108,8 +110,6 @@ impl Circuit<Fr> for DynamicHashCircuit {
                     first_pass = false;
                     return Ok(());
                 }
-
-                config.rlc_config.init(&mut region)?;
 
                 // ==============================
                 // keccak part
