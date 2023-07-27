@@ -253,12 +253,17 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     // so the returned pair is consisted of same values
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
         let row_num = Self::min_num_rows();
-        let tx_count = block.circuits_params.max_txs;
-        let max_tx_count = (row_num * COLUMN_NUM_LIMIT) / CELLS_PER_SIG;
+        
+        let tx_count = block.txs.len();
+        
+        // TODO: Take the tx limit by block? 
+        let max_tx_count = block.circuits_params.max_txs;
+        // or by actual circuit capacity?
+        // let max_tx_count = (row_num * COLUMN_NUM_LIMIT) / CELLS_PER_SIG;
 
         // Instead of showing actual minimum row usage,
-        // halo2-lib based circuits use min_row_num to represent a fraction of total capacity
-        // This functionality allows l2geth to decide if additional sig ops can be added.
+        // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
+        // This functionality allows l2geth to decide if additional ops can be added.
         let min_row_num = (row_num / max_tx_count) * tx_count;
 
         (min_row_num, row_num)

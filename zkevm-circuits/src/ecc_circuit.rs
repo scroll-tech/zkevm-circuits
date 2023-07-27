@@ -799,7 +799,7 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         Ok(())
     }
 
-    fn min_num_rows_block(_block: &Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
         // EccCircuit can't determine usable rows independently.
         // Instead, the blinding area is determined by other advise columns with most counts of rotation queries
         // This value is typically determined by either the Keccak or EVM circuit. 
@@ -809,6 +809,22 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         // same formula as halo2-lib's FlexGate
         let row_num = (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3);
 
-        (row_num, row_num)
+        let ec_adds = block.get_ec_add_ops().len();
+        let ec_muls = block.get_ec_mul_ops().len();
+        let ec_pairings = block.get_ec_pairing_ops().len();
+
+        // Instead of showing actual minimum row usage,
+        // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
+        // This functionality allows l2geth to decide if additional ops can be added.
+        let min_row_num = [
+            (row_num / block.circuits_params.max_ec_ops.ec_add) * ec_adds,
+            (row_num / block.circuits_params.max_ec_ops.ec_mul) * ec_muls,
+            (row_num / block.circuits_params.max_ec_ops.ec_pairing) * ec_pairings,
+        ]
+        .into_iter()
+        .max()
+        .unwrap();
+
+        (min_row_num, row_num)
     }
 }
