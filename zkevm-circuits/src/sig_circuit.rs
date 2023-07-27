@@ -19,7 +19,8 @@ use crate::{
     keccak_circuit::KeccakCircuit,
     sig_circuit::{
         ecdsa::ecdsa_verify_no_pubkey_check,
-        utils::{COLUMN_NUM_LIMIT, CELLS_PER_SIG}
+        // used for possibly determine sig capacity by actual column limit
+        // utils::{COLUMN_NUM_LIMIT, CELLS_PER_SIG}
     },
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
