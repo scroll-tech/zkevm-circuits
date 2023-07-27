@@ -273,6 +273,10 @@ impl ModExpAuxData {
             output_len,
             input_memory,
             output_memory,
+        }
+    }
+}
+
 /// Auxiliary data for EcAdd, i.e. P + Q = R
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EcAddAuxData {
