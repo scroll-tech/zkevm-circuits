@@ -15,11 +15,19 @@ use crate::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 
+mod ec_add;
+pub use ec_add::EcAddGadget;
+
 mod ecrecover;
 pub use ecrecover::EcrecoverGadget;
 
 mod modexp;
 pub use modexp::ModExpGadget;
+mod ec_mul;
+pub use ec_mul::EcMulGadget;
+
+mod ec_pairing;
+pub use ec_pairing::EcPairingGadget;
 
 mod identity;
 pub use identity::IdentityGadget;

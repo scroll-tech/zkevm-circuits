@@ -1,15 +1,21 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, ExecStep,
+        NumberOrHash,
     },
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
-    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    operation::{AccountField, AccountOp, CallContextField},
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
+use eth_types::{
+    bytecode::BytecodeElement,
+    evm_types::{memory::MemoryWordRange, Memory},
+    Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256,
+};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
+use log::trace;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Create<const IS_CREATE2: bool>;
@@ -327,24 +333,41 @@ fn handle_copy(
     offset: usize,
     length: usize,
 ) -> Result<(Vec<u8>, H256, H256), Error> {
-    let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
+    let rw_counter_start = state.block_ctx.rwc;
+    let call_ctx = state.call_ctx_mut()?;
+    //let memory: &mut Memory = &mut call_ctx.memory;
+    let memory: &mut Memory = &mut call_ctx.memory;
+    memory.extend_for_range(Word::from(offset as u64), Word::from(length as u64));
+
+    let initialization_bytes = memory.0[offset..offset + length].to_vec();
+    trace!("initialization_bytes bussmapping is {initialization_bytes:?}");
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
-    let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
-        .code
-        .iter()
-        .map(|element| (element.value, element.is_code))
-        .collect();
+    let bytes = Bytecode::from(initialization_bytes.clone()).code;
 
-    let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _)) in bytes.iter().enumerate() {
-        // this could be a memory read, if this happens before we push the new call?
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryOp::new(callee_id, (offset + i).into(), *byte),
-        );
+    let dst_range = MemoryWordRange::align_range(offset, length);
+    let mem_read = memory.read_chunk(dst_range);
+    // collect all bytecode to memory with padding word
+    let mut chunk_index = dst_range.start_slot().0;
+
+    // memory word writes to destination word
+    for _ in 0..dst_range.word_count() {
+        // read memory
+        state.memory_read_word(step, chunk_index.into())?;
+        chunk_index += 32;
     }
+
+    let copy_steps = CopyEventStepsBuilder::new()
+        .source(bytes.as_slice())
+        .read_offset(0)
+        .write_offset(dst_range.shift())
+        .step_length(dst_range.full_length())
+        .length(length)
+        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| {
+            mem_read.get(idx).copied().unwrap_or(0)
+        })
+        .mapper(|v: &BytecodeElement| (v.value, v.is_code))
+        .build();
 
     state.push_copy(
         step,
@@ -358,7 +381,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Hash(code_hash),
             dst_addr: 0,
             log_id: None,
-            bytes,
+            copy_bytes: CopyBytes::new(copy_steps, None, None),
         },
     );
 
@@ -370,7 +393,10 @@ mod tests {
     use super::*;
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::RW};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word};
-    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        test_ctx::{helpers::account_0_code_account_1_no_code, LoggerConfig},
+        TestContext,
+    };
 
     #[test]
     fn test_create_address_collision_error() {
@@ -403,13 +429,14 @@ mod tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             |mut txs, accs| {
                 txs[0].from(accs[1].address).to(accs[0].address);
             },
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();

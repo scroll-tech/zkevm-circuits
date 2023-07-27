@@ -118,6 +118,7 @@ pub trait Op: Clone + Eq + Ord {
     fn reverse(&self) -> Self;
 }
 
+// new Memory ops for word value
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
 /// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
@@ -128,15 +129,17 @@ pub struct MemoryOp {
     /// Memory Address
     pub address: MemoryAddress,
     /// Value
-    pub value: u8,
+    pub value: Word,
+    /// The value before the operation.
+    pub value_prev: Word,
 }
 
 impl fmt::Debug for MemoryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("MemoryOp { ")?;
         f.write_fmt(format_args!(
-            "call_id: {:?}, addr: {:?}, value: 0x{:02x}",
-            self.call_id, self.address, self.value
+            "call_id: {:?}, addr: {:?}, value: 0x{:?} value_prev {:?}",
+            self.call_id, self.address, self.value, self.value_prev
         ))?;
         f.write_str(" }")
     }
@@ -144,11 +147,22 @@ impl fmt::Debug for MemoryOp {
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(call_id: usize, address: MemoryAddress, value: u8) -> MemoryOp {
+    pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryOp {
+        Self::new_write(call_id, address, value, value)
+    }
+
+    /// Create a new instance of a `MemoryOp` from it's components.
+    pub fn new_write(
+        call_id: usize,
+        address: MemoryAddress,
+        value: Word,
+        value_prev: Word,
+    ) -> MemoryOp {
         MemoryOp {
             call_id,
             address,
             value,
+            value_prev,
         }
     }
 
@@ -168,8 +182,13 @@ impl MemoryOp {
     }
 
     /// Returns the bytes read or written by this operation.
-    pub fn value(&self) -> u8 {
+    pub fn value(&self) -> Word {
         self.value
+    }
+
+    /// Returns the bytes as of before this operation.
+    pub fn value_prev(&self) -> Word {
+        self.value_prev
     }
 }
 
@@ -484,7 +503,7 @@ pub struct TxRefundOp {
     pub tx_id: usize,
     /// Refund Value in units of gas after the operation.
     pub value: u64,
-    /// Refund Value in units of gas after the operation.
+    /// Refund Value in units of gas before the operation.
     pub value_prev: u64,
 }
 
@@ -908,7 +927,7 @@ impl Op for TxReceiptOp {
 pub enum OpEnum {
     /// Stack
     Stack(StackOp),
-    /// Memory
+    /// Memory word
     Memory(MemoryOp),
     /// Storage
     Storage(StorageOp),
@@ -1075,7 +1094,7 @@ mod operation_tests {
 
         let stack_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, stack_op.clone());
 
-        let memory_op = MemoryOp::new(1, MemoryAddress(0x40), 0x40);
+        let memory_op = MemoryOp::new(1, MemoryAddress(0x40), Word::from(0x40));
 
         let memory_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, memory_op.clone());
 

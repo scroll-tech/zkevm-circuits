@@ -36,8 +36,9 @@ use ethers_core::{
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
-    CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, ModExpEvent,
-    NumberOrHash,
+    CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp, EcMulOp,
+    EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 use hex::decode_to_slice;
 
@@ -52,6 +53,17 @@ use std::{
 pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
 };
+
+/// Setup parameters for ECC-related precompile calls.
+#[derive(Debug, Clone, Copy)]
+pub struct PrecompileEcParams {
+    /// Maximum number of EcAdd ops supported in one block.
+    pub ec_add: usize,
+    /// Maximum number of EcMul ops supported in one block.
+    pub ec_mul: usize,
+    /// Maximum number of EcPairing ops supported in one block.
+    pub ec_pairing: usize,
+}
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
@@ -90,6 +102,8 @@ pub struct CircuitsParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// Max number of ECC-related ops supported in the ECC circuit.
+    pub max_ec_ops: PrecompileEcParams,
 }
 
 impl Default for CircuitsParams {
@@ -102,13 +116,18 @@ impl Default for CircuitsParams {
             max_inner_blocks: 64,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
-            max_copy_rows: 1000,
+            max_copy_rows: 2000,
             max_mpt_rows: 1000,
             max_exp_steps: 1000,
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
             max_rlp_rows: 1000,
+            max_ec_ops: PrecompileEcParams {
+                ec_add: 50,
+                ec_mul: 50,
+                ec_pairing: 2,
+            },
         }
     }
 }
@@ -331,7 +350,7 @@ impl<'a> CircuitInputBuilder {
             .rev()
         {
             log::debug!(
-                "op {:?}, count {}, mem rw {}(avg {:.2}), stack rw {}(avg {:.2})",
+                "op {:?}, count {}, memory_word rw {}(avg {:.2}), stack rw {}(avg {:.2})",
                 op,
                 count,
                 mem,
@@ -340,7 +359,7 @@ impl<'a> CircuitInputBuilder {
                 *stack as f32 / *count as f32
             );
         }
-        log::debug!("memory num: {}", self.block.container.memory.len());
+        log::debug!("memory_word num: {}", self.block.container.memory.len());
         log::debug!("stack num: {}", self.block.container.stack.len());
         log::debug!("storage num: {}", self.block.container.storage.len());
         log::debug!(

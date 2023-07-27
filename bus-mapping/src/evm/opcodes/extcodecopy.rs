@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
@@ -22,22 +22,7 @@ impl Opcode for Extcodecopy {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
 
-        // reconstruction
-        let address = geth_steps[0].stack.nth_last(0)?.to_address();
-        let dst_offset = geth_steps[0].stack.nth_last(1)?;
-        let code_offset = geth_step.stack.nth_last(2)?;
-        let length = geth_steps[0].stack.nth_last(3)?;
-
-        let (_, account) = state.sdb.get_account(&address);
-        let code_hash = account.code_hash;
-        let code = state.code(code_hash)?;
-
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-
-        memory.copy_from(dst_offset, code_offset, length, &code);
-
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -114,6 +99,7 @@ fn gen_extcodecopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -147,15 +133,8 @@ fn gen_copy_event(
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
 
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = state.gen_copy_steps_for_bytecode(
-        &mut exec_step,
-        &bytecode,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
+    let (copy_steps, prev_bytes) =
+        state.gen_copy_steps_for_bytecode(exec_step, &bytecode, src_addr, dst_addr, length)?;
 
     Ok(CopyEvent {
         src_addr,
@@ -167,7 +146,7 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         log_id: None,
         rw_counter_start,
-        bytes: copy_steps,
+        copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
     })
 }
 
@@ -188,7 +167,7 @@ mod extcodecopy_tests {
         geth_types::GethData,
         Bytecode, Bytes, ToWord, Word, U256,
     };
-    use mock::TestContext;
+    use mock::{test_ctx::LoggerConfig, TestContext};
 
     fn test_ok(
         code_ext: Bytes,
@@ -225,7 +204,7 @@ mod extcodecopy_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new_with_logger_config(
             None,
             |accs| {
                 accs[0]
@@ -242,6 +221,7 @@ mod extcodecopy_tests {
                 txs[0].to(accs[0].address).from(accs[2].address);
             },
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();
@@ -403,23 +383,38 @@ mod extcodecopy_tests {
 
         let expected_call_id = transaction.calls()[step.call_index].call_id;
 
+        let length = memory_offset + copy_size;
+        let copy_start = memory_offset - memory_offset % 32;
+        let copy_end = length - length % 32;
+        let word_ops = (copy_end + 32 - copy_start) / 32;
+        let copied_bytes = builder.block.copy_events[0]
+            .copy_bytes
+            .bytes
+            .iter()
+            .map(|(b, _, _)| *b)
+            .collect::<Vec<_>>();
+        let prev_bytes = builder.block.copy_events[0]
+            .copy_bytes
+            .bytes_write_prev
+            .clone()
+            .unwrap();
+
+        assert_eq!(builder.block.container.memory.len(), word_ops);
         assert_eq!(
-            (0..copy_size)
+            (0..word_ops)
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
-            (0..copy_size)
+            (0..word_ops)
                 .map(|idx| {
                     (
                         RW::WRITE,
-                        MemoryOp::new(
-                            expected_call_id,
-                            MemoryAddress::from(memory_offset + idx),
-                            if data_offset + idx < bytecode_ext.to_vec().len() {
-                                bytecode_ext.to_vec()[data_offset + idx]
-                            } else {
-                                0
-                            },
+                        MemoryOp::new_write(
+                            call_id,
+                            MemoryAddress(copy_start + idx * 32),
+                            Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
+                            // get previous value
+                            Word::from(&prev_bytes[idx * 32..(idx + 1) * 32]),
                         ),
                     )
                 })
@@ -428,7 +423,6 @@ mod extcodecopy_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), copy_size);
         assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(code_hash));
         assert_eq!(copy_events[0].src_addr as usize, data_offset);
         assert_eq!(copy_events[0].src_addr_end as usize, code_ext.len());
@@ -441,10 +435,12 @@ mod extcodecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
-            let bytecode_element = bytecode_ext.get(idx).unwrap_or_default();
-            assert_eq!(*value, bytecode_element.value);
-            assert_eq!(*is_code, bytecode_element.is_code);
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
+            if !*is_mask {
+                let bytecode_element = bytecode_ext.get(idx).unwrap_or_default();
+                assert_eq!(*value, bytecode_element.value);
+                assert_eq!(*is_code, bytecode_element.is_code);
+            }
         }
     }
 

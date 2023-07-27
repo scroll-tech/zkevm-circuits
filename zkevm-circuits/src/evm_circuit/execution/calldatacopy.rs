@@ -24,8 +24,6 @@ use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use std::cmp::min;
-
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
@@ -208,28 +206,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.data_offset
             .assign(region, offset, data_offset, F::from(call_data_length))?;
 
-        // rw_counter increase from copy lookup is `length` memory writes + a variable
-        // number of memory reads.
-        let copy_rwc_inc = length
-            + if call.is_root {
-                // no memory reads when reading from tx call data.
-                0
-            } else {
-                // memory reads when reading from memory of caller is capped by call_data_length
-                // - data_offset.
-                min(
-                    length.as_u64(),
-                    u64::try_from(data_offset)
-                        .ok()
-                        .and_then(|offset| call_data_length.checked_sub(offset))
-                        .unwrap_or_default(),
-                )
-            };
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                copy_rwc_inc
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
@@ -258,7 +239,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, word, Word};
     use mock::{
         generate_mock_call_bytecode,
         test_ctx::{helpers::*, TestContext},
@@ -348,11 +329,13 @@ mod test {
     #[test]
     fn calldatacopy_gadget_simple() {
         test_root_ok(0x40, 10, 0x00.into(), 0x40.into());
+        test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0x00.into());
         test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_large() {
+        test_root_ok(0x204, 0x1, 0x102.into(), 0x101.into());
         test_root_ok(0x204, 0x101, 0x102.into(), 0x103.into());
         test_internal_ok(0x30, 0x204, 0x101, 0x102.into(), 0x103.into());
     }
@@ -379,5 +362,23 @@ mod test {
     fn calldatacopy_gadget_overflow_memory_offset_and_zero_length() {
         test_root_ok(0x40, 0, 0x40.into(), Word::MAX);
         test_internal_ok(0x40, 0x40, 0, 0x10.into(), Word::MAX);
+    }
+
+    #[test]
+    fn calldatacopy_unaligned_data() {
+        // calldatacopy_d0(cdc_0_1_2)_g0_v0
+        test_internal_ok(0xf, 0x10, 2, 1.into(), 0x0.into());
+
+        // copy source out of bounds
+        test_internal_ok(0xf, 0x10, 0x9, 0x20.into(), 0x0.into());
+
+        // calldatacopy_d4(cdc_0_neg6_ff)_g0_v0
+        test_internal_ok(
+            0xf,
+            0x10,
+            0x09,
+            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa"),
+            0x0.into(),
+        );
     }
 }

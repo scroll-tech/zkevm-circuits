@@ -102,9 +102,10 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
     }
 
     fn min_num_rows_block(block: &witness::Block<Fr>) -> (usize, usize) {
-        // FIXME
         (
-            block.circuits_params.max_mpt_rows,
+            // For an empty storage proof, we may need to lookup the canonical representations of
+            // three different keys. Each lookup requires 32 rows.
+            3 * 32 * block.mpt_updates.len(),
             block.circuits_params.max_mpt_rows,
         )
     }

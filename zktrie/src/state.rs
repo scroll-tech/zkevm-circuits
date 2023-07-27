@@ -110,12 +110,12 @@ impl ZktrieState {
             let (exists, acc) = self.sdb.get_account(addr);
             if exists {
                 log::trace!(
-                    "overwrite trace account in sdb: addr {:?}, new {:?}, replace old: {:?}",
+                    "skip trace account into sdb: addr {:?}, new {:?}, keep old: {:?}",
                     addr,
                     acc_data,
                     acc
                 );
-                //continue;
+                continue;
             }
             if acc_proof.key.is_some() {
                 log::trace!("trace account into sdb: {:?} => {:?}", addr, acc_data);
@@ -139,11 +139,11 @@ impl ZktrieState {
         }
 
         for (addr, key, bytes) in storage_proofs {
-            let (_exists, old_value) = self.sdb.get_storage(addr, key);
+            let (exists, old_value) = self.sdb.get_storage(addr, key);
             let old_value = *old_value;
-            //if exists {
-            //    continue;
-            //}
+            if exists {
+                continue;
+            }
             let (_, acc) = self.sdb.get_account_mut(addr);
             let mut key_buf = [0u8; 32];
             key.to_big_endian(key_buf.as_mut_slice());

@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     error::{
         ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError,
@@ -381,10 +381,10 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
-    if memory_enabled {
-        let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
-        if check_level >= 1 {
+    let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
+    if check_level >= 1 {
+        let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
+        if memory_enabled {
             #[allow(clippy::collapsible_else_if)]
             if state.call_ctx()?.memory != geth_steps[0].memory {
                 log::error!(
@@ -511,6 +511,19 @@ pub fn gen_begin_tx_ops(
         nonce_prev,
     )?;
 
+    // Add precompile contract address to access list
+    for address in 1..=9 {
+        let address = eth_types::Address::from_low_u64_be(address);
+        let is_warm_prev = !state.sdb.add_account_to_access_list(address);
+        state.tx_accesslist_account_write(
+            &mut exec_step,
+            state.tx_ctx.id(),
+            address,
+            true,
+            is_warm_prev,
+        )?;
+    }
+
     // Add caller, callee and coinbase (only for Shanghai) to access list.
     #[cfg(feature = "shanghai")]
     let accessed_addresses = [
@@ -631,20 +644,22 @@ pub fn gen_begin_tx_ops(
         });
         // 2. add init code to keccak circuit.
         let init_code = state.tx.input.as_slice();
+        let length = init_code.len();
         state.block.sha3_inputs.push(init_code.to_vec());
         // 3. add init code to copy circuit.
         let code_hash = CodeDB::hash(init_code);
         let bytes = Bytecode::from(init_code.to_vec())
             .code
             .iter()
-            .map(|element| (element.value, element.is_code))
-            .collect::<Vec<(u8, bool)>>();
+            .map(|element| (element.value, element.is_code, false))
+            .collect::<Vec<(u8, bool, bool)>>();
+
         let rw_counter_start = state.block_ctx.rwc;
         state.push_copy(
             &mut exec_step,
             CopyEvent {
                 src_addr: 0,
-                src_addr_end: init_code.len() as u64,
+                src_addr_end: length as u64,
                 src_type: CopyDataType::TxCalldata,
                 src_id: NumberOrHash::Number(state.tx_ctx.id()),
                 dst_addr: 0,
@@ -652,7 +667,7 @@ pub fn gen_begin_tx_ops(
                 dst_id: NumberOrHash::Hash(code_hash),
                 log_id: None,
                 rw_counter_start,
-                bytes,
+                copy_bytes: CopyBytes::new(bytes, None, None),
             },
         );
     }

@@ -62,13 +62,13 @@ use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
 use crate::{
     bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs},
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
+    ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
     precompile_circuit,
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    table::SigTable,
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block},
@@ -82,8 +82,8 @@ use crate::util::Challenges;
 use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, ModExpTable, MptTable,
-        PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, TxTable,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable, MptTable,
+        PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable, TxTable,
     },
 };
 
@@ -120,6 +120,7 @@ pub struct SuperCircuitConfig<F: Field> {
     tx_circuit: TxCircuitConfig<F>,
     sig_circuit: SigCircuitConfig<F>,
     modexp_circuit: precompile_circuit::modexp::ModExpCircuitConfig,
+    ecc_circuit: EccCircuitConfig<F>,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
     #[cfg(feature = "poseidon-codehash")]
@@ -196,6 +197,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "sig table");
         let modexp_table = ModExpTable::construct(meta);
         log_circuit_info(meta, "modexp table");
+        let ecc_table = EccTable::construct(meta);
+        log_circuit_info(meta, "ecc table");
         let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         log_circuit_info(meta, "power of randomness table");
 
@@ -310,6 +313,14 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let modexp_circuit =
             precompile_circuit::modexp::ModExpCircuitConfig::new(meta, modexp_table);
         log_circuit_info(meta, "modexp circuit");
+        let ecc_circuit = EccCircuitConfig::new(
+            meta,
+            EccCircuitConfigArgs {
+                ecc_table,
+                challenges: challenges_expr.clone(),
+            },
+        );
+        log_circuit_info(meta, "ecc circuit");
 
         let state_circuit = StateCircuitConfig::new(
             meta,
@@ -337,6 +348,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 exp_table,
                 sig_table,
                 modexp_table,
+                ecc_table,
                 pow_of_rand_table,
             },
         );
@@ -365,6 +377,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             exp_circuit,
             sig_circuit,
             modexp_circuit,
+            ecc_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
@@ -402,6 +415,8 @@ pub struct SuperCircuit<
     pub sig_circuit: SigCircuit<F>,
     /// Modexp Circuit
     pub modexp_circuit: precompile_circuit::modexp::ModExpCircuit<F>,
+    /// Ecc Circuit
+    pub ecc_circuit: EccCircuit<F, 9>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit
@@ -509,6 +524,7 @@ impl<
         let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
         let sig_circuit = SigCircuit::new_from_block(block);
+        let ecc_circuit = EccCircuit::new_from_block(block);
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(block);
         SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS> {
@@ -524,6 +540,7 @@ impl<
             rlp_circuit,
             sig_circuit,
             modexp_circuit,
+            ecc_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
