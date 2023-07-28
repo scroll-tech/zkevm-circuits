@@ -733,10 +733,19 @@ pub(crate) fn chunk_is_valid(
     offset: &mut usize,
 ) -> Result<[AssignedCell<Fr, Fr>; MAX_AGG_SNARKS], halo2_proofs::plonk::Error> {
     let mut res = vec![];
+    let mut cur_index = rlc_config.load_private(region, &Fr::zero(), offset)?;
+    let zero_cell = rlc_config.zero_cell(cur_index.cell().region_index);
+    region.constrain_equal(cur_index.cell(), zero_cell)?;
+    let one = rlc_config.load_private(region, &Fr::zero(), offset)?;
+    let one_cell = rlc_config.zero_cell(one.cell().region_index);
+    region.constrain_equal(one.cell(), one_cell)?;
 
-    for i in 0..MAX_AGG_SNARKS {
-        let value = rlc_config.load_private(region, &Fr::from(i as u64), offset)?;
-        let is_valid = rlc_config.is_smaller_than(region, &value, num_of_valid_chunks, offset)?;
+    let is_valid = rlc_config.is_smaller_than(region, &cur_index, num_of_valid_chunks, offset)?;
+    res.push(is_valid);
+    for _ in 0..MAX_AGG_SNARKS - 1 {
+        cur_index = rlc_config.add(region, &cur_index, &one, offset)?;
+        let is_valid =
+            rlc_config.is_smaller_than(region, &cur_index, num_of_valid_chunks, offset)?;
         res.push(is_valid);
     }
     // constrain the chunks are ordered with real ones at the beginning. that is,
