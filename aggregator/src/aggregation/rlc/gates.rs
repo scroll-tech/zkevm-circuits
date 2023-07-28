@@ -28,6 +28,12 @@ impl RlcConfig {
             5,
             || Value::known(Fr::from(32)),
         )?;
+        region.assign_fixed(
+            || "const two to thirty two",
+            self.fixed,
+            6,
+            || Value::known(Fr::from(1 << 32)),
+        )?;
         Ok(())
     }
 
@@ -81,6 +87,15 @@ impl RlcConfig {
         Cell {
             region_index,
             row_offset: 5,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn two_to_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 6,
             column: self.fixed.into(),
         }
     }
@@ -399,7 +414,7 @@ impl RlcConfig {
     }
 
     // return a boolean if a is smaller than b
-    // requires that both a and b are smallish
+    // requires that both a and b are less than 32 bits
     pub(crate) fn is_smaller_than(
         &self,
         region: &mut Region<Fr>,
@@ -408,11 +423,18 @@ impl RlcConfig {
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         // when a and b are both small (as in our use case)
-        // if a < b, (a-b) will under flow and the highest bit of (a-b) be one
-        // else,  the highest bit of (a-b) be zero
-        let sub = self.sub(region, a, b, offset)?;
-        let bits = self.decomposition(region, &sub, offset)?;
-        Ok(bits[253].clone())
+        // if a >= b, c = 2^32 + (a-b) will be >= 2^32
+        // we bit decompose c and check the 33-th bit
+        let two_to_thirty_two = self.load_private(region, &Fr::from(1 << 32), offset)?;
+        let two_to_thirty_two_cell =
+            self.two_to_thirty_two_cell(two_to_thirty_two.cell().region_index);
+        region.constrain_equal(two_to_thirty_two_cell, two_to_thirty_two.cell())?;
+
+        let ca = self.add(region, &two_to_thirty_two, a, offset)?;
+        let c = self.sub(region, &ca, b, offset)?;
+        let bits = self.decomposition(region, &c, offset)?;
+        let res = self.not(region, &bits[32], offset)?;
+        Ok(res)
     }
 }
 #[inline]

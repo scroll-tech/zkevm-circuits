@@ -146,8 +146,8 @@ impl Circuit<Fr> for ArithTestCircuit {
                 // unit test: is smaller than
                 {
                     for _ in 0..10 {
-                        let a = Fr::from(rng.next_u64());
-                        let b = Fr::from(rng.next_u64());
+                        let a = Fr::from(rng.next_u32() as u64);
+                        let b = Fr::from(rng.next_u32() as u64);
                         let c = if a < b { Fr::one() } else { Fr::zero() };
                         let a = config.load_private(&mut region, &a, &mut offset)?;
                         let b = config.load_private(&mut region, &b, &mut offset)?;
@@ -157,7 +157,7 @@ impl Circuit<Fr> for ArithTestCircuit {
                     }
 
                     // equality check
-                    let a = Fr::from(rng.next_u64());
+                    let a = Fr::from(rng.next_u32() as u64);
                     let b = a;
                     let c = Fr::zero();
                     let a = config.load_private(&mut region, &a, &mut offset)?;
