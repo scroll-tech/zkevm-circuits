@@ -736,7 +736,7 @@ pub(crate) fn chunk_is_valid(
     let mut cur_index = rlc_config.load_private(region, &Fr::zero(), offset)?;
     let zero_cell = rlc_config.zero_cell(cur_index.cell().region_index);
     region.constrain_equal(cur_index.cell(), zero_cell)?;
-    let one = rlc_config.load_private(region, &Fr::zero(), offset)?;
+    let one = rlc_config.load_private(region, &Fr::one(), offset)?;
     let one_cell = rlc_config.zero_cell(one.cell().region_index);
     region.constrain_equal(one.cell(), one_cell)?;
 
