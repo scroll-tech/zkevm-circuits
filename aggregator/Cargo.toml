@@ -25,5 +25,7 @@ snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", br
 
 
 [features]
-default = []
+default = [  ]
 print-trace = [ "ark-std/print-trace" ]
+# This feature is useful for unit tests where we check the SAT of pi aggregation circuit
+disable_proof_aggregation = []
