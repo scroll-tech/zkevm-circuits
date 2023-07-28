@@ -99,7 +99,26 @@ impl WitnessGenerator {
     pub fn dump(&self) {
         log::info!("account data {:#?}", self.accounts);
     }
-
+    /// get account proof
+    pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
+        self.trie.prove(address.as_bytes()).unwrap()
+    }
+    /// get storage proof
+    pub fn storage_proof(&self, address: Address, key: Word) -> Vec<Vec<u8>> {
+        let (_storage_key, key) = {
+            let mut word_buf = [0u8; 32];
+            key.to_big_endian(word_buf.as_mut_slice());
+            (hash_zktrie_key(&word_buf), HexBytes(word_buf))
+        };
+        // TODO: use or_else to optimize
+        let default_trie = &ZktrieState::default()
+            .zk_db
+            .borrow_mut()
+            .new_trie(&ZkTrieHash::default())
+            .unwrap();
+        let trie: &ZkTrie = self.storages.get(&address).unwrap_or(default_trie);
+        trie.prove(key.as_ref()).unwrap()
+    }
     fn trace_storage_update(
         &mut self,
         address: Address,

@@ -3,7 +3,9 @@ use std::{
     ops::{Add, Mul, Neg},
 };
 
-use bus_mapping::circuit_input_builder::{EcAddOp, EcMulOp, EcPairingOp, PrecompileEcParams};
+use bus_mapping::circuit_input_builder::{
+    EcAddOp, EcMulOp, EcPairingOp, EcPairingPair, PrecompileEcParams,
+};
 use eth_types::Field;
 use halo2_proofs::{
     arithmetic::Field as ArithmeticField,
@@ -78,13 +80,13 @@ impl GenRand for EcPairingOp {
         let point_c = G1Affine::from(G1Affine::generator() * alpha * beta);
         let point_d = G2Affine::generator();
         Self {
-            inputs: [
-                (point_p_negated, point_q),
-                (point_s, point_t),
-                (point_a_negated, point_b),
-                (point_c, point_d),
+            pairs: [
+                EcPairingPair::new(point_p_negated, point_q),
+                EcPairingPair::new(point_s, point_t),
+                EcPairingPair::new(point_a_negated, point_b),
+                EcPairingPair::new(point_c, point_d),
             ],
-            output: 1u64.into(),
+            output: eth_types::U256::one(),
         }
     }
 }

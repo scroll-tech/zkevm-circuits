@@ -215,7 +215,20 @@ impl<F: Field> PrecompileGadget<F> {
                     r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
                 );
             }),
-            Box::new(|_cb| { /* Bn128Pairing */ }),
+            Box::new(|cb| {
+                let (evm_input_rlc, output) = (cb.query_cell_phase2(), cb.query_bool());
+                cb.require_equal(
+                    "input bytes (RLC) equality",
+                    padding_gadget.padded_rlc(),
+                    evm_input_rlc.expr(),
+                );
+                // RLC of output bytes always equals boolean result of pairing check.
+                cb.require_equal(
+                    "output bytes (RLC) equality",
+                    output_bytes_rlc.expr(),
+                    output.expr(),
+                );
+            }),
             Box::new(|_cb| { /* Blake2F */ }),
         ];
         cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);

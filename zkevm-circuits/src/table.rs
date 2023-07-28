@@ -17,7 +17,7 @@ use crate::{
 use bus_mapping::{
     circuit_input_builder::{
         CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEcParams,
+        PrecompileEcParams, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
     },
     precompile::PrecompileCalls,
 };
@@ -29,7 +29,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Layouter, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::Fq,
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -1375,16 +1375,21 @@ impl KeccakTable {
         region: &mut Region<F>,
         offset: usize,
         values: [Value<F>; 4],
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let mut res = vec![];
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
             .iter()
             .zip(values.iter())
         {
-            region.assign_advice(|| format!("assign {offset}"), column, offset, || *value)?;
+            res.push(region.assign_advice(
+                || format!("assign {offset}"),
+                column,
+                offset,
+                || *value,
+            )?);
         }
-        Ok(())
+        Ok(res)
     }
-
     /// Provide this function for the case that we want to consume a keccak
     /// table but without running the full keccak circuit
     pub fn dev_load<'a, F: Field>(
@@ -2509,7 +2514,7 @@ impl EccTable {
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
-                keccak_rand.map(|r| rlc::value(&pairing_op.to_bytes_le(), r)),
+                keccak_rand.map(|r| rlc::value(pairing_op.to_bytes_be().iter().rev(), r)),
                 Value::known(
                     pairing_op
                         .output
@@ -2616,7 +2621,8 @@ impl PowOfRandTable {
             || "power of randomness table",
             |mut region| {
                 let pows_of_rand =
-                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r)).take(128);
+                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r))
+                        .take(N_PAIRING_PER_OP * N_BYTES_PER_PAIR);
 
                 for (idx, pow_of_rand) in pows_of_rand.enumerate() {
                     region.assign_fixed(

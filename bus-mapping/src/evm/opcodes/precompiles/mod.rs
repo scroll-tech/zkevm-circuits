@@ -9,11 +9,13 @@ use crate::{
 
 mod ec_add;
 mod ec_mul;
+mod ec_pairing;
 mod ecrecover;
 
-use ec_add::handle as handle_ec_add;
-use ec_mul::handle as handle_ec_mul;
-use ecrecover::handle as handle_ecrecover;
+use ec_add::opt_data as opt_data_ec_add;
+use ec_mul::opt_data as opt_data_ec_mul;
+use ec_pairing::opt_data as opt_data_ec_pairing;
+use ecrecover::opt_data as opt_data_ecrecover;
 
 type InOutRetData = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
 
@@ -30,18 +32,22 @@ pub fn gen_associated_ops(
 
     common_call_ctx_reads(state, &mut exec_step, &call);
 
-    match precompile {
-        PrecompileCalls::Ecrecover => {
-            handle_ecrecover(input_bytes, output_bytes, state, &mut exec_step)
+    let (opt_event, aux_data) = match precompile {
+        PrecompileCalls::Ecrecover => opt_data_ecrecover(input_bytes, output_bytes),
+        PrecompileCalls::Bn128Add => opt_data_ec_add(input_bytes, output_bytes),
+        PrecompileCalls::Bn128Mul => opt_data_ec_mul(input_bytes, output_bytes),
+        PrecompileCalls::Bn128Pairing => opt_data_ec_pairing(input_bytes, output_bytes),
+        PrecompileCalls::Identity => (None, None),
+        _ => {
+            log::warn!("precompile {:?} unsupported in circuits", precompile);
+            (None, None)
         }
-        PrecompileCalls::Bn128Add => {
-            handle_ec_add(input_bytes, output_bytes, state, &mut exec_step)
-        }
-        PrecompileCalls::Bn128Mul => {
-            handle_ec_mul(input_bytes, output_bytes, state, &mut exec_step)
-        }
-        _ => {}
+    };
+
+    if let Some(event) = opt_event {
+        state.push_precompile_event(event);
     }
+    exec_step.aux_data = aux_data;
 
     Ok(exec_step)
 }

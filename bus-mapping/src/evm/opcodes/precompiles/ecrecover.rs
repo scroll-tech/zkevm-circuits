@@ -5,16 +5,14 @@ use eth_types::{
 use halo2_proofs::halo2curves::secp256k1::Fq;
 
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, PrecompileEvent},
+    circuit_input_builder::PrecompileEvent,
     precompile::{EcrecoverAuxData, PrecompileAuxData},
 };
 
-pub(crate) fn handle(
+pub(crate) fn opt_data(
     input_bytes: Option<Vec<u8>>,
     output_bytes: Option<Vec<u8>>,
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-) {
+) -> (Option<PrecompileEvent>, Option<PrecompileAuxData>) {
     let input_bytes = input_bytes.map_or(vec![0u8; 128], |mut bytes| {
         bytes.resize(128, 0u8);
         bytes
@@ -44,19 +42,22 @@ pub(crate) fn handle(
                 msg_hash: Fq::from_bytes(&aux_data.msg_hash.to_be_bytes()).unwrap(),
             };
             assert_eq!(aux_data.recovered_addr, sign_data.get_addr());
-            state.push_precompile_event(PrecompileEvent::Ecrecover(sign_data));
+            (
+                Some(PrecompileEvent::Ecrecover(sign_data)),
+                Some(PrecompileAuxData::Ecrecover(aux_data)),
+            )
         } else {
             log::warn!(
                 "could not recover pubkey. ecrecover aux_data={:?}",
                 aux_data
             );
+            (None, Some(PrecompileAuxData::Ecrecover(aux_data)))
         }
     } else {
         log::warn!(
             "invalid recoveryId for ecrecover. sig_v={:?}",
             aux_data.sig_v
         );
+        (None, Some(PrecompileAuxData::Ecrecover(aux_data)))
     }
-
-    exec_step.aux_data = Some(PrecompileAuxData::Ecrecover(aux_data));
 }

@@ -4,7 +4,7 @@ use std::fs::File;
 
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Fq, G1Affine},
     plonk::{Circuit, ConstraintSystem, Error},
 };
@@ -12,13 +12,15 @@ use rand::Rng;
 use snark_verifier::{
     loader::{
         halo2::{
-            halo2_ecc::halo2_base::{
-                self,
-                halo2_proofs::{
-                    halo2curves::bn256::{Bn256, Fr},
-                    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+            halo2_ecc::{
+                halo2_base,
+                halo2_base::{
+                    halo2_proofs::{
+                        halo2curves::bn256::{Bn256, Fr},
+                        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+                    },
+                    Context, ContextParams,
                 },
-                Context, ContextParams,
             },
             Halo2Loader,
         },
@@ -42,7 +44,7 @@ pub struct CompressionCircuit {
     pub(crate) svk: KzgSuccinctVerifyingKey<G1Affine>,
     pub(crate) snark: SnarkWitness,
     /// whether this circuit compresses a fresh snark
-    pub(crate) is_fresh: bool,
+    pub(crate) has_accumulator: bool,
     /// instances, flattened.
     /// It re-exposes same public inputs from the input snark.
     /// If the previous snark is already a compressed, this flattened_instances will
@@ -67,7 +69,7 @@ impl Circuit<Fr> for CompressionCircuit {
         Self {
             svk: self.svk,
             snark: SnarkWitness::without_witnesses(&self.snark),
-            is_fresh: true,
+            has_accumulator: false,
             flattened_instances,
             as_proof: Value::unknown(),
         }
@@ -104,15 +106,17 @@ impl Circuit<Fr> for CompressionCircuit {
             .range()
             .load_lookup_table(&mut layouter)
             .expect("load range lookup table");
+
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-        let mut instances = vec![];
-        layouter.assign_region(
+
+        let instances = layouter.assign_region(
             || "compression circuit",
-            |region| {
+            |region| -> Result<Vec<Cell>, Error> {
                 if first_pass {
                     first_pass = false;
-                    return Ok(());
+                    return Ok(vec![]);
                 }
+                let mut instances = vec![];
                 let ctx = Context::new(
                     region,
                     ContextParams {
@@ -141,7 +145,7 @@ impl Circuit<Fr> for CompressionCircuit {
                 );
                 // - if the snark is not a fresh one, assigned_instances already contains an
                 //   accumulator so we want to skip the first 12 elements from the public input
-                let skip = if self.is_fresh { 0 } else { ACC_LEN };
+                let skip = if self.has_accumulator { ACC_LEN } else { 0 };
                 instances.extend(assigned_instances.iter().flat_map(|instance_column| {
                     instance_column.iter().skip(skip).map(|x| x.cell())
                 }));
@@ -149,7 +153,7 @@ impl Circuit<Fr> for CompressionCircuit {
                 config.range().finalize(&mut loader.ctx_mut());
 
                 loader.ctx_mut().print_stats(&["Range"]);
-                Ok(())
+                Ok(instances)
             },
         )?;
 
@@ -168,7 +172,7 @@ impl CompressionCircuit {
     pub fn new(
         params: &ParamsKZG<Bn256>,
         snark: Snark,
-        is_fresh: bool,
+        has_accumulator: bool,
         rng: impl Rng + Send,
     ) -> Result<Self, snark_verifier::Error> {
         let svk = params.get_g()[0].into();
@@ -191,7 +195,7 @@ impl CompressionCircuit {
             .map(fe_to_limbs::<Fq, Fr, { LIMBS }, { BITS }>)
             .concat();
         // skip the old accumulator if exists
-        let skip = if is_fresh { 0 } else { ACC_LEN };
+        let skip = if has_accumulator { ACC_LEN } else { 0 };
         let snark_instance = snark
             .instances
             .iter()
@@ -215,7 +219,7 @@ impl CompressionCircuit {
         Ok(Self {
             svk,
             snark: snark.into(),
-            is_fresh,
+            has_accumulator,
             flattened_instances,
             as_proof: Value::known(as_proof),
         })
