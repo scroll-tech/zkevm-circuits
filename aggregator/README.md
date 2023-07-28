@@ -182,7 +182,7 @@ for i in 1 ... n:
     if is_padding:
         chunk_i.prev_state_root == chunk_i.post_state_root 
         chunk_i.withdraw_root == chunk_{i-1}.withdraw_root
-        chunk_i.data_hash == [0u8; 32]
+        chunk_i.data_hash == keccak("")
 ```
 7. chunk[i]'s data_hash len is `0` when chunk[i] is padded
 
