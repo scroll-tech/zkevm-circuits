@@ -7,7 +7,8 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{
-        self, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, BigModExp, ExpEvent, PrecompileEvents,
+        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEvents,
     },
     Error,
 };
@@ -150,7 +151,6 @@ impl<F: Field> Block<F> {
     pub(crate) fn get_big_modexp(&self) -> Vec<BigModExp> {
         self.precompile_events.get_modexp_events()
     }
-
 }
 
 #[cfg(feature = "test")]

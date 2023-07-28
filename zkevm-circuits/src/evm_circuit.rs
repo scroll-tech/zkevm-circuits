@@ -22,7 +22,7 @@ use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
-        PowOfRandTable, RwTable, SigTable, TxTable, ModExpTable,
+        ModExpTable, PowOfRandTable, RwTable, SigTable, TxTable,
     },
     util::{SubCircuit, SubCircuitConfig},
 };

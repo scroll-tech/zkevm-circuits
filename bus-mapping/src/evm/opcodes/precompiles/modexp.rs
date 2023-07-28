@@ -1,6 +1,5 @@
-
 use crate::{
-    circuit_input_builder::{PrecompileEvent, BigModExp},
+    circuit_input_builder::{BigModExp, PrecompileEvent},
     precompile::{ModExpAuxData, PrecompileAuxData},
 };
 
@@ -10,7 +9,6 @@ pub(crate) fn opt_data(
     input_bytes: Option<Vec<u8>>,
     output_bytes: Option<Vec<u8>>,
 ) -> (Option<PrecompileEvent>, Option<PrecompileAuxData>) {
-
     let aux_data = ModExpAuxData::new(
         input_bytes.unwrap_or_default(),
         output_bytes.unwrap_or_default(),
@@ -22,9 +20,11 @@ pub(crate) fn opt_data(
             modulus: Word::from_big_endian(&aux_data.inputs[2]),
             result: Word::from_big_endian(&aux_data.output),
         };
-        (Some(PrecompileEvent::ModExp(event)), Some(PrecompileAuxData::Modexp(aux_data)))
+        (
+            Some(PrecompileEvent::ModExp(event)),
+            Some(PrecompileAuxData::Modexp(aux_data)),
+        )
     } else {
         (None, Some(PrecompileAuxData::Modexp(aux_data)))
     }
 }
-

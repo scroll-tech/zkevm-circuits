@@ -906,7 +906,7 @@ impl PrecompileEvents {
             })
             .cloned()
             .collect()
-    }    
+    }
 }
 
 /// I/O from a precompiled contract call.
@@ -921,7 +921,7 @@ pub enum PrecompileEvent {
     /// Represents the I/O from EcPairing call.
     EcPairing(Box<EcPairingOp>),
     /// Represents the I/O from Modexp call.
-    ModExp(BigModExp)
+    ModExp(BigModExp),
 }
 
 impl Default for PrecompileEvent {
@@ -1190,7 +1190,6 @@ impl EcPairingOp {
         false
     }
 }
-
 
 /// Event representating an exponentiation `a ^ b == d (mod m)` in precompile modexp.
 #[derive(Clone, Debug)]

@@ -2543,7 +2543,6 @@ impl EccTable {
     }
 }
 
-
 /// Lookup table embedded in the modexp circuit for precompile.
 #[derive(Clone, Copy, Debug)]
 pub struct ModExpTable {
@@ -2681,8 +2680,7 @@ impl ModExpTable {
                 }
 
                 Ok(())
-            },                    
-
+            },
         )?;
         self.fill_blank(layouter)
     }

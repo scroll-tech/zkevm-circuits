@@ -1186,7 +1186,8 @@ mod test {
     }
 
     // notice, "invalid" test would not work until bus-mapping put calling fail case being handle
-    // in normal CallOp, i.e. return None in bus_mapping::circuit_input_builder::input_state_ref::CircuitInputStateRef::get_step_err
+    // in normal CallOp, i.e. return None in
+    // bus_mapping::circuit_input_builder::input_state_ref::CircuitInputStateRef::get_step_err
     // for unsuccess (call.is_success is false) call
     #[ignore]
     #[test]
