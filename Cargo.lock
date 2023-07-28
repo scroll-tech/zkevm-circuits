@@ -5494,7 +5494,7 @@ dependencies = [
 [[package]]
 name = "zktrie"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.6_candidate#239d6b9a5bcde72d2316e08f622070f44a7b6f1c"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.6#83318659773604fa565e2ebeb810a6d3746f0af4"
 dependencies = [
  "gobuild 0.1.0-alpha.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
