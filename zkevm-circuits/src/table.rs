@@ -16,7 +16,7 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{
-        CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        BigModExp, CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
         PrecompileEcParams, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
     },
     precompile::PrecompileCalls,
@@ -2629,14 +2629,14 @@ impl ModExpTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        events: &[BigModExp],
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "modexp table",
             |mut region| {
                 let mut offset = 0usize;
 
-                for event in &block.get_big_modexp() {
+                for event in events {
                     for i in 0..4 {
                         region.assign_fixed(
                             || format!("modexp table head {}", offset + i),

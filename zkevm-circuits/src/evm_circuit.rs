@@ -505,7 +505,9 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .sig_table
             .dev_load(&mut layouter, block, &challenges)?;
-        config.modexp_table.dev_load(&mut layouter, block)?;
+        config
+            .modexp_table
+            .dev_load(&mut layouter, &block.get_big_modexp())?;
         config.ecc_table.dev_load(
             &mut layouter,
             block.circuits_params.max_ec_ops,

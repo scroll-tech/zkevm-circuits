@@ -1,3 +1,6 @@
+//! The Modexp circuit is responsible for modexp operations on big integer from precompiled contract
+//! calls ModExp, current the size of supported integer is up to 32 bytes (U256)
+
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error},

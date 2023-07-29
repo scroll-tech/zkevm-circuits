@@ -66,8 +66,8 @@ use crate::{
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    modexp_circuit::{ModExpCircuit, ModExpCircuitConfig},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
-    precompile_circuit,
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
@@ -120,7 +120,7 @@ pub struct SuperCircuitConfig<F: Field> {
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     sig_circuit: SigCircuitConfig<F>,
-    modexp_circuit: precompile_circuit::modexp::ModExpCircuitConfig,
+    modexp_circuit: ModExpCircuitConfig,
     ecc_circuit: EccCircuitConfig<F>,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
@@ -311,8 +311,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         );
         log_circuit_info(meta, "sig circuit");
 
-        let modexp_circuit =
-            precompile_circuit::modexp::ModExpCircuitConfig::new(meta, modexp_table);
+        let modexp_circuit = ModExpCircuitConfig::new(meta, modexp_table);
         log_circuit_info(meta, "modexp circuit");
         let ecc_circuit = EccCircuitConfig::new(
             meta,
@@ -415,7 +414,7 @@ pub struct SuperCircuit<
     /// Sig Circuit
     pub sig_circuit: SigCircuit<F>,
     /// Modexp Circuit
-    pub modexp_circuit: precompile_circuit::modexp::ModExpCircuit<F>,
+    pub modexp_circuit: ModExpCircuit<F>,
     /// Ecc Circuit
     pub ecc_circuit: EccCircuit<F, 9>,
     /// Rlp Circuit
@@ -453,7 +452,7 @@ impl<
         let tx = TxCircuit::min_num_rows_block(block);
         let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
-        let mod_exp = precompile_circuit::modexp::ModExpCircuit::min_num_rows_block(block);
+        let mod_exp = ModExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
         let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
@@ -520,7 +519,7 @@ impl<
         let bytecode_circuit = BytecodeCircuit::new_from_block(block);
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
         let exp_circuit = ExpCircuit::new_from_block(block);
-        let modexp_circuit = precompile_circuit::modexp::ModExpCircuit::new_from_block(block);
+        let modexp_circuit = ModExpCircuit::new_from_block(block);
         let keccak_circuit = KeccakCircuit::new_from_block(block);
         let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
