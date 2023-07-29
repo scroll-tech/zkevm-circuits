@@ -779,7 +779,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
-            println!("exp data: {:?}", data);
+            //println!("exp data: {:?}", data);
 
             self.input.assign(
                 region,
@@ -904,7 +904,7 @@ mod test {
             .unwrap();
 
         assert_eq!(limb0, n.limbs[0].value);
-        assert_eq!(limb1, n.limbs[1].value * Fr::from(16 as u64));
+        assert_eq!(limb1, n.limbs[1].value * Fr::from(16_u64));
         assert_eq!(limb2, n.limbs[2].value);
 
         let nt: Fr = ModExpTable::native_u256(&w);
