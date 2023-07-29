@@ -342,6 +342,9 @@ impl<F: Field> PaddingGadget<F> {
                 // skip padding if calldata length == 0.
                 if cd_len == 0 {
                     (required_input_len as u64, input_rlc, Value::known(F::one()))
+                } else if precompile == PrecompileCalls::Modexp {
+                    // modexp do not need right padding
+                    (cd_len, input_rlc, Value::known(F::one()))
                 } else {
                     // pad only if calldata length is less than the required input length.
                     let n_padded_zeroes = if cd_len < required_input_len as u64 {
