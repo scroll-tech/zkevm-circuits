@@ -15,13 +15,12 @@ mod dev;
 mod test;
 
 use crate::{
-    evm_circuit::{EvmCircuit, util::{not, rlc}},
-    keccak_circuit::KeccakCircuit,
-    sig_circuit::{
-        ecdsa::ecdsa_verify_no_pubkey_check,
-        // used for possibly determine sig capacity by actual column limit
-        // utils::{COLUMN_NUM_LIMIT, CELLS_PER_SIG}
+    evm_circuit::{
+        util::{not, rlc},
+        EvmCircuit,
     },
+    keccak_circuit::KeccakCircuit,
+    sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
 };
@@ -254,7 +253,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     // so the returned pair is consisted of same values
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
         let row_num = Self::min_num_rows();
-        
+
         let tx_count = block.txs.len();
         let max_tx_count = block.circuits_params.max_txs;
 
@@ -281,8 +280,9 @@ impl<F: Field> SigCircuit<F> {
     /// particular size.
     pub fn min_num_rows() -> usize {
         // SigCircuit can't determine usable rows independently.
-        // Instead, the blinding area is determined by other advise columns with most counts of rotation queries
-        // This value is typically determined by either the Keccak or EVM circuit. 
+        // Instead, the blinding area is determined by other advise columns with most counts of
+        // rotation queries. This value is typically determined by either the Keccak or EVM
+        // circuit.
 
         // the cells are allocated vertically, i.e., given a TOTAL_NUM_ROWS * NUM_ADVICE
         // matrix, the allocator will try to use all the cells in the first column, then

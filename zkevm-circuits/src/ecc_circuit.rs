@@ -32,8 +32,8 @@ use itertools::Itertools;
 use log::error;
 
 use crate::{
-    keccak_circuit::KeccakCircuit,
     evm_circuit::EvmCircuit,
+    keccak_circuit::KeccakCircuit,
     table::{EccTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Block,
@@ -52,7 +52,7 @@ use self::util::LOG_TOTAL_NUM_ROWS;
 macro_rules! log_context_cursor {
     ($ctx: ident) => {{
         log::trace!("Ctx cell pos: {:?}", $ctx.advice_alloc);
-    }}
+    }};
 }
 
 /// Arguments accepted to configure the EccCircuitConfig.
@@ -574,7 +574,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 }
             })
             .collect_vec();
-        
+
         log::trace!("[ECC] EcPairing g1s Assigned:");
         log_context_cursor!(ctx);
 
@@ -801,8 +801,9 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
 
     fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
         // EccCircuit can't determine usable rows independently.
-        // Instead, the blinding area is determined by other advise columns with most counts of rotation queries
-        // This value is typically determined by either the Keccak or EVM circuit. 
+        // Instead, the blinding area is determined by other advise columns with most counts of
+        // rotation queries. This value is typically determined by either the Keccak or EVM
+        // circuit.
 
         let max_blinding_factor = Self::unusable_rows() - 1;
 

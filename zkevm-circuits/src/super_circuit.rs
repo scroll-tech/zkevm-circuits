@@ -328,8 +328,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "evm circuit");
 
         // Sig Circuit and ECC Circuit use halo2-lib's vertifcal assignments gates
-        // and need to be configured after Circuits with higher counts of unique rotation queries (ex. Keccak, EVM)
-        // to avoid assigning advice values into blinding area. 
+        // and need to be configured after Circuits with higher counts of unique rotation queries
+        // (ex. Keccak, EVM) to avoid assigning advice values into blinding area.
         let sig_circuit = SigCircuitConfig::new(
             meta,
             SigCircuitConfigArgs {
@@ -496,11 +496,9 @@ impl<
             EvmCircuit::<Fr>::unusable_rows(),
             StateCircuit::<Fr>::unusable_rows(),
             TxCircuit::<Fr>::unusable_rows(),
-
-            // TODO: The PiCircuit unusable_rows fn is not implemented 
+            // TODO: The PiCircuit unusable_rows fn is not implemented
             // and returns the arbitrary default number, causing overflow
             // PiCircuit::<Fr>::unusable_rows(),
-
             BytecodeCircuit::<Fr>::unusable_rows(),
             CopyCircuit::<Fr>::unusable_rows(),
             ExpCircuit::<Fr>::unusable_rows(),

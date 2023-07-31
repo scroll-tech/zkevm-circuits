@@ -7,11 +7,10 @@ pub const LOG_TOTAL_NUM_ROWS: u32 = 20;
 
 // Cell usage accounting for EcAdd, EcMul and EcPairing
 // Roud up to nearest 100
-pub(super) const EC_ADD_CELLS: usize = 6_900;    // actual: 6_851
-pub(super) const EC_MUL_CELLS: usize = 405_500;  // actual: 405_476
+pub(super) const EC_ADD_CELLS: usize = 6_900; // actual: 6_851
+pub(super) const EC_MUL_CELLS: usize = 405_500; // actual: 405_476
 pub(super) const EC_PAIRING_CELLS: usize = 6_627_500; // actual: 6_627_442
-// Max number of columns allowed
-pub(super) const COLUMN_NUM_LIMIT: usize = 150;
+pub(super) const COLUMN_NUM_LIMIT: usize = 150; // Max number of columns allowed
 
 pub struct G1Decomposed<F: Field> {
     pub ec_point: EcPoint<F, CRTInteger<F>>,
