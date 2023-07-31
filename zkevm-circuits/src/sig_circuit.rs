@@ -256,11 +256,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         let row_num = Self::min_num_rows();
         
         let tx_count = block.txs.len();
-        
-        // TODO: Take the tx limit by block? 
         let max_tx_count = block.circuits_params.max_txs;
-        // or by actual circuit capacity?
-        // let max_tx_count = (row_num * COLUMN_NUM_LIMIT) / CELLS_PER_SIG;
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
