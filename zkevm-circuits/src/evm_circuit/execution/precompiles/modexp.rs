@@ -218,8 +218,8 @@ fn assign_word<F: Field, const N: usize>(
     Ok(())
 }
 
-// rlc word, in the reversed byte order
-fn rlc_word_rev<F: Field, const N: usize>(
+// rlc cells array, in the reversed byte order
+fn rlc_rev<F: Field, const N: usize>(
     cells: &[Cell<F>; N],
     randomness: Expression<F>,
 ) -> Expression<F> {
@@ -228,6 +228,14 @@ fn rlc_word_rev<F: Field, const N: usize>(
         .map(|cell| cell.expr())
         .reduce(|acc, value| acc * randomness.clone() + value)
         .expect("values should not be empty")
+}
+
+// rlc word, in the reversed byte order
+fn rlc_word_rev<F: Field>(
+    cells: &[Cell<F>; 32],
+    randomness: Expression<F>,
+) -> Expression<F> {
+    rlc_rev(cells, randomness)
 }
 
 // calc for big-endian (notice util::expr_from_bytes calc for little-endian)
@@ -341,19 +349,15 @@ struct ModExpInputs<F> {
     exp_pow: RandPow<F>,
     exp: Word<F>,
     input_valid: Cell<F>,
-    padding_pow: RandPowRepresent<F, INPUT_REPRESENT_BITS>,
-    is_input_need_padding: LtGadget<F, INPUT_REPRESENT_BYTES>,
+    input_bytes_rlc: Expression<F>,
+    input_len_expected: Expression<F>,
     pub base_limbs: Limbs<F>,
     pub exp_limbs: Limbs<F>,
     pub modulus_limbs: Limbs<F>,
 }
 
 impl<F: Field> ModExpInputs<F> {
-    pub fn configure(
-        cb: &mut EVMConstraintBuilder<F>,
-        input_bytes_len: Expression<F>,
-        input_bytes_acc: Expression<F>,
-    ) -> Self {
+    pub fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let base_len = SizeRepresent::configure(cb);
         let modulus_len = SizeRepresent::configure(cb);
         let exp_len = SizeRepresent::configure(cb);
@@ -382,32 +386,18 @@ impl<F: Field> ModExpInputs<F> {
         );
 
         let base_len_expected =
-            util::select::expr(input_valid.expr(), base_len.value(), SIZE_LIMIT.expr());
+            util::select::expr(input_valid.expr(), base_len.value(), 0.expr());
 
         let exp_len_expected =
-            util::select::expr(input_valid.expr(), exp_len.value(), SIZE_LIMIT.expr());
+            util::select::expr(input_valid.expr(), exp_len.value(), 0.expr());
 
         let modulus_len_expected =
-            util::select::expr(input_valid.expr(), modulus_len.value(), SIZE_LIMIT.expr());
+            util::select::expr(input_valid.expr(), modulus_len.value(), 0.expr());
 
-        let input_expected = 96.expr()
+        let input_len_expected = 96.expr()
             + base_len_expected.clone()
             + exp_len_expected.clone()
             + modulus_len_expected.clone();
-
-        let is_input_need_padding =
-            LtGadget::construct(cb, input_bytes_len.clone(), input_expected.clone());
-
-        let padding_pow = RandPowRepresent::configure_with_lookup(
-            cb,
-            cb.challenges().keccak_input(),
-            util::select::expr(
-                is_input_need_padding.expr(),
-                input_expected - input_bytes_len,
-                0.expr(),
-            ),
-            None,
-        );
 
         // we put correct size in each input word if input is valid
         // else we just put as most as possible bytes (32) into it
@@ -435,16 +425,13 @@ impl<F: Field> ModExpInputs<F> {
             Some(exp_pow.expr()),
         );
 
-        cb.require_equal(
-            "input acc bytes must equal",
-            padding_pow.expr() * input_bytes_acc,
+        let input_bytes_rlc = 
             rlc_word_rev(&modulus, cb.challenges().keccak_input()) //rlc of base
             + modulus_pow.expr() * rlc_word_rev(&exp, cb.challenges().keccak_input()) //rlc of exp plus r**base_len
             + exp_pow.expr() * rlc_word_rev(&base, cb.challenges().keccak_input()) //rlc of exp plus r**(base_len + exp_len)
             + base_pow.expr() * modulus_len.memory_rlc()
             + base_pow.expr() * r_pow_32 * exp_len.memory_rlc()
-            + base_pow.expr() * r_pow_64 * base_len.memory_rlc(),
-        );
+            + base_pow.expr() * r_pow_64 * base_len.memory_rlc();
 
         // println!("phase 2 cell used {}",
         //     padding_pow.phase2_cell_cost() + [&modulus_pow, &exp_pow,
@@ -461,8 +448,8 @@ impl<F: Field> ModExpInputs<F> {
             exp_pow,
             exp,
             input_valid,
-            padding_pow,
-            is_input_need_padding,
+            input_bytes_rlc,
+            input_len_expected,
             base_limbs,
             exp_limbs,
             modulus_limbs,
@@ -475,13 +462,18 @@ impl<F: Field> ModExpInputs<F> {
     pub fn is_valid(&self) -> Expression<F> {
         self.input_valid.expr()
     }
+    pub fn len_expected(&self) -> Expression<F> {
+        self.input_len_expected.clone()
+    }
+    pub fn bytes_rlc(&self) -> Expression<F> {
+        self.input_bytes_rlc.clone()
+    }
 
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         (input_valid, lens, values): InputParsedResult,
-        input_len: usize,
     ) -> Result<(), Error> {
         self.input_valid.assign(
             region,
@@ -508,7 +500,7 @@ impl<F: Field> ModExpInputs<F> {
                 if input_valid {
                     len.as_usize()
                 } else {
-                    SIZE_LIMIT
+                    0
                 },
                 linked_v,
             )?;
@@ -528,30 +520,6 @@ impl<F: Field> ModExpInputs<F> {
             assign_word(region, offset, input_bytes, val)?;
         }
 
-        let expected_len = if input_valid {
-            lens.iter().map(U256::as_usize).sum::<usize>() + 96
-        } else {
-            INPUT_LIMIT
-        };
-
-        self.is_input_need_padding.assign(
-            region,
-            offset,
-            F::from(input_len as u64),
-            F::from(expected_len as u64),
-        )?;
-
-        self.padding_pow.assign(
-            region,
-            offset,
-            if input_len < expected_len {
-                expected_len - input_len
-            } else {
-                0
-            },
-            None,
-        )?;
-
         Ok(())
     }
 }
@@ -560,13 +528,13 @@ impl<F: Field> ModExpInputs<F> {
 struct ModExpOutputs<F> {
     result: Word<F>,
     is_result_zero: IsZeroGadget<F>,
+    output_bytes_rlc: Expression<F>,
     pub result_limbs: Limbs<F>,
 }
 
 impl<F: Field> ModExpOutputs<F> {
     fn configure(
         cb: &mut EVMConstraintBuilder<F>,
-        output_bytes_acc: Expression<F>,
         inner_success: Expression<F>,
         modulus_len: Expression<F>,
     ) -> Self {
@@ -576,28 +544,26 @@ impl<F: Field> ModExpOutputs<F> {
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
 
-        cb.condition(is_result_zero.expr(), |cb| {
-            cb.require_zero(
-                "output acc bytes must be zero for nil output",
-                output_bytes_acc.clone(),
-            );
-        });
-
-        cb.require_equal(
-            "output acc bytes must equal",
-            output_bytes_acc,
+        let output_bytes_rlc = util::select::expr(
+            is_result_zero.expr(), 
+            0.expr(), 
             rlc_word_rev(&result, cb.challenges().keccak_input()),
         );
 
         Self {
             result,
             is_result_zero,
+            output_bytes_rlc,
             result_limbs,
         }
     }
 
-    pub fn is_output_nil(&self) -> Expression<F> {
+    pub fn is_nil(&self) -> Expression<F> {
         self.is_result_zero.expr()
+    }
+
+    pub fn bytes_rlc(&self) -> Expression<F> {
+        self.output_bytes_rlc.clone()
     }
 
     pub fn assign(
@@ -688,10 +654,12 @@ pub struct ModExpGadget<F> {
     return_data_length: Cell<F>,
 
     input: ModExpInputs<F>,
+    padding_zero: RandPowRepresent<F, INPUT_REPRESENT_BITS>,
     output: ModExpOutputs<F>,
 
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
+    garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
 
 impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
@@ -722,7 +690,13 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let input = ModExpInputs::configure(cb, call_data_length.expr(), input_bytes_acc.expr());
+        let input = ModExpInputs::configure(cb);
+        let padding_zero = RandPowRepresent::configure(
+            cb,
+            cb.challenges().keccak_input(),
+            MODEXP_INPUT_LIMIT.expr() - input.len_expected(),
+            None,
+        );
 
         let call_success = util::and::expr([
             input.is_valid(),
@@ -738,14 +712,13 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
         let output = ModExpOutputs::configure(
             cb,
-            output_bytes_acc.expr(),
             //FIXME: there may be still some edge cases lead to nil output (even modulus_len is
             // not 0)
             call_success,
             input.modulus_len(),
         );
 
-        cb.condition(util::not::expr(output.is_output_nil()), |cb| {
+        cb.condition(util::not::expr(output.is_nil()), |cb| {
             cb.modexp_table_lookup(
                 input.base_limbs.limbs(),
                 input.exp_limbs.limbs(),
@@ -753,6 +726,21 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 output.result_limbs.limbs(),
             );
         });
+
+        let garbage_bytes_holder = cb.query_bytes();
+
+        cb.require_equal(
+            "input acc bytes with padding must equal",
+            input_bytes_acc.expr(),
+            padding_zero.expr() * input.bytes_rlc() + rlc_rev(&garbage_bytes_holder, cb.challenges().keccak_input()),
+        );
+
+        cb.require_equal(
+            "output acc bytes must equal",
+            output_bytes_acc.expr(),
+            output.bytes_rlc(),
+        );
+
 
         Self {
             is_success,
@@ -763,9 +751,11 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             return_data_offset,
             return_data_length,
             input,
+            padding_zero,
             output,
             input_bytes_acc,
             output_bytes_acc,
+            garbage_bytes_holder,
         }
     }
 
@@ -779,14 +769,37 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
-            //println!("exp data: {:?}", data);
+            println!("exp data: {:?}", data);
 
             self.input.assign(
                 region,
                 offset,
                 (data.valid, data.input_lens, data.inputs),
-                data.input_memory.len(),
             )?;
+    
+            let input_expected_len = 96 + if data.valid {
+                data.input_lens.iter().map(U256::as_usize).sum::<usize>()
+            } else {
+                0
+            };
+
+            let garbage_bytes = if call.call_data_length as usize > input_expected_len {
+                let mut bts = Vec::new();
+                bts.resize(input_expected_len - 96, 0); //front prefix zero
+                bts.append(&mut Vec::from(&data.input_memory[input_expected_len..]));
+                bts.resize(96, 0); //padding zero
+                bts
+            } else {
+                Vec::from([0u8;96])
+            };
+
+            println!("garbage bytes {:?}", garbage_bytes);
+
+            self.padding_zero.assign(region, offset, INPUT_LIMIT - input_expected_len, None)?;
+
+            for (cell, bt) in self.garbage_bytes_holder.iter().zip(garbage_bytes){
+                cell.assign(region, offset, Value::known(F::from(bt as u64)))?;
+            }
 
             self.output
                 .assign(region, offset, (data.output_len, data.output))?;
@@ -796,12 +809,15 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .keccak_input()
                 .map(|randomness| rlc::value(data.input_memory.iter().rev(), randomness));
 
+            let n_padded_zeroes_pow = region.challenges().keccak_input()
+                .map(|r| r.pow(&[INPUT_LIMIT as u64 - call.call_data_length, 0, 0, 0]));
+
             let output_rlc = region
                 .challenges()
                 .keccak_input()
                 .map(|randomness| rlc::value(data.output_memory.iter().rev(), randomness));
 
-            self.input_bytes_acc.assign(region, offset, input_rlc)?;
+            self.input_bytes_acc.assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
@@ -1002,6 +1018,54 @@ mod test {
                     ..Default::default()
                 },
                 PrecompileCallArgs {
+                    name: "modexp no input",
+                    setup_code: bytecode! {
+                        // just put something in memory
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x0.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },                
+                PrecompileCallArgs {
+                    name: "modexp success with garbage bytes",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x3)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x2)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800000901000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000009"))
+                        PUSH1(0x80)
+                        MSTORE
+                        PUSH32(word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"))
+                        PUSH1(0xA0)
+                        MSTORE                        
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0xc0.into(),
+                    ret_offset: 0xe0.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },                
+                PrecompileCallArgs {
                     name: "modexp zero modulus",
                     setup_code: bytecode! {
                         // Base size
@@ -1131,7 +1195,7 @@ mod test {
                     address: PrecompileCalls::Modexp.address().to_word(),
                     gas: 100000.into(),
                     ..Default::default()
-                },
+                },                
             ]
         };
     }
@@ -1139,7 +1203,7 @@ mod test {
     #[ignore]
     #[test]
     fn precompile_modexp_test_fast() {
-        let bytecode = TEST_VECTOR[0].with_call_op(OpcodeId::STATICCALL);
+        let bytecode = TEST_VECTOR[4].with_call_op(OpcodeId::STATICCALL);
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),

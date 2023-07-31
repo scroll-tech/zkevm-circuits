@@ -52,10 +52,13 @@ impl<F: Field> PrecompileGadget<F> {
                 address.value_equals(PrecompileCalls::Bn128Add),
             ]);
             let len_96 = address.value_equals(PrecompileCalls::Bn128Mul);
+            let len_192 = address.value_equals(PrecompileCalls::Modexp);
             select::expr(
                 len_128,
                 128.expr(),
-                select::expr(len_96, 96.expr(), cd_length.expr()),
+                select::expr(len_96, 96.expr(), 
+                    select::expr(len_192, 192.expr(), cd_length.expr()),
+                ),
             )
         };
         let pad_right = LtGadget::construct(cb, cd_length.expr(), input_len.expr());
@@ -157,8 +160,8 @@ impl<F: Field> PrecompileGadget<F> {
                 let input_bytes_acc_copied = cb.query_cell_phase2();
                 let output_bytes_acc_copied = cb.query_cell_phase2();
                 cb.require_equal(
-                    "copy input bytes",
-                    input_bytes_rlc.clone(),
+                    "copy padded input bytes",
+                    padding_gadget.padded_rlc(),
                     input_bytes_acc_copied.expr(),
                 );
                 cb.require_equal(
@@ -342,9 +345,6 @@ impl<F: Field> PaddingGadget<F> {
                 // skip padding if calldata length == 0.
                 if cd_len == 0 {
                     (required_input_len as u64, input_rlc, Value::known(F::one()))
-                } else if precompile == PrecompileCalls::Modexp {
-                    // modexp do not need right padding
-                    (cd_len, input_rlc, Value::known(F::one()))
                 } else {
                     // pad only if calldata length is less than the required input length.
                     let n_padded_zeroes = if cd_len < required_input_len as u64 {

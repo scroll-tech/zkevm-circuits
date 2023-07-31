@@ -241,17 +241,17 @@ impl ModExpAuxData {
         let base_mem_len = if input_valid {
             base_len.as_usize()
         } else {
-            MODEXP_SIZE_LIMIT
+            0
         };
         let exp_mem_len = if input_valid {
             exp_len.as_usize()
         } else {
-            MODEXP_SIZE_LIMIT
+            0
         };
         let modulus_mem_len = if input_valid {
             modulus_len.as_usize()
         } else {
-            MODEXP_SIZE_LIMIT
+            0
         };
 
         mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
