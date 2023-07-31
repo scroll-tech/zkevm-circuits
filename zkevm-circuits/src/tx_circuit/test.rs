@@ -115,7 +115,7 @@ fn run<F: Field>(
     max_calldata: usize,
 ) -> Result<(), Vec<VerifyFailure>> {
     let k = max(
-        19,
+        20,
         log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
     );
     let circuit = TxCircuitTester::<F> {
