@@ -1,8 +1,5 @@
 use eth_types::{Field, ToScalar, U256};
-use gadgets::{
-    binary_number::AsBits,
-    util::{self, Expr},
-};
+use gadgets::util::{self, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -26,8 +23,8 @@ use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE
 #[derive(Clone, Debug)]
 struct RandPowRepresent<F, const BIT_LIMIT: usize> {
     bits: BinaryNumberGadget<F, BIT_LIMIT>,
-    pow_assembles: Vec<(Cell<F>, usize)>,
-    pow_from_bits: Option<Cell<F>>,
+    pow_lookup: Cell<F>,
+    cache_for_degree: Option<Cell<F>>,
     pow: Expression<F>,
 }
 
@@ -43,105 +40,42 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
             .expect("same length")
     }
 
-    /// build r**EXP (EXP can be represented by BIT_LIMIT bits)
-    pub fn pows_expr<const EXP: usize>(randomness: Expression<F>) -> Expression<F> {
-        assert!(
-            2usize.pow(BIT_LIMIT as u32) > EXP,
-            "EXP ({EXP}) can not exceed bit limit (2**{BIT_LIMIT}-1)"
-        );
-        let bits: [bool; BIT_LIMIT] = EXP.as_bits();
-        let base_pows = Self::base_pows_expr(randomness);
-        bits.as_slice()
-            .iter()
-            .rev()
-            .zip(&base_pows)
-            .fold(
-                1.expr(),
-                |calc, (&bit, base_pow)| if bit { calc * base_pow.clone() } else { calc },
-            )
-    }
-
     /// refere to a binary represent of exponent (like BinaryNumberGadget), can
     /// link another expression so the expr is linked_val * r ** exponent
     pub fn configure(
-        cb: &mut EVMConstraintBuilder<F>,
-        randomness: Expression<F>,
-        exponent: Expression<F>,
-        linked_val: Option<Expression<F>>,
-    ) -> Self {
-        let bits = BinaryNumberGadget::construct(cb, exponent);
-        let base_pows = Self::base_pows_expr(randomness);
-        let mut pow_assembles = Vec::new();
-        let mut pow = linked_val.unwrap_or_else(|| 1.expr());
-        for (n, (base_pow, exp_bit)) in base_pows
-            .into_iter()
-            .zip(bits.bits.as_slice().iter().rev())
-            .enumerate()
-        {
-            pow = pow * util::select::expr(exp_bit.expr(), base_pow, 1.expr());
-
-            if pow.degree() > Self::BIT_EXP_MAX_DEGREE {
-                let cached_cell = cb.query_cell_phase2();
-                cb.require_equal(
-                    "pow_assemble cached current expression",
-                    cached_cell.expr(),
-                    pow.clone(),
-                );
-
-                pow = cached_cell.expr();
-                pow_assembles.push((cached_cell, n));
-            }
-        }
-
-        Self {
-            pow_assembles,
-            bits,
-            pow,
-            pow_from_bits: None,
-        }
-    }
-
-    /// same as configure, make use of rand_pow_table instead of constraint it
-    /// by additional cells
-    pub fn configure_with_lookup(
         cb: &mut EVMConstraintBuilder<F>,
         _randomness: Expression<F>,
         exponent: Expression<F>,
         linked_val: Option<Expression<F>>,
     ) -> Self {
         let bits = BinaryNumberGadget::construct(cb, exponent);
-        let mut pow_assembles = Vec::new();
-        let lookup_cell = cb.query_cell_phase2();
-        cb.pow_of_rand_lookup(bits.value(), lookup_cell.expr());
+        let pow_lookup = cb.query_cell_phase2();
+        cb.pow_of_rand_lookup(bits.value(), pow_lookup.expr());
 
-        let mut pow = linked_val.unwrap_or_else(|| 1.expr()) * lookup_cell.expr();
-        // still we would cache the pow expression in case degree is too larget
-        if pow.degree() > Self::BIT_EXP_MAX_DEGREE {
+        let pow = linked_val.unwrap_or_else(|| 1.expr()) * pow_lookup.expr();
+        // we would cache the pow expression in case degree is too larget
+        let cache_for_degree = if pow.degree() > Self::BIT_EXP_MAX_DEGREE {
             let cached_cell = cb.query_cell_phase2();
             cb.require_equal(
                 "pow_assemble cached current expression",
                 cached_cell.expr(),
                 pow.clone(),
             );
-
-            pow = cached_cell.expr();
-            pow_assembles.push((cached_cell, BIT_LIMIT - 1));
-        }
+            Some(cached_cell)
+        } else {
+            None
+        };
 
         Self {
-            pow_assembles,
+            pow_lookup,
             bits,
             pow,
-            pow_from_bits: Some(lookup_cell),
+            cache_for_degree,
         }
     }
 
     pub fn expr(&self) -> Expression<F> {
         self.pow.clone()
-    }
-
-    pub fn phase2_cell_cost(&self) -> usize {
-        self.pow_assembles.len()
     }
 
     pub fn assign(
@@ -156,40 +90,18 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
             "exponent ({exponent}) can not exceed bit limit (2**{BIT_LIMIT}-1)"
         );
         self.bits.assign(region, offset, exponent)?;
-        let bits: [bool; BIT_LIMIT] = exponent.as_bits();
-        let base_pows = std::iter::successors(Some(region.challenges().keccak_input()), |val| {
-            Some(val.map(|v| v.square()))
-        })
-        .take(BIT_LIMIT);
 
-        let mut pow_cached_i = self.pow_assembles.iter();
-        let mut cached_cell = pow_cached_i.next();
-        let mut value_should_assigned = linked_value.unwrap_or_else(|| Value::known(F::one()));
+        let pow_of_rand = region
+            .challenges()
+            .keccak_input()
+            .map(|v| v.pow(&[exponent as u64, 0, 0, 0]));
+        let value_should_assigned =
+            linked_value.unwrap_or_else(|| Value::known(F::one())) * pow_of_rand;
 
-        if let Some(cell) = &self.pow_from_bits {
-            cell.assign(
-                region,
-                offset,
-                region
-                    .challenges()
-                    .keccak_input()
-                    .map(|v| v.pow(&[exponent as u64, 0, 0, 0])),
-            )?;
-        }
+        self.pow_lookup.assign(region, offset, pow_of_rand)?;
 
-        for (n, (base_pow, &bit)) in base_pows.zip(bits.as_slice().iter().rev()).enumerate() {
-            value_should_assigned = value_should_assigned
-                * (if bit {
-                    base_pow
-                } else {
-                    Value::known(F::one())
-                });
-            if let Some((cell, i)) = cached_cell {
-                if *i == n {
-                    cell.assign(region, offset, value_should_assigned)?;
-                    cached_cell = pow_cached_i.next();
-                }
-            }
+        if let Some(cell) = &self.cache_for_degree {
+            cell.assign(region, offset, value_should_assigned)?;
         }
 
         Ok(value_should_assigned)
@@ -231,10 +143,7 @@ fn rlc_rev<F: Field, const N: usize>(
 }
 
 // rlc word, in the reversed byte order
-fn rlc_word_rev<F: Field>(
-    cells: &[Cell<F>; 32],
-    randomness: Expression<F>,
-) -> Expression<F> {
+fn rlc_word_rev<F: Field>(cells: &[Cell<F>; 32], randomness: Expression<F>) -> Expression<F> {
     rlc_rev(cells, randomness)
 }
 
@@ -385,11 +294,9 @@ impl<F: Field> ModExpInputs<F> {
             ]),
         );
 
-        let base_len_expected =
-            util::select::expr(input_valid.expr(), base_len.value(), 0.expr());
+        let base_len_expected = util::select::expr(input_valid.expr(), base_len.value(), 0.expr());
 
-        let exp_len_expected =
-            util::select::expr(input_valid.expr(), exp_len.value(), 0.expr());
+        let exp_len_expected = util::select::expr(input_valid.expr(), exp_len.value(), 0.expr());
 
         let modulus_len_expected =
             util::select::expr(input_valid.expr(), modulus_len.value(), 0.expr());
@@ -425,8 +332,7 @@ impl<F: Field> ModExpInputs<F> {
             Some(exp_pow.expr()),
         );
 
-        let input_bytes_rlc = 
-            rlc_word_rev(&modulus, cb.challenges().keccak_input()) //rlc of base
+        let input_bytes_rlc = rlc_word_rev(&modulus, cb.challenges().keccak_input()) //rlc of base
             + modulus_pow.expr() * rlc_word_rev(&exp, cb.challenges().keccak_input()) //rlc of exp plus r**base_len
             + exp_pow.expr() * rlc_word_rev(&base, cb.challenges().keccak_input()) //rlc of exp plus r**(base_len + exp_len)
             + base_pow.expr() * modulus_len.memory_rlc()
@@ -497,11 +403,7 @@ impl<F: Field> ModExpInputs<F> {
             let assigned = pow.assign(
                 region,
                 offset,
-                if input_valid {
-                    len.as_usize()
-                } else {
-                    0
-                },
+                if input_valid { len.as_usize() } else { 0 },
                 linked_v,
             )?;
 
@@ -545,8 +447,8 @@ impl<F: Field> ModExpOutputs<F> {
         let result_limbs = Limbs::configure(cb, &result);
 
         let output_bytes_rlc = util::select::expr(
-            is_result_zero.expr(), 
-            0.expr(), 
+            is_result_zero.expr(),
+            0.expr(),
             rlc_word_rev(&result, cb.challenges().keccak_input()),
         );
 
@@ -732,7 +634,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         cb.require_equal(
             "input acc bytes with padding must equal",
             input_bytes_acc.expr(),
-            padding_zero.expr() * input.bytes_rlc() + rlc_rev(&garbage_bytes_holder, cb.challenges().keccak_input()),
+            padding_zero.expr() * input.bytes_rlc()
+                + rlc_rev(&garbage_bytes_holder, cb.challenges().keccak_input()),
         );
 
         cb.require_equal(
@@ -740,7 +643,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output_bytes_acc.expr(),
             output.bytes_rlc(),
         );
-
 
         Self {
             is_success,
@@ -769,19 +671,17 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
-            println!("exp data: {:?}", data);
+            //println!("exp data: {:?}", data);
 
-            self.input.assign(
-                region,
-                offset,
-                (data.valid, data.input_lens, data.inputs),
-            )?;
-    
-            let input_expected_len = 96 + if data.valid {
-                data.input_lens.iter().map(U256::as_usize).sum::<usize>()
-            } else {
-                0
-            };
+            self.input
+                .assign(region, offset, (data.valid, data.input_lens, data.inputs))?;
+
+            let input_expected_len = 96
+                + if data.valid {
+                    data.input_lens.iter().map(U256::as_usize).sum::<usize>()
+                } else {
+                    0
+                };
 
             let garbage_bytes = if call.call_data_length as usize > input_expected_len {
                 let mut bts = Vec::new();
@@ -790,14 +690,15 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 bts.resize(96, 0); //padding zero
                 bts
             } else {
-                Vec::from([0u8;96])
+                Vec::from([0u8; 96])
             };
 
-            println!("garbage bytes {:?}", garbage_bytes);
+            //println!("garbage bytes {:?}", garbage_bytes);
 
-            self.padding_zero.assign(region, offset, INPUT_LIMIT - input_expected_len, None)?;
+            self.padding_zero
+                .assign(region, offset, INPUT_LIMIT - input_expected_len, None)?;
 
-            for (cell, bt) in self.garbage_bytes_holder.iter().zip(garbage_bytes){
+            for (cell, bt) in self.garbage_bytes_holder.iter().zip(garbage_bytes) {
                 cell.assign(region, offset, Value::known(F::from(bt as u64)))?;
             }
 
@@ -809,7 +710,9 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .keccak_input()
                 .map(|randomness| rlc::value(data.input_memory.iter().rev(), randomness));
 
-            let n_padded_zeroes_pow = region.challenges().keccak_input()
+            let n_padded_zeroes_pow = region
+                .challenges()
+                .keccak_input()
                 .map(|r| r.pow(&[INPUT_LIMIT as u64 - call.call_data_length, 0, 0, 0]));
 
             let output_rlc = region
@@ -817,7 +720,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .keccak_input()
                 .map(|randomness| rlc::value(data.output_memory.iter().rev(), randomness));
 
-            self.input_bytes_acc.assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
+            self.input_bytes_acc
+                .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
@@ -1031,7 +935,7 @@ mod test {
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
                     ..Default::default()
-                },                
+                },
                 PrecompileCallArgs {
                     name: "modexp success with garbage bytes",
                     setup_code: bytecode! {
@@ -1056,7 +960,7 @@ mod test {
                         MSTORE
                         PUSH32(word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"))
                         PUSH1(0xA0)
-                        MSTORE                        
+                        MSTORE
                     },
                     call_data_offset: 0x0.into(),
                     call_data_length: 0xc0.into(),
@@ -1064,7 +968,7 @@ mod test {
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
                     ..Default::default()
-                },                
+                },
                 PrecompileCallArgs {
                     name: "modexp zero modulus",
                     setup_code: bytecode! {
@@ -1195,7 +1099,7 @@ mod test {
                     address: PrecompileCalls::Modexp.address().to_word(),
                     gas: 100000.into(),
                     ..Default::default()
-                },                
+                },
             ]
         };
     }

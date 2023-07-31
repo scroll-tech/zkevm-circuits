@@ -56,7 +56,9 @@ impl<F: Field> PrecompileGadget<F> {
             select::expr(
                 len_128,
                 128.expr(),
-                select::expr(len_96, 96.expr(), 
+                select::expr(
+                    len_96,
+                    96.expr(),
                     select::expr(len_192, 192.expr(), cd_length.expr()),
                 ),
             )

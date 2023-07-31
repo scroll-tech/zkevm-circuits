@@ -238,16 +238,8 @@ impl ModExpAuxData {
 
         let (input_valid, [base_len, exp_len, modulus_len]) = Self::check_input(&mem_input);
 
-        let base_mem_len = if input_valid {
-            base_len.as_usize()
-        } else {
-            0
-        };
-        let exp_mem_len = if input_valid {
-            exp_len.as_usize()
-        } else {
-            0
-        };
+        let base_mem_len = if input_valid { base_len.as_usize() } else { 0 };
+        let exp_mem_len = if input_valid { exp_len.as_usize() } else { 0 };
         let modulus_mem_len = if input_valid {
             modulus_len.as_usize()
         } else {
