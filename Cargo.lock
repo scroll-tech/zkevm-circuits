@@ -397,7 +397,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4114279215a005bc675e386011e594e1d9b800918cea18fcadadcce864a2046b"
 dependencies = [
  "borsh-derive",
- "hashbrown 0.13.2",
+ "hashbrown 0.12.3",
 ]
 
 [[package]]
@@ -3986,7 +3986,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d470e29e933dac4101180fd6574971892315c414cf2961a192729089687cc9b"
 dependencies = [
  "derive_more",
- "primitive-types 0.12.1",
+ "primitive-types 0.11.1",
  "rlp",
  "ruint-macro",
  "rustc_version 0.4.0",
@@ -4469,7 +4469,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#6eeba7783d337e0964d0d89de3d4ee8a7856fde6"
 dependencies = [
  "bytes",
  "ethereum-types 0.14.1",
@@ -4493,7 +4493,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#6eeba7783d337e0964d0d89de3d4ee8a7856fde6"
 dependencies = [
  "bincode",
  "env_logger 0.10.0",
