@@ -234,8 +234,8 @@ fn serial_test_super_circuit_1tx_1max_tx() {
     );
 }
 
-#[ignore]
-#[cfg(feature = "scroll")]
+// #[ignore]
+// #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_1tx_deploy_2max_tx() {
     let block = block_1tx_deploy();
@@ -264,8 +264,8 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
     );
 }
 
-#[ignore]
-#[cfg(feature = "scroll")]
+// #[ignore]
+// #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_1tx_2max_tx() {
     let block = block_1tx();
@@ -292,8 +292,8 @@ fn serial_test_super_circuit_1tx_2max_tx() {
     );
 }
 
-#[ignore]
-#[cfg(feature = "scroll")]
+// #[ignore]
+// #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_2tx_4max_tx() {
     let block = block_2tx();
@@ -322,8 +322,8 @@ fn serial_test_super_circuit_2tx_4max_tx() {
     );
 }
 
-#[ignore]
-#[cfg(feature = "scroll")]
+// #[ignore]
+// #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_2tx_2max_tx() {
     let block = block_2tx();
