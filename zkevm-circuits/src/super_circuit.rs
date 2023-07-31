@@ -333,7 +333,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let sig_circuit = SigCircuitConfig::new(
             meta,
             SigCircuitConfigArgs {
-                keccak_table: keccak_table,
+                keccak_table,
                 sig_table,
                 challenges: challenges_expr.clone(),
             },
