@@ -1,4 +1,4 @@
-use eth_types::{Field, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -88,6 +88,14 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        self.gas_cost.assign(
+            region,
+            offset,
+            Value::known(F::from(
+                GasCost::PRECOMPILE_IDENTITY_BASE.0
+                    + (call.call_data_length / 32 + 1) * GasCost::PRECOMPILE_IDENTITY_PER_WORD.0,
+            )),
+        )?;
         self.is_success.assign(
             region,
             offset,
