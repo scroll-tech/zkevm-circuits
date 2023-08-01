@@ -5,9 +5,12 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_WORD},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::ConstantDivisionGadget,
             CachedRegion, Cell,
         },
     },
@@ -18,6 +21,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct IdentityGadget<F> {
     gas_cost: Cell<F>,
+    input_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -49,6 +53,18 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             ]
             .map(|tag| cb.call_context(None, tag));
 
+        let input_word_size = ConstantDivisionGadget::construct(
+            cb,
+            call_data_length.expr() + (N_BYTES_WORD - 1).expr(),
+            N_BYTES_WORD as u64,
+        );
+        cb.require_equal(
+            "ecrcover: gas cost",
+            gas_cost.expr(),
+            GasCost::PRECOMPILE_IDENTITY_BASE.expr()
+                + input_word_size.quotient() * GasCost::PRECOMPILE_IDENTITY_PER_WORD.expr(),
+        );
+
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
             callee_address.expr(),
@@ -67,6 +83,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
 
         Self {
             gas_cost,
+            input_word_size,
 
             is_success,
             callee_address,
@@ -93,9 +110,16 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             offset,
             Value::known(F::from(
                 GasCost::PRECOMPILE_IDENTITY_BASE.0
-                    + (call.call_data_length / 32 + 1) * GasCost::PRECOMPILE_IDENTITY_PER_WORD.0,
+                    + ((call.call_data_length + (N_BYTES_WORD as u64) - 1) / (N_BYTES_WORD as u64))
+                        * GasCost::PRECOMPILE_IDENTITY_PER_WORD.0,
             )),
         )?;
+        self.input_word_size.assign(
+            region,
+            offset,
+            (call.call_data_length + (N_BYTES_WORD as u64) - 1).into(),
+        )?;
+
         self.is_success.assign(
             region,
             offset,

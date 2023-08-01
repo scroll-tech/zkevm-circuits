@@ -8,8 +8,9 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder, rlc,
-            CachedRegion, Cell,
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            rlc, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -50,7 +51,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_q_y_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
-            gas_cost,
         ) = (
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -58,7 +58,12 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
-            cb.query_cell(),
+        );
+        let gas_cost = cb.query_cell();
+        cb.require_equal(
+            "ecAdd: gas cost",
+            gas_cost.expr(),
+            GasCost::PRECOMPILE_BN256ADD.expr(),
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =

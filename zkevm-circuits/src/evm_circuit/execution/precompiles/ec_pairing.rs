@@ -80,6 +80,13 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         };
         cb.pow_of_rand_lookup(64.expr(), rand_pow_64.expr());
 
+        cb.require_equal(
+            "ecPairing: gas cost",
+            gas_cost.expr(),
+            GasCost::PRECOMPILE_BN256PAIRING.expr()
+                + n_pairs.expr() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
+        );
+
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,

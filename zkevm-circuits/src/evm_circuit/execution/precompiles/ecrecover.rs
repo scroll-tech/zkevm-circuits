@@ -53,6 +53,11 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.query_keccak_rlc(),
         );
         let gas_cost = cb.query_cell();
+        cb.require_equal(
+            "ecrecover: gas cost",
+            gas_cost.expr(),
+            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+        );
 
         cb.condition(recovered.expr(), |cb| {
             // if address was recovered, the sig_v (recovery ID) was correct.

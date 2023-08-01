@@ -71,6 +71,11 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_cell_phase2(),
         );
         let gas_cost = cb.query_cell();
+        cb.require_equal(
+            "ecMul: gas cost",
+            gas_cost.expr(),
+            GasCost::PRECOMPILE_BN256MUL.expr(),
+        );
 
         let (scalar_s_raw, scalar_s, n) = (
             cb.query_keccak_rlc(),
