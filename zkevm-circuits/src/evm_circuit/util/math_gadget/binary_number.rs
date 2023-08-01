@@ -12,7 +12,7 @@ use crate::evm_circuit::util::{
 
 #[derive(Clone, Debug)]
 pub struct BinaryNumberGadget<F, const N: usize> {
-    bits: [Cell<F>; N],
+    pub(crate) bits: [Cell<F>; N],
 }
 
 impl<F: Field, const N: usize> BinaryNumberGadget<F, N> {

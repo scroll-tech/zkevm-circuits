@@ -11,11 +11,13 @@ mod ec_add;
 mod ec_mul;
 mod ec_pairing;
 mod ecrecover;
+mod modexp;
 
 use ec_add::opt_data as opt_data_ec_add;
 use ec_mul::opt_data as opt_data_ec_mul;
 use ec_pairing::opt_data as opt_data_ec_pairing;
 use ecrecover::opt_data as opt_data_ecrecover;
+use modexp::opt_data as opt_data_modexp;
 
 type InOutRetData = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
 
@@ -37,6 +39,7 @@ pub fn gen_associated_ops(
         PrecompileCalls::Bn128Add => opt_data_ec_add(input_bytes, output_bytes),
         PrecompileCalls::Bn128Mul => opt_data_ec_mul(input_bytes, output_bytes),
         PrecompileCalls::Bn128Pairing => opt_data_ec_pairing(input_bytes, output_bytes),
+        PrecompileCalls::Modexp => opt_data_modexp(input_bytes, output_bytes),
         PrecompileCalls::Identity => (None, None),
         _ => {
             log::warn!("precompile {:?} unsupported in circuits", precompile);

@@ -2192,6 +2192,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2-gate-generator"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/halo2gategen.git#35b137de2f71c37dfbd236842b868013c46739d1"
+dependencies = [
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
 source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4#892726037d18d122b6ee30843eb12ef80c18ce10"
@@ -3980,6 +3996,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmd160-circuits"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#31c41ca4365dcf2b6ed4f2cdcd3dc8d2e8f080df"
+dependencies = [
+ "halo2-gate-generator",
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "ruint"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5478,6 +5511,7 @@ dependencies = [
  "rand_chacha",
  "rand_xorshift",
  "rayon",
+ "rmd160-circuits",
  "serde",
  "serde_json",
  "sha3 0.10.8",
