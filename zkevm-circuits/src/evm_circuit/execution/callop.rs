@@ -296,6 +296,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     no_callee_code.expr(),
                     true.expr(),
                 );
+                cb.require_true(
+                    "Precompile addresses are always warm",
+                    and::expr([is_warm.expr(), is_warm_prev.expr()]),
+                );
 
                 // Write to callee's context.
                 for (field_tag, value) in [
@@ -468,21 +472,28 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ..StepStateTransition::default()
                 });
 
+                let precompile_gadget = PrecompileGadget::construct(
+                    cb,
+                    call_gadget.is_success.expr(),
+                    call_gadget.callee_address_expr(),
+                    cb.curr.state.call_id.expr(),
+                    call_gadget.cd_address.offset(),
+                    call_gadget.cd_address.length(),
+                    call_gadget.rd_address.offset(),
+                    call_gadget.rd_address.length(),
+                    precompile_return_length.expr(),
+                    precompile_input_bytes_rlc.expr(),
+                    precompile_output_bytes_rlc.expr(),
+                    precompile_return_bytes_rlc.expr(),
+                );
+                cb.require_equal(
+                    "precompile call: step gas cost",
+                    step_gas_cost.expr(),
+                    gas_cost.expr() + precompile_gadget.precompile_call_gas_cost.expr(),
+                );
+
                 (
-                    PrecompileGadget::construct(
-                        cb,
-                        call_gadget.is_success.expr(),
-                        call_gadget.callee_address_expr(),
-                        cb.curr.state.call_id.expr(),
-                        call_gadget.cd_address.offset(),
-                        call_gadget.cd_address.length(),
-                        call_gadget.rd_address.offset(),
-                        call_gadget.rd_address.length(),
-                        precompile_return_length.expr(),
-                        precompile_input_bytes_rlc.expr(),
-                        precompile_output_bytes_rlc.expr(),
-                        precompile_return_bytes_rlc.expr(),
-                    ),
+                    precompile_gadget,
                     precompile_input_bytes_rlc,
                     precompile_output_bytes_rlc,
                     precompile_return_bytes_rlc,

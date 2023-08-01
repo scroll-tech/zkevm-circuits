@@ -1,5 +1,5 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -25,6 +25,7 @@ pub struct EcAddGadget<F> {
     point_q_y_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
+    gas_cost: Cell<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -49,6 +50,7 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_q_y_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
+            gas_cost,
         ) = (
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -56,6 +58,7 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
+            cb.query_cell(),
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
@@ -106,6 +109,7 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_q_y_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
+            gas_cost,
 
             is_success,
             callee_address,
@@ -143,6 +147,17 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
                     keccak_rand.map(|r| rlc::value(&word_value.to_le_bytes(), r)),
                 )?;
             }
+            // FIXME: when we handle invalid inputs (and hence failures in the precompile calls),
+            // this will be assigned either fixed gas cost (in case of success) or the
+            // entire gas passed to the precompile call (in case of failure).
+            self.gas_cost.assign(
+                region,
+                offset,
+                Value::known(F::from(GasCost::PRECOMPILE_BN256ADD.0)),
+            )?;
+        } else {
+            log::error!("unexpected aux_data {:?} for ecAdd", step.aux_data);
+            return Err(Error::Synthesis);
         }
 
         self.is_success.assign(

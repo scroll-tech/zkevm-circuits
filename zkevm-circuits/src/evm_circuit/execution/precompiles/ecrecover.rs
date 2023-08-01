@@ -1,5 +1,5 @@
 use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -26,6 +26,7 @@ pub struct EcrecoverGadget<F> {
     sig_r_rlc: Cell<F>,
     sig_s_rlc: Cell<F>,
     recovered_addr_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    gas_cost: Cell<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -51,6 +52,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.query_cell_phase2(),
             cb.query_keccak_rlc(),
         );
+        let gas_cost = cb.query_cell();
 
         cb.condition(recovered.expr(), |cb| {
             // if address was recovered, the sig_v (recovery ID) was correct.
@@ -105,6 +107,8 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_r_rlc,
             sig_s_rlc,
             recovered_addr_rlc,
+            gas_cost,
+
             is_success,
             callee_address,
             caller_id,
@@ -170,6 +174,14 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     recovered_addr
                 }),
             )?;
+            self.gas_cost.assign(
+                region,
+                offset,
+                Value::known(F::from(GasCost::PRECOMPILE_ECRECOVER_BASE.0)),
+            )?;
+        } else {
+            log::error!("unexpected aux_data {:?} for ecrecover", step.aux_data);
+            return Err(Error::Synthesis);
         }
 
         self.is_success.assign(

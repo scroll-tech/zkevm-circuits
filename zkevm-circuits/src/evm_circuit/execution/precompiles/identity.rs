@@ -17,6 +17,8 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct IdentityGadget<F> {
+    gas_cost: Cell<F>,
+
     is_success: Cell<F>,
     callee_address: Cell<F>,
     caller_id: Cell<F>,
@@ -33,6 +35,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
     const NAME: &'static str = "IDENTITY";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let gas_cost = cb.query_cell();
+
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
@@ -62,6 +66,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         );
 
         Self {
+            gas_cost,
+
             is_success,
             callee_address,
             caller_id,

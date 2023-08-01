@@ -561,6 +561,7 @@ pub struct ModExpGadget<F> {
 
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
+    gas_cost: Cell<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
 
@@ -573,6 +574,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         // we 'copy' the acc_bytes cell inside call_op step, so it must be the first query cells
         let input_bytes_acc = cb.query_cell_phase2();
         let output_bytes_acc = cb.query_cell_phase2();
+        let gas_cost = cb.query_cell();
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -657,6 +659,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output,
             input_bytes_acc,
             output_bytes_acc,
+            gas_cost,
             garbage_bytes_holder,
         }
     }
@@ -671,8 +674,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
-            //println!("exp data: {:?}", data);
-
             self.input
                 .assign(region, offset, (data.valid, data.input_lens, data.inputs))?;
 
@@ -692,8 +693,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             } else {
                 Vec::from([0u8; 96])
             };
-
-            //println!("garbage bytes {:?}", garbage_bytes);
 
             self.padding_zero
                 .assign(region, offset, INPUT_LIMIT - input_expected_len, None)?;
@@ -723,6 +722,10 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             self.input_bytes_acc
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
+
+            // FIXME
+            self.gas_cost
+                .assign(region, offset, Value::known(F::from(0)))?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
             return Err(Error::Synthesis);
