@@ -135,6 +135,7 @@ fn run<F: Field>(
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_2tx_2max_tx() {
     const NUM_TXS: usize = 2;
     const MAX_TXS: usize = 4;
@@ -163,6 +164,7 @@ fn tx_circuit_2tx_2max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_0tx_1max_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -174,6 +176,7 @@ fn tx_circuit_0tx_1max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_1tx_1max_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -187,6 +190,7 @@ fn tx_circuit_1tx_1max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_1tx_2max_tx() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 320;
@@ -200,6 +204,7 @@ fn tx_circuit_1tx_2max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_l1_msg_tx() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 400;
@@ -213,6 +218,7 @@ fn tx_circuit_l1_msg_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_bad_address() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -225,6 +231,7 @@ fn tx_circuit_bad_address() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_to_is_zero() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
