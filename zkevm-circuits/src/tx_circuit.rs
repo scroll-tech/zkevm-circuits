@@ -58,7 +58,7 @@ use halo2_proofs::plonk::Fixed;
 use halo2_proofs::plonk::SecondPhase;
 
 use crate::{
-    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID, U16Table},
+    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID, U16Table, U8Table},
     util::rlc_be_bytes,
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
@@ -165,6 +165,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     pub rlp_table: RlpTable,
     /// SigTable
     pub sig_table: SigTable,
+    /// Reusable u8 lookup table,
+    pub u8_table: U8Table,
     /// Reusable u16 lookup table,
     pub u16_table: U16Table,
     /// Challenges
@@ -183,6 +185,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             keccak_table,
             rlp_table,
             sig_table,
+            u8_table,
             u16_table,
             challenges: _,
         }: Self::ConfigArgs,
@@ -686,7 +689,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.query_fixed(q_enable, Rotation::cur()),
             |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
             |meta| meta.query_advice(cum_num_txs, Rotation::cur()),
-            u16_table.into(),
+            u8_table.into(),
         );
 
         meta.create_gate("tx_id <= cum_num_txs", |meta| {

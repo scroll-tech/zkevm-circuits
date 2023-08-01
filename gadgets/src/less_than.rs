@@ -38,7 +38,7 @@ pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the bytes representation of the difference between lhs and rhs.
     pub diff: [Column<Advice>; N_BYTES],
     /// Denotes the range within which each byte should lie.
-    pub u16_table: TableColumn,
+    pub u8_table: TableColumn,
     /// Denotes the range within which both lhs and rhs lie.
     pub range: F,
 }
@@ -69,7 +69,7 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
         lhs: impl FnOnce(&mut VirtualCells<F>) -> Expression<F>,
         rhs: impl FnOnce(&mut VirtualCells<F>) -> Expression<F>,
-        u16_table: TableColumn,
+        u8_table: TableColumn,
     ) -> LtConfig<F, N_BYTES> {
         let lt = meta.advice_column();
         let diff = [(); N_BYTES].map(|_| meta.advice_column());
@@ -94,25 +94,20 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
                 .map(move |poly| q_enable.clone() * poly)
         });
 
-        for cell_columns in diff.chunks(2) {
-            meta.lookup("range check for u16", |meta| {
+        for cell_column in diff.iter().copied() {
+            meta.lookup("range check for u8", |meta| {
                 let q_enable = q_enable.clone()(meta);
-                let cell_expr = if cell_columns.len() == 2 {
-                    meta.query_advice(cell_columns[0], Rotation::cur())
-                        * Expression::Constant(pow_of_two(8))
-                        + (meta.query_advice(cell_columns[1], Rotation::cur()))
-                } else {
-                    meta.query_advice(cell_columns[0], Rotation::cur())
-                        * Expression::Constant(pow_of_two(8))
-                };
-                vec![(q_enable * cell_expr, u16_table)]
+                vec![(
+                    q_enable * meta.query_advice(cell_column, Rotation::cur()),
+                    u8_table,
+                )]
             });
         }
 
         LtConfig {
             lt,
             diff,
-            u16_table,
+            u8_table,
             range,
         }
     }
@@ -160,15 +155,15 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
         &self,
         layouter: &mut impl halo2_proofs::circuit::Layouter<F>,
     ) -> Result<(), Error> {
-        const RANGE: usize = u16::MAX as usize;
+        const RANGE: usize = u8::MAX as usize;
 
         layouter.assign_table(
-            || "load u16 range check table",
+            || "load u8 range check table",
             |mut table| {
                 for i in 0..=RANGE {
                     table.assign_cell(
                         || "assign cell in fixed column",
-                        self.config.u16_table,
+                        self.config.u8_table,
                         i,
                         || Value::known(F::from(i as u64)),
                     )?;

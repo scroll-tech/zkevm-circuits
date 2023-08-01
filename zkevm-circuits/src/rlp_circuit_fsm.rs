@@ -622,7 +622,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cmp_enabled,
                     |meta| meta.query_advice(byte_value, Rotation::cur()),
                     |_| $value.expr(),
-                    u16_table.into(),
+                    u8_table.into(),
                 );
             };
         }
@@ -633,7 +633,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cmp_enabled,
                     |_| $value.expr(),
                     |meta| meta.query_advice(byte_value, Rotation::cur()),
-                    u16_table.into(),
+                    u8_table.into(),
                 );
             };
         }
@@ -716,14 +716,14 @@ impl<F: Field> RlpCircuitConfig<F> {
             cmp_enabled,
             |meta| meta.query_advice(tag_idx, Rotation::cur()),
             |meta| meta.query_advice(tag_length, Rotation::cur()),
-            u16_table.into(),
+            u8_table.into(),
         );
         let mlength_lte_0x20 = ComparatorChip::configure(
             meta,
             cmp_enabled,
             |meta| meta.query_advice(max_length, Rotation::cur()),
             |_meta| 0x20.expr(),
-            u16_table.into(),
+            u8_table.into(),
         );
         let depth_check = IsEqualChip::configure(
             meta,
