@@ -457,7 +457,7 @@ impl<
         let exp = ExpCircuit::min_num_rows_block(block);
         let mod_exp = ModExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
-        let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::min_num_rows_block(block);
         let sig = SigCircuit::min_num_rows_block(block);
         let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
