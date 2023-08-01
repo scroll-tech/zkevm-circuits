@@ -503,7 +503,7 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
     }
 
     let leaf = trie_proof.key.as_ref().map(|h| SMTNode {
-        node_type: 4,
+        node_type: trie_proof.key_type.expect("key type should has been set"),
         value: smt_hash_from_bytes(trie_proof.data.as_ref()),
         sibling: smt_hash_from_bytes(h.as_bytes()),
     });

@@ -168,6 +168,7 @@ impl CanRead for StorageData {
 pub(crate) struct TrieProof<T> {
     pub data: T,
     pub key: Option<H256>,
+    pub key_type: Option<u64>,
     // the path from top to bottom, in (left child, right child) form
     pub path: Vec<(U256, U256)>,
     // the path type from top to bottom
@@ -201,6 +202,7 @@ where
                     let data = T::parse_leaf(data)?;
                     return Ok(Self {
                         key: Some(key),
+                        key_type: Some(prefix[0] as u64),
                         data,
                         path,
                         path_type,
@@ -210,6 +212,7 @@ where
                     return Ok(Self {
                         path,
                         path_type,
+                        key_type: Some(prefix[0] as u64),
                         ..Default::default()
                     });
                 }
