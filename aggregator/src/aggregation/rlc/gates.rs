@@ -288,6 +288,21 @@ impl RlcConfig {
         self.mul_add(region, b, &cond_not, &tmp, offset)
     }
 
+    // if cond = 1, enforce a==b
+    // caller need to ensure cond is binary
+    pub(crate) fn conditional_enforce_equal(
+        &self,
+        region: &mut Region<Fr>,
+        a: &AssignedCell<Fr, Fr>,
+        b: &AssignedCell<Fr, Fr>,
+        cond: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<(), Error> {
+        let diff = self.sub(region, a, b, offset)?;
+        let res = self.mul(region, &diff, cond, offset)?;
+        self.enforce_zero(region, &res)
+    }
+
     // Returns inputs[0] + challenge * inputs[1] + ... + challenge^k * inputs[k]
     #[allow(dead_code)]
     pub(crate) fn rlc(

@@ -185,7 +185,7 @@ for i in 1 ... n:
         chunk_i.data_hash == [0u8; 32]
 ```
 7. chunk[i]'s data_hash len is `0` when chunk[i] is padded
-
+8. batch data hash is correct w.r.t. its RLCs
 
 ### Handling dynamic inputs
 
