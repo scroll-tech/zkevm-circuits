@@ -84,7 +84,7 @@ use crate::{
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
-        TxTable,
+        TxTable, U16Table, U8Table,
     },
 };
 
@@ -116,6 +116,8 @@ pub struct SuperCircuitConfig<F: Field> {
     rlp_table: RlpTable,
     tx_table: TxTable,
     poseidon_table: PoseidonTable,
+    u8_table: U8Table,
+    u16_table: U16Table,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
@@ -203,6 +205,11 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         log_circuit_info(meta, "power of randomness table");
 
+        let u8_table = U8Table::construct(meta);
+        log_circuit_info(meta, "u8 table");
+        let u16_table = U16Table::construct(meta);
+        log_circuit_info(meta, "u16 table");
+
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
             KeccakCircuitConfigArgs {
@@ -220,6 +227,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             meta,
             RlpCircuitConfigArgs {
                 rlp_table,
+                u8_table,
                 challenges: challenges_expr.clone(),
             },
         );
@@ -247,6 +255,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 keccak_table: keccak_table.clone(),
                 rlp_table,
                 sig_table,
+                u16_table,
                 challenges: challenges_expr.clone(),
             },
         );
@@ -368,6 +377,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             tx_table,
             rlp_table,
             poseidon_table,
+            u8_table,
+            u16_table,
             evm_circuit,
             state_circuit,
             copy_circuit,
@@ -385,6 +396,18 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             mpt_circuit,
         }
     }
+}
+
+/// Row usage for each sub circuit
+#[derive(Clone, Default, Debug)]
+pub struct SubcircuitRowUsage {
+    /// Subcircuit name
+    pub name: String,
+    // TODO: better name?
+    /// Without padding
+    pub row_num_real: usize,
+    /// With padding
+    pub row_num_total: usize,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -446,7 +469,7 @@ impl<
         num_rows_evm_circuit
     }
     /// Return the minimum number of rows required to prove the block
-    pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> (Vec<usize>, Vec<usize>) {
+    pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> Vec<SubcircuitRowUsage> {
         let evm = EvmCircuit::min_num_rows_block(block);
         let state = StateCircuit::min_num_rows_block(block);
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
@@ -457,7 +480,7 @@ impl<
         let exp = ExpCircuit::min_num_rows_block(block);
         let mod_exp = ModExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
-        let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::min_num_rows_block(block);
         let sig = SigCircuit::min_num_rows_block(block);
         let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
@@ -480,14 +503,37 @@ impl<
             #[cfg(feature = "zktrie")]
             mpt,
         ];
-        let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
-            rows.into_iter().unzip();
-        log::debug!(
-            "subcircuit rows(without padding): {:?}",
-            rows_without_padding
-        );
-        log::debug!("subcircuit rows(with    padding): {:?}", rows_with_padding);
-        (rows_without_padding, rows_with_padding)
+        let sub_circuit_names: Vec<String> = [
+            "evm",
+            "state",
+            "bytecode",
+            "copy",
+            "keccak",
+            "tx",
+            "rlp",
+            "exp",
+            "modexp",
+            "pi",
+            "poseidon",
+            "sig",
+            "ecc",
+            #[cfg(feature = "zktrie")]
+            "mpt",
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+        let row_usage_details = sub_circuit_names
+            .into_iter()
+            .zip_eq(rows.into_iter())
+            .map(|(name, (row_num_real, row_num_total))| SubcircuitRowUsage {
+                name,
+                row_num_real,
+                row_num_total,
+            })
+            .collect_vec();
+        log::debug!("row_usage_details {row_usage_details:?}");
+        row_usage_details
     }
 }
 
@@ -572,10 +618,10 @@ impl<
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &Block<Fr>) -> (usize, usize) {
-        let (rows_without_padding, rows_with_padding) = Self::min_num_rows_block_subcircuits(block);
+        let row_usage = Self::min_num_rows_block_subcircuits(block);
         (
-            itertools::max(rows_without_padding).unwrap(),
-            itertools::max(rows_with_padding).unwrap(),
+            itertools::max(row_usage.iter().map(|x| x.row_num_real)).unwrap(),
+            itertools::max(row_usage.iter().map(|x| x.row_num_total)).unwrap(),
         )
     }
 
@@ -675,6 +721,9 @@ impl<
             block.chain_id,
             &challenges,
         )?;
+
+        config.u8_table.load(&mut layouter)?;
+        config.u16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
