@@ -1,5 +1,5 @@
-use eth_types::{Field, ToScalar, U256};
-use gadgets::util::{self, Expr};
+use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use gadgets::util::{self, and, or, select, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -8,10 +8,14 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_U64,
         step::ExecutionState,
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
+            math_gadget::{
+                BinaryNumberGadget, ComparisonGadget, ConstantDivisionGadget, IsZeroGadget,
+                LtGadget, MinMaxGadget,
+            },
             rlc, CachedRegion, Cell,
         },
     },
@@ -545,6 +549,48 @@ impl<F: Field> Limbs<F> {
     }
 }
 
+pub(crate) struct ModExpGasCost<F> {
+    max_length: MinMaxGadget<F, 1>,
+    words: ConstantDivisionGadget<F, 1>,
+    exp_is_zero: IsZeroGadget<F>,
+    dynamic_gas: MinMaxGadget<F, N_BYTES_U64>,
+}
+
+impl<F: Field> ModExpGasCost<F> {
+    fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        b_size: &SizeRepresent<F>,
+        e_size: &SizeRepresent<F>,
+        exp_expr: Expression<F>,
+        m_size: &SizeRepresent<F>,
+    ) -> Self {
+        let max_length = MinMaxGadget::construct(cb, b_size.value(), m_size.value());
+        let words = ConstantDivisionGadget::construct(cb, max_length.max() + 7.expr(), 8);
+        let multiplication_complexity = words.quotient() * words.quotient();
+
+        let exp_is_zero = IsZeroGadget::construct(cb, "modexp: exponent", exp_expr);
+
+        let iteration_count = select::expr(
+            exp_is_zero.expr(),
+            0.expr(),
+            /* exponent.bit_length() - 1 */ 0.expr(),
+        );
+
+        let dynamic_gas = MinMaxGadget::construct(
+            cb,
+            GasCost::PRECOMPILE_MODEXP_MIN.expr(),
+            /* multiplication_complexity * iteration_count / 3 */ 0.expr(),
+        );
+
+        Self {
+            max_length,
+            words,
+            exp_is_zero,
+            dynamic_gas,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ModExpGadget<F> {
     is_success: Cell<F>,
@@ -562,6 +608,7 @@ pub struct ModExpGadget<F> {
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
     gas_cost: Cell<F>,
+    gas_cost_gadget: ModExpGasCost<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
 
@@ -646,6 +693,19 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output.bytes_rlc(),
         );
 
+        let gas_cost_gadget = ModExpGasCost::construct(
+            cb,
+            &input.base_len,
+            &input.exp_len,
+            /* exp is zero? */ 0.expr(),
+            &input.modulus_len,
+        );
+        cb.require_equal(
+            "modexp: gas cost",
+            gas_cost.expr(),
+            gas_cost_gadget.dynamic_gas.max(),
+        );
+
         Self {
             is_success,
             callee_address,
@@ -660,6 +720,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             input_bytes_acc,
             output_bytes_acc,
             gas_cost,
+            gas_cost_gadget,
             garbage_bytes_holder,
         }
     }
