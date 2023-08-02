@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256, geth_types::TxType::L1Msg};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -42,6 +42,8 @@ use gadgets::util::select;
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
     tx_id: Cell<F>,
+    tx_type: Cell<F>,
+    tx_is_l1msg: IsEqualGadget<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
     tx_gas_price: Word<F>,
@@ -99,7 +101,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let tx_id = cb.query_cell();
 
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost, tx_type] =
             [
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
@@ -109,10 +111,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
                 TxContextFieldTag::TxDataGasCost,
+                TxContextFieldTag::TxType,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        let tx_l1_fee = TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr());
+        let tx_is_l1msg = IsEqualGadget::construct(cb, tx_type.expr(), (L1Msg as u64).expr());
+        let tx_l1_fee = cb.condition(not::expr(tx_is_l1msg.expr()), |cb|TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr()));
+        cb.condition(tx_is_l1msg.expr(), |cb|{
+            cb.require_zero(
+                "l1fee is 0 for l1msg",
+                tx_data_gas_cost.expr(),
+            );
+        });
+        let tx_l1_fee_rw_delta = select::expr(tx_is_l1msg.expr(), 0.expr(), tx_l1_fee.rw_delta());
 
         cb.call_context_lookup(
             1.expr(),
@@ -438,7 +449,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext CodeHash
                 rw_counter: Delta(
                     22.expr()
-                        + tx_l1_fee.rw_delta()
+                        + tx_l1_fee_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr(),
@@ -494,7 +505,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - a TransferWithGasFeeGadget
                 rw_counter: Delta(
                     7.expr()
-                        + tx_l1_fee.rw_delta()
+                        + tx_l1_fee_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr()
@@ -547,7 +558,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - a TransferWithGasFeeGadget
                     rw_counter: Delta(
                         8.expr()
-                            + tx_l1_fee.rw_delta()
+                            + tx_l1_fee_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
@@ -619,7 +630,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext CodeHash
                     rw_counter: Delta(
                         21.expr()
-                            + tx_l1_fee.rw_delta()
+                            + tx_l1_fee_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
@@ -638,6 +649,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         Self {
             tx_id,
+            tx_type,
+            tx_is_l1msg,
             tx_nonce,
             tx_gas,
             tx_gas_price,
@@ -727,6 +740,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+        self.tx_type
+            .assign(region, offset, Value::known(F::from(tx.tx_type as u64)))?;
+        self.tx_is_l1msg
+            .assign(region, offset, F::from(tx.tx_type as u64), F::from(L1Msg as u64))?;
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.nonce)))?;
         self.tx_gas
