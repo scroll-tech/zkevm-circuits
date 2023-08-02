@@ -45,6 +45,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
+use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
@@ -2868,5 +2869,48 @@ impl<F: Field> LookupTable<F> for PowOfRandTable {
             meta.query_fixed(self.exponent, Rotation::cur()),
             meta.query_advice(self.pow_of_rand, Rotation::cur()),
         ]
+    }
+}
+
+/// Lookup table for [0, MAX) range
+#[derive(Clone, Copy, Debug)]
+pub struct RangeTable<const MAX: usize>(TableColumn);
+
+/// Type Alias of u8 table, [0, 1 << 8)
+pub type U8Table = RangeTable<{ 1 << 8 }>;
+/// Type Alias of u16 table, [0, 1 << 16)
+pub type U16Table = RangeTable<{ 1 << 16 }>;
+
+impl<const MAX: usize> RangeTable<MAX> {
+    /// Construct the range table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        let inner = meta.lookup_table_column();
+        meta.annotate_lookup_column(inner, || format!("range table [0, {MAX})"));
+        Self(inner)
+    }
+
+    /// Assign values to the table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || format!("range table [0, {MAX})"),
+            |mut table| {
+                for i in 0..MAX {
+                    table.assign_cell(
+                        || format!("range at offset = {i}"),
+                        self.0,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<const MAX: usize> From<RangeTable<MAX>> for TableColumn {
+    fn from(table: RangeTable<MAX>) -> TableColumn {
+        table.0
     }
 }
