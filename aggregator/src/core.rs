@@ -26,12 +26,12 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
-        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
+        CHAIN_ID_LEN, CHUNK_PI_HASH_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE,
+        MAX_AGG_SNARKS, MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
     },
     util::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, keccak_round_capacity,
-        parse_hash_digest_cells, parse_hash_preimage_cells,
+        parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
     AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
     PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
@@ -117,13 +117,14 @@ pub(crate) fn assign_batch_hashes(
             challenges,
             preimages,
         )?;
-    // 2. batch_pi_hash used same roots as chunk_pi_hash
-    // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
-    // 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
-    // 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
-    // 4. chunks are continuous: they are linked via the state roots
-    // 5. batch and all its chunks use a same chain id
-    copy_constraints(layouter, &hash_input_cells)?;
+    // // 2. batch_pi_hash used same roots as chunk_pi_hash
+    // // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
+    // // 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
+    // // 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
+    // // 4. chunks are continuous: they are linked via the state roots
+    // // 5. batch and all its chunks use a same chain id
+    // copy_constraints(layouter, &hash_input_cells)?;
+
     // 1. batch_data_hash digest is reused for public input hash
     // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not
     // padded
@@ -132,7 +133,6 @@ pub(crate) fn assign_batch_hashes(
     // 8. batch data hash is correct w.r.t. its RLCs
     let num_valid_snarks = conditional_constraints(
         &config.rlc_config,
-        // config.flex_gate(),
         layouter,
         challenges,
         &hash_input_cells,
@@ -433,6 +433,8 @@ pub(crate) fn conditional_constraints(
 
                 rlc_config.init(&mut region)?;
                 let mut offset = 0;
+
+                chunks_are_valid(rlc_config, &mut region, data_rlc_cells, &mut offset)?;
 
                 // ====================================================
                 // build the flags to indicate the chunks are empty or not
@@ -752,6 +754,52 @@ pub(crate) fn conditional_constraints(
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
     Ok(num_of_valid_snarks_cell[0].clone())
+}
+
+/// Input the all chunks' pi hash's data RLCs,
+/// generate a string of binary cells indicating
+/// if the i-th chunk is a valid chunk
+///
+/// Assumption: the first chunk must be valid
+pub(crate) fn chunks_are_valid(
+    rlc_config: &RlcConfig,
+    region: &mut Region<Fr>,
+    data_rlc_cells: &[AssignedCell<Fr, Fr>],
+    offset: &mut usize,
+) -> Result<[AssignedCell<Fr, Fr>; 10], halo2_proofs::plonk::Error> {
+    let chunk_pi_hash_rlc_cells = parse_pi_hash_rlc_cells(data_rlc_cells);
+
+    for (i, e) in chunk_pi_hash_rlc_cells.iter().enumerate() {
+        println!("{i}-th rlc: {:?}", e.value());
+    }
+
+    // // sanity checks
+    // assert_eq!(chunk_pi_hash_preimages.len(), MAX_AGG_SNARKS);
+    // for preimage in chunk_pi_hash_preimages.iter() {
+    //     assert_eq!(preimage.len(), INPUT_LEN_PER_ROUND * 2);
+    // }
+
+    // let zero = rlc_config.load_private(region, &Fr::zero(), offset)?;
+    // let zero_cell = rlc_config.zero_cell(zero.cell().region_index);
+    // region.constrain_equal(zero.cell(), zero_cell)?;
+    // let one = rlc_config.load_private(region, &Fr::one(), offset)?;
+    // let one_cell = rlc_config.one_cell(one.cell().region_index);
+    // region.constrain_equal(one.cell(), one_cell)?;
+
+    // let mut res = vec![one];
+
+    // for chunk_index in 1..MAX_AGG_SNARKS {
+    //     // we check if all CHUNK_PI_HASH_LEN elements matches for chunk_pi_hash_preimages[i-1]
+    // and chunk_pi_hash_preimages[i]     // this is done by checking
+    //     // prod_not_diff := prod_{j=0}^CHUNK_PI_HASH_LEN (1 - (chunk_pi_hash_preimages[i-1][j] -
+    // chunk_pi_hash_preimages[i][j]))     let mut prod_not_diff = zero.clone();
+    //     for byte_index in 0..CHUNK_PI_HASH_LEN{
+    //         let diff = rlc_config.sub(region, a, b, offset)
+
+    //     }
+    // }
+
+    todo!()
 }
 
 /// generate a string of binary cells indicating

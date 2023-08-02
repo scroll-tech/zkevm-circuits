@@ -104,10 +104,10 @@ impl ChunkHash {
         );
         Self {
             chain_id: previous_chunk.chain_id,
-            prev_state_root: previous_chunk.post_state_root,
+            prev_state_root: previous_chunk.prev_state_root,
             post_state_root: previous_chunk.post_state_root,
             withdraw_root: previous_chunk.withdraw_root,
-            data_hash: keccak256([]).into(),
+            data_hash: previous_chunk.data_hash,
             is_padding: true,
         }
     }

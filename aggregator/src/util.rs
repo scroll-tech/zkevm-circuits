@@ -234,6 +234,21 @@ pub(crate) fn parse_hash_digest_cells(
     )
 }
 
+#[inline]
+#[allow(clippy::type_complexity)]
+pub(crate) fn parse_pi_hash_rlc_cells(
+    data_rlc_cells: &[AssignedCell<Fr, Fr>],
+) -> Vec<&AssignedCell<Fr, Fr>> {
+    data_rlc_cells
+        .iter()
+        .skip(3) // the first 3 rlc cells are pad (1) + batch pi hash (2)
+        .take(MAX_AGG_SNARKS * 2) // each chunk hash takes 2 rounds
+        .chunks(2)
+        .into_iter()
+        .map(|t| t.last().unwrap())
+        .collect()
+}
+
 #[allow(dead_code)]
 pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
     assert!(!inputs.is_empty());

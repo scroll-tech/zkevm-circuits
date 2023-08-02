@@ -40,6 +40,7 @@ pub(crate) const PREV_STATE_ROOT_INDEX: usize = 8;
 pub(crate) const POST_STATE_ROOT_INDEX: usize = 40;
 pub(crate) const WITHDRAW_ROOT_INDEX: usize = 72;
 pub(crate) const CHUNK_DATA_HASH_INDEX: usize = 104;
+pub(crate) const CHUNK_PI_HASH_LEN: usize = 136;
 
 // ================================
 // aggregator parameters

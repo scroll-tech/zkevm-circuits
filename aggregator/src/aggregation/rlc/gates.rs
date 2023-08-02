@@ -1,4 +1,5 @@
 use halo2_proofs::{
+    arithmetic::Field,
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
     halo2curves::bn256::Fr,
     plonk::Error,
@@ -10,7 +11,7 @@ use crate::{constants::LOG_DEGREE, util::assert_equal};
 use super::RlcConfig;
 
 impl RlcConfig {
-    /// initialize the chip with fixed 0 and 1 cells
+    /// initialize the chip with fixed cells
     pub(crate) fn init(&self, region: &mut Region<Fr>) -> Result<(), Error> {
         region.assign_fixed(|| "const zero", self.fixed, 0, || Value::known(Fr::zero()))?;
         region.assign_fixed(|| "const one", self.fixed, 1, || Value::known(Fr::one()))?;
@@ -446,6 +447,84 @@ impl RlcConfig {
         let bits = self.decomposition(region, &c, offset)?;
         let res = self.not(region, &bits[32], offset)?;
         Ok(res)
+    }
+
+    // return a boolean if a ?= 0
+    pub(crate) fn is_zero(
+        &self,
+        region: &mut Region<Fr>,
+        a: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        // constraints
+        // - res + a * a_inv = 1
+        // - res * a = 0
+        // for some witness a_inv where
+        // a_inv = 0 if a = 0
+        // a_inv = 1/a if a != 0
+        let mut a_tmp = Fr::default();
+        a.value().map(|&v| a_tmp = v);
+        let res = a_tmp == Fr::zero();
+        let res_cell = self.load_private(region, &Fr::from(res as u64), offset)?;
+        let a_inv = a_tmp.invert().unwrap_or(Fr::zero());
+        let a_inv_cell = self.load_private(region, &a_inv, offset)?;
+        {
+            // - res + a * a_inv = 1
+            self.selector.enable(region, *offset)?;
+            a.copy_advice(|| "a", region, self.phase_2_column, *offset)?;
+            a_inv_cell.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
+            res_cell.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
+            let d = region.assign_advice(
+                || "d",
+                self.phase_2_column,
+                *offset + 3,
+                || Value::known(Fr::one()),
+            )?;
+            region.constrain_equal(d.cell(), self.one_cell(d.cell().region_index))?;
+            *offset += 4;
+        }
+        {
+            // - res * a = 0
+            self.selector.enable(region, *offset)?;
+            a.copy_advice(|| "a", region, self.phase_2_column, *offset)?;
+            res_cell.copy_advice(|| "b", region, self.phase_2_column, *offset + 1)?;
+            let c = region.assign_advice(
+                || "c",
+                self.phase_2_column,
+                *offset + 2,
+                || Value::known(Fr::zero()),
+            )?;
+            let d = region.assign_advice(
+                || "d",
+                self.phase_2_column,
+                *offset + 3,
+                || Value::known(Fr::zero()),
+            )?;
+            region.constrain_equal(c.cell(), self.zero_cell(c.cell().region_index))?;
+            region.constrain_equal(d.cell(), self.zero_cell(d.cell().region_index))?;
+            *offset += 4;
+        }
+        Ok(res_cell)
+    }
+
+    // return a boolean if a ?= b
+    pub(crate) fn is_equal(
+        &self,
+        region: &mut Region<Fr>,
+        a: &AssignedCell<Fr, Fr>,
+        b: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        let diff = self.sub(region, a, b, offset)?;
+        let diff_bits = self.decomposition(region, &diff, offset)?;
+        // we can simply take the sum of the bits, given that decomposition already
+        // asserted that bits are all binary
+        let mut sum_of_bits = diff_bits[0].clone();
+        for bit in diff_bits.iter().skip(1) {
+            sum_of_bits = self.add(region, bit, &sum_of_bits, offset)?;
+        }
+
+        self.is_zero(region, &sum_of_bits, offset)
     }
 }
 #[inline]

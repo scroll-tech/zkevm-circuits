@@ -116,7 +116,7 @@ impl Circuit<Fr> for ArithTestCircuit {
                     config.conditional_enforce_equal(&mut region, &f1, &f2, &zero, &mut offset)?;
                 }
 
-                let inputs = vec![f1, f2, f3, f4];
+                let inputs = vec![f1.clone(), f2.clone(), f3, f4];
 
                 // unit test: rlc
                 {
@@ -171,7 +171,27 @@ impl Circuit<Fr> for ArithTestCircuit {
                     let c_rec = config.is_smaller_than(&mut region, &a, &b, &mut offset)?;
                     region.constrain_equal(c.cell(), c_rec.cell())?;
                 }
+                // unit test: is zero
+                {
+                    let should_be_false = config.is_zero(&mut region, &f1, &mut offset)?;
+                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
+                    region.constrain_equal(should_be_false.cell(), zero.cell())?;
 
+                    let should_be_true = config.is_zero(&mut region, &zero, &mut offset)?;
+                    let one = config.load_private(&mut region, &Fr::one(), &mut offset)?;
+                    region.constrain_equal(should_be_true.cell(), one.cell())?;
+                }
+
+                // unit test: is equal
+                {
+                    let should_be_false = config.is_equal(&mut region, &f1, &f2, &mut offset)?;
+                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
+                    region.constrain_equal(should_be_false.cell(), zero.cell())?;
+
+                    let should_be_true = config.is_equal(&mut region, &f1, &f1, &mut offset)?;
+                    let one = config.load_private(&mut region, &Fr::one(), &mut offset)?;
+                    region.constrain_equal(should_be_true.cell(), one.cell())?;
+                }
                 Ok(())
             },
         )?;
