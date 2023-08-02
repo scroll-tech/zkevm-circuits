@@ -162,9 +162,9 @@ for i in 1 ... __n__
 
 This is done by compute the RLCs of chunk[i]'s data_hash for `i=0..k`, and then check the RLC matches the one from the keccak table.
 
-4. chunks are continuous: they are linked via the state roots. __Static__.
+4. chunks are continuous when the are not padded: they are linked via the state roots.
 
-for i in 1 ... __n-1__
+for i in 1 ... __k-1__
 ```
 c_i.post_state_root == c_{i+1}.prev_state_root
 ```
@@ -175,15 +175,17 @@ for i in 1 ... __n__
     batch.chain_id == chunk[i].chain_id
 ```
 
-6. The last `(n-k)` chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
+6. The last `(n-k)` chunk[i] are padding
 ```
 for i in 1 ... n:
-    is_padding = (i > k) // k is a public input
     if is_padding:
-        chunk_i.prev_state_root == chunk_i.post_state_root 
-        chunk_i.withdraw_root == chunk_{i-1}.withdraw_root
-        chunk_i.data_hash == keccak("")
+        chunk_{i-1}.chain_id == chunk_i.chain_id 
+        chunk_{i-1}.prev_state_root == chunk_i.prev_state_root 
+        chunk_{i-1}.post_state_root == chunk_i.post_state_root 
+        chunk_{i-1}.withdraw_root == chunk_i.withdraw_root 
+        chunk_{i-1}.data_hash == chunk_i.data_hash 
 ```
+This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
 7. chunk[i]'s data_hash len is `0` when chunk[i] is padded
 8. batch data hash is correct w.r.t. its RLCs
 
