@@ -568,109 +568,95 @@ pub(crate) fn conditional_constraints(
                     }
                 }
 
-                // // 3 batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when
-                // // chunk[i] is not padded
-                // //
-                // // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
-                // //
-                // // chunk[i].piHash =
-                // //     keccak(
-                // //        &chain id ||
-                // //        chunk[i].prevStateRoot ||
-                // //        chunk[i].postStateRoot ||
-                // //        chunk[i].withdrawRoot  ||
-                // //        chunk[i].datahash)
-                // for i in 0..MAX_AGG_SNARKS {
-                //     for j in 0..DIGEST_LEN {
-                //         assert_conditional_equal(
-                //             &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
-                //             &potential_batch_data_hash_preimage[i * DIGEST_LEN + j],
-                //             &chunk_is_valid_cells[i],
-                //         );
-                //         rlc_config.conditional_enforce_equal(
-                //             &mut region,
-                //             &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
-                //             &potential_batch_data_hash_preimage[i * DIGEST_LEN + j],
-                //             &chunk_is_valid_cells[i],
-                //             &mut offset,
-                //         )?;
-                //     }
-                // }
+                // 3 batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when
+                // chunk[i] is not padded
+                //
+                // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
+                //
+                // chunk[i].piHash =
+                //     keccak(
+                //        &chain id ||
+                //        chunk[i].prevStateRoot ||
+                //        chunk[i].postStateRoot ||
+                //        chunk[i].withdrawRoot  ||
+                //        chunk[i].datahash)
+                for i in 0..MAX_AGG_SNARKS {
+                    for j in 0..DIGEST_LEN {
+                        assert_conditional_equal(
+                            &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
+                            &potential_batch_data_hash_preimage[i * DIGEST_LEN + j],
+                            &chunk_is_valid_cells[i],
+                        );
+                        rlc_config.conditional_enforce_equal(
+                            &mut region,
+                            &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
+                            &potential_batch_data_hash_preimage[i * DIGEST_LEN + j],
+                            &chunk_is_valid_cells[i],
+                            &mut offset,
+                        )?;
+                    }
+                }
 
-                // // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
-                // for (i, chunk_hash_input) in chunk_pi_hash_preimages.iter().enumerate() {
-                //     for j in 0..DIGEST_LEN {
-                //         let t1 = &chunk_hash_input[j + PREV_STATE_ROOT_INDEX];
-                //         let t2 = &chunk_hash_input[j + POST_STATE_ROOT_INDEX];
+                // 6.1 chunk[i]'s prev_state_root == chunk[i-1].prev_state_root when chunk[i] is padded
+                // 6.2 chunk[i]'s post_state_root == chunk[i-1].post_state_root when chunk[i] is padded
+                // 6.3 chunk[i]'s withdraw_root == chunk[i-1].withdraw_root when chunk[i] is padded
+                // Those three are not checked as we have already checked the RLCs
+  
 
-                //         assert_conditional_equal(t1, t2, &chunk_is_pad[i]);
-                //         // assert (t1 - t2) * chunk_is_padding == 0
-                //         let t1_sub_t2 = rlc_config.sub(&mut region, t1, t2, &mut offset)?;
-                //         let res = rlc_config.mul(
-                //             &mut region,
-                //             &t1_sub_t2,
-                //             &chunk_is_pad[i],
-                //             &mut offset,
-                //         )?;
+                // 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
+                // that means the data_hash length is 32 * number_of_valid_snarks
+                let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
+                let const32_cell = rlc_config.thirty_two_cell(const32.cell().region_index);
+                region.constrain_equal(const32.cell(), const32_cell)?;
+                let data_hash_inputs_len =
+                    rlc_config.mul(&mut region, &num_valid_snarks, &const32, &mut offset)?;
 
-                //         rlc_config.enforce_zero(&mut region, &res)?;
-                //     }
-                // }
+                // sanity check
+                assert_exist(
+                    &data_hash_inputs_len,
+                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3],
+                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4],
+                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5],
+                );
 
-                // // 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
-                // // that means the data_hash length is 32 * number_of_valid_snarks
-                // let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
-                // let const32_cell = rlc_config.thirty_two_cell(const32.cell().region_index);
-                // region.constrain_equal(const32.cell(), const32_cell)?;
-                // let data_hash_inputs =
-                //     rlc_config.mul(&mut region, &num_valid_snarks, &const32, &mut offset)?;
+                log::trace!("data_hash_inputs: {:?}", data_hash_inputs_len.value());
+                log::trace!(
+                    "candidate 1: {:?}",
+                    hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3].value()
+                );
+                log::trace!(
+                    "candidate 2: {:?}",
+                    hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4].value()
+                );
+                log::trace!(
+                    "candidate 3: {:?}",
+                    hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5].value()
+                );
 
-                // // sanity check
-                // assert_exist(
-                //     &data_hash_inputs,
-                //     &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3],
-                //     &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4],
-                //     &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5],
-                // );
+                let mut data_hash_inputs_len_rec = rlc_config.mul(
+                    &mut region,
+                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3],
+                    &flag1,
+                    &mut offset,
+                )?;
+                data_hash_inputs_len_rec = rlc_config.mul_add(
+                    &mut region,
+                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4],
+                    &flag2,
+                    &data_hash_inputs_len_rec,
+                    &mut offset,
+                )?;
+                data_hash_inputs_len_rec = rlc_config.mul_add(
+                    &mut region,
+                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5],
+                    &flag3,
+                    &data_hash_inputs_len_rec,
+                    &mut offset,
+                )?;
 
-                // log::trace!("data_hash_inputs: {:?}", data_hash_inputs.value());
-                // log::trace!(
-                //     "candidate 1: {:?}",
-                //     hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3].value()
-                // );
-                // log::trace!(
-                //     "candidate 2: {:?}",
-                //     hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4].value()
-                // );
-                // log::trace!(
-                //     "candidate 3: {:?}",
-                //     hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5].value()
-                // );
-
-                // let mut data_hash_inputs_rec = rlc_config.mul(
-                //     &mut region,
-                //     &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3],
-                //     &flag1,
-                //     &mut offset,
-                // )?;
-                // data_hash_inputs_rec = rlc_config.mul_add(
-                //     &mut region,
-                //     &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4],
-                //     &flag2,
-                //     &data_hash_inputs_rec,
-                //     &mut offset,
-                // )?;
-                // data_hash_inputs_rec = rlc_config.mul_add(
-                //     &mut region,
-                //     &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5],
-                //     &flag3,
-                //     &data_hash_inputs_rec,
-                //     &mut offset,
-                // )?;
-
-                // // sanity check
-                // assert_equal(&data_hash_inputs, &data_hash_inputs_rec);
-                // region.constrain_equal(data_hash_inputs.cell(), data_hash_inputs_rec.cell())?;
+                // sanity check
+                assert_equal(&data_hash_inputs_len, &data_hash_inputs_len_rec);
+                region.constrain_equal(data_hash_inputs_len.cell(), data_hash_inputs_len_rec.cell())?;
 
                 // // 8. batch data hash is correct w.r.t. its RLCs
                 // // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
