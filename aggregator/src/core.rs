@@ -367,21 +367,6 @@ fn copy_constraints(
                     )?;
                 }
 
-                // 4  chunks are continuous: they are linked via the state roots
-                for i in 0..MAX_AGG_SNARKS - 1 {
-                    for j in 0..DIGEST_LEN {
-                        // sanity check
-                        assert_equal(
-                            &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j],
-                            &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j],
-                        );
-                        region.constrain_equal(
-                            chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j].cell(),
-                            chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j].cell(),
-                        )?;
-                    }
-                }
-
                 // 5 assert hashes use a same chain id
                 for chunk_pi_hash_preimage in chunk_pi_hash_preimages.iter() {
                     for (lhs, rhs) in batch_pi_hash_preimage
@@ -597,11 +582,30 @@ pub(crate) fn conditional_constraints(
                     }
                 }
 
-                // 6.1 chunk[i]'s prev_state_root == chunk[i-1].prev_state_root when chunk[i] is padded
-                // 6.2 chunk[i]'s post_state_root == chunk[i-1].post_state_root when chunk[i] is padded
-                // 6.3 chunk[i]'s withdraw_root == chunk[i-1].withdraw_root when chunk[i] is padded
+                // 4  __valid__ chunks are continuous: they are linked via the state roots
+                for i in 0..MAX_AGG_SNARKS - 1 {
+                    for j in 0..DIGEST_LEN {
+                        // sanity check
+                        assert_conditional_equal(
+                            &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j],
+                            &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j],
+                            &chunk_is_valid_cells[i + 1],
+                        );
+                        rlc_config.conditional_enforce_equal(
+                            &mut region,
+                            &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j],
+                            &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j],
+                            &chunk_is_valid_cells[i + 1],
+                            &mut offset,
+                        )?;
+                    }
+                }
+
+                // 6.1 chunk[i]'s prev_state_root == chunk[i-1].prev_state_root when chunk[i] is
+                // padded 6.2 chunk[i]'s post_state_root ==
+                // chunk[i-1].post_state_root when chunk[i] is padded 6.3 chunk[i]'s
+                // withdraw_root == chunk[i-1].withdraw_root when chunk[i] is padded
                 // Those three are not checked as we have already checked the RLCs
-  
 
                 // 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
                 // that means the data_hash length is 32 * number_of_valid_snarks
@@ -656,69 +660,72 @@ pub(crate) fn conditional_constraints(
 
                 // sanity check
                 assert_equal(&data_hash_inputs_len, &data_hash_inputs_len_rec);
-                region.constrain_equal(data_hash_inputs_len.cell(), data_hash_inputs_len_rec.cell())?;
+                region.constrain_equal(
+                    data_hash_inputs_len.cell(),
+                    data_hash_inputs_len_rec.cell(),
+                )?;
 
-                // // 8. batch data hash is correct w.r.t. its RLCs
-                // // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
-                // let challenge_cell =
-                //     rlc_config.read_challenge(&mut region, challenges, &mut offset)?;
+                // 8. batch data hash is correct w.r.t. its RLCs
+                // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
+                let challenge_cell =
+                    rlc_config.read_challenge(&mut region, challenges, &mut offset)?;
 
-                // let flags = chunk_is_valid_cells
-                //     .iter()
-                //     .flat_map(|cell| vec![cell; 32])
-                //     .cloned()
-                //     .collect::<Vec<_>>();
+                let flags = chunk_is_valid_cells
+                    .iter()
+                    .flat_map(|cell| vec![cell; 32])
+                    .cloned()
+                    .collect::<Vec<_>>();
 
-                // let rlc_cell = rlc_config.rlc_with_flag(
-                //     &mut region,
-                //     potential_batch_data_hash_preimage[..DIGEST_LEN * MAX_AGG_SNARKS].as_ref(),
-                //     &challenge_cell,
-                //     &flags,
-                //     &mut offset,
-                // )?;
+                let rlc_cell = rlc_config.rlc_with_flag(
+                    &mut region,
+                    potential_batch_data_hash_preimage[..DIGEST_LEN * MAX_AGG_SNARKS].as_ref(),
+                    &challenge_cell,
+                    &flags,
+                    &mut offset,
+                )?;
 
-                // assert_exist(
-                //     &rlc_cell,
-                //     &data_rlc_cells[MAX_AGG_SNARKS * 2 + 3],
-                //     &data_rlc_cells[MAX_AGG_SNARKS * 2 + 4],
-                //     &data_rlc_cells[MAX_AGG_SNARKS * 2 + 5],
-                // );
-                // log::trace!("rlc from chip {:?}", rlc_cell.value());
-                // log::trace!(
-                //     "rlc from table {:?}",
-                //     data_rlc_cells[MAX_AGG_SNARKS * 2 + 3].value()
-                // );
-                // log::trace!(
-                //     "rlc from table {:?}",
-                //     data_rlc_cells[MAX_AGG_SNARKS * 2 + 4].value()
-                // );
-                // log::trace!(
-                //     "rlc from table {:?}",
-                //     data_rlc_cells[MAX_AGG_SNARKS * 2 + 5].value()
-                // );
+                assert_exist(
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 3],
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 4],
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 5],
+                );
+                log::trace!("rlc from chip {:?}", rlc_cell.value());
+                log::trace!(
+                    "rlc from table {:?}",
+                    data_rlc_cells[MAX_AGG_SNARKS * 2 + 3].value()
+                );
+                log::trace!(
+                    "rlc from table {:?}",
+                    data_rlc_cells[MAX_AGG_SNARKS * 2 + 4].value()
+                );
+                log::trace!(
+                    "rlc from table {:?}",
+                    data_rlc_cells[MAX_AGG_SNARKS * 2 + 5].value()
+                );
 
-                // // assertion
-                // let t1 = rlc_config.sub(
-                //     &mut region,
-                //     &rlc_cell,
-                //     &data_rlc_cells[MAX_AGG_SNARKS * 2 + 3],
-                //     &mut offset,
-                // )?;
-                // let t2 = rlc_config.sub(
-                //     &mut region,
-                //     &rlc_cell,
-                //     &data_rlc_cells[MAX_AGG_SNARKS * 2 + 4],
-                //     &mut offset,
-                // )?;
-                // let t3 = rlc_config.sub(
-                //     &mut region,
-                //     &rlc_cell,
-                //     &data_rlc_cells[MAX_AGG_SNARKS * 2 + 5],
-                //     &mut offset,
-                // )?;
-                // let t1t2 = rlc_config.mul(&mut region, &t1, &t2, &mut offset)?;
-                // let t1t2t3 = rlc_config.mul(&mut region, &t1t2, &t3, &mut offset)?;
-                // rlc_config.enforce_zero(&mut region, &t1t2t3)?;
+                // assertion
+                let t1 = rlc_config.sub(
+                    &mut region,
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 3],
+                    &mut offset,
+                )?;
+                let t2 = rlc_config.sub(
+                    &mut region,
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 4],
+                    &mut offset,
+                )?;
+                let t3 = rlc_config.sub(
+                    &mut region,
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 5],
+                    &mut offset,
+                )?;
+                let t1t2 = rlc_config.mul(&mut region, &t1, &t2, &mut offset)?;
+                let t1t2t3 = rlc_config.mul(&mut region, &t1t2, &t3, &mut offset)?;
+                rlc_config.enforce_zero(&mut region, &t1t2t3)?;
 
                 log::trace!("rlc chip uses {} rows", offset);
                 Ok(())
