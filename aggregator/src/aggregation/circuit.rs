@@ -249,7 +249,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let (hash_digest_cells, num_valid_snarks) = {
+        let hash_digest_cells = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -269,7 +269,7 @@ impl Circuit<Fr> for AggregationCircuit {
             end_timer!(timer);
 
             let timer = start_timer!(|| ("assign hash cells").to_string());
-            let (hash_digest_cells, num_valid_snarks) = assign_batch_hashes(
+            let hash_digest_cells = assign_batch_hashes(
                 &config,
                 &mut layouter,
                 challenges,
@@ -278,7 +278,7 @@ impl Circuit<Fr> for AggregationCircuit {
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);
-            (hash_digest_cells, num_valid_snarks)
+            hash_digest_cells
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
@@ -372,8 +372,6 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
-
-        log::trace!("number of valid snarks: {:?}", num_valid_snarks.value());
 
         end_timer!(witness_time);
         Ok(())
