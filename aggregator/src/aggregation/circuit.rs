@@ -49,7 +49,6 @@ pub struct AggregationCircuit {
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
     // - the batch's public_input_hash (32 elements)
-    // - the number of snarks that is aggregated (1 element)
     pub flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
     pub as_proof: Value<Vec<u8>>,
@@ -107,13 +106,8 @@ impl AggregationCircuit {
         // the public instance for this circuit consists of
         // - an accumulator (12 elements)
         // - the batch's public_input_hash (32 elements)
-        // - the number of snarks that is aggregated (1 element)
-        let flattened_instances: Vec<Fr> = [
-            acc_instances.as_slice(),
-            public_input_hash.as_slice(),
-            &[Fr::from(batch_hash.number_of_valid_chunks as u64)],
-        ]
-        .concat();
+        let flattened_instances: Vec<Fr> =
+            [acc_instances.as_slice(), public_input_hash.as_slice()].concat();
 
         end_timer!(timer);
         Ok(Self {
@@ -379,12 +373,6 @@ impl Circuit<Fr> for AggregationCircuit {
 
         log::trace!("number of valid snarks: {:?}", num_valid_snarks.value());
 
-        layouter.constrain_instance(
-            num_valid_snarks.cell(),
-            config.instance,
-            DIGEST_LEN + ACC_LEN,
-        )?;
-
         end_timer!(witness_time);
         Ok(())
     }
@@ -394,13 +382,11 @@ impl CircuitExt<Fr> for AggregationCircuit {
     fn num_instance(&self) -> Vec<usize> {
         // 12 elements from accumulator
         // 32 elements from batch's public_input_hash
-        // 1 element for # of valid chunks
-        vec![ACC_LEN + DIGEST_LEN + 1]
+        vec![ACC_LEN + DIGEST_LEN]
     }
 
     // 12 elements from accumulator
     // 32 elements from batch's public_input_hash
-    // 1 element for # of valid chunks
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
     }

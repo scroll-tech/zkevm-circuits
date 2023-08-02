@@ -893,6 +893,20 @@ impl PrecompileEvents {
             })
             .collect()
     }
+    /// Get all Big Modexp events.
+    pub fn get_modexp_events(&self) -> Vec<BigModExp> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::ModExp(op) = e {
+                    Some(op)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 /// I/O from a precompiled contract call.
@@ -906,6 +920,8 @@ pub enum PrecompileEvent {
     EcMul(EcMulOp),
     /// Represents the I/O from EcPairing call.
     EcPairing(Box<EcPairingOp>),
+    /// Represents the I/O from Modexp call.
+    ModExp(BigModExp),
 }
 
 impl Default for PrecompileEvent {
@@ -1172,5 +1188,29 @@ impl EcPairingOp {
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
         false
+    }
+}
+
+/// Event representating an exponentiation `a ^ b == d (mod m)` in precompile modexp.
+#[derive(Clone, Debug)]
+pub struct BigModExp {
+    /// Base `a` for the exponentiation.
+    pub base: Word,
+    /// Exponent `b` for the exponentiation.
+    pub exponent: Word,
+    /// Modulus `m`
+    pub modulus: Word,
+    /// Mod exponentiation result.
+    pub result: Word,
+}
+
+impl Default for BigModExp {
+    fn default() -> Self {
+        Self {
+            modulus: 1.into(),
+            base: Default::default(),
+            exponent: Default::default(),
+            result: Default::default(),
+        }
     }
 }

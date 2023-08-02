@@ -1362,7 +1362,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Sig Table
-
     pub(crate) fn sig_table_lookup(
         &mut self,
         msg_hash_rlc: Expression<F>,
@@ -1442,6 +1441,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 input_rlc,
                 input_len,
                 output_rlc,
+            },
+        );
+    }
+
+    // ModExp table
+    pub(crate) fn modexp_table_lookup(
+        &mut self,
+        base_limbs: [Expression<F>; 3],
+        exp_limbs: [Expression<F>; 3],
+        modulus_limbs: [Expression<F>; 3],
+        result_limbs: [Expression<F>; 3],
+    ) {
+        self.add_lookup(
+            "u256 exponentiation modulus lookup",
+            Lookup::ModExpTable {
+                base_limbs,
+                exp_limbs,
+                modulus_limbs,
+                result_limbs,
             },
         );
     }
