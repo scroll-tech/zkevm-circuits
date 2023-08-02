@@ -1,6 +1,6 @@
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
-    circuit::{AssignedCell, Chip, Layouter, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -26,8 +26,8 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        CHAIN_ID_LEN, CHUNK_PI_HASH_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE,
-        MAX_AGG_SNARKS, MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
+        CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
+        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
     },
     util::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, keccak_round_capacity,
@@ -108,7 +108,7 @@ pub(crate) fn assign_batch_hashes(
     challenges: Challenges<Value<Fr>>,
     preimages: &[Vec<u8>],
     num_of_valid_chunks: usize,
-) -> Result<(Vec<AssignedCell<Fr, Fr>>), Error> {
+) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
     let (hash_input_cells, hash_output_cells, data_rlc_cells, hash_input_len_cells) =
         extract_hash_cells(
             &config.keccak_circuit_config,
@@ -116,17 +116,17 @@ pub(crate) fn assign_batch_hashes(
             challenges,
             preimages,
         )?;
-    // // 2. batch_pi_hash used same roots as chunk_pi_hash
-    // // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
-    // // 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
-    // // 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
-    // // 4. chunks are continuous: they are linked via the state roots
-    // // 5. batch and all its chunks use a same chain id
-    // copy_constraints(layouter, &hash_input_cells)?;
+    // 2. batch_pi_hash used same roots as chunk_pi_hash
+    // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
+    // 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
+    // 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
+    // 5. batch and all its chunks use a same chain id
+    copy_constraints(layouter, &hash_input_cells)?;
 
     // 1. batch_data_hash digest is reused for public input hash
     // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not
     // padded
+    // 4. chunks are continuous: they are linked via the state roots
     // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
     // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
     // 8. batch data hash is correct w.r.t. its RLCs
@@ -141,7 +141,7 @@ pub(crate) fn assign_batch_hashes(
         num_of_valid_chunks,
     )?;
 
-    Ok((hash_output_cells))
+    Ok(hash_output_cells)
 }
 
 #[allow(clippy::type_complexity)]
@@ -280,7 +280,6 @@ pub(crate) fn extract_hash_cells(
 // 2.1. batch_pi_hash and chunk[0] use a same prev_state_root
 // 2.2. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same post_state_root
 // 2.3. batch_pi_hash and chunk[MAX_AGG_SNARKS-1] use a same withdraw_root
-// 4. chunks are continuous: they are linked via the state roots
 // 5. batch and all its chunks use a same chain id
 fn copy_constraints(
     layouter: &mut impl Layouter<Fr>,
@@ -390,6 +389,7 @@ fn copy_constraints(
 // This function asserts the following constraints on the hashes
 // 1. batch_data_hash digest is reused for public input hash
 // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
+// 4. chunks are continuous: they are linked via the state roots
 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
 // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
 // 8. batch data hash is correct w.r.t. its RLCs
@@ -420,7 +420,7 @@ pub(crate) fn conditional_constraints(
                 // ====================================================
                 // build the flags to indicate the chunks are empty or not
                 // ====================================================
-                let (chunk_is_valid_cells, chunk_is_pad) =
+                let chunk_is_valid_cells =
                     chunks_are_valid(rlc_config, &mut region, data_rlc_cells, &mut offset)?;
 
                 let num_valid_snarks =
@@ -745,25 +745,14 @@ fn chunks_are_valid(
     region: &mut Region<Fr>,
     data_rlc_cells: &[AssignedCell<Fr, Fr>],
     offset: &mut usize,
-) -> Result<
-    (
-        [AssignedCell<Fr, Fr>; 10], // chunks are valid
-        [AssignedCell<Fr, Fr>; 10], // chunks are padding
-    ),
-    halo2_proofs::plonk::Error,
-> {
+) -> Result<[AssignedCell<Fr, Fr>; 10], halo2_proofs::plonk::Error> {
     let chunk_pi_hash_rlc_cells = parse_pi_hash_rlc_cells(data_rlc_cells);
-
-    let mut zero = rlc_config.load_private(region, &Fr::zero(), offset)?;
-    let zero_cell = rlc_config.zero_cell(zero.cell().region_index);
-    region.constrain_equal(zero.cell(), zero_cell)?;
 
     let one = rlc_config.load_private(region, &Fr::one(), offset)?;
     let one_cell = rlc_config.one_cell(one.cell().region_index);
     region.constrain_equal(one.cell(), one_cell)?;
 
     let mut chunk_are_valid = vec![one];
-    let mut chunk_are_padding = vec![zero];
 
     for i in 1..MAX_AGG_SNARKS {
         let is_padding = rlc_config.is_equal(
@@ -773,7 +762,6 @@ fn chunks_are_valid(
             offset,
         )?;
         chunk_are_valid.push(rlc_config.not(region, &is_padding, offset)?);
-        chunk_are_padding.push(is_padding);
     }
 
     for (i, (e, f)) in chunk_pi_hash_rlc_cells
@@ -785,10 +773,7 @@ fn chunks_are_valid(
         log::trace!("{i}-th chunk is valid: {:?}", f.value());
     }
 
-    Ok((
-        chunk_are_valid.try_into().unwrap(),
-        chunk_are_padding.try_into().unwrap(),
-    ))
+    Ok(chunk_are_valid.try_into().unwrap())
 }
 
 // Input a list of flags whether the snark is valid
