@@ -274,7 +274,6 @@ impl Circuit<Fr> for AggregationCircuit {
                 &mut layouter,
                 challenges,
                 &preimages,
-                self.batch_hash.number_of_valid_chunks,
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);

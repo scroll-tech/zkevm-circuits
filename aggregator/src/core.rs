@@ -107,7 +107,6 @@ pub(crate) fn assign_batch_hashes(
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     preimages: &[Vec<u8>],
-    num_of_valid_chunks: usize,
 ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
     let (hash_input_cells, hash_output_cells, data_rlc_cells, hash_input_len_cells) =
         extract_hash_cells(
@@ -138,7 +137,6 @@ pub(crate) fn assign_batch_hashes(
         &hash_output_cells,
         &data_rlc_cells,
         &hash_input_len_cells,
-        num_of_valid_chunks,
     )?;
 
     Ok(hash_output_cells)
@@ -402,7 +400,6 @@ pub(crate) fn conditional_constraints(
     hash_output_cells: &[AssignedCell<Fr, Fr>],
     data_rlc_cells: &[AssignedCell<Fr, Fr>],
     hash_input_len_cells: &[AssignedCell<Fr, Fr>],
-    num_of_valid_chunks: usize,
 ) -> Result<(), Error> {
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
@@ -427,8 +424,7 @@ pub(crate) fn conditional_constraints(
                     num_valid_snarks(rlc_config, &mut region, &chunk_is_valid_cells, &mut offset)?;
 
                 log::trace!(
-                    "number of valid chunks: {} vs {:?}",
-                    num_of_valid_chunks,
+                    "number of valid chunks: {:?}",
                     num_valid_snarks.value()
                 );
                 // #valid snarks | offset of data hash | flags

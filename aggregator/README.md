@@ -127,7 +127,7 @@ We want to aggregate `k` snarks, each from a valid chunk. We generate `(n-k)` em
 
 In the above example, we have `k = 2` valid chunks, and `2` empty chunks.
 
-> Interlude: we just need to generate 1 empty snark, and the rest `n-k-1` will be identical for the same batch. We cannot pre-compute it though, as the witness `c_k.post_state_root` and `c_k.withdraw_root` are batch dependent.
+The padded snarks are identical the the last valid snark, so the aggregator does not need to generate snarks for padded chunks.
 
 ### Configuration
 
@@ -140,7 +140,6 @@ There will be three configurations for Aggregation circuit.
 The public input of the aggregation circuit consists of
 - 12 elements from accumulator
 - 32 elements of `batch_pi_hash`
-- 1 element of `k`
 
 ### Statements
 For snarks $s_1,\dots,s_k,\dots, s_n$ the aggregation circuit argues the following statements.
@@ -162,7 +161,7 @@ for i in 1 ... __n__
 
 This is done by compute the RLCs of chunk[i]'s data_hash for `i=0..k`, and then check the RLC matches the one from the keccak table.
 
-4. chunks are continuous when the are not padded: they are linked via the state roots.
+4. chunks are continuous when they are not padded: they are linked via the state roots.
 
 for i in 1 ... __k-1__
 ```
