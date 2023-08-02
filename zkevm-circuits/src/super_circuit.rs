@@ -84,7 +84,7 @@ use crate::{
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
-        TxTable,
+        TxTable, U16Table, U8Table,
     },
 };
 
@@ -116,6 +116,8 @@ pub struct SuperCircuitConfig<F: Field> {
     rlp_table: RlpTable,
     tx_table: TxTable,
     poseidon_table: PoseidonTable,
+    u8_table: U8Table,
+    u16_table: U16Table,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
@@ -203,6 +205,11 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         log_circuit_info(meta, "power of randomness table");
 
+        let u8_table = U8Table::construct(meta);
+        log_circuit_info(meta, "u8 table");
+        let u16_table = U16Table::construct(meta);
+        log_circuit_info(meta, "u16 table");
+
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
             KeccakCircuitConfigArgs {
@@ -220,6 +227,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             meta,
             RlpCircuitConfigArgs {
                 rlp_table,
+                u8_table,
                 challenges: challenges_expr.clone(),
             },
         );
@@ -247,6 +255,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 keccak_table: keccak_table.clone(),
                 rlp_table,
                 sig_table,
+                u16_table,
                 challenges: challenges_expr.clone(),
             },
         );
@@ -368,6 +377,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             tx_table,
             rlp_table,
             poseidon_table,
+            u8_table,
+            u16_table,
             evm_circuit,
             state_circuit,
             copy_circuit,
@@ -457,7 +468,7 @@ impl<
         let exp = ExpCircuit::min_num_rows_block(block);
         let mod_exp = ModExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
-        let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::min_num_rows_block(block);
         let sig = SigCircuit::min_num_rows_block(block);
         let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
@@ -675,6 +686,9 @@ impl<
             block.chain_id,
             &challenges,
         )?;
+
+        config.u8_table.load(&mut layouter)?;
+        config.u16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
