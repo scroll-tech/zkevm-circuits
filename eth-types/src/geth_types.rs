@@ -58,10 +58,16 @@ impl TxType {
             Some(x) if x == U64::from(1) => Self::Eip2930,
             Some(x) if x == U64::from(2) => Self::Eip2930,
             Some(x) if x == U64::from(0x7e) => Self::L1Msg,
-            _ => match tx.v.as_u64() {
-                0 | 1 | 27 | 28 => Self::PreEip155,
-                _ => Self::Eip155,
-            },
+            _ => {
+                if tx.v.is_zero() && tx.r.is_zero() && tx.s.is_zero() {
+                    Self::L1Msg
+                } else {
+                    match tx.v.as_u64() {
+                        0 | 1 | 27 | 28 => Self::PreEip155,
+                        _ => Self::Eip155,
+                    }
+                }
+            }
         }
     }
 
