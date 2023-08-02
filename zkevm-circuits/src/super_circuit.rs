@@ -399,6 +399,18 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
     }
 }
 
+/// Row usage for each sub circuit
+#[derive(Clone, Default, Debug)]
+pub struct SubcircuitRowUsage {
+    /// Subcircuit name
+    pub name: String,
+    // TODO: better name?
+    /// Without padding
+    pub row_num_real: usize,
+    /// With padding
+    pub row_num_total: usize,
+}
+
 /// The Super Circuit contains all the zkEVM circuits
 #[derive(Clone, Default, Debug)]
 pub struct SuperCircuit<
@@ -458,7 +470,7 @@ impl<
         num_rows_evm_circuit
     }
     /// Return the minimum number of rows required to prove the block
-    pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> (Vec<usize>, Vec<usize>) {
+    pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> Vec<SubcircuitRowUsage> {
         let evm = EvmCircuit::min_num_rows_block(block);
         let state = StateCircuit::min_num_rows_block(block);
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
@@ -469,7 +481,7 @@ impl<
         let exp = ExpCircuit::min_num_rows_block(block);
         let mod_exp = ModExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
-        let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::min_num_rows_block(block);
         let sig = SigCircuit::min_num_rows_block(block);
         let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
@@ -492,14 +504,37 @@ impl<
             #[cfg(feature = "zktrie")]
             mpt,
         ];
-        let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
-            rows.into_iter().unzip();
-        log::debug!(
-            "subcircuit rows(without padding): {:?}",
-            rows_without_padding
-        );
-        log::debug!("subcircuit rows(with    padding): {:?}", rows_with_padding);
-        (rows_without_padding, rows_with_padding)
+        let sub_circuit_names: Vec<String> = [
+            "evm",
+            "state",
+            "bytecode",
+            "copy",
+            "keccak",
+            "tx",
+            "rlp",
+            "exp",
+            "modexp",
+            "pi",
+            "poseidon",
+            "sig",
+            "ecc",
+            #[cfg(feature = "zktrie")]
+            "mpt",
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+        let row_usage_details = sub_circuit_names
+            .into_iter()
+            .zip_eq(rows.into_iter())
+            .map(|(name, (row_num_real, row_num_total))| SubcircuitRowUsage {
+                name,
+                row_num_real,
+                row_num_total,
+            })
+            .collect_vec();
+        log::debug!("row_usage_details {row_usage_details:?}");
+        row_usage_details
     }
 }
 
@@ -584,10 +619,10 @@ impl<
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &Block<Fr>) -> (usize, usize) {
-        let (rows_without_padding, rows_with_padding) = Self::min_num_rows_block_subcircuits(block);
+        let row_usage = Self::min_num_rows_block_subcircuits(block);
         (
-            itertools::max(rows_without_padding).unwrap(),
-            itertools::max(rows_with_padding).unwrap(),
+            itertools::max(row_usage.iter().map(|x| x.row_num_real)).unwrap(),
+            itertools::max(row_usage.iter().map(|x| x.row_num_total)).unwrap(),
         )
     }
 
