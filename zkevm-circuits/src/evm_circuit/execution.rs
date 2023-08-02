@@ -1,9 +1,9 @@
 use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, ECC_TABLE_LOOKUPS,
-        EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS,
-        N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS,
-        SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, MODEXP_TABLE_LOOKUPS,
+        N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS,
+        RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
     EvmCircuitExports,
@@ -203,7 +203,9 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
-use precompiles::{EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget};
+use precompiles::{
+    EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget, ModExpGadget,
+};
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -352,7 +354,7 @@ pub(crate) struct ExecutionConfig<F> {
     precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
     precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
-    precompile_modexp_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBigModExp }>>,
+    precompile_modexp_gadget: Box<ModExpGadget<F>>,
     precompile_bn128add_gadget: Box<EcAddGadget<F>>,
     precompile_bn128mul_gadget: Box<EcMulGadget<F>>,
     precompile_bn128pairing_gadget: Box<EcPairingGadget<F>>,
@@ -375,6 +377,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
+        modexp_table: &dyn LookupTable<F>,
         ecc_table: &dyn LookupTable<F>,
         pow_of_rand_table: &dyn LookupTable<F>,
     ) -> Self {
@@ -651,6 +654,7 @@ impl<F: Field> ExecutionConfig<F> {
             keccak_table,
             exp_table,
             sig_table,
+            modexp_table,
             ecc_table,
             pow_of_rand_table,
             &challenges,
@@ -909,6 +913,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
+        modexp_table: &dyn LookupTable<F>,
         ecc_table: &dyn LookupTable<F>,
         pow_of_rand_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
@@ -928,6 +933,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
                         Table::Sig => sig_table,
+                        Table::ModExp => modexp_table,
                         Table::Ecc => ecc_table,
                         Table::PowOfRand => pow_of_rand_table,
                     }
@@ -1230,6 +1236,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
+            ("EVM_lookup_modexp", MODEXP_TABLE_LOOKUPS),
             ("EVM_lookup_ecc", ECC_TABLE_LOOKUPS),
             ("EVM_lookup_pow_of_rand", POW_OF_RAND_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),

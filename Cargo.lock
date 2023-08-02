@@ -397,7 +397,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4114279215a005bc675e386011e594e1d9b800918cea18fcadadcce864a2046b"
 dependencies = [
  "borsh-derive",
- "hashbrown 0.13.2",
+ "hashbrown 0.12.3",
 ]
 
 [[package]]
@@ -2192,9 +2192,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2-gate-generator"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/halo2gategen.git#35b137de2f71c37dfbd236842b868013c46739d1"
+dependencies = [
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4#892726037d18d122b6ee30843eb12ef80c18ce10"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.5#1c11b6c9b1245073a76c3ce7100b6798060f7cb8"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -3491,11 +3507,14 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0619#50015b7cfbd5fe3263ec683cb291396c1b99cd1f"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0723#1652d54bf7ca9d8f286b53fe077d9efefdcf6d5f"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",
  "lazy_static",
+ "log",
+ "rand",
+ "rand_xorshift",
  "thiserror",
 ]
 
@@ -3980,13 +3999,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmd160-circuits"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#31c41ca4365dcf2b6ed4f2cdcd3dc8d2e8f080df"
+dependencies = [
+ "halo2-gate-generator",
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "ruint"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d470e29e933dac4101180fd6574971892315c414cf2961a192729089687cc9b"
 dependencies = [
  "derive_more",
- "primitive-types 0.12.1",
+ "primitive-types 0.11.1",
  "rlp",
  "ruint-macro",
  "rustc_version 0.4.0",
@@ -4469,7 +4505,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#6eeba7783d337e0964d0d89de3d4ee8a7856fde6"
 dependencies = [
  "bytes",
  "ethereum-types 0.14.1",
@@ -4493,7 +4529,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#6eeba7783d337e0964d0d89de3d4ee8a7856fde6"
 dependencies = [
  "bincode",
  "env_logger 0.10.0",
@@ -5478,6 +5514,7 @@ dependencies = [
  "rand_chacha",
  "rand_xorshift",
  "rayon",
+ "rmd160-circuits",
  "serde",
  "serde_json",
  "sha3 0.10.8",
@@ -5490,8 +5527,8 @@ dependencies = [
 
 [[package]]
 name = "zktrie"
-version = "0.1.2"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#1a5562f663a81ff903383db69dc6c9404b63e69d"
+version = "0.2.0"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.6#83318659773604fa565e2ebeb810a6d3746f0af4"
 dependencies = [
  "gobuild 0.1.0-alpha.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

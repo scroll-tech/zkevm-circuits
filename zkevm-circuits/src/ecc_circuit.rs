@@ -32,6 +32,8 @@ use itertools::Itertools;
 use log::error;
 
 use crate::{
+    evm_circuit::EvmCircuit,
+    keccak_circuit::KeccakCircuit,
     table::{EccTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Block,
@@ -46,6 +48,12 @@ use util::{
 };
 
 use self::util::LOG_TOTAL_NUM_ROWS;
+
+macro_rules! log_context_cursor {
+    ($ctx: ident) => {{
+        log::trace!("Ctx cell pos: {:?}", $ctx.advice_alloc);
+    }};
+}
 
 /// Arguments accepted to configure the EccCircuitConfig.
 #[derive(Clone, Debug)]
@@ -405,9 +413,15 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_rand: &[QuantumCell<F>],
         op: &EcAddOp,
     ) -> EcAddAssigned<F> {
+        log::trace!("[ECC] ==> EcAdd Assignmnet START:");
+        log_context_cursor!(ctx);
+
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
         let point_q = self.assign_g1(ctx, ecc_chip, op.q, powers_of_rand);
         let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+
+        log::trace!("[ECC] EcAdd Inputs Assigned:");
+        log_context_cursor!(ctx);
 
         // We follow the approach mentioned below to handle many edge cases for the points P, Q and
         // R so that we can maintain the same fixed and permutation columns and reduce the overall
@@ -472,6 +486,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 
         ecc_chip.assert_equal(ctx, &rand_point, &sum3);
 
+        log::trace!("[ECC] EcAdd Assignmnet END:");
+        log_context_cursor!(ctx);
         EcAddAssigned {
             point_p,
             point_q,
@@ -490,9 +506,16 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_rand: &[QuantumCell<F>],
         op: &EcMulOp,
     ) -> EcMulAssigned<F> {
+        log::trace!("[ECC] ==> EcMul Assignmnet START:");
+        log_context_cursor!(ctx);
+
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
         let scalar_s = self.assign_fr(ctx, fr_chip, op.s);
         let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+
+        log::trace!("[ECC] EcMul Inputs Assigned:");
+        log_context_cursor!(ctx);
+
         let point_r_got = ecc_chip.scalar_mult(
             ctx,
             &point_p.decomposed.ec_point,
@@ -501,6 +524,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             4, // TODO: window bits?
         );
         ecc_chip.assert_equal(ctx, &point_r.decomposed.ec_point, &point_r_got);
+
+        log::trace!("[ECC] EcMul Assignmnet END:");
+        log_context_cursor!(ctx);
+
         EcMulAssigned {
             point_p,
             scalar_s,
@@ -519,6 +546,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_rand: &[QuantumCell<F>],
         op: &EcPairingOp,
     ) -> EcPairingAssigned<F> {
+        log::trace!("[ECC] ==> EcPairing Assignment START:");
+        log_context_cursor!(ctx);
+
         let g1s = op
             .pairs
             .iter()
@@ -544,6 +574,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 }
             })
             .collect_vec();
+
+        log::trace!("[ECC] EcPairing g1s Assigned:");
+        log_context_cursor!(ctx);
+
         let g2s = op
             .pairs
             .iter()
@@ -583,6 +617,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             })
             .collect_vec();
 
+        log::trace!("[ECC] EcPairing g2s Assigned:");
+        log_context_cursor!(ctx);
+
         // RLC over the entire input bytes.
         let input_cells = g1s
             .iter()
@@ -605,6 +642,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             input_cells,
             powers_of_rand.iter().cloned(),
         );
+
+        log::trace!("[ECC] EcPairing Inputs RLC Assigned:");
+        log_context_cursor!(ctx);
 
         let pairs = g1s
             .iter()
@@ -629,6 +669,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 op.output.to_scalar().expect("EcPairing output = {0, 1}"),
             )),
         );
+
+        log::trace!("[ECC] EcPairingAssignment END:");
+        log_context_cursor!(ctx);
 
         EcPairingAssigned {
             g1s,
@@ -732,6 +775,19 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         }
     }
 
+    /// Returns number of unusable rows of the SubCircuit, which should be
+    /// `meta.blinding_factors() + 1`.
+    fn unusable_rows() -> usize {
+        [
+            KeccakCircuit::<F>::unusable_rows(),
+            EvmCircuit::<F>::unusable_rows(),
+            // may include additional subcircuits here
+        ]
+        .into_iter()
+        .max()
+        .unwrap()
+    }
+
     fn synthesize_sub(
         &self,
         config: &Self::Config,
@@ -743,7 +799,33 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         Ok(())
     }
 
-    fn min_num_rows_block(_block: &Block<F>) -> (usize, usize) {
-        unimplemented!()
+    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
+        // EccCircuit can't determine usable rows independently.
+        // Instead, the blinding area is determined by other advise columns with most counts of
+        // rotation queries. This value is typically determined by either the Keccak or EVM
+        // circuit.
+
+        let max_blinding_factor = Self::unusable_rows() - 1;
+
+        // same formula as halo2-lib's FlexGate
+        let row_num = (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3);
+
+        let ec_adds = block.get_ec_add_ops().len();
+        let ec_muls = block.get_ec_mul_ops().len();
+        let ec_pairings = block.get_ec_pairing_ops().len();
+
+        // Instead of showing actual minimum row usage,
+        // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
+        // This functionality allows l2geth to decide if additional ops can be added.
+        let min_row_num = [
+            (row_num / block.circuits_params.max_ec_ops.ec_add) * ec_adds,
+            (row_num / block.circuits_params.max_ec_ops.ec_mul) * ec_muls,
+            (row_num / block.circuits_params.max_ec_ops.ec_pairing) * ec_pairings,
+        ]
+        .into_iter()
+        .max()
+        .unwrap();
+
+        (min_row_num, row_num)
     }
 }

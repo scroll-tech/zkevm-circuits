@@ -15,7 +15,11 @@ mod dev;
 mod test;
 
 use crate::{
-    evm_circuit::util::{not, rlc},
+    evm_circuit::{
+        util::{not, rlc},
+        EvmCircuit,
+    },
+    keccak_circuit::KeccakCircuit,
     sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
@@ -221,6 +225,19 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         }
     }
 
+    /// Returns number of unusable rows of the SubCircuit, which should be
+    /// `meta.blinding_factors() + 1`.
+    fn unusable_rows() -> usize {
+        [
+            KeccakCircuit::<F>::unusable_rows(),
+            EvmCircuit::<F>::unusable_rows(),
+            // may include additional subcircuits here
+        ]
+        .into_iter()
+        .max()
+        .unwrap()
+    }
+
     fn synthesize_sub(
         &self,
         config: &Self::Config,
@@ -235,8 +252,17 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
-        let row_num = Self::min_num_rows(block.circuits_params.max_txs);
-        (row_num, row_num)
+        let row_num = Self::min_num_rows();
+
+        let tx_count = block.txs.len();
+        let max_tx_count = block.circuits_params.max_txs;
+
+        // Instead of showing actual minimum row usage,
+        // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
+        // This functionality allows l2geth to decide if additional ops can be added.
+        let min_row_num = (row_num / max_tx_count) * tx_count;
+
+        (min_row_num, row_num)
     }
 }
 
@@ -252,32 +278,20 @@ impl<F: Field> SigCircuit<F> {
 
     /// Return the minimum number of rows required to prove an input of a
     /// particular size.
-    /// TODO: minus 256?
-    pub fn min_num_rows(num_verif: usize) -> usize {
+    pub fn min_num_rows() -> usize {
+        // SigCircuit can't determine usable rows independently.
+        // Instead, the blinding area is determined by other advise columns with most counts of
+        // rotation queries. This value is typically determined by either the Keccak or EVM
+        // circuit.
+
         // the cells are allocated vertically, i.e., given a TOTAL_NUM_ROWS * NUM_ADVICE
         // matrix, the allocator will try to use all the cells in the first column, then
         // the second column, etc.
-        let row_num = 1 << LOG_TOTAL_NUM_ROWS;
-        let col_num = calc_required_advices(num_verif);
-        if num_verif * CELLS_PER_SIG > col_num * row_num {
-            log::error!(
-                "ecdsa chip not enough rows. rows: {}, advice {}, num of sigs {}, cells per sig {}",
-                row_num,
-                col_num,
-                num_verif,
-                CELLS_PER_SIG
-            )
-        } else {
-            log::debug!(
-                "ecdsa chip: rows: {}, advice {}, num of sigs {}, cells per sig {}",
-                row_num,
-                col_num,
-                num_verif,
-                CELLS_PER_SIG
-            )
-        }
 
-        row_num
+        let max_blinding_factor = Self::unusable_rows() - 1;
+
+        // same formula as halo2-lib's FlexGate
+        (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3)
     }
 }
 

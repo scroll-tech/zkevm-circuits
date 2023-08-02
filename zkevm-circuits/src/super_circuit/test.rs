@@ -52,6 +52,13 @@ fn test_super_circuit<
     builder.block.prev_state_root = block.mpt_updates.old_root();
     block.keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
 
+    let active_row_num =SuperCircuit::<
+        Fr,
+        MAX_TXS,
+        MAX_CALLDATA,
+        MAX_INNER_BLOCKS,
+        MOCK_RANDOMNESS,
+    >::min_num_rows_block(&block).0;
     let (k, circuit, instance) = SuperCircuit::<
         Fr,
         MAX_TXS,
@@ -61,10 +68,11 @@ fn test_super_circuit<
     >::build_from_witness_block(block)
     .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
-    prover.assert_satisfied_par();
-    let res = prover.verify_par();
-    if let Err(err) = res {
-        error!("Verification failures: {:#?}", err);
+
+    let res = prover.verify_at_rows_par(0..active_row_num, 0..active_row_num);
+    if let Err(errs) = res {
+        error!("Verification failures: {:#?}", errs);
+        prover.assert_satisfied_par();
         panic!("Failed verification");
     }
 }

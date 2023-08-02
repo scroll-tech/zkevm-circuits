@@ -52,21 +52,6 @@ impl AggregationConfig {
             "For now we fix limb_bits = {BITS}, otherwise change code",
         );
 
-        // base field configuration for aggregation circuit
-        let base_field_config = FpConfig::configure(
-            meta,
-            params.strategy.clone(),
-            &params.num_advice,
-            &params.num_lookup_advice,
-            params.num_fixed,
-            params.lookup_bits,
-            BITS,
-            LIMBS,
-            modulus::<Fq>(),
-            0,
-            params.degree as usize,
-        );
-
         // RLC configuration
         let rlc_config = RlcConfig::configure(meta, challenges);
 
@@ -82,6 +67,21 @@ impl AggregationConfig {
 
             KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
         };
+
+        // base field configuration for aggregation circuit
+        let base_field_config = FpConfig::configure(
+            meta,
+            params.strategy.clone(),
+            &params.num_advice,
+            &params.num_lookup_advice,
+            params.num_fixed,
+            params.lookup_bits,
+            BITS,
+            LIMBS,
+            modulus::<Fq>(),
+            0,
+            params.degree as usize,
+        );
 
         // The current code base is hardcoded for KeccakCircuit configured
         // with 300 rows and 87 columns per hash call.
