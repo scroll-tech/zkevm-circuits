@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        param::N_BYTES_WORD,
+        param::{N_BITS_U8, N_BYTES_WORD},
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             sum, CachedRegion, Cell,
@@ -14,63 +14,105 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+pub(crate) enum ByteOrWord {
+    Byte(u8),
+    Word(Word),
+}
+
+impl ByteOrWord {
+    fn get_byte(&self) -> u8 {
+        if let Self::Byte(val) = &self {
+            *val
+        } else {
+            unreachable!("get_byte called on a word");
+        }
+    }
+
+    fn get_word(&self) -> Word {
+        if let Self::Word(val) = &self {
+            *val
+        } else {
+            unreachable!("get_word called on a byte");
+        }
+    }
+}
+
 /// Gadget to verify the byte-size of a word, i.e. the minimum number of bytes
 /// it takes to represent the word.
 #[derive(Clone, Debug)]
-pub(crate) struct ByteSizeGadgetN<F, const N: usize> {
+pub(crate) struct ByteOrBitSizeGadget<F, const N: usize, const IS_BYTE: bool> {
     /// Array of indices from which only one will be turned on. The turned on
-    /// index is the index of the most significant non-zero byte in value.
-    most_significant_nonzero_byte_index: [Cell<F>; N],
-    is_byte_size_zero: Cell<F>,
-    /// The inverse of the most significant non-zero byte in value. The inverse
-    /// should exist if the byte-size is non-zero.
-    most_significant_nonzero_byte_inverse: Cell<F>,
-    /// The most significant byte in this word.
-    pub(crate) most_significant_byte: Expression<F>,
+    /// index is the index of the most significant non-zero byte/bit in value.
+    most_significant_nonzero_value_index: [Cell<F>; N],
+    /// True if the byte size or bit length of the value is zero, i.e. the value itself is zero.
+    is_size_zero: Cell<F>,
+    /// The inverse of the most significant non-zero byte/bit in value. The inverse
+    /// should exist if the size is non-zero.
+    most_significant_nonzero_value_inverse: Cell<F>,
+    /// The most significant byte/bit.
+    pub(crate) most_significant_value: Expression<F>,
 }
 
-impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
+impl<F: Field, const N: usize, const IS_BYTE: bool> ByteOrBitSizeGadget<F, N, IS_BYTE> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
-        let most_significant_nonzero_byte_index = [(); N].map(|()| cb.query_bool());
-        let is_byte_size_zero = cb.query_bool();
+        let most_significant_nonzero_value_index = [(); N].map(|()| cb.query_bool());
+        let is_size_zero = cb.query_bool();
         cb.require_equal(
-            "exactly one cell in indices is 1",
-            sum::expr(&most_significant_nonzero_byte_index) + is_byte_size_zero.expr(),
+            "There is exactly one msb, or the value itself is zero",
+            sum::expr(&most_significant_nonzero_value_index) + is_size_zero.expr(),
             1.expr(),
         );
 
-        let most_significant_nonzero_byte_inverse = cb.query_cell();
-        for (i, index) in most_significant_nonzero_byte_index.iter().enumerate() {
+        let most_significant_nonzero_value_inverse = cb.query_cell();
+        for (i, index) in most_significant_nonzero_value_index.iter().enumerate() {
             cb.condition(index.expr(), |cb| {
-                cb.require_zero("more significant bytes are 0", sum::expr(&values[i + 1..N]));
-                cb.require_equal(
-                    "most significant nonzero byte's inverse exists",
-                    values[i].expr() * most_significant_nonzero_byte_inverse.expr(),
-                    1.expr(),
-                );
+                if IS_BYTE {
+                    cb.require_zero(
+                        "more significant bytes/bits are 0 IS_BYTE=true",
+                        sum::expr(&values[i + 1..N]),
+                    );
+                } else {
+                    cb.require_zero(
+                        "more significant bytes/bits are 0 IS_BYTE=false",
+                        sum::expr(&values[i + 1..N]),
+                    );
+                }
+                if IS_BYTE {
+                    cb.require_equal(
+                        "most significant nonzero byte/bit's inverse exists IS_BYTE=true",
+                        values[i].expr() * most_significant_nonzero_value_inverse.expr(),
+                        1.expr(),
+                    );
+                } else {
+                    cb.require_equal(
+                        "most significant nonzero byte/bit's inverse exists IS_BYTE=false",
+                        values[i].expr() * most_significant_nonzero_value_inverse.expr(),
+                        1.expr(),
+                    );
+                }
             });
         }
 
-        cb.condition(is_byte_size_zero.expr(), |cb| {
-            cb.require_zero("all bytes are 0 when byte size is 0", sum::expr(&values));
+        cb.condition(is_size_zero.expr(), |cb| {
+            cb.require_zero("all bytes are 0 when value itself is 0", sum::expr(&values));
             cb.require_zero(
-                "byte size == 0",
-                most_significant_nonzero_byte_inverse.expr(),
+                "byte size/bit length == 0",
+                most_significant_nonzero_value_inverse.expr(),
             );
         });
 
-        let most_significant_byte = values
+        let most_significant_value = values
             .iter()
-            .zip(most_significant_nonzero_byte_index.iter())
+            .zip(most_significant_nonzero_value_index.iter())
             .fold(0.expr(), |acc, (value, index)| {
                 acc.expr() + (value.expr() * index.expr())
             });
 
         Self {
-            most_significant_nonzero_byte_index,
-            is_byte_size_zero,
-            most_significant_nonzero_byte_inverse,
-            most_significant_byte,
+            most_significant_nonzero_value_index,
+            is_size_zero,
+            most_significant_nonzero_value_inverse,
+            most_significant_value,
         }
     }
 
@@ -78,38 +120,46 @@ impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        value: Word,
+        value: ByteOrWord,
     ) -> Result<(), Error> {
-        let byte_size = (value.bits() + 7) / 8;
-        for (i, byte_index) in self.most_significant_nonzero_byte_index.iter().enumerate() {
+        // get the byte size or bit length of the value.
+        let size = if IS_BYTE {
+            (value.get_word().bits() + 7) / 8
+        } else {
+            N_BITS_U8 - (value.get_byte().leading_zeros() as usize)
+        };
+
+        for (i, byte_index) in self.most_significant_nonzero_value_index.iter().enumerate() {
             byte_index.assign(
                 region,
                 offset,
-                Value::known(if i + 1 == byte_size {
-                    F::one()
-                } else {
-                    F::zero()
-                }),
+                Value::known(if i + 1 == size { F::one() } else { F::zero() }),
             )?;
         }
-        self.is_byte_size_zero.assign(
+        self.is_size_zero.assign(
             region,
             offset,
-            Value::known(if byte_size == 0 { F::one() } else { F::zero() }),
+            Value::known(if size == 0 { F::one() } else { F::zero() }),
         )?;
-        if byte_size > 0 {
-            let most_significant_nonzero_byte = value.to_le_bytes()[byte_size - 1];
-            self.most_significant_nonzero_byte_inverse.assign(
+        if size > 0 {
+            let most_significant_nonzero_value = if IS_BYTE {
+                value.get_word().to_le_bytes()[size - 1]
+            } else {
+                let byte = value.get_byte();
+                let mask = 1 << (size - 1);
+                ((mask & byte) > 0) as u8
+            };
+            self.most_significant_nonzero_value_inverse.assign(
                 region,
                 offset,
                 Value::known(
-                    F::from(u64::try_from(most_significant_nonzero_byte).unwrap())
+                    F::from(u64::try_from(most_significant_nonzero_value).unwrap())
                         .invert()
                         .unwrap(),
                 ),
             )?;
         } else {
-            self.most_significant_nonzero_byte_inverse.assign(
+            self.most_significant_nonzero_value_inverse.assign(
                 region,
                 offset,
                 Value::known(F::zero()),
@@ -118,9 +168,10 @@ impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
         Ok(())
     }
 
-    pub(crate) fn byte_size(&self) -> Expression<F> {
+    /// Get the byte size or bit length of the value.
+    pub(crate) fn size(&self) -> Expression<F> {
         sum::expr(
-            self.most_significant_nonzero_byte_index
+            self.most_significant_nonzero_value_index
                 .iter()
                 .enumerate()
                 .map(|(i, cell)| (i + 1).expr() * cell.expr()),
@@ -128,7 +179,8 @@ impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
     }
 }
 
-pub(crate) type ByteSizeGadget<F> = ByteSizeGadgetN<F, N_BYTES_WORD>;
+pub(crate) type ByteSizeGadget<F> = ByteOrBitSizeGadget<F, N_BYTES_WORD, true>;
+pub(crate) type BitLengthGadget<F> = ByteOrBitSizeGadget<F, N_BITS_U8, false>;
 
 #[cfg(test)]
 mod tests {
@@ -163,13 +215,13 @@ mod tests {
             if TEST_MSB {
                 cb.require_equal(
                     "check most significant byte",
-                    bytesize_gadget.most_significant_byte.expr(),
+                    bytesize_gadget.most_significant_value.expr(),
                     N.expr(),
                 );
             } else {
                 cb.require_equal(
                     "byte size gadget must equal N",
-                    bytesize_gadget.byte_size(),
+                    bytesize_gadget.size(),
                     N.expr(),
                 );
             }
@@ -188,7 +240,8 @@ mod tests {
             let offset = 0;
             let x = witnesses[0];
             self.a.assign(region, offset, Some(x.to_le_bytes()))?;
-            self.bytesize_gadget.assign(region, offset, x)?;
+            self.bytesize_gadget
+                .assign(region, offset, ByteOrWord::Word(x))?;
 
             Ok(())
         }

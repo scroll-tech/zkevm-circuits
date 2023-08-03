@@ -14,8 +14,8 @@ use crate::{
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{
-                BinaryNumberGadget, ByteSizeGadget, ByteSizeGadgetN, ConstantDivisionGadget,
-                IsZeroGadget, LtGadget, MinMaxGadget,
+                BinaryNumberGadget, BitLengthGadget, ByteOrWord, ByteSizeGadget,
+                ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
             },
             rlc, CachedRegion, Cell,
         },
@@ -555,7 +555,7 @@ pub(crate) struct ModExpGasCost<F> {
     words: ConstantDivisionGadget<F, 1>,
     exp_is_zero: IsZeroGadget<F>,
     exp_byte_size: ByteSizeGadget<F>,
-    exp_msb_bit_size: ByteSizeGadgetN<F, N_BITS_U8>,
+    exp_msb_bit_length: BitLengthGadget<F>,
     exp_msb: BinaryNumberGadget<F, N_BITS_U8>,
     calc_gas: ConstantDivisionGadget<F, N_BYTES_U64>,
     dynamic_gas: MinMaxGadget<F, N_BYTES_U64>,
@@ -573,32 +573,34 @@ impl<F: Field> ModExpGasCost<F> {
         let multiplication_complexity = words.quotient() * words.quotient();
         let exp_is_zero = IsZeroGadget::construct(cb, "modexp: exponent", expr_from_bytes(exp));
 
-        let (exp_byte_size, exp_msb, exp_msb_bit_size) =
+        let (exp_byte_size, exp_msb, exp_msb_bit_length) =
             cb.condition(not::expr(exp_is_zero.expr()), |cb| {
                 let exp_byte_size = ByteSizeGadget::construct(
                     cb,
                     exp.iter()
+                        .rev()
                         .map(Expr::expr)
                         .collect::<Vec<Expression<F>>>()
                         .try_into()
                         .unwrap(),
                 );
                 let exp_msb =
-                    BinaryNumberGadget::construct(cb, exp_byte_size.most_significant_byte.expr());
-                let exp_msb_bit_size = ByteSizeGadgetN::construct(
+                    BinaryNumberGadget::construct(cb, exp_byte_size.most_significant_value.expr());
+                let exp_msb_bit_length = BitLengthGadget::construct(
                     cb,
                     exp_msb
                         .bits
                         .iter()
+                        .rev()
                         .map(Expr::expr)
                         .collect::<Vec<Expression<F>>>()
                         .try_into()
                         .unwrap(),
                 );
-                (exp_byte_size, exp_msb, exp_msb_bit_size)
+                (exp_byte_size, exp_msb, exp_msb_bit_length)
             });
-        let exp_bit_length = (exp_byte_size.byte_size() - 1.expr()) * N_BITS_U8.expr()
-            + exp_msb_bit_size.byte_size();
+        let exp_bit_length =
+            (exp_byte_size.size() - 1.expr()) * N_BITS_U8.expr() + exp_msb_bit_length.size();
 
         // We already restrict Esize <= 32. So we can completely ignore the branch concerning
         // Esize > 32. We only care about whether or not exponent is zero.
@@ -621,7 +623,7 @@ impl<F: Field> ModExpGasCost<F> {
             exp_is_zero,
             exp_byte_size,
             exp_msb,
-            exp_msb_bit_size,
+            exp_msb_bit_length,
             calc_gas,
             dynamic_gas,
         }
@@ -651,16 +653,17 @@ impl<F: Field> ModExpGasCost<F> {
                 .to_scalar()
                 .expect("exponent is within scalar field"),
         )?;
-        self.exp_byte_size.assign(region, offset, exp_word)?;
+        self.exp_byte_size
+            .assign(region, offset, ByteOrWord::Word(exp_word))?;
         let exp_byte_size = (exp_word.bits() + 7) / 8;
         let exp_msb = if exp_byte_size > 0 {
-            exponent[exp_byte_size - 1]
+            exponent[N_BYTES_WORD - exp_byte_size]
         } else {
             0
         };
         self.exp_msb.assign(region, offset, exp_msb)?;
-        self.exp_msb_bit_size
-            .assign(region, offset, exp_msb.into())?;
+        self.exp_msb_bit_length
+            .assign(region, offset, ByteOrWord::Byte(exp_msb))?;
         let exp_bit_length = exp_word.bits();
         let max_length = b_size.max(m_size);
         let words = (max_length + 7) / 8;

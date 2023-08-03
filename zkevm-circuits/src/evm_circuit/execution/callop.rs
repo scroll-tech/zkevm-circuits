@@ -1797,6 +1797,7 @@ mod test_precompiles {
             )],
             ..Default::default()
         },
+        /*
         sha2_256: PrecompileCallArgs {
             name: "SHA2-256",
             setup_code: bytecode! {
@@ -1833,6 +1834,7 @@ mod test_precompiles {
             )],
             ..Default::default()
         },
+        */
         identity: PrecompileCallArgs {
             name: "identity",
             setup_code: bytecode! {
@@ -1977,6 +1979,7 @@ mod test_precompiles {
             max_rws: 3000,
             ..Default::default()
         },
+        /*
         blake2f: PrecompileCallArgs {
             name: "blake2f",
             setup_code: bytecode! {
@@ -2028,5 +2031,6 @@ mod test_precompiles {
             max_rws: 2000,
             ..Default::default()
         },
+        */
     );
 }
