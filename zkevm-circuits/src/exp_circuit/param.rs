@@ -1,5 +1,5 @@
 /// The number of rows assigned for each step in an exponentiation trace.
-pub(crate) const OFFSET_INCREMENT: usize = 7usize;
+pub(crate) const OFFSET_INCREMENT: usize = 8usize;
 /// The number of rows required for the exponentiation table within the circuit
 /// for each step.
 pub(crate) const ROWS_PER_STEP: usize = 4usize;
