@@ -60,7 +60,7 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
 ];
 
 /// Fixed Table lookups done in EVMCircuit
-pub const FIXED_TABLE_LOOKUPS: usize = 8;
+pub const FIXED_TABLE_LOOKUPS: usize = 10;
 
 /// Tx Table lookups done in EVMCircuit
 pub const TX_TABLE_LOOKUPS: usize = 4;

@@ -569,7 +569,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn range_lookup(&mut self, value: Expression<F>, range: u64) {
         let (name, tag) = match range {
+            3 => ("Range3", FixedTableTag::Range3),
             5 => ("Range5", FixedTableTag::Range5),
+            8 => ("Range8", FixedTableTag::Range8),
             16 => ("Range16", FixedTableTag::Range16),
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
