@@ -7,7 +7,8 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{
-        self, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent, PrecompileEvents,
+        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEvents,
     },
     Error,
 };
@@ -144,6 +145,11 @@ impl<F: Field> Block<F> {
     /// Get EcPairing operations from all precompiled contract calls in this block.
     pub(crate) fn get_ec_pairing_ops(&self) -> Vec<EcPairingOp> {
         self.precompile_events.get_ec_pairing_events()
+    }
+
+    /// Get BigModexp operations from all precompiled contract calls in this block.
+    pub(crate) fn get_big_modexp(&self) -> Vec<BigModExp> {
+        self.precompile_events.get_modexp_events()
     }
 }
 

@@ -13,7 +13,7 @@ impl CircuitExt<Fr> for CompressionCircuit {
         let snark_pi_len: usize = self.snark.instances.iter().map(|x| x.len()).sum();
 
         // if the snark is not fresh, the snark_pi already contains elements for the accumulator
-        vec![snark_pi_len + ACC_LEN * self.is_fresh as usize]
+        vec![snark_pi_len + ACC_LEN * !self.has_accumulator as usize]
     }
 
     fn instances(&self) -> Vec<Vec<Fr>> {

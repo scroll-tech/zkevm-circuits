@@ -306,6 +306,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         Rotation::cur(),
                     ),
                     meta.query_advice(poseidon_table.control, Rotation::cur()),
+                    meta.query_advice(poseidon_table.domain_spec, Rotation::cur()),
                 ]
             };
 
@@ -338,6 +339,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         meta.query_advice(field_input, Rotation::cur()),
                         meta.query_advice(control_length, Rotation::cur())
                             * domain_spec_factor.clone(),
+                        0.expr(),
                     ];
 
                     for (input_expr, table_expr) in lookup_inputs
@@ -366,6 +368,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     meta.query_advice(code_hash, Rotation::cur()),
                     0.expr(),
                     meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor,
+                    0.expr(),
                 ];
                 for (input_expr, table_expr) in lookup_inputs
                     .into_iter()

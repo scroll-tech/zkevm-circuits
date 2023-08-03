@@ -52,10 +52,15 @@ impl<F: Field> PrecompileGadget<F> {
                 address.value_equals(PrecompileCalls::Bn128Add),
             ]);
             let len_96 = address.value_equals(PrecompileCalls::Bn128Mul);
+            let len_192 = address.value_equals(PrecompileCalls::Modexp);
             select::expr(
                 len_128,
                 128.expr(),
-                select::expr(len_96, 96.expr(), cd_length.expr()),
+                select::expr(
+                    len_96,
+                    96.expr(),
+                    select::expr(len_192, 192.expr(), cd_length.expr()),
+                ),
             )
         };
         let pad_right = LtGadget::construct(cb, cd_length.expr(), input_len.expr());
@@ -153,7 +158,20 @@ impl<F: Field> PrecompileGadget<F> {
                     );
                 });
             }),
-            Box::new(|_cb| { /* Modexp */ }),
+            Box::new(|cb| {
+                let input_bytes_acc_copied = cb.query_cell_phase2();
+                let output_bytes_acc_copied = cb.query_cell_phase2();
+                cb.require_equal(
+                    "copy padded input bytes",
+                    padding_gadget.padded_rlc(),
+                    input_bytes_acc_copied.expr(),
+                );
+                cb.require_equal(
+                    "copy output bytes",
+                    output_bytes_rlc.clone(),
+                    output_bytes_acc_copied.expr(),
+                );
+            }),
             Box::new(|cb| {
                 let (p_x_rlc, p_y_rlc, q_x_rlc, q_y_rlc, r_x_rlc, r_y_rlc) = (
                     cb.query_cell_phase2(),
@@ -215,7 +233,20 @@ impl<F: Field> PrecompileGadget<F> {
                     r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
                 );
             }),
-            Box::new(|_cb| { /* Bn128Pairing */ }),
+            Box::new(|cb| {
+                let (evm_input_rlc, output) = (cb.query_cell_phase2(), cb.query_bool());
+                cb.require_equal(
+                    "input bytes (RLC) equality",
+                    padding_gadget.padded_rlc(),
+                    evm_input_rlc.expr(),
+                );
+                // RLC of output bytes always equals boolean result of pairing check.
+                cb.require_equal(
+                    "output bytes (RLC) equality",
+                    output_bytes_rlc.expr(),
+                    output.expr(),
+                );
+            }),
             Box::new(|_cb| { /* Blake2F */ }),
         ];
         cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);

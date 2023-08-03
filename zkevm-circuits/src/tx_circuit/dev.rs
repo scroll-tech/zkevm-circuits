@@ -6,7 +6,7 @@ pub use super::TxCircuit;
 
 use crate::{
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable},
+    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, U16Table},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Transaction,
@@ -29,6 +29,8 @@ pub struct TxCircuitTesterConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// SigTable
     pub sig_table: SigTable,
+    /// u16 lookup table,
+    pub u16_table: U16Table,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
 }
@@ -39,6 +41,8 @@ pub struct TxCircuitTesterConfig<F: Field> {
     tx_config: TxCircuitConfig<F>,
     // SigTable is assigned inside SigCircuit
     sig_config: SigCircuitConfig<F>,
+    /// u16 lookup table,
+    pub u16_table: U16Table,
 }
 
 impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
@@ -52,6 +56,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
             keccak_table,
             rlp_table,
             sig_table,
+            u16_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -71,12 +76,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
                 tx_table,
                 keccak_table,
                 rlp_table,
+                u16_table,
                 challenges,
             },
         );
         TxCircuitTesterConfig {
             tx_config,
             sig_config,
+            u16_table,
         }
     }
 }
@@ -143,6 +150,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         let keccak_table = KeccakTable::construct(meta);
         let rlp_table = RlpTable::construct(meta);
         let sig_table = SigTable::construct(meta);
+        let u16_table = U16Table::construct(meta);
         let challenges = Challenges::construct(meta);
 
         let config = {
@@ -163,12 +171,14 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                     tx_table,
                     keccak_table,
                     rlp_table,
+                    u16_table,
                     challenges,
                 },
             );
             TxCircuitTesterConfig {
                 tx_config,
                 sig_config,
+                u16_table,
             }
         };
 
@@ -181,6 +191,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
+        config.u16_table.load(&mut layouter)?;
 
         let padding_txs = (self.tx_circuit.txs.len()..self.tx_circuit.max_txs)
             .into_iter()
