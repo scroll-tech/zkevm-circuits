@@ -104,7 +104,6 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> RangeCheckInstruction<
         // assign u16 repr
         for (row_idx, value) in values.into_iter().enumerate() {
             let repr: [u8; 32] = value.to_repr();
-            println!("{repr:X?}");
             for (col_idx, (column, value)) in config
                 .u16_repr
                 .iter()
@@ -112,7 +111,6 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> RangeCheckInstruction<
                 .zip(repr.chunks(2).take(N_2BYTE))
                 .enumerate()
             {
-                println!("{value:X?}");
                 region.assign_advice(
                     || format!("range expr[{row_idx}] u16_cell[{col_idx}]"),
                     column,
