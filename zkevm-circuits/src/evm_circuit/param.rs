@@ -104,6 +104,9 @@ pub(crate) const N_BYTES_WORD: usize = 32;
 // Number of bytes an u64 has.
 pub(crate) const N_BYTES_U64: usize = 8;
 
+// Number of bits a u8 has.
+pub(crate) const N_BITS_U8: usize = 8;
+
 pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 
 // Number of bytes that will be used of the memory address and size.

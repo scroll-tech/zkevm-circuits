@@ -45,6 +45,10 @@ impl<F: Field, const N: usize> BinaryNumberGadget<F, N> {
         Ok(())
     }
 
+    pub(crate) fn leading_zeros(&self) -> Expression<F> {
+        unimplemented!()
+    }
+
     pub(crate) fn value(&self) -> Expression<F> {
         self.bits
             .iter()

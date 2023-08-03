@@ -24,6 +24,8 @@ pub(crate) struct ByteSizeGadget<F> {
     /// The inverse of the most significant non-zero byte in value. The inverse
     /// should exist if the byte-size is non-zero.
     most_significant_nonzero_byte_inverse: Cell<F>,
+    /// The most significant byte in this word.
+    pub(crate) most_significant_byte: Expression<F>,
 }
 
 impl<F: Field> ByteSizeGadget<F> {
@@ -50,7 +52,7 @@ impl<F: Field> ByteSizeGadget<F> {
                         "most significant nonzero byte's inverse exists",
                         values[i - 1].expr() * most_significant_nonzero_byte_inverse.expr(),
                         1.expr(),
-                    )
+                    );
                 } else {
                     cb.require_zero(
                         "byte size == 0",
@@ -60,9 +62,17 @@ impl<F: Field> ByteSizeGadget<F> {
             });
         }
 
+        let most_significant_byte = values
+            .iter()
+            .zip(most_significant_nonzero_byte_index.iter())
+            .fold(0.expr(), |acc, (value, index)| {
+                acc.expr() + (value.expr() * index.expr())
+            });
+
         Self {
             most_significant_nonzero_byte_index,
             most_significant_nonzero_byte_inverse,
+            most_significant_byte,
         }
     }
 

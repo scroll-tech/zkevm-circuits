@@ -1,5 +1,5 @@
 use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
-use gadgets::util::{self, and, or, select, Expr};
+use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -8,13 +8,13 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_U64,
+        param::{N_BITS_U8, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{
-                BinaryNumberGadget, ComparisonGadget, ConstantDivisionGadget, IsZeroGadget,
-                LtGadget, MinMaxGadget,
+                BinaryNumberGadget, ByteSizeGadget, ConstantDivisionGadget, IsZeroGadget, LtGadget,
+                MinMaxGadget,
             },
             rlc, CachedRegion, Cell,
         },
@@ -549,10 +549,14 @@ impl<F: Field> Limbs<F> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct ModExpGasCost<F> {
     max_length: MinMaxGadget<F, 1>,
     words: ConstantDivisionGadget<F, 1>,
     exp_is_zero: IsZeroGadget<F>,
+    exp_byte_size: ByteSizeGadget<F>,
+    exp_msb: BinaryNumberGadget<F, N_BITS_U8>,
+    calc_gas: ConstantDivisionGadget<F, N_BYTES_U64>,
     dynamic_gas: MinMaxGadget<F, N_BYTES_U64>,
 }
 
@@ -560,32 +564,53 @@ impl<F: Field> ModExpGasCost<F> {
     fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         b_size: &SizeRepresent<F>,
-        e_size: &SizeRepresent<F>,
-        exp_expr: Expression<F>,
+        exp: &[Cell<F>; N_BYTES_WORD],
         m_size: &SizeRepresent<F>,
     ) -> Self {
         let max_length = MinMaxGadget::construct(cb, b_size.value(), m_size.value());
         let words = ConstantDivisionGadget::construct(cb, max_length.max() + 7.expr(), 8);
         let multiplication_complexity = words.quotient() * words.quotient();
+        let exp_is_zero = IsZeroGadget::construct(cb, "modexp: exponent", expr_from_bytes(exp));
 
-        let exp_is_zero = IsZeroGadget::construct(cb, "modexp: exponent", exp_expr);
+        let (exp_byte_size, exp_msb) = cb.condition(not::expr(exp_is_zero.expr()), |cb| {
+            let exp_byte_size = ByteSizeGadget::construct(
+                cb,
+                exp.iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<Expression<F>>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            let exp_msb =
+                BinaryNumberGadget::construct(cb, exp_byte_size.most_significant_byte.expr());
+            (exp_byte_size, exp_msb)
+        });
 
+        // We already restrict Esize <= 32. So we can completely ignore the branch concerning
+        // Esize > 32. We only care about whether or not exponent is zero.
         let iteration_count = select::expr(
             exp_is_zero.expr(),
             0.expr(),
-            /* exponent.bit_length() - 1 */ 0.expr(),
+            // exponent.bit_length() - 1
+            (exp_byte_size.byte_size() - 1.expr()) * N_BITS_U8.expr()
+                + (N_BITS_U8.expr() - exp_msb.leading_zeros())
+                - 1.expr(),
         );
-
+        let calc_gas =
+            ConstantDivisionGadget::construct(cb, multiplication_complexity * iteration_count, 3);
         let dynamic_gas = MinMaxGadget::construct(
             cb,
             GasCost::PRECOMPILE_MODEXP_MIN.expr(),
-            /* multiplication_complexity * iteration_count / 3 */ 0.expr(),
+            calc_gas.quotient(),
         );
 
         Self {
             max_length,
             words,
             exp_is_zero,
+            exp_byte_size,
+            exp_msb,
+            calc_gas,
             dynamic_gas,
         }
     }
@@ -693,13 +718,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output.bytes_rlc(),
         );
 
-        let gas_cost_gadget = ModExpGasCost::construct(
-            cb,
-            &input.base_len,
-            &input.exp_len,
-            /* exp is zero? */ 0.expr(),
-            &input.modulus_len,
-        );
+        let gas_cost_gadget =
+            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
         cb.require_equal(
             "modexp: gas cost",
             gas_cost.expr(),
@@ -785,8 +805,10 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
 
             // FIXME
-            self.gas_cost
-                .assign(region, offset, Value::known(F::from(0)))?;
+            // self.gas_cost
+            //    .assign(region, offset, Value::known(F::from(0)))?;
+            // TODO
+            // self.gas_cost_gadget.assign(region, offset)?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
             return Err(Error::Synthesis);
