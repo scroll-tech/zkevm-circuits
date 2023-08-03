@@ -1,6 +1,6 @@
-use array_init::array_init;
+use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
 use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
-use gadgets::util::{self, not, select, sum, Expr};
+use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -14,8 +14,8 @@ use crate::{
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{
-                BinaryNumberGadget, ByteSizeGadgetN, ByteSizeGadget, ConstantDivisionGadget, IsZeroGadget, LtGadget,
-                MinMaxGadget,
+                BinaryNumberGadget, ByteSizeGadget, ByteSizeGadgetN, ConstantDivisionGadget,
+                IsZeroGadget, LtGadget, MinMaxGadget,
             },
             rlc, CachedRegion, Cell,
         },
@@ -23,7 +23,6 @@ use crate::{
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
-use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
 
 #[derive(Clone, Debug)]
 struct RandPowRepresent<F, const BIT_LIMIT: usize> {
@@ -588,13 +587,18 @@ impl<F: Field> ModExpGasCost<F> {
                     BinaryNumberGadget::construct(cb, exp_byte_size.most_significant_byte.expr());
                 let exp_msb_bit_size = ByteSizeGadgetN::construct(
                     cb,
-                    exp_msb.bits.clone().map(|c|c.expr()),
+                    exp_msb
+                        .bits
+                        .iter()
+                        .map(Expr::expr)
+                        .collect::<Vec<Expression<F>>>()
+                        .try_into()
+                        .unwrap(),
                 );
-
                 (exp_byte_size, exp_msb, exp_msb_bit_size)
             });
-        let exp_bit_length =
-            (exp_byte_size.byte_size() - 1.expr()) * N_BITS_U8.expr() + exp_msb_bit_size.byte_size();
+        let exp_bit_length = (exp_byte_size.byte_size() - 1.expr()) * N_BITS_U8.expr()
+            + exp_msb_bit_size.byte_size();
 
         // We already restrict Esize <= 32. So we can completely ignore the branch concerning
         // Esize > 32. We only care about whether or not exponent is zero.
@@ -621,6 +625,62 @@ impl<F: Field> ModExpGasCost<F> {
             calc_gas,
             dynamic_gas,
         }
+    }
+
+    fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        b_size: &U256,
+        m_size: &U256,
+        exponent: &[u8; MODEXP_SIZE_LIMIT],
+    ) -> Result<u64, Error> {
+        self.max_length.assign(
+            region,
+            offset,
+            b_size.to_scalar().expect("Bsize is within scalar field"),
+            m_size.to_scalar().expect("Msize is within scalar field"),
+        )?;
+        self.words
+            .assign(region, offset, b_size.max(m_size).as_u128() + 7u128)?;
+        let exp_word = U256::from_big_endian(exponent);
+        self.exp_is_zero.assign(
+            region,
+            offset,
+            exp_word
+                .to_scalar()
+                .expect("exponent is within scalar field"),
+        )?;
+        self.exp_byte_size.assign(region, offset, exp_word)?;
+        let exp_byte_size = (exp_word.bits() + 7) / 8;
+        let exp_msb = if exp_byte_size > 0 {
+            exponent[exp_byte_size - 1]
+        } else {
+            0
+        };
+        self.exp_msb.assign(region, offset, exp_msb)?;
+        self.exp_msb_bit_size
+            .assign(region, offset, exp_msb.into())?;
+        let exp_bit_length = exp_word.bits();
+        let max_length = b_size.max(m_size);
+        let words = (max_length + 7) / 8;
+        let multiplication_complexity = words * words;
+        let iteration_count = if exp_word.is_zero() {
+            0
+        } else {
+            exp_bit_length - 1
+        };
+        let numerator = multiplication_complexity * iteration_count;
+        self.calc_gas.assign(region, offset, numerator.as_u128())?;
+        self.dynamic_gas.assign(
+            region,
+            offset,
+            F::from(GasCost::PRECOMPILE_MODEXP_MIN.0),
+            F::from((numerator / 3).as_u64()),
+        )?;
+        let gas_cost = std::cmp::max(GasCost::PRECOMPILE_MODEXP_MIN.0, (numerator / 3).as_u64());
+
+        Ok(gas_cost)
     }
 }
 
@@ -812,11 +872,15 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
 
-            // FIXME
-            // self.gas_cost
-            //    .assign(region, offset, Value::known(F::from(0)))?;
-            // TODO
-            // self.gas_cost_gadget.assign(region, offset)?;
+            let gas_cost = self.gas_cost_gadget.assign(
+                region,
+                offset,
+                &data.input_lens[0],
+                &data.input_lens[2],
+                &data.inputs[1],
+            )?;
+            self.gas_cost
+                .assign(region, offset, Value::known(F::from(gas_cost)))?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
             return Err(Error::Synthesis);

@@ -30,10 +30,7 @@ pub(crate) struct ByteSizeGadgetN<F, const N: usize> {
 }
 
 impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        values: [Expression<F>; N],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
         let most_significant_nonzero_byte_index = [(); N].map(|()| cb.query_bool());
         let is_byte_size_zero = cb.query_bool();
         cb.require_equal(
@@ -45,10 +42,7 @@ impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
         let most_significant_nonzero_byte_inverse = cb.query_cell();
         for (i, index) in most_significant_nonzero_byte_index.iter().enumerate() {
             cb.condition(index.expr(), |cb| {
-                cb.require_zero(
-                    "more significant bytes are 0",
-                    sum::expr(&values[i+1..N]),
-                );
+                cb.require_zero("more significant bytes are 0", sum::expr(&values[i + 1..N]));
                 cb.require_equal(
                     "most significant nonzero byte's inverse exists",
                     values[i].expr() * most_significant_nonzero_byte_inverse.expr(),
@@ -58,11 +52,7 @@ impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
         }
 
         cb.condition(is_byte_size_zero.expr(), |cb| {
-
-            cb.require_zero(
-                "all bytes are 0 when byte size is 0",
-                sum::expr(&values),
-            );
+            cb.require_zero("all bytes are 0 when byte size is 0", sum::expr(&values));
             cb.require_zero(
                 "byte size == 0",
                 most_significant_nonzero_byte_inverse.expr(),
@@ -95,10 +85,18 @@ impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
             byte_index.assign(
                 region,
                 offset,
-                Value::known(if i + 1 == byte_size { F::one() } else { F::zero() }),
+                Value::known(if i + 1 == byte_size {
+                    F::one()
+                } else {
+                    F::zero()
+                }),
             )?;
         }
-        self.is_byte_size_zero.assign(region, offset, Value::known(if byte_size == 0 { F::one() } else { F::zero() }))?;
+        self.is_byte_size_zero.assign(
+            region,
+            offset,
+            Value::known(if byte_size == 0 { F::one() } else { F::zero() }),
+        )?;
         if byte_size > 0 {
             let most_significant_nonzero_byte = value.to_le_bytes()[byte_size - 1];
             self.most_significant_nonzero_byte_inverse.assign(
@@ -125,7 +123,7 @@ impl<F: Field, const N: usize> ByteSizeGadgetN<F, N> {
             self.most_significant_nonzero_byte_index
                 .iter()
                 .enumerate()
-                .map(|(i, cell)| (i+1).expr() * cell.expr()),
+                .map(|(i, cell)| (i + 1).expr() * cell.expr()),
         )
     }
 }
@@ -146,7 +144,9 @@ mod tests {
         a: util::Word<F>,
     }
 
-    impl<F: Field, const N: u8, const TEST_MSB: bool> MathGadgetContainer<F> for ByteSizeGadgetContainerM<F, N, TEST_MSB> {
+    impl<F: Field, const N: u8, const TEST_MSB: bool> MathGadgetContainer<F>
+        for ByteSizeGadgetContainerM<F, N, TEST_MSB>
+    {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let value_rlc = cb.query_word_rlc();
             let bytesize_gadget = ByteSizeGadget::<F>::construct(
@@ -166,13 +166,12 @@ mod tests {
                     bytesize_gadget.most_significant_byte.expr(),
                     N.expr(),
                 );
-    
             } else {
                 cb.require_equal(
                     "byte size gadget must equal N",
                     bytesize_gadget.byte_size(),
                     N.expr(),
-                );    
+                );
             }
 
             Self {
@@ -229,7 +228,6 @@ mod tests {
         try_test!(ByteSizeGadgetContainer<Fr, 32>, vec![Word::MAX], true)
     }
 
-
     #[test]
     fn test_bytesize_msb_0() {
         try_test!(WordMSBGadgetContainer<Fr, 0>, vec![Word::from(0)], true)
@@ -260,5 +258,4 @@ mod tests {
     fn test_bytesize_258_msb_neq_2() {
         try_test!(ByteSizeGadgetContainer<Fr, 2>, vec![Word::from(258)], true)
     }
-
 }
