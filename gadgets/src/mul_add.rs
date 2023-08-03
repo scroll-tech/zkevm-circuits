@@ -12,6 +12,7 @@
 // | 0      | carry_lo5 | carry_lo6 | carry_lo7 | carry_lo8 | -         |
 // | 0      | carry_hi0 | carry_hi1 | carry_hi2 | carry_hi3 | carry_hi4 |
 // | 0      | carry_hi5 | carry_hi6 | carry_hi7 | carry_hi8 | -         |
+// | 0      | -         | -         | -         | -         | -         |
 // |--------|-----------|-----------|-----------|-----------|-----------|
 
 use eth_types::{Field, ToLittleEndian, Word};

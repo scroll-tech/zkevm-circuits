@@ -72,7 +72,7 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> RangeCheckChip<F, N_2B
                 meta.lookup(concat!("u16 cell range check"), |meta| {
                     let q_enable = q_enable.clone()(meta);
                     let cell = meta.query_advice(column, Rotation(offset as i32));
-                    vec![(q_enable.clone() * cell, u16_table)]
+                    vec![(q_enable * cell, u16_table)]
                 });
             }
         }
