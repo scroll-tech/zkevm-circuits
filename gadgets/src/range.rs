@@ -8,7 +8,10 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 
@@ -84,6 +87,7 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> RangeCheckChip<F, N_2B
         }
     }
 
+    /// Constructs a range chip.
     pub fn construct(config: RangeCheckConfig<F, N_2BYTE, N_EXPR>) -> Self {
         Self { config }
     }

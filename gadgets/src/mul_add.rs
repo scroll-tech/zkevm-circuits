@@ -52,7 +52,7 @@ pub struct MulAddConfig<F> {
     /// also, Lookup table for LtChips
     pub u16_table: TableColumn,
     /// Range check of a, b which needs to be in [0, 2^64)
-    pub range_check_64: RangeCheckChip<F, 4>,
+    pub range_check_64: RangeCheckChip<F, 4, 8>,
     /// Range check of c, d which needs to be in [0, 2^128)
     pub range_check_128: [(LtChip<F, 16>, LtChip<F, 16>); 2],
 }
@@ -602,7 +602,7 @@ mod test {
                         for (a, b, d) in self.values.iter() {
                             config.q_enable.enable(&mut region, offset)?;
                             chip.assign(&mut region, offset, [*a, *b, Word::zero(), *d])?;
-                            offset += 7
+                            offset += 8
                         }
                         Ok(())
                     },
@@ -615,7 +615,7 @@ mod test {
         }
 
         let mut rng = rand::thread_rng();
-        let n = 2;
+        let n = 100;
         let mut values = Vec::with_capacity(n);
         for _ in 0..n {
             let a = rand_word();
@@ -625,15 +625,15 @@ mod test {
         }
 
         try_test_circuit!(values.clone());
-        // try_test_circuit_error!(values
-        //     .into_iter()
-        //     .map(|(a, b, d)| {
-        //         if rng.gen::<bool>() {
-        //             (a, b, d + 1)
-        //         } else {
-        //             (a, b, d - 1)
-        //         }
-        //     })
-        //     .collect::<Vec<(Word, Word, Word)>>());
+        try_test_circuit_error!(values
+            .into_iter()
+            .map(|(a, b, d)| {
+                if rng.gen::<bool>() {
+                    (a, b, d + 1)
+                } else {
+                    (a, b, d - 1)
+                }
+            })
+            .collect::<Vec<(Word, Word, Word)>>());
     }
 }
