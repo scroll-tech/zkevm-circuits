@@ -14,7 +14,7 @@ use crate::{
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{
-                BinaryNumberGadget, ByteSizeGadget, ConstantDivisionGadget, IsZeroGadget, LtGadget,
+                BinaryNumberGadget, ByteSizeGadgetN, ByteSizeGadget, ConstantDivisionGadget, IsZeroGadget, LtGadget,
                 MinMaxGadget,
             },
             rlc, CachedRegion, Cell,
@@ -556,7 +556,7 @@ pub(crate) struct ModExpGasCost<F> {
     words: ConstantDivisionGadget<F, 1>,
     exp_is_zero: IsZeroGadget<F>,
     exp_byte_size: ByteSizeGadget<F>,
-    exp_msb_most_significant_bit_index: [Cell<F>; N_BITS_U8],
+    exp_msb_bit_size: ByteSizeGadgetN<F, N_BITS_U8>,
     exp_msb: BinaryNumberGadget<F, N_BITS_U8>,
     calc_gas: ConstantDivisionGadget<F, N_BYTES_U64>,
     dynamic_gas: MinMaxGadget<F, N_BYTES_U64>,
@@ -574,7 +574,7 @@ impl<F: Field> ModExpGasCost<F> {
         let multiplication_complexity = words.quotient() * words.quotient();
         let exp_is_zero = IsZeroGadget::construct(cb, "modexp: exponent", expr_from_bytes(exp));
 
-        let (exp_byte_size, exp_msb, exp_msb_most_significant_bit_index) =
+        let (exp_byte_size, exp_msb, exp_msb_bit_size) =
             cb.condition(not::expr(exp_is_zero.expr()), |cb| {
                 let exp_byte_size = ByteSizeGadget::construct(
                     cb,
@@ -586,31 +586,15 @@ impl<F: Field> ModExpGasCost<F> {
                 );
                 let exp_msb =
                     BinaryNumberGadget::construct(cb, exp_byte_size.most_significant_byte.expr());
-                let exp_msb_most_significant_bit_index = array_init(|_| cb.query_bool());
-                cb.require_boolean(
-                    "there can at the most be one most significant bit",
-                    sum::expr(exp_msb_most_significant_bit_index.iter()),
+                let exp_msb_bit_size = ByteSizeGadgetN::construct(
+                    cb,
+                    exp_msb.bits.clone().map(|c|c.expr()),
                 );
-                for (i, index) in exp_msb_most_significant_bit_index.iter().enumerate() {
-                    cb.condition(index.expr(), |cb| {
-                        cb.require_zero(
-                            "no bit turned on after the most significant bit",
-                            sum::expr(exp_msb.bits.iter().skip(i)),
-                        );
-                        cb.require_equal("most significant bit", exp_msb.bits[i].expr(), 1.expr());
-                    });
-                }
 
-                (exp_byte_size, exp_msb, exp_msb_most_significant_bit_index)
+                (exp_byte_size, exp_msb, exp_msb_bit_size)
             });
-        let exp_msb_bit_length = sum::expr(
-            exp_msb_most_significant_bit_index
-                .iter()
-                .enumerate()
-                .map(|(i, index)| i.expr() * index.expr()),
-        );
         let exp_bit_length =
-            (exp_byte_size.byte_size() - 1.expr()) * N_BITS_U8.expr() + exp_msb_bit_length.expr();
+            (exp_byte_size.byte_size() - 1.expr()) * N_BITS_U8.expr() + exp_msb_bit_size.byte_size();
 
         // We already restrict Esize <= 32. So we can completely ignore the branch concerning
         // Esize > 32. We only care about whether or not exponent is zero.
@@ -633,7 +617,7 @@ impl<F: Field> ModExpGasCost<F> {
             exp_is_zero,
             exp_byte_size,
             exp_msb,
-            exp_msb_most_significant_bit_index,
+            exp_msb_bit_size,
             calc_gas,
             dynamic_gas,
         }
