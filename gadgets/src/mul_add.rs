@@ -104,8 +104,8 @@ impl<F: Field> MulAddConfig<F> {
     /// 128-bit lo-hi parts of `d` from the next step.
     pub fn d_lo_hi_next(&self, meta: &mut VirtualCells<'_, F>) -> (Expression<F>, Expression<F>) {
         (
-            meta.query_advice(self.col2, Rotation(9)),
-            meta.query_advice(self.col3, Rotation(9)),
+            meta.query_advice(self.col2, Rotation(2 + 8)),
+            meta.query_advice(self.col3, Rotation(2 + 8)),
         )
     }
 }

@@ -92,14 +92,14 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         meta.create_gate("verify all but the last step", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // base limbs MUST be the same across all steps. Since each step consumes 7 rows
+            // base limbs MUST be the same across all steps. Since each step consumes 8 rows
             // (check MulAddChip), we check the current step's rotation `i`
-            // against `i + 7`.
+            // against `i + 8`.
             for i in 0..4 {
                 cb.require_equal(
                     "base_limb[i] is the same across all steps",
                     meta.query_advice(exp_table.base_limb, Rotation(i)),
-                    meta.query_advice(exp_table.base_limb, Rotation(i + 7)),
+                    meta.query_advice(exp_table.base_limb, Rotation(i + OFFSET_INCREMENT as i32)),
                 );
             }
 
@@ -126,7 +126,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             cb.require_equal(
                 "identifier does not change",
                 meta.query_advice(exp_table.identifier, Rotation::cur()),
-                meta.query_advice(exp_table.identifier, Rotation(7)),
+                meta.query_advice(exp_table.identifier, Rotation(OFFSET_INCREMENT as i32)),
             );
 
             cb.gate(and::expr([
@@ -199,12 +199,12 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (lo::next == lo::cur - 1)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(7)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(OFFSET_INCREMENT as i32)),
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(0)) - 1.expr(),
                 );
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (hi::next == hi::cur)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(1 + OFFSET_INCREMENT as i32)),
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(1)),
                 );
 
@@ -243,12 +243,12 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 let exponent_next_hi = limb2 + (limb3 * multiplier);
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate next lo)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(7)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(OFFSET_INCREMENT as i32)),
                     exponent_next_lo,
                 );
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate next hi)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(1 + OFFSET_INCREMENT as i32)),
                     exponent_next_hi,
                 );
 
@@ -416,7 +416,7 @@ impl<F: Field> ExpCircuitConfig<F> {
                     || Value::known(F::zero()),
                 )?;
             }
-            // mul_chip has 7 rows, exp_table has 4 rows. So we increment the offset by
+            // mul_chip has 8 rows, exp_table has 4 rows. So we increment the offset by
             // the maximum number of rows taken up by any gadget within the
             // exponentiation circuit.
             *offset += OFFSET_INCREMENT;
