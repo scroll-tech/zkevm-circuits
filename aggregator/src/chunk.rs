@@ -17,17 +17,17 @@ use zkevm_circuits::witness::Block;
 /// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
 pub struct ChunkHash {
     /// Chain identifier
-    pub(crate) chain_id: u64,
+    pub chain_id: u64,
     /// state root before this chunk
-    pub(crate) prev_state_root: H256,
+    pub prev_state_root: H256,
     /// state root after this chunk
-    pub(crate) post_state_root: H256,
+    pub post_state_root: H256,
     /// the withdraw root after this chunk
-    pub(crate) withdraw_root: H256,
+    pub withdraw_root: H256,
     /// the data hash of this chunk
-    pub(crate) data_hash: H256,
+    pub data_hash: H256,
     /// if the chunk is a padded chunk
-    pub(crate) is_padding: bool,
+    pub is_padding: bool,
 }
 
 impl ChunkHash {
