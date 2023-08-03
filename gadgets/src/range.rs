@@ -8,10 +8,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn,
-        VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
     poly::Rotation,
 };
 
