@@ -95,10 +95,10 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
             // byte is 0 if it is either not pushed or padding
             cb.condition(
-                not::expr(or::expr(&[is_pushed_cell.expr(), is_padding_cell.expr()])),
+                or::expr(&[not::expr(is_pushed_cell.expr()), is_padding_cell.expr()]),
                 |cb| {
                     cb.require_zero(
-                        "Constrain byte == 0 when is_pushed == 0 or is_padding == 0",
+                        "Constrain byte == 0 when is_pushed == 0 or is_padding == 1",
                         byte.expr(),
                     );
                 },
