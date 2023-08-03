@@ -423,10 +423,7 @@ pub(crate) fn conditional_constraints(
                 let num_valid_snarks =
                     num_valid_snarks(rlc_config, &mut region, &chunk_is_valid_cells, &mut offset)?;
 
-                log::trace!(
-                    "number of valid chunks: {:?}",
-                    num_valid_snarks.value()
-                );
+                log::trace!("number of valid chunks: {:?}", num_valid_snarks.value());
                 // #valid snarks | offset of data hash | flags
                 // 1,2,3,4       | 0                   | 1, 0, 0
                 // 5,6,7,8       | 32                  | 0, 1, 0

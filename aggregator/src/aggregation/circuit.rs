@@ -269,13 +269,9 @@ impl Circuit<Fr> for AggregationCircuit {
             end_timer!(timer);
 
             let timer = start_timer!(|| ("assign hash cells").to_string());
-            let hash_digest_cells = assign_batch_hashes(
-                &config,
-                &mut layouter,
-                challenges,
-                &preimages,
-            )
-            .map_err(|_e| Error::ConstraintSystemFailure)?;
+            let hash_digest_cells =
+                assign_batch_hashes(&config, &mut layouter, challenges, &preimages)
+                    .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);
             hash_digest_cells
         };
