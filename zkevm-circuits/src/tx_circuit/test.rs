@@ -114,10 +114,9 @@ fn run<F: Field>(
     max_txs: usize,
     max_calldata: usize,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let k = max(
-        20,
-        log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
-    );
+    let active_row_num = TxCircuit::<F>::min_num_rows(max_txs, max_calldata);
+
+    let k = max(20, log2_ceil(active_row_num));
     let circuit = TxCircuitTester::<F> {
         sig_circuit: SigCircuit {
             max_verif: max_txs,
@@ -131,7 +130,7 @@ fn run<F: Field>(
         Err(e) => panic!("{e:#?}"),
     };
 
-    prover.verify_par()
+    prover.verify_at_rows_par(0..active_row_num, 0..active_row_num)
 }
 
 #[test]
