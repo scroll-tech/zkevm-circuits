@@ -201,6 +201,8 @@ impl GasCost {
     pub const PRECOMPILE_BN256PAIRING_PER_PAIR: Self = Self(34_000);
     /// Base gas cost for precompile call: MODEXP
     pub const PRECOMPILE_MODEXP: Self = Self(0);
+    /// Minimum gas cost for precompile calls: MODEXP
+    pub const PRECOMPILE_MODEXP_MIN: Self = Self(200);
     /// Base gas cost for precompile call: BLAKE2F
     pub const PRECOMPILE_BLAKE2F: Self = Self(0);
 }
