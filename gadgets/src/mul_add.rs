@@ -14,6 +14,7 @@
 // | 0      | carry_hi5 | carry_hi6 | carry_hi7 | carry_hi8 | -         |
 // | 0      | -         | -         | -         | -         | -         |
 // |--------|-----------|-----------|-----------|-----------|-----------|
+// last row is padding to fit in 8 rows range_check_64 chip
 
 use eth_types::{Field, ToLittleEndian, Word};
 
