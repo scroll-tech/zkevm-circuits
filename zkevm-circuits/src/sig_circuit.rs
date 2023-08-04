@@ -258,7 +258,11 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
         let row_num = Self::min_num_rows();
 
-        let ecdsa_verif_count = block.txs.iter().filter(|tx| !tx.tx_type.is_l1_msg()).count()
+        let ecdsa_verif_count = block
+            .txs
+            .iter()
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .count()
             + block.precompile_events.get_ecrecover_events().len();
         // Reserve one ecdsa verification for padding tx such that the bad case in which some tx
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
