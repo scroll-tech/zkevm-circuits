@@ -25,7 +25,7 @@ use halo2_proofs::{
 
 use crate::{
     range::{UIntRangeCheckChip, UIntRangeCheckInstruction},
-    util::{expr_from_bytes, pow_of_two, split_u256, split_u256_limb64, Expr},
+    util::{expr_from_bytes, pow_of_two, split_u256, split_u256_limb64, sum, Expr},
 };
 
 /// Config for the MulAddChip.
@@ -213,7 +213,14 @@ impl<F: Field> MulAddChip<F> {
             let check_b = t2.expr() + t3.expr() * pow_of_two::<F>(64) + c_hi + carry_lo_expr
                 - (d_hi + carry_hi_expr * pow_of_two::<F>(128));
 
-            [check_a, check_b]
+            let unused_cells = [0, 1, 2, 4, 6]
+                .map(|rot| meta.query_advice(col4, Rotation(rot)))
+                .into_iter()
+                .chain(
+                    [col0, col1, col2, col3, col4].map(|col| meta.query_advice(col, Rotation(7))),
+                );
+
+            [check_a, check_b, sum::expr(unused_cells)]
                 .into_iter()
                 .map(move |poly| q_enable.clone() * poly)
         });
@@ -445,6 +452,22 @@ impl<F: Field> MulAddChip<F> {
             offset + 6,
             || Value::known(F::zero()),
         )?;
+
+        // unused padding row
+        for col in [
+            self.config.col0,
+            self.config.col1,
+            self.config.col2,
+            self.config.col3,
+            self.config.col4,
+        ] {
+            region.assign_advice(
+                || "unused padding row",
+                col,
+                offset + 7,
+                || Value::known(F::zero()),
+            )?;
+        }
 
         Ok(())
     }
