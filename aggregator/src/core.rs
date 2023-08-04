@@ -664,15 +664,14 @@ pub(crate) fn conditional_constraints(
                     .take((MAX_AGG_SNARKS + 1) * 2)
                     .chunks(2)
                     .into_iter()
-                    .map(|chunk| {
+                    .try_for_each(|chunk| {
                         let cur_hash_len = chunk.last().unwrap(); // safe unwrap
                         region.constrain_equal(
                             cur_hash_len.cell(),
                             rlc_config
                                 .one_hundred_and_thirty_six_cell(cur_hash_len.cell().region_index),
                         )
-                    })
-                    .collect::<Result<(), halo2_proofs::plonk::Error>>()?;
+                    })?;
 
                 // - batch's data_hash length is 32 * number_of_valid_snarks
                 let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
