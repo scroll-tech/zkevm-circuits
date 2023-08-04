@@ -6,7 +6,7 @@ use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, Memory},
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
-    Address, GethExecTrace, Signature, Word, H256,
+    AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
 use ethers_core::utils::get_contract_address;
 
@@ -229,6 +229,8 @@ pub struct Transaction {
     pub l1_fee: TxL1Fee,
     /// Committed values of L1 fee
     pub l1_fee_committed: TxL1Fee,
+    /// EIP2930
+    pub access_list: Option<AccessList>,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -253,6 +255,7 @@ impl From<&Transaction> for geth_types::Transaction {
             gas_tip_cap: tx.gas_tip_cap,
             rlp_unsigned_bytes: tx.rlp_unsigned_bytes.clone(),
             rlp_bytes: tx.rlp_bytes.clone(),
+            tx_type: tx.tx_type,
             ..Default::default()
         }
     }
@@ -286,6 +289,7 @@ impl Transaction {
             tx_type: Default::default(),
             l1_fee: Default::default(),
             l1_fee_committed: Default::default(),
+            access_list: None,
         }
     }
 
@@ -391,6 +395,7 @@ impl Transaction {
             },
             l1_fee,
             l1_fee_committed,
+            access_list: eth_tx.access_list.clone(),
         })
     }
 

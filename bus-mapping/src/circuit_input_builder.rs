@@ -1028,10 +1028,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         _prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = BlockHead::new(self.chain_id, history_hashes, eth_block)?;
-        let mut builder =
-            CircuitInputBuilder::new_from_headers(self.circuits_params, sdb, code_db, &[block]);
-
+        let block = Block::new(
+            self.chain_id,
+            history_hashes,
+            eth_block,
+            self.circuits_params,
+        )?;
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, &block);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }

@@ -1506,16 +1506,24 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let row_num = |inner_block_num, tx_num| -> usize {
-            BLOCK_HEADER_BYTES_NUM * inner_block_num + KECCAK_DIGEST_SIZE * tx_num + 33
-        };
-        (
-            row_num(block.context.ctxs.len(), block.txs.len()),
-            row_num(
-                block.circuits_params.max_inner_blocks,
-                block.circuits_params.max_txs,
-            ),
-        )
+        let max_inner_blocks = block.circuits_params.max_inner_blocks;
+        let max_txs = block.circuits_params.max_txs;
+
+        let num_rows = 1 + max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+            + max_txs * KECCAK_DIGEST_SIZE
+            + 1 // for data hash row
+            + 1 // for pi bytes start row
+            + N_BYTES_U64 // chain_id
+            + 4 * KECCAK_DIGEST_SIZE // state_roots & data hash
+            + 1 // for pi hash row
+            + 1 // for pi hash bytes start row
+            + KECCAK_DIGEST_SIZE // pi hash bytes
+            + 1 // for coinbase & difficulty start row
+            + N_BYTES_ACCOUNT_ADDRESS
+            + N_BYTES_WORD;
+
+        // the number of rows is independent of block
+        (num_rows, num_rows)
     }
 
     /// Compute the public inputs for this circuit.
