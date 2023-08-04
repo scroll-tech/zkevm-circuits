@@ -49,7 +49,8 @@ pub struct MulAddConfig<F> {
     /// Sum of the parts higher than 256-bit in the product.
     pub overflow: Expression<F>,
     /// Range check of carry_lo, carry_hi which needs to be in [0, 2^8)
-    /// also, Lookup table for LtChips
+    pub u8_table: TableColumn,
+    /// Lookup table for LtChips
     pub u16_table: TableColumn,
     /// Range check of a, b which needs to be in [0, 2^64)
     pub range_check_64: UIntRangeCheckChip<F, { UIntRangeCheckChip::SIZE_U64 }, 8>,
@@ -122,6 +123,7 @@ impl<F: Field> MulAddChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
+        u8_table: TableColumn,
         u16_table: TableColumn,
     ) -> MulAddConfig<F> {
         let col0 = meta.advice_column();
@@ -161,14 +163,10 @@ impl<F: Field> MulAddChip<F> {
             let mut carry_cols = carry_lo_cols.clone();
             carry_cols.append(&mut carry_hi_cols.clone());
 
-            for cols in carry_cols.chunks(2) {
-                debug_assert_eq!(cols.len(), 2);
+            for (col, rot) in carry_cols.into_iter() {
                 meta.lookup("mul carry range check lo/hi lookup u8", |meta| {
                     let q_enable = q_enable.clone()(meta);
-                    let cell1 = meta.query_advice(cols[0].0, Rotation(cols[0].1));
-                    let cell2 = meta.query_advice(cols[1].0, Rotation(cols[1].1));
-                    let expr = cell1 * Expression::Constant(pow_of_two(8)) + cell2;
-                    vec![(q_enable * expr, u16_table)]
+                    vec![(q_enable * meta.query_advice(col, Rotation(rot)), u8_table)]
                 });
             }
         }
@@ -249,6 +247,7 @@ impl<F: Field> MulAddChip<F> {
             col3,
             col4,
             overflow,
+            u8_table,
             u16_table,
             range_check_64: UIntRangeCheckChip::construct(range_check_64_config),
             range_check_128: UIntRangeCheckChip::construct(range_check_128_config),
@@ -532,9 +531,14 @@ mod test {
 
             fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.complex_selector();
+                let u8_table = meta.lookup_table_column();
                 let u16_table = meta.lookup_table_column();
-                let mul_config =
-                    MulAddChip::configure(meta, |meta| meta.query_selector(q_enable), u16_table);
+                let mul_config = MulAddChip::configure(
+                    meta,
+                    |meta| meta.query_selector(q_enable),
+                    u8_table,
+                    u16_table,
+                );
                 Self::Config {
                     q_enable,
                     mul_config,
@@ -547,6 +551,21 @@ mod test {
                 mut layouter: impl halo2_proofs::circuit::Layouter<F>,
             ) -> Result<(), halo2_proofs::plonk::Error> {
                 let chip = MulAddChip::construct(config.mul_config);
+
+                layouter.assign_table(
+                    || "u8 table",
+                    |mut table| {
+                        for i in 0..=255 {
+                            table.assign_cell(
+                                || format!("u8 table row {i}"),
+                                chip.config.u8_table,
+                                i,
+                                || Value::known(F::from(i as u64)),
+                            )?;
+                        }
+                        Ok(())
+                    },
+                )?;
 
                 layouter.assign_table(
                     || "u16 table",

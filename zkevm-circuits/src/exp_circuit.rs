@@ -10,7 +10,7 @@ pub use dev::ExpCircuit as TestExpCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{ExpTable, LookupTable, U16Table},
+    table::{ExpTable, LookupTable, U16Table, U8Table},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -25,7 +25,6 @@ use halo2_proofs::{
     plonk::{Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
 };
-
 use param::*;
 use std::{marker::PhantomData, ops::Add};
 
@@ -36,6 +35,8 @@ pub struct ExpCircuitConfig<F> {
     pub q_enable: Column<Fixed>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
+    /// u8 lookup table,
+    pub u8_table: U8Table,
     /// u16 lookup table,
     pub u16_table: U16Table,
     /// Multiplication gadget for verification of each step.
@@ -48,6 +49,8 @@ pub struct ExpCircuitConfig<F> {
 pub struct ExpCircuitArgs {
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
+    /// u8 lookup table,
+    pub u8_table: U8Table,
     /// u16 lookup table,
     pub u16_table: U16Table,
 }
@@ -60,6 +63,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         ExpCircuitArgs {
             exp_table,
+            u8_table,
             u16_table,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -72,6 +76,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                     meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 ])
             },
+            u8_table.into(),
             u16_table.into(),
         );
         let parity_check = MulAddChip::configure(
@@ -82,6 +87,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                     meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 ])
             },
+            u8_table.into(),
             u16_table.into(),
         );
 
@@ -302,6 +308,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         Self {
             q_enable,
             exp_table,
+            u8_table,
             u16_table,
             mul_gadget,
             parity_check,
