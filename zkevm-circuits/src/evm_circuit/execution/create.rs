@@ -13,7 +13,8 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, LtGadget, LtWordGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
+                LtGadget, LtWordGadget,
             },
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
@@ -28,7 +29,7 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
 use eth_types::{
     evm_types::{GasCost, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE},
-    Field, ToBigEndian, ToLittleEndian, ToScalar, U256,
+    Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, U256,
 };
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
@@ -67,8 +68,8 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     keccak_output: Word<F>,
     // prevous code hash befor creating
     code_hash_previous: Cell<F>,
-    // if code_hash_previous is zero, then no collision
-    not_address_collision: IsZeroGadget<F>,
+    code_hash_is_empty: IsEqualGadget<F>,
+    code_hash_is_zero: IsZeroGadget<F>,
     copy_rwc_inc: Cell<F>,
 }
 
@@ -282,7 +283,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             code_hash_previous.expr(),
         );
 
-        let not_address_collision = IsZeroGadget::construct(cb, "", code_hash_previous.expr());
+        let code_hash_is_zero = IsZeroGadget::construct(cb, "", code_hash_previous.expr());
+        let code_hash_is_empty =
+            IsEqualGadget::construct(cb, code_hash_previous.expr(), cb.empty_code_hash_rlc());
+        let not_address_collision = code_hash_is_zero.expr() + code_hash_is_empty.expr();
         /*
         // CREATE2 may cause address collision error. And for a tricky
         // case of CREATE, it could also cause this error. e.g. the `to`
@@ -505,7 +509,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             keccak_code_hash,
             keccak_output,
             code_hash_previous,
-            not_address_collision,
+            code_hash_is_empty,
+            code_hash_is_zero,
             copy_rwc_inc,
         }
     }
@@ -634,9 +639,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
             .assign(region, offset, code_hash_previous_rlc)?;
-        self.not_address_collision
+        self.code_hash_is_zero
             .assign_value(region, offset, code_hash_previous_rlc)?;
-        let is_address_collision = !code_hash_previous.0.is_zero();
+        self.code_hash_is_empty.assign_value(
+            region,
+            offset,
+            code_hash_previous_rlc,
+            region.empty_code_hash_rlc(),
+        )?;
+        let is_address_collision = !code_hash_previous.0.is_zero()
+            && code_hash_previous.0 != CodeDB::empty_code_hash().to_word();
 
         if is_precheck_ok == 1 && !is_address_collision {
             /*

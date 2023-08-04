@@ -76,21 +76,6 @@ pub struct BlockContexts {
     pub ctxs: BTreeMap<u64, BlockContext>,
 }
 
-impl BlockContexts {
-    /// ..
-    pub fn first(&self) -> &BlockContext {
-        self.ctxs.iter().next().unwrap().1
-    }
-    /// ..
-    pub fn first_or_default(&self) -> BlockContext {
-        self.ctxs
-            .iter()
-            .next()
-            .map(|(_k, v)| v.clone())
-            .unwrap_or_default()
-    }
-}
-
 impl<F: Field> Block<F> {
     /// For each tx, for each step, print the rwc at the beginning of the step,
     /// and all the rw operations of the step.

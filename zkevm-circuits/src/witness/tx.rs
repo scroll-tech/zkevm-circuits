@@ -863,11 +863,13 @@ pub(super) fn tx_convert(
     chain_id: u64,
     next_block_num: u64,
 ) -> Transaction {
-    debug_assert_eq!(
-        chain_id, tx.chain_id,
-        "block.chain_id = {}, tx.chain_id = {}",
-        chain_id, tx.chain_id
-    );
+    if tx.chain_id != 0 {
+        debug_assert_eq!(
+            chain_id, tx.chain_id,
+            "block.chain_id = {}, tx.chain_id = {}",
+            chain_id, tx.chain_id
+        );
+    }
     let callee_address = tx.to;
     //if tx.is_create() { None } else { Some(tx.to) };
     let tx_gas_cost = if tx.tx_type.is_l1_msg() {
@@ -918,6 +920,9 @@ pub(super) fn tx_convert(
                 call_data_length: call.call_data_length,
                 return_data_offset: call.return_data_offset,
                 return_data_length: call.return_data_length,
+                last_callee_id: call.last_callee_id,
+                last_callee_return_data_length: call.last_callee_return_data_length,
+                last_callee_return_data_offset: call.last_callee_return_data_offset,
                 value: call.value,
                 is_success: call.is_success,
                 is_persistent: call.is_persistent,
@@ -931,16 +936,14 @@ pub(super) fn tx_convert(
             .chain({
                 let rw_counter = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
                 debug_assert!(next_block_num >= tx.block_num);
-                let end_inner_block_steps = (tx.block_num..next_block_num)
+                (tx.block_num..next_block_num)
                     .map(|block_num| ExecStep {
                         rw_counter,
                         execution_state: ExecutionState::EndInnerBlock,
                         block_num,
                         ..Default::default()
                     })
-                    .collect::<Vec<ExecStep>>();
-                log::trace!("end_inner_block_steps {:?}", end_inner_block_steps);
-                end_inner_block_steps
+                    .collect::<Vec<ExecStep>>()
             })
             .collect(),
     }
