@@ -364,11 +364,14 @@ impl RlcConfig {
         Ok(())
     }
 
-    // decompose a field element into 254 bits of boolean cells
+    // decompose a field element into log_size bits of boolean cells
+    // require the input to be less than 2^log_size
+    // require log_size < 254
     pub(crate) fn decomposition(
         &self,
         region: &mut Region<Fr>,
         input: &AssignedCell<Fr, Fr>,
+        log_size: usize,
         offset: &mut usize,
     ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
         let mut input_element = Fr::default();
@@ -378,6 +381,7 @@ impl RlcConfig {
             .to_bytes()
             .iter()
             .flat_map(byte_to_bits_le)
+            .take(log_size)
             .collect::<Vec<_>>();
         // sanity check
         {
@@ -444,7 +448,7 @@ impl RlcConfig {
 
         let ca = self.add(region, &two_to_thirty_two, a, offset)?;
         let c = self.sub(region, &ca, b, offset)?;
-        let bits = self.decomposition(region, &c, offset)?;
+        let bits = self.decomposition(region, &c, 33, offset)?;
         let res = self.not(region, &bits[32], offset)?;
         Ok(res)
     }
@@ -516,15 +520,7 @@ impl RlcConfig {
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         let diff = self.sub(region, a, b, offset)?;
-        let diff_bits = self.decomposition(region, &diff, offset)?;
-        // we can simply take the sum of the bits, given that decomposition already
-        // asserted that bits are all binary
-        let mut sum_of_bits = diff_bits[0].clone();
-        for bit in diff_bits.iter().skip(1) {
-            sum_of_bits = self.add(region, bit, &sum_of_bits, offset)?;
-        }
-
-        self.is_zero(region, &sum_of_bits, offset)
+        self.is_zero(region, &diff, offset)
     }
 }
 #[inline]

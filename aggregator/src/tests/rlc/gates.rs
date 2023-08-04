@@ -2,7 +2,6 @@
 
 use ark_std::test_rng;
 use halo2_proofs::{
-    arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
     halo2curves::bn256::Fr,
@@ -143,9 +142,9 @@ impl Circuit<Fr> for ArithTestCircuit {
                 // unit test: decomposition
                 {
                     for _ in 0..10 {
-                        let tmp = Fr::random(&mut rng);
+                        let tmp = Fr::from(rng.next_u64());
                         let tmp = config.load_private(&mut region, &tmp, &mut offset)?;
-                        config.decomposition(&mut region, &tmp, &mut offset)?;
+                        config.decomposition(&mut region, &tmp, 64, &mut offset)?;
                     }
                 }
                 // unit test: is smaller than
@@ -181,7 +180,6 @@ impl Circuit<Fr> for ArithTestCircuit {
                     let one = config.load_private(&mut region, &Fr::one(), &mut offset)?;
                     region.constrain_equal(should_be_true.cell(), one.cell())?;
                 }
-
                 // unit test: is equal
                 {
                     let should_be_false = config.is_equal(&mut region, &f1, &f2, &mut offset)?;
