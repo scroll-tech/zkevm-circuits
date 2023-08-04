@@ -1326,11 +1326,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
         };
 
-        let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).expect(
-            &format!(
-            "caller_gas_left underflow geth_step_next.gas {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", geth_step_next.gas.0, gas_refund, exec_step, geth_step
-            )
-        );
+        let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).unwrap_or_else(|| panic!("caller_gas_left underflow geth_step_next.gas {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", geth_step_next.gas.0, gas_refund, exec_step, geth_step));
 
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
