@@ -453,6 +453,7 @@ impl RlcConfig {
     }
 
     // return a boolean if a ?= 0
+    #[allow(dead_code)]
     pub(crate) fn is_zero(
         &self,
         region: &mut Region<Fr>,
@@ -511,6 +512,7 @@ impl RlcConfig {
     }
 
     // return a boolean if a ?= b
+    #[allow(dead_code)]
     pub(crate) fn is_equal(
         &self,
         region: &mut Region<Fr>,

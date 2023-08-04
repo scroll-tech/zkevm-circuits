@@ -98,14 +98,16 @@ pub(crate) fn extract_accumulators_and_proof(
 // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
 // 4. chunks are continuous: they are linked via the state roots
 // 5. batch and all its chunks use a same chain id
-// 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
-// 7. chunk[i]'s data_hash == "" when chunk[i] is padded
+// 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
+// padded
+// 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 #[allow(clippy::type_complexity)]
 pub(crate) fn assign_batch_hashes(
     config: &AggregationConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
+    chunks_are_valid: &[bool],
     preimages: &[Vec<u8>],
 ) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
     let (hash_input_cells, hash_output_cells, data_rlc_cells, hash_input_len_cells) =
@@ -126,13 +128,15 @@ pub(crate) fn assign_batch_hashes(
     // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not
     // padded
     // 4. chunks are continuous: they are linked via the state roots
-    // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
-    // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
+    // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
+    // padded
+    // 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
     // 8. batch data hash is correct w.r.t. its RLCs
     conditional_constraints(
         &config.rlc_config,
         layouter,
         challenges,
+        chunks_are_valid,
         &hash_input_cells,
         &hash_output_cells,
         &data_rlc_cells,
@@ -388,14 +392,16 @@ fn copy_constraints(
 // 1. batch_data_hash digest is reused for public input hash
 // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
 // 4. chunks are continuous: they are linked via the state roots
-// 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
-// 7. chunk[i]'s data_hash == "" when chunk[i] is padded
+// 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
+// padded
+// 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn conditional_constraints(
     rlc_config: &RlcConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
+    chunks_are_valid: &[bool],
     hash_input_cells: &[AssignedCell<Fr, Fr>],
     hash_output_cells: &[AssignedCell<Fr, Fr>],
     data_rlc_cells: &[AssignedCell<Fr, Fr>],
@@ -417,13 +423,35 @@ pub(crate) fn conditional_constraints(
                 // ====================================================
                 // build the flags to indicate the chunks are empty or not
                 // ====================================================
-                let chunk_is_valid_cells =
-                    chunks_are_valid(rlc_config, &mut region, data_rlc_cells, &mut offset)?;
-
+                let chunk_is_valid_cells = chunks_are_valid
+                    .iter()
+                    .map(|chunk_is_valid| {
+                        rlc_config.load_private(
+                            &mut region,
+                            &Fr::from(*chunk_is_valid as u64),
+                            &mut offset,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, halo2_proofs::plonk::Error>>()?;
                 let num_valid_snarks =
                     num_valid_snarks(rlc_config, &mut region, &chunk_is_valid_cells, &mut offset)?;
 
                 log::trace!("number of valid chunks: {:?}", num_valid_snarks.value());
+                //
+                // if the num_of_valid_snarks <= 4, which only needs 1 keccak-f round. Therefore
+                // the batch's data hash (input, len, data_rlc, output_rlc) are in the first 300
+                // keccak rows;
+                //
+                // else if the num_of_valid_snarks <= 8, which needs
+                // 2 keccak-f rounds. Therefore the batch's data hash (input, len, data_rlc,
+                // output_rlc) are in the 2nd 300 keccak rows;
+                //
+                // else the
+                // num_of_valid_snarks <= 12, which needs 3 keccak-f rounds. Therefore the batch's
+                // data hash (input, len, data_rlc, output_rlc) are in the 3rd 300 keccak rows;
+                //
+                // the following flag is build to indicate which row the final data_rlc exists
+                //
                 // #valid snarks | offset of data hash | flags
                 // 1,2,3,4       | 0                   | 1, 0, 0
                 // 5,6,7,8       | 32                  | 0, 1, 0
@@ -498,6 +526,7 @@ pub(crate) fn conditional_constraints(
                 //      batch_data_hash )
                 //
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
+                //
                 //
                 // #valid snarks | offset of data hash | flags
                 // 1,2,3,4       | 0                   | 1, 0, 0
@@ -594,14 +623,35 @@ pub(crate) fn conditional_constraints(
                     }
                 }
 
-                // 6.1 chunk[i]'s prev_state_root == chunk[i-1].prev_state_root when chunk[i] is
-                // padded 6.2 chunk[i]'s post_state_root ==
-                // chunk[i-1].post_state_root when chunk[i] is padded 6.3 chunk[i]'s
-                // withdraw_root == chunk[i-1].withdraw_root when chunk[i] is padded
-                // Those three are not checked as we have already checked the RLCs
+                // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when
+                // chunk[i] is padded
+                let chunks_are_padding = chunk_is_valid_cells
+                    .iter()
+                    .map(|chunk_is_valid| rlc_config.not(&mut region, chunk_is_valid, &mut offset))
+                    .collect::<Result<Vec<_>, halo2_proofs::plonk::Error>>()?;
 
-                // 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
-                // that means the data_hash length is 32 * number_of_valid_snarks
+                let chunk_pi_hash_rlc_cells = parse_pi_hash_rlc_cells(data_rlc_cells);
+
+                for i in 1..MAX_AGG_SNARKS {
+                    rlc_config.conditional_enforce_equal(
+                        &mut region,
+                        chunk_pi_hash_rlc_cells[i - 1],
+                        chunk_pi_hash_rlc_cells[i],
+                        &chunks_are_padding[i],
+                        &mut offset,
+                    )?;
+                }
+
+                for (i, (e, f)) in chunk_pi_hash_rlc_cells
+                    .iter()
+                    .zip(chunk_is_valid_cells.iter())
+                    .enumerate()
+                {
+                    log::trace!("{i}-th chunk rlc:      {:?}", e.value());
+                    log::trace!("{i}-th chunk is valid: {:?}", f.value());
+                }
+
+                // 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
                 let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
                 let const32_cell = rlc_config.thirty_two_cell(const32.cell().region_index);
                 region.constrain_equal(const32.cell(), const32_cell)?;
@@ -726,47 +776,6 @@ pub(crate) fn conditional_constraints(
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
     Ok(())
-}
-
-/// Input the all chunks' pi hash's data RLCs,
-/// generate a string of binary cells indicating
-/// if the i-th chunk is a valid chunk
-///
-/// Assumption: the first chunk must be valid
-fn chunks_are_valid(
-    rlc_config: &RlcConfig,
-    region: &mut Region<Fr>,
-    data_rlc_cells: &[AssignedCell<Fr, Fr>],
-    offset: &mut usize,
-) -> Result<[AssignedCell<Fr, Fr>; 10], halo2_proofs::plonk::Error> {
-    let chunk_pi_hash_rlc_cells = parse_pi_hash_rlc_cells(data_rlc_cells);
-
-    let one = rlc_config.load_private(region, &Fr::one(), offset)?;
-    let one_cell = rlc_config.one_cell(one.cell().region_index);
-    region.constrain_equal(one.cell(), one_cell)?;
-
-    let mut chunk_are_valid = vec![one];
-
-    for i in 1..MAX_AGG_SNARKS {
-        let is_padding = rlc_config.is_equal(
-            region,
-            chunk_pi_hash_rlc_cells[i - 1],
-            chunk_pi_hash_rlc_cells[i],
-            offset,
-        )?;
-        chunk_are_valid.push(rlc_config.not(region, &is_padding, offset)?);
-    }
-
-    for (i, (e, f)) in chunk_pi_hash_rlc_cells
-        .iter()
-        .zip(chunk_are_valid.iter())
-        .enumerate()
-    {
-        log::trace!("{i}-th chunk rlc:      {:?}", e.value());
-        log::trace!("{i}-th chunk is valid: {:?}", f.value());
-    }
-
-    Ok(chunk_are_valid.try_into().unwrap())
 }
 
 // Input a list of flags whether the snark is valid

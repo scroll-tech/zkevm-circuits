@@ -269,9 +269,20 @@ impl Circuit<Fr> for AggregationCircuit {
             end_timer!(timer);
 
             let timer = start_timer!(|| ("assign hash cells").to_string());
-            let hash_digest_cells =
-                assign_batch_hashes(&config, &mut layouter, challenges, &preimages)
-                    .map_err(|_e| Error::ConstraintSystemFailure)?;
+            let chunks_are_valid = self
+                .batch_hash
+                .chunks_with_padding
+                .iter()
+                .map(|chunk| !chunk.is_padding)
+                .collect::<Vec<_>>();
+            let hash_digest_cells = assign_batch_hashes(
+                &config,
+                &mut layouter,
+                challenges,
+                &chunks_are_valid,
+                &preimages,
+            )
+            .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);
             hash_digest_cells
         };
