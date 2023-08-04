@@ -121,6 +121,7 @@ for i in 1 ... n:
 This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
 8. batch data hash is correct w.r.t. its RLCs
+9. is_final_cells are set correctly
 
 ### Handling dynamic inputs
 
