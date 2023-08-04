@@ -114,8 +114,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // get the following parameters by running
         // `cargo test --release --package zkevm-circuits --lib sig_circuit::test::sign_verify --
         // --nocapture`
-        // - num_advice: 44
-        // - num_lookup_advice: 6
+        // - num_advice: 56
+        // - num_lookup_advice: 8
         // - num_fixed: 1
         // - lookup_bits: 19
         // - limb_bits: 88
@@ -126,7 +126,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             meta,
             FpStrategy::Simple,
             &num_advice,
-            &[6],
+            &[8],
             1,
             LOG_TOTAL_NUM_ROWS - 1,
             88,
