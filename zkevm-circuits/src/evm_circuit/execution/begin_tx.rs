@@ -938,6 +938,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
         let tx_l1_fee = if tx.tx_type.is_l1_msg() {
+            log::trace!("tx is l1msg and l1 fee is 0");
             0
         } else {
             tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0
