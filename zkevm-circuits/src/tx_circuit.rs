@@ -53,12 +53,12 @@ use crate::{
 };
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
+use halo2_proofs::plonk::Fixed;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
-use halo2_proofs::plonk::{Fixed, TableColumn};
 
 use crate::{
-    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID},
+    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID, U16Table},
     util::rlc_be_bytes,
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
@@ -106,7 +106,7 @@ pub struct TxCircuitConfig<F: Field> {
     // Whether tag's RLP-encoded value is 0x80 = rlp([])
     is_none: Column<Advice>,
 
-    u16_table: TableColumn,
+    u16_table: U16Table,
 
     /// Verify if the tx_id is zero or not.
     tx_id_is_zero: IsZeroConfig<F>,
@@ -165,6 +165,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     pub rlp_table: RlpTable,
     /// SigTable
     pub sig_table: SigTable,
+    /// Reusable u16 lookup table,
+    pub u16_table: U16Table,
     /// Challenges
     pub challenges: crate::util::Challenges<Expression<F>>,
 }
@@ -181,6 +183,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             keccak_table,
             rlp_table,
             sig_table,
+            u16_table,
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -200,9 +203,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // columns for accumulating length and gas_cost of call_data
         let is_final = meta.advice_column();
         let calldata_gas_cost_acc = meta.advice_column();
-
-        // fixed column for showing (tx_id' - tx_id) < 2^16
-        let u16_table = meta.lookup_table_column();
 
         // booleans to reduce degree
         let is_l1_msg = meta.advice_column();
@@ -742,7 +742,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let lookup_condition =
                 and::expr([q_enable, is_calldata, not::expr(tx_id_next_is_zero)]);
 
-            vec![(lookup_condition * (tx_id_next - tx_id), u16_table)]
+            vec![(lookup_condition * (tx_id_next - tx_id), u16_table.into())]
         });
 
         meta.create_gate("tx call data bytes", |meta| {
@@ -1171,26 +1171,6 @@ impl<F: Field> TxCircuitConfig<F> {
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
-    }
-
-    /// Load ECDSA RangeChip table.
-    pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_table(
-            || "u16 fixed table",
-            |mut table| {
-                for i in 0..(1 << 16) {
-                    table.assign_cell(
-                        || format!("u16_row_{i}"),
-                        self.u16_table,
-                        i,
-                        || Value::known(F::from(i as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )?;
-
-        Ok(())
     }
 
     /// Assigns a tx circuit row and returns the assigned cell of the value in
@@ -2043,8 +2023,6 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 }
             })
             .collect::<Result<Vec<SignData>, Error>>()?;
-
-        config.load_aux_tables(layouter)?;
 
         // check if tx.caller_address == recovered_pk
         let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
