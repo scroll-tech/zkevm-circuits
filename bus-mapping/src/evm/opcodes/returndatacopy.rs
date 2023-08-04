@@ -63,7 +63,11 @@ fn gen_returndatacopy_step(
         (CallContextField::LastCalleeId, last_callee_id.into()),
         (
             CallContextField::LastCalleeReturnDataOffset,
-            last_callee_return_data_offset.into(),
+            if return_data_len == 0 {
+                0.into()
+            } else {
+                last_callee_return_data_offset.into()
+            },
         ),
         (
             CallContextField::LastCalleeReturnDataLength,

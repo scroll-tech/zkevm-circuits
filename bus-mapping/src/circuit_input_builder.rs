@@ -525,7 +525,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
                 if geth_step.op.is_push_with_data() {
-                    format!("{:?}", geth_trace.struct_logs[index + 1].stack.last())
+                    format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
@@ -577,7 +577,13 @@ impl<'a> CircuitInputBuilder {
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )
-                } else {
+                } else if matches!(geth_step.op, OpcodeId::RETURN) {
+		    format!(
+                        "{:?} {:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                    )
+		} else {
                     "".to_string()
                 }
             );

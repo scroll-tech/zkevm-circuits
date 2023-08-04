@@ -93,6 +93,9 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &witness::Block<Fr>) -> Moc
     MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
 }
 fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
+    if *CIRCUIT == "none" {
+        return Vec::new();
+    }
     let prover = if *CIRCUIT == "evm" {
         test_with::<EvmCircuit<Fr>>(block)
     } else if *CIRCUIT == "copy" {
@@ -153,7 +156,7 @@ async fn test_circuit_all_block() {
             return;
         }
 
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         let errs = test_witness_block(&block);
         log::info!(
             "test {} circuit, block number: {} err num {:?}",

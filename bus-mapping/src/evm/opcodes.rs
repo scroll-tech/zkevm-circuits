@@ -1090,6 +1090,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, false)?;
+    state.handle_return(&mut exec_step, geth_steps, true)?;
     Ok(vec![exec_step])
 }
