@@ -337,7 +337,7 @@ impl Circuit<Fr> for AggregationCircuit {
                             );
 
                             region.constrain_equal(
-                                // in the keccak table, the input and output date have different
+                                // in the keccak table, the input and output data have different
                                 // endianess
                                 chunk_pi_hash_digests[i][j * 8 + k].cell(),
                                 snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].cell(),
