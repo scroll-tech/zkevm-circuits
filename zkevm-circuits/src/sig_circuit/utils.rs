@@ -17,7 +17,7 @@ pub(super) const MAX_NUM_SIG: usize = 32;
 // We set CELLS_PER_SIG = 535000 to allows for a few buffer
 pub(super) const CELLS_PER_SIG: usize = 535000;
 // Total number of rows allocated for ecdsa chip
-pub(super) const LOG_TOTAL_NUM_ROWS: usize = 19;
+pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed
 pub(super) const COLUMN_NUM_LIMIT: usize = 150;
 

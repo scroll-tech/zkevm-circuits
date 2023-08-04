@@ -83,6 +83,7 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     copy_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
+    geth_data_modifiers: Vec<Box<dyn Fn(&mut GethData)>>,
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
@@ -111,6 +112,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 ), Ok(()));
             }),
             block_modifiers: vec![],
+            geth_data_modifiers: vec![],
         }
     }
 
@@ -182,6 +184,17 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self.block_modifiers.push(modifier);
         self
     }
+
+    #[allow(clippy::type_complexity)]
+    /// Allows to provide modifier functions for the [`GethData`] that will be
+    /// generated within this builder.
+    ///
+    /// That allow some test (like precompile) require a modified geth exec
+    /// results
+    pub fn geth_data_modifier(mut self, modifier: Box<dyn Fn(&mut GethData)>) -> Self {
+        self.geth_data_modifiers.push(modifier);
+        self
+    }
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
@@ -199,7 +212,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
-            let block: GethData = self.test_ctx.unwrap().into();
+            let mut block: GethData = self.test_ctx.unwrap().into();
+            for modifier_fn in self.geth_data_modifiers {
+                modifier_fn.as_ref()(&mut block);
+            }
             let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
                 .new_circuit_input_builder();
             builder

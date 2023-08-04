@@ -436,7 +436,7 @@ fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
     let bt_high = Fr::from_u128(u128::from_be_bytes(first_16bytes));
     let bt_low = Fr::from_u128(u128::from_be_bytes(last_16bytes));
 
-    let hash = Fr::hash([bt_high, bt_low]);
+    let hash = Fr::hash_with_domain([bt_high, bt_low], Fr::from(512));
 
     U256::from_little_endian(hash.to_repr().as_ref())
 }
@@ -480,15 +480,17 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
     let mut path_part: BigUint = Default::default();
     let mut path = Vec::new();
 
-    for (left, right) in trie_proof.path.iter() {
+    for ((left, right), &node_type) in trie_proof.path.iter().zip(&trie_proof.path_type) {
         let is_bit_one = key.bit(0);
         path.push(if is_bit_one {
             SMTNode {
+                node_type,
                 value: smt_hash_from_u256(right),
                 sibling: smt_hash_from_u256(left),
             }
         } else {
             SMTNode {
+                node_type,
                 value: smt_hash_from_u256(left),
                 sibling: smt_hash_from_u256(right),
             }
@@ -501,6 +503,7 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
     }
 
     let leaf = trie_proof.key.as_ref().map(|h| SMTNode {
+        node_type: trie_proof.key_type.expect("key type should has been set"),
         value: smt_hash_from_bytes(trie_proof.data.as_ref()),
         sibling: smt_hash_from_bytes(h.as_bytes()),
     });

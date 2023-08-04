@@ -253,6 +253,7 @@ impl From<&Transaction> for geth_types::Transaction {
             gas_tip_cap: tx.gas_tip_cap,
             rlp_unsigned_bytes: tx.rlp_unsigned_bytes.clone(),
             rlp_bytes: tx.rlp_bytes.clone(),
+            tx_type: tx.tx_type,
             ..Default::default()
         }
     }
