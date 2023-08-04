@@ -395,7 +395,6 @@ impl RlcConfig {
 
         let bit_cells = bits
             .iter()
-            .take(254) // hard coded for BN curve
             .map(|&bit| {
                 let cell = self.load_private(region, &Fr::from(bit as u64), offset)?;
                 self.enforce_binary(region, &cell, offset)?;
