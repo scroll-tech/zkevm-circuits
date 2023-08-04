@@ -667,6 +667,8 @@ pub mod tests {
                 .push(32, self.gas)
                 .write_op(call_op)
                 .write_op(OpcodeId::POP);
+            code.write_op(OpcodeId::RETURNDATASIZE)
+                .write_op(OpcodeId::POP);
             for (offset, _) in self.stack_value.iter().rev() {
                 code.push(32, *offset).write_op(OpcodeId::MLOAD);
             }
