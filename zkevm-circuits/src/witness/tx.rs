@@ -938,7 +938,7 @@ pub(super) fn tx_convert(
                 debug_assert!(next_block_num >= tx.block_num);
                 (tx.block_num..next_block_num)
                     .map(|block_num| ExecStep {
-                        rw_counter: rw_counter.clone(),
+                        rw_counter,
                         execution_state: ExecutionState::EndInnerBlock,
                         block_num,
                         ..Default::default()
