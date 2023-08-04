@@ -66,6 +66,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
+        let is_address_collision = callee_account.code_hash != CodeDB::empty_code_hash();
         if !callee_exists && callee.value.is_zero() {
             state.sdb.get_account_mut(&address).1.storage.clear();
         }
@@ -170,7 +171,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // operation happens in evm create() method before checking
         // ErrContractAddressCollision
         let code_hash_previous = if callee_exists {
-            if is_precheck_ok {
+            if is_precheck_ok && is_address_collision {
                 // CREATE2 may cause address collision error. And for a tricky
                 // case of CREATE, it could also cause this error. e.g. the `to`
                 // field of transaction is set to the calculated contract
@@ -198,12 +199,12 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             code_hash_previous.to_word(),
         );
 
-        if is_precheck_ok && !callee_exists {
+        if is_precheck_ok && !is_address_collision {
             state.transfer(
                 &mut exec_step,
                 callee.caller_address,
                 callee.address,
-                true,
+                true, // since `must_create` is true, the `receiver_exists` is unused
                 true,
                 callee.value,
             )?;
@@ -311,7 +312,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         state.block.sha3_inputs.push(keccak_input);
         state.block.sha3_inputs.push(initialization_code);
 
-        if length == 0 || callee_exists {
+        if length == 0 || is_address_collision {
             for (field, value) in [
                 (CallContextField::LastCalleeId, 0.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
