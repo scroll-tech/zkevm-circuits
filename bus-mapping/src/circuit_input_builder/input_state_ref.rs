@@ -1282,7 +1282,14 @@ impl<'a> CircuitInputStateRef<'a> {
             OpcodeId::REVERT | OpcodeId::RETURN => {
                 let offset = geth_step.stack.nth_last(0)?;
                 let length = geth_step.stack.nth_last(1)?;
-                [offset, length]
+                // This is the convention we are using for memory addresses so that there is no
+                // memory expansion cost when the length is 0.
+                // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
+                if length.is_zero() {
+                    [Word::zero(); 2]
+                } else {
+                    [offset, length]
+                }
             }
             _ => [Word::zero(), Word::zero()],
         };

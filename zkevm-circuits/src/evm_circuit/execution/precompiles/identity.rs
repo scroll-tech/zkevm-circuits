@@ -56,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             is_success.expr(),
             0.expr(),
             0.expr(),
-            0.expr(),
+            return_data_length.expr(),
             0.expr(),
             0.expr(),
         );
