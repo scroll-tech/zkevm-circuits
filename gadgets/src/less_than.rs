@@ -25,7 +25,7 @@ pub trait LtInstruction<F: FieldExt> {
     ) -> Result<(), Error>;
 
     #[cfg(test)]
-    /// Load the u16 lookup table.
+    /// Load the u8 lookup table.
     fn dev_load(&self, layouter: &mut impl halo2_proofs::circuit::Layouter<F>)
         -> Result<(), Error>;
 }
@@ -155,10 +155,10 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
         &self,
         layouter: &mut impl halo2_proofs::circuit::Layouter<F>,
     ) -> Result<(), Error> {
-        const RANGE: usize = u16::MAX as usize;
+        const RANGE: usize = u8::MAX as usize;
 
         layouter.assign_table(
-            || "load u16 range check table",
+            || "load u8 range check table",
             |mut table| {
                 for i in 0..=RANGE {
                     table.assign_cell(
