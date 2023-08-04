@@ -217,9 +217,10 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
     fn new_from_block(block: &crate::witness::Block<F>) -> Self {
+        assert!(block.circuits_params.max_txs <= MAX_NUM_SIG);
+
         SigCircuit {
-            // TODO: seperate max_verif with max_txs?
-            max_verif: block.circuits_params.max_txs,
+            max_verif: MAX_NUM_SIG,
             signatures: block.get_sign_data(true),
             _marker: Default::default(),
         }
@@ -254,13 +255,18 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
         let row_num = Self::min_num_rows();
 
-        let tx_count = block.txs.len();
-        let max_tx_count = block.circuits_params.max_txs;
+        let ecdsa_verif_count = block.txs.iter().filter(|tx| !tx.tx_type.is_l1_msg()).count()
+            + block.precompile_events.get_ecrecover_events().len();
+        // Reserve one ecdsa verification for padding tx such that the bad case in which some tx
+        // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
+        // circuit won't have more space for the padding tx's ECDSA verification. Then the
+        // prover won't be able to produce any valid proof.
+        let max_num_verif = MAX_NUM_SIG - 1;
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
         // This functionality allows l2geth to decide if additional ops can be added.
-        let min_row_num = (row_num / max_tx_count) * tx_count;
+        let min_row_num = (row_num / max_num_verif) * ecdsa_verif_count;
 
         (min_row_num, row_num)
     }

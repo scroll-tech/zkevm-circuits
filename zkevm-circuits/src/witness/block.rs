@@ -111,23 +111,17 @@ impl<F: Field> Block<F> {
         let mut signatures: Vec<SignData> = self
             .txs
             .iter()
-            .map(|tx| {
-                if tx.tx_type.is_l1_msg() {
-                    // dummy signature
-                    Ok(SignData::default())
-                } else {
-                    tx.sign_data()
-                }
-            })
+            // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
         signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
         if padding {
-            let max_verif = self.circuits_params.max_txs;
-            signatures.resize(
-                max_verif,
-                Transaction::dummy(self.chain_id).sign_data().unwrap(),
-            )
+            if self.txs.len() < self.circuits_params.max_txs {
+                // padding tx's sign data
+                signatures.push(Transaction::dummy(self.chain_id).sign_data().unwrap());
+            }
         }
         signatures
     }
