@@ -102,11 +102,9 @@ impl<F: Field> Block<F> {
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
         signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
-        if padding {
-            if self.txs.len() < self.circuits_params.max_txs {
-                // padding tx's sign data
-                signatures.push(Transaction::dummy(self.chain_id).sign_data().unwrap());
-            }
+        if padding && self.txs.len() < self.circuits_params.max_txs {
+            // padding tx's sign data
+            signatures.push(Transaction::dummy(self.chain_id).sign_data().unwrap());
         }
         signatures
     }
