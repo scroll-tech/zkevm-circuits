@@ -1277,7 +1277,8 @@ impl<'a> CircuitInputStateRef<'a> {
             OpcodeId::STOP => [Word::zero(); 2],
             OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::STATICCALL | OpcodeId::DELEGATECALL => {
                 // must be precompile
-                [Word::zero(), self.caller_ctx()?.return_data.len().into()]
+                // FIXME: self.caller_ctx()?.return_data.len().into()
+                [Word::zero(), Word::zero()]
             }
             OpcodeId::REVERT | OpcodeId::RETURN => {
                 let offset = geth_step.stack.nth_last(0)?;

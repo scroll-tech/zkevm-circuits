@@ -92,7 +92,7 @@ impl RwMap {
                 }
             }
         }
-        log::warn!("rw value check err num: {}", errs.len());
+        log::info!("rw value check err num: {}", errs.len());
         for e in errs {
             log::warn!("err is {:?}", e);
         }

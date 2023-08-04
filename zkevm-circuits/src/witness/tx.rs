@@ -920,6 +920,9 @@ pub(super) fn tx_convert(
                 call_data_length: call.call_data_length,
                 return_data_offset: call.return_data_offset,
                 return_data_length: call.return_data_length,
+                last_callee_id: call.last_callee_id,
+                last_callee_return_data_length: call.last_callee_return_data_length,
+                last_callee_return_data_offset: call.last_callee_return_data_offset,
                 value: call.value,
                 is_success: call.is_success,
                 is_persistent: call.is_persistent,
@@ -933,16 +936,14 @@ pub(super) fn tx_convert(
             .chain({
                 let rw_counter = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
                 debug_assert!(next_block_num >= tx.block_num);
-                let end_inner_block_steps = (tx.block_num..next_block_num)
+                (tx.block_num..next_block_num)
                     .map(|block_num| ExecStep {
-                        rw_counter,
+                        rw_counter: rw_counter.clone(),
                         execution_state: ExecutionState::EndInnerBlock,
                         block_num,
                         ..Default::default()
                     })
-                    .collect::<Vec<ExecStep>>();
-                log::trace!("end_inner_block_steps {:?}", end_inner_block_steps);
-                end_inner_block_steps
+                    .collect::<Vec<ExecStep>>()
             })
             .collect(),
     }
