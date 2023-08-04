@@ -110,7 +110,9 @@ pub(crate) struct ExtractedHashCells {
 // 5. batch and all its chunks use a same chain id
 // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
 // padded
-// 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
+// 7. the hash input length are correct
+// - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+// - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
 pub(crate) fn assign_batch_hashes(
@@ -139,7 +141,9 @@ pub(crate) fn assign_batch_hashes(
     // 4. chunks are continuous: they are linked via the state roots
     // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
     // padded
-    // 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
+    // 7. the hash input length are correct
+    // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+    // - batch's data_hash length is 32 * number_of_valid_snarks
     // 8. batch data hash is correct w.r.t. its RLCs
     // 9. is_final_cells are set correctly
     conditional_constraints(
@@ -386,7 +390,9 @@ fn copy_constraints(
 // 4. chunks are continuous: they are linked via the state roots
 // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
 // padded
-// 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
+// 7. the hash input length are correct
+// - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+// - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
 pub(crate) fn conditional_constraints(
@@ -647,7 +653,28 @@ pub(crate) fn conditional_constraints(
                     log::trace!("{i}-th chunk is valid: {:?}", f.value());
                 }
 
-                // 7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
+                // 7. the hash input length are correct
+                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                // - batch's data_hash length is 32 * number_of_valid_snarks
+
+                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                hash_input_len_cells
+                    .iter()
+                    .skip(1)
+                    .take((MAX_AGG_SNARKS + 1) * 2)
+                    .chunks(2)
+                    .into_iter()
+                    .map(|chunk| {
+                        let cur_hash_len = chunk.last().unwrap(); // safe unwrap
+                        region.constrain_equal(
+                            cur_hash_len.cell(),
+                            rlc_config
+                                .one_hundred_and_thirty_six_cell(cur_hash_len.cell().region_index),
+                        )
+                    })
+                    .collect::<Result<(), halo2_proofs::plonk::Error>>()?;
+
+                // - batch's data_hash length is 32 * number_of_valid_snarks
                 let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
                 let const32_cell = rlc_config.thirty_two_cell(const32.cell().region_index);
                 region.constrain_equal(const32.cell(), const32_cell)?;
@@ -787,8 +814,8 @@ pub(crate) fn conditional_constraints(
                 // so a,b,c are constrained as follows
                 //
                 // #valid snarks | flags     | a | b | c
-                // 1,2,3,4       | 1, 0, 0   | 1 | 1 | 1
-                // 5,6,7,8       | 0, 1, 0   | 0 | 1 | 1
+                // 1,2,3,4       | 1, 0, 0   | 1 | - | -
+                // 5,6,7,8       | 0, 1, 0   | 0 | 1 | -
                 // 9,10          | 0, 0, 1   | 0 | 0 | 1
 
                 // first MAX_AGG_SNARKS + 1 keccak
@@ -813,12 +840,15 @@ pub(crate) fn conditional_constraints(
                     )?;
                 }
                 // last keccak
+                // we constrain a * flag1 + b * flag2 + c * flag3 == 1
                 let a = &is_final_cells[2 * (MAX_AGG_SNARKS) + 3];
                 let b = &is_final_cells[2 * (MAX_AGG_SNARKS) + 4];
                 let c = &is_final_cells[2 * (MAX_AGG_SNARKS) + 5];
-                region.constrain_equal(flag1.cell(), a.cell())?;
-                region.constrain_equal(not_flag3.cell(), b.cell())?;
-                region.constrain_equal(rlc_config.one_cell(c.cell().region_index), c.cell())?;
+                let mut left = rlc_config.mul(&mut region, a, &flag1, &mut offset)?;
+                left = rlc_config.mul_add(&mut region, b, &flag2, &left, &mut offset)?;
+                left = rlc_config.mul_add(&mut region, c, &flag3, &left, &mut offset)?;
+                region
+                    .constrain_equal(left.cell(), rlc_config.one_cell(left.cell().region_index))?;
 
                 log::trace!("rlc chip uses {} rows", offset);
                 Ok(())

@@ -119,7 +119,9 @@ for i in 1 ... n:
         chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells
 ```
 This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
-7. chunk[i]'s data_hash length is 32 * number_of_valid_snarks
+7. the hash input length are correct
+- first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+- batch's data_hash length is 32 * number_of_valid_snarks
 8. batch data hash is correct w.r.t. its RLCs
 9. is_final_cells are set correctly
 
