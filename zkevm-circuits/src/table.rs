@@ -176,7 +176,7 @@ pub enum TxFieldTag {
     /// TxHash: Hash of the transaction with the signature
     TxHash,
     /// TxType: Type of the transaction
-    TxType,    
+    TxType,
     /// The block number in which this tx is included.
     BlockNumber,
 }

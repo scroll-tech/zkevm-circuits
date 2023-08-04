@@ -377,7 +377,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 ],
             );
 
-            cb.condition(is_tx_type(meta), |cb|{
+            cb.condition(is_tx_type(meta), |cb| {
                 cb.require_equal(
                     "associated tx type to tag",
                     meta.query_advice(tx_type, Rotation::cur()),
@@ -1841,7 +1841,7 @@ impl<F: Field> TxCircuit<F> {
                             None,
                             None,
                             Value::known(F::from(tx.tx_type as u64)),
-                        ),                        
+                        ),
                         (
                             BlockNumber,
                             None,

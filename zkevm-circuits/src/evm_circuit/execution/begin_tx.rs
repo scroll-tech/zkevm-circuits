@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256, geth_types::TxType::L1Msg};
+use eth_types::{geth_types::TxType::L1Msg, Address, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -116,12 +116,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
         let tx_is_l1msg = IsEqualGadget::construct(cb, tx_type.expr(), (L1Msg as u64).expr());
-        let tx_l1_fee = cb.condition(not::expr(tx_is_l1msg.expr()), |cb|TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr()));
-        cb.condition(tx_is_l1msg.expr(), |cb|{
-            cb.require_zero(
-                "l1fee is 0 for l1msg",
-                tx_data_gas_cost.expr(),
-            );
+        let tx_l1_fee = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
+        });
+        cb.condition(tx_is_l1msg.expr(), |cb| {
+            cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
         });
         let tx_l1_fee_rw_delta = select::expr(tx_is_l1msg.expr(), 0.expr(), tx_l1_fee.rw_delta());
 
@@ -742,8 +741,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_type
             .assign(region, offset, Value::known(F::from(tx.tx_type as u64)))?;
-        self.tx_is_l1msg
-            .assign(region, offset, F::from(tx.tx_type as u64), F::from(L1Msg as u64))?;
+        self.tx_is_l1msg.assign(
+            region,
+            offset,
+            F::from(tx.tx_type as u64),
+            F::from(L1Msg as u64),
+        )?;
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.nonce)))?;
         self.tx_gas
@@ -934,7 +937,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_coinbase_warm
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
-        let tx_l1_fee = if tx.tx_type.is_l1_msg() {0} else {tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0};
+        let tx_l1_fee = if tx.tx_type.is_l1_msg() {
+            0
+        } else {
+            tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0
+        };
         let tx_l2_fee = tx.gas_price * tx.gas;
         if tx_fee != tx_l2_fee + tx_l1_fee {
             log::error!(
