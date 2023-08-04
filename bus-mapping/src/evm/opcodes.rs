@@ -770,7 +770,10 @@ pub fn gen_begin_tx_ops(
             exec_step.gas_cost = real_gas_cost;
         }
     } else {
-        debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        // EIP2930 not implemented
+        if state.tx.access_list.is_none() {
+            debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        }
     }
 
     log::trace!("begin_tx_step: {:?}", exec_step);

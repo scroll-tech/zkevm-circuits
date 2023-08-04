@@ -111,10 +111,13 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
         // halo2-ecc's ECDSA config
         //
-        // - num_advice: 36
-        // - num_lookup_advice: 17
+        // get the following parameters by running
+        // `cargo test --release --package zkevm-circuits --lib sig_circuit::test::sign_verify --
+        // --nocapture`
+        // - num_advice: 56
+        // - num_lookup_advice: 8
         // - num_fixed: 1
-        // - lookup_bits: 13
+        // - lookup_bits: 19
         // - limb_bits: 88
         // - num_limbs: 3
         //
@@ -123,9 +126,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             meta,
             FpStrategy::Simple,
             &num_advice,
-            &[17],
+            &[8],
             1,
-            13,
+            LOG_TOTAL_NUM_ROWS - 1,
             88,
             3,
             modulus::<Fp>(),
@@ -781,12 +784,12 @@ impl<F: Field> SigCircuit<F> {
 
                 // IMPORTANT: Move to Phase2 before RLC
                 log::info!("before proceeding to the next phase");
-                ctx.print_stats(&["Range"]);
 
                 #[cfg(not(feature = "onephase"))]
                 {
                     // finalize the current lookup table before moving to next phase
                     ecdsa_chip.finalize(&mut ctx);
+                    ctx.print_stats(&["ECDSA context"]);
                     ctx.next_phase();
                 }
 
@@ -843,7 +846,7 @@ impl<F: Field> SigCircuit<F> {
                 let lookup_cells = ecdsa_chip.finalize(&mut ctx);
                 log::info!("total number of lookup cells: {}", lookup_cells);
 
-                ctx.print_stats(&["Range"]);
+                ctx.print_stats(&["ECDSA context"]);
                 Ok(assigned_keccak_values_and_sigs
                     .iter()
                     .map(|a| a.1.clone())

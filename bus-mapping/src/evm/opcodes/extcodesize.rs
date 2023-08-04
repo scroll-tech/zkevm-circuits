@@ -54,7 +54,10 @@ impl Opcode for Extcodesize {
         let account = state.sdb.get_account(&address).1;
         let exists = !account.is_empty();
         let (code_hash, code_size) = if exists {
-            (account.code_hash, account.code_size)
+            (
+                account.code_hash,
+                state.code(account.code_hash)?.len().into(),
+            )
         } else {
             (H256::zero(), Word::zero())
         };
