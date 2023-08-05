@@ -800,7 +800,7 @@ mod test {
         static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
     }
 
-    fn run_test_circuits(ctx: TestContext<2, 1>) {
+    fn run_test_circuits<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_rws: 70_000,
@@ -1091,5 +1091,45 @@ mod test {
             };
             run_test_circuits(test_context(caller));
         });
+    }
+
+    #[test]
+    fn test_create2_deploy_to_non_zero_balance_address() {
+        let initialization_code = initialization_bytecode(true);
+        let root_code = creater_bytecode(initialization_code, 0.into(), true, true);
+        let caller = Account {
+            address: *CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(eth(10));
+                accs[1].account(&caller);
+                accs[2]
+                    .address(address!("0x4e74035cefd0998ea16ab5145f7713620a9eb0c5"))
+                    .balance(eth(10));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(word!("0x2386F26FC10000"));
+            },
+            |block, _| block,
+        )
+        .unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 200,
+                max_copy_rows: 100,
+                ..Default::default()
+            })
+            .run();
     }
 }

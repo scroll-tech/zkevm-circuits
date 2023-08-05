@@ -525,7 +525,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
                 if geth_step.op.is_push_with_data() {
-                    format!("{:?}", geth_trace.struct_logs[index + 1].stack.last())
+                    format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
@@ -577,7 +577,13 @@ impl<'a> CircuitInputBuilder {
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )
-                } else {
+                } else if matches!(geth_step.op, OpcodeId::RETURN) {
+		    format!(
+                        "{:?} {:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                    )
+		} else {
                     "".to_string()
                 }
             );
@@ -1028,10 +1034,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         _prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = BlockHead::new(self.chain_id, history_hashes, eth_block)?;
-        let mut builder =
-            CircuitInputBuilder::new_from_headers(self.circuits_params, sdb, code_db, &[block]);
-
+        let block = Block::new(
+            self.chain_id,
+            history_hashes,
+            eth_block,
+            self.circuits_params,
+        )?;
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, &block);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }
