@@ -99,7 +99,7 @@ fn test_l1_msg_tx() {
         _marker: Default::default(),
     };
 
-    let mock_prover = MockProver::run(17, &rlp_circuit, vec![]);
+    let mock_prover = MockProver::run(14, &rlp_circuit, vec![]);
     assert!(mock_prover.is_ok());
 
     let mock_prover = mock_prover.unwrap();
@@ -126,7 +126,7 @@ fn test_eip1559_tx() {
         _marker: Default::default(),
     };
 
-    let mock_prover = MockProver::run(17, &rlp_circuit, vec![]);
+    let mock_prover = MockProver::run(14, &rlp_circuit, vec![]);
     assert!(mock_prover.is_ok());
     let mock_prover = mock_prover.unwrap();
     if let Err(errors) = mock_prover.verify_par() {

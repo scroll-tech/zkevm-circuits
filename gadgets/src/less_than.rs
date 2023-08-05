@@ -207,7 +207,7 @@ mod test {
 
             // TODO: remove zk blinding factors in halo2 to restore the
             // correct k (without the extra + 2).
-            let k = (usize::BITS - $values.len().leading_zeros() + 2).max(17);
+            let k = usize::BITS - $values.len().leading_zeros() + 2;
             let circuit = TestCircuit::<Fp> {
                 values: Some($values),
                 checks: Some($checks),
@@ -224,7 +224,7 @@ mod test {
 
             // TODO: remove zk blinding factors in halo2 to restore the
             // correct k (without the extra + 2).
-            let k = (usize::BITS - $values.len().leading_zeros() + 2).max(17);
+            let k = usize::BITS - $values.len().leading_zeros() + 2;
             let circuit = TestCircuit::<Fp> {
                 values: Some($values),
                 checks: Some($checks),
@@ -265,14 +265,14 @@ mod test {
                 let q_enable = meta.complex_selector();
                 let value = meta.advice_column();
                 let check = meta.advice_column();
-                let u16_table = meta.lookup_table_column();
+                let u8_table = meta.lookup_table_column();
 
                 let lt = LtChip::configure(
                     meta,
                     |meta| meta.query_selector(q_enable),
                     |meta| meta.query_advice(value, Rotation::prev()),
                     |meta| meta.query_advice(value, Rotation::cur()),
-                    u16_table,
+                    u8_table,
                 );
 
                 let config = Self::Config {
