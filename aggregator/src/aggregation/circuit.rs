@@ -249,7 +249,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let (hash_digest_cells, num_valid_snarks) = {
+        let hash_digest_cells = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -269,16 +269,22 @@ impl Circuit<Fr> for AggregationCircuit {
             end_timer!(timer);
 
             let timer = start_timer!(|| ("assign hash cells").to_string());
-            let (hash_digest_cells, num_valid_snarks) = assign_batch_hashes(
+            let chunks_are_valid = self
+                .batch_hash
+                .chunks_with_padding
+                .iter()
+                .map(|chunk| !chunk.is_padding)
+                .collect::<Vec<_>>();
+            let hash_digest_cells = assign_batch_hashes(
                 &config,
                 &mut layouter,
                 challenges,
+                &chunks_are_valid,
                 &preimages,
-                self.batch_hash.number_of_valid_chunks,
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);
-            (hash_digest_cells, num_valid_snarks)
+            hash_digest_cells
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
@@ -331,6 +337,8 @@ impl Circuit<Fr> for AggregationCircuit {
                             );
 
                             region.constrain_equal(
+                                // in the keccak table, the input and output date have different
+                                // endianess
                                 chunk_pi_hash_digests[i][j * 8 + k].cell(),
                                 snark_inputs[i * DIGEST_LEN + (3 - j) * 8 + k].cell(),
                             )?;
@@ -370,8 +378,6 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
-
-        log::trace!("number of valid snarks: {:?}", num_valid_snarks.value());
 
         end_timer!(witness_time);
         Ok(())

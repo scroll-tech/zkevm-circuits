@@ -770,7 +770,10 @@ pub fn gen_begin_tx_ops(
             exec_step.gas_cost = real_gas_cost;
         }
     } else {
-        debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        // EIP2930 not implemented
+        if state.tx.access_list.is_none() {
+            debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        }
     }
 
     log::trace!("begin_tx_step: {:?}", exec_step);
@@ -945,6 +948,11 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
 // Add 3 RW read operations for transaction L1 fee.
 fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep) {
+    // for l1 message, no need to add rw op
+    if state.tx.tx_type.is_l1_msg() {
+        return;
+    }
+
     let tx_id = state.tx_ctx.id();
 
     let base_fee = Word::from(state.tx.l1_fee.base_fee);
@@ -1087,6 +1095,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, false)?;
+    state.handle_return(&mut exec_step, geth_steps, true)?;
     Ok(vec![exec_step])
 }

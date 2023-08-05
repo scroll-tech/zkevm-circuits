@@ -64,7 +64,7 @@ impl RlcConfig {
             let q2 = meta.query_selector(enable_challenge);
             let cs2 = q2 * (a - challenge_expr.keccak_input());
 
-            vec![cs1 + cs2]
+            vec![cs1, cs2]
         });
         Self {
             #[cfg(test)]

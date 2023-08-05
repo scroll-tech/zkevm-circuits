@@ -190,7 +190,7 @@ impl Block {
         }
     }
     /// Create a new block.
-    pub fn new<TX>(
+    pub fn new(
         chain_id: u64,
         history_hashes: Vec<Word>,
         eth_block: &eth_types::Block<eth_types::Transaction>,

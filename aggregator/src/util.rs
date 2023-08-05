@@ -43,12 +43,12 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     let mut round_ctr = 0;
 
     for preimage in preimages.iter().take(MAX_AGG_SNARKS + 1) {
-        //  136 = 17 * 8 is the size in bits of each
+        //  136 = 17 * 8 is the size in bytes of each
         //  input chunk that can be processed by Keccak circuit using absorb
         //  each chunk of size 136 needs 300 Keccak circuit rows to prove
         //  which consists of 12 Keccak rows for each of 24 + 1 Keccak circuit rounds
         //  digest only happens at the end of the last input chunk with
-        //  4 Keccak circuit rounds, so 48 Keccak rows, and 300 - 48 = 256
+        //  4 Keccak circuit rounds, so 48 Keccak rows, and 300 - 48 = 252
         let num_rounds = 1 + preimage.len() / INPUT_LEN_PER_ROUND;
         let mut preimage_padded = preimage.clone();
         preimage_padded.resize(INPUT_LEN_PER_ROUND * num_rounds, 0);
@@ -192,6 +192,9 @@ pub(crate) fn parse_hash_preimage_cells(
     Vec<&[AssignedCell<Fr, Fr>]>,
     &[AssignedCell<Fr, Fr>],
 ) {
+    // each pi hash has INPUT_LEN_PER_ROUND bytes as input
+    // keccak will pad the input with another INPUT_LEN_PER_ROUND bytes
+    // we extract all those bytes
     let batch_pi_hash_preimage = &hash_input_cells[0..INPUT_LEN_PER_ROUND * 2];
     let mut chunk_pi_hash_preimages = vec![];
     for i in 0..MAX_AGG_SNARKS {
@@ -229,6 +232,21 @@ pub(crate) fn parse_hash_digest_cells(
         chunk_pi_hash_digests,
         potential_batch_data_hash_digest,
     )
+}
+
+#[inline]
+#[allow(clippy::type_complexity)]
+pub(crate) fn parse_pi_hash_rlc_cells(
+    data_rlc_cells: &[AssignedCell<Fr, Fr>],
+) -> Vec<&AssignedCell<Fr, Fr>> {
+    data_rlc_cells
+        .iter()
+        .skip(3) // the first 3 rlc cells are pad (1) + batch pi hash (2)
+        .take(MAX_AGG_SNARKS * 2) // each chunk hash takes 2 rounds
+        .chunks(2)
+        .into_iter()
+        .map(|t| t.last().unwrap())
+        .collect()
 }
 
 #[allow(dead_code)]
