@@ -1023,6 +1023,8 @@ impl<F: Field> TxCircuitConfig<F> {
             let enable = and::expr([meta.query_fixed(q_enable, Rotation::cur()), is_l1_msg(meta)]);
             let hash_format = L1MsgHash.expr();
             let tag_value = 0x7E.expr();
+            let tag_bytes_rlc = 0x7E.expr();
+            let tag_length = 1.expr();
 
             let input_exprs = vec![
                 1.expr(), // q_enable = true
@@ -1030,8 +1032,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 hash_format,
                 RLPTxType.expr(),
                 tag_value,
-                meta.query_advice(tx_value_rlc, Rotation::cur()),
-                meta.query_advice(tx_value_length, Rotation::cur()),
+                tag_bytes_rlc,
+                tag_length,
                 1.expr(), // is_output = true
                 0.expr(), // is_none = false
             ];
@@ -1895,7 +1897,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Len),
                             Some(false),
                             None,
-                            None,
+                            Some((64 - rlp_unsigned_tx_be_bytes.len().leading_zeros() + 7) / 8),
                             Value::known(F::from(rlp_unsigned_tx_be_bytes.len() as u64)),
                         ),
                         (
@@ -1916,7 +1918,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Len),
                             Some(false),
                             None,
-                            None,
+                            Some((64 - rlp_signed_tx_be_bytes.len().leading_zeros() + 7) / 8),
                             Value::known(F::from(rlp_signed_tx_be_bytes.len() as u64)),
                         ),
                         (

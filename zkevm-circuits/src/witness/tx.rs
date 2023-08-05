@@ -454,7 +454,7 @@ impl Transaction {
                             assert!(!cur.tag.is_list());
                             is_output = true;
                             cur.tag_value_acc = Value::known(F::from(byte_value as u64));
-                            cur.tag_bytes_rlc = cur.tag_value_acc.clone();
+                            cur.tag_bytes_rlc = cur.tag_value_acc;
                             cur.tag_length = 1;
 
                             // state transitions
@@ -499,6 +499,7 @@ impl Transaction {
                                 rlp_tag = RlpTag::Len;
                             }
                             cur.tag_value_acc = Value::known(F::from(u64::from(byte_value - 0xc0)));
+                            cur.tag_length = 1;
 
                             // state transitions
                             let num_bytes_of_new_list = usize::from(byte_value - 0xc0);
@@ -658,7 +659,9 @@ impl Transaction {
                 RlpTag::Null => unreachable!("Null is not used"),
             };
             let (tag_bytes_rlc, tag_length) = match rlp_tag {
-                RlpTag::Len | RlpTag::RLC | RlpTag::GasCost => (Value::known(F::zero()), 0),
+                // Len | RLC | GasCost are just meta-info extracted from keccak input bytes
+                RlpTag::Len => (Value::known(F::zero()), cur.tag_length),
+                RlpTag::RLC | RlpTag::GasCost => (Value::known(F::zero()), 0),
                 RlpTag::Tag(_) => (cur.tag_bytes_rlc, cur.tag_length),
                 RlpTag::Null => unreachable!("Null is not used"),
             };
