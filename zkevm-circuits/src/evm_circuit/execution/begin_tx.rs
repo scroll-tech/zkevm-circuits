@@ -189,8 +189,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
-            from_bytes::expr(&tx_l1_fee.tx_l1_fee().cells[..])
-                + from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
+            select::expr(
+                tx_is_l1msg.expr(),
+                0.expr(),
+                from_bytes::expr(&tx_l1_fee.tx_l1_fee().cells[..]),
+            ) + from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
             from_bytes::expr(&tx_fee.cells[..16]),
         );
 
@@ -702,7 +705,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
-        rws.offset_add(10 + PRECOMPILE_COUNT);
+        rws.offset_add(if tx.tx_type.is_l1_msg() { 7 } else { 10 } + PRECOMPILE_COUNT);
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
