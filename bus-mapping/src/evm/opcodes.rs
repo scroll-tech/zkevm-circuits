@@ -487,35 +487,37 @@ pub fn gen_begin_tx_ops(
         // create it here
         let caller_acc = state.sdb.get_account(&caller_address).1.clone();
 
-        state.account_read(&mut exec_step, 
-            caller_address, 
-            AccountField::CodeHash, 
+        state.account_read(
+            &mut exec_step,
+            caller_address,
+            AccountField::CodeHash,
             caller_acc.code_hash_read().to_word(),
         );
 
         if caller_acc.is_empty() {
             log::info!("create account for {:?} inside l1msg tx", caller_address);
 
-            // notice the op is not reversible, since the nonce increasing is 
+            // notice the op is not reversible, since the nonce increasing is
             // inreversible
-            state.account_write(&mut exec_step, 
-                caller_address, 
-                AccountField::CodeHash, 
-                caller_acc.code_hash.to_word(), 
+            state.account_write(
+                &mut exec_step,
+                caller_address,
+                AccountField::CodeHash,
+                caller_acc.code_hash.to_word(),
                 Word::zero(),
             )?;
 
             #[cfg(feature = "scroll")]
             {
-                state.account_write(&mut exec_step, 
-                    caller_address, 
-                    AccountField::KeccakCodeHash, 
-                    caller_acc.keccak_code_hash.to_word(), 
+                state.account_write(
+                    &mut exec_step,
+                    caller_address,
+                    AccountField::KeccakCodeHash,
+                    caller_acc.keccak_code_hash.to_word(),
                     Word::zero(),
                 )?;
-            }            
+            }
         }
-
     } else {
         // else, add 3 RW read operations for transaction L1 fee.
         gen_tx_l1_fee_ops(state, &mut exec_step);
@@ -528,7 +530,6 @@ pub fn gen_begin_tx_ops(
     // + for non-scroll l1-msg tx:
     //   * caller existed: 1 (read codehash)
     //   * caller not existed: 2 (read codehash and create account)
-    
 
     for (field, value) in [
         (CallContextField::TxId, state.tx_ctx.id().into()),
@@ -997,7 +998,6 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
 // Add 3 RW read operations for transaction L1 fee.
 fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep) {
-
     let tx_id = state.tx_ctx.id();
 
     let base_fee = Word::from(state.tx.l1_fee.base_fee);

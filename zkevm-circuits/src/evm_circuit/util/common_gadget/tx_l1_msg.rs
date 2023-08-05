@@ -1,23 +1,19 @@
 use super::{CachedRegion, Cell};
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_U64,
-        util::{
-            and, select,
-            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes, U64Word,
-            math_gadget::{IsEqualGadget, IsZeroGadget}
-        },
+    evm_circuit::util::{
+        and,
+        constraint_builder::EVMConstraintBuilder,
+        math_gadget::{IsEqualGadget, IsZeroGadget},
+        select,
     },
     table::{AccountFieldTag, TxFieldTag::TxType as TxTypeField},
     util::Expr,
 };
-use bus_mapping::{
-    circuit_input_builder::{TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION},
-    l2_predeployed::l1_gas_price_oracle,
+use eth_types::{geth_types::TxType, Field, U256};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
 };
-use eth_types::{geth_types::TxType, Field, ToLittleEndian, ToScalar, U256};
-use halo2_proofs::{circuit::Value, plonk::{Error, Expression}};
 
 /// L1 Msg Transaction gadget for some extra handling
 #[derive(Clone, Debug)]
@@ -37,24 +33,41 @@ impl<F: Field> TxL1MsgGadget<F> {
         tx_id: Expression<F>,
         caller_address: Expression<F>,
     ) -> Self {
-
         let tx_type = cb.tx_context(tx_id.expr(), TxTypeField, None);
-        let tx_is_l1msg = IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
+        let tx_is_l1msg =
+            IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
         let caller_codehash = cb.query_cell_phase2();
-        let is_caller_empty = IsZeroGadget::construct(cb, "is caller address not existed", caller_codehash.expr());
+        let is_caller_empty =
+            IsZeroGadget::construct(cb, "is caller address not existed", caller_codehash.expr());
 
-        cb.condition(tx_is_l1msg.expr(), |cb|{
-            cb.account_read(caller_address.expr(), AccountFieldTag::CodeHash, caller_codehash.expr());
+        cb.condition(tx_is_l1msg.expr(), |cb| {
+            cb.account_read(
+                caller_address.expr(),
+                AccountFieldTag::CodeHash,
+                caller_codehash.expr(),
+            );
         });
 
-        cb.condition(and::expr([
-                tx_is_l1msg.expr(),
-                is_caller_empty.expr(),
-            ]), |cb|{
-            cb.account_write(caller_address.expr(), AccountFieldTag::CodeHash, cb.empty_code_hash_rlc(), 0.expr(), None);
-            #[cfg(feature = "scroll")]
-            cb.account_write(caller_address.expr(), AccountFieldTag::KeccakCodeHash, cb.empty_keccak_hash_rlc(), 0.expr(), None);
-        });
+        cb.condition(
+            and::expr([tx_is_l1msg.expr(), is_caller_empty.expr()]),
+            |cb| {
+                cb.account_write(
+                    caller_address.expr(),
+                    AccountFieldTag::CodeHash,
+                    cb.empty_code_hash_rlc(),
+                    0.expr(),
+                    None,
+                );
+                #[cfg(feature = "scroll")]
+                cb.account_write(
+                    caller_address.expr(),
+                    AccountFieldTag::KeccakCodeHash,
+                    cb.empty_keccak_hash_rlc(),
+                    0.expr(),
+                    None,
+                );
+            },
+        );
 
         Self {
             tx_type,
@@ -62,7 +75,6 @@ impl<F: Field> TxL1MsgGadget<F> {
             caller_codehash,
             is_caller_empty,
         }
-
     }
 
     pub(crate) fn assign(
@@ -72,12 +84,18 @@ impl<F: Field> TxL1MsgGadget<F> {
         tx_type: TxType,
         code_hash: U256,
     ) -> Result<(), Error> {
-
-        self.tx_type.assign(region, offset, Value::known(F::from(tx_type as u64)))?;
-        self.tx_is_l1msg.assign(region, offset, F::from(tx_type as u64), F::from(TxType::L1Msg as u64))?;
+        self.tx_type
+            .assign(region, offset, Value::known(F::from(tx_type as u64)))?;
+        self.tx_is_l1msg.assign(
+            region,
+            offset,
+            F::from(tx_type as u64),
+            F::from(TxType::L1Msg as u64),
+        )?;
         let code_hash = region.code_hash(code_hash);
         self.caller_codehash.assign(region, offset, code_hash)?;
-        self.is_caller_empty.assign_value(region, offset, code_hash)?;
+        self.is_caller_empty
+            .assign_value(region, offset, code_hash)?;
 
         Ok(())
     }
@@ -86,13 +104,16 @@ impl<F: Field> TxL1MsgGadget<F> {
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         select::expr(
             self.is_caller_empty.expr(),
-            if cfg!(feature = "scroll") {3.expr()} else {2.expr()},
-            1.expr()
+            if cfg!(feature = "scroll") {
+                3.expr()
+            } else {
+                2.expr()
+            },
+            1.expr(),
         )
     }
 
     pub(crate) fn is_l1_msg(&self) -> Expression<F> {
         self.tx_is_l1msg.expr()
     }
-
 }

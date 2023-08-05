@@ -121,7 +121,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
         });
         // the rw delta caused by l1 related handling
-        let l1_rw_delta = select::expr(tx_l1_msg.is_l1_msg(), tx_l1_msg.rw_delta(), tx_l1_fee.rw_delta());
+        let l1_rw_delta = select::expr(
+            tx_l1_msg.is_l1_msg(),
+            tx_l1_msg.rw_delta(),
+            tx_l1_fee.rw_delta(),
+        );
 
         // the cost caused by l1
         let l1_fee_cost = select::expr(tx_l1_msg.is_l1_msg(), 0.expr(), tx_l1_fee.tx_l1_fee());
@@ -705,24 +709,36 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let caller_code_hash = if tx.tx_type.is_l1_msg() {
             let caller_code_hash_pair = rws.next().account_codehash_pair();
-            assert_eq!(caller_code_hash_pair.0, caller_code_hash_pair.1, "expected a read for code hash");
+            assert_eq!(
+                caller_code_hash_pair.0, caller_code_hash_pair.1,
+                "expected a read for code hash"
+            );
             caller_code_hash_pair.0
         } else {
             U256::zero()
         };
-        self.tx_l1_msg.assign(region, offset, tx.tx_type, caller_code_hash)?;
+        self.tx_l1_msg
+            .assign(region, offset, tx.tx_type, caller_code_hash)?;
 
         rws.offset_add(
-            if tx.tx_type.is_l1_msg() { 
+            if tx.tx_type.is_l1_msg() {
                 if caller_code_hash.is_zero() {
-                    assert_eq!(tx.nonce, 0, "unexpected nonce {} when caller is not existed (must be 0)", tx.nonce);
-                    if cfg!(feature = "scroll") {10} else {9}
+                    assert_eq!(
+                        tx.nonce, 0,
+                        "unexpected nonce {} when caller is not existed (must be 0)",
+                        tx.nonce
+                    );
+                    if cfg!(feature = "scroll") {
+                        10
+                    } else {
+                        9
+                    }
                 } else {
                     8
                 }
-            } else { 
+            } else {
                 10
-            } + PRECOMPILE_COUNT
+            } + PRECOMPILE_COUNT,
         );
 
         #[cfg(feature = "shanghai")]

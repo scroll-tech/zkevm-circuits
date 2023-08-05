@@ -110,7 +110,6 @@ impl Account {
             self.code_hash
         }
     }
-    
 }
 
 /// In-memory key-value database that represents the Ethereum State Trie.
