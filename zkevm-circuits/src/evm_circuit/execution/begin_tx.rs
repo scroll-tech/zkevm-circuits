@@ -309,7 +309,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // Transfer value from caller to callee, creating account if necessary.
-        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
+        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct_with_gas_fee(
             cb,
             tx_caller_address.expr(),
             call_callee_address.expr(),

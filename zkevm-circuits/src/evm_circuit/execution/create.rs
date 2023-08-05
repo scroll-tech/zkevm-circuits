@@ -7,7 +7,7 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            common_gadget::{get_copy_bytes, TransferGadget},
+            common_gadget::{get_copy_bytes, TransferWithoutGasFeeGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -34,7 +34,6 @@ use eth_types::{
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
-
 use log::trace;
 use std::iter::once;
 
@@ -49,7 +48,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     depth: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     callee_is_success: Cell<F>,
-    transfer: TransferGadget<F>,
+    transfer: TransferWithoutGasFeeGadget<F>,
     init_code: MemoryAddressGadget<F>,
     init_code_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_ADDRESS>,
     // Init code size must be less than or equal to 49152
@@ -68,6 +67,8 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     keccak_output: Word<F>,
     // prevous code hash befor creating
     code_hash_previous: Cell<F>,
+    #[cfg(feature = "scroll")]
+    keccak_code_hash_previous: Cell<F>,
     code_hash_is_empty: IsEqualGadget<F>,
     code_hash_is_zero: IsZeroGadget<F>,
     copy_rwc_inc: Cell<F>,
@@ -84,6 +85,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
         let code_hash_previous = cb.query_cell();
+        #[cfg(feature = "scroll")]
+        let keccak_code_hash_previous = cb.query_cell_phase2();
         let opcode = cb.query_cell();
         let copy_rwc_inc = cb.query_cell();
 
@@ -306,12 +309,15 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let transfer = cb.condition(
             and::expr([is_precheck_ok.expr(), not_address_collision.expr()]),
             |cb| {
-                let tansfer_gadget = TransferGadget::construct(
+                let tansfer_gadget = TransferWithoutGasFeeGadget::construct_without_gas_fee(
                     cb,
                     create.caller_address(),
                     new_address.clone(),
                     0.expr(),
                     1.expr(),
+                    code_hash_previous.expr(),
+                    #[cfg(feature = "scroll")]
+                    keccak_code_hash_previous.expr(),
                     value.clone(),
                     &mut callee_reversion_info,
                 );
@@ -509,6 +515,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             keccak_code_hash,
             keccak_output,
             code_hash_previous,
+            #[cfg(feature = "scroll")]
+            keccak_code_hash_previous,
             code_hash_is_empty,
             code_hash_is_zero,
             copy_rwc_inc,
@@ -669,6 +677,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             rw_offset += 2;
             #[cfg(feature = "scroll")]
             {
+                let keccak_code_hash_previous = block.rws[step.rw_indices[16 + rw_offset]]
+                    .account_keccak_codehash_pair()
+                    .1;
+                self.keccak_code_hash_previous.assign(
+                    region,
+                    offset,
+                    region.word_rlc(keccak_code_hash_previous),
+                )?;
                 rw_offset += 2; // Read Write empty Keccak code hash.
             }
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
@@ -1127,7 +1143,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_rws: 200,
-                max_copy_rows: 100,
+                max_copy_rows: 200,
                 ..Default::default()
             })
             .run();
