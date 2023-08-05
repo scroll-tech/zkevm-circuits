@@ -486,10 +486,21 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     precompile_output_bytes_rlc.expr(),
                     precompile_return_bytes_rlc.expr(),
                 );
-                cb.require_equal(
-                    "precompile call: step gas cost",
-                    step_gas_cost.expr(),
-                    gas_cost.expr() + precompile_gadget.precompile_call_gas_cost.expr(),
+                cb.condition(
+                    // FIXME: skipping the gas cost checks for SHA2-256, RIPEMD-160 and BLAKE2F
+                    // until they are implemented in zkevm-circuits.
+                    not::expr(cb.next.execution_state_selector([
+                        ExecutionState::PrecompileSha256,
+                        ExecutionState::PrecompileRipemd160,
+                        ExecutionState::PrecompileBlake2f,
+                    ])),
+                    |cb| {
+                        cb.require_equal(
+                            "precompile call: step gas cost",
+                            step_gas_cost.expr(),
+                            gas_cost.expr() + precompile_gadget.precompile_call_gas_cost.expr(),
+                        );
+                    },
                 );
 
                 (
@@ -1797,7 +1808,6 @@ mod test_precompiles {
             )],
             ..Default::default()
         },
-        /*
         sha2_256: PrecompileCallArgs {
             name: "SHA2-256",
             setup_code: bytecode! {
@@ -1834,7 +1844,6 @@ mod test_precompiles {
             )],
             ..Default::default()
         },
-        */
         identity: PrecompileCallArgs {
             name: "identity",
             setup_code: bytecode! {
@@ -1979,7 +1988,6 @@ mod test_precompiles {
             max_rws: 3000,
             ..Default::default()
         },
-        /*
         blake2f: PrecompileCallArgs {
             name: "blake2f",
             setup_code: bytecode! {
@@ -2031,6 +2039,5 @@ mod test_precompiles {
             max_rws: 2000,
             ..Default::default()
         },
-        */
     );
 }
