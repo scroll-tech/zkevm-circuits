@@ -478,7 +478,11 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
         // Sanity check for transaction L1 fee.
-        let tx_l1_fee = tx.l1_fee();
+        let tx_l1_fee = if tx.tx_type.is_l1_msg() {
+            0
+        } else {
+            tx.l1_fee()
+        };
         if tx_l1_fee != geth_trace.l1_fee {
             log::error!(
                 "Mismatch tx_l1_fee: calculated = {}, real = {}",

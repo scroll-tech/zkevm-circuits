@@ -948,6 +948,11 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
 // Add 3 RW read operations for transaction L1 fee.
 fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep) {
+    // for l1 message, no need to add rw op
+    if state.tx.tx_type.is_l1_msg() {
+        return;
+    }
+
     let tx_id = state.tx_ctx.id();
 
     let base_fee = Word::from(state.tx.l1_fee.base_fee);
