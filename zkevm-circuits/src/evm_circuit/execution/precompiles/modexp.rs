@@ -10,6 +10,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
             rlc, CachedRegion, Cell,
@@ -554,6 +555,7 @@ pub struct ModExpGadget<F> {
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
+    restore_context_gadget: RestoreContextGadget<F>,
 
     input: ModExpInputs<F>,
     padding_zero: RandPowRepresent<F, INPUT_REPRESENT_BITS>,
@@ -644,6 +646,16 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output.bytes_rlc(),
         );
 
+        let restore_context_gadget = RestoreContextGadget::construct(
+            cb,
+            is_success.expr(),
+            0.expr(),
+            0.expr(),
+            input.modulus_len(),
+            0.expr(),
+            0.expr(),
+        );
+
         Self {
             is_success,
             callee_address,
@@ -652,6 +664,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             call_data_length,
             return_data_offset,
             return_data_length,
+            restore_context_gadget,
             input,
             padding_zero,
             output,
@@ -665,7 +678,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
+        block: &Block<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -692,8 +705,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             } else {
                 Vec::from([0u8; 96])
             };
-
-            //println!("garbage bytes {:?}", garbage_bytes);
 
             self.padding_zero
                 .assign(region, offset, INPUT_LIMIT - input_expected_len, None)?;
@@ -728,7 +739,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             return Err(Error::Synthesis);
         }
 
-        //println!("call success {}", call.is_success);
         self.is_success.assign(
             region,
             offset,
@@ -761,6 +771,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
+        self.restore_context_gadget
+            .assign(region, offset, block, call, step, 7)?;
 
         Ok(())
     }

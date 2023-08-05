@@ -151,8 +151,8 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb,
             is_success.expr(),
             0.expr(),
-            0.expr(),
-            0.expr(),
+            0x00.expr(), // ReturnDataOffset
+            0x40.expr(), // ReturnDataLength
             0.expr(),
             0.expr(),
         );
