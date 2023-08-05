@@ -1276,9 +1276,11 @@ impl<'a> CircuitInputStateRef<'a> {
         let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
             OpcodeId::STOP => [Word::zero(); 2],
             OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::STATICCALL | OpcodeId::DELEGATECALL => {
-                // must be precompile
-                // FIXME: self.caller_ctx()?.return_data.len().into()
-                [Word::zero(), Word::zero()]
+                let return_data_length = match exec_step.exec_state {
+                    ExecState::Precompile(_) => self.caller_ctx()?.return_data.len().into(),
+                    _ => Word::zero(),
+                };
+                [Word::zero(), return_data_length]
             }
             OpcodeId::REVERT | OpcodeId::RETURN => {
                 let offset = geth_step.stack.nth_last(0)?;
