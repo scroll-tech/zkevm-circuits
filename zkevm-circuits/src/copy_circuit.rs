@@ -634,10 +634,16 @@ impl<F: Field> CopyCircuitConfig<F> {
             .iter()
             .map(|c| c.full_length() as usize * 2)
             .sum::<usize>();
-        assert!(
-            copy_rows_needed + DISABLED_ROWS + UNUSED_ROWS <= max_copy_rows,
-            "copy rows not enough {copy_rows_needed} vs {max_copy_rows}"
-        );
+        let max_copy_rows = if max_copy_rows == 0 {
+            // dynamic
+            copy_rows_needed + DISABLED_ROWS + UNUSED_ROWS
+        } else {
+            assert!(
+                copy_rows_needed + DISABLED_ROWS + UNUSED_ROWS <= max_copy_rows,
+                "copy rows not enough {copy_rows_needed} vs {max_copy_rows}"
+            );
+            max_copy_rows
+        };
         let filler_rows = max_copy_rows - copy_rows_needed - DISABLED_ROWS;
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
@@ -1004,16 +1010,14 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        (
-            block
-                .copy_events
-                .iter()
-                .map(|c| c.full_length() as usize * 2)
-                .sum::<usize>()
-                + UNUSED_ROWS
-                + DISABLED_ROWS,
-            block.circuits_params.max_copy_rows,
-        )
+        let row_num = block
+            .copy_events
+            .iter()
+            .map(|c| c.full_length() as usize * 2)
+            .sum::<usize>()
+            + UNUSED_ROWS
+            + DISABLED_ROWS;
+        (row_num, row_num.max(block.circuits_params.max_copy_rows))
     }
 
     /// Make the assignments to the CopyCircuit

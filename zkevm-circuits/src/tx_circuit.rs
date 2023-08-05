@@ -73,7 +73,7 @@ use eth_types::geth_types::{
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 22;
+pub const TX_LEN: usize = 23;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
@@ -272,6 +272,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_sign_hash, TxSignHash);
         is_tx_tag!(is_hash, TxHash);
         is_tx_tag!(is_block_num, BlockNumber);
+        is_tx_tag!(is_tx_type, TxType);
 
         // testing if value is zero for tags
         let value_is_zero = IsZeroChip::configure(
@@ -358,6 +359,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_data(meta), Null),
                 (is_block_num(meta), Null),
                 (is_chain_id_expr(meta), Null),
+                (is_tx_type(meta), Null),
             ];
 
             cb.require_boolean(
@@ -374,6 +376,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     usize::from(L1Msg).expr(),
                 ],
             );
+
+            cb.condition(is_tx_type(meta), |cb| {
+                cb.require_equal(
+                    "associated tx type to tag",
+                    meta.query_advice(tx_type, Rotation::cur()),
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                );
+            });
 
             cb.require_equal(
                 "associated rlp_tag",
@@ -1825,6 +1835,12 @@ impl<F: Field> TxCircuit<F> {
                                         acc * challenge + F::from(byte as u64)
                                     })
                             }),
+                        ),
+                        (
+                            TxFieldTag::TxType,
+                            None,
+                            None,
+                            Value::known(F::from(tx.tx_type as u64)),
                         ),
                         (
                             BlockNumber,

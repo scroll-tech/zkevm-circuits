@@ -12,10 +12,10 @@ use halo2_proofs::{
 
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
-pub(super) const MAX_NUM_SIG: usize = 32;
-// Each ecdsa signature requires 534042 cells
-// We set CELLS_PER_SIG = 535000 to allows for a few buffer
-pub(super) const CELLS_PER_SIG: usize = 535000;
+pub(super) const MAX_NUM_SIG: usize = 128;
+// Each ecdsa signature requires 456786 cells
+// We set CELLS_PER_SIG = 457000 to allows for a few buffer
+pub(super) const CELLS_PER_SIG: usize = 457000;
 // Total number of rows allocated for ecdsa chip
 pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed

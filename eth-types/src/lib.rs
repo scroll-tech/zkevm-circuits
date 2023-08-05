@@ -284,11 +284,13 @@ pub struct EIP1186ProofResponse {
     /// The balance of the account
     pub balance: U256,
     /// The keccak hash of the code of the account
+    #[serde(default)]
     pub keccak_code_hash: H256,
     /// The poseidon hash of the code of the account
     #[serde(alias = "poseidonCodeHash")]
     pub code_hash: H256,
     /// Size of the code, i.e. code length
+    #[serde(default)]
     pub code_size: U256,
     /// The nonce of the account
     pub nonce: U256,
