@@ -7,7 +7,7 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            common_gadget::{get_copy_bytes, TransferWithoutGasFeeGadget},
+            common_gadget::{get_copy_bytes, TransferGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -48,7 +48,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     depth: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     callee_is_success: Cell<F>,
-    transfer: TransferWithoutGasFeeGadget<F>,
+    transfer: TransferGadget<F>,
     init_code: MemoryAddressGadget<F>,
     init_code_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_ADDRESS>,
     // Init code size must be less than or equal to 49152
@@ -309,7 +309,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let transfer = cb.condition(
             and::expr([is_precheck_ok.expr(), not_address_collision.expr()]),
             |cb| {
-                let tansfer_gadget = TransferWithoutGasFeeGadget::construct_without_gas_fee(
+                let tansfer_gadget = TransferGadget::construct_without_gas_fee(
                     cb,
                     create.caller_address(),
                     new_address.clone(),
