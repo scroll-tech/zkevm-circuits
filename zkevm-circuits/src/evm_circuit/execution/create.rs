@@ -309,7 +309,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let transfer = cb.condition(
             and::expr([is_precheck_ok.expr(), not_address_collision.expr()]),
             |cb| {
-                let tansfer_gadget = TransferGadget::construct_without_gas_fee(
+                let tansfer_gadget = TransferGadget::construct(
                     cb,
                     create.caller_address(),
                     new_address.clone(),

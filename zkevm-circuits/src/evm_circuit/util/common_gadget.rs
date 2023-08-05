@@ -493,7 +493,7 @@ impl<F: Field> TransferMayWithGasFeeGadgetInner<F> {
 
 impl<F: Field> TransferMayWithGasFeeGadget<F, UpdateBalanceGadget<F, 2, false>> {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn construct_with_gas_fee(
+    pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
@@ -561,7 +561,7 @@ impl<F: Field> TransferMayWithGasFeeGadget<F, UpdateBalanceGadget<F, 2, false>> 
 
 impl<F: Field> TransferMayWithGasFeeGadget<F, ()> {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn construct_without_gas_fee(
+    pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,

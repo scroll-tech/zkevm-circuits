@@ -237,7 +237,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let code_hash_previous = cb.query_cell();
         let keccak_code_hash_previous = cb.query_cell_phase2();
         let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
-            TransferGadget::construct_without_gas_fee(
+            TransferGadget::construct(
                 cb,
                 caller_address.expr(),
                 callee_address.expr(),
