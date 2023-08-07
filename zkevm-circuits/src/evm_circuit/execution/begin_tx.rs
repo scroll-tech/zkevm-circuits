@@ -20,7 +20,8 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{
-        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag,
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
+        TxFieldTag as TxContextFieldTag,
     },
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
@@ -42,6 +43,7 @@ use gadgets::util::select;
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
     tx_id: Cell<F>,
+    sender_nonce: Cell<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
     tx_gas_price: Word<F>,
@@ -100,6 +102,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let tx_id = cb.query_cell();
 
+        let sender_nonce = cb.query_cell();
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
             [
                 TxContextFieldTag::Nonce,
@@ -115,6 +118,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_id.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
+            cb.require_equal(
+                "tx.nonce == sender.nonce",
+                tx_nonce.expr(),
+                sender_nonce.expr(),
+            );
             TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
         });
         cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
@@ -181,8 +189,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.account_write(
             tx_caller_address.expr(),
             AccountFieldTag::Nonce,
-            tx_nonce.expr() + 1.expr(),
-            tx_nonce.expr(),
+            sender_nonce.expr() + 1.expr(),
+            sender_nonce.expr(),
             None,
         ); // rwc_delta += 1
 
@@ -654,6 +662,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         Self {
             tx_id,
             tx_nonce,
+            sender_nonce,
             tx_gas,
             tx_gas_price,
             mul_gas_fee_by_gas,
@@ -720,26 +729,53 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_l1_msg
             .assign(region, offset, tx.tx_type, caller_code_hash)?;
 
-        rws.offset_add(
-            if tx.tx_type.is_l1_msg() {
-                if caller_code_hash.is_zero() {
-                    assert_eq!(
-                        tx.nonce, 0,
-                        "unexpected nonce {} when caller is not existed (must be 0)",
-                        tx.nonce
-                    );
-                    if cfg!(feature = "scroll") {
-                        10
-                    } else {
-                        9
-                    }
+        ////////////// RWS ////////////////
+        // if L1:
+        //      CodeHash
+        //      if empty:
+        //          CodeHash
+        //          if scroll:
+        //              KeccakCodeHash
+        // else:
+        //      3 l1 fee rw
+        // TxId
+        // RwCounterEndOfReversion
+        // IsPersistent
+        // IsSuccess
+        // Nonce
+        // Precompiles
+        // caller addr
+        // callee addr
+        // coinbase
+        rws.offset_add(if tx.tx_type.is_l1_msg() {
+            if caller_code_hash.is_zero() {
+                assert_eq!(
+                    tx.nonce, 0,
+                    "unexpected nonce {} when caller is not existed (must be 0)",
+                    tx.nonce
+                );
+                if cfg!(feature = "scroll") {
+                    2
                 } else {
-                    8
+                    1
                 }
             } else {
-                10
-            } + PRECOMPILE_COUNT,
-        );
+                0
+            }
+        } else {
+            3
+        });
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::TxId as u64));
+        rws.offset_add(3);
+
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::Account);
+        debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
+        let nonce_rw = rw.account_nonce_pair();
+
+        rws.offset_add(PRECOMPILE_COUNT + 2);
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
@@ -778,6 +814,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+        self.sender_nonce
+            .assign(region, offset, Value::known(F::from(nonce_rw.1.as_u64())))?;
         self.tx_gas
             .assign(region, offset, Value::known(F::from(tx.gas)))?;
         self.tx_gas_price

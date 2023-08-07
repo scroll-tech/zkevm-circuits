@@ -723,6 +723,10 @@ impl<'a> StepRws<'a> {
     }
     /// Increment the step rw operation offset by `offset`.
     pub(crate) fn offset_add(&mut self, offset: usize) {
+        self.offset += offset
+    }
+    /// Set the step rw operation offset by `offset`.
+    pub(crate) fn offset_set(&mut self, offset: usize) {
         self.offset = offset
     }
     /// Return the next rw operation from the step.

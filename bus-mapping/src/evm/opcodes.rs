@@ -547,13 +547,13 @@ pub fn gen_begin_tx_ops(
     }
 
     // Increase caller's nonce
-    let mut nonce_prev = state.sdb.get_nonce(&caller_address);
-    debug_assert!(nonce_prev <= state.tx.nonce);
-    while nonce_prev < state.tx.nonce {
-        state.sdb.increase_nonce(&caller_address);
-        nonce_prev = state.sdb.get_nonce(&caller_address);
-        log::warn!("[debug] increase nonce to {}", nonce_prev);
-    }
+    let nonce_prev = state.sdb.get_nonce(&caller_address);
+    //debug_assert!(nonce_prev <= state.tx.nonce);
+    //while nonce_prev < state.tx.nonce {
+    //    state.sdb.increase_nonce(&caller_address);
+    //    nonce_prev = state.sdb.get_nonce(&caller_address);
+    //    log::warn!("[debug] increase nonce to {}", nonce_prev);
+    //}
     state.account_write(
         &mut exec_step,
         caller_address,
