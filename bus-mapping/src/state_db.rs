@@ -99,6 +99,17 @@ impl Account {
             && self.code_hash.eq(&CodeDB::empty_code_hash())
             && self.code_size.is_zero()
     }
+
+    /// Return the expected read code hash, i.e. in
+    /// empty (non-existed) account it is expected
+    /// to be 0
+    pub fn code_hash_read(&self) -> Hash {
+        if self.is_empty() {
+            Hash::zero()
+        } else {
+            self.code_hash
+        }
+    }
 }
 
 /// In-memory key-value database that represents the Ethereum State Trie.

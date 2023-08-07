@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::{TransferWithGasFeeGadget, TxL1FeeGadget},
+            common_gadget::{TransferWithGasFeeGadget, TxL1FeeGadget, TxL1MsgGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -20,11 +20,12 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{
-        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag,
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
+        TxFieldTag as TxContextFieldTag,
     },
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{geth_types::TxType::L1Msg, Address, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -42,8 +43,7 @@ use gadgets::util::select;
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
     tx_id: Cell<F>,
-    tx_type: Cell<F>,
-    tx_is_l1msg: IsEqualGadget<F>,
+    sender_nonce: Cell<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
     tx_gas_price: Word<F>,
@@ -88,6 +88,7 @@ pub(crate) struct BeginTxGadget<F> {
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
     is_coinbase_warm: Cell<F>,
     tx_l1_fee: TxL1FeeGadget<F>,
+    tx_l1_msg: TxL1MsgGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -101,7 +102,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let tx_id = cb.query_cell();
 
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost, tx_type] =
+        let sender_nonce = cb.query_cell();
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
             [
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
@@ -111,18 +113,30 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
                 TxContextFieldTag::TxDataGasCost,
-                TxContextFieldTag::TxType,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        let tx_is_l1msg = IsEqualGadget::construct(cb, tx_type.expr(), (L1Msg as u64).expr());
-        let tx_l1_fee = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+        let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_id.expr(), tx_caller_address.expr());
+        let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
+            cb.require_equal(
+                "tx.nonce == sender.nonce",
+                tx_nonce.expr(),
+                sender_nonce.expr(),
+            );
             TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
         });
-        cb.condition(tx_is_l1msg.expr(), |cb| {
+        cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
         });
-        let tx_l1_fee_rw_delta = select::expr(tx_is_l1msg.expr(), 0.expr(), tx_l1_fee.rw_delta());
+        // the rw delta caused by l1 related handling
+        let l1_rw_delta = select::expr(
+            tx_l1_msg.is_l1_msg(),
+            tx_l1_msg.rw_delta(),
+            tx_l1_fee.rw_delta(),
+        );
+
+        // the cost caused by l1
+        let l1_fee_cost = select::expr(tx_l1_msg.is_l1_msg(), 0.expr(), tx_l1_fee.tx_l1_fee());
 
         cb.call_context_lookup(
             1.expr(),
@@ -175,8 +189,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.account_write(
             tx_caller_address.expr(),
             AccountFieldTag::Nonce,
-            tx_nonce.expr() + 1.expr(),
-            tx_nonce.expr(),
+            sender_nonce.expr() + 1.expr(),
+            sender_nonce.expr(),
             None,
         ); // rwc_delta += 1
 
@@ -189,11 +203,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
-            select::expr(
-                tx_is_l1msg.expr(),
-                0.expr(),
-                from_bytes::expr(&tx_l1_fee.tx_l1_fee().cells[..]),
-            ) + from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
+            l1_fee_cost + from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
             from_bytes::expr(&tx_fee.cells[..16]),
         );
 
@@ -451,7 +461,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext CodeHash
                 rw_counter: Delta(
                     22.expr()
-                        + tx_l1_fee_rw_delta.expr()
+                        + l1_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr(),
@@ -507,7 +517,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - a TransferWithGasFeeGadget
                 rw_counter: Delta(
                     7.expr()
-                        + tx_l1_fee_rw_delta.expr()
+                        + l1_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr()
@@ -560,7 +570,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - a TransferWithGasFeeGadget
                     rw_counter: Delta(
                         8.expr()
-                            + tx_l1_fee_rw_delta.expr()
+                            + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
@@ -632,7 +642,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext CodeHash
                     rw_counter: Delta(
                         21.expr()
-                            + tx_l1_fee_rw_delta.expr()
+                            + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
@@ -651,9 +661,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         Self {
             tx_id,
-            tx_type,
-            tx_is_l1msg,
             tx_nonce,
+            sender_nonce,
             tx_gas,
             tx_gas_price,
             mul_gas_fee_by_gas,
@@ -690,6 +699,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             coinbase,
             is_coinbase_warm,
             tx_l1_fee,
+            tx_l1_msg,
         }
     }
 
@@ -705,7 +715,67 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
-        rws.offset_add(if tx.tx_type.is_l1_msg() { 7 } else { 10 } + PRECOMPILE_COUNT);
+
+        let caller_code_hash = if tx.tx_type.is_l1_msg() {
+            let caller_code_hash_pair = rws.next().account_codehash_pair();
+            assert_eq!(
+                caller_code_hash_pair.0, caller_code_hash_pair.1,
+                "expected a read for code hash"
+            );
+            caller_code_hash_pair.0
+        } else {
+            U256::zero()
+        };
+        self.tx_l1_msg
+            .assign(region, offset, tx.tx_type, caller_code_hash)?;
+
+        ////////////// RWS ////////////////
+        // if L1:
+        //      CodeHash
+        //      if empty:
+        //          CodeHash
+        //          if scroll:
+        //              KeccakCodeHash
+        // else:
+        //      3 l1 fee rw
+        // TxId
+        // RwCounterEndOfReversion
+        // IsPersistent
+        // IsSuccess
+        // Nonce
+        // Precompiles
+        // caller addr
+        // callee addr
+        // coinbase
+        rws.offset_add(if tx.tx_type.is_l1_msg() {
+            if caller_code_hash.is_zero() {
+                assert_eq!(
+                    tx.nonce, 0,
+                    "unexpected nonce {} when caller is not existed (must be 0)",
+                    tx.nonce
+                );
+                if cfg!(feature = "scroll") {
+                    2
+                } else {
+                    1
+                }
+            } else {
+                0
+            }
+        } else {
+            3
+        });
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::TxId as u64));
+        rws.offset_add(3);
+
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::Account);
+        debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
+        let nonce_rw = rw.account_nonce_pair();
+
+        rws.offset_add(PRECOMPILE_COUNT + 2);
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
@@ -742,16 +812,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
-        self.tx_type
-            .assign(region, offset, Value::known(F::from(tx.tx_type as u64)))?;
-        self.tx_is_l1msg.assign(
-            region,
-            offset,
-            F::from(tx.tx_type as u64),
-            F::from(L1Msg as u64),
-        )?;
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+        self.sender_nonce
+            .assign(region, offset, Value::known(F::from(nonce_rw.1.as_u64())))?;
         self.tx_gas
             .assign(region, offset, Value::known(F::from(tx.gas)))?;
         self.tx_gas_price

@@ -34,7 +34,6 @@ use eth_types::{
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
-
 use log::trace;
 use std::iter::once;
 
@@ -68,6 +67,8 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     keccak_output: Word<F>,
     // prevous code hash befor creating
     code_hash_previous: Cell<F>,
+    #[cfg(feature = "scroll")]
+    keccak_code_hash_previous: Cell<F>,
     code_hash_is_empty: IsEqualGadget<F>,
     code_hash_is_zero: IsZeroGadget<F>,
     copy_rwc_inc: Cell<F>,
@@ -83,7 +84,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
-        let code_hash_previous = cb.query_cell();
+        let code_hash_previous = cb.query_cell_phase2();
+        #[cfg(feature = "scroll")]
+        let keccak_code_hash_previous = cb.query_cell_phase2();
         let opcode = cb.query_cell();
         let copy_rwc_inc = cb.query_cell();
 
@@ -312,6 +315,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     new_address.clone(),
                     0.expr(),
                     1.expr(),
+                    code_hash_previous.expr(),
+                    #[cfg(feature = "scroll")]
+                    keccak_code_hash_previous.expr(),
                     value.clone(),
                     &mut callee_reversion_info,
                 );
@@ -509,6 +515,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             keccak_code_hash,
             keccak_output,
             code_hash_previous,
+            #[cfg(feature = "scroll")]
+            keccak_code_hash_previous,
             code_hash_is_empty,
             code_hash_is_zero,
             copy_rwc_inc,
@@ -669,6 +677,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             rw_offset += 2;
             #[cfg(feature = "scroll")]
             {
+                let keccak_code_hash_previous = block.rws[step.rw_indices[16 + rw_offset]]
+                    .account_keccak_codehash_pair()
+                    .1;
+                self.keccak_code_hash_previous.assign(
+                    region,
+                    offset,
+                    region.word_rlc(keccak_code_hash_previous),
+                )?;
                 rw_offset += 2; // Read Write empty Keccak code hash.
             }
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
@@ -800,7 +816,7 @@ mod test {
         static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
     }
 
-    fn run_test_circuits(ctx: TestContext<2, 1>) {
+    fn run_test_circuits<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_rws: 70_000,
@@ -1091,5 +1107,45 @@ mod test {
             };
             run_test_circuits(test_context(caller));
         });
+    }
+
+    #[test]
+    fn test_create2_deploy_to_non_zero_balance_address() {
+        let initialization_code = initialization_bytecode(true);
+        let root_code = creater_bytecode(initialization_code, 0.into(), true, true);
+        let caller = Account {
+            address: *CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(eth(10));
+                accs[1].account(&caller);
+                accs[2]
+                    .address(address!("0x4e74035cefd0998ea16ab5145f7713620a9eb0c5"))
+                    .balance(eth(10));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(word!("0x2386F26FC10000"));
+            },
+            |block, _| block,
+        )
+        .unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 200,
+                max_copy_rows: 200,
+                ..Default::default()
+            })
+            .run();
     }
 }

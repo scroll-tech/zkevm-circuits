@@ -361,8 +361,15 @@ impl Transaction {
             }
         );
 
-        let l1_fee = TxL1Fee::get_current_values_from_state_db(sdb);
-        let l1_fee_committed = TxL1Fee::get_committed_values_from_state_db(sdb);
+        let tx_type = TxType::get_tx_type(eth_tx);
+        let (l1_fee, l1_fee_committed) = if tx_type.is_l1_msg() {
+            Default::default()
+        } else {
+            (
+                TxL1Fee::get_current_values_from_state_db(sdb),
+                TxL1Fee::get_committed_values_from_state_db(sdb),
+            )
+        };
 
         log::debug!(
             "l1_fee: {:?}, l1_fee_committed: {:?}",
@@ -373,7 +380,7 @@ impl Transaction {
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
             hash: eth_tx.hash,
-            tx_type: TxType::get_tx_type(eth_tx),
+            tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
             nonce: eth_tx.nonce.as_u64(),
