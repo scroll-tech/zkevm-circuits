@@ -14,6 +14,8 @@ use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
+use rand::seq::index;
+use rand_chacha::rand_core::block;
 
 use crate::{
     table::{BlockTable, LookupTable, TxTable},
@@ -1306,6 +1308,9 @@ impl<F: Field> PiCircuitConfig<F> {
             ];
             let mut cum_num_txs_field = F::from(cum_num_txs as u64);
             cum_num_txs += num_txs;
+            // index_cells of same block are equal to block_number.
+            let mut index_cells = vec![];
+            let mut block_number_cell = None;
             for (row, tag) in block_ctx
                 .table_assignments(num_txs, cum_num_txs, challenges)
                 .into_iter()
@@ -1317,9 +1322,6 @@ impl<F: Field> PiCircuitConfig<F> {
                     offset,
                     || row[0],
                 )?;
-                // index_cells of same block are equal to block_number.
-                let mut index_cells = vec![];
-                let mut block_number_cell = None;
                 for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                     let cell = region.assign_advice(
                         || format!("block table row {offset}"),
@@ -1336,15 +1338,6 @@ impl<F: Field> PiCircuitConfig<F> {
                     if *column == self.block_table.value {
                         block_value_cells.push(cell);
                     }
-                }
-                for i in 0..(index_cells.len() - 1) {
-                    region.constrain_equal(index_cells[i].cell(), index_cells[i + 1].cell())?;
-                }
-                if *tag == Number {
-                    region.constrain_equal(
-                        block_number_cell.unwrap().cell(),
-                        index_cells[0].cell(),
-                    )?;
                 }
 
                 region.assign_fixed(
@@ -1382,6 +1375,12 @@ impl<F: Field> PiCircuitConfig<F> {
                     )?;
                 }
                 offset += 1;
+            }
+            // block_num == index[0]
+            region.constrain_equal(block_number_cell.unwrap().cell(), index_cells[0].cell())?;
+            // index[i] = index[i + 1]
+            for i in 0..(index_cells.len() - 1) {
+                region.constrain_equal(index_cells[i].cell(), index_cells[i + 1].cell())?;
             }
         }
 
