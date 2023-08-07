@@ -451,7 +451,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 );
 
                 let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                    is_call.expr() * not::expr(transfer.value_is_zero()) * 2.expr();
                 // +15 call context lookups for precompile.
                 let rw_counter_delta = 33.expr()
                     + is_call.expr() * 1.expr()
@@ -533,7 +533,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 //
                 // No extra lookups for STATICCALL opcode.
                 let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                    is_call.expr() * not::expr(transfer.value_is_zero()) * 2.expr();
                 // +3 call context lookups for empty accounts.
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
@@ -676,7 +676,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 //
                 // No extra lookups for STATICCALL opcode.
                 let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                    is_call.expr() * not::expr(transfer.value_is_zero()) * 2.expr();
                 let rw_counter_delta = 41.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
