@@ -5,9 +5,21 @@ mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
 
-use std::marker::PhantomData;
-
-use crate::util::is_zero::{IsZeroChip, IsZeroConfig};
+use crate::{
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    table::{LookupTable, RlpFsmRlpTable, U8Table},
+    util::{
+        is_zero::{IsZeroChip, IsZeroConfig},
+        Challenges, SubCircuit, SubCircuitConfig,
+    },
+    witness::{
+        Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
+        State::{DecodeTagStart, End},
+        Tag,
+        Tag::{BeginList, EndList, TxType},
+        Transaction,
+    },
+};
 use eth_types::Field;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
@@ -23,20 +35,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use std::marker::PhantomData;
 use strum::IntoEnumIterator;
-
-use crate::{
-    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, RlpFsmRlpTable, U8Table},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{
-        Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
-        State::{DecodeTagStart, End},
-        Tag,
-        Tag::{BeginList, EndList, TxType},
-        Transaction,
-    },
-};
 
 /// Data table allows us a lookup argument from the RLP circuit to check the byte value at an index
 /// while decoding a tx of a given format.
@@ -279,7 +279,7 @@ pub struct RlpCircuitConfig<F> {
     data_table: RlpFsmDataTable,
     /// ROM table
     rom_table: RlpFsmRomTable,
-    /// Range256 table
+    /// Range u8 table
     u8_table: U8Table,
 }
 
@@ -619,6 +619,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cmp_enabled,
                     |meta| meta.query_advice(byte_value, Rotation::cur()),
                     |_| $value.expr(),
+                    u8_table.into(),
                 );
             };
         }
@@ -629,6 +630,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cmp_enabled,
                     |_| $value.expr(),
                     |meta| meta.query_advice(byte_value, Rotation::cur()),
+                    u8_table.into(),
                 );
             };
         }
@@ -711,12 +713,14 @@ impl<F: Field> RlpCircuitConfig<F> {
             cmp_enabled,
             |meta| meta.query_advice(tag_idx, Rotation::cur()),
             |meta| meta.query_advice(tag_length, Rotation::cur()),
+            u8_table.into(),
         );
         let mlength_lte_0x20 = ComparatorChip::configure(
             meta,
             cmp_enabled,
             |meta| meta.query_advice(max_length, Rotation::cur()),
             |_meta| 0x20.expr(),
+            u8_table.into(),
         );
         let depth_check = IsEqualChip::configure(
             meta,

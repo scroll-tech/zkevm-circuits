@@ -16,17 +16,41 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     sig_circuit::SigCircuit,
     table::{
+        BlockContextFieldTag::CumNumTxs,
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
-        TxTable,
+        TxFieldTag::{
+            BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
+            CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV,
+            TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+        },
+        TxTable, U16Table, U8Table,
     },
-    util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig},
+    util::{
+        is_zero::{IsZeroChip, IsZeroConfig},
+        keccak, random_linear_combine_word as rlc, rlc_be_bytes, SubCircuit, SubCircuitConfig,
+    },
     witness,
-    witness::{rlp_fsm::Tag, RlpTag, Transaction},
+    witness::{
+        rlp_fsm::Tag,
+        Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
+        RlpTag,
+        RlpTag::{GasCost, Len, Null, RLC},
+        Tag::TxType as RLPTxType,
+        Transaction,
+    },
 };
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
-use eth_types::{sign_types::SignData, Address, Field, ToAddress, ToLittleEndian, ToScalar};
+use eth_types::{
+    geth_types::{
+        TxType,
+        TxType::{Eip155, L1Msg, PreEip155},
+    },
+    sign_types::SignData,
+    Address, Field, ToAddress, ToLittleEndian, ToScalar,
+};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     util::{and, not, select, sum, Expr},
 };
@@ -43,34 +67,11 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::{
-    table::TxFieldTag::{
-        BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
-        CallerAddress, Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost,
-        TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
-    },
-    util::is_zero::{IsZeroChip, IsZeroConfig},
-};
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::Fixed;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
-
-use crate::{
-    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID, U16Table},
-    util::rlc_be_bytes,
-    witness::{
-        Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
-        RlpTag::{GasCost, Len, Null, RLC},
-        Tag::TxType as RLPTxType,
-    },
-};
-use eth_types::geth_types::{
-    TxType,
-    TxType::{Eip155, L1Msg, PreEip155},
-};
-use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 23;
@@ -106,6 +107,7 @@ pub struct TxCircuitConfig<F: Field> {
     // Whether tag's RLP-encoded value is 0x80 = rlp([])
     is_none: Column<Advice>,
 
+    u8_table: U8Table,
     u16_table: U16Table,
 
     /// Verify if the tx_id is zero or not.
@@ -165,6 +167,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     pub rlp_table: RlpTable,
     /// SigTable
     pub sig_table: SigTable,
+    /// Reusable u8 lookup table,
+    pub u8_table: U8Table,
     /// Reusable u16 lookup table,
     pub u16_table: U16Table,
     /// Challenges
@@ -183,6 +187,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             keccak_table,
             rlp_table,
             sig_table,
+            u8_table,
             u16_table,
             challenges: _,
         }: Self::ConfigArgs,
@@ -696,6 +701,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.query_fixed(q_enable, Rotation::cur()),
             |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
             |meta| meta.query_advice(cum_num_txs, Rotation::cur()),
+            u8_table.into(),
         );
 
         meta.create_gate("tx_id <= cum_num_txs", |meta| {
@@ -885,6 +891,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_type_bits,
             rlp_tag,
             is_none,
+            u8_table,
             u16_table,
             tx_id_is_zero,
             value_is_zero,
