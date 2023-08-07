@@ -2,7 +2,6 @@
 
 use ark_std::test_rng;
 use halo2_proofs::{
-    arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
     halo2curves::bn256::Fr,
@@ -22,6 +21,7 @@ struct ArithTestCircuit {
     f5: Fr,
     f6: Fr,
     f7: Fr,
+    f8: Fr,
 }
 
 impl Circuit<Fr> for ArithTestCircuit {
@@ -63,6 +63,7 @@ impl Circuit<Fr> for ArithTestCircuit {
                 let f5 = config.load_private(&mut region, &self.f5, &mut offset)?;
                 let f6 = config.load_private(&mut region, &self.f6, &mut offset)?;
                 let f7 = config.load_private(&mut region, &self.f7, &mut offset)?;
+                let f8 = config.load_private(&mut region, &self.f8, &mut offset)?;
 
                 // unit test: addition
                 {
@@ -109,9 +110,12 @@ impl Circuit<Fr> for ArithTestCircuit {
 
                     let f1_rec = config.select(&mut region, &f1, &f2, &one, &mut offset)?;
                     region.constrain_equal(f1.cell(), f1_rec.cell())?;
+
+                    config.conditional_enforce_equal(&mut region, &f1, &f8, &one, &mut offset)?;
+                    config.conditional_enforce_equal(&mut region, &f1, &f2, &zero, &mut offset)?;
                 }
 
-                let inputs = vec![f1, f2, f3, f4];
+                let inputs = vec![f1.clone(), f2.clone(), f3, f4];
 
                 // unit test: rlc
                 {
@@ -138,16 +142,16 @@ impl Circuit<Fr> for ArithTestCircuit {
                 // unit test: decomposition
                 {
                     for _ in 0..10 {
-                        let tmp = Fr::random(&mut rng);
+                        let tmp = Fr::from(rng.next_u64());
                         let tmp = config.load_private(&mut region, &tmp, &mut offset)?;
-                        config.decomposition(&mut region, &tmp, &mut offset)?;
+                        config.decomposition(&mut region, &tmp, 64, &mut offset)?;
                     }
                 }
                 // unit test: is smaller than
                 {
                     for _ in 0..10 {
-                        let a = Fr::from(rng.next_u64());
-                        let b = Fr::from(rng.next_u64());
+                        let a = Fr::from(rng.next_u32() as u64);
+                        let b = Fr::from(rng.next_u32() as u64);
                         let c = if a < b { Fr::one() } else { Fr::zero() };
                         let a = config.load_private(&mut region, &a, &mut offset)?;
                         let b = config.load_private(&mut region, &b, &mut offset)?;
@@ -157,7 +161,7 @@ impl Circuit<Fr> for ArithTestCircuit {
                     }
 
                     // equality check
-                    let a = Fr::from(rng.next_u64());
+                    let a = Fr::from(rng.next_u32() as u64);
                     let b = a;
                     let c = Fr::zero();
                     let a = config.load_private(&mut region, &a, &mut offset)?;
@@ -166,7 +170,26 @@ impl Circuit<Fr> for ArithTestCircuit {
                     let c_rec = config.is_smaller_than(&mut region, &a, &b, &mut offset)?;
                     region.constrain_equal(c.cell(), c_rec.cell())?;
                 }
+                // unit test: is zero
+                {
+                    let should_be_false = config.is_zero(&mut region, &f1, &mut offset)?;
+                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
+                    region.constrain_equal(should_be_false.cell(), zero.cell())?;
 
+                    let should_be_true = config.is_zero(&mut region, &zero, &mut offset)?;
+                    let one = config.load_private(&mut region, &Fr::one(), &mut offset)?;
+                    region.constrain_equal(should_be_true.cell(), one.cell())?;
+                }
+                // unit test: is equal
+                {
+                    let should_be_false = config.is_equal(&mut region, &f1, &f2, &mut offset)?;
+                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
+                    region.constrain_equal(should_be_false.cell(), zero.cell())?;
+
+                    let should_be_true = config.is_equal(&mut region, &f1, &f1, &mut offset)?;
+                    let one = config.load_private(&mut region, &Fr::one(), &mut offset)?;
+                    region.constrain_equal(should_be_true.cell(), one.cell())?;
+                }
                 Ok(())
             },
         )?;
@@ -185,6 +208,7 @@ fn test_field_ops() {
     let f5 = f1 * f2 + f3; // 19
     let f6 = rlc(&[f1, f2, f3, f4], &f5);
     let f7 = Fr::zero();
+    let f8 = f1;
 
     {
         let circuit = ArithTestCircuit {
@@ -195,6 +219,7 @@ fn test_field_ops() {
             f5,
             f6,
             f7,
+            f8,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         prover.assert_satisfied();
@@ -209,6 +234,7 @@ fn test_field_ops() {
             f5,
             f6,
             f7,
+            f8,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
@@ -223,6 +249,7 @@ fn test_field_ops() {
             f5,
             f6,
             f7,
+            f8,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
@@ -237,6 +264,7 @@ fn test_field_ops() {
             f5: Fr::zero(),
             f6,
             f7,
+            f8,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
@@ -251,6 +279,7 @@ fn test_field_ops() {
             f5,
             f6: Fr::zero(),
             f7,
+            f8,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
@@ -265,6 +294,22 @@ fn test_field_ops() {
             f5,
             f6,
             f7: Fr::one(),
+            f8,
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert!(prover.verify().is_err());
+    }
+
+    {
+        let circuit = ArithTestCircuit {
+            f1,
+            f2,
+            f3,
+            f4,
+            f5,
+            f6,
+            f7,
+            f8: Fr::one(),
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());

@@ -59,6 +59,9 @@ pub(crate) struct CallOpGadget<F> {
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     transfer: TransferGadget<F>,
+    code_hash_previous: Cell<F>,
+    #[cfg(feature = "scroll")]
+    keccak_code_hash_previous: Cell<F>,
     // current handling Call* opcode's caller balance
     caller_balance_word: Word<F>,
     // check if insufficient balance case
@@ -231,6 +234,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
+        let code_hash_previous = cb.query_cell();
+        let keccak_code_hash_previous = cb.query_cell_phase2();
         let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
             TransferGadget::construct(
                 cb,
@@ -241,6 +246,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     is_precompile.expr(),
                 ]),
                 0.expr(),
+                code_hash_previous.expr(),
+                #[cfg(feature = "scroll")]
+                keccak_code_hash_previous.expr(),
                 call_gadget.value.clone(),
                 &mut callee_reversion_info,
             )
@@ -707,6 +715,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_warm_prev,
             callee_reversion_info,
             transfer,
+            code_hash_previous,
+            #[cfg(feature = "scroll")]
+            keccak_code_hash_previous,
             caller_balance_word,
             is_insufficient_balance,
             is_depth_ok,
@@ -817,9 +828,25 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let (caller_balance_pair, callee_balance_pair) =
             if is_call && is_precheck_ok && !value.is_zero() {
                 if !callee_exists {
+                    let code_hash_previous = block.rws[step.rw_indices[19 + rw_offset]]
+                        .account_codehash_pair()
+                        .1;
+                    self.code_hash_previous.assign(
+                        region,
+                        offset,
+                        region.word_rlc(code_hash_previous),
+                    )?;
                     rw_offset += 2; // codehash read and write
                     #[cfg(feature = "scroll")]
                     {
+                        let keccak_code_hash_previous = block.rws[step.rw_indices[19 + rw_offset]]
+                            .account_keccak_codehash_pair()
+                            .1;
+                        self.keccak_code_hash_previous.assign(
+                            region,
+                            offset,
+                            region.word_rlc(keccak_code_hash_previous),
+                        )?;
                         rw_offset += 2; // keccak codehash read and write
                     }
                 }

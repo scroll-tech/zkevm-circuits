@@ -68,12 +68,17 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
+        let last_callee_return_data_length = match Self::EXECUTION_STATE {
+            ExecutionState::PrecompileSha256 | ExecutionState::PrecompileRipemd160 => 0x20,
+            ExecutionState::PrecompileBlake2f => 0x40,
+            _ => unreachable!("{} should not use the base gadget", Self::EXECUTION_STATE),
+        };
         let restore_context = RestoreContextGadget::construct(
             cb,
             is_success.expr(),
             0.expr(),
-            0.expr(),
-            0.expr(),
+            0.expr(),                              // ReturnDataOffset
+            last_callee_return_data_length.expr(), // ReturnDataLength
             0.expr(),
             0.expr(),
         );

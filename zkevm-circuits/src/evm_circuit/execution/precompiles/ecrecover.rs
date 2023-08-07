@@ -1,6 +1,6 @@
 use bus_mapping::precompile::PrecompileAuxData;
 use eth_types::{Field, ToLittleEndian, ToScalar};
-use gadgets::util::Expr;
+use gadgets::util::{select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -92,8 +92,8 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb,
             is_success.expr(),
             0.expr(),
-            0.expr(),
-            0.expr(),
+            0x00.expr(),                                              // ReturnDataOffset
+            select::expr(recovered.expr(), 0x20.expr(), 0x00.expr()), // ReturnDataLength
             0.expr(),
             0.expr(),
         );

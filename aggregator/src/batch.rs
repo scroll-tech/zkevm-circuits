@@ -63,22 +63,30 @@ impl BatchHash {
         // todo: return errors instead
         for i in 0..MAX_AGG_SNARKS - 1 {
             assert_eq!(
-                chunks_with_padding[i].post_state_root,
-                chunks_with_padding[i + 1].prev_state_root,
-            );
-            assert_eq!(
                 chunks_with_padding[i].chain_id,
                 chunks_with_padding[i + 1].chain_id,
             );
             if chunks_with_padding[i + 1].is_padding {
-                assert_eq!(chunks_with_padding[i + 1].data_hash, keccak256([]).into());
                 assert_eq!(
-                    chunks_with_padding[i + 1].prev_state_root,
-                    chunks_with_padding[i + 1].post_state_root
+                    chunks_with_padding[i + 1].data_hash,
+                    chunks_with_padding[i].data_hash
                 );
                 assert_eq!(
-                    chunks_with_padding[i].withdraw_root,
-                    chunks_with_padding[i + 1].withdraw_root
+                    chunks_with_padding[i + 1].prev_state_root,
+                    chunks_with_padding[i].prev_state_root
+                );
+                assert_eq!(
+                    chunks_with_padding[i + 1].post_state_root,
+                    chunks_with_padding[i].post_state_root
+                );
+                assert_eq!(
+                    chunks_with_padding[i + 1].withdraw_root,
+                    chunks_with_padding[i].withdraw_root
+                );
+            } else {
+                assert_eq!(
+                    chunks_with_padding[i].post_state_root,
+                    chunks_with_padding[i + 1].prev_state_root,
                 );
             }
         }

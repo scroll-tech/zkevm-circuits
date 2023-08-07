@@ -55,8 +55,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             cb,
             is_success.expr(),
             0.expr(),
-            0.expr(),
-            0.expr(),
+            0x00.expr(),             // ReturnDataOffset
+            call_data_length.expr(), // ReturnDataLength
             0.expr(),
             0.expr(),
         );

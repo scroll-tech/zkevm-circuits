@@ -271,14 +271,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // written from memory addr 0 to memory addr result.len()
                 state.call_ctx_mut()?.memory.extend_at_least(result.len());
 
+                state.caller_ctx_mut()?.return_data = result.clone();
                 // mutate the caller memory.
                 let length = min(result.len(), ret_length);
                 if length > 0 {
-                    {
-                        let caller_ctx_mut = state.caller_ctx_mut()?;
-                        caller_ctx_mut.return_data = result.clone();
-                        caller_ctx_mut.memory.extend_at_least(ret_offset + length);
-                    }
+                    state
+                        .caller_ctx_mut()?
+                        .memory
+                        .extend_at_least(ret_offset + length);
                 }
 
                 for (field, value) in [
@@ -666,6 +666,8 @@ pub mod tests {
             code.push(32, self.address)
                 .push(32, self.gas)
                 .write_op(call_op)
+                .write_op(OpcodeId::POP);
+            code.write_op(OpcodeId::RETURNDATASIZE)
                 .write_op(OpcodeId::POP);
             for (offset, _) in self.stack_value.iter().rev() {
                 code.push(32, *offset).write_op(OpcodeId::MLOAD);

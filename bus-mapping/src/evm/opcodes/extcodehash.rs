@@ -56,7 +56,11 @@ impl Opcode for Extcodehash {
         let account = state.sdb.get_account(&external_address).1;
         let exists = !account.is_empty();
         let code_hash = if exists {
-            account.keccak_code_hash
+            if cfg!(feature = "scroll") {
+                account.keccak_code_hash
+            } else {
+                account.code_hash
+            }
         } else {
             H256::zero()
         };

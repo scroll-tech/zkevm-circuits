@@ -477,8 +477,59 @@ pub fn gen_begin_tx_ops(
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
-    // Add 3 RW read operations for transaction L1 fee.
-    gen_tx_l1_fee_ops(state, &mut exec_step);
+    let caller_address = call.caller_address;
+
+    if state.tx.tx_type.is_l1_msg() {
+        // for l1 message, no need to add rw op, but we must check
+        // caller for its existent status
+
+        // notice the caller must existed after a l1msg tx, so we
+        // create it here
+        let caller_acc = state.sdb.get_account(&caller_address).1.clone();
+
+        state.account_read(
+            &mut exec_step,
+            caller_address,
+            AccountField::CodeHash,
+            caller_acc.code_hash_read().to_word(),
+        );
+
+        if caller_acc.is_empty() {
+            log::info!("create account for {:?} inside l1msg tx", caller_address);
+
+            // notice the op is not reversible, since the nonce increasing is
+            // inreversible
+            state.account_write(
+                &mut exec_step,
+                caller_address,
+                AccountField::CodeHash,
+                caller_acc.code_hash.to_word(),
+                Word::zero(),
+            )?;
+
+            #[cfg(feature = "scroll")]
+            {
+                state.account_write(
+                    &mut exec_step,
+                    caller_address,
+                    AccountField::KeccakCodeHash,
+                    caller_acc.keccak_code_hash.to_word(),
+                    Word::zero(),
+                )?;
+            }
+        }
+    } else {
+        // else, add 3 RW read operations for transaction L1 fee.
+        gen_tx_l1_fee_ops(state, &mut exec_step);
+    }
+    // the rw delta before is:
+    // + for non-l1 msg tx: 3 (rw for fee oracle contrace)
+    // + for scroll l1-msg tx:
+    //   * caller existed: 1 (read codehash)
+    //   * caller not existed: 3 (read codehash and create account)
+    // + for non-scroll l1-msg tx:
+    //   * caller existed: 1 (read codehash)
+    //   * caller not existed: 2 (read codehash and create account)
 
     for (field, value) in [
         (CallContextField::TxId, state.tx_ctx.id().into()),
@@ -496,19 +547,19 @@ pub fn gen_begin_tx_ops(
     }
 
     // Increase caller's nonce
-    let caller_address = call.caller_address;
-    let mut nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
-    debug_assert!(nonce_prev <= state.tx.nonce.into());
-    while nonce_prev < state.tx.nonce.into() {
-        nonce_prev = state.sdb.increase_nonce(&caller_address).into();
-        log::warn!("[debug] increase nonce to {}", nonce_prev);
-    }
+    let nonce_prev = state.sdb.get_nonce(&caller_address);
+    //debug_assert!(nonce_prev <= state.tx.nonce);
+    //while nonce_prev < state.tx.nonce {
+    //    state.sdb.increase_nonce(&caller_address);
+    //    nonce_prev = state.sdb.get_nonce(&caller_address);
+    //    log::warn!("[debug] increase nonce to {}", nonce_prev);
+    //}
     state.account_write(
         &mut exec_step,
         caller_address,
         AccountField::Nonce,
-        nonce_prev + 1,
-        nonce_prev,
+        (nonce_prev + 1).into(),
+        nonce_prev.into(),
     )?;
 
     // Add precompile contract address to access list
@@ -770,7 +821,10 @@ pub fn gen_begin_tx_ops(
             exec_step.gas_cost = real_gas_cost;
         }
     } else {
-        debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        // EIP2930 not implemented
+        if state.tx.access_list.is_none() {
+            debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        }
     }
 
     log::trace!("begin_tx_step: {:?}", exec_step);
@@ -1087,6 +1141,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, false)?;
+    state.handle_return(&mut exec_step, geth_steps, true)?;
     Ok(vec![exec_step])
 }

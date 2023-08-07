@@ -1275,11 +1275,19 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
             OpcodeId::STOP => [Word::zero(); 2],
+            OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::STATICCALL | OpcodeId::DELEGATECALL => {
+                let return_data_length = match exec_step.exec_state {
+                    ExecState::Precompile(_) => self.caller_ctx()?.return_data.len().into(),
+                    _ => Word::zero(),
+                };
+                [Word::zero(), return_data_length]
+            }
             OpcodeId::REVERT | OpcodeId::RETURN => {
                 let offset = geth_step.stack.nth_last(0)?;
                 let length = geth_step.stack.nth_last(1)?;
                 // This is the convention we are using for memory addresses so that there is no
                 // memory expansion cost when the length is 0.
+                // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
                 if length.is_zero() {
                     [Word::zero(); 2]
                 } else {
@@ -1310,10 +1318,17 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 0
             };
-            geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost
+            geth_step.gas.0
+                - memory_expansion_gas_cost
+                - code_deposit_cost
+                - if geth_step.op == OpcodeId::SELFDESTRUCT {
+                    GasCost::SELFDESTRUCT.as_u64()
+                } else {
+                    0
+                }
         };
 
-        let caller_gas_left = geth_step_next.gas.0 - gas_refund;
+        let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).unwrap_or_else(|| panic!("caller_gas_left underflow geth_step_next.gas {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", geth_step_next.gas.0, gas_refund, exec_step, geth_step));
 
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
