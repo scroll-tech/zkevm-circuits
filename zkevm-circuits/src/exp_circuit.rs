@@ -538,11 +538,11 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         // - Rotation(1)
         // - Rotation(2)
         // - Rotation(3)
-        // - Rotation(7)
         // - Rotation(8)
         // - Rotation(9)
         // - Rotation(10)
-        // Also column col2 and col3 of are queried at 8 distinct rotations at
+        // - Rotation(11)
+        // Also column col2 and col3 of are queried at 9 distinct rotations at
         // - Rotation(0)
         // - Rotation(1)
         // - Rotation(2)
@@ -550,9 +550,10 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         // - Rotation(4)
         // - Rotation(5)
         // - Rotation(6)
-        // - Rotation(9)
-        // so returns 11 unusable rows.
-        11
+        // - Rotation(7)
+        // - Rotation(10)
+        // so returns max(8, 9) + 3 unusable rows.
+        12
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
