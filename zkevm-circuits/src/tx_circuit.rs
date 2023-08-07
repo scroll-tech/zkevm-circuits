@@ -1598,7 +1598,7 @@ impl<F: Field> TxCircuitConfig<F> {
             F::from(tx_id as u64),
             F::from(cum_num_txs.unwrap_or_default() as u64),
         )?;
-        let tx_id_gt_prev_cnt = LtChip::construct(self.tx_id_gt_prev_cnt.clone());
+        let tx_id_gt_prev_cnt = LtChip::construct(self.tx_id_gt_prev_cnt);
         tx_id_gt_prev_cnt.assign(
             region,
             *offset,
