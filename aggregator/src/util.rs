@@ -16,8 +16,6 @@ use crate::{
     constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS}
 };
 
-use std::env::var;
-
 /// Return
 /// - the indices of the rows that contain the input preimages
 /// - the indices of the rows that contain the output digest

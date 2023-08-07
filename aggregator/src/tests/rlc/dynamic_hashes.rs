@@ -24,7 +24,7 @@ use crate::{
 };
 use zkevm_circuits::keccak_circuit::{
     KeccakCircuit,
-    keccak_packed_multi::{get_num_rows_per_round, get_num_rows_per_update}
+    keccak_packed_multi::get_num_rows_per_update
 };
 
 
@@ -115,12 +115,13 @@ impl Circuit<Fr> for DynamicHashCircuit {
                 // keccak part
                 // ==============================
                 let mut data_rlc_cells = vec![];
+                let keccak_f_rows = get_num_rows_per_update();
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row =
                         config
                             .keccak_circuit_config
                             .set_row(&mut region, offset, keccak_row)?;
-                    if offset % get_num_rows_per_update() == 0 && data_rlc_cells.len() < 4 {
+                    if offset % keccak_f_rows == 0 && data_rlc_cells.len() < 4 {
                         // second element is data rlc
                         data_rlc_cells.push(row[1].clone());
                     }
