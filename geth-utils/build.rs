@@ -41,18 +41,14 @@ fn main() {
     // Files the lib depends on that should recompile the lib
     let dep_files = if cfg!(feature = "scroll") {
         vec![
-            "./l2geth/asm.go",
             "./l2geth/trace.go",
-            "./l2geth/util.go",
             "./l2geth/lib.go",
             "./l2geth/go.mod",
             "./l2geth/go.sum",
         ]
     } else {
         vec![
-            "./gethutil/asm.go",
             "./gethutil/trace.go",
-            "./gethutil/util.go",
             "./go.mod",
         ]
     };
