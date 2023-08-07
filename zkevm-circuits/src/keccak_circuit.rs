@@ -34,7 +34,7 @@ use crate::{
         split, split_uniform, transform, transform_to, Part,
     },
     table::{KeccakTable, LookupTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig, unusable_rows},
+    util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
 use eth_types::Field;
