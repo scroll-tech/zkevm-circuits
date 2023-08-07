@@ -789,6 +789,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         }
         let callee_exists = is_precompile || !account_code_hash.is_zero();
         let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
+        let caller_balance_sub_value_pair = if !tx.value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (zero, zero)
+        };
         if (!callee_exists && !tx.value.is_zero()) || tx.is_create {
             rws.next(); // codehash read
             account_code_hash = rws.next().account_codehash_pair().1;
@@ -803,11 +808,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 )?;
             }
         }
-        let mut caller_balance_sub_value_pair = (zero, zero);
-        let mut callee_balance_pair = (zero, zero);
-        if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_balance_pair();
-            callee_balance_pair = rws.next().account_balance_pair();
+        let callee_balance_pair = if !tx.value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (zero, zero)
         };
 
         self.tx_id

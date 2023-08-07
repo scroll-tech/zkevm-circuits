@@ -644,6 +644,17 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance_prev,
             sender_balance
         );
+        if !value.is_zero() {
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            )?;
+        }
         // If receiver doesn't exist, create it
         if (!receiver_exists && !value.is_zero()) || must_create {
             let account = self.sdb.get_account(&receiver).1.clone();
@@ -691,16 +702,6 @@ impl<'a> CircuitInputStateRef<'a> {
             // Skip transfer if value == 0
             return Ok(());
         }
-
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
-                value: sender_balance,
-                value_prev: sender_balance_prev,
-            },
-        )?;
 
         let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
