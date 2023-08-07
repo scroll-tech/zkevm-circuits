@@ -20,18 +20,17 @@ use snark_verifier_sdk::{
     Snark,
 };
 use zkevm_circuits::{
-    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuitConfig},
+    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuit},
     table::LookupTable,
     util::Challenges,
 };
 
 use crate::{
     constants::{
-        CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
-        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
+        CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS, MAX_KECCAK_ROUNDS
     },
     util::{
-        assert_conditional_equal, assert_equal, assert_exist, get_indices, keccak_round_capacity,
+        assert_conditional_equal, assert_equal, assert_exist, get_indices,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
     AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
@@ -164,7 +163,7 @@ pub(crate) fn extract_hash_cells(
     preimages: &[Vec<u8>],
 ) -> Result<ExtractedHashCells, Error> {
     let mut is_first_time = true;
-    let num_rows = 1 << LOG_DEGREE;
+    let keccak_f_capacity = KeccakCircuit::<Fr>::capacity_for_rows(1 << LOG_DEGREE);
 
     let timer = start_timer!(|| ("multi keccak").to_string());
     // preimages consists of the following parts
@@ -181,7 +180,7 @@ pub(crate) fn extract_hash_cells(
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
-    let witness = multi_keccak(preimages, challenges, keccak_round_capacity(num_rows))
+    let witness = multi_keccak(preimages, challenges, keccak_f_capacity)
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
     end_timer!(timer);
 
@@ -229,7 +228,7 @@ pub(crate) fn extract_hash_cells(
                         hash_output_cells.push(row.last().unwrap().clone()); // sage unwrap
                         cur_digest_index = digest_indices_iter.next();
                     }
-                    if offset % ROWS_PER_ROUND == 0 && offset / ROWS_PER_ROUND <= MAX_KECCAK_ROUNDS
+                    if keccak_row.is_final
                     {
                         // first column is is_final
                         is_final_cells.push(row[0].clone());

@@ -34,7 +34,7 @@ use crate::{
         split, split_uniform, transform, transform_to, Part,
     },
     table::{KeccakTable, LookupTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    util::{Challenges, SubCircuit, SubCircuitConfig, unusable_rows},
     witness,
 };
 use eth_types::Field;
@@ -1066,8 +1066,17 @@ impl<F: Field> KeccakCircuit<F> {
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> Option<usize> {
         if self.num_rows > 0 {
-            // Subtract two for unusable rows
-            Some(self.num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
+            Some((self.num_rows - keccak_unusable_rows()) / ((NUM_ROUNDS + 1) * get_num_rows_per_round()))
+        } else {
+            None
+        }
+    }
+
+     /// Class function. The number of keccak_f's that can be done in a circuit
+     /// with a certain number of rows
+     pub fn capacity_for_rows(num_rows: usize) -> Option<usize> {
+        if num_rows > 0 {
+            Some((num_rows - keccak_unusable_rows()) / ((NUM_ROUNDS + 1) * get_num_rows_per_round()))
         } else {
             None
         }

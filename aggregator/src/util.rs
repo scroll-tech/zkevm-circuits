@@ -9,30 +9,14 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
     gates::{flex_gate::FlexGateConfig, GateInstructions},
     AssignedValue, Context,
 };
+use zkevm_circuits::keccak_circuit::keccak_packed_multi::{get_num_rows_per_round, get_num_rows_per_update};
 
 use crate::{
     aggregation::RlcConfig,
-    constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS},
-    DEFAULT_KECCAK_ROWS, NUM_ROUNDS,
+    constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS}
 };
 
 use std::env::var;
-
-pub(crate) fn keccak_round_capacity(num_rows: usize) -> Option<usize> {
-    if num_rows > 0 {
-        // Subtract two for unusable rows
-        Some(num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
-    } else {
-        None
-    }
-}
-
-pub(crate) fn get_num_rows_per_round() -> usize {
-    var("KECCAK_ROWS")
-        .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
-        .parse()
-        .expect("Cannot parse KECCAK_ROWS env var as usize")
-}
 
 /// Return
 /// - the indices of the rows that contain the input preimages
@@ -41,6 +25,8 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     let mut preimage_indices = vec![];
     let mut digest_indices = vec![];
     let mut round_ctr = 0;
+    let keccak_inner_round_rows = get_num_rows_per_round();
+    let keccak_f_rows = get_num_rows_per_update();
 
     for preimage in preimages.iter().take(MAX_AGG_SNARKS + 1) {
         //  136 = 17 * 8 is the size in bytes of each
@@ -56,14 +42,23 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
             // indices for preimages
             for (j, _chunk) in round.chunks(8).into_iter().enumerate() {
                 for k in 0..8 {
-                    preimage_indices.push(round_ctr * 300 + j * 12 + k + 12)
+                    preimage_indices.push([
+                        round_ctr * keccak_f_rows,
+                        (j + 1) * keccak_inner_round_rows,
+                        k
+                    ].iter().sum());
                 }
             }
             // indices for digests
             if i == num_rounds - 1 {
                 for j in 0..4 {
                     for k in 0..8 {
-                        digest_indices.push(round_ctr * 300 + j * 12 + k + 252)
+                        digest_indices.push([
+                            round_ctr * keccak_f_rows,
+                            j * keccak_inner_round_rows,
+                            keccak_f_rows - keccak_inner_round_rows * (DIGEST_LEN / 8),
+                            k
+                        ].iter().sum());
                     }
                 }
             }
@@ -79,12 +74,21 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
             .enumerate()
         {
             for k in 0..8 {
-                preimage_indices.push(round_ctr * 300 + j * 12 + k + 12)
+                preimage_indices.push([
+                    round_ctr * keccak_f_rows,
+                    (j + 1) * keccak_inner_round_rows,
+                    k
+                ].iter().sum());
             }
         }
         for j in 0..4 {
             for k in 0..8 {
-                digest_indices.push(round_ctr * 300 + j * 12 + k + 252)
+                digest_indices.push([
+                    round_ctr * keccak_f_rows,
+                    j * keccak_inner_round_rows,
+                    keccak_f_rows - keccak_inner_round_rows * (DIGEST_LEN / 8),
+                    k
+                ].iter().sum());
             }
         }
         round_ctr += 1;
