@@ -31,6 +31,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
     opcode: Cell<F>,
+    // check if it is REVERT opcode
     is_revert: IsEqualGadget<F>,
 
     range: MemoryAddressGadget<F>,
@@ -294,8 +295,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             },
         );
 
-        // todo: handle revert case
-
+        // handle revert case
         cb.condition(is_revert.expr(), |cb| {
             // "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
             // constrain RwCounterEndOfReversion
@@ -354,17 +354,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         self.is_revert
             .assign(region, offset, opcode, F::from(OpcodeId::REVERT.as_u64()))?;
-
-        println!(
-            "opcode {}, is_success {}, rw_counter_end_of_reversion {}, rw_counter {}, 
-        reversible_write_counter {}, reversible_write_counter_delta {} ",
-            step.opcode.unwrap().as_u64(),
-            call.is_success,
-            call.rw_counter_end_of_reversion,
-            step.rw_counter,
-            step.reversible_write_counter,
-            step.reversible_write_counter_delta
-        );
 
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         let range = self.range.assign(region, offset, memory_offset, length)?;
