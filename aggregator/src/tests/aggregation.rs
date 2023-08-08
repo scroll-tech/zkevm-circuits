@@ -13,7 +13,7 @@ use crate::{
 
 use super::mock_chunk::MockChunkCircuit;
 
-#[ignore = "it takes too much time"]
+// #[ignore = "it takes too much time"]
 #[test]
 fn test_aggregation_circuit() {
     env_logger::init();
