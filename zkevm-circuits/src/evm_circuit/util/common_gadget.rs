@@ -16,7 +16,7 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell, CellType, Word,
+            not, or, Cell, CellType, StepRws, Word,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
@@ -654,6 +654,14 @@ pub(crate) type TransferWithGasFeeGadget<F> =
     TransferGadgetImpl<F, TransferFromWithGasFeeGadget<F>>;
 pub(crate) type TransferGadget<F> = TransferGadgetImpl<F, TransferFromGadget<F>>;
 
+#[derive(Default)]
+pub(crate) struct TransferGadgetAssignResult {
+    pub(crate) gas_fee: Option<U256>,
+    pub(crate) account_code_hash: Option<U256>,
+    #[cfg(feature = "scroll")]
+    pub(crate) account_keccak_code_hash: Option<U256>,
+}
+
 impl<F: Field> TransferWithGasFeeGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
@@ -702,7 +710,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         sender_balance_sub_fee_pair: (U256, U256),
-        sender_balance_sub_pair: (U256, U256),
+        sender_balance_sub_value_pair: (U256, U256),
         receiver_balance_pair: (U256, U256),
         value: U256,
         gas_fee: U256,
@@ -713,11 +721,64 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             region,
             offset,
             sender_balance_sub_fee_pair,
-            sender_balance_sub_pair,
+            sender_balance_sub_value_pair,
             value,
             gas_fee,
         )?;
         self.to.assign(region, offset, receiver_balance_pair, value)
+    }
+
+    pub(crate) fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        receiver_exists: bool,
+        must_create: bool,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<TransferGadgetAssignResult, Error> {
+        let sender_balance_sub_fee_pair = rws.next().account_balance_pair();
+        let sender_balance_sub_value_pair = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        let gas_fee = sender_balance_sub_fee_pair.1 - sender_balance_sub_fee_pair.0;
+        let assign_result = if (!receiver_exists && !value.is_zero()) || must_create {
+            TransferGadgetAssignResult {
+                gas_fee: Some(gas_fee),
+                account_code_hash: {
+                    rws.next(); // codehash read
+                    Some(rws.next().account_codehash_pair().1)
+                },
+                #[cfg(feature = "scroll")]
+                account_keccak_code_hash: {
+                    rws.next(); // keccak codehash read
+                    Some(rws.next().account_codehash_pair().1)
+                },
+            }
+        } else {
+            TransferGadgetAssignResult {
+                gas_fee: Some(gas_fee),
+                ..Default::default()
+            }
+        };
+        let receiver_balance_pair = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        self.assign(
+            region,
+            offset,
+            sender_balance_sub_fee_pair,
+            sender_balance_sub_value_pair,
+            receiver_balance_pair,
+            value,
+            gas_fee,
+        )?;
+
+        Ok(assign_result)
     }
 }
 

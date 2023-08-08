@@ -783,36 +783,50 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_coinbase_warm = false;
 
         let is_precompile = is_precompiled(&tx.callee_address.unwrap_or_default());
-        let mut account_code_hash = zero;
-        if !is_precompile {
-            account_code_hash = rws.next().account_codehash_pair().1;
-        }
-        let callee_exists = is_precompile || !account_code_hash.is_zero();
-        let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
-        let caller_balance_sub_value_pair = if !tx.value.is_zero() {
-            rws.next().account_balance_pair()
+        let account_code_hash = if !is_precompile {
+            rws.next().account_codehash_pair().1
         } else {
-            (zero, zero)
+            zero
         };
-        if (!callee_exists && !tx.value.is_zero()) || tx.is_create {
-            rws.next(); // codehash read
-            account_code_hash = rws.next().account_codehash_pair().1;
-            #[cfg(feature = "scroll")]
-            {
-                rws.next(); // keccak codehash read
-                let account_keccak_code_hash = rws.next().account_keccak_codehash_pair().1;
-                self.account_keccak_code_hash.assign(
-                    region,
-                    offset,
-                    region.word_rlc(account_keccak_code_hash),
-                )?;
-            }
+        let transfer_assign_result = self.transfer_with_gas_fee.assign_from_rws(
+            region,
+            offset,
+            is_precompile || !account_code_hash.is_zero(),
+            tx.is_create,
+            tx.value,
+            &mut rws,
+        )?;
+
+        let tx_fee = transfer_assign_result.gas_fee.unwrap();
+        self.tx_fee
+            .assign(region, offset, Some(tx_fee.to_le_bytes()))?;
+        log::info!(
+            "tx_fee assigned {:?}, gas price {:?}, gas {}",
+            tx_fee,
+            tx.gas_price,
+            tx.gas
+        );
+        self.account_code_hash.assign(
+            region,
+            offset,
+            region.code_hash(
+                transfer_assign_result
+                    .account_code_hash
+                    .unwrap_or(account_code_hash),
+            ),
+        )?;
+        #[cfg(feature = "scroll")]
+        {
+            self.account_keccak_code_hash.assign(
+                region,
+                offset,
+                region.word_rlc(
+                    transfer_assign_result
+                        .account_keccak_code_hash
+                        .unwrap_or(zero),
+                ),
+            )?;
         }
-        let callee_balance_pair = if !tx.value.is_zero() {
-            rws.next().account_balance_pair()
-        } else {
-            (zero, zero)
-        };
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -896,26 +910,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
-        let tx_fee = caller_balance_sub_fee_pair.1 - caller_balance_sub_fee_pair.0;
-        self.tx_fee
-            .assign(region, offset, Some(tx_fee.to_le_bytes()))?;
-        log::info!(
-            "tx_fee assigned {:?}, gas price {:?}, gas {}",
-            tx_fee,
-            tx.gas_price,
-            tx.gas
-        );
-        self.transfer_with_gas_fee.assign(
-            region,
-            offset,
-            caller_balance_sub_fee_pair,
-            caller_balance_sub_value_pair,
-            callee_balance_pair,
-            tx.value,
-            tx_fee,
-        )?;
-        self.account_code_hash
-            .assign(region, offset, region.code_hash(account_code_hash))?;
         self.call_code_hash
             .assign(region, offset, region.code_hash(call.code_hash))?;
         let untrimmed_contract_addr = {
