@@ -50,8 +50,8 @@ pub(crate) const BITS: usize = 88;
 // TODO: update me(?)
 pub const MAX_AGG_SNARKS: usize = 10;
 
-// The number of keccak rounds is the sum of
-// - batch public input hash: 2 rounds
-// - chunk's public input hash: 2 * MAX_AGG_SNARKS
-// - batch data hash: (32 * MAX_AGG_SNARKS)/INPUT_LEN_PER_ROUND
-pub(crate) const MAX_KECCAK_ROUNDS: usize = 2 + 2 * MAX_AGG_SNARKS + (32 * MAX_AGG_SNARKS) / INPUT_LEN_PER_ROUND;
+/// The number of keccak rounds is the sum of
+/// - batch public input hash: 2 rounds
+/// - chunk's public input hash: 2 * MAX_AGG_SNARKS
+/// - batch data hash: (32 * MAX_AGG_SNARKS)/INPUT_LEN_PER_ROUND
+pub(crate) const MAX_KECCAK_ROUNDS: usize = 2 * (MAX_AGG_SNARKS + 1) + (32 * MAX_AGG_SNARKS) / INPUT_LEN_PER_ROUND;
