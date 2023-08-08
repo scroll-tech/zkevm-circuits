@@ -15,7 +15,7 @@ use crate::evm_circuit::{
             CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
             MemoryExpansionGadget,
         },
-        rlc, CachedRegion, Cell, Word,
+        rlc, CachedRegion, Cell, StepRws, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -114,11 +114,11 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let mut rws = StepRws::new(block, step);
+
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_offset, size, sha3_output] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+        let [memory_offset, size, sha3_output] = [(); 3].map(|_| rws.next().stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, size)?;
@@ -138,14 +138,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             ),
         )?;
 
-        let values: Vec<u8> = get_copy_bytes(
-            block,
-            step,
-            3,
-            3 + (copy_rwc_inc as usize),
-            shift,
-            size.as_u64(),
-        );
+        let values: Vec<u8> = get_copy_bytes(&mut rws, copy_rwc_inc as usize, shift, size.as_u64());
 
         let rlc_acc = region
             .challenges()

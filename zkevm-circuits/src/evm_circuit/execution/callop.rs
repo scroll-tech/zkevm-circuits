@@ -1195,9 +1195,9 @@ mod test {
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALL,
-        // OpcodeId::CALLCODE,
-        // OpcodeId::DELEGATECALL,
-        // OpcodeId::STATICCALL,
+        OpcodeId::CALLCODE,
+        OpcodeId::DELEGATECALL,
+        OpcodeId::STATICCALL,
     ];
 
     #[test]
@@ -1242,51 +1242,51 @@ mod test {
         let stacks = [
             // With nothing
             Stack::default(),
-            // // With value
-            // Stack {
-            //     value: Word::from(10).pow(18.into()),
-            //     ..Default::default()
-            // },
-            // // With gas
-            // Stack {
-            //     gas: 100,
-            //     ..Default::default()
-            // },
-            // Stack {
-            //     gas: 100000,
-            //     ..Default::default()
-            // },
-            // // With memory expansion
-            // Stack {
-            //     cd_offset: 64.into(),
-            //     cd_length: 320,
-            //     rd_offset: Word::zero(),
-            //     rd_length: 32,
-            //     ..Default::default()
-            // },
-            // Stack {
-            //     cd_offset: Word::zero(),
-            //     cd_length: 32,
-            //     rd_offset: 64.into(),
-            //     rd_length: 320,
-            //     ..Default::default()
-            // },
-            // Stack {
-            //     cd_offset: 0xFFFFFF.into(),
-            //     cd_length: 0,
-            //     rd_offset: 0xFFFFFF.into(),
-            //     rd_length: 0,
-            //     ..Default::default()
-            // },
-            // // With memory expansion and value
-            // Stack {
-            //     cd_offset: 64.into(),
-            //     cd_length: 320,
-            //     rd_offset: 0.into(),
-            //     rd_length: 32,
-            //     value: Word::from(10).pow(18.into()),
-            //     ..Default::default()
-            // },
+            // With value
+            Stack {
+                value: Word::from(10).pow(18.into()),
+                ..Default::default()
+            },
+            // With gas
+            Stack {
+                gas: 100,
+                ..Default::default()
+            },
+            Stack {
+                gas: 100000,
+                ..Default::default()
+            },
+            // With memory expansion
+            Stack {
+                cd_offset: 64.into(),
+                cd_length: 320,
+                rd_offset: Word::zero(),
+                rd_length: 32,
+                ..Default::default()
+            },
+            Stack {
+                cd_offset: Word::zero(),
+                cd_length: 32,
+                rd_offset: 64.into(),
+                rd_length: 320,
+                ..Default::default()
+            },
+            Stack {
+                cd_offset: 0xFFFFFF.into(),
+                cd_length: 0,
+                rd_offset: 0xFFFFFF.into(),
+                rd_length: 0,
+                ..Default::default()
+            },
+            // With memory expansion and value
+            Stack {
+                cd_offset: 64.into(),
+                cd_length: 320,
+                rd_offset: 0.into(),
+                rd_length: 32,
+                value: Word::from(10).pow(18.into()),
+                ..Default::default()
+            },
         ];
         let callees = [callee(bytecode! {})];
 
