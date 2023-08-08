@@ -23,6 +23,7 @@ use crate::{
     util::Expr,
     witness::{Block, Call, ExecStep},
 };
+use either::Either;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
@@ -370,7 +371,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferFromGadgetImpl<F, WithFeeGadget> {
-    pub(crate) value_is_zero: IsZeroGadget<F>,
+    pub(crate) value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
     sender_sub_fee: WithFeeGadget,
     sender_sub_value: UpdateBalanceGadget<F, 2, false>,
 }
@@ -385,8 +386,28 @@ impl<F: Field> TransferFromGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "", value.expr());
-        let sender_sub_value = cb.condition(not::expr(value_is_zero.expr()), |cb| {
+        let value_is_zero =
+            IsZeroGadget::construct(cb, "transfer from is zero value", value.expr());
+        Self::construct_with_is_zero(
+            cb,
+            sender_address,
+            value,
+            Either::Left(value_is_zero),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn construct_with_is_zero(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        value: Word<F>,
+        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero_expr = value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone());
+        let sender_sub_value = cb.condition(not::expr(value_is_zero_expr), |cb| {
             UpdateBalanceGadget::construct(
                 cb,
                 sender_address,
@@ -408,8 +429,9 @@ impl<F: Field> TransferFromGadget<F> {
         (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
         value: U256,
     ) -> Result<(), Error> {
-        self.value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
         self.sender_sub_value.assign(
             region,
             offset,
@@ -428,10 +450,32 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "", value.expr());
+        let value_is_zero =
+            IsZeroGadget::construct(cb, "transfer from with gas is zero value", value.expr());
+        Self::construct_with_is_zero(
+            cb,
+            sender_address,
+            value,
+            gas_fee,
+            Either::Left(value_is_zero),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn construct_with_is_zero(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        value: Word<F>,
+        gas_fee: Word<F>,
+        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero_expr = value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone());
         let sender_sub_fee =
             UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
-        let sender_sub_value = cb.condition(not::expr(value_is_zero.expr()), |cb| {
+        let sender_sub_value = cb.condition(not::expr(value_is_zero_expr), |cb| {
             UpdateBalanceGadget::construct(
                 cb,
                 sender_address,
@@ -455,8 +499,9 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
         value: U256,
         gas_fee: U256,
     ) -> Result<(), Error> {
-        self.value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
         self.sender_sub_fee.assign(
             region,
             offset,
@@ -476,7 +521,7 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferToGadget<F> {
-    pub(crate) value_is_zero: IsZeroGadget<F>,
+    pub(crate) value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
     receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
     must_create: Expression<F>,
@@ -494,11 +539,40 @@ impl<F: Field> TransferToGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "", value.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, "transfer to is zero value", value.expr());
+        Self::construct_with_is_zero(
+            cb,
+            receiver_address,
+            receiver_exists,
+            must_create,
+            prev_code_hash,
+            #[cfg(feature = "scroll")]
+            prev_keccak_code_hash,
+            value,
+            Either::Left(value_is_zero),
+            reversion_info,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct_with_is_zero(
+        cb: &mut EVMConstraintBuilder<F>,
+        receiver_address: Expression<F>,
+        receiver_exists: Expression<F>,
+        must_create: Expression<F>,
+        prev_code_hash: Expression<F>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
+        value: Word<F>,
+        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero_expr = value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone());
         // If receiver doesn't exist, create it
         cb.condition(
             or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.clone()),
+                not::expr(value_is_zero_expr.expr()) * not::expr(receiver_exists.clone()),
                 must_create.clone(),
             ]),
             |cb| {
@@ -532,7 +606,7 @@ impl<F: Field> TransferToGadget<F> {
                 }
             },
         );
-        let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
+        let receiver = cb.condition(not::expr(value_is_zero_expr), |cb| {
             UpdateBalanceGadget::construct(cb, receiver_address, vec![value], Some(reversion_info))
         });
         Self {
@@ -550,8 +624,9 @@ impl<F: Field> TransferToGadget<F> {
         (receiver_balance, prev_receiver_balance): (U256, U256),
         value: U256,
     ) -> Result<(), Error> {
-        self.value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
         self.receiver.assign(
             region,
             offset,
@@ -570,6 +645,7 @@ impl<F: Field> TransferToGadget<F> {
 /// unconditionally if must_create is true.  This gadget is used in BeginTx.
 #[derive(Clone, Debug)]
 pub(crate) struct TransferGadgetImpl<F, TransferFromGadget> {
+    value_is_zero: IsZeroGadget<F>,
     from: TransferFromGadget,
     to: TransferToGadget<F>,
 }
@@ -592,14 +668,16 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let from = TransferFromWithGasFeeGadget::construct(
+        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let from = TransferFromWithGasFeeGadget::construct_with_is_zero(
             cb,
             sender_address,
             value.clone(),
             gas_fee,
+            Either::Right(value_is_zero.expr()),
             reversion_info,
         );
-        let to = TransferToGadget::construct(
+        let to = TransferToGadget::construct_with_is_zero(
             cb,
             receiver_address,
             receiver_exists,
@@ -608,9 +686,14 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             #[cfg(feature = "scroll")]
             prev_keccak_code_hash,
             value,
+            Either::Right(value_is_zero.expr()),
             reversion_info,
         );
-        Self { from, to }
+        Self {
+            value_is_zero,
+            from,
+            to,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -624,6 +707,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         value: U256,
         gas_fee: U256,
     ) -> Result<(), Error> {
+        self.value_is_zero
+            .assign_value(region, offset, region.word_rlc(value))?;
         self.from.assign(
             region,
             offset,
@@ -649,9 +734,15 @@ impl<F: Field> TransferGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let from =
-            TransferFromGadget::construct(cb, sender_address.expr(), value.clone(), reversion_info);
-        let to = TransferToGadget::construct(
+        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let from = TransferFromGadget::construct_with_is_zero(
+            cb,
+            sender_address.expr(),
+            value.clone(),
+            Either::Right(value_is_zero.expr()),
+            reversion_info,
+        );
+        let to = TransferToGadget::construct_with_is_zero(
             cb,
             receiver_address,
             receiver_exists,
@@ -660,9 +751,14 @@ impl<F: Field> TransferGadget<F> {
             #[cfg(feature = "scroll")]
             prev_keccak_code_hash,
             value,
+            Either::Right(value_is_zero.expr()),
             reversion_info,
         );
-        Self { from, to }
+        Self {
+            value_is_zero,
+            from,
+            to,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -674,6 +770,8 @@ impl<F: Field> TransferGadget<F> {
         receiver_balance_pair: (U256, U256),
         value: U256,
     ) -> Result<(), Error> {
+        self.value_is_zero
+            .assign_value(region, offset, region.word_rlc(value))?;
         self.from
             .assign(region, offset, sender_balance_sub_pair, value)?;
         self.to.assign(region, offset, receiver_balance_pair, value)
@@ -709,7 +807,7 @@ impl<F: Field, G> TransferGadgetImpl<F, G> {
     }
 
     pub(crate) fn value_is_zero(&self) -> Expression<F> {
-        self.to.value_is_zero.expr()
+        self.value_is_zero.expr()
     }
 }
 
