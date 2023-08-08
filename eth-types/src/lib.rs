@@ -315,6 +315,7 @@ struct GethExecStepInternal {
     depth: u16,
     error: Option<String>,
     // stack is in hex 0x prefixed
+    #[serde(default)]
     stack: Vec<DebugU256>,
     // memory is in chunks of 32 bytes, in hex
     #[serde(default)]

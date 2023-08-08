@@ -29,7 +29,7 @@ type ExecutionResult struct {
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.FormatLogs
 // FormatLogs formats EVM returned structured logs for json output
 func FormatLogs(logs []*vm.StructLog) []*types.StructLogRes {
-	formatted := make([]*types.StructLogRes, len(logs))
+	formatted := make([]*types.StructLogRes, 0, len(logs))
 	for _, trace := range logs {
 		logRes := types.NewStructLogResBasic(trace.Pc, trace.Op.String(), trace.Gas, trace.GasCost, trace.Depth, trace.RefundCounter, trace.Err)
 		for _, stackValue := range trace.Stack {
