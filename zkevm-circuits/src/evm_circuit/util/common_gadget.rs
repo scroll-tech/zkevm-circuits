@@ -754,7 +754,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 #[cfg(feature = "scroll")]
                 account_keccak_code_hash: {
                     rws.next(); // keccak codehash read
-                    Some(rws.next().account_codehash_pair().1)
+                    Some(rws.next().account_keccak_codehash_pair().1)
                 },
             }
         } else {
