@@ -2,7 +2,7 @@ use bus_mapping::{
     circuit_input_builder::{EcPairingPair, N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
     precompile::{PrecompileAuxData, PrecompileCalls},
 };
-use eth_types::{Field, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::{or, select, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -35,6 +35,9 @@ pub struct EcPairingGadget<F> {
     // Boolean output from the ecPairing call, denoting whether or not the pairing check was
     // successful.
     output: Cell<F>,
+    /// Gas cost for the precompile call.
+    gas_cost: Cell<F>,
+
     /// Number of pairs provided through EVM input. Since a maximum of 4 pairs can be supplied from
     /// EVM, we need 3 binary bits for a max value of [1, 0, 0].
     n_pairs: Cell<F>,
@@ -63,8 +66,9 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256Pairing;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (evm_input_rlc, output, n_pairs) =
-            (cb.query_cell_phase2(), cb.query_bool(), cb.query_cell());
+        let (evm_input_rlc, output) = (cb.query_cell_phase2(), cb.query_bool());
+        let gas_cost = cb.query_cell();
+        let n_pairs = cb.query_cell();
         let n_pairs_cmp = BinaryNumberGadget::construct(cb, n_pairs.expr());
         let rand_pow_64 = cb.query_cell_phase2();
         let (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576) = {
@@ -75,6 +79,13 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576)
         };
         cb.pow_of_rand_lookup(64.expr(), rand_pow_64.expr());
+
+        cb.require_equal(
+            "ecPairing: gas cost",
+            gas_cost.expr(),
+            GasCost::PRECOMPILE_BN256PAIRING.expr()
+                + n_pairs.expr() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
+        );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -222,6 +233,8 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         Self {
             evm_input_rlc,
             output,
+            gas_cost,
+
             n_pairs,
             n_pairs_cmp,
             rand_pow_64,
@@ -301,6 +314,17 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                 self.evm_input_g2_rlc[i].assign(region, offset, g2_rlc)?;
                 self.is_g2_identity[i].assign_value(region, offset, g2_rlc)?;
             }
+            self.gas_cost.assign(
+                region,
+                offset,
+                Value::known(F::from(
+                    GasCost::PRECOMPILE_BN256PAIRING.0
+                        + (n_pairs as u64 * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.0),
+                )),
+            )?;
+        } else {
+            log::error!("unexpected aux_data {:?} for ecPairing", step.aux_data);
+            return Err(Error::Synthesis);
         }
 
         self.is_success.assign(

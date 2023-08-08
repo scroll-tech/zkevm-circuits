@@ -149,11 +149,11 @@ mod test {
                 assert_eq!(block.txs[0].steps.len(), 5);
                 block.txs[0].steps[2].gas_left -= 1;
             }))
-            .evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+            .evm_checks(Some(Box::new(|prover, gate_rows, lookup_rows| {
                 assert!(prover
                     .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
                     .is_err())
-            }))
+            })))
             .run();
     }
 }
