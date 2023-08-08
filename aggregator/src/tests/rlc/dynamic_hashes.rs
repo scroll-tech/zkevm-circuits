@@ -14,19 +14,14 @@ use zkevm_circuits::{
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuitConfig},
 };
-
 use crate::{
     aggregation::RlcConfig,
     constants::LOG_DEGREE
-
-    // ROWS_PER_ROUND},
-    // util::keccak_round_capacity,
 };
 use zkevm_circuits::keccak_circuit::{
     KeccakCircuit,
     keccak_packed_multi::get_num_rows_per_update
 };
-
 
 #[derive(Default, Debug, Clone)]
 struct DynamicHashCircuit {
