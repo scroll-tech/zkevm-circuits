@@ -408,6 +408,8 @@ impl<F: Field> TransferFromGadget<F> {
         (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
         value: U256,
     ) -> Result<(), Error> {
+        self.value_is_zero
+            .assign_value(region, offset, region.word_rlc(value))?;
         self.sender_sub_value.assign(
             region,
             offset,
@@ -453,6 +455,8 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
         value: U256,
         gas_fee: U256,
     ) -> Result<(), Error> {
+        self.value_is_zero
+            .assign_value(region, offset, region.word_rlc(value))?;
         self.sender_sub_fee.assign(
             region,
             offset,
@@ -565,14 +569,14 @@ impl<F: Field> TransferToGadget<F> {
 /// setting it's code_hash = EMPTY_HASH.   The receiver account is also created
 /// unconditionally if must_create is true.  This gadget is used in BeginTx.
 #[derive(Clone, Debug)]
-pub(crate) struct TransferGadgetImpl<F, WithFeeGadget> {
-    from: TransferFromGadgetImpl<F, WithFeeGadget>,
+pub(crate) struct TransferGadgetImpl<F, TransferFromGadget> {
+    from: TransferFromGadget,
     to: TransferToGadget<F>,
 }
 
 pub(crate) type TransferWithGasFeeGadget<F> =
-    TransferGadgetImpl<F, UpdateBalanceGadget<F, 2, false>>;
-pub(crate) type TransferGadget<F> = TransferGadgetImpl<F, ()>;
+    TransferGadgetImpl<F, TransferFromWithGasFeeGadget<F>>;
+pub(crate) type TransferGadget<F> = TransferGadgetImpl<F, TransferFromGadget<F>>;
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
     #[allow(clippy::too_many_arguments)]
@@ -590,7 +594,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     ) -> Self {
         let from = TransferFromWithGasFeeGadget::construct(
             cb,
-            sender_address.expr(),
+            sender_address,
             value.clone(),
             gas_fee,
             reversion_info,
@@ -705,7 +709,7 @@ impl<F: Field, G> TransferGadgetImpl<F, G> {
     }
 
     pub(crate) fn value_is_zero(&self) -> Expression<F> {
-        self.from.value_is_zero.expr()
+        self.to.value_is_zero.expr()
     }
 }
 
