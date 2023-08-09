@@ -828,33 +828,27 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             depth.low_u64() < 1025 && (!(is_call || is_callcode) || caller_balance >= value);
 
         // only call opcode do transfer in sucessful case.
-        let (caller_balance_pair, callee_balance_pair) =
-            if is_call && is_precheck_ok && !value.is_zero() {
-                if !callee_exists {
-                    rws.next();
-                    let code_hash_previous = rws.next().account_codehash_pair().1;
-                    self.code_hash_previous.assign(
-                        region,
-                        offset,
-                        region.code_hash(code_hash_previous),
-                    )?;
-                    #[cfg(feature = "scroll")]
-                    {
-                        rws.next();
-                        let keccak_code_hash_previous = rws.next().account_keccak_codehash_pair().1;
-                        self.keccak_code_hash_previous.assign(
-                            region,
-                            offset,
-                            region.word_rlc(keccak_code_hash_previous),
-                        )?;
-                    }
-                }
-                let caller_balance_pair = rws.next().account_balance_pair();
-                let callee_balance_pair = rws.next().account_balance_pair();
-                (caller_balance_pair, callee_balance_pair)
-            } else {
-                ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
-            };
+        if is_call && is_precheck_ok && !value.is_zero() {
+            let transfer_assign_result = self.transfer.assign_from_rws(
+                region,
+                offset,
+                callee_exists,
+                false,
+                value,
+                &mut rws,
+            )?;
+            self.code_hash_previous.assign(
+                region,
+                offset,
+                region.code_hash(transfer_assign_result.account_code_hash.unwrap()),
+            )?;
+            #[cfg(feature = "scroll")]
+            self.keccak_code_hash_previous.assign(
+                region,
+                offset,
+                region.word_rlc(transfer_assign_result.account_keccak_code_hash.unwrap()),
+            )?;
+        }
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -935,16 +929,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_rw_counter_end_of_reversion.low_u64() as usize,
             callee_is_persistent.low_u64() != 0,
         )?;
-        // conditionally assign
-        if is_precheck_ok && !value.is_zero() {
-            self.transfer.assign(
-                region,
-                offset,
-                caller_balance_pair,
-                callee_balance_pair,
-                value,
-            )?;
-        }
 
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = self.call.cal_gas_cost_for_assignment(

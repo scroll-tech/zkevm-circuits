@@ -34,7 +34,6 @@ use halo2_proofs::{
 mod tx_l1_fee;
 mod tx_l1_msg;
 
-use crate::evm_circuit::util::StepRws;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
@@ -828,15 +827,61 @@ impl<F: Field> TransferGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        sender_balance_sub_pair: (U256, U256),
+        sender_balance_sub_value_pair: (U256, U256),
         receiver_balance_pair: (U256, U256),
         value: U256,
     ) -> Result<(), Error> {
         self.value_is_zero
             .assign_value(region, offset, region.word_rlc(value))?;
         self.from
-            .assign(region, offset, sender_balance_sub_pair, value)?;
+            .assign(region, offset, sender_balance_sub_value_pair, value)?;
         self.to.assign(region, offset, receiver_balance_pair, value)
+    }
+
+    pub(crate) fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        receiver_exists: bool,
+        must_create: bool,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<TransferGadgetAssignResult, Error> {
+        let sender_balance_sub_value_pair = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        let assign_result = if (!receiver_exists && !value.is_zero()) || must_create {
+            TransferGadgetAssignResult {
+                account_code_hash: {
+                    rws.next(); // codehash read
+                    Some(rws.next().account_codehash_pair().1)
+                },
+                #[cfg(feature = "scroll")]
+                account_keccak_code_hash: {
+                    rws.next(); // keccak codehash read
+                    Some(rws.next().account_keccak_codehash_pair().1)
+                },
+                ..Default::default()
+            }
+        } else {
+            Default::default()
+        };
+        let receiver_balance_pair = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        self.assign(
+            region,
+            offset,
+            sender_balance_sub_value_pair,
+            receiver_balance_pair,
+            value,
+        )?;
+
+        Ok(assign_result)
     }
 }
 
