@@ -58,7 +58,10 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::{Fixed, TableColumn};
 
 use crate::{
-    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID},
+    table::{
+        BlockContextFieldTag::{CumNumTxs, NumTxs},
+        TxFieldTag::ChainID,
+    },
     util::rlc_be_bytes,
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
@@ -70,7 +73,10 @@ use eth_types::geth_types::{
     TxType,
     TxType::{Eip155, L1Msg, PreEip155},
 };
-use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
+use gadgets::{
+    comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
+    less_than::{LtChip, LtConfig, LtInstruction},
+};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 22;
@@ -146,8 +152,11 @@ pub struct TxCircuitConfig<F: Field> {
     is_padding_tx: Column<Advice>,
     /// Tx id must be no greater than cum_num_txs
     tx_id_cmp_cum_num_txs: ComparatorConfig<F, 2>,
+    tx_id_gt_prev_cnt: LtConfig<F, 2>,
     /// Cumulative number of txs up to a block
     cum_num_txs: Column<Advice>,
+    /// Number of txs in a block
+    num_txs: Column<Advice>,
 
     /// Address recovered by SignVerifyChip
     sv_address: Column<Advice>,
@@ -206,6 +215,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // columns for constraining BlockNum is valid
         let cum_num_txs = meta.advice_column();
+        // num_of_txs that each block contains
+        let num_txs = meta.advice_column();
         let is_padding_tx = meta.advice_column();
 
         // columns for accumulating length and gas_cost of call_data
@@ -347,6 +358,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     "sv_address does not change",
                     meta.query_advice(sv_address, Rotation::next()),
                     meta.query_advice(sv_address, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "is_padding_tx does not change",
+                    meta.query_advice(is_padding_tx, Rotation::next()),
+                    meta.query_advice(is_padding_tx, Rotation::cur()),
                 );
             });
 
@@ -715,6 +731,43 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        // prev block's cum_num_txs < tx_id
+        let tx_id_gt_prev_cnt = LtChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enable, Rotation::cur()),
+            |meta| {
+                let num_txs = meta.query_advice(num_txs, Rotation::cur());
+                let cum_num_txs = meta.query_advice(cum_num_txs, Rotation::cur());
+
+                cum_num_txs - num_txs
+            },
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
+        );
+
+        // last non-padding tx must have tx_id == cum_num_txs
+        meta.create_gate(
+            "last non-padding tx must have tx_id == cum_num_txs",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+                let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
+                let is_cur_tx_non_padding =
+                    not::expr(meta.query_advice(is_padding_tx, Rotation::cur()));
+                let is_next_tx_padding = meta.query_advice(is_padding_tx, Rotation::next());
+                let cum_num_txs = meta.query_advice(cum_num_txs, Rotation::cur());
+                let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
+
+                // tag == BlockNum && cur tx is the last non-padding tx
+                cb.condition(
+                    and::expr([is_tag_block_num, is_cur_tx_non_padding, is_next_tx_padding]),
+                    |cb| {
+                        cb.require_equal("tx_id == cum_num_txs", tx_id, cum_num_txs);
+                    },
+                );
+
+                cb.gate(meta.query_fixed(tx_table.q_enable, Rotation::cur()))
+            },
+        );
+
         // tx_id <= cum_num_txs
         let tx_id_cmp_cum_num_txs = ComparatorChip::configure(
             meta,
@@ -735,6 +788,26 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
             ]))
+        });
+
+        meta.lookup_any("num_txs in block table", |meta| {
+            let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
+            let block_num = meta.query_advice(tx_table.value, Rotation::cur());
+            let num_txs = meta.query_advice(num_txs, Rotation::cur());
+
+            let input_expr = vec![NumTxs.expr(), block_num, num_txs];
+            let table_expr = block_table.table_exprs(meta);
+            let condition = and::expr([
+                is_tag_block_num,
+                not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
+                meta.query_fixed(q_enable, Rotation::cur()),
+            ]);
+
+            input_expr
+                .into_iter()
+                .zip(table_expr.into_iter())
+                .map(|(input, table)| (input * condition.clone(), table))
+                .collect::<Vec<_>>()
         });
 
         meta.lookup_any("cum_num_txs in block table", |meta| {
@@ -994,6 +1067,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_calldata,
             is_caller_address,
             tx_id_cmp_cum_num_txs,
+            tx_id_gt_prev_cnt,
             cum_num_txs,
             is_padding_tx,
             lookup_conditions,
@@ -1011,6 +1085,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             rlp_table,
             is_tag_block_num,
             _marker: PhantomData,
+            num_txs,
         }
     }
 }
@@ -1353,6 +1428,7 @@ impl<F: Field> TxCircuitConfig<F> {
         is_none: Option<bool>,
         is_padding_tx: Option<bool>,
         cum_num_txs: Option<usize>,
+        num_txs: Option<usize>,
         is_final: Option<bool>,
         calldata_gas_cost_acc: Option<u64>,
         calldata_rlc: Option<Value<F>>,
@@ -1558,11 +1634,24 @@ impl<F: Field> TxCircuitConfig<F> {
             F::from(tx_id as u64),
             F::from(cum_num_txs.unwrap_or_default() as u64),
         )?;
+        let tx_id_gt_prev_cnt = LtChip::construct(self.tx_id_gt_prev_cnt);
+        tx_id_gt_prev_cnt.assign(
+            region,
+            *offset,
+            F::from((cum_num_txs.unwrap_or_default() - num_txs.unwrap_or_default()) as u64),
+            F::from(tx_id as u64),
+        )?;
         region.assign_advice(
             || "cum_num_txs",
             self.cum_num_txs,
             *offset,
             || Value::known(F::from(cum_num_txs.unwrap_or_default() as u64)),
+        )?;
+        region.assign_advice(
+            || "num_txs",
+            self.num_txs,
+            *offset,
+            || Value::known(F::from(num_txs.unwrap_or_default() as u64)),
         )?;
 
         *offset += 1;
@@ -1759,30 +1848,49 @@ impl<F: Field> TxCircuit<F> {
         layouter.assign_region(
             || "dev block table",
             |mut region| {
-                for (offset, (block_num, cum_num_txs)) in iter::once((0, 0))
+                for (offset, (block_num, cum_num_txs, num_txs)) in iter::once((0, 0, 0))
                     .chain(block_nums.iter().scan(0, |cum_num_txs, block_num| {
-                        *cum_num_txs += num_txs_in_blocks[block_num];
-                        Some((*block_num, *cum_num_txs))
+                        let num_txs = num_txs_in_blocks[block_num];
+                        *cum_num_txs += num_txs;
+                        Some((*block_num, *cum_num_txs, num_txs))
                     }))
                     .enumerate()
                 {
                     region.assign_fixed(
                         || "block_table.tag",
                         config.block_table.tag,
-                        offset,
+                        2 * offset,
                         || Value::known(F::from(CumNumTxs as u64)),
                     )?;
                     region.assign_advice(
                         || "block_table.index",
                         config.block_table.index,
-                        offset,
+                        2 * offset,
                         || Value::known(F::from(block_num)),
                     )?;
                     region.assign_advice(
                         || "block_table.value",
                         config.block_table.value,
-                        offset,
+                        2 * offset,
                         || Value::known(F::from(cum_num_txs as u64)),
+                    )?;
+                    region.assign_fixed(
+                        || "block_table.tag",
+                        config.block_table.tag,
+                        2 * offset + 1,
+                        || Value::known(F::from(NumTxs as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "block_table.index",
+                        config.block_table.index,
+                        2 * offset + 1,
+                        || Value::known(F::from(block_num)),
+                    )?;
+                    region.assign_advice(
+                        || "block_table.value",
+                        config.block_table.value,
+                        2 * offset + 1,
+                        || Value::known(F::from(num_txs as u64)),
                     )?;
                 }
                 Ok(())
@@ -1808,6 +1916,7 @@ impl<F: Field> TxCircuit<F> {
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
 
                 let mut cum_num_txs;
+                let mut num_txs;
                 let mut is_padding_tx;
                 // Empty entry
                 config.assign_row(
@@ -1825,6 +1934,7 @@ impl<F: Field> TxCircuit<F> {
                     None,
                     None,
                     None,
+                    None,
                 )?;
 
                 // Assign all tx fields except for call data
@@ -1834,17 +1944,25 @@ impl<F: Field> TxCircuit<F> {
                     } else {
                         &padding_txs[i - self.txs.len()]
                     };
+                    let block_num = tx.block_number;
                     let rlp_unsigned_tx_be_bytes = tx.rlp_unsigned.clone();
                     let rlp_signed_tx_be_bytes = tx.rlp_signed.clone();
                     if i < self.txs.len() {
                         cum_num_txs = self
                             .txs
                             .iter()
-                            .filter(|tx| tx.block_number <= self.txs[i].block_number)
+                            .filter(|tx| tx.block_number <= block_num)
                             .count();
+                        num_txs = self
+                            .txs
+                            .iter()
+                            .filter(|tx| tx.block_number == block_num)
+                            .count();
+                        log::info!("num_txs: {}", num_txs);
                         is_padding_tx = false;
                     } else {
                         cum_num_txs = 0;
+                        num_txs = 0;
                         is_padding_tx = true;
                     }
 
@@ -2043,6 +2161,7 @@ impl<F: Field> TxCircuit<F> {
                             is_none,
                             Some(is_padding_tx),
                             Some(cum_num_txs),
+                            Some(num_txs),
                             None,
                             None,
                             None,
@@ -2107,6 +2226,7 @@ impl<F: Field> TxCircuit<F> {
                             tx_id_next, // tx_id_next
                             CallData,
                             Value::known(F::from(*byte as u64)),
+                            None,
                             None,
                             None,
                             None,
