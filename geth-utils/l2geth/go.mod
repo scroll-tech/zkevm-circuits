@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/holiman/uint256 v1.2.0
 	github.com/imdario/mergo v0.3.15
-	github.com/scroll-tech/go-ethereum v1.10.14-0.20230808134353-e20b0427cd81
+	github.com/scroll-tech/go-ethereum v1.10.14-0.20230809083042-eed2b93a7953
 )
 
 require (
@@ -20,7 +20,7 @@ require (
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
-	github.com/iden3/go-iden3-crypto v0.0.12 // indirect
+	github.com/iden3/go-iden3-crypto v0.0.13 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
