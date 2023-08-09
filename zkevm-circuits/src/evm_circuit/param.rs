@@ -103,6 +103,9 @@ pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 pub(crate) const N_BYTES_MEMORY_ADDRESS: usize = 5;
 pub(crate) const N_BYTES_MEMORY_WORD_SIZE: usize = 4;
 
+/// The size of a chunk of memory that is accessed at once in RW lookups.
+pub(crate) const N_BYTES_MEMORY_CHUNK: usize = N_BYTES_WORD;
+
 pub(crate) const STACK_CAPACITY: usize = 1024;
 
 // Number of bytes that will be used of prorgam counter. Although the maximum

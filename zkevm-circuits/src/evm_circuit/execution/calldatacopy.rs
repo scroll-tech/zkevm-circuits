@@ -24,8 +24,6 @@ use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use std::cmp::min;
-
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
@@ -208,28 +206,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.data_offset
             .assign(region, offset, data_offset, F::from(call_data_length))?;
 
-        // rw_counter increase from copy lookup is `length` memory writes + a variable
-        // number of memory reads.
-        let copy_rwc_inc = length
-            + if call.is_root {
-                // no memory reads when reading from tx call data.
-                0
-            } else {
-                // memory reads when reading from memory of caller is capped by call_data_length
-                // - data_offset.
-                min(
-                    length.as_u64(),
-                    u64::try_from(data_offset)
-                        .ok()
-                        .and_then(|offset| call_data_length.checked_sub(offset))
-                        .unwrap_or_default(),
-                )
-            };
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                copy_rwc_inc
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
@@ -348,11 +329,13 @@ mod test {
     #[test]
     fn calldatacopy_gadget_simple() {
         test_root_ok(0x40, 10, 0x00.into(), 0x40.into());
+        test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0x00.into());
         test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_large() {
+        test_root_ok(0x204, 0x1, 0x102.into(), 0x101.into());
         test_root_ok(0x204, 0x101, 0x102.into(), 0x103.into());
         test_internal_ok(0x30, 0x204, 0x101, 0x102.into(), 0x103.into());
     }

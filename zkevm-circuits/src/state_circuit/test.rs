@@ -73,7 +73,7 @@ fn verifying_key_independent_of_rw_length() {
             memory: vec![Operation::new(
                 RWCounter::from(1),
                 RW::WRITE,
-                MemoryOp::new(1, MemoryAddress::from(0), 32),
+                MemoryOp::new(1, MemoryAddress::from(0), 32.into()),
             )],
             ..Default::default()
         }),
@@ -97,23 +97,23 @@ fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(24),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
 
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(1), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(96), 32.into(), 0.into()),
     );
     let memory_op_3 = Operation::new(
         RWCounter::from(87),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(1), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(96), 32.into(), 32.into()),
     );
 
     let stack_op_0 = Operation::new(
@@ -176,12 +176,12 @@ fn state_circuit_simple_6() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     let storage_op_2 = Operation::new(
         RWCounter::from(19),
@@ -203,7 +203,7 @@ fn lexicographic_ordering_test_1() {
     let memory_op = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let storage_op = Operation::new(
         RWCounter::from(19),
@@ -225,12 +225,12 @@ fn lexicographic_ordering_test_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     test_state_circuit_ok(vec![memory_op_0, memory_op_1], vec![], vec![]);
 }
@@ -477,8 +477,9 @@ fn nonlexicographic_order_tag() {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
-        memory_address: 10,
-        byte: 12,
+        memory_address: 0,
+        value: 12.into(),
+        value_prev: 0.into(),
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -670,24 +671,54 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
 
 #[test]
 fn read_inconsistency() {
+    // TODO: memory word checking read_inconsistency
     let rows = vec![
         Rw::Memory {
             rw_counter: 10,
             is_write: false,
             call_id: 1,
-            memory_address: 10,
-            byte: 0,
+            memory_address: 32,
+            value: 0.into(),
+            value_prev: 0.into(),
         },
         Rw::Memory {
             rw_counter: 40,
             is_write: false,
             call_id: 1,
-            memory_address: 10,
-            byte: 200,
+            memory_address: 32,
+            value: 200.into(),
+            value_prev: 0.into(),
         },
     ];
 
     assert_error_matches(verify(rows), "non-first access reads don't change value");
+}
+
+#[test]
+fn memory_write_inconsistency() {
+    let rows = vec![
+        Rw::Memory {
+            rw_counter: 10,
+            is_write: true,
+            call_id: 1,
+            memory_address: 32,
+            value: 100.into(),
+            value_prev: 0.into(),
+        },
+        Rw::Memory {
+            rw_counter: 40,
+            is_write: true,
+            call_id: 1,
+            memory_address: 32,
+            value: 200.into(),
+            value_prev: 0.into(), // should have been 100.
+        },
+    ];
+
+    assert_error_matches(
+        verify(rows),
+        "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+    );
 }
 
 #[test]
@@ -720,10 +751,27 @@ fn invalid_memory_address() {
         is_write: true,
         call_id: 1,
         memory_address: 1u64 << 32,
-        byte: 12,
+        value: 12.into(),
+        value_prev: 0.into(),
     }];
 
     assert_error_matches(verify(rows), "memory address fits into 2 limbs");
+}
+
+#[test]
+fn misaligned_memory_address() {
+    for memory_address in [1, 31, 0x010010, u32::MAX as u64] {
+        let rows = vec![Rw::Memory {
+            rw_counter: 1,
+            is_write: true,
+            call_id: 1,
+            memory_address,
+            value: 12.into(),
+            value_prev: 0.into(),
+        }];
+
+        assert_error_matches(verify(rows), "address % 32 == 0");
+    }
 }
 
 #[test]
@@ -732,8 +780,9 @@ fn bad_initial_memory_value() {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
-        memory_address: 10,
-        byte: 0,
+        memory_address: 32,
+        value: 0.into(),
+        value_prev: 0.into(),
     }];
 
     let v = Fr::from(200);
@@ -748,26 +797,6 @@ fn bad_initial_memory_value() {
     let result = verify_with_overrides(rows, overrides);
 
     assert_error_matches(result, "initial Memory value is 0");
-}
-
-#[test]
-fn invalid_memory_value() {
-    let rows = vec![Rw::Memory {
-        rw_counter: 1,
-        is_write: true,
-        call_id: 1,
-        memory_address: 10,
-        byte: 1,
-    }];
-    let v = Fr::from(256);
-    let overrides = HashMap::from([
-        ((AdviceColumn::Value, 0), v),
-        ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
-    ]);
-
-    let result = verify_with_overrides(rows, overrides);
-
-    assert_error_matches(result, "memory value is a byte");
 }
 
 #[test]

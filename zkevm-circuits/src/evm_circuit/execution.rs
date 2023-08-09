@@ -916,7 +916,7 @@ impl<F: Field> ExecutionConfig<F> {
     ) {
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
-                let name = format!("{:?}", table);
+                let name = format!("{table:?}");
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
@@ -1239,7 +1239,7 @@ impl<F: Field> ExecutionConfig<F> {
         let mut index = 0;
         for col in self.advices {
             let (name, length) = groups[group_index];
-            region.name_column(|| format!("{}_{}", name, index), col);
+            region.name_column(|| format!("{name}_{index}"), col);
             index += 1;
             if index >= length {
                 index = 0;
@@ -1549,7 +1549,6 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
-        //}
         Ok(())
     }
 

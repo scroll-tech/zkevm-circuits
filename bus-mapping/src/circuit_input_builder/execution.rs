@@ -10,7 +10,7 @@ use crate::{
     precompile::{PrecompileAuxData, PrecompileCalls},
 };
 use eth_types::{
-    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
+    evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     GethExecStep, Word, H256,
 };
 use gadgets::impl_expr;
@@ -327,6 +327,10 @@ impl_expr!(CopyDataType, u64::from);
 pub struct CopyStep {
     /// Byte value copied in this step.
     pub value: u8,
+    /// Byte value before this step.
+    pub prev_value: u8,
+    /// mask indicates this byte won't be copied.
+    pub mask: bool,
     /// Optional field which is enabled only for the source being `bytecode`,
     /// and represents whether or not the byte is an opcode.
     pub is_code: Option<bool>,
@@ -341,6 +345,44 @@ pub enum NumberOrHash {
     Hash(H256),
 }
 
+/// Represents all bytes related in one copy event.
+///
+/// - When the source is memory, `bytes` is the memory content, including masked areas. The
+///   destination data is the non-masked bytes.
+/// - When only the destination is memory or log, `bytes` is the memory content to write, including
+///   masked areas. The source data is the non-masked bytes.
+/// - When both source and destination are memory or log, it is `aux_bytes` that holds the
+///   destination memory.
+///
+/// Additionally, when the destination is memory, `bytes_write_prev` holds the memory content
+/// *before* the write.
+#[derive(Clone, Debug)]
+pub struct CopyBytes {
+    /// Represents the list of (bytes, is_code, mask) copied during this copy event
+    pub bytes: Vec<(u8, bool, bool)>,
+    /// Represents the list of (bytes, is_code, mask) read to copy during this copy event, used for
+    /// memory to memory write case
+    pub aux_bytes: Option<Vec<(u8, bool, bool)>>,
+    /// Represents the list of bytes before this copy event, it is required for memory write copy
+    /// event
+    pub bytes_write_prev: Option<Vec<u8>>,
+}
+
+impl CopyBytes {
+    /// construct CopyBytes instance
+    pub fn new(
+        bytes: Vec<(u8, bool, bool)>,
+        aux_bytes: Option<Vec<(u8, bool, bool)>>,
+        bytes_write_prev: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            bytes,
+            aux_bytes,
+            bytes_write_prev,
+        }
+    }
+}
+
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
 /// CODECOPY, CREATE, etc. More information:
 /// <https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md>.
@@ -349,6 +391,7 @@ pub struct CopyEvent {
     /// Represents the start address at the source of the copy event.
     pub src_addr: u64,
     /// Represents the end address at the source of the copy event.
+    /// It must be `src_addr_end >= src_addr`.
     pub src_addr_end: u64,
     /// Represents the source type.
     pub src_type: CopyDataType,
@@ -365,46 +408,360 @@ pub struct CopyEvent {
     pub log_id: Option<u64>,
     /// Value of rw counter at start of this copy event
     pub rw_counter_start: RWCounter,
-    /// Represents the list of (bytes, is_code) copied during this copy event
-    pub bytes: Vec<(u8, bool)>,
+    /// Represents the list of bytes related during this copy event
+    pub copy_bytes: CopyBytes,
 }
 
+pub type CopyEventSteps = Vec<(u8, bool, bool)>;
+pub type CopyEventPrevBytes = Vec<u8>;
+
 impl CopyEvent {
-    /// rw counter at step index
-    pub fn rw_counter(&self, step_index: usize) -> u64 {
-        u64::try_from(self.rw_counter_start.0).unwrap() + self.rw_counter_increase(step_index)
+    /// The full length of the event, including masked segments.
+    pub fn full_length(&self) -> u64 {
+        self.copy_bytes.bytes.len() as u64
     }
 
-    /// rw counter increase left at step index
-    pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
-        self.rw_counter(self.bytes.len() * 2) - self.rw_counter(step_index)
+    /// The length of the copied data, excluding masked segments.
+    pub fn copy_length(&self) -> u64 {
+        self.copy_bytes.bytes.iter().filter(|&step| !step.2).count() as u64
     }
 
-    /// Number of rw operations performed by this copy event
+    /// Whether the source performs RW lookups in the state circuit.
+    pub fn is_source_rw(&self) -> bool {
+        self.src_type == CopyDataType::Memory
+    }
+
+    /// Whether the destination performs RW lookups in the state circuit.
+    pub fn is_destination_rw(&self) -> bool {
+        self.dst_type == CopyDataType::Memory || self.dst_type == CopyDataType::TxLog
+    }
+
+    /// The RW counter of the first RW lookup performed by this copy event.
+    pub fn rw_counter_start(&self) -> u64 {
+        usize::from(self.rw_counter_start) as u64
+    }
+
+    /// The number of RW lookups performed by this copy event.
     pub fn rw_counter_delta(&self) -> u64 {
-        self.rw_counter_increase(self.bytes.len() * 2)
+        (self.is_source_rw() as u64 + self.is_destination_rw() as u64) * (self.full_length() / 32)
+    }
+}
+
+/// Defines a builder to construct a copy event.
+///
+/// ```markdown
+///     │◄──read_offset──►│
+///     ├─────────────────┼───────────────┬──────┐
+///     │                 │ Source  Bytes │      │
+///     └─────────────────┼───────┬───────┼──────┘
+///      get_padding      │     mapper    │
+/// ┌─────────▼───────────┼───────▼───────┼─────────┐
+/// │      Padding        │ Copied  Bytes │ Padding │
+/// ├─────────────────────┼───────────────┼─────────┤
+/// │◄────write_offset───►│◄───length────►│         │
+/// │◄─────────────── step_length ─────────────────►│
+/// ```
+pub struct CopyEventStepsBuilder<
+    Source,
+    ReadOffset,
+    WriteOffset,
+    StepLength,
+    Length,
+    Padding,
+    Mapper,
+> {
+    source: Source,
+    read_offset: ReadOffset,
+    write_offset: WriteOffset,
+    step_length: StepLength,
+    length: Length,
+    padding_byte_getter: Padding,
+    mapper: Mapper,
+}
+
+impl Default for CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
+    /// Create a new copy steps builder.
+    pub fn new() -> Self {
+        CopyEventStepsBuilder {
+            source: (),
+            read_offset: (),
+            write_offset: (),
+            step_length: (),
+            length: (),
+            padding_byte_getter: (),
+            mapper: (),
+        }
     }
 
-    // increase in rw counter from the start of the copy event to step index
-    fn rw_counter_increase(&self, step_index: usize) -> u64 {
-        let source_rw_increase = match self.src_type {
-            CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::Precompile(_) => 0,
-            CopyDataType::Memory => std::cmp::min(
-                u64::try_from(step_index + 1).unwrap() / 2,
-                self.src_addr_end
-                    .checked_sub(self.src_addr)
-                    .unwrap_or_default(),
-            ),
-            CopyDataType::RlcAcc | CopyDataType::TxLog | CopyDataType::Padding => unreachable!(),
-        };
-        let destination_rw_increase = match self.dst_type {
-            CopyDataType::RlcAcc | CopyDataType::Bytecode | CopyDataType::Precompile(_) => 0,
-            CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
-            CopyDataType::TxCalldata | CopyDataType::Padding => {
-                unreachable!()
+    /// Create a memory copy steps builder.
+    #[allow(clippy::type_complexity)]
+    pub fn memory() -> CopyEventStepsBuilder<
+        (),
+        (),
+        (),
+        (),
+        (),
+        Box<dyn Fn(&[u8], usize) -> u8>,
+        Box<dyn Fn(&u8) -> (u8, bool)>,
+    > {
+        Self::new()
+            .padding_byte_getter(
+                Box::new(|s: &[u8], idx: usize| s.get(idx).copied().unwrap_or(0))
+                    as Box<dyn Fn(&[u8], usize) -> u8>,
+            )
+            .mapper(Box::new(|v: &u8| (*v, false)) as Box<dyn Fn(&u8) -> (u8, bool)>)
+    }
+
+    /// Create a memory copy steps builder from rage.
+    #[allow(clippy::type_complexity)]
+    pub fn memory_range(
+        range: MemoryWordRange,
+    ) -> CopyEventStepsBuilder<
+        (),
+        MemoryAddress,
+        MemoryAddress,
+        MemoryAddress,
+        MemoryAddress,
+        Box<dyn Fn(&[u8], usize) -> u8>,
+        Box<dyn Fn(&u8) -> (u8, bool)>,
+    > {
+        Self::memory()
+            .read_offset(range.shift())
+            .write_offset(range.shift())
+            .step_length(range.full_length())
+            .length(range.original_length())
+    }
+}
+
+impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
+    CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
+{
+    /// Set source
+    pub fn source<New>(
+        self,
+        source: New,
+    ) -> CopyEventStepsBuilder<New, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
+    {
+        let CopyEventStepsBuilder {
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+            ..
+        } = self;
+        CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+        }
+    }
+
+    /// Set read offset
+    pub fn read_offset<New>(
+        self,
+        read_offset: New,
+    ) -> CopyEventStepsBuilder<Source, New, WriteOffset, StepLength, Length, Padding, Mapper> {
+        let CopyEventStepsBuilder {
+            source,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+            ..
+        } = self;
+        CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+        }
+    }
+
+    /// Set write offset
+    pub fn write_offset<New>(
+        self,
+        write_offset: New,
+    ) -> CopyEventStepsBuilder<Source, ReadOffset, New, StepLength, Length, Padding, Mapper> {
+        let CopyEventStepsBuilder {
+            source,
+            read_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+            ..
+        } = self;
+        CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+        }
+    }
+
+    /// Set step length
+    pub fn step_length<New>(
+        self,
+        step_length: New,
+    ) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, New, Length, Padding, Mapper> {
+        let CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            length,
+            padding_byte_getter,
+            mapper,
+            ..
+        } = self;
+        CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+        }
+    }
+
+    /// Set length
+    pub fn length<New>(
+        self,
+        length: New,
+    ) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, New, Padding, Mapper>
+    {
+        let CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            padding_byte_getter,
+            mapper,
+            ..
+        } = self;
+        CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+        }
+    }
+
+    /// Set padding byte getter
+    pub fn padding_byte_getter<New>(
+        self,
+        padding_byte_getter: New,
+    ) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, New, Mapper>
+    {
+        let CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            mapper,
+            ..
+        } = self;
+        CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+        }
+    }
+
+    /// Set mapper
+    pub fn mapper<New>(
+        self,
+        mapper: New,
+    ) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, New>
+    {
+        let CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            ..
+        } = self;
+        CopyEventStepsBuilder {
+            source,
+            read_offset,
+            write_offset,
+            step_length,
+            length,
+            padding_byte_getter,
+            mapper,
+        }
+    }
+}
+
+impl<'a, T: 'a, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
+    CopyEventStepsBuilder<&'a [T], ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
+where
+    ReadOffset: Into<MemoryAddress>,
+    WriteOffset: Into<MemoryAddress>,
+    StepLength: Into<MemoryAddress>,
+    Length: Into<MemoryAddress>,
+    Padding: Fn(&[T], usize) -> u8,
+    Mapper: Fn(&T) -> (u8, bool),
+{
+    /// Build the copy event steps.
+    pub fn build(self) -> CopyEventSteps {
+        let read_offset = self.read_offset.into().0;
+        let write_offset = self.write_offset.into().0;
+        let step_length = self.step_length.into().0;
+        let length = self.length.into().0;
+        let read_end = read_offset
+            .checked_add(length)
+            .expect("unexpected overflow");
+
+        let mut steps = Vec::with_capacity(step_length);
+        for idx in 0..step_length {
+            if (idx < write_offset) || (idx >= write_offset + length) {
+                // padding bytes
+                let value = (self.padding_byte_getter)(self.source, idx);
+                steps.push((value, false, true));
+            } else {
+                let addr = read_offset
+                    .checked_add(idx - write_offset)
+                    .unwrap_or(read_end);
+                if addr < self.source.len() {
+                    let (value, is_code) = (self.mapper)(&self.source[addr]);
+                    steps.push((value, is_code, false));
+                } else {
+                    // out range bytes
+                    steps.push((0, false, false));
+                }
             }
-        };
-        source_rw_increase + destination_rw_increase
+        }
+        steps
     }
 }
 

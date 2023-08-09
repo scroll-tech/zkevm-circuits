@@ -1285,3 +1285,34 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         self.not_overflow.expr()
     }
 }
+
+/// get real copy bytes from rw memory words according to shift and copy size
+pub(crate) fn get_copy_bytes<F: Field>(
+    block: &Block<F>,
+    step: &ExecStep,
+    begin_rw_index: usize,
+    end_rw_index: usize,
+    shift: u64,
+    copy_size: u64,
+) -> Vec<u8> {
+    // read real copy bytes from padded memory words
+    let padded_bytes: Vec<u8> = (begin_rw_index..end_rw_index)
+        .map(|i| {
+            let mut bytes = block.rws[step.rw_indices[i]]
+                .memory_word_pair()
+                .0
+                .to_le_bytes();
+            bytes.reverse();
+            bytes
+        })
+        .into_iter()
+        .flatten()
+        .collect();
+    let values: Vec<u8> = if copy_size == 0 {
+        vec![0; 0]
+    } else {
+        padded_bytes[shift as usize..(shift + copy_size) as usize].to_vec()
+    };
+
+    values
+}
