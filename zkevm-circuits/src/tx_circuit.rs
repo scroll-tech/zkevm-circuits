@@ -464,7 +464,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_calldata",
-                tag_bits.value_equals(CallData, Rotation::cur())(meta),
+                is_data(meta),
                 meta.query_advice(is_calldata, Rotation::cur()),
             );
 
@@ -476,7 +476,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_caller_address",
-                tag_bits.value_equals(CallerAddress, Rotation::cur())(meta),
+                is_caller_addr(meta),
                 meta.query_advice(is_caller_address, Rotation::cur()),
             );
 
@@ -488,7 +488,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_chain_id",
-                tag_bits.value_equals(ChainID, Rotation::cur())(meta),
+                is_chain_id_expr(meta),
                 meta.query_advice(is_chain_id, Rotation::cur()),
             );
 
@@ -1165,7 +1165,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 is_none,
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
+            .zip(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1284,7 +1284,7 @@ impl<F: Field> TxCircuitConfig<F> {
         });
     }
 
-    /// Load ECDSA RangeChip table.
+    /// Load u16 range table.
     pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "u16 fixed table",
