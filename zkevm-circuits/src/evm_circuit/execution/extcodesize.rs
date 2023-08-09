@@ -57,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         let code_hash = cb.query_cell_phase2();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
         cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
-        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
+        let not_exists = IsZeroGadget::construct(cb, "", code_hash.expr());
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_word_rlc();
@@ -172,14 +172,23 @@ mod test {
 
     #[test]
     fn test_extcodesize_gadget_simple() {
+        // Test for empty account.
+        let mut empty_address_bytes = [0; 20];
+        empty_address_bytes[12] = 234;
+        assert!(Account::default().is_empty());
+        test_ok(
+            &Account {
+                address: empty_address_bytes.into(),
+                ..Default::default()
+            },
+            false,
+        );
+
         let account = Account {
             address: MOCK_ACCOUNTS[4],
             code: MOCK_CODES[4].clone(),
             ..Default::default()
         };
-
-        // Test for empty account.
-        test_ok(&Account::default(), false);
         // Test for cold account.
         test_ok(&account, false);
         // Test for warm account.

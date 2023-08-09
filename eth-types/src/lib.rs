@@ -47,7 +47,11 @@ use std::{collections::HashMap, fmt, str::FromStr};
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
 pub trait Field:
-    FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> + poseidon_circuit::hash::Hashable
+    FieldExt
+    + Halo2Field
+    + PrimeField<Repr = [u8; 32]>
+    + poseidon_circuit::hash::Hashable
+    + std::convert::From<Fr>
 {
 }
 
@@ -280,11 +284,13 @@ pub struct EIP1186ProofResponse {
     /// The balance of the account
     pub balance: U256,
     /// The keccak hash of the code of the account
+    #[serde(default)]
     pub keccak_code_hash: H256,
     /// The poseidon hash of the code of the account
     #[serde(alias = "poseidonCodeHash")]
     pub code_hash: H256,
     /// Size of the code, i.e. code length
+    #[serde(default)]
     pub code_size: U256,
     /// The nonce of the account
     pub nonce: U256,
@@ -364,6 +370,7 @@ impl fmt::Debug for GethExecStep {
             .field("op", &self.op)
             .field("gas", &format_args!("{}", self.gas.0))
             .field("gas_cost", &format_args!("{}", self.gas_cost.0))
+            .field("refund", &format_args!("{}", self.refund.0))
             .field("depth", &self.depth)
             .field("error", &self.error)
             .field("stack", &self.stack)

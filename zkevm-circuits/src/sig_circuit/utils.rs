@@ -12,12 +12,12 @@ use halo2_proofs::{
 
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
-pub(super) const MAX_NUM_SIG: usize = 32;
-// Each ecdsa signature requires 534042 cells
-// We set CELLS_PER_SIG = 535000 to allows for a few buffer
-pub(super) const CELLS_PER_SIG: usize = 535000;
+pub(super) const MAX_NUM_SIG: usize = 128;
+// Each ecdsa signature requires 456786 cells
+// We set CELLS_PER_SIG = 457000 to allows for a few buffer
+pub(super) const CELLS_PER_SIG: usize = 457000;
 // Total number of rows allocated for ecdsa chip
-pub(super) const LOG_TOTAL_NUM_ROWS: usize = 19;
+pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed
 pub(super) const COLUMN_NUM_LIMIT: usize = 150;
 
@@ -36,10 +36,7 @@ pub(super) fn calc_required_advices(num_verif: usize) -> usize {
         }
         num_adv += 1;
     }
-    panic!(
-        "the required advice columns exceeds {} for {} signatures",
-        COLUMN_NUM_LIMIT, num_verif
-    );
+    panic!("the required advice columns exceeds {COLUMN_NUM_LIMIT} for {num_verif} signatures");
 }
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field

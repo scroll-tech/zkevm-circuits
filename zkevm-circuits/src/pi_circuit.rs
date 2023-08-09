@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{iter, marker::PhantomData};
+use std::{iter, marker::PhantomData, str::FromStr};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -45,6 +45,7 @@ use halo2_proofs::{
 use once_cell::sync::Lazy;
 
 use crate::{
+    evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     pi_circuit::param::{COINBASE_OFFSET, DIFFICULTY_OFFSET},
     table::BlockContextFieldTag::{
         BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumTxs, Number, Timestamp,
@@ -56,7 +57,12 @@ use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
-pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
+pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| {
+    read_env_var(
+        "COINBASE",
+        Address::from_str("0x5300000000000000000000000000000000000005").unwrap(),
+    )
+});
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
 /// PublicData contains all the values that the PiCircuit receives as input
@@ -214,7 +220,8 @@ pub struct PiCircuitConfig<F: Field> {
     is_rlc_keccak: Column<Fixed>,
     q_keccak: Selector,
 
-    pi: Column<Instance>, // hi(keccak(rpi)), lo(keccak(rpi))
+    // 32 big-endian bytes of pi_hash
+    pi: Column<Instance>,
 
     // External tables
     block_table: BlockTable,
@@ -353,7 +360,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 let rpi_bytes_next = meta.query_advice(rpi_bytes, Rotation::next());
                 let keccak_rand = challenges.keccak_input();
                 let evm_rand = challenges.evm_word();
-                let is_rlc_keccak = meta.query_fixed(is_rlc_keccak, Rotation::cur());
+                let is_rlc_keccak = meta.query_fixed(is_rlc_keccak, Rotation::next());
                 let r = select::expr(is_rlc_keccak, keccak_rand, evm_rand);
 
                 cb.require_equal(
@@ -612,6 +619,10 @@ impl<F: Field> PiCircuitConfig<F> {
         ///////////////////////////////////
         ///////  assign data bytes ////////
         ///////////////////////////////////
+        let data_bytes_start_row = 0;
+        let data_bytes_end_row =
+            self.max_inner_blocks * BLOCK_HEADER_BYTES_NUM + self.max_txs * KECCAK_DIGEST_SIZE;
+        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
         // assign block contexts
         for (i, block) in block_values
             .ctxs
@@ -665,7 +676,10 @@ impl<F: Field> PiCircuitConfig<F> {
 
             block_table_offset += BLOCK_LEN;
         }
-        for i in 0..offset {
+
+        let q_block_context_start_row = 1;
+        let q_block_context_end_row = 1 + BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks;
+        for i in q_block_context_start_row..q_block_context_end_row {
             // assign q_block_context
             region.assign_fixed(
                 || "q_block_context",
@@ -675,10 +689,11 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        debug_assert_eq!(offset, BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks);
+        debug_assert_eq!(offset, 1 + BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks);
 
         // assign tx hashes
-        let block_context_row = offset;
+        let q_tx_hashes_start_row = offset;
+        let q_tx_hashes_end_row = q_tx_hashes_start_row + KECCAK_DIGEST_SIZE * self.max_txs;
         let num_txs = tx_hashes.len();
         let mut data_bytes_rlc = None;
         let mut data_bytes_length = None;
@@ -711,7 +726,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
             }
         }
-        for i in block_context_row..offset {
+        for i in q_tx_hashes_start_row..q_tx_hashes_end_row {
             region.assign_fixed(
                 || "q_tx_hashes",
                 self.q_tx_hashes,
@@ -720,13 +735,10 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        debug_assert_eq!(
-            offset,
-            BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks + KECCAK_DIGEST_SIZE * self.max_txs
-        );
+        assert_eq!(offset, data_bytes_end_row + 1);
 
-        // the last row of data bytes part is offset - 1
-        for i in 0..(offset - 1) {
+        // the last row of data bytes part is disabled
+        for i in data_bytes_start_row..data_bytes_end_row {
             self.q_not_end.enable(region, i)?;
         }
 
@@ -773,15 +785,14 @@ impl<F: Field> PiCircuitConfig<F> {
             || data_hash_rlc,
         )?;
         self.q_keccak.enable(region, data_hash_row)?;
+        offset += 1;
 
         /////////////////////////////////
         ///////// assign pi bytes ///////
         /////////////////////////////////
-        // reset
-        rpi_rlc_acc = Value::known(F::zero());
-        rpi_length_acc = 0;
-
-        offset += 1;
+        let pi_bytes_start_row = offset;
+        let pi_bytes_end_row = pi_bytes_start_row + N_BYTES_U64 + N_BYTES_WORD * 4;
+        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
         // assign chain_id
         let cells = self.assign_field_in_pi(
             region,
@@ -795,7 +806,6 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         let chain_id_cell = cells[RPI_CELL_IDX].clone();
-        let chain_id_byte_cells = cells[3..].to_vec();
         // copy chain_id to block table
         for block_idx in 0..self.max_inner_blocks {
             region.constrain_equal(
@@ -873,9 +883,12 @@ impl<F: Field> PiCircuitConfig<F> {
         // copy data_hash down here
         region.constrain_equal(data_hash_rlc_cell.cell(), data_hash_cell.cell())?;
 
-        for i in (data_hash_row + 1)..(offset - 1) {
+        for i in pi_bytes_start_row..pi_bytes_end_row {
             self.q_not_end.enable(region, i)?;
         }
+
+        // +1 for the rlc_start row
+        assert_eq!(offset, pi_bytes_end_row + 1);
 
         // assign keccak row for computing pi_hash = keccak256(pi_bytes)
         let pi_hash_row = offset;
@@ -900,19 +913,19 @@ impl<F: Field> PiCircuitConfig<F> {
             || pi_hash_rlc,
         )?;
         self.q_keccak.enable(region, pi_hash_row)?;
+        offset += 1;
 
         //////////////////////////////////////////////////
         //// assign pi_hash (high, low)-decomposition ////
         //////////////////////////////////////////////////
+        let pi_hash_bytes_start_row = offset;
+        let pi_hash_bytes_end_row = pi_hash_bytes_start_row + KECCAK_DIGEST_SIZE;
+        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
 
-        // reset
-        rpi_rlc_acc = Value::known(F::zero());
-        rpi_length_acc = 0;
-        offset += 1;
-
-        for i in offset..(offset + 31) {
+        for i in pi_hash_bytes_start_row..pi_hash_bytes_end_row {
             self.q_not_end.enable(region, i)?;
         }
+
         // the high 16 bytes of keccak output
         let cells = self.assign_field_in_pi(
             region,
@@ -943,17 +956,20 @@ impl<F: Field> PiCircuitConfig<F> {
         let pi_hash_lo_byte_cells = cells[3..].to_vec();
         // let pi_hash_lo_cell = cells[RPI_CELL_IDX].clone();
 
+        // +1 for the rlc_start row
+        assert_eq!(offset, pi_hash_bytes_end_row + 1);
+
         // copy pi hash down here
         region.constrain_equal(pi_hash_rlc_cell.cell(), cells[RPI_RLC_ACC_CELL_IDX].cell())?;
 
         //////////////////////////////////////////////////
         ////////// assign COINBASE, DIFFICULTY  //////////
         //////////////////////////////////////////////////
-        // reset
-        rpi_rlc_acc = Value::known(F::zero());
-        rpi_length_acc = 0;
+        let coinbase_diff_start_row = offset;
+        let coinbase_diff_end_row =
+            coinbase_diff_start_row + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD;
 
-        let off_start = offset;
+        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
 
         let cells = self.assign_field_in_pi_ext(
             region,
@@ -983,7 +999,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         let difficulty_cell = cells[RPI_CELL_IDX].clone();
 
-        for i in off_start..(offset - 1) {
+        for i in coinbase_diff_start_row..coinbase_diff_end_row {
             self.q_not_end.enable(region, i)?;
         }
 
@@ -999,14 +1015,53 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        let instance_byte_cells = [
-            chain_id_byte_cells,
-            pi_hash_hi_byte_cells,
-            pi_hash_lo_byte_cells,
-        ]
-        .concat();
+        assert_eq!(
+            offset,
+            // for data bytes start row
+            1 + self.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+                + self.max_txs * KECCAK_DIGEST_SIZE
+                + 1 // for data hash row
+                + 1 // for pi bytes start row
+                + N_BYTES_U64
+                + 4 * KECCAK_DIGEST_SIZE
+                + 1 // for pi hash row
+                + 1 // for pi hash bytes start row
+                + KECCAK_DIGEST_SIZE
+                + 1 // for coinbase & difficulty start row
+                + N_BYTES_ACCOUNT_ADDRESS
+                + N_BYTES_WORD,
+        );
+
+        let instance_byte_cells = [pi_hash_hi_byte_cells, pi_hash_lo_byte_cells].concat();
 
         Ok((instance_byte_cells, connections))
+    }
+
+    fn assign_rlc_start(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: &mut usize,
+        rpi_rlc_acc: &mut Value<F>,
+        rpi_length_acc: &mut u64,
+    ) -> Result<(), Error> {
+        *rpi_rlc_acc = Value::known(F::zero());
+        *rpi_length_acc = 0;
+
+        region.assign_advice_from_constant(
+            || "rpi_rlc_acc[0]",
+            self.rpi_rlc_acc,
+            *offset,
+            F::zero(),
+        )?;
+        region.assign_advice_from_constant(
+            || "rpi_length_acc[0]",
+            self.rpi_length_acc,
+            *offset,
+            F::zero(),
+        )?;
+        *offset += 1;
+
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1077,7 +1132,6 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut rpi_bytes_acc_cells = vec![];
         let mut byte_cells = vec![];
         for (i, byte) in value_be_bytes.iter().enumerate() {
-            let is_rlc_start = *rpi_length_acc == 0;
             let row_offset = *offset + i;
 
             let real_value = if is_rpi_padding {
@@ -1150,14 +1204,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 row_offset,
                 || *rpi_rlc_acc,
             )?;
-            let rpi_length_cell = if is_rlc_start {
-                region.assign_advice_from_constant(
-                    || "rpi_length_acc",
-                    self.rpi_length_acc,
-                    row_offset,
-                    F::one(),
-                )?
-            } else {
+            let rpi_length_cell = {
                 region.assign_advice(
                     || "rpi_length_acc",
                     self.rpi_length_acc,
@@ -1165,10 +1212,6 @@ impl<F: Field> PiCircuitConfig<F> {
                     || Value::known(F::from(*rpi_length_acc)),
                 )?
             };
-            if is_rlc_start {
-                // use copy constraint to make sure that rpi_rlc_acc == byte at start
-                region.constrain_equal(rpi_rlc_cell.cell(), byte_cell.cell())?;
-            }
 
             region.assign_advice(
                 || "is_rpi_padding",
@@ -1269,7 +1312,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 .zip(tag.iter())
             {
                 region.assign_fixed(
-                    || format!("block table row {}", offset),
+                    || format!("block table row {offset}"),
                     self.block_table.tag,
                     offset,
                     || row[0],
@@ -1279,7 +1322,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 let mut block_number_cell = None;
                 for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                     let cell = region.assign_advice(
-                        || format!("block table row {}", offset),
+                        || format!("block table row {offset}"),
                         *column,
                         offset,
                         || *value,
@@ -1368,12 +1411,7 @@ impl<F: Field> PiCircuit<F> {
         max_inner_blocks: usize,
         block: &Block<F>,
     ) -> Self {
-        let chain_id = block
-            .context
-            .ctxs
-            .iter()
-            .next()
-            .map_or(0, |(_k, v)| v.chain_id);
+        let chain_id = block.chain_id;
         let public_data = PublicData {
             chain_id,
             transactions: block.txs.clone(),
@@ -1413,19 +1451,33 @@ impl<F: Field> PiCircuit<F> {
             || "pi connecting region",
             |mut region| {
                 if let Some(state_roots) = state_roots {
-                    region.constrain_equal(
-                        local_conn.start_state_root.cell(),
-                        state_roots.start_state_root.0,
-                    )?;
-                    region.constrain_equal(
-                        local_conn.end_state_root.cell(),
-                        state_roots.end_state_root.0,
-                    )?;
+                    log::debug!(
+                        "constrain_equal of state root: {:?} <-> {:?}",
+                        (&local_conn.start_state_root, &local_conn.end_state_root),
+                        (&state_roots.start_state_root, &state_roots.end_state_root)
+                    );
+
+                    #[cfg(feature = "scroll-trace")]
+                    {
+                        region.constrain_equal(
+                            local_conn.start_state_root.cell(),
+                            state_roots.start_state_root.0,
+                        )?;
+                        region.constrain_equal(
+                            local_conn.end_state_root.cell(),
+                            state_roots.end_state_root.0,
+                        )?;
+                    }
                 } else {
                     log::warn!("state roots are not set, skip connection with state circuit");
                 }
 
                 if let Some(withdraw_roots) = withdraw_roots {
+                    log::debug!(
+                        "constrain_equal of withdraw root: {:?} <-> {:?}",
+                        &local_conn.withdraw_root,
+                        &withdraw_roots.withdraw_root
+                    );
                     region.constrain_equal(
                         local_conn.withdraw_root.cell(),
                         withdraw_roots.withdraw_root.0,
@@ -1454,16 +1506,24 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let row_num = |inner_block_num, tx_num| -> usize {
-            BLOCK_HEADER_BYTES_NUM * inner_block_num + KECCAK_DIGEST_SIZE * tx_num + 33
-        };
-        (
-            row_num(block.context.ctxs.len(), block.txs.len()),
-            row_num(
-                block.circuits_params.max_inner_blocks,
-                block.circuits_params.max_txs,
-            ),
-        )
+        let max_inner_blocks = block.circuits_params.max_inner_blocks;
+        let max_txs = block.circuits_params.max_txs;
+
+        let num_rows = 1 + max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+            + max_txs * KECCAK_DIGEST_SIZE
+            + 1 // for data hash row
+            + 1 // for pi bytes start row
+            + N_BYTES_U64 // chain_id
+            + 4 * KECCAK_DIGEST_SIZE // state_roots & data hash
+            + 1 // for pi hash row
+            + 1 // for pi hash bytes start row
+            + KECCAK_DIGEST_SIZE // pi hash bytes
+            + 1 // for coinbase & difficulty start row
+            + N_BYTES_ACCOUNT_ADDRESS
+            + N_BYTES_WORD;
+
+        // the number of rows is independent of block
+        (num_rows, num_rows)
     }
 
     /// Compute the public inputs for this circuit.
@@ -1471,13 +1531,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let pi_hash = self.public_data.get_pi();
 
         let public_inputs = iter::empty()
-            .chain(
-                self.public_data
-                    .chain_id
-                    .to_be_bytes()
-                    .into_iter()
-                    .map(|byte| F::from(byte as u64)),
-            )
             .chain(
                 pi_hash
                     .to_fixed_bytes()

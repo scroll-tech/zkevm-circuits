@@ -56,7 +56,11 @@ impl Opcode for Extcodehash {
         let account = state.sdb.get_account(&external_address).1;
         let exists = !account.is_empty();
         let code_hash = if exists {
-            account.keccak_code_hash
+            if cfg!(feature = "scroll") {
+                account.keccak_code_hash
+            } else {
+                account.code_hash
+            }
         } else {
             H256::zero()
         };
@@ -65,7 +69,11 @@ impl Opcode for Extcodehash {
         state.account_read(
             &mut exec_step,
             external_address,
-            AccountField::KeccakCodeHash,
+            if cfg!(feature = "scroll") {
+                AccountField::KeccakCodeHash
+            } else {
+                AccountField::CodeHash
+            },
             code_hash.to_word(),
         );
         debug_assert_eq!(steps[1].stack.last()?, code_hash.to_word());
@@ -272,7 +280,11 @@ mod extcodehash_tests {
                 RW::READ,
                 &AccountOp {
                     address: external_address,
-                    field: AccountField::KeccakCodeHash,
+                    field: if cfg!(feature = "scroll") {
+                        AccountField::KeccakCodeHash
+                    } else {
+                        AccountField::CodeHash
+                    },
                     value: if exists { code_hash } else { U256::zero() },
                     value_prev: if exists { code_hash } else { U256::zero() },
                 }

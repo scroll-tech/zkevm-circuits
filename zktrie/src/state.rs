@@ -12,21 +12,6 @@ pub mod witness;
 
 use std::{cell::RefCell, fmt, rc::Rc};
 
-/// turn a integer (expressed by field) into MPTProofType
-pub fn as_proof_type(v: i32) -> MPTProofType {
-    match v {
-        0 => MPTProofType::PoseidonCodeHashExists,
-        1 => MPTProofType::NonceChanged,
-        2 => MPTProofType::BalanceChanged,
-        3 => MPTProofType::CodeHashExists,
-        4 => MPTProofType::CodeSizeExists,
-        5 => MPTProofType::AccountDoesNotExist,
-        6 => MPTProofType::StorageChanged,
-        7 => MPTProofType::StorageDoesNotExist,
-        _ => unreachable!("unexpected proof type number {:?}", v),
-    }
-}
-
 /// represent a storage state being applied in specified block
 #[derive(Clone, Default)]
 pub struct ZktrieState {
@@ -125,7 +110,7 @@ impl ZktrieState {
             let (exists, acc) = self.sdb.get_account(addr);
             if exists {
                 log::trace!(
-                    "skip trace account into sdb: {:?} => {:?}, keep old: {:?}",
+                    "skip trace account into sdb: addr {:?}, new {:?}, keep old: {:?}",
                     addr,
                     acc_data,
                     acc
@@ -154,7 +139,8 @@ impl ZktrieState {
         }
 
         for (addr, key, bytes) in storage_proofs {
-            let (exists, _value) = self.sdb.get_storage(addr, key);
+            let (exists, old_value) = self.sdb.get_storage(addr, key);
+            let old_value = *old_value;
             if exists {
                 continue;
             }
@@ -174,10 +160,22 @@ impl ZktrieState {
                     );
                     acc.storage.insert(*key, *store_proof.data.as_ref());
                 } else {
+                    log::trace!(
+                        "set storage to 0, addr {:?} key {:?} old value {:?}",
+                        addr,
+                        key,
+                        old_value
+                    );
                     //acc.storage.remove(key);
                     acc.storage.insert(*key, U256::zero());
                 }
             } else {
+                log::trace!(
+                    "clear storage addr {:?} key {:?} old value {:?}",
+                    addr,
+                    key,
+                    old_value
+                );
                 // acc.storage.remove(key);
                 acc.storage.insert(*key, U256::zero());
             }

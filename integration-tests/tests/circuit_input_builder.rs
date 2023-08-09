@@ -27,6 +27,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
             max_exp_steps: 1000,
             max_keccak_rows: 0,
             max_rlp_rows: 4200,
+            ..Default::default()
         },
     )
     .await

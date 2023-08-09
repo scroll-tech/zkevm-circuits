@@ -6,3 +6,5 @@
 *.log
 *.json
 *.sh
+*.txt
+*.srs

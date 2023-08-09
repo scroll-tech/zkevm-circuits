@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
-    table::{MPTProofType as ProofType, RwTableTag},
+    table::{AccountFieldTag, MPTProofType as ProofType, RwTableTag},
     util::Expr,
 };
 use eth_types::Field;
@@ -154,23 +154,10 @@ impl<F: Field> ConstraintBuilder<F> {
                 "first access reads don't change value",
                 q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
             );
-            // FIXME
-            // precompile should be warm
-            // https://github.com/scroll-tech/zkevm-circuits/issues/343
-            // If we decide to implement optional access list of tx later,
-            // we need to revist this constraint.
-            cb.condition(
-                not::expr(
-                    q.tag_matches(RwTableTag::TxAccessListAccount)
-                        + q.tag_matches(RwTableTag::TxAccessListAccountStorage),
-                ),
-                |cb| {
-                    cb.require_equal(
-                        "value_prev column is initial_value for first access",
-                        q.value_prev_column(),
-                        q.initial_value.clone(),
-                    );
-                },
+            cb.require_equal(
+                "value_prev column is initial_value for first access",
+                q.value_prev_column(),
+                q.initial_value.clone(),
             );
         });
 
@@ -231,11 +218,15 @@ impl<F: Field> ConstraintBuilder<F> {
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
-        // 2.3. value is a byte
+
+        // The address is aligned.
+        let inv_32 = F::from(32).invert().unwrap();
         self.add_lookup(
-            "memory value is a byte",
-            vec![(q.rw_table.value.clone(), q.lookups.u8.clone())],
+            "address % 32 == 0",
+            vec![(q.address.limbs[0].clone() * inv_32, q.lookups.u16.clone())],
         );
+
+        // 2.3. value is a word
         // 2.4. Start initial value is 0
         self.require_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
@@ -244,11 +235,14 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_equal(
-            "value_prev column equals initial_value for Memory",
-            q.value_prev_column(),
-            q.initial_value(),
-        );
+        // 2.6. The value on the previous row equals the value_prev column.
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
@@ -290,7 +284,13 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
         // ref. spec 4.0. Unused keys are 0
-        self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
+        // See comment above configure for is_non_exist in state_circuit.rs for a explanation of why
+        // this is required.
+        self.require_equal(
+            "field_tag is AccountFieldTag::CodeHash for AccountStorage",
+            q.field_tag(),
+            AccountFieldTag::CodeHash.expr(),
+        );
 
         // value = 0 means the leaf doesn't exist. 0->0 transition requires a
         // non-existing proof.
@@ -298,8 +298,8 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_equal(
             "mpt_proof_type is field_tag or NonExistingStorageProof",
             q.mpt_proof_type(),
-            is_non_exist.expr() * ProofType::NonExistingStorageProof.expr()
-                + (1.expr() - is_non_exist) * ProofType::StorageMod.expr(),
+            is_non_exist.expr() * (ProofType::StorageDoesNotExist as u64).expr()
+                + (1.expr() - is_non_exist) * (ProofType::StorageChanged as u64).expr(),
         );
 
         // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
@@ -431,7 +431,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_equal(
             "mpt_proof_type is field_tag or NonExistingAccountProofs",
             q.mpt_proof_type(),
-            q.is_non_exist() * ProofType::NonExistingAccountProof.expr()
+            q.is_non_exist() * (ProofType::AccountDoesNotExist as u64).expr()
                 + (1.expr() - q.is_non_exist()) * q.field_tag(),
         );
 
@@ -440,6 +440,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for Account last access",
                 vec![
+                    (1.expr(), q.mpt_update_table.q_enable.clone()),
                     (
                         q.rw_table.address.clone(),
                         q.mpt_update_table.address.clone(),
@@ -627,6 +628,10 @@ impl<F: Field> Queries<F> {
 
     fn address_change(&self) -> Expression<F> {
         self.rw_table.address.clone() - self.rw_table.prev_address.clone()
+    }
+
+    fn address_not_change(&self) -> Expression<F> {
+        not::expr(self.address_change())
     }
 
     fn rw_counter_change(&self) -> Expression<F> {

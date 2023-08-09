@@ -57,7 +57,7 @@ pub(crate) fn hash_code_poseidon(code: &[u8]) -> Hash {
     let h = if msgs.is_empty() {
         // the empty code hash is overlapped with simple hash on [0, 0]
         // an issue in poseidon primitive prevent us calculate it from hash_msg
-        Fr::hash([Fr::zero(), Fr::zero()])
+        Fr::hash_with_domain([Fr::zero(), Fr::zero()], Fr::zero())
     } else {
         Fr::hash_msg(&msgs, Some(code.len() as u128 * HASHABLE_DOMAIN_SPEC))
     };

@@ -59,6 +59,15 @@ where
         }
     }
 
+    /// Return the constant that represents a given value. To be compared with the value expression.
+    pub fn constant_expr<F: Field>(&self, value: T) -> Expression<F> {
+        let f = value
+            .as_bits()
+            .iter()
+            .fold(F::zero(), |result, bit| F::from(*bit) + result * F::from(2));
+        Expression::Constant(f)
+    }
+
     /// Returns a function that can evaluate to a binary expression, that
     /// evaluates to 1 if value is equal to value as bits. The returned
     /// expression is of degree N.
@@ -96,12 +105,12 @@ where
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
         let mut annotations = Vec::new();
         for (i, _) in self.bits.iter().enumerate() {
-            annotations.push(format!("GADGETS_binary_number_{}", i));
+            annotations.push(format!("GADGETS_binary_number_{i}"));
         }
         self.bits
             .iter()
             .zip(annotations.iter())
-            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+            .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
     }
 }
 
@@ -187,7 +196,7 @@ where
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
             region.assign_advice(
-                || format!("binary number {:?}", column),
+                || format!("binary number {column:?}"),
                 column,
                 offset,
                 || Value::known(F::from(bit)),

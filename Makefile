@@ -15,7 +15,7 @@ fmt: ## Check whether the code is formated correctly
 	@cargo fmt --all -- --check
 
 test-light: ## Run light tests
-	@cargo test --release --all --exclude integration-tests --exclude circuit-benchmarks
+	@cargo test --release --workspace --exclude integration-tests --exclude circuit-benchmarks
 
 test-heavy: ## Run heavy tests serially to avoid OOM
 	@cargo test --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored # --test-threads 1

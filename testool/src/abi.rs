@@ -21,7 +21,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         "uint" => ParamType::Uint(256),
         "uint256" => ParamType::Uint(256),
         "bool" => ParamType::Bool,
-        _ => panic!("unimplemented abi type {:?}", t),
+        _ => panic!("unimplemented abi type {t:?}"),
     };
 
     let encode_type = |t, v: &str| match t {
@@ -35,7 +35,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         ParamType::Bool => match v.to_lowercase().as_str() {
             "true" | "0x01" => Ok(Token::Bool(true)),
             "false" | "0x00" => Ok(Token::Bool(false)),
-            _ => panic!("unexpected boolean '{}'", v),
+            _ => panic!("unexpected boolean '{v}'"),
         },
         _ => unimplemented!(),
     };
@@ -44,7 +44,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         .iter()
         .enumerate()
         .map(|(n, t)| Param {
-            name: format!("p{}", n),
+            name: format!("p{n}"),
             kind: map_type(t),
             internal_type: None,
         })

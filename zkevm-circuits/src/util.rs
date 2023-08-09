@@ -67,8 +67,8 @@ impl MockChallenges {
     pub fn construct<F: FieldExt>(_meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             evm_word: 0x100,
-            keccak_input: 0x100,
-            lookup_input: 0x100,
+            keccak_input: 0x101,
+            lookup_input: 0x102,
         }
     }
     /// ..
@@ -285,6 +285,7 @@ pub(crate) struct CircuitStats {
     num_simple_selectors: usize,
     num_permutation_columns: usize,
     degree: usize,
+    blinding_factors: usize,
     num_challenges: usize,
     max_phase: u8,
     num_rotation: usize,
@@ -313,6 +314,7 @@ pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStat
         num_simple_selectors: meta.num_simple_selectors,
         num_permutation_columns: meta.permutation.columns.len(),
         degree: meta.degree(),
+        blinding_factors: meta.blinding_factors(),
         num_challenges: meta.num_challenges(),
         max_phase: meta.max_phase(),
         num_rotation: rotations.len(),

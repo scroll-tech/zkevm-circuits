@@ -6,7 +6,7 @@ use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, Memory},
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
-    Address, GethExecTrace, Signature, Word, H256,
+    AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
 use ethers_core::utils::get_contract_address;
 
@@ -212,7 +212,7 @@ pub struct Transaction {
     /// From / Caller Address
     pub from: Address,
     /// To / Callee Address
-    pub to: Address,
+    pub to: Option<Address>,
     /// Value
     pub value: Word,
     /// Input / Call Data
@@ -229,6 +229,8 @@ pub struct Transaction {
     pub l1_fee: TxL1Fee,
     /// Committed values of L1 fee
     pub l1_fee_committed: TxL1Fee,
+    /// EIP2930
+    pub access_list: Option<AccessList>,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -240,7 +242,7 @@ impl From<&Transaction> for geth_types::Transaction {
         geth_types::Transaction {
             hash: tx.hash,
             from: tx.from,
-            to: Some(tx.to),
+            to: tx.to,
             nonce: Word::from(tx.nonce),
             gas_limit: Word::from(tx.gas),
             value: tx.value,
@@ -253,6 +255,7 @@ impl From<&Transaction> for geth_types::Transaction {
             gas_tip_cap: tx.gas_tip_cap,
             rlp_unsigned_bytes: tx.rlp_unsigned_bytes.clone(),
             rlp_bytes: tx.rlp_bytes.clone(),
+            tx_type: tx.tx_type,
             ..Default::default()
         }
     }
@@ -268,7 +271,7 @@ impl Transaction {
             gas_fee_cap: Word::zero(),
             gas_tip_cap: Word::zero(),
             from: Address::zero(),
-            to: Address::zero(),
+            to: Some(Address::zero()), // or use None?
             value: Word::zero(),
             input: Vec::new(),
             chain_id: 0,
@@ -286,6 +289,7 @@ impl Transaction {
             tx_type: Default::default(),
             l1_fee: Default::default(),
             l1_fee_committed: Default::default(),
+            access_list: None,
         }
     }
 
@@ -357,8 +361,15 @@ impl Transaction {
             }
         );
 
-        let l1_fee = TxL1Fee::get_current_values_from_state_db(sdb);
-        let l1_fee_committed = TxL1Fee::get_committed_values_from_state_db(sdb);
+        let tx_type = TxType::get_tx_type(eth_tx);
+        let (l1_fee, l1_fee_committed) = if tx_type.is_l1_msg() {
+            Default::default()
+        } else {
+            (
+                TxL1Fee::get_current_values_from_state_db(sdb),
+                TxL1Fee::get_committed_values_from_state_db(sdb),
+            )
+        };
 
         log::debug!(
             "l1_fee: {:?}, l1_fee_committed: {:?}",
@@ -369,7 +380,7 @@ impl Transaction {
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
             hash: eth_tx.hash,
-            tx_type: TxType::get_tx_type(eth_tx),
+            tx_type,
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
             nonce: eth_tx.nonce.as_u64(),
@@ -378,7 +389,7 @@ impl Transaction {
             gas_fee_cap: eth_tx.max_fee_per_gas.unwrap_or_default(),
             gas_tip_cap: eth_tx.max_priority_fee_per_gas.unwrap_or_default(),
             from: eth_tx.from,
-            to: eth_tx.to.unwrap_or_default(),
+            to: eth_tx.to,
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
             chain_id: eth_tx.chain_id.unwrap_or_default().as_u64(), // FIXME
@@ -391,6 +402,7 @@ impl Transaction {
             },
             l1_fee,
             l1_fee_committed,
+            access_list: eth_tx.access_list.clone(),
         })
     }
 

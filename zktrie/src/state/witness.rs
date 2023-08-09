@@ -10,7 +10,7 @@ use mpt_circuits::serde::{
     AccountData as SMTAccount, Hash as SMTHash, HexBytes, SMTNode, SMTPath, SMTTrace, StateData,
 };
 use std::collections::HashMap;
-use zktrie::{ZkTrie, ZkTrieNode};
+use zktrie::{Hash as ZkTrieHash, ZkTrie, ZkTrieNode};
 
 use num_bigint::BigUint;
 use std::io::{Error as IoError, Read};
@@ -99,7 +99,26 @@ impl WitnessGenerator {
     pub fn dump(&self) {
         log::info!("account data {:#?}", self.accounts);
     }
-
+    /// get account proof
+    pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
+        self.trie.prove(address.as_bytes()).unwrap()
+    }
+    /// get storage proof
+    pub fn storage_proof(&self, address: Address, key: Word) -> Vec<Vec<u8>> {
+        let (_storage_key, key) = {
+            let mut word_buf = [0u8; 32];
+            key.to_big_endian(word_buf.as_mut_slice());
+            (hash_zktrie_key(&word_buf), HexBytes(word_buf))
+        };
+        // TODO: use or_else to optimize
+        let default_trie = &ZktrieState::default()
+            .zk_db
+            .borrow_mut()
+            .new_trie(&ZkTrieHash::default())
+            .unwrap();
+        let trie: &ZkTrie = self.storages.get(&address).unwrap_or(default_trie);
+        trie.prove(key.as_ref()).unwrap()
+    }
     fn trace_storage_update(
         &mut self,
         address: Address,
@@ -112,6 +131,23 @@ impl WitnessGenerator {
             key.to_big_endian(word_buf.as_mut_slice());
             (hash_zktrie_key(&word_buf), HexBytes(word_buf))
         };
+
+        // Handle corner case where the account doesn't exist at all. In this case we produce an
+        // non-existing account proof, but with the state_key field set.
+        if new_value.is_zero() && !self.accounts.contains_key(&address) {
+            let mut trace = self.trace_account_update(address, |_| None);
+            trace.state_key = Some(key);
+            return trace;
+        }
+
+        self.storages.entry(address).or_insert_with(|| {
+            ZktrieState::default()
+                .zk_db
+                .borrow_mut()
+                .new_trie(&ZkTrieHash::default())
+                .unwrap()
+        });
+
         let trie = self.storages.get_mut(&address).unwrap();
 
         let store_before = {
@@ -243,6 +279,9 @@ impl WitnessGenerator {
             }
 
             self.accounts.insert(address, account_data_after);
+            // if account_data_before.is_none() {
+            //     self.storages.insert(address, ZkTrie::new());
+            // }
         } else if account_data_before.is_some() {
             log::warn!("trace update try delete account {address:?} trie while we have no SELFDESTRUCT yet");
             self.trie.delete(address.as_bytes());
@@ -287,11 +326,15 @@ impl WitnessGenerator {
         if let Some(key) = key {
             self.trace_storage_update(address, key, new_val, old_val)
         } else {
-            self.trace_account_update(address, |acc_before| {
+            self.trace_account_update(address, |acc_before: Option<&AccountData>| {
                 let mut acc_data = acc_before.copied().unwrap_or_default();
                 match proof_type {
                     MPTProofType::NonceChanged => {
-                        assert_eq!(old_val.as_u64(), acc_data.nonce);
+                        assert!(old_val <= u64::MAX.into());
+                        // TODO: fix (hypothetical) inconsistency where CREATE gadget allows nonce
+                        // to be 1 << 64, but mpt circuit does not support this.
+                        assert!(new_val <= Word::from(u64::MAX) + Word::one());
+                        //assert_eq!(old_val.as_u64(), acc_data.nonce);
                         acc_data.nonce = new_val.as_u64();
                     }
                     MPTProofType::BalanceChanged => {
@@ -332,13 +375,13 @@ impl WitnessGenerator {
                         acc_data.poseidon_code_hash = H256::from(code_hash);
                     }
                     MPTProofType::CodeSizeExists => {
+                        assert!(old_val < u64::MAX.into());
+                        assert!(new_val < u64::MAX.into());
                         // code size can only change from 0
                         debug_assert_eq!(old_val.as_u64(), acc_data.code_size);
                         debug_assert!(
                             old_val.as_u64() == 0u64 || old_val.as_u64() == new_val.as_u64(),
-                            "old {:?} new {:?}",
-                            old_val,
-                            new_val
+                            "old {old_val:?} new {new_val:?}",
                         );
                         acc_data.code_size = new_val.as_u64();
                     }
@@ -361,7 +404,11 @@ impl WitnessGenerator {
                     }
                     _ => unreachable!("invalid proof type: {:?}", proof_type),
                 }
-                Some(acc_data)
+                if acc_data == AccountData::default() {
+                    None
+                } else {
+                    Some(acc_data)
+                }
             })
         }
     }
@@ -381,7 +428,7 @@ fn smt_hash_from_bytes(bt: &[u8]) -> SMTHash {
 
 fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
     use halo2_proofs::{arithmetic::FieldExt, halo2curves::bn256::Fr};
-    use mpt_circuits::hash::Hashable;
+    use hash_circuit::hash::Hashable;
 
     let first_16bytes: [u8; 16] = key_buf[..16].try_into().expect("expect first 16 bytes");
     let last_16bytes: [u8; 16] = key_buf[16..].try_into().expect("expect last 16 bytes");
@@ -389,7 +436,7 @@ fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
     let bt_high = Fr::from_u128(u128::from_be_bytes(first_16bytes));
     let bt_low = Fr::from_u128(u128::from_be_bytes(last_16bytes));
 
-    let hash = Fr::hash([bt_high, bt_low]);
+    let hash = Fr::hash_with_domain([bt_high, bt_low], Fr::from(512));
 
     U256::from_little_endian(hash.to_repr().as_ref())
 }
@@ -433,15 +480,17 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
     let mut path_part: BigUint = Default::default();
     let mut path = Vec::new();
 
-    for (left, right) in trie_proof.path.iter() {
+    for ((left, right), &node_type) in trie_proof.path.iter().zip(&trie_proof.path_type) {
         let is_bit_one = key.bit(0);
         path.push(if is_bit_one {
             SMTNode {
+                node_type,
                 value: smt_hash_from_u256(right),
                 sibling: smt_hash_from_u256(left),
             }
         } else {
             SMTNode {
+                node_type,
                 value: smt_hash_from_u256(left),
                 sibling: smt_hash_from_u256(right),
             }
@@ -454,6 +503,7 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
     }
 
     let leaf = trie_proof.key.as_ref().map(|h| SMTNode {
+        node_type: trie_proof.key_type.expect("key type should has been set"),
         value: smt_hash_from_bytes(trie_proof.data.as_ref()),
         sibling: smt_hash_from_bytes(h.as_bytes()),
     });

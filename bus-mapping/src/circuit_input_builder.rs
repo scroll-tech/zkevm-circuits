@@ -32,7 +32,9 @@ use eth_types::{
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
-    CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    BigModExp, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp,
+    EcMulOp, EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 use hex::decode_to_slice;
 
@@ -48,6 +50,17 @@ use std::{
 pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
 };
+
+/// Setup parameters for ECC-related precompile calls.
+#[derive(Debug, Clone, Copy)]
+pub struct PrecompileEcParams {
+    /// Maximum number of EcAdd ops supported in one block.
+    pub ec_add: usize,
+    /// Maximum number of EcMul ops supported in one block.
+    pub ec_mul: usize,
+    /// Maximum number of EcPairing ops supported in one block.
+    pub ec_pairing: usize,
+}
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
@@ -86,6 +99,8 @@ pub struct CircuitsParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// Max number of ECC-related ops supported in the ECC circuit.
+    pub max_ec_ops: PrecompileEcParams,
 }
 
 impl Default for CircuitsParams {
@@ -98,13 +113,18 @@ impl Default for CircuitsParams {
             max_inner_blocks: 64,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
-            max_copy_rows: 1000,
+            max_copy_rows: 2000,
             max_mpt_rows: 1000,
             max_exp_steps: 1000,
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
             max_rlp_rows: 1000,
+            max_ec_ops: PrecompileEcParams {
+                ec_add: 50,
+                ec_mul: 50,
+                ec_pairing: 2,
+            },
         }
     }
 }
@@ -327,7 +347,7 @@ impl<'a> CircuitInputBuilder {
             .rev()
         {
             log::debug!(
-                "op {:?}, count {}, mem rw {}(avg {:.2}), stack rw {}(avg {:.2})",
+                "op {:?}, count {}, memory_word rw {}(avg {:.2}), stack rw {}(avg {:.2})",
                 op,
                 count,
                 mem,
@@ -336,7 +356,7 @@ impl<'a> CircuitInputBuilder {
                 *stack as f32 / *count as f32
             );
         }
-        log::debug!("memory num: {}", self.block.container.memory.len());
+        log::debug!("memory_word num: {}", self.block.container.memory.len());
         log::debug!("stack num: {}", self.block.container.stack.len());
         log::debug!("storage num: {}", self.block.container.storage.len());
         log::debug!(
@@ -455,7 +475,11 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
         // Sanity check for transaction L1 fee.
-        let tx_l1_fee = tx.l1_fee();
+        let tx_l1_fee = if tx.tx_type.is_l1_msg() {
+            0
+        } else {
+            tx.l1_fee()
+        };
         if tx_l1_fee != geth_trace.l1_fee {
             log::error!(
                 "Mismatch tx_l1_fee: calculated = {}, real = {}",
@@ -467,6 +491,8 @@ impl<'a> CircuitInputBuilder {
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
         let mut debug_tx = tx.clone();
         debug_tx.input.clear();
+        debug_tx.rlp_bytes.clear();
+        debug_tx.rlp_unsigned_bytes.clear();
         log::trace!("handle_tx tx {:?}", debug_tx);
         if let Some(al) = &eth_tx.access_list {
             for item in &al.0 {
@@ -500,7 +526,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
                 if geth_step.op.is_push_with_data() {
-                    format!("{:?}", geth_trace.struct_logs[index + 1].stack.last())
+                    format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
@@ -545,7 +571,20 @@ impl<'a> CircuitInputBuilder {
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )
-                } else {
+                } else if matches!(geth_step.op, OpcodeId::SSTORE) {
+                    format!(
+                        "{:?} {:?} {:?}",
+                        state_ref.call().unwrap().address,
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                    )
+                } else if matches!(geth_step.op, OpcodeId::RETURN) {
+		    format!(
+                        "{:?} {:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                    )
+		} else {
                     "".to_string()
                 }
             );
@@ -960,10 +999,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         _prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = BlockHead::new(self.chain_id, history_hashes, eth_block)?;
-        let mut builder =
-            CircuitInputBuilder::new_from_headers(self.circuits_params, sdb, code_db, &[block]);
-
+        let block = Block::new(
+            self.chain_id,
+            history_hashes,
+            eth_block,
+            self.circuits_params,
+        )?;
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, &block);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }

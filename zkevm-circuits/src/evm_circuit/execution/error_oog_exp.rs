@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{ByteSizeGadget, LtGadget},
+            math_gadget::{ByteOrWord, ByteSizeGadget, LtGadget},
             CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
             // static_gas = 10
             // dynamic_gas = exponent_byte_size * 50
             // gas_cost = dynamic_gas + static_gas
-            exponent_byte_size.byte_size() * GasCost::EXP_BYTE_TIMES.0.expr()
+            exponent_byte_size.size() * GasCost::EXP_BYTE_TIMES.0.expr()
                 + OpcodeId::EXP.constant_gas_cost().expr(),
         );
 
@@ -111,7 +111,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         self.base.assign(region, offset, Some(base.to_le_bytes()))?;
         self.exponent
             .assign(region, offset, Some(exponent.to_le_bytes()))?;
-        self.exponent_byte_size.assign(region, offset, exponent)?;
+        self.exponent_byte_size
+            .assign(region, offset, ByteOrWord::Word(exponent))?;
         self.insufficient_gas_cost.assign_value(
             region,
             offset,

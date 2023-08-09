@@ -199,14 +199,14 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     pub fn code_hash(&self, n: U256) -> Value<F> {
-        self.challenges.evm_word().map(|r| {
-            if cfg!(feature = "poseidon-codehash") {
-                // only FieldExt is not enough for ToScalar trait so we have to make workaround
-                rlc::value(&n.to_le_bytes(), F::from(256u64))
-            } else {
-                rlc::value(&n.to_le_bytes(), r)
-            }
-        })
+        if cfg!(feature = "poseidon-codehash") {
+            // only FieldExt is not enough for ToScalar trait so we have to make workaround
+            Value::known(rlc::value(&n.to_le_bytes(), F::from(256u64)))
+        } else {
+            self.challenges
+                .evm_word()
+                .map(|r| rlc::value(&n.to_le_bytes(), r))
+        }
     }
 
     pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
@@ -416,6 +416,12 @@ impl<F: FieldExt> CellManager<F> {
         }
     }
 
+    pub(crate) fn reset_heights_to(&mut self, heights: &[usize]) {
+        for (column, &height) in self.columns.iter_mut().zip_eq(heights.iter()) {
+            column.height = height;
+        }
+    }
+
     pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
         let mut cells = Vec::with_capacity(count);
         while cells.len() < count {
@@ -464,7 +470,7 @@ impl<F: FieldExt> CellManager<F> {
             Some(index) => index,
             // If we reach this case, it means that all the columns of cell_type have assignments
             // taking self.height rows, so there's no more space.
-            None => panic!("not enough cells for query: {:?}", cell_type),
+            None => panic!("not enough cells for query: {cell_type:?}"),
         }
     }
 
@@ -474,6 +480,10 @@ impl<F: FieldExt> CellManager<F> {
             .map(|column| column.height)
             .max()
             .unwrap()
+    }
+
+    pub(crate) fn get_heights(&self) -> Vec<usize> {
+        self.columns().iter().map(|column| column.height).collect()
     }
 
     /// Returns a map of CellType -> (width, height, num_cells)
@@ -570,6 +580,40 @@ pub(crate) mod from_bytes {
         for byte in bytes.iter() {
             value += F::from(*byte as u64) * multiplier;
             multiplier *= F::from(256);
+        }
+        value
+    }
+}
+
+/// Decodes a field element from its binary representation
+pub(crate) mod from_bits {
+    use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bits: &[E]) -> Expression<F> {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = 0.expr();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value = value + bit.expr() * multiplier;
+            multiplier *= F::from(2);
+        }
+        value
+    }
+
+    pub(crate) fn value<F: FieldExt>(bits: &[bool]) -> F {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = F::zero();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value += F::from(*bit as u64) * multiplier;
+            multiplier *= F::from(2);
         }
         value
     }
@@ -679,6 +723,10 @@ impl<'a> StepRws<'a> {
     }
     /// Increment the step rw operation offset by `offset`.
     pub(crate) fn offset_add(&mut self, offset: usize) {
+        self.offset += offset
+    }
+    /// Set the step rw operation offset by `offset`.
+    pub(crate) fn offset_set(&mut self, offset: usize) {
         self.offset = offset
     }
     /// Return the next rw operation from the step.

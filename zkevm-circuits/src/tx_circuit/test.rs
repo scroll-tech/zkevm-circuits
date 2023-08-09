@@ -99,7 +99,8 @@ fn build_l1_msg_tx() -> Transaction {
     tx.is_create = eth_tx.to.is_none();
     tx.call_data_length = tx.call_data.len();
     tx.call_data_gas_cost = tx_data_gas_cost(&tx.call_data);
-    tx.tx_data_gas_cost = tx_data_gas_cost(&tx.rlp_signed);
+    // l1 msg's data has been charged in L1
+    tx.tx_data_gas_cost = 0;
     tx.v = eth_tx.v.as_u64();
     tx.r = eth_tx.r;
     tx.s = eth_tx.s;
@@ -113,10 +114,9 @@ fn run<F: Field>(
     max_txs: usize,
     max_calldata: usize,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let k = max(
-        19,
-        log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
-    );
+    let active_row_num = TxCircuit::<F>::min_num_rows(max_txs, max_calldata);
+
+    let k = max(20, log2_ceil(active_row_num));
     let circuit = TxCircuitTester::<F> {
         sig_circuit: SigCircuit {
             max_verif: max_txs,
@@ -127,13 +127,14 @@ fn run<F: Field>(
     };
     let prover = match MockProver::run(k, &circuit, vec![]) {
         Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
+        Err(e) => panic!("{e:#?}"),
     };
 
-    prover.verify_par()
+    prover.verify_at_rows_par(0..active_row_num, 0..active_row_num)
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_2tx_2max_tx() {
     const NUM_TXS: usize = 2;
     const MAX_TXS: usize = 4;
@@ -162,6 +163,7 @@ fn tx_circuit_2tx_2max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_0tx_1max_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -173,6 +175,7 @@ fn tx_circuit_0tx_1max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_1tx_1max_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -186,6 +189,7 @@ fn tx_circuit_1tx_1max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_1tx_2max_tx() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 320;
@@ -199,6 +203,7 @@ fn tx_circuit_1tx_2max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_l1_msg_tx() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 400;
@@ -211,8 +216,8 @@ fn tx_circuit_l1_msg_tx() {
     );
 }
 
-#[cfg(feature = "reject-eip2718")]
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_bad_address() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -225,6 +230,7 @@ fn tx_circuit_bad_address() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_to_is_zero() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;

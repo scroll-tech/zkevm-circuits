@@ -16,7 +16,7 @@ pub const MAX_STEP_HEIGHT: usize = 21;
 pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 
 /// Number of Advice Phase2 columns in the EVM circuit
-pub(crate) const N_PHASE2_COLUMNS: usize = 4;
+pub(crate) const N_PHASE2_COLUMNS: usize = 7;
 
 /// Number of Advice Phase1 columns in the EVM circuit
 pub(crate) const N_PHASE1_COLUMNS: usize =
@@ -37,7 +37,11 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
-    + EXP_TABLE_LOOKUPS;
+    + EXP_TABLE_LOOKUPS
+    + SIG_TABLE_LOOKUPS
+    + MODEXP_TABLE_LOOKUPS
+    + ECC_TABLE_LOOKUPS
+    + POW_OF_RAND_TABLE_LOOKUPS;
 
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -50,10 +54,13 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
     (Table::Sig, SIG_TABLE_LOOKUPS),
+    (Table::ModExp, MODEXP_TABLE_LOOKUPS),
+    (Table::Ecc, ECC_TABLE_LOOKUPS),
+    (Table::PowOfRand, POW_OF_RAND_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
-pub const FIXED_TABLE_LOOKUPS: usize = 8;
+pub const FIXED_TABLE_LOOKUPS: usize = 10;
 
 /// Tx Table lookups done in EVMCircuit
 pub const TX_TABLE_LOOKUPS: usize = 4;
@@ -79,6 +86,14 @@ pub const EXP_TABLE_LOOKUPS: usize = 1;
 /// Sig Table lookups done in EVMCircuit
 pub const SIG_TABLE_LOOKUPS: usize = 1;
 
+/// ModExp Table lookups done in EVMCircuit
+pub const MODEXP_TABLE_LOOKUPS: usize = 1;
+/// Ecc Table lookups done in EVMCircuit
+pub const ECC_TABLE_LOOKUPS: usize = 1;
+
+/// Power of Randomness lookups done from EVM Circuit.
+pub const POW_OF_RAND_TABLE_LOOKUPS: usize = 1;
+
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.
 pub(crate) const MAX_N_BYTES_INTEGER: usize = 31;
@@ -89,6 +104,9 @@ pub(crate) const N_BYTES_WORD: usize = 32;
 // Number of bytes an u64 has.
 pub(crate) const N_BYTES_U64: usize = 8;
 
+// Number of bits a u8 has.
+pub(crate) const N_BITS_U8: usize = 8;
+
 pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 
 // Number of bytes that will be used of the memory address and size.
@@ -96,6 +114,9 @@ pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 // an out-of-gas error.
 pub(crate) const N_BYTES_MEMORY_ADDRESS: usize = 5;
 pub(crate) const N_BYTES_MEMORY_WORD_SIZE: usize = 4;
+
+/// The size of a chunk of memory that is accessed at once in RW lookups.
+pub(crate) const N_BYTES_MEMORY_CHUNK: usize = N_BYTES_WORD;
 
 pub(crate) const STACK_CAPACITY: usize = 1024;
 

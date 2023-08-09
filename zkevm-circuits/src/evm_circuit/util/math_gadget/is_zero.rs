@@ -19,17 +19,30 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, value: Expression<F>) -> Self {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        name: &str,
+        value: Expression<F>,
+    ) -> Self {
         let inverse = cb.query_cell_with_type(CellType::storage_for_expr(&value));
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
         // inverse)
-        cb.add_constraint("value ⋅ (1 - value ⋅ value_inv)", value * is_zero.clone());
+        cb.add_constraint(
+            Box::leak(
+                format!("IsZeroGadget(\"{name}\"): value ⋅ (1 - value ⋅ value_inv)")
+                    .into_boxed_str(),
+            ),
+            value * is_zero.clone(),
+        );
         // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
         // inverse)`
         cb.add_constraint(
-            "value_inv ⋅ (1 - value ⋅ value_inv)",
+            Box::leak(
+                format!("IsZeroGadget(\"{name}\"): value_inv ⋅ (1 - value ⋅ value_inv)")
+                    .into_boxed_str(),
+            ),
             inverse.expr() * is_zero.clone(),
         );
 
@@ -87,7 +100,7 @@ mod tests {
     impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let n = cb.query_cell();
-            let z_gadget = IsZeroGadget::<F>::construct(cb, n.expr());
+            let z_gadget = IsZeroGadget::<F>::construct(cb, "", n.expr());
             cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());
             IsZeroGadgetTestContainer { z_gadget, n }
         }

@@ -6,7 +6,7 @@ use bus_mapping::{
     },
     evm::OpcodeId,
     operation,
-    precompile::PrecompileCalls,
+    precompile::{PrecompileAuxData, PrecompileCalls},
 };
 
 use crate::{
@@ -50,6 +50,8 @@ pub struct ExecStep {
     pub opcode: Option<OpcodeId>,
     /// The block number in which this step exists.
     pub block_num: u64,
+    /// Aux data used for precompiles
+    pub aux_data: Option<PrecompileAuxData>,
 }
 
 impl ExecStep {
@@ -216,7 +218,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                 }
             }
             circuit_input_builder::ExecState::Precompile(precompile) => match precompile {
-                PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+                PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
                 PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
                 PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
                 PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
@@ -274,5 +276,6 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
         reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
         block_num,
+        aux_data: step.aux_data.clone(),
     }
 }

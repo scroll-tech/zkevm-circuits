@@ -80,7 +80,7 @@ async fn main() {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
         let compiled = Solc::default()
             .compile_source(&path_sol)
-            .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
+            .unwrap_or_else(|_| panic!("solc compile error {path_sol:?}",));
         if !compiled.errors.is_empty() {
             panic!("Errors compiling {:?}:\n{:#?}", &path_sol, compiled.errors)
         }
@@ -133,10 +133,7 @@ async fn main() {
         .await
         .expect("cannot get block number");
     if block_number.as_u64() != 0 {
-        panic!(
-            "Blockchain is not in a clean state.  Last block number: {}",
-            block_number
-        );
+        panic!("Blockchain is not in a clean state.  Last block number: {block_number}");
     }
 
     let accounts = prov.get_accounts().await.expect("cannot get accounts");
@@ -339,9 +336,7 @@ async fn main() {
         assert_eq!(
             receipt.status,
             Some(U64::from(expected_status)),
-            "failed tx hash: {:?}, receipt: {:#?}",
-            tx_hash,
-            receipt
+            "failed tx hash: {tx_hash:?}, receipt: {receipt:#?}",
         );
     }
     let block_num = prov.get_block_number().await.expect("cannot get block_num");

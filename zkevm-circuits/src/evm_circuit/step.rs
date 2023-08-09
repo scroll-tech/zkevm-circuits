@@ -22,7 +22,7 @@ use strum_macros::EnumIter;
 impl From<PrecompileCalls> for ExecutionState {
     fn from(value: PrecompileCalls) -> Self {
         match value {
-            PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+            PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
             PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
             PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
             PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
@@ -125,7 +125,7 @@ pub enum ExecutionState {
     ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,
     // Precompiles
-    PrecompileEcRecover,
+    PrecompileEcrecover,
     PrecompileSha256,
     PrecompileRipemd160,
     PrecompileIdentity,
@@ -144,7 +144,7 @@ impl Default for ExecutionState {
 
 impl Display for ExecutionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -160,7 +160,7 @@ impl ExecutionState {
     pub(crate) fn is_precompiled(&self) -> bool {
         matches!(
             self,
-            Self::PrecompileEcRecover
+            Self::PrecompileEcrecover
                 | Self::PrecompileSha256
                 | Self::PrecompileRipemd160
                 | Self::PrecompileIdentity
@@ -174,7 +174,7 @@ impl ExecutionState {
 
     pub(crate) fn precompile_base_gas_cost(&self) -> GasCost {
         (match self {
-            Self::PrecompileEcRecover => PrecompileCalls::ECRecover,
+            Self::PrecompileEcrecover => PrecompileCalls::Ecrecover,
             Self::PrecompileSha256 => PrecompileCalls::Sha256,
             Self::PrecompileRipemd160 => PrecompileCalls::Ripemd160,
             Self::PrecompileIdentity => PrecompileCalls::Identity,
@@ -384,7 +384,7 @@ impl ExecutionState {
 
     pub fn get_step_height(&self) -> usize {
         self.get_step_height_option()
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
+            .unwrap_or_else(|| panic!("Execution state unknown: {self:?}"))
     }
 }
 

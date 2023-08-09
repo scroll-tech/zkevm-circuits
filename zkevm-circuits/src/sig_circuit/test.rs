@@ -18,11 +18,12 @@ use rand::{Rng, RngCore};
 #[test]
 fn sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
+    use crate::sig_circuit::utils::MAX_NUM_SIG;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use sha3::{Digest, Keccak256};
     let mut rng = XorShiftRng::seed_from_u64(1);
-    let max_sigs = [16];
+    let max_sigs = [1, 16, MAX_NUM_SIG];
     for max_sig in max_sigs.iter() {
         log::debug!("testing for {} signatures", max_sig);
         let mut signatures = Vec::new();
@@ -95,7 +96,7 @@ fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
 
     let prover = match MockProver::run(k, &circuit, vec![]) {
         Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
+        Err(e) => panic!("{e:#?}"),
     };
     assert_eq!(prover.verify(), Ok(()));
 }

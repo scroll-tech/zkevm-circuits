@@ -92,13 +92,13 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
 
 impl SignData {
     /// Recover address of the signature
-    pub fn get_addr(&self) -> Word {
+    pub fn get_addr(&self) -> Address {
         let pk_le = pk_bytes_le(&self.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         let pk_hash = keccak256(pk_be);
         let mut addr_bytes = [0u8; 20];
         addr_bytes.copy_from_slice(&pk_hash[12..]);
-        Address::from(addr_bytes).to_word()
+        Address::from_slice(&addr_bytes)
     }
 }
 

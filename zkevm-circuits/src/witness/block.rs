@@ -6,7 +6,10 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{
+        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEvents,
+    },
     Error,
 };
 use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
@@ -50,8 +53,6 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
-    /// IO to/from precompile Ecrecover calls.
-    pub ecrecover_events: Vec<SignData>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Withdraw root
@@ -64,6 +65,8 @@ pub struct Block<F> {
     pub mpt_updates: MptUpdates,
     /// Chain ID
     pub chain_id: u64,
+    /// IO to/from precompile calls.
+    pub precompile_events: PrecompileEvents,
 }
 
 /// ...
@@ -73,27 +76,12 @@ pub struct BlockContexts {
     pub ctxs: BTreeMap<u64, BlockContext>,
 }
 
-impl BlockContexts {
-    /// ..
-    pub fn first(&self) -> &BlockContext {
-        self.ctxs.iter().next().unwrap().1
-    }
-    /// ..
-    pub fn first_or_default(&self) -> BlockContext {
-        self.ctxs
-            .iter()
-            .next()
-            .map(|(_k, v)| v.clone())
-            .unwrap_or_default()
-    }
-}
-
 impl<F: Field> Block<F> {
     /// For each tx, for each step, print the rwc at the beginning of the step,
     /// and all the rw operations of the step.
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
-            println!("tx {}", tx_idx);
+            println!("tx {tx_idx}");
             for step in &tx.steps {
                 println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
                 for rw_ref in &step.rw_indices {
@@ -108,25 +96,37 @@ impl<F: Field> Block<F> {
         let mut signatures: Vec<SignData> = self
             .txs
             .iter()
-            .map(|tx| {
-                if tx.tx_type.is_l1_msg() {
-                    // dummy signature
-                    Ok(SignData::default())
-                } else {
-                    tx.sign_data()
-                }
-            })
+            // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
-        signatures.extend_from_slice(&self.ecrecover_events);
-        if padding {
-            let max_verif = self.circuits_params.max_txs;
-            signatures.resize(
-                max_verif,
-                Transaction::dummy(self.chain_id).sign_data().unwrap(),
-            )
+        signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
+        if padding && self.txs.len() < self.circuits_params.max_txs {
+            // padding tx's sign data
+            signatures.push(Transaction::dummy(self.chain_id).sign_data().unwrap());
         }
         signatures
+    }
+
+    /// Get EcAdd operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_add_ops(&self) -> Vec<EcAddOp> {
+        self.precompile_events.get_ec_add_events()
+    }
+
+    /// Get EcMul operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_mul_ops(&self) -> Vec<EcMulOp> {
+        self.precompile_events.get_ec_mul_events()
+    }
+
+    /// Get EcPairing operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_pairing_ops(&self) -> Vec<EcPairingOp> {
+        self.precompile_events.get_ec_pairing_events()
+    }
+
+    /// Get BigModexp operations from all precompiled contract calls in this block.
+    pub(crate) fn get_big_modexp(&self) -> Vec<BigModExp> {
+        self.precompile_events.get_modexp_events()
     }
 }
 
@@ -154,8 +154,11 @@ impl<F: Field> Block<F> {
             .values()
             .map(|bytecode| bytecode.bytes.len() + 1)
             .sum();
-        let num_rows_required_for_copy_table: usize =
-            self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
+        let num_rows_required_for_copy_table: usize = self
+            .copy_events
+            .iter()
+            .map(|c| c.copy_bytes.bytes.len() * 2)
+            .sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
             TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;
@@ -370,6 +373,7 @@ pub fn block_convert<F: Field>(
     } else {
         block.circuits_params.max_rws
     };
+
     let mpt_updates = MptUpdates::from_rws_with_mock_state_roots(
         &rws.table_assignments(),
         block.prev_state_root,
@@ -443,7 +447,6 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        ecrecover_events: block.ecrecover_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params
@@ -455,6 +458,7 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
+        precompile_events: block.precompile_events.clone(),
     })
 }
 

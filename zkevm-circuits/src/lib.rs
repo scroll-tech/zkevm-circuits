@@ -18,9 +18,14 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![deny(clippy::debug_assert_with_mut_call)]
+// We have too many cast between `usize` and `u64`,
+// we'd better ensure usize is 64-bit on target arch.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("This program requires a 64-bit target architecture.");
 
 pub mod bytecode_circuit;
 pub mod copy_circuit;
+pub mod ecc_circuit;
 pub mod evm_circuit;
 pub mod exp_circuit;
 pub mod keccak_circuit;
@@ -31,6 +36,7 @@ pub mod rlp_circuit_fsm;
 pub mod sig_circuit;
 // we don't use this for aggregation
 //pub mod root_circuit;
+pub mod modexp_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;

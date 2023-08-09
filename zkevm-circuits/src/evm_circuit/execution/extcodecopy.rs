@@ -214,7 +214,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             region,
             offset,
             Value::known(
-                memory_length
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),

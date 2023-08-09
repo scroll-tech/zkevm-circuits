@@ -62,12 +62,13 @@ use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
 use crate::{
     bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs},
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
+    ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    modexp_circuit::{ModExpCircuit, ModExpCircuitConfig},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    table::SigTable,
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block},
@@ -76,16 +77,14 @@ use crate::{
 #[cfg(feature = "zktrie")]
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
 
-#[cfg(not(feature = "onephase"))]
 use crate::util::Challenges;
-#[cfg(feature = "onephase")]
-use crate::util::MockChallenges as Challenges;
 
 use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable,
-        RlpFsmRlpTable as RlpTable, RwTable, TxTable,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
+        MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
+        TxTable, U16Table, U8Table,
     },
 };
 
@@ -97,7 +96,8 @@ use bus_mapping::{
 use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem, Error},
 };
 use itertools::Itertools;
 use snark_verifier_sdk::CircuitExt;
@@ -116,10 +116,14 @@ pub struct SuperCircuitConfig<F: Field> {
     rlp_table: RlpTable,
     tx_table: TxTable,
     poseidon_table: PoseidonTable,
+    u8_table: U8Table,
+    u16_table: U16Table,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     sig_circuit: SigCircuitConfig<F>,
+    modexp_circuit: ModExpCircuitConfig,
+    ecc_circuit: EccCircuitConfig<F>,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
     #[cfg(feature = "poseidon-codehash")]
@@ -132,11 +136,11 @@ pub struct SuperCircuitConfig<F: Field> {
     rlp_circuit: RlpCircuitConfig<F>,
     /// Mpt Circuit
     #[cfg(feature = "zktrie")]
-    mpt_circuit: MptCircuitConfig,
+    mpt_circuit: MptCircuitConfig<F>,
 }
 
 /// Circuit configuration arguments
-pub struct SuperCircuitConfigArgs<F: Field> {
+pub struct SuperCircuitConfigArgs {
     /// Max txs
     pub max_txs: usize,
     /// Max calldata
@@ -146,15 +150,15 @@ pub struct SuperCircuitConfigArgs<F: Field> {
     /// Mock randomness
     pub mock_randomness: u64,
     /// Challenges
-    pub challenges: crate::util::Challenges<Expression<F>>,
+    pub challenges: crate::util::Challenges,
 }
 
-impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
-    type ConfigArgs = SuperCircuitConfigArgs<F>;
+impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
+    type ConfigArgs = SuperCircuitConfigArgs;
 
     /// Configure SuperCircuitConfig
     fn new(
-        meta: &mut ConstraintSystem<F>,
+        meta: &mut ConstraintSystem<Fr>,
         Self::ConfigArgs {
             max_txs,
             max_calldata,
@@ -163,9 +167,11 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let log_circuit_info = |meta: &ConstraintSystem<F>, tag: &str| {
+        let log_circuit_info = |meta: &ConstraintSystem<Fr>, tag: &str| {
             log::debug!("circuit info after {}: {:#?}", tag, circuit_stats(meta));
         };
+        let challenges_expr = challenges.exprs(meta);
+
         let tx_table = TxTable::construct(meta);
         log_circuit_info(meta, "tx table");
         let rw_table = RwTable::construct(meta);
@@ -192,12 +198,23 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         log_circuit_info(meta, "keccak table");
         let sig_table = SigTable::construct(meta);
         log_circuit_info(meta, "sig table");
+        let modexp_table = ModExpTable::construct(meta);
+        log_circuit_info(meta, "modexp table");
+        let ecc_table = EccTable::construct(meta);
+        log_circuit_info(meta, "ecc table");
+        let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+        log_circuit_info(meta, "power of randomness table");
+
+        let u8_table = U8Table::construct(meta);
+        log_circuit_info(meta, "u8 table");
+        let u16_table = U16Table::construct(meta);
+        log_circuit_info(meta, "u16 table");
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
             KeccakCircuitConfigArgs {
                 keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "keccak circuit");
@@ -210,7 +227,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             RlpCircuitConfigArgs {
                 rlp_table,
-                challenges: challenges.clone(),
+                u8_table,
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "rlp circuit");
@@ -224,7 +242,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 block_table: block_table.clone(),
                 keccak_table: keccak_table.clone(),
                 tx_table: tx_table.clone(),
-                challenges: challenges.clone(),
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "pi circuit");
@@ -237,7 +255,9 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 keccak_table: keccak_table.clone(),
                 rlp_table,
                 sig_table,
-                challenges: challenges.clone(),
+                u8_table,
+                u16_table,
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "tx circuit");
@@ -248,7 +268,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             BytecodeCircuitConfigArgs {
                 bytecode_table: bytecode_table.clone(),
                 keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
+                challenges: challenges_expr.clone(),
             },
         );
         #[cfg(feature = "poseidon-codehash")]
@@ -258,7 +278,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 base_args: BytecodeCircuitConfigArgs {
                     bytecode_table: bytecode_table.clone(),
                     keccak_table: keccak_table.clone(),
-                    challenges: challenges.clone(),
+                    challenges: challenges_expr.clone(),
                 },
                 poseidon_table,
             },
@@ -274,7 +294,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,
-                challenges: challenges.clone(),
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "copy circuit");
@@ -285,28 +305,20 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             MptCircuitConfigArgs {
                 poseidon_table,
                 mpt_table,
-                challenges: challenges.clone(),
+                challenges,
             },
         );
         #[cfg(feature = "zktrie")]
         log_circuit_info(meta, "zktrie circuit");
 
-        let sig_circuit = SigCircuitConfig::new(
-            meta,
-            SigCircuitConfigArgs {
-                keccak_table: keccak_table.clone(),
-                sig_table,
-                challenges: challenges.clone(),
-            },
-        );
-        log_circuit_info(meta, "sig circuit");
-
+        let modexp_circuit = ModExpCircuitConfig::new(meta, modexp_table);
+        log_circuit_info(meta, "modexp circuit");
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
                 rw_table,
                 mpt_table,
-                challenges: challenges.clone(),
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "state circuit");
@@ -317,30 +329,57 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
-                challenges,
+                challenges: challenges_expr.clone(),
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table,
                 block_table: block_table.clone(),
                 copy_table,
-                keccak_table,
+                keccak_table: keccak_table.clone(),
                 exp_table,
                 sig_table,
+                modexp_table,
+                ecc_table,
+                pow_of_rand_table,
             },
         );
         log_circuit_info(meta, "evm circuit");
+
+        // Sig Circuit and ECC Circuit use halo2-lib's vertifcal assignments gates
+        // and need to be configured after Circuits with higher counts of unique rotation queries
+        // (ex. Keccak, EVM) to avoid assigning advice values into blinding area.
+        let sig_circuit = SigCircuitConfig::new(
+            meta,
+            SigCircuitConfigArgs {
+                keccak_table,
+                sig_table,
+                challenges: challenges_expr.clone(),
+            },
+        );
+        log_circuit_info(meta, "sig circuit");
+
+        let ecc_circuit = EccCircuitConfig::new(
+            meta,
+            EccCircuitConfigArgs {
+                ecc_table,
+                challenges: challenges_expr,
+            },
+        );
+        log_circuit_info(meta, "ecc circuit");
 
         #[cfg(feature = "onephase")]
         if meta.max_phase() != 0 {
             log::warn!("max_phase: {}", meta.max_phase());
         }
 
-        SuperCircuitConfig::<F> {
+        SuperCircuitConfig {
             block_table,
             mpt_table,
             tx_table,
             rlp_table,
             poseidon_table,
+            u8_table,
+            u16_table,
             evm_circuit,
             state_circuit,
             copy_circuit,
@@ -352,10 +391,24 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             tx_circuit,
             exp_circuit,
             sig_circuit,
+            modexp_circuit,
+            ecc_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
     }
+}
+
+/// Row usage for each sub circuit
+#[derive(Clone, Default, Debug)]
+pub struct SubcircuitRowUsage {
+    /// Subcircuit name
+    pub name: String,
+    // TODO: better name?
+    /// Without padding
+    pub row_num_real: usize,
+    /// With padding
+    pub row_num_total: usize,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -387,6 +440,10 @@ pub struct SuperCircuit<
     pub poseidon_circuit: PoseidonCircuit<F>,
     /// Sig Circuit
     pub sig_circuit: SigCircuit<F>,
+    /// Modexp Circuit
+    pub modexp_circuit: ModExpCircuit<F>,
+    /// Ecc Circuit
+    pub ecc_circuit: EccCircuit<F, 9>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit
@@ -403,8 +460,8 @@ impl<
     > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
 {
     /// Return the number of rows required to verify a given block
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
+    pub fn get_num_rows_required(block: &Block<Fr>) -> usize {
+        let num_rows_evm_circuit = EvmCircuit::<Fr>::get_num_rows_required(block);
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         // FIXME: need to call the SigCircuit::get_num_rows_required instead
         // let num_rows_tx_circuit =
@@ -413,7 +470,7 @@ impl<
         num_rows_evm_circuit
     }
     /// Return the minimum number of rows required to prove the block
-    pub fn min_num_rows_block_subcircuits(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+    pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> Vec<SubcircuitRowUsage> {
         let evm = EvmCircuit::min_num_rows_block(block);
         let state = StateCircuit::min_num_rows_block(block);
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
@@ -422,10 +479,13 @@ impl<
         let tx = TxCircuit::min_num_rows_block(block);
         let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
+        let mod_exp = ModExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
-        let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::min_num_rows_block(block);
+        let sig = SigCircuit::min_num_rows_block(block);
+        let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
-        let mpt = (0, 0); //MptCircuit::min_num_rows_block(block);
+        let mpt = MptCircuit::<Fr>::min_num_rows_block(block);
 
         let rows: Vec<(usize, usize)> = vec![
             evm,
@@ -436,19 +496,45 @@ impl<
             tx,
             rlp,
             exp,
+            mod_exp,
             pi,
             poseidon,
+            sig,
+            ecc,
             #[cfg(feature = "zktrie")]
             mpt,
         ];
-        let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
-            rows.into_iter().unzip();
-        log::debug!(
-            "subcircuit rows(without padding): {:?}",
-            rows_without_padding
-        );
-        log::debug!("subcircuit rows(with    padding): {:?}", rows_with_padding);
-        (rows_without_padding, rows_with_padding)
+        let sub_circuit_names: Vec<String> = [
+            "evm",
+            "state",
+            "bytecode",
+            "copy",
+            "keccak",
+            "tx",
+            "rlp",
+            "exp",
+            "modexp",
+            "pi",
+            "poseidon",
+            "sig",
+            "ecc",
+            #[cfg(feature = "zktrie")]
+            "mpt",
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+        let row_usage_details = sub_circuit_names
+            .into_iter()
+            .zip_eq(rows.into_iter())
+            .map(|(name, (row_num_real, row_num_total))| SubcircuitRowUsage {
+                name,
+                row_num_real,
+                row_num_total,
+            })
+            .collect_vec();
+        log::debug!("row_usage_details {row_usage_details:?}");
+        row_usage_details
     }
 }
 
@@ -456,30 +542,32 @@ impl<
 // trait for it in order to get the `new_from_block` and `instance` methods that
 // allow us to generalize integration tests.
 impl<
-        F: Field,
         const MAX_TXS: usize,
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MOCK_RANDOMNESS: u64,
-    > SubCircuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
+    > SubCircuit<Fr>
+    for SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
 {
-    type Config = SuperCircuitConfig<F>;
+    type Config = SuperCircuitConfig<Fr>;
 
     fn unusable_rows() -> usize {
         itertools::max([
-            EvmCircuit::<F>::unusable_rows(),
-            StateCircuit::<F>::unusable_rows(),
-            TxCircuit::<F>::unusable_rows(),
-            PiCircuit::<F>::unusable_rows(),
-            BytecodeCircuit::<F>::unusable_rows(),
-            CopyCircuit::<F>::unusable_rows(),
-            ExpCircuit::<F>::unusable_rows(),
-            KeccakCircuit::<F>::unusable_rows(),
+            EvmCircuit::<Fr>::unusable_rows(),
+            StateCircuit::<Fr>::unusable_rows(),
+            TxCircuit::<Fr>::unusable_rows(),
+            // TODO: The PiCircuit unusable_rows fn is not implemented
+            // and returns the arbitrary default number, causing overflow
+            // PiCircuit::<Fr>::unusable_rows(),
+            BytecodeCircuit::<Fr>::unusable_rows(),
+            CopyCircuit::<Fr>::unusable_rows(),
+            ExpCircuit::<Fr>::unusable_rows(),
+            KeccakCircuit::<Fr>::unusable_rows(),
         ])
         .unwrap()
     }
 
-    fn new_from_block(block: &Block<F>) -> Self {
+    fn new_from_block(block: &Block<Fr>) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
         let tx_circuit = TxCircuit::new_from_block(block);
@@ -487,13 +575,15 @@ impl<
         let bytecode_circuit = BytecodeCircuit::new_from_block(block);
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
         let exp_circuit = ExpCircuit::new_from_block(block);
+        let modexp_circuit = ModExpCircuit::new_from_block(block);
         let keccak_circuit = KeccakCircuit::new_from_block(block);
         let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
         let sig_circuit = SigCircuit::new_from_block(block);
+        let ecc_circuit = EccCircuit::new_from_block(block);
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(block);
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS> {
+        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS> {
             evm_circuit,
             state_circuit,
             tx_circuit,
@@ -505,13 +595,15 @@ impl<
             poseidon_circuit,
             rlp_circuit,
             sig_circuit,
+            modexp_circuit,
+            ecc_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
     }
 
     /// Returns suitable inputs for the SuperCircuit.
-    fn instance(&self) -> Vec<Vec<F>> {
+    fn instance(&self) -> Vec<Vec<Fr>> {
         let mut instance = Vec::new();
         instance.extend_from_slice(&self.keccak_circuit.instance());
         instance.extend_from_slice(&self.pi_circuit.instance());
@@ -526,11 +618,11 @@ impl<
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
-        let (rows_without_padding, rows_with_padding) = Self::min_num_rows_block_subcircuits(block);
+    fn min_num_rows_block(block: &Block<Fr>) -> (usize, usize) {
+        let row_usage = Self::min_num_rows_block_subcircuits(block);
         (
-            itertools::max(rows_without_padding).unwrap(),
-            itertools::max(rows_with_padding).unwrap(),
+            itertools::max(row_usage.iter().map(|x| x.row_num_real)).unwrap(),
+            itertools::max(row_usage.iter().map(|x| x.row_num_total)).unwrap(),
         )
     }
 
@@ -538,8 +630,8 @@ impl<
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &crate::util::Challenges<Value<F>>,
-        layouter: &mut impl Layouter<F>,
+        challenges: &crate::util::Challenges<Value<Fr>>,
+        layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
@@ -551,6 +643,8 @@ impl<
             .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
         self.sig_circuit
             .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
+        self.modexp_circuit
+            .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
         self.state_circuit
             .synthesize_sub(&config.state_circuit, challenges, layouter)?;
         self.copy_circuit
@@ -565,9 +659,7 @@ impl<
 
         self.pi_circuit.connect_export(
             layouter,
-            // TODO: enable this after zktrie deletion deployed inside l2geth and
-            // test data regenerated.
-            None,
+            self.state_circuit.exports.borrow().as_ref(),
             self.evm_circuit.exports.borrow().as_ref(),
         )?;
 
@@ -583,23 +675,21 @@ impl<
 }
 
 impl<
-        F: Field,
         const MAX_TXS: usize,
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MOCK_RANDOMNESS: u64,
-    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
+    > Circuit<Fr> for SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
 {
-    type Config = (SuperCircuitConfig<F>, Challenges);
+    type Config = (SuperCircuitConfig<Fr>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let challenges = Challenges::construct(meta);
-        let challenge_exprs = challenges.exprs(meta);
         (
             SuperCircuitConfig::new(
                 meta,
@@ -608,7 +698,7 @@ impl<
                     max_calldata: MAX_CALLDATA,
                     max_inner_blocks: MAX_INNER_BLOCKS,
                     mock_randomness: MOCK_RANDOMNESS,
-                    challenges: challenge_exprs,
+                    challenges,
                 },
             ),
             challenges,
@@ -618,18 +708,12 @@ impl<
     fn synthesize(
         &self,
         (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
+        mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
 
         let block = self.evm_circuit.block.as_ref().unwrap();
 
-        // PI circuit had the hardcoded constants for RegionIndex of block table
-        // and tx table (which are 0 and 1).
-        // The reason for that is the assignment of block/tx tables are done in
-        // their load() functions which however do not emit the cells.
-        // To set up copy constraints between pi cells and block/tx table cells,
-        // we need to construct them manually.
         config.tx_table.load(
             &mut layouter,
             &block.txs,
@@ -639,41 +723,36 @@ impl<
             &challenges,
         )?;
 
-        config.mpt_table.load(
-            &mut layouter,
-            &self.state_circuit.updates,
-            block.circuits_params.max_mpt_rows,
-            challenges.evm_word(),
-        )?;
+        config.u8_table.load(&mut layouter)?;
+        config.u16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
 impl<
-        F: Field,
         const MAX_TXS: usize,
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MOCK_RANDOMNESS: u64,
-    > CircuitExt<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
+    > CircuitExt<Fr>
+    for SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
 {
     fn num_instance(&self) -> Vec<usize> {
         self.instances().iter().map(|l| l.len()).collect_vec()
     }
 
-    fn instances(&self) -> Vec<Vec<F>> {
+    fn instances(&self) -> Vec<Vec<Fr>> {
         self.instance()
     }
 }
 
 impl<
-        F: Field,
         const MAX_TXS: usize,
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MOCK_RANDOMNESS: u64,
-    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
+    > SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
 {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
@@ -684,7 +763,7 @@ impl<
     pub fn build(
         geth_data: GethData,
         circuits_params: CircuitsParams,
-    ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder), bus_mapping::Error> {
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>, CircuitInputBuilder), bus_mapping::Error> {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
 
@@ -704,17 +783,17 @@ impl<
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
         builder: &CircuitInputBuilder,
-    ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
         let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.randomness = F::from(MOCK_RANDOMNESS);
+        block.randomness = Fr::from(MOCK_RANDOMNESS);
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
         Self::build_from_witness_block(block)
     }
     /// ..
     pub fn build_from_witness_block(
-        block: Block<F>,
-    ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
+        block: Block<Fr>,
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
         log::debug!(
             "super circuit build_from_witness_block, circuits_params {:?}",
             block.circuits_params
@@ -725,7 +804,7 @@ impl<
         log::debug!("super circuit needs k = {}", k);
 
         let circuit =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA,MAX_INNER_BLOCKS,  MOCK_RANDOMNESS>::new_from_block(&block);
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA,MAX_INNER_BLOCKS,  MOCK_RANDOMNESS>::new_from_block(&block);
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))
