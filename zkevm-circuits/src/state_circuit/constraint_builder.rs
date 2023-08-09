@@ -231,11 +231,15 @@ impl<F: Field> ConstraintBuilder<F> {
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
-        // 2.3. value is a byte
+
+        // The address is aligned.
+        let inv_32 = F::from(32).invert().unwrap();
         self.add_lookup(
-            "memory value is a byte",
-            vec![(q.rw_table.value.clone(), q.lookups.u8.clone())],
+            "address % 32 == 0",
+            vec![(q.address.limbs[0].clone() * inv_32, q.lookups.u16.clone())],
         );
+
+        // 2.3. value is a word
         // 2.4. Start initial value is 0
         self.require_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
@@ -244,11 +248,14 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_equal(
-            "value_prev column equals initial_value for Memory",
-            q.value_prev_column(),
-            q.initial_value(),
-        );
+        // 2.6. The value on the previous row equals the value_prev column.
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
@@ -634,6 +641,10 @@ impl<F: Field> Queries<F> {
 
     fn address_change(&self) -> Expression<F> {
         self.rw_table.address.clone() - self.rw_table.prev_address.clone()
+    }
+
+    fn address_not_change(&self) -> Expression<F> {
+        not::expr(self.address_change())
     }
 
     fn rw_counter_change(&self) -> Expression<F> {
