@@ -19,7 +19,7 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, CachedRegion, Cell, Word,
+            not, CachedRegion, Cell, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -537,27 +537,25 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let mut rw_offset = 1; // is_static
-        let [value, init_code_start, init_code_length] = [0, 1, 2]
-            .map(|i| step.rw_indices[i + rw_offset])
-            .map(|idx| block.rws[idx].stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        rws.next(); // is_static
+        let [value, init_code_start, init_code_length] = [(); 3].map(|_| rws.next().stack_value());
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         let salt = if is_create2 {
-            block.rws[step.rw_indices[3 + rw_offset]].stack_value()
+            rws.next().stack_value()
         } else {
             U256::zero()
         };
-        rw_offset += usize::from(is_create2);
+        rws.next(); // skip output
 
         let shift = init_code_start.low_u64() % 32;
         let copy_rwc_inc: u64 = step.copy_rw_counter_delta;
 
         let values: Vec<u8> = get_copy_bytes(
-            block,
-            step,
-            4 + rw_offset,
-            4 + rw_offset + copy_rwc_inc as usize,
+            &mut rws,
+            copy_rwc_inc as usize,
             shift,
             init_code_length.as_u64(),
         );
@@ -597,40 +595,31 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        rw_offset += copy_rwc_inc as usize;
-        let tx_access_rw = block.rws[step.rw_indices[7 + rw_offset]];
+
+        rws.offset_add(3); // skip call context
         self.was_warm.assign(
             region,
             offset,
             Value::known(
-                tx_access_rw
+                rws.next()
                     .tx_access_list_value_pair()
                     .1
                     .to_scalar()
                     .unwrap(),
             ),
         )?;
+        rws.offset_add(2);
+        let caller_balance = rws.next().account_balance_pair().1;
 
-        let caller_balance = block.rws[step.rw_indices[10 + rw_offset]]
-            .account_balance_pair()
-            .1;
-
-        let caller_nonce = block.rws[step.rw_indices[11 + rw_offset]]
-            .account_nonce_pair()
-            .1
-            .low_u64();
+        let caller_nonce = rws.next().account_nonce_pair().1.low_u64();
 
         let is_precheck_ok =
-            if call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX {
-                1
-            } else {
-                0
-            };
-        rw_offset += is_precheck_ok;
-        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [12, 13].map(|i| {
-            let rw = block.rws[step.rw_indices[i + rw_offset]];
-            rw.call_context_value()
-        });
+            call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX;
+        if is_precheck_ok {
+            rws.next();
+        }
+        let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
+            [(); 2].map(|_| rws.next().call_context_value());
 
         self.callee_reversion_info.assign(
             region,
@@ -643,7 +632,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         )?;
 
         // retrieve code_hash for creating address
-        let code_hash_previous = block.rws[step.rw_indices[14 + rw_offset]].account_codehash_pair();
+        let code_hash_previous = rws.next().account_codehash_pair();
         let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
             .assign(region, offset, code_hash_previous_rlc)?;
@@ -658,7 +647,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let is_address_collision = !code_hash_previous.0.is_zero()
             && code_hash_previous.0 != CodeDB::empty_code_hash().to_word();
 
-        if is_precheck_ok == 1 && !is_address_collision {
+        if is_precheck_ok && !is_address_collision {
             /*
             rws:
                 ...
@@ -674,24 +663,19 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 caller balance // 15 + rw_offset
                 callee balance // 16 + rw_offset
              */
-            rw_offset += 2;
+            rws.offset_add(2);
             #[cfg(feature = "scroll")]
             {
-                let keccak_code_hash_previous = block.rws[step.rw_indices[16 + rw_offset]]
-                    .account_keccak_codehash_pair()
-                    .1;
+                rws.next();
+                let keccak_code_hash_previous = rws.next().account_keccak_codehash_pair().1;
                 self.keccak_code_hash_previous.assign(
                     region,
                     offset,
                     region.word_rlc(keccak_code_hash_previous),
-                )?;
-                rw_offset += 2; // Read Write empty Keccak code hash.
+                )?; // Read Write empty Keccak code hash.
             }
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                let account_balance_pair = [15, 16]
-                    .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
-                rw_offset += 2;
-                account_balance_pair
+                [(); 2].map(|_| rws.next().account_balance_pair())
             } else {
                 [(0.into(), 0.into()), (0.into(), 0.into())]
             };
@@ -728,16 +712,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             step.gas_left - GasCost::CREATE.as_u64() - memory_expansion_gas_cost - keccak_gas_cost;
         self.gas_left.assign(region, offset, gas_left.into())?;
 
+        rws.offset_add(7); // skip unused call context
         self.callee_is_success.assign(
             region,
             offset,
-            Value::known(if is_precheck_ok == 0 || is_address_collision {
+            Value::known(if !is_precheck_ok || is_address_collision {
                 F::zero()
             } else {
-                block.rws[step.rw_indices[22 + rw_offset]]
-                    .call_context_value()
-                    .to_scalar()
-                    .unwrap()
+                rws.next().call_context_value().to_scalar().unwrap()
             }),
         )?;
 

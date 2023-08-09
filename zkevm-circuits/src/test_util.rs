@@ -72,16 +72,16 @@ fn init_env_logger() {
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
 ///     .block_modifier(Box::new(|block| block.circuits_params.max_evm_rows = (1 << 18) - 100))
-///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
+///     .state_checks(Some(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err()))))
 ///     .run();
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<CircuitsParams>,
     block: Option<Block<Fr>>,
-    evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
-    state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
-    copy_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+    evm_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
+    state_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
+    copy_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
     geth_data_modifiers: Vec<Box<dyn Fn(&mut GethData)>>,
 }
@@ -93,24 +93,24 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             test_ctx: None,
             circuits_params: None,
             block: None,
-            evm_checks: Box::new(|prover, gate_rows, lookup_rows| {
+            evm_checks: Some(Box::new(|prover, gate_rows, lookup_rows| {
                 assert_eq!(prover.verify_at_rows_par(
                     gate_rows.iter().cloned(),
                     lookup_rows.iter().cloned(),
                 ), Ok(()));
-            }),
-            state_checks: Box::new(|prover, gate_rows, lookup_rows| {
+            })),
+            state_checks: Some(Box::new(|prover, gate_rows, lookup_rows| {
                 assert_eq!(prover.verify_at_rows_par(
                     gate_rows.iter().cloned(),
                     lookup_rows.iter().cloned(),
                 ), Ok(()));
-            }),
-            copy_checks: Box::new(|prover, gate_rows, lookup_rows| {
+            })),
+            copy_checks: Some(Box::new(|prover, gate_rows, lookup_rows| {
                 assert_eq!(prover.verify_at_rows_par(
                     gate_rows.iter().cloned(),
                     lookup_rows.iter().cloned(),
                 ), Ok(()));
-            }),
+            })),
             block_modifiers: vec![],
             geth_data_modifiers: vec![],
         }
@@ -157,7 +157,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Circuit verification.
     pub fn state_checks(
         mut self,
-        state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+        state_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
     ) -> Self {
         self.state_checks = state_checks;
         self
@@ -168,9 +168,20 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Circuit verification.
     pub fn evm_checks(
         mut self,
-        evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+        evm_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
     ) -> Self {
         self.evm_checks = evm_checks;
+        self
+    }
+
+    #[allow(clippy::type_complexity)]
+    /// Allows to provide checks different than the default ones for the Copy
+    /// Circuit verification.
+    pub fn copy_checks(
+        mut self,
+        copy_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
+    ) -> Self {
+        self.copy_checks = copy_checks;
         self
     }
 
@@ -235,18 +246,18 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         const NUM_BLINDING_ROWS: usize = 64;
         // Run evm circuit test
-        {
+        if let Some(evm_checks) = &self.evm_checks {
             let k = block.get_test_degree();
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = EvmCircuit::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
-            self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
+            evm_checks(prover, &active_gate_rows, &active_lookup_rows)
         }
 
         // Run state circuit test
-        {
+        if let Some(state_checks) = &self.state_checks {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
             let k = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
             let state_circuit = StateCircuit::<Fr>::new(block.rws.clone(), params.max_rws);
@@ -260,11 +271,11 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .count();
             let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
-            self.state_checks.as_ref()(prover, &rows, &rows);
+            state_checks(prover, &rows, &rows);
         }
 
         // Run copy circuit test
-        {
+        if let Some(copy_checks) = &self.copy_checks {
             let (active_rows, max_rows) = CopyCircuit::<Fr>::min_num_rows_block(&block);
             let k1 = block.get_test_degree();
             let k2 = log2_ceil(max_rows + NUM_BLINDING_ROWS);
@@ -274,7 +285,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let prover = MockProver::<Fr>::run(k, &copy_circuit, instance).unwrap();
             let rows = (0..active_rows).collect();
 
-            self.copy_checks.as_ref()(prover, &rows, &rows);
+            copy_checks(prover, &rows, &rows);
         }
     }
 }
