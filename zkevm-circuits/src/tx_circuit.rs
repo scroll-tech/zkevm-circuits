@@ -108,6 +108,8 @@ pub struct TxCircuitConfig<F: Field> {
     tx_table: TxTable,
     tx_tag_bits: BinaryNumberConfig<TxFieldTag, 5>,
 
+    // A selector which is enabled at 2nd row
+    q_second: Column<Fixed>,
     tx_type: Column<Advice>,
     tx_type_bits: BinaryNumberConfig<TxType, 3>,
     // The associated rlp tag to lookup in the RLP table
@@ -203,7 +205,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = tx_table.q_enable;
-
+        let q_second = meta.fixed_column();
         let q_calldata_first = meta.fixed_column();
         let q_calldata_last = meta.fixed_column();
         // tag, rlp_tag, tx_type, is_none
@@ -325,6 +327,17 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         );
 
         // tx_id transition
+        meta.create_gate("tx_id starts with 1", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "tx_id == 1",
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                1.expr(),
+            );
+
+            cb.gate(meta.query_fixed(q_second, Rotation::cur()))
+        });
         meta.create_gate("tx_id transition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1060,6 +1073,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_type_bits,
             rlp_tag,
             is_none,
+            q_second,
             u16_table,
             tx_id_is_zero,
             value_is_zero,
@@ -1935,6 +1949,13 @@ impl<F: Field> TxCircuit<F> {
                     None,
                     None,
                     None,
+                )?;
+
+                region.assign_fixed(
+                    || "q_second",
+                    config.q_second,
+                    1,
+                    || Value::known(F::one()),
                 )?;
 
                 // Assign all tx fields except for call data
