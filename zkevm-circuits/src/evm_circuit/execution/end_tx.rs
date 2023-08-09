@@ -312,7 +312,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         )?;
         let coinbase_reward = effective_tip * (gas_used - effective_refund);
         let (coinbase_codehash, _) = rws.next().account_codehash_pair();
-        let coinbase_created = coinbase_codehash.is_zero() && !coinbase_reward.is_zero();
         let coinbase_codehash_rlc = region.code_hash(coinbase_codehash);
         self.coinbase_codehash
             .assign(region, offset, coinbase_codehash_rlc)?;
