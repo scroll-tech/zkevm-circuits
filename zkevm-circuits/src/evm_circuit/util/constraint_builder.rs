@@ -751,7 +751,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         tag: RwTableTag,
         values: RwValues<F>,
     ) {
-        let name = format!("rw lookup {}", name);
+        let name = format!("rw lookup {name}");
         self.add_lookup(
             &name,
             Lookup::Rw {
@@ -812,7 +812,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         if let Some(reversion_info) = reversion_info {
             let reversible_write_counter_inc_selector = self.condition_expr();
             self.condition(not::expr(reversion_info.is_persistent()), |cb| {
-                let name = format!("{} with reversion", name);
+                let name = format!("{name} with reversion");
                 cb.rw_lookup_with_counter(
                     &name,
                     reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
@@ -1207,8 +1207,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn memory_lookup(
         &mut self,
         is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
+        memory_address: Expression<F>, // slot
+        value: Expression<F>,
+        value_prev: Expression<F>,
         call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
@@ -1220,8 +1221,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 memory_address,
                 0.expr(),
                 0.expr(),
-                byte,
-                0.expr(),
+                value,
+                value_prev,
                 0.expr(),
                 0.expr(),
             ),
@@ -1333,6 +1334,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 rwc_inc: rwc_inc.clone(),
             },
         );
+        // TODO: constrain the value of rwc_inc.
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
     }
 
@@ -1596,7 +1598,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 self.in_next_step = in_next_step;
 
                 // Require the stored value to equal the value of the expression
-                let name = format!("{} (stored expression)", name);
+                let name = format!("{name} (stored expression)");
                 self.push_constraint(
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),

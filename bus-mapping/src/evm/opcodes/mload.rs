@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     Error,
 };
-use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian};
+use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
@@ -28,31 +28,24 @@ impl Opcode for Mload {
         // Manage first stack read at latest stack position
         state.stack_read(&mut exec_step, stack_position, stack_value_read)?;
 
-        // Read the memory
-        let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        // Accesses to memory that hasn't been initialized are valid, and return
-        // 0.
+        // Read the memory value from the next step of the trace.
         let mem_read_value = geth_steps[1].stack.last()?;
 
+        let offset = stack_value_read.as_u64();
+        let shift = offset % 32;
+        let slot = offset - shift;
+
         // First stack write
-        //
         state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
 
-        // First mem read -> 32 MemoryOp generated.
-        //
-        for byte in mem_read_value.to_be_bytes() {
-            state.memory_read(&mut exec_step, mem_read_addr, byte)?;
+        state.memory_read_word(&mut exec_step, slot.into())?;
+        state.memory_read_word(&mut exec_step, (slot + 32).into())?;
 
-            // Update mem_read_addr to next byte's one
-            mem_read_addr += MemoryAddress::from(1);
-        }
-
-        // reconstruction
-        let offset = geth_step.stack.nth_last(0)?;
-        let offset_addr: MemoryAddress = offset.try_into()?;
-
-        let minimal_length = offset_addr.0 + 32;
-        state.call_ctx_mut()?.memory.extend_at_least(minimal_length);
+        // Expand memory if needed.
+        state
+            .call_ctx_mut()?
+            .memory
+            .extend_at_least((offset + 32) as usize);
 
         Ok(vec![exec_step])
     }
@@ -60,7 +53,6 @@ impl Opcode for Mload {
 
 #[cfg(test)]
 mod mload_tests {
-    use super::*;
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
@@ -68,7 +60,7 @@ mod mload_tests {
     };
     use eth_types::{
         bytecode,
-        evm_types::{OpcodeId, StackAddress},
+        evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
         Word,
     };
@@ -123,18 +115,24 @@ mod mload_tests {
             ]
         );
 
+        let shift = 0x40 % 32;
+        let slot = 0x40 - shift;
         assert_eq!(
-            (2..34)
+            (2..4)
                 .map(|idx| &builder.block.container.memory
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
-            Word::from(0x80)
-                .to_be_bytes()
-                .into_iter()
-                .enumerate()
-                .map(|(idx, byte)| (RW::READ, MemoryOp::new(1, MemoryAddress(idx + 0x40), byte)))
-                .collect_vec()
+            vec![
+                (
+                    RW::READ,
+                    MemoryOp::new(1, MemoryAddress(slot), Word::from(0x80u64))
+                ),
+                (
+                    RW::READ,
+                    MemoryOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
+                ),
+            ]
         )
     }
 }

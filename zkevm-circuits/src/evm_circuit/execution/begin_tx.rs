@@ -23,7 +23,8 @@ use crate::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag,
     },
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar};
+use bus_mapping::circuit_input_builder::CopyDataType;
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -71,6 +72,8 @@ pub(crate) struct BeginTxGadget<F> {
     is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
     /// Keccak256(RLP([tx_caller_address, tx_nonce]))
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
+    keccak_code_hash: Cell<F>,
+    init_code_rlc: Cell<F>,
     /// RLP gadget for CREATE address.
     create: ContractCreateGadget<F, false>,
     is_caller_callee_equal: Cell<F>,
@@ -328,7 +331,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // 1. Handle contract creation transaction.
-        cb.condition(tx_is_create.expr(), |cb| {
+        let (init_code_rlc, keccak_code_hash) = cb.condition(tx_is_create.expr(), |cb| {
             let output_rlc = cb.word_rlc::<N_BYTES_WORD>(
                 caller_nonce_hash_bytes
                     .iter()
@@ -338,6 +341,28 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     .unwrap(),
             );
             cb.keccak_table_lookup(create.input_rlc(cb), create.input_length(), output_rlc);
+
+            let keccak_code_hash = cb.query_cell_phase2();
+            let init_code_rlc = cb.query_cell_phase2();
+            // keccak table lookup for init code.
+            cb.keccak_table_lookup(
+                init_code_rlc.expr(),
+                tx_call_data_length.expr(),
+                keccak_code_hash.expr(),
+            );
+            // copy table lookup for init code.
+            cb.copy_table_lookup(
+                tx_id.expr(),                    // src_id
+                CopyDataType::TxCalldata.expr(), // src_tag
+                cb.curr.state.code_hash.expr(),  // dst_id
+                CopyDataType::Bytecode.expr(),   // dst_tag
+                0.expr(),                        // src_addr
+                tx_call_data_length.expr(),      // src_addr_end
+                0.expr(),                        // dst_addr
+                tx_call_data_length.expr(),      // length
+                init_code_rlc.expr(),            // rlc_acc
+                0.expr(),                        // rwc increase
+            );
 
             cb.account_write(
                 call_callee_address.expr(),
@@ -418,6 +443,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 log_id: To(0.expr()),
                 ..StepStateTransition::new_context()
             });
+
+            (init_code_rlc, keccak_code_hash)
         });
 
         // 2. Handle call to precompiled contracts.
@@ -623,6 +650,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             intrinsic_gas_cost,
             is_precompile_lt,
             caller_nonce_hash_bytes,
+            init_code_rlc,
+            keccak_code_hash,
             create,
             is_caller_callee_equal,
             coinbase,
@@ -835,6 +864,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         {
             c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
+        let (init_code_rlc, keccak_code_hash_rlc) = if tx.is_create {
+            let init_code_rlc =
+                region.keccak_rlc(&tx.call_data.iter().cloned().rev().collect::<Vec<u8>>());
+            let keccak_code_hash_rlc = region.word_rlc(U256::from(keccak256(&tx.call_data)));
+            (init_code_rlc, keccak_code_hash_rlc)
+        } else {
+            (Value::known(F::zero()), Value::known(F::zero()))
+        };
+        self.init_code_rlc.assign(region, offset, init_code_rlc)?;
+        self.keccak_code_hash
+            .assign(region, offset, keccak_code_hash_rlc)?;
+
         self.create.assign(
             region,
             offset,

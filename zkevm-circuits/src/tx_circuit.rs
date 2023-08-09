@@ -134,6 +134,8 @@ pub struct TxCircuitConfig<F: Field> {
     /// An accumulator value used to correctly calculate the calldata gas cost
     /// for a tx.
     calldata_gas_cost_acc: Column<Advice>,
+    /// An accumulator value used to correctly calculate the RLC(calldata) for a tx.
+    calldata_rlc: Column<Advice>,
 
     /// Columns for ensuring that BlockNum is correct
     is_padding_tx: Column<Advice>,
@@ -183,7 +185,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             keccak_table,
             rlp_table,
             sig_table,
-            challenges: _,
+            challenges,
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = tx_table.q_enable;
@@ -203,6 +205,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // columns for accumulating length and gas_cost of call_data
         let is_final = meta.advice_column();
         let calldata_gas_cost_acc = meta.advice_column();
+        let calldata_rlc = meta.advice_column_in(SecondPhase);
 
         // fixed column for showing (tx_id' - tx_id) < 2^16
         let u16_table = meta.lookup_table_column();
@@ -276,6 +279,13 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_hash, TxHash);
         is_tx_tag!(is_block_num, BlockNumber);
 
+        let tx_id_unchanged = IsEqualChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enable, Rotation::cur()),
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::next()),
+        );
+
         // testing if value is zero for tags
         let value_is_zero = IsZeroChip::configure(
             meta,
@@ -324,6 +334,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     );
                 },
             );
+
+            cb.condition(tx_id_unchanged.is_equal_expression.expr(), |cb| {
+                cb.require_equal(
+                    "sv_address does not change",
+                    meta.query_advice(sv_address, Rotation::next()),
+                    meta.query_advice(sv_address, Rotation::cur()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -641,10 +659,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_none,
             &lookup_conditions,
             is_final,
+            is_calldata,
             is_chain_id,
             is_l1_msg,
             sv_address,
             calldata_gas_cost_acc,
+            calldata_rlc,
             tx_table.clone(),
             keccak_table.clone(),
             rlp_table,
@@ -732,13 +752,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         ////////////////////////////////////////////////////////////////////////
         ///////////  CallData length and gas_cost calculation  /////////////////
         ////////////////////////////////////////////////////////////////////////
-        let tx_id_unchanged = IsEqualChip::configure(
-            meta,
-            |meta| meta.query_fixed(q_enable, Rotation::cur()),
-            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
-            |meta| meta.query_advice(tx_table.tx_id, Rotation::next()),
-        );
-
         meta.lookup("tx_id_diff must in u16", |meta| {
             let q_enable = meta.query_fixed(q_enable, Rotation::next());
             let is_calldata = meta.query_advice(is_calldata, Rotation::cur());
@@ -764,9 +777,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 0.expr(),
             );
             cb.require_equal(
-                "calldata_gas_cost_acc == gas_cost_next",
+                "calldata_gas_cost_acc == gas_cost",
                 meta.query_advice(calldata_gas_cost_acc, Rotation::cur()),
                 gas_cost,
+            );
+            cb.require_equal(
+                "calldata_rlc == byte",
+                meta.query_advice(calldata_rlc, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -802,6 +820,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(calldata_gas_cost_acc, Rotation::next()),
                     meta.query_advice(calldata_gas_cost_acc, Rotation::cur()) + gas_cost_next,
                 );
+                cb.require_equal(
+                    "calldata_rlc' = calldata_rlc * r + byte'",
+                    meta.query_advice(calldata_rlc, Rotation::next()),
+                    meta.query_advice(calldata_rlc, Rotation::cur()) * challenges.keccak_input()
+                        + meta.query_advice(tx_table.value, Rotation::next()),
+                );
             });
 
             // on the final call data byte, tx_id must change.
@@ -830,6 +854,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         "calldata_gas_cost_acc' == gas_cost_next",
                         meta.query_advice(calldata_gas_cost_acc, Rotation::next()),
                         gas_cost_next,
+                    );
+                    cb.require_equal(
+                        "calldata_rlc' == byte'",
+                        meta.query_advice(calldata_rlc, Rotation::next()),
+                        meta.query_advice(tx_table.value, Rotation::next()),
                     );
                 },
             );
@@ -942,6 +971,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_chain_id,
             is_final,
             calldata_gas_cost_acc,
+            calldata_rlc,
             sv_address,
             sig_table,
             block_table,
@@ -964,10 +994,12 @@ impl<F: Field> TxCircuitConfig<F> {
         is_none: Column<Advice>,
         lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
         is_final: Column<Advice>,
+        is_calldata: Column<Advice>,
         is_chain_id: Column<Advice>,
         is_l1_msg_col: Column<Advice>,
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
+        calldata_rlc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
@@ -1049,6 +1081,32 @@ impl<F: Field> TxCircuitConfig<F> {
             )
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
+        });
+        meta.lookup_any("lookup CallDataRLC in the calldata part", |meta| {
+            let is_call_data = meta.query_advice(is_calldata, Rotation::cur());
+            let calldata_rlc = meta.query_advice(calldata_rlc, Rotation::cur());
+            let enable = and::expr([
+                meta.query_fixed(tx_table.q_enable, Rotation::cur()),
+                is_call_data,
+                meta.query_advice(is_final, Rotation::cur()),
+            ]);
+
+            let input_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                CallDataRLC.expr(),
+                calldata_rlc.expr(),
+            ];
+            let table_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
+            ];
+
+            input_exprs
+                .into_iter()
+                .zip(table_exprs.into_iter())
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
         });
 
         /////////////////////////////////////////////////////////////////
@@ -1264,6 +1322,7 @@ impl<F: Field> TxCircuitConfig<F> {
         cum_num_txs: Option<usize>,
         is_final: Option<bool>,
         calldata_gas_cost_acc: Option<u64>,
+        calldata_rlc: Option<Value<F>>,
     ) -> Result<(), Error> {
         // assign to tag, rlp_tag, is_none
         let tag_chip = BinaryNumberChip::construct(self.tx_tag_bits);
@@ -1442,6 +1501,12 @@ impl<F: Field> TxCircuitConfig<F> {
             *offset,
             || Value::known(F::from(calldata_gas_cost_acc.unwrap_or_default())),
         )?;
+        region.assign_advice(
+            || "calldata_rlc",
+            self.calldata_rlc,
+            *offset,
+            || calldata_rlc.unwrap_or(Value::known(F::zero())),
+        )?;
 
         // assign to
         region.assign_advice(
@@ -1512,7 +1577,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.tx_table.tx_id, F::zero()),
                 (self.tx_table.index, F::zero()),
                 (self.tx_table.value, F::zero()),
-                (self.is_final, F::one()),
+                (self.is_final, F::zero()),
                 (self.is_calldata, F::one()),
                 (self.calldata_gas_cost_acc, F::zero()),
             ] {
@@ -1717,6 +1782,7 @@ impl<F: Field> TxCircuit<F> {
                     !sigs.is_empty() as usize, // tx_id_next
                     TxFieldTag::Null,
                     Value::known(F::zero()),
+                    None,
                     None,
                     None,
                     None,
@@ -1943,6 +2009,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(cum_num_txs),
                             None,
                             None,
+                            None,
                         )?;
                         let sv_address: F = sign_data.get_addr().to_scalar().unwrap();
                         region.assign_advice(
@@ -1961,6 +2028,7 @@ impl<F: Field> TxCircuit<F> {
                 let mut calldata_count = 0;
                 for (i, tx) in self.txs.iter().enumerate() {
                     let mut calldata_gas_cost = 0;
+                    let mut calldata_rlc = Value::known(F::zero());
                     let calldata_length = tx.call_data.len();
                     calldata_count += calldata_length;
                     for (index, byte) in tx.call_data.iter().enumerate() {
@@ -1992,6 +2060,9 @@ impl<F: Field> TxCircuit<F> {
                                 || Value::known(F::one()),
                             )?;
                         }
+                        calldata_rlc = calldata_rlc
+                            .zip(challenges.keccak_input())
+                            .map(|(rlc, r)| rlc * r + F::from(*byte as u64));
                         config.assign_row(
                             &mut region,
                             &mut offset,
@@ -2006,6 +2077,7 @@ impl<F: Field> TxCircuit<F> {
                             None,
                             Some(is_final),
                             Some(calldata_gas_cost),
+                            Some(calldata_rlc),
                         )?;
                     }
                 }
