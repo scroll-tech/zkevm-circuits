@@ -1,5 +1,5 @@
 # RUST_LOG=trace MODE=greeter cargo test --release --features=print-trace test_mock_chunk_prover -- --nocapture 2>&1 | tee mock_chunk.log
-# RUST_LOG=trace MODE=greeter cargo test --release --features=print-trace test_mock_aggregation -- --nocapture 2>&1 | tee mock_aggregation.log
+# RUST_LOG=trace MODE=greeter cargo test --release --features=print-trace test_aggregation_circuit -- --nocapture 2>&1 | tee mock_aggregation.log
 # RUST_LOG=trace MODE=greeter cargo test --release --features=print-trace test_mock_compression -- --nocapture 2>&1 | tee compression.log
 
 # the following 3 tests takes super long time
