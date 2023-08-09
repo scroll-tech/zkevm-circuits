@@ -4,7 +4,7 @@ use crate::{
         param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::{TransferToGadget, UpdateBalanceGadget},
+            common_gadget::{TransferGadgetInfo, TransferToGadget, UpdateBalanceGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
@@ -335,7 +335,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             ),
         )?;
 
-        let (coinbase_balance, coinbase_balance_prev) = self.coinbase_transfer.assign_from_rws(
+        let result = self.coinbase_transfer.assign_from_rws(
             region,
             offset,
             !coinbase_codehash.is_zero(),
@@ -343,7 +343,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_reward,
             &mut rws,
         )?;
-        let effective_fee = coinbase_balance - coinbase_balance_prev;
+        let coinbase_balance_pair = result.receiver_balance_pair.unwrap();
+        let effective_fee = coinbase_balance_pair.0 - coinbase_balance_pair.1;
         debug_assert_eq!(coinbase_reward, effective_fee);
         self.effective_fee
             .assign(region, offset, Some(effective_fee.to_le_bytes()))?;

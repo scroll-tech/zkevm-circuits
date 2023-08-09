@@ -38,6 +38,7 @@ const SHANGHAI_RW_DELTA: u8 = 0;
 
 const PRECOMPILE_COUNT: usize = 9;
 
+use crate::evm_circuit::util::common_gadget::TransferGadgetInfo;
 use gadgets::util::select;
 
 #[derive(Clone, Debug)]
