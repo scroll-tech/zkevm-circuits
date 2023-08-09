@@ -13,7 +13,7 @@ impl ByteSize for u64 {
     fn byte_size(&self) -> u32 {
         // note that 0_u64 is encoded as [0x80] in RLP
         // see the relevant code at https://github.com/paritytech/parity-common/blob/master/rlp/src/impls.rs#L208
-        ((std::mem::size_of::<u64>() as u32 - self.leading_zeros()) + 7) / 8
+        (64 - self.leading_zeros() + 7) / 8
     }
 }
 
@@ -28,13 +28,13 @@ impl ByteSize for U256 {
     fn byte_size(&self) -> u32 {
         // note that U256::zero() is encoded as [0x80] in RLP
         // see the relevant code at https://github.com/paritytech/parity-common/blob/impl-rlp-v0.3.0/primitive-types/src/lib.rs#L117
-        ((std::mem::size_of::<U256>() as u32 - self.leading_zeros()) + 7) / 8
+        (256 - self.leading_zeros() + 7) / 8
     }
 }
 
 impl ByteSize for H160 {
     fn byte_size(&self) -> u32 {
-        std::mem::size_of::<H160>() as u32
+        20
     }
 }
 
@@ -43,10 +43,7 @@ impl ByteSize for Option<Address> {
         if self.is_none() {
             0
         } else {
-            let size = self.unwrap().byte_size();
-            assert_eq!(size, 20);
-
-            size
+            self.unwrap().byte_size()
         }
     }
 }
