@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         );
 
         // Get the next memory size and the gas cost for this memory access
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
 
         // Check if the amount of gas available is less than the amount of gas
         // required

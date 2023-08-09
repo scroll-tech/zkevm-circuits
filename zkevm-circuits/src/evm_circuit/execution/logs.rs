@@ -135,7 +135,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
 
         let copy_rwc_inc = cb.query_cell();
         let dst_addr = build_tx_log_expression(
@@ -151,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 tx_id.expr(),
                 CopyDataType::TxLog.expr(),
                 memory_address.offset(),
-                memory_address.address(),
+                memory_address.end_offset(),
                 dst_addr,
                 memory_address.length(),
                 0.expr(), // for LOGN, rlc_acc is 0
