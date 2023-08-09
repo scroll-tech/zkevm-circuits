@@ -5,51 +5,51 @@ use strum_macros::EnumIter;
 
 use crate::util::Challenges;
 
-pub(crate) trait ByteSize {
-    fn byte_size(&self) -> u32;
+pub(crate) trait ValueTagLength {
+    fn tag_length(&self) -> u32;
 }
 
-impl ByteSize for u64 {
-    fn byte_size(&self) -> u32 {
+impl ValueTagLength for u64 {
+    fn tag_length(&self) -> u32 {
         // note that 0_u64 is encoded as [0x80] in RLP
         // see the relevant code at https://github.com/paritytech/parity-common/blob/master/rlp/src/impls.rs#L208
         (64 - self.leading_zeros() + 7) / 8
     }
 }
 
-impl ByteSize for usize {
-    fn byte_size(&self) -> u32 {
+impl ValueTagLength for usize {
+    fn tag_length(&self) -> u32 {
         // usize is treated as same as u64
-        (*self as u64).byte_size()
+        (*self as u64).tag_length()
     }
 }
 
-impl ByteSize for U256 {
-    fn byte_size(&self) -> u32 {
+impl ValueTagLength for U256 {
+    fn tag_length(&self) -> u32 {
         // note that U256::zero() is encoded as [0x80] in RLP
         // see the relevant code at https://github.com/paritytech/parity-common/blob/impl-rlp-v0.3.0/primitive-types/src/lib.rs#L117
         (256 - self.leading_zeros() + 7) / 8
     }
 }
 
-impl ByteSize for H160 {
-    fn byte_size(&self) -> u32 {
+impl ValueTagLength for H160 {
+    fn tag_length(&self) -> u32 {
         20
     }
 }
 
-impl ByteSize for Option<Address> {
-    fn byte_size(&self) -> u32 {
+impl ValueTagLength for Option<Address> {
+    fn tag_length(&self) -> u32 {
         if self.is_none() {
             0
         } else {
-            self.unwrap().byte_size()
+            self.unwrap().tag_length()
         }
     }
 }
 
-impl ByteSize for Vec<u8> {
-    fn byte_size(&self) -> u32 {
+impl ValueTagLength for Vec<u8> {
+    fn tag_length(&self) -> u32 {
         self.len() as u32
     }
 }
