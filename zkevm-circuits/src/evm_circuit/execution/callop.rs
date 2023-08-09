@@ -837,17 +837,23 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 value,
                 &mut rws,
             )?;
-            self.code_hash_previous.assign(
-                region,
-                offset,
-                region.code_hash(transfer_assign_result.account_code_hash.unwrap()),
-            )?;
+            if let Some(account_code_hash) = transfer_assign_result.account_code_hash {
+                self.code_hash_previous.assign(
+                    region,
+                    offset,
+                    region.code_hash(account_code_hash),
+                )?;
+            }
+
             #[cfg(feature = "scroll")]
-            self.keccak_code_hash_previous.assign(
-                region,
-                offset,
-                region.word_rlc(transfer_assign_result.account_keccak_code_hash.unwrap()),
-            )?;
+            if let Some(account_keccak_code_hash) = transfer_assign_result.account_keccak_code_hash
+            {
+                self.keccak_code_hash_previous.assign(
+                    region,
+                    offset,
+                    region.word_rlc(account_keccak_code_hash),
+                )?;
+            }
         }
 
         self.opcode
