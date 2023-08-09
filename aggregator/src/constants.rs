@@ -54,4 +54,6 @@ pub const MAX_AGG_SNARKS: usize = 10;
 /// - batch public input hash: 2 rounds
 /// - chunk's public input hash: 2 * MAX_AGG_SNARKS
 /// - batch data hash: (32 * MAX_AGG_SNARKS)/INPUT_LEN_PER_ROUND
-pub(crate) const MAX_KECCAK_ROUNDS: usize = 2 * (MAX_AGG_SNARKS + 1) + (32 * MAX_AGG_SNARKS) / INPUT_LEN_PER_ROUND;
+const DATA_HASH_ROUNDS: usize = (32 * MAX_AGG_SNARKS) / INPUT_LEN_PER_ROUND;
+const DATA_HASH_ROUNDS_PAD: usize = if INPUT_LEN_PER_ROUND * DATA_HASH_ROUNDS < 32 * MAX_AGG_SNARKS { 1 } else { 0 };
+pub(crate) const MAX_KECCAK_ROUNDS: usize = 2 * (MAX_AGG_SNARKS + 1) + DATA_HASH_ROUNDS + DATA_HASH_ROUNDS_PAD;
