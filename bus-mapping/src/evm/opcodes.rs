@@ -921,7 +921,15 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             coinbase_account.code_hash.to_word()
         },
     );
+
     if coinbase_account.is_empty() && !coinbase_reward.is_zero() {
+        state.account_read(
+            &mut exec_step,
+            block_info.coinbase,
+            AccountField::CodeHash,
+            Word::zero(),
+        );
+
         state.account_write(
             &mut exec_step,
             block_info.coinbase,
@@ -932,6 +940,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
         #[cfg(feature = "scroll")]
         {
+            state.account_read(
+                &mut exec_step,
+                block_info.coinbase,
+                AccountField::KeccakCodeHash,
+                Word::zero(),
+            );
+
             state.account_write(
                 &mut exec_step,
                 block_info.coinbase,
