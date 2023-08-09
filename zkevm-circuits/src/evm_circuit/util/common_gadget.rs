@@ -773,8 +773,11 @@ impl<F: Field> TransferToGadget<F> {
         )?;
 
         Ok(TransferGadgetAssignResult {
+            account_code_hash: result.account_code_hash,
+            #[cfg(feature = "scroll")]
+            account_keccak_code_hash: result.account_keccak_code_hash,
             receiver_balance_pair: Some((receiver_balance, prev_receiver_balance)),
-            ..result
+            ..Default::default()
         })
     }
 }
@@ -913,6 +916,8 @@ impl<F: Field, G: TransferFromAssign<F> + TransferGadgetInfo<F>> TransferGadgetI
         value: U256,
         rws: &mut StepRws,
     ) -> Result<TransferGadgetAssignResult, Error> {
+        self.value_is_zero
+            .assign_value(region, offset, region.word_rlc(value))?;
         let TransferGadgetAssignResult {
             gas_fee,
             sender_balance_sub_fee_pair,

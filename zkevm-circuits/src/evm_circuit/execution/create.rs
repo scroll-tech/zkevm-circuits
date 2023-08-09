@@ -664,7 +664,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 callee balance // 16 + rw_offset
              */
             // rws.offset_add(2);
-            let transfer_assign_result = self
+            let _transfer_assign_result = self
                 .transfer
                 .assign_from_rws(region, offset, false, true, value, &mut rws)?;
 
@@ -672,7 +672,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             self.keccak_code_hash_previous.assign(
                 region,
                 offset,
-                region.word_rlc(transfer_assign_result.account_keccak_code_hash.unwrap()),
+                region.word_rlc(_transfer_assign_result.account_keccak_code_hash.unwrap()),
             )?; // Read Write empty Keccak code hash.
         }
 
