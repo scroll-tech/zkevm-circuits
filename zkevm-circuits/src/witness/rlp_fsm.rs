@@ -1,9 +1,61 @@
-use eth_types::Field;
+use eth_types::{Address, Field, H160, U256};
 use gadgets::{impl_expr, util::Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 use strum_macros::EnumIter;
 
 use crate::util::Challenges;
+
+pub(crate) trait ByteSize {
+    fn byte_size(&self) -> u32;
+}
+
+impl ByteSize for u64 {
+    fn byte_size(&self) -> u32 {
+        // note that 0_u64 is encoded as [0x80] in RLP
+        // see the relevant code at https://github.com/paritytech/parity-common/blob/master/rlp/src/impls.rs#L208
+        ((std::mem::size_of::<u64>() as u32 - self.leading_zeros()) + 7) / 8
+    }
+}
+
+impl ByteSize for usize {
+    fn byte_size(&self) -> u32 {
+        // usize is treated as same as u64
+        (*self as u64).byte_size()
+    }
+}
+
+impl ByteSize for U256 {
+    fn byte_size(&self) -> u32 {
+        // note that U256::zero() is encoded as [0x80] in RLP
+        // see the relevant code at https://github.com/paritytech/parity-common/blob/impl-rlp-v0.3.0/primitive-types/src/lib.rs#L117
+        ((std::mem::size_of::<U256>() as u32 - self.leading_zeros()) + 7) / 8
+    }
+}
+
+impl ByteSize for H160 {
+    fn byte_size(&self) -> u32 {
+        std::mem::size_of::<H160>() as u32
+    }
+}
+
+impl ByteSize for Option<Address> {
+    fn byte_size(&self) -> u32 {
+        if self.is_none() {
+            0
+        } else {
+            let size = self.unwrap().byte_size();
+            assert_eq!(size, 20);
+
+            size
+        }
+    }
+}
+
+impl ByteSize for Vec<u8> {
+    fn byte_size(&self) -> u32 {
+        self.len() as u32
+    }
+}
 
 /// RLP tags
 #[derive(Default, Clone, Copy, Debug, EnumIter, PartialEq, Eq)]

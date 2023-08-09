@@ -64,6 +64,7 @@ use crate::{
     table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID},
     util::rlc_be_bytes,
     witness::{
+        rlp_fsm::ByteSize,
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
         RlpTag::{GasCost, Len, Null, RLC},
         Tag::TxType as RLPTxType,
@@ -1747,7 +1748,7 @@ impl<F: Field> TxCircuit<F> {
                                 &tx.nonce.to_be_bytes(),
                                 challenges.keccak_input(),
                             )),
-                            Some((64 - tx.nonce.leading_zeros() + 7) / 8),
+                            Some(tx.nonce.byte_size()),
                             Value::known(F::from(tx.nonce)),
                         ),
                         (
@@ -1758,7 +1759,7 @@ impl<F: Field> TxCircuit<F> {
                                 &tx.gas.to_be_bytes(),
                                 challenges.keccak_input(),
                             )),
-                            Some((64 - tx.gas.leading_zeros() + 7) / 8),
+                            Some(tx.gas.byte_size()),
                             Value::known(F::from(tx.gas)),
                         ),
                         (
@@ -1769,7 +1770,7 @@ impl<F: Field> TxCircuit<F> {
                                 &tx.gas_price.to_be_bytes(),
                                 challenges.keccak_input(),
                             )),
-                            Some((256 - tx.gas_price.leading_zeros() + 7) / 8),
+                            Some(tx.gas_price.byte_size()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
@@ -1782,7 +1783,7 @@ impl<F: Field> TxCircuit<F> {
                                 &tx.caller_address.to_fixed_bytes(),
                                 challenges.keccak_input(),
                             )),
-                            Some(20),
+                            Some(tx.caller_address.byte_size()),
                             Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
                         ),
                         (
@@ -1792,7 +1793,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(tx.callee_address.map_or(Value::known(F::zero()), |callee| {
                                 rlc_be_bytes(&callee.to_fixed_bytes(), challenges.keccak_input())
                             })),
-                            Some(tx.callee_address.map_or(0, |_| 20)),
+                            Some(tx.callee_address.byte_size()),
                             Value::known(
                                 tx.callee_address
                                     .unwrap_or(Address::zero())
@@ -1816,7 +1817,7 @@ impl<F: Field> TxCircuit<F> {
                                 &tx.value.to_be_bytes(),
                                 challenges.keccak_input(),
                             )),
-                            Some((256 - tx.value.leading_zeros() + 7) / 8),
+                            Some(tx.value.byte_size()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.value.to_le_bytes(), challenge)),
@@ -1826,7 +1827,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Tag::Data.into()),
                             Some(tx.call_data.is_empty()),
                             Some(rlc_be_bytes(&tx.call_data, challenges.keccak_input())),
-                            Some(tx.call_data.len() as u32),
+                            Some(tx.call_data.byte_size()),
                             rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
                         ),
                         (
@@ -1861,7 +1862,7 @@ impl<F: Field> TxCircuit<F> {
                                 &tx.chain_id.to_be_bytes(),
                                 challenges.keccak_input(),
                             )),
-                            Some((64 - tx.chain_id.leading_zeros() + 7) / 8),
+                            Some(tx.chain_id.byte_size()),
                             Value::known(F::from(tx.chain_id)),
                         ),
                         (
@@ -1869,7 +1870,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Tag::SigV.into()),
                             Some(tx.v.is_zero()),
                             Some(rlc_be_bytes(&tx.v.to_be_bytes(), challenges.keccak_input())),
-                            Some((64 - tx.v.leading_zeros() + 7) / 8),
+                            Some(tx.v.byte_size()),
                             Value::known(F::from(tx.v)),
                         ),
                         (
@@ -1877,7 +1878,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Tag::SigR.into()),
                             Some(tx.r.is_zero()),
                             Some(rlc_be_bytes(&tx.r.to_be_bytes(), challenges.keccak_input())),
-                            Some((256 - tx.r.leading_zeros() + 7) / 8),
+                            Some(tx.r.byte_size()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.r.to_le_bytes(), challenge)),
@@ -1887,7 +1888,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Tag::SigS.into()),
                             Some(tx.s.is_zero()),
                             Some(rlc_be_bytes(&tx.s.to_be_bytes(), challenges.keccak_input())),
-                            Some((256 - tx.s.leading_zeros() + 7) / 8),
+                            Some(tx.s.byte_size()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.s.to_le_bytes(), challenge)),
@@ -1897,7 +1898,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Len),
                             Some(false),
                             None,
-                            Some((64 - rlp_unsigned_tx_be_bytes.len().leading_zeros() + 7) / 8),
+                            Some(rlp_unsigned_tx_be_bytes.len().byte_size()),
                             Value::known(F::from(rlp_unsigned_tx_be_bytes.len() as u64)),
                         ),
                         (
@@ -1918,7 +1919,7 @@ impl<F: Field> TxCircuit<F> {
                             Some(Len),
                             Some(false),
                             None,
-                            Some((64 - rlp_signed_tx_be_bytes.len().leading_zeros() + 7) / 8),
+                            Some(rlp_signed_tx_be_bytes.len().byte_size()),
                             Value::known(F::from(rlp_signed_tx_be_bytes.len() as u64)),
                         ),
                         (
