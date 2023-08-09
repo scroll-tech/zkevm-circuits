@@ -256,7 +256,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 let precompile_call: PrecompileCalls = code_address.0[19].into();
 
                 // get the result of the precompile call.
-                let (result, contract_gas_cost) = execute_precompiled(
+                let (result, precompile_call_gas_cost) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
                         let caller_memory = &state.caller_ctx()?.memory;
@@ -271,14 +271,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // written from memory addr 0 to memory addr result.len()
                 state.call_ctx_mut()?.memory.extend_at_least(result.len());
 
+                state.caller_ctx_mut()?.return_data = result.clone();
                 // mutate the caller memory.
                 let length = min(result.len(), ret_length);
                 if length > 0 {
-                    {
-                        let caller_ctx_mut = state.caller_ctx_mut()?;
-                        caller_ctx_mut.return_data = result.clone();
-                        caller_ctx_mut.memory.extend_at_least(ret_offset + length);
-                    }
+                    state
+                        .caller_ctx_mut()?
+                        .memory
+                        .extend_at_least(ret_offset + length);
                 }
 
                 for (field, value) in [
@@ -323,7 +323,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_steps[0].gas.0 - gas_cost - contract_gas_cost).into(),
+                        (geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
@@ -468,9 +468,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         } else {
                             0
                         },
-                    gas_cost + contract_gas_cost
+                    gas_cost + precompile_call_gas_cost
                 );
-                exec_step.gas_cost = GasCost(gas_cost + contract_gas_cost);
+                exec_step.gas_cost = GasCost(gas_cost + precompile_call_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
@@ -482,7 +482,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // Set gas left and gas cost for precompile step.
                 precompile_step.gas_left = Gas(callee_gas_left);
-                precompile_step.gas_cost = GasCost(contract_gas_cost);
+                precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
 
                 Ok(vec![exec_step, precompile_step])
             }
@@ -583,7 +583,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 Ok(vec![exec_step])
             }
-
             // 4. insufficient balance or error depth cases.
             (true, _, _) => {
                 for (field, value) in [
@@ -666,6 +665,8 @@ pub mod tests {
             code.push(32, self.address)
                 .push(32, self.gas)
                 .write_op(call_op)
+                .write_op(OpcodeId::POP);
+            code.write_op(OpcodeId::RETURNDATASIZE)
                 .write_op(OpcodeId::POP);
             for (offset, _) in self.stack_value.iter().rev() {
                 code.push(32, *offset).write_op(OpcodeId::MLOAD);

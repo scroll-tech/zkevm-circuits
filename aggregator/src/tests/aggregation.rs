@@ -114,11 +114,8 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
     // ==========================
     // padded chunks
     // ==========================
-    let padded_snarks = {
-        let circuit = MockChunkCircuit::new(true, padded_chunk);
-        let snark = layer_0!(circuit, MockChunkCircuit, params, k0, path);
-        vec![snark; MAX_AGG_SNARKS - num_real_chunks]
-    };
+    let padded_snarks =
+        { vec![real_snarks.last().unwrap().clone(); MAX_AGG_SNARKS - num_real_chunks] };
 
     // ==========================
     // batch
