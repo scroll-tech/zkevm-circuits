@@ -2,7 +2,7 @@
 
 use crate::{
     geth_types::{Transaction, TxType},
-    ToBigEndian, ToWord, Word, H256,
+    ToBigEndian, Word, H256,
 };
 use ethers_core::{
     k256::ecdsa::SigningKey,
@@ -113,7 +113,7 @@ lazy_static! {
             v: sig.v,
             r: sig.r,
             s: sig.s,
-            /// other fields are irrelevant to get the sign_data()
+            // other fields are irrelevant to get the sign_data()
             ..Default::default()
         };
 
