@@ -601,7 +601,7 @@ impl<F: Field> TransferToGadget<F> {
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash_rlc(),
                     prev_code_hash.expr(),
-                    reversion_info.as_mut().map(|x| &mut **x),
+                    reversion_info.as_deref_mut(),
                 );
                 #[cfg(feature = "scroll")]
                 {
@@ -616,7 +616,7 @@ impl<F: Field> TransferToGadget<F> {
                         AccountFieldTag::KeccakCodeHash,
                         cb.empty_keccak_hash_rlc(),
                         prev_keccak_code_hash.expr(),
-                        reversion_info.as_mut().map(|x| &mut **x),
+                        reversion_info.as_deref_mut(),
                     );
                 }
             },
