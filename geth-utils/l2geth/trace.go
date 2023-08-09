@@ -98,6 +98,138 @@ type TraceConfig struct {
 
 func newUint64(val uint64) *uint64 { return &val }
 
+func transferTxs(txs []Transaction) types.Transactions {
+	// current we can only transfer
+}
+
+func L2Trace(config TraceConfig) (*types.BlockTrace, error) {
+
+	chainConfig := params.ChainConfig{
+		ChainID:             new(big.Int).SetUint64(config.ChainID),
+		HomesteadBlock:      big.NewInt(0),
+		DAOForkBlock:        big.NewInt(0),
+		DAOForkSupport:      true,
+		EIP150Block:         big.NewInt(0),
+		EIP150Hash:          common.Hash{},
+		EIP155Block:         big.NewInt(0),
+		EIP158Block:         big.NewInt(0),
+		ByzantiumBlock:      big.NewInt(0),
+		ConstantinopleBlock: big.NewInt(0),
+		PetersburgBlock:     big.NewInt(0),
+		IstanbulBlock:       big.NewInt(0),
+		MuirGlacierBlock:    big.NewInt(0),
+		BerlinBlock:         big.NewInt(0),
+		LondonBlock:         big.NewInt(0),
+	}
+
+	if config.ChainConfig != nil {
+		mergo.Merge(&chainConfig, config.ChainConfig, mergo.WithOverride)
+	}
+
+	// Debug for Shanghai
+	// fmt.Printf("geth-utils: ShanghaiTime = %d\n", *chainConfig.ShanghaiTime)
+
+	var txsGasLimit uint64
+	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
+	messages := make([]core.Message, len(config.Transactions))
+	for i, tx := range config.Transactions {
+		// If gas price is specified directly, the tx is treated as legacy type.
+		if tx.GasPrice != nil {
+			tx.GasFeeCap = tx.GasPrice
+			tx.GasTipCap = tx.GasPrice
+		}
+
+		txAccessList := make(types.AccessList, len(tx.AccessList))
+		for i, accessList := range tx.AccessList {
+			txAccessList[i].Address = accessList.Address
+			txAccessList[i].StorageKeys = accessList.StorageKeys
+		}
+		messages[i] = types.NewMessage(
+			tx.From,
+			tx.To,
+			uint64(tx.Nonce),
+			toBigInt(tx.Value),
+			uint64(tx.GasLimit),
+			toBigInt(tx.GasPrice),
+			toBigInt(tx.GasFeeCap),
+			toBigInt(tx.GasTipCap),
+			tx.CallData,
+			txAccessList,
+			false,
+		)
+
+		txsGasLimit += uint64(tx.GasLimit)
+	}
+	if txsGasLimit > blockGasLimit {
+		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
+	}
+
+	// For opcode PREVRANDAO
+	randao := common.BigToHash(toBigInt(config.Block.Difficulty)) // TODO: fix
+
+	blockCtx := vm.BlockContext{
+		CanTransfer: core.CanTransfer,
+		Transfer:    core.Transfer,
+		GetHash: func(n uint64) common.Hash {
+			number := config.Block.Number.ToInt().Uint64()
+			if number > n && number-n <= 256 {
+				index := uint64(len(config.HistoryHashes)) - number + n
+				return common.BigToHash(toBigInt(config.HistoryHashes[index]))
+			}
+			return common.Hash{}
+		},
+		Coinbase:    config.Block.Coinbase,
+		BlockNumber: toBigInt(config.Block.Number),
+		Time:        toBigInt(config.Block.Timestamp),
+		Difficulty:  toBigInt(config.Block.Difficulty),
+		//		Random:      &randao,
+		BaseFee:  toBigInt(config.Block.BaseFee),
+		GasLimit: blockGasLimit,
+	}
+
+	//FIXME: if no history, use random hash instead?
+	parent := randao
+	if len(config.HistoryHashes) > 0 {
+		parentI := len(config.HistoryHashes) - 1
+		parent = common.BigToHash(toBigInt(config.HistoryHashes[parentI]))
+	}
+
+	header := &types.Header{
+		ParentHash: parent,
+		Number:     toBigInt(config.Block.Number),
+		GasLimit:   toBigInt(config.Block.GasLimit).Uint64(),
+		Extra:      nil,
+		Time:       toBigInt(config.Block.Timestamp).Uint64(),
+	}
+	block := types.NewBlockWithHeader(header).WithBody([]*types.Transaction{types.NewTx(&types.LegacyTx{})}, nil)
+
+	// Setup state db with accounts from argument
+	stateDB, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	for address, account := range config.Accounts {
+		stateDB.SetNonce(address, uint64(account.Nonce))
+		stateDB.SetCode(address, account.Code)
+		if account.Balance != nil {
+			stateDB.SetBalance(address, toBigInt(account.Balance))
+		}
+		for key, value := range account.Storage {
+			stateDB.SetState(address, key, value)
+		}
+	}
+	stateDB.Finalise(true)
+
+	traceEnv := core.CreateTraceEnvDirect(
+		&chainConfig,
+		blockCtx,
+		blockCtx.Coinbase,
+		stateDB,
+		parent,
+		block,
+		true,
+	)
+
+	return traceEnv.GetBlockTrace(block)
+}
+
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
 		ChainID:             new(big.Int).SetUint64(config.ChainID),

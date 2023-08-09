@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/holiman/uint256 v1.2.0
 	github.com/imdario/mergo v0.3.15
-	github.com/scroll-tech/go-ethereum v1.10.14-0.20230807061521-b428fa1339af
+	github.com/scroll-tech/go-ethereum v1.10.14-0.20230808134353-e20b0427cd81
 )
 
 require (
