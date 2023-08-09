@@ -670,7 +670,11 @@ impl<F: Field> TransferToGadget<F> {
         } else {
             Default::default()
         };
-        let (receiver_balance, prev_receiver_balance) = rws.next().account_balance_pair();
+        let (receiver_balance, prev_receiver_balance) = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
         debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
         self.receiver.assign(
             region,
