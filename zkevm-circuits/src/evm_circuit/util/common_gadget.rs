@@ -575,7 +575,7 @@ impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
         rws: &mut StepRws,
     ) -> Result<TransferGadgetAssignResult, Error> {
         let sender_balance_sub_fee_pair = rws.next().account_balance_pair();
-        let gas_fee = sender_balance_sub_fee_pair.0 - sender_balance_sub_fee_pair.1;
+        let gas_fee = sender_balance_sub_fee_pair.1 - sender_balance_sub_fee_pair.0;
         let sender_balance_sub_value_pair = if !value.is_zero() {
             rws.next().account_balance_pair()
         } else {
@@ -927,7 +927,10 @@ impl<F: Field, G: TransferFromAssign<F> + TransferGadgetInfo<F>> TransferGadgetI
             gas_fee,
             sender_balance_sub_fee_pair,
             sender_balance_sub_value_pair,
-            ..to_result
+            account_code_hash: to_result.account_code_hash,
+            #[cfg(feature = "scroll")]
+            account_keccak_code_hash: to_result.account_keccak_code_hash,
+            receiver_balance_pair: to_result.receiver_balance_pair,
         })
     }
 

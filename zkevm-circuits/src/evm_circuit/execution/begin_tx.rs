@@ -5,7 +5,9 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::{TransferWithGasFeeGadget, TxL1FeeGadget, TxL1MsgGadget},
+            common_gadget::{
+                TransferGadgetInfo, TransferWithGasFeeGadget, TxL1FeeGadget, TxL1MsgGadget,
+            },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -27,7 +29,7 @@ use crate::{
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
-use gadgets::util::{expr_from_bytes, not, or, Expr};
+use gadgets::util::{expr_from_bytes, not, or, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 // For Shanghai, EIP-3651 (Warm COINBASE) adds 1 write op for coinbase.
@@ -37,9 +39,6 @@ const SHANGHAI_RW_DELTA: u8 = 1;
 const SHANGHAI_RW_DELTA: u8 = 0;
 
 const PRECOMPILE_COUNT: usize = 9;
-
-use crate::evm_circuit::util::common_gadget::TransferGadgetInfo;
-use gadgets::util::select;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
