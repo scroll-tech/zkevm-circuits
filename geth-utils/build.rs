@@ -15,7 +15,7 @@ fn main() {
             "./l2geth/trace.go",
             "./l2geth/util.go",
             "./l2geth/lib.go",
-        ]        
+        ]
     } else {
         vec!["./lib/lib.go"]
     };
@@ -23,7 +23,6 @@ fn main() {
     // Replace to a custom go-ethereum for scroll.
     #[cfg(feature = "scroll")]
     build.modfile("./l2geth/go.mod");
-
 
     if let Err(e) = build.files(target_files).try_compile(lib_name) {
         // The error type is private so have to check the error string
@@ -48,7 +47,7 @@ fn main() {
             "./l2geth/lib.go",
             "./l2geth/go.mod",
             "./l2geth/go.sum",
-        ]        
+        ]
     } else {
         vec![
             "./gethutil/asm.go",
@@ -57,7 +56,7 @@ fn main() {
             "./go.mod",
         ]
     };
-    
+
     for file in dep_files {
         println!("cargo:rerun-if-changed={file}");
     }
