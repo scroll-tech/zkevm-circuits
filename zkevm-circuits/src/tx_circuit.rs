@@ -101,6 +101,7 @@ pub struct TxCircuitConfig<F: Field> {
     tx_table: TxTable,
     tx_tag_bits: BinaryNumberConfig<TxFieldTag, 5>,
 
+    // A selector which is enabled at 2nd row
     q_second: Column<Fixed>,
     tx_type: Column<Advice>,
     tx_type_bits: BinaryNumberConfig<TxType, 3>,
