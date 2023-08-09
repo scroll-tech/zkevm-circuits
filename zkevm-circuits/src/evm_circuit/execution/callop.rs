@@ -856,7 +856,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     self.code_hash_previous.assign(
                         region,
                         offset,
-                        region.word_rlc(code_hash_previous),
+                        region.code_hash(code_hash_previous),
                     )?;
                     rw_offset += 2; // codehash read and write
                     #[cfg(feature = "scroll")]
