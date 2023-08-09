@@ -304,6 +304,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     no_callee_code.expr(),
                     true.expr(),
                 );
+                cb.require_true(
+                    "Precompile addresses are always warm",
+                    and::expr([is_warm.expr(), is_warm_prev.expr()]),
+                );
 
                 // Write to callee's context.
                 for (field_tag, value) in [
@@ -476,21 +480,39 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ..StepStateTransition::default()
                 });
 
+                let precompile_gadget = PrecompileGadget::construct(
+                    cb,
+                    call_gadget.is_success.expr(),
+                    call_gadget.callee_address_expr(),
+                    cb.curr.state.call_id.expr(),
+                    call_gadget.cd_address.offset(),
+                    call_gadget.cd_address.length(),
+                    call_gadget.rd_address.offset(),
+                    call_gadget.rd_address.length(),
+                    precompile_return_length.expr(),
+                    precompile_input_bytes_rlc.expr(),
+                    precompile_output_bytes_rlc.expr(),
+                    precompile_return_bytes_rlc.expr(),
+                );
+                cb.condition(
+                    // FIXME: skipping the gas cost checks for SHA2-256, RIPEMD-160 and BLAKE2F
+                    // until they are implemented in zkevm-circuits.
+                    not::expr(cb.next.execution_state_selector([
+                        ExecutionState::PrecompileSha256,
+                        ExecutionState::PrecompileRipemd160,
+                        ExecutionState::PrecompileBlake2f,
+                    ])),
+                    |cb| {
+                        cb.require_equal(
+                            "precompile call: step gas cost",
+                            step_gas_cost.expr(),
+                            gas_cost.expr() + precompile_gadget.precompile_call_gas_cost.expr(),
+                        );
+                    },
+                );
+
                 (
-                    PrecompileGadget::construct(
-                        cb,
-                        call_gadget.is_success.expr(),
-                        call_gadget.callee_address_expr(),
-                        cb.curr.state.call_id.expr(),
-                        call_gadget.cd_address.offset(),
-                        call_gadget.cd_address.length(),
-                        call_gadget.rd_address.offset(),
-                        call_gadget.rd_address.length(),
-                        precompile_return_length.expr(),
-                        precompile_input_bytes_rlc.expr(),
-                        precompile_output_bytes_rlc.expr(),
-                        precompile_return_bytes_rlc.expr(),
-                    ),
+                    precompile_gadget,
                     precompile_input_bytes_rlc,
                     precompile_output_bytes_rlc,
                     precompile_return_bytes_rlc,
@@ -834,7 +856,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     self.code_hash_previous.assign(
                         region,
                         offset,
-                        region.word_rlc(code_hash_previous),
+                        region.code_hash(code_hash_previous),
                     )?;
                     rw_offset += 2; // codehash read and write
                     #[cfg(feature = "scroll")]

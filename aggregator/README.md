@@ -93,7 +93,7 @@ and `batch_pi_hash` matches public input.
 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
 
 ```
-for i in 1 ... __n__
+for i in 1 ... n
     chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
 ```
 
@@ -101,14 +101,14 @@ This is done by compute the RLCs of chunk[i]'s data_hash for `i=0..k`, and then 
 
 4. chunks are continuous when they are not padded: they are linked via the state roots.
 
-for i in 1 ... __k-1__
 ```
-c_i.post_state_root == c_{i+1}.prev_state_root
+for i in 1 ... k-1
+    c_i.post_state_root == c_{i+1}.prev_state_root
 ```
 
 5. All the chunks use a same chain id. __Static__.
 ```
-for i in 1 ... __n__
+for i in 1 ... n
     batch.chain_id == chunk[i].chain_id
 ```
 
@@ -131,7 +131,7 @@ This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
 ![Dynamic_inputs](./figures/hash_table.jpg)
 
 
-Our keccak table uses `2^19` rows. Each keccak round takes `300` rows. When the number of round is is less than $2^19/300$, the cell manager will fill in the rest of the rows with dummy hashes. 
+Our keccak table uses $2^{19}$ rows. Each keccak round takes `300` rows. When the number of round is is less than $2^{19}/300$, the cell manager will fill in the rest of the rows with dummy hashes. 
 
 The only hash that uses dynamic number of rounds is the last hash. 
 Suppose we target for `MAX_AGG_SNARK = 10`. Then, the last hash function will take no more than `32 * 10 /136 = 3` rounds. 
