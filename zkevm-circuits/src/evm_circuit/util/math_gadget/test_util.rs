@@ -233,7 +233,9 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                             .filter(|t| {
                                 matches!(
                                     t,
-                                    FixedTableTag::Range5
+                                    FixedTableTag::Range3
+                                        | FixedTableTag::Range5
+                                        | FixedTableTag::Range8
                                         | FixedTableTag::Range16
                                         | FixedTableTag::Range32
                                         | FixedTableTag::Range64

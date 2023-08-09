@@ -193,11 +193,11 @@ mod test {
 
         let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
         if !ok {
-            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+            ctb = ctb.evm_checks(Some(Box::new(|prover, gate_rows, lookup_rows| {
                 assert!(prover
                     .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
                     .is_err())
-            }));
+            })));
         };
         ctb.run()
     }

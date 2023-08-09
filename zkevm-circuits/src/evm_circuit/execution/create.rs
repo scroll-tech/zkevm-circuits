@@ -84,7 +84,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
-        let code_hash_previous = cb.query_cell_phase2();
+        let code_hash_previous = cb.query_cell();
         #[cfg(feature = "scroll")]
         let keccak_code_hash_previous = cb.query_cell_phase2();
         let opcode = cb.query_cell();

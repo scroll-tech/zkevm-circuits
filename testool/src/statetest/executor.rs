@@ -349,7 +349,9 @@ pub fn run_test(
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
 
-        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
+        CircuitTestBuilder::<1, 1>::new_from_block(block)
+            .copy_checks(None)
+            .run();
     } else {
         geth_data.sign(&wallets);
 

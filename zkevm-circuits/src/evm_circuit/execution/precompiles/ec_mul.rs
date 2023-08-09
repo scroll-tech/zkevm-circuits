@@ -1,5 +1,5 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, or, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -34,6 +34,7 @@ pub struct EcMulGadget<F> {
     scalar_s_raw_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
+    gas_cost: Cell<F>,
 
     p_x_is_zero: IsZeroGadget<F>,
     p_y_is_zero: IsZeroGadget<F>,
@@ -68,6 +69,12 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
+        );
+        let gas_cost = cb.query_cell();
+        cb.require_equal(
+            "ecMul: gas cost",
+            gas_cost.expr(),
+            GasCost::PRECOMPILE_BN256MUL.expr(),
         );
 
         let (scalar_s_raw, scalar_s, n) = (
@@ -163,6 +170,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             scalar_s_raw_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
+            gas_cost,
 
             p_x_is_zero,
             p_y_is_zero,
@@ -226,6 +234,14 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             let (k, _) = aux_data.s_raw.div_mod(n);
             self.modword
                 .assign(region, offset, aux_data.s_raw, n, aux_data.s, k)?;
+            self.gas_cost.assign(
+                region,
+                offset,
+                Value::known(F::from(GasCost::PRECOMPILE_BN256MUL.0)),
+            )?;
+        } else {
+            log::error!("unexpected aux_data {:?} for ecMul", step.aux_data);
+            return Err(Error::Synthesis);
         }
 
         self.is_success.assign(
