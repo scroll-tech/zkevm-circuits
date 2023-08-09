@@ -519,6 +519,21 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
     }
 }
 
+impl<F: Field, WithFeeGadget> TransferFromGadgetImpl<F, WithFeeGadget> {
+    pub(crate) fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone())
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (sender) Balance (Not Reversible tx fee)
+        1.expr() +
+        // +1 Write Account (sender) Balance
+        not::expr(self.value_is_zero())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct TransferToGadget<F> {
     pub(crate) value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
@@ -537,7 +552,7 @@ impl<F: Field> TransferToGadget<F> {
         prev_code_hash: Expression<F>,
         #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
         value: Word<F>,
-        reversion_info: &mut ReversionInfo<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         let value_is_zero = IsZeroGadget::construct(cb, "transfer to is zero value", value.expr());
         Self::construct_with_is_zero(
@@ -564,7 +579,7 @@ impl<F: Field> TransferToGadget<F> {
         #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
         value: Word<F>,
         value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
-        reversion_info: &mut ReversionInfo<F>,
+        mut reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         let value_is_zero_expr = value_is_zero
             .as_ref()
@@ -586,7 +601,7 @@ impl<F: Field> TransferToGadget<F> {
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash_rlc(),
                     prev_code_hash.expr(),
-                    Some(reversion_info),
+                    reversion_info.as_mut().map(|x| &mut **x),
                 );
                 #[cfg(feature = "scroll")]
                 {
@@ -601,13 +616,13 @@ impl<F: Field> TransferToGadget<F> {
                         AccountFieldTag::KeccakCodeHash,
                         cb.empty_keccak_hash_rlc(),
                         prev_keccak_code_hash.expr(),
-                        Some(reversion_info),
+                        reversion_info.as_mut().map(|x| &mut **x),
                     );
                 }
             },
         );
         let receiver = cb.condition(not::expr(value_is_zero_expr), |cb| {
-            UpdateBalanceGadget::construct(cb, receiver_address, vec![value], Some(reversion_info))
+            UpdateBalanceGadget::construct(cb, receiver_address, vec![value], reversion_info)
         });
         Self {
             value_is_zero,
@@ -634,6 +649,59 @@ impl<F: Field> TransferToGadget<F> {
             vec![value],
             receiver_balance,
         )
+    }
+
+    pub(crate) fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        receiver_exists: bool,
+        must_create: bool,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<(U256, U256), Error> {
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
+        if (!receiver_exists && !value.is_zero()) || must_create {
+            rws.offset_add(2);
+            #[cfg(feature = "scroll")]
+            rws.offset_add(2);
+        } else {
+            Default::default()
+        };
+        let (receiver_balance, prev_receiver_balance) = rws.next().account_balance_pair();
+        debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
+        self.receiver.assign(
+            region,
+            offset,
+            prev_receiver_balance,
+            vec![value],
+            receiver_balance,
+        )?;
+
+        Ok((receiver_balance, prev_receiver_balance))
+    }
+
+    pub(crate) fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone())
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
+        or::expr([
+            not::expr(self.value_is_zero()) * not::expr(self.receiver_exists.clone()),
+            self.must_create.clone(),
+        ]) * if cfg!(feature = "scroll") {
+            4.expr()
+        } else {
+            2.expr()
+        } +
+            // +1 Write Account (receiver) Balance
+        not::expr(self.value_is_zero())
     }
 }
 
@@ -695,7 +763,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             prev_keccak_code_hash,
             value,
             Either::Right(value_is_zero.expr()),
-            reversion_info,
+            Some(reversion_info),
         );
         Self {
             value_is_zero,
@@ -813,7 +881,7 @@ impl<F: Field> TransferGadget<F> {
             prev_keccak_code_hash,
             value,
             Either::Right(value_is_zero.expr()),
-            reversion_info,
+            Some(reversion_info),
         );
         Self {
             value_is_zero,
@@ -885,19 +953,9 @@ impl<F: Field> TransferGadget<F> {
     }
 }
 
-impl<F: Field, G> TransferGadgetImpl<F, G> {
+impl<F: Field, WithFeeGadget> TransferGadgetImpl<F, TransferFromGadgetImpl<F, WithFeeGadget>> {
     pub(crate) fn rw_delta(&self) -> Expression<F> {
-        // +1 Write Account (sender) Balance (Not Reversible tx fee)
-        1.expr() +
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
-        or::expr([
-            not::expr(self.value_is_zero()) * not::expr(self.to.receiver_exists.clone()),
-            self.to.must_create.clone()]
-        ) * if cfg!(feature = "scroll") {4.expr()} else {2.expr()} +
-        // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero()) * 2.expr()
+        self.from.rw_delta() + self.to.rw_delta()
     }
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
