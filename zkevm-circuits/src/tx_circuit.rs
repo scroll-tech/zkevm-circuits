@@ -104,6 +104,7 @@ pub struct TxCircuitConfig<F: Field> {
 
     // This is only true at the first row of calldata part of tx table
     q_calldata_first: Column<Fixed>,
+    q_calldata_last: Column<Fixed>,
     tx_table: TxTable,
     tx_tag_bits: BinaryNumberConfig<TxFieldTag, 5>,
 
@@ -142,6 +143,10 @@ pub struct TxCircuitConfig<F: Field> {
     calldata_gas_cost_acc: Column<Advice>,
     /// An accumulator value used to correctly calculate the RLC(calldata) for a tx.
     calldata_rlc: Column<Advice>,
+    /// 1st phase column which equals to tx_table.value when is_calldata is true
+    /// We need this because tx_table.value is a 2nd phase column and is used to get calldata_rlc.
+    /// It's not safe to do RLC on columns of same phase.
+    calldata_byte: Column<Advice>,
 
     /// Columns for ensuring that BlockNum is correct
     is_padding_tx: Column<Advice>,
@@ -200,6 +205,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let q_enable = tx_table.q_enable;
 
         let q_calldata_first = meta.fixed_column();
+        let q_calldata_last = meta.fixed_column();
         // tag, rlp_tag, tx_type, is_none
         let tx_type = meta.advice_column();
         let rlp_tag = meta.advice_column();
@@ -217,6 +223,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_final = meta.advice_column();
         let calldata_gas_cost_acc = meta.advice_column();
         let calldata_rlc = meta.advice_column_in(SecondPhase);
+        let calldata_byte = meta.advice_column();
 
         // fixed column for showing (tx_id' - tx_id) < 2^16
         let u16_table = meta.lookup_table_column();
@@ -480,7 +487,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_calldata",
-                tag_bits.value_equals(CallData, Rotation::cur())(meta),
+                is_data(meta),
                 meta.query_advice(is_calldata, Rotation::cur()),
             );
 
@@ -492,7 +499,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_caller_address",
-                tag_bits.value_equals(CallerAddress, Rotation::cur())(meta),
+                is_caller_addr(meta),
                 meta.query_advice(is_caller_address, Rotation::cur()),
             );
 
@@ -504,7 +511,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "is_chain_id",
-                tag_bits.value_equals(ChainID, Rotation::cur())(meta),
+                is_chain_id_expr(meta),
                 meta.query_advice(is_chain_id, Rotation::cur()),
             );
 
@@ -672,6 +679,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             q_enable,
             rlp_tag,
             tx_type_bits,
+            tx_id_is_zero.clone(),
             is_none,
             &lookup_conditions,
             is_final,
@@ -836,6 +844,27 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 and::expr([q_enable, is_calldata, not::expr(tx_id_next_is_zero)]);
 
             vec![(lookup_condition * (tx_id_next - tx_id), u16_table)]
+        });
+
+        meta.create_gate("last row of call data", |meta| {
+            let q_calldata_last = meta.query_fixed(q_calldata_last, Rotation::cur());
+            let is_final = meta.query_advice(is_final, Rotation::cur());
+
+            vec![(q_calldata_last * (is_final - true.expr()))]
+        });
+        meta.create_gate("calldata_byte == tx_table.value", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            let is_calldata = meta.query_advice(is_calldata, Rotation::cur());
+
+            cb.condition(is_calldata, |cb| {
+                cb.require_equal(
+                    "calldata_byte == tx_table.value",
+                    meta.query_advice(calldata_byte, Rotation::cur()),
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                );
+            });
+
+            cb.gate(meta.query_fixed(tx_table.q_enable, Rotation::cur()))
         });
 
         meta.create_gate("tx call data init", |meta| {
@@ -1025,6 +1054,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         Self {
             minimum_rows: meta.minimum_rows(),
             q_calldata_first,
+            q_calldata_last,
             tx_tag_bits: tag_bits,
             tx_type,
             tx_type_bits,
@@ -1046,6 +1076,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_final,
             calldata_gas_cost_acc,
             calldata_rlc,
+            calldata_byte,
             sv_address,
             sig_table,
             block_table,
@@ -1066,6 +1097,7 @@ impl<F: Field> TxCircuitConfig<F> {
         q_enable: Column<Fixed>,
         rlp_tag: Column<Advice>,
         tx_type_bits: BinaryNumberConfig<TxType, 3>,
+        tx_id_is_zero: IsZeroConfig<F>,
         is_none: Column<Advice>,
         lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
         is_final: Column<Advice>,
@@ -1163,6 +1195,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let enable = and::expr([
                 meta.query_fixed(tx_table.q_enable, Rotation::cur()),
                 is_call_data,
+                not::expr(tx_id_is_zero.expr(Rotation::cur())(meta)),
                 meta.query_advice(is_final, Rotation::cur()),
             ]);
 
@@ -1240,7 +1273,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 is_none,
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
+            .zip(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1359,7 +1392,7 @@ impl<F: Field> TxCircuitConfig<F> {
         });
     }
 
-    /// Load ECDSA RangeChip table.
+    /// Load u16 range table.
     pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
             || "u16 fixed table",
@@ -1583,6 +1616,9 @@ impl<F: Field> TxCircuitConfig<F> {
             *offset,
             || calldata_rlc.unwrap_or(Value::known(F::zero())),
         )?;
+        if tag == CallData {
+            region.assign_advice(|| "calldata_byte", self.calldata_byte, *offset, || value)?;
+        }
 
         // assign to
         region.assign_advice(
@@ -1666,7 +1702,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.tx_table.tx_id, F::zero()),
                 (self.tx_table.index, F::zero()),
                 (self.tx_table.value, F::zero()),
-                (self.is_final, F::zero()),
+                (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
                 (self.calldata_gas_cost_acc, F::zero()),
             ] {
@@ -2202,6 +2238,16 @@ impl<F: Field> TxCircuit<F> {
                     }
                 }
 
+                assert!(calldata_count <= self.max_calldata);
+                let q_calldata_last_offset = self.max_txs * TX_LEN + self.max_calldata;
+                if offset == q_calldata_last_offset + 1 {
+                    region.assign_fixed(
+                        || "q_calldata_last",
+                        config.q_calldata_last,
+                        q_calldata_last_offset,
+                        || Value::known(F::one()),
+                    )?;
+                }
                 debug_assert_eq!(offset, self.max_txs * TX_LEN + 1 + calldata_count);
 
                 Ok(offset)
@@ -2225,6 +2271,15 @@ impl<F: Field> TxCircuit<F> {
                         || "q_calldata_first",
                         config.q_calldata_first,
                         0,
+                        || Value::known(F::one()),
+                    )?;
+                }
+                if last_off < self.max_txs * TX_LEN + 1 + self.max_calldata {
+                    let calldata_count = last_off - self.max_txs * TX_LEN - 1;
+                    region.assign_fixed(
+                        || "q_calldata_last",
+                        config.q_calldata_last,
+                        self.max_calldata - calldata_count - 1,
                         || Value::known(F::one()),
                     )?;
                 }
