@@ -45,6 +45,10 @@ type Transaction struct {
 		Address     common.Address `json:"address"`
 		StorageKeys []common.Hash  `json:"storage_keys"`
 	} `json:"access_list"`
+	Type string       `json:"tx_type"`
+	V    int64        `json:"v"`
+	R    *hexutil.Big `json:"r"`
+	S    *hexutil.Big `json:"s"`
 }
 
 type TraceConfig struct {
@@ -62,31 +66,55 @@ type TraceConfig struct {
 func newUint64(val uint64) *uint64 { return &val }
 
 func transferTxs(txs []Transaction) types.Transactions {
-	// current we can only transfer
+
 	t_txs := make([]*types.Transaction, 0, len(txs))
 	for _, tx := range txs {
-		// If gas price is specified directly, the tx is treated as legacy type.
-		// if tx.GasPrice != nil {
-		// 	tx.GasFeeCap = tx.GasPrice
-		// 	tx.GasTipCap = tx.GasPrice
-		// }
 
-		// txAccessList := make(types.AccessList, len(tx.AccessList))
-		// for i, accessList := range tx.AccessList {
-		// 	txAccessList[i].Address = accessList.Address
-		// 	txAccessList[i].StorageKeys = accessList.StorageKeys
-		// }
+		// if no signature, we can only handle it as l1msg tx
+		// notice the type is defined in geth_types
+		if tx.Type == "L1Msg" || tx.R == nil || tx.R.ToInt().Cmp(big.NewInt(0)) == 0 {
+			l1msgTx := &types.L1MessageTx{
+				Gas:        uint64(tx.GasLimit),
+				QueueIndex: uint64(tx.Nonce),
+				To:         tx.To,
+				Value:      toBigInt(tx.Value),
+				Data:       tx.CallData,
+				Sender:     tx.From,
+			}
+			t_txs = append(t_txs, types.NewTx(l1msgTx))
+		} else {
 
-		// currently we can only use l1msg tx (since we have no signature yet)
-		l1msgTx := &types.L1MessageTx{
-			Gas:        uint64(tx.GasLimit),
-			QueueIndex: uint64(tx.Nonce),
-			To:         tx.To,
-			Value:      toBigInt(tx.Value),
-			Data:       tx.CallData,
-			Sender:     tx.From,
+			switch tx.Type {
+			case "Eip155":
+				legacyTx := &types.LegacyTx{
+					Nonce:    uint64(tx.Nonce),
+					To:       tx.To,
+					Value:    toBigInt(tx.Value),
+					Gas:      uint64(tx.GasLimit),
+					GasPrice: toBigInt(tx.GasPrice),
+					Data:     tx.CallData,
+					V:        big.NewInt(tx.V),
+					R:        tx.R.ToInt(),
+					S:        tx.S.ToInt(),
+				}
+				t_txs = append(t_txs, types.NewTx(legacyTx))
+			default:
+				// If gas price is specified directly, the tx is treated as legacy type.
+				// if tx.GasPrice != nil {
+				// 	tx.GasFeeCap = tx.GasPrice
+				// 	tx.GasTipCap = tx.GasPrice
+				// }
+
+				// txAccessList := make(types.AccessList, len(tx.AccessList))
+				// for i, accessList := range tx.AccessList {
+				// 	txAccessList[i].Address = accessList.Address
+				// 	txAccessList[i].StorageKeys = accessList.StorageKeys
+				// }
+
+				panic(fmt.Errorf("not implement tx type [%s]", tx.Type))
+			}
+
 		}
-		t_txs = append(t_txs, types.NewTx(l1msgTx))
 	}
 
 	return types.Transactions(t_txs)
@@ -110,6 +138,7 @@ func L2Trace(config TraceConfig) (*types.BlockTrace, error) {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
+		ShanghaiBlock:       big.NewInt(0),
 	}
 
 	if config.ChainConfig != nil {
