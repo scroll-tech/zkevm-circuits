@@ -2234,22 +2234,23 @@ impl SigTable {
             |mut region| {
                 let signatures: Vec<SignData> = block.get_sign_data(false);
 
+                let evm_word = challenges.evm_word();
                 for (offset, sign_data) in signatures.iter().enumerate() {
-                    let msg_hash_rlc = challenges.keccak_input().map(|challenge| {
+                    let msg_hash_rlc = evm_word.map(|challenge| {
                         rlc::value(
-                            sign_data.msg_hash.to_bytes().iter().rev().collect_vec(),
+                            sign_data.msg_hash.to_bytes().iter().collect_vec(),
                             challenge,
                         )
                     });
-                    let sig_r_rlc = challenges.keccak_input().map(|challenge| {
+                    let sig_r_rlc = evm_word.map(|challenge| {
                         rlc::value(
-                            sign_data.signature.0.to_bytes().iter().rev().collect_vec(),
+                            sign_data.signature.0.to_bytes().iter().collect_vec(),
                             challenge,
                         )
                     });
-                    let sig_s_rlc = challenges.keccak_input().map(|challenge| {
+                    let sig_s_rlc = evm_word.map(|challenge| {
                         rlc::value(
-                            sign_data.signature.1.to_bytes().iter().rev().collect_vec(),
+                            sign_data.signature.1.to_bytes().iter().collect_vec(),
                             challenge,
                         )
                     });
