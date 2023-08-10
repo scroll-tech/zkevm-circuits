@@ -2801,7 +2801,7 @@ impl PowOfRandTable {
     }
 
     /// Assign values to the table.
-    pub fn dev_load<F: Field>(
+    pub fn assign<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
