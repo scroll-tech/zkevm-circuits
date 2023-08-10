@@ -4,10 +4,12 @@ use crate::{
         param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, from_bytes,
-            math_gadget::IsEqualGadget, CachedRegion, Cell,
-            memory_gadget::{MemoryWordAddress, MemoryMask},
-            RandomLinearCombination, Word,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::EVMConstraintBuilder,
+            from_bytes,
+            math_gadget::IsEqualGadget,
+            memory_gadget::{MemoryMask, MemoryWordAddress},
+            CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -135,8 +137,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         )?;
 
         let shift = memory_offset.as_u64() % 32;
-        self.mask
-            .assign(region, offset, shift,  true)?;
+        self.mask.assign(region, offset, shift, true)?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
         Ok(())
