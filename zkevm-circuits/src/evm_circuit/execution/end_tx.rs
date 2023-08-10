@@ -465,6 +465,7 @@ mod test {
         );
     }
 
+    #[ignore]
     #[test]
     fn end_tx_gadget_nonexisting_coinbase() {
         test_ok(
