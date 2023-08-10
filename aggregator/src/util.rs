@@ -15,6 +15,18 @@ use crate::{
     constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS},
 };
 
+// Calculates the maximum keccak updates (1 absorb, or 1 f-box invoke)
+// needed for the number of snarks
+pub(crate) fn get_max_keccak_updates(max_snarks: usize) -> usize {
+    let pi_rounds = 2;
+    let chunk_hash_rounds = 2 * max_snarks;
+    
+    let data_hash_rounds = (32 * max_snarks) / INPUT_LEN_PER_ROUND;
+    let padding_round = if data_hash_rounds * INPUT_LEN_PER_ROUND < 32 * max_snarks { 1 } else { 0 };
+
+    pi_rounds + chunk_hash_rounds + data_hash_rounds + padding_round
+}
+
 /// Return
 /// - the indices of the rows that contain the input preimages
 /// - the indices of the rows that contain the output digest

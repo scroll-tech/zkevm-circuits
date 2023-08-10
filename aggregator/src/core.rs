@@ -20,7 +20,7 @@ use snark_verifier_sdk::{
     Snark,
 };
 use zkevm_circuits::{
-    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuit},
+    keccak_circuit::{keccak_packed_multi::{multi_keccak, self}, KeccakCircuitConfig, KeccakCircuit},
     table::LookupTable,
     util::Challenges,
 };
@@ -31,7 +31,7 @@ use crate::{
         MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
     },
     util::{
-        assert_conditional_equal, assert_equal, assert_exist, get_indices,
+        assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
     AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
@@ -165,6 +165,8 @@ pub(crate) fn extract_hash_cells(
 ) -> Result<ExtractedHashCells, Error> {
     let mut is_first_time = true;
     let keccak_capacity = KeccakCircuit::<Fr>::capacity_for_row(1 << LOG_DEGREE);
+    let max_keccak_updates = get_max_keccak_updates(MAX_AGG_SNARKS);
+    let keccak_f_rows = keccak_packed_multi::get_num_rows_per_update();
 
     let timer = start_timer!(|| ("multi keccak").to_string());
     // preimages consists of the following parts
@@ -229,7 +231,7 @@ pub(crate) fn extract_hash_cells(
                         hash_output_cells.push(row.last().unwrap().clone()); // sage unwrap
                         cur_digest_index = digest_indices_iter.next();
                     }
-                    if offset % ROWS_PER_ROUND == 0 && offset / ROWS_PER_ROUND <= MAX_KECCAK_ROUNDS
+                    if offset % keccak_f_rows == 0 && offset / keccak_f_rows <= max_keccak_updates
                     {
                         // first column is is_final
                         is_final_cells.push(row[0].clone());
