@@ -158,8 +158,8 @@ impl<F: Field> MulAddChip<F> {
             overflow = carry_hi_expr.clone()
                 + a_limbs[1].clone() * b_limbs[3].clone()
                 + a_limbs[2].clone() * b_limbs[2].clone()
-                + a_limbs[3].clone() * b_limbs[2].clone()
                 + a_limbs[2].clone() * b_limbs[3].clone()
+                + a_limbs[3].clone() * b_limbs[1].clone()
                 + a_limbs[3].clone() * b_limbs[2].clone()
                 + a_limbs[3].clone() * b_limbs[3].clone();
 

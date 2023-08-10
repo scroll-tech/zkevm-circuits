@@ -716,8 +716,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, "", sum::expr(&gas_word.cells[N_BYTES_GAS..]));
-        let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(
+            cb,
+            [cd_address.end_offset(), rd_address.end_offset()],
+        );
 
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&value.cells));
