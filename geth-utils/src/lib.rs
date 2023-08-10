@@ -150,7 +150,7 @@ mod test {
                 ]
             }"#,
         ] {
-            assert!(trace(config).is_err())
+            assert!(trace(config).is_err(), "consider correct {}", config)
         }
     }
 }
