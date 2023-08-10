@@ -20,7 +20,7 @@ use snark_verifier_sdk::{
     Snark,
 };
 use zkevm_circuits::{
-    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuitConfig},
+    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuit},
     table::LookupTable,
     util::Challenges,
 };
@@ -164,7 +164,7 @@ pub(crate) fn extract_hash_cells(
     preimages: &[Vec<u8>],
 ) -> Result<ExtractedHashCells, Error> {
     let mut is_first_time = true;
-    let num_rows = 1 << LOG_DEGREE;
+    let keccak_capacity = KeccakCircuit::<Fr>::capacity_for_row(1 << LOG_DEGREE);
 
     let timer = start_timer!(|| ("multi keccak").to_string());
     // preimages consists of the following parts
@@ -181,7 +181,7 @@ pub(crate) fn extract_hash_cells(
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
-    let witness = multi_keccak(preimages, challenges, keccak_round_capacity(num_rows))
+    let witness = multi_keccak(preimages, challenges, keccak_capacity)
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
     end_timer!(timer);
 
