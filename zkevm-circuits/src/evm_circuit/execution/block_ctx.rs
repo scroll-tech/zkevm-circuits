@@ -188,7 +188,6 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub(crate) struct DifficulityGadget<F> {
     same_context: SameContextGadget<F>,
@@ -224,8 +223,7 @@ impl<F: Field> ExecutionGadget<F> for DifficulityGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context
-            .assign_exec_step(region, offset, step)?;
+        self.same_context.assign_exec_step(region, offset, step)?;
 
         Ok(())
     }

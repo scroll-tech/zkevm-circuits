@@ -6,8 +6,8 @@ use ethers_providers::ProviderError;
 use std::error::Error as StdError;
 
 use crate::geth_errors::{
-    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS,
-    GETH_ERR_STACK_OVERFLOW, GETH_ERR_STACK_UNDERFLOW, GETH_ERR_WRITE_PROTECTION,
+    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
+    GETH_ERR_STACK_UNDERFLOW, GETH_ERR_WRITE_PROTECTION,
 };
 
 /// Error type for any BusMapping related failure.
