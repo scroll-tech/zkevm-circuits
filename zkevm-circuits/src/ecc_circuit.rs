@@ -660,13 +660,16 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             let one = fp12_chip.load_constant(ctx, Fq12::one());
             fp12_chip.is_equal(ctx, &gt, &one)
         };
+        log::info!("success = {:?}", success.value);
 
+        let op_output = ecc_chip.field_chip().range().gate().load_witness(
+            ctx,
+            Value::known(op.output.to_scalar().expect("EcPairing output = {0, 1}")),
+        );
         ecc_chip.field_chip().range().gate().assert_equal(
             ctx,
             QuantumCell::Existing(success),
-            QuantumCell::Witness(Value::known(
-                op.output.to_scalar().expect("EcPairing output = {0, 1}"),
-            )),
+            QuantumCell::Existing(op_output),
         );
 
         log::trace!("[ECC] EcPairingAssignment END:");
