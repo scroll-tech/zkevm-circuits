@@ -11,15 +11,6 @@ pub(crate) const DIGEST_LEN: usize = 32;
 /// Input length per round
 pub(crate) const INPUT_LEN_PER_ROUND: usize = 136;
 
-// Each round requires (NUM_ROUNDS+1) * DEFAULT_KECCAK_ROWS = 300 rows.
-// This library is hard coded for this parameter.
-// Modifying the following parameters may result into bugs.
-// Adopted from keccak circuit
-pub(crate) const DEFAULT_KECCAK_ROWS: usize = 12;
-// Adopted from keccak circuit
-pub(crate) const NUM_ROUNDS: usize = 24;
-pub(crate) const ROWS_PER_ROUND: usize = (NUM_ROUNDS + 1) * DEFAULT_KECCAK_ROWS;
-
 // TODO(ZZ): update to the right degree
 #[allow(dead_code)]
 pub(crate) const LOG_DEGREE: u32 = 19;
