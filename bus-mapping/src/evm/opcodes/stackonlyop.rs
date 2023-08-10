@@ -445,7 +445,7 @@ mod stackonlyop_tests {
     fn basefee_opcode_impl() {
         if cfg!(feature = "scroll") {
             stack_only_opcode_not_impl::<0, 1>(
-                OpcodeId::BASEFEE,
+                OpcodeId::INVALID(0x48),
                 bytecode! {
                     BASEFEE
                     STOP
