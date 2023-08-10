@@ -72,8 +72,12 @@ mod stackonlyop_tests {
     use itertools::Itertools;
     use mock::{
         test_ctx::{helpers::*, TestContext},
-        MOCK_BASEFEE, MOCK_DIFFICULTY, MOCK_GASLIMIT,
+        MOCK_BASEFEE, MOCK_GASLIMIT,
     };
+    #[cfg(not(feature = "scroll"))]
+    use mock::MOCK_DIFFICULTY;
+    #[cfg(feature = "scroll")]
+    use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
     use pretty_assertions::assert_eq;
     use std::ops::{BitOr, BitXor};
 
