@@ -12,11 +12,19 @@ use std::{env::var, vec};
 
 const MAX_DEGREE: usize = 9;
 
-pub(crate) fn get_num_rows_per_round() -> usize {
+/// Obtain the rows required for 1 iteration of f-box's inner round
+/// function (consisting of 5 phases) within Keccak circuit
+pub fn get_num_rows_per_round() -> usize {
     var("KECCAK_ROWS")
         .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize")
+}
+/// Obtain the rows required for 1 iteration of the f-box
+/// function (consisting of nr = 12 + 2*l inner rounds)
+/// within Keccak circuit
+pub fn get_num_rows_per_update() -> usize {
+    get_num_rows_per_round() *(NUM_ROUNDS + 1)
 }
 
 pub(crate) fn keccak_unusable_rows() -> usize {
