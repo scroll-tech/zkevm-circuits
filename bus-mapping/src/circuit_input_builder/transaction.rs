@@ -344,7 +344,7 @@ impl Transaction {
                 code_hash,
                 depth: 1,
                 value: eth_tx.value,
-                call_data_length: eth_tx.input.len().try_into().unwrap(),
+                call_data_length: 0,
                 ..Default::default()
             }
         };
