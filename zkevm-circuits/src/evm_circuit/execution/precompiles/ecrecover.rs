@@ -1,13 +1,15 @@
+use array_init::array_init;
 use bus_mapping::precompile::PrecompileAuxData;
 
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::{select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
+use itertools::Itertools;
 
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -22,12 +24,16 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct EcrecoverGadget<F> {
     recovered: Cell<F>,
-    msg_hash_rlc: Cell<F>,
-    sig_v_rlc: Cell<F>,
-    sig_r_rlc: Cell<F>,
-    sig_s_rlc: Cell<F>,
-    recovered_addr_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    msg_hash_keccak_rlc: Cell<F>,
+    sig_v_keccak_rlc: Cell<F>,
+    sig_r_keccak_rlc: Cell<F>,
+    sig_s_keccak_rlc: Cell<F>,
+    recovered_addr_keccak_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
     gas_cost: Cell<F>,
+
+    msg_hash: [Cell<F>; N_BYTES_WORD],
+    sig_r: [Cell<F>; N_BYTES_WORD],
+    sig_s: [Cell<F>; N_BYTES_WORD],
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -45,7 +51,14 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
     const NAME: &'static str = "ECRECOVER";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
+        let (
+            recovered,
+            msg_hash_keccak_rlc,
+            sig_v_keccak_rlc,
+            sig_r_keccak_rlc,
+            sig_s_keccak_rlc,
+            recovered_addr_keccak_rlc,
+        ) = (
             cb.query_bool(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -60,21 +73,41 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
         );
 
+        let msg_hash = array_init(|_| cb.query_byte());
+        let sig_r = array_init(|_| cb.query_byte());
+        let sig_s = array_init(|_| cb.query_byte());
+
+        cb.require_equal(
+            "msg hash cells assigned incorrectly",
+            msg_hash_keccak_rlc.expr(),
+            cb.keccak_rlc(msg_hash.clone().map(|x| x.expr())),
+        );
+        cb.require_equal(
+            "sig_r cells assigned incorrectly",
+            sig_r_keccak_rlc.expr(),
+            cb.keccak_rlc(sig_r.clone().map(|x| x.expr())),
+        );
+        cb.require_equal(
+            "sig_s cells assigned incorrectly",
+            sig_s_keccak_rlc.expr(),
+            cb.keccak_rlc(sig_s.clone().map(|x| x.expr())),
+        );
+
         cb.condition(recovered.expr(), |cb| {
             // if address was recovered, the sig_v (recovery ID) was correct.
             cb.require_zero(
                 "sig_v == 27 or 28",
-                (sig_v_rlc.expr() - 27.expr()) * (sig_v_rlc.expr() - 28.expr()),
+                (sig_v_keccak_rlc.expr() - 27.expr()) * (sig_v_keccak_rlc.expr() - 28.expr()),
             );
 
             // lookup to the sign_verify table
             // || v | r | s | msg_hash | recovered_addr ||
             cb.sig_table_lookup(
-                msg_hash_rlc.expr(),
-                sig_v_rlc.expr() - 27.expr(),
-                sig_r_rlc.expr(),
-                sig_s_rlc.expr(),
-                from_bytes::expr(&recovered_addr_rlc.cells),
+                cb.word_rlc(msg_hash.clone().map(|x| x.expr())),
+                sig_v_keccak_rlc.expr() - 27.expr(),
+                cb.word_rlc(sig_r.clone().map(|x| x.expr())),
+                cb.word_rlc(sig_s.clone().map(|x| x.expr())),
+                from_bytes::expr(&recovered_addr_keccak_rlc.cells),
             );
         });
 
@@ -108,12 +141,16 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
 
         Self {
             recovered,
-            msg_hash_rlc,
-            sig_v_rlc,
-            sig_r_rlc,
-            sig_s_rlc,
-            recovered_addr_rlc,
+            msg_hash_keccak_rlc,
+            sig_v_keccak_rlc,
+            sig_r_keccak_rlc,
+            sig_s_keccak_rlc,
+            recovered_addr_keccak_rlc,
             gas_cost,
+
+            msg_hash,
+            sig_r,
+            sig_s,
 
             is_success,
             callee_address,
@@ -139,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             let recovered = !aux_data.recovered_addr.is_zero();
             self.recovered
                 .assign(region, offset, Value::known(F::from(recovered as u64)))?;
-            self.msg_hash_rlc.assign(
+            self.msg_hash_keccak_rlc.assign(
                 region,
                 offset,
                 region
@@ -147,7 +184,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.msg_hash.to_le_bytes(), r)),
             )?;
-            self.sig_v_rlc.assign(
+            self.sig_v_keccak_rlc.assign(
                 region,
                 offset,
                 region
@@ -155,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.sig_v.to_le_bytes(), r)),
             )?;
-            self.sig_r_rlc.assign(
+            self.sig_r_keccak_rlc.assign(
                 region,
                 offset,
                 region
@@ -163,7 +200,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.sig_r.to_le_bytes(), r)),
             )?;
-            self.sig_s_rlc.assign(
+            self.sig_s_keccak_rlc.assign(
                 region,
                 offset,
                 region
@@ -171,7 +208,16 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.sig_s.to_le_bytes(), r)),
             )?;
-            self.recovered_addr_rlc.assign(
+            for (cells, value) in [
+                (&self.msg_hash, aux_data.msg_hash),
+                (&self.sig_r, aux_data.sig_r),
+                (&self.sig_s, aux_data.sig_s),
+            ] {
+                for (cell, &byte_value) in cells.iter().zip_eq(value.to_le_bytes().iter()) {
+                    cell.assign(region, offset, Value::known(F::from(byte_value as u64)))?;
+                }
+            }
+            self.recovered_addr_keccak_rlc.assign(
                 region,
                 offset,
                 Some({
