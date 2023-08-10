@@ -9,7 +9,7 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
     gates::{flex_gate::FlexGateConfig, GateInstructions},
     AssignedValue, Context,
 };
-
+use zkevm_circuits::keccak_circuit::keccak_packed_multi::{get_num_rows_per_round, get_num_rows_per_update};
 use crate::{
     aggregation::RlcConfig,
     constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS},
@@ -20,11 +20,15 @@ use crate::{
 pub(crate) fn get_max_keccak_updates(max_snarks: usize) -> usize {
     let pi_rounds = 2;
     let chunk_hash_rounds = 2 * max_snarks;
-    
+    let data_hash_rounds = get_data_hash_keccak_updates(max_snarks);
+
+    pi_rounds + chunk_hash_rounds + data_hash_rounds
+}
+pub(crate) fn get_data_hash_keccak_updates(max_snarks: usize) -> usize {
     let data_hash_rounds = (32 * max_snarks) / INPUT_LEN_PER_ROUND;
     let padding_round = if data_hash_rounds * INPUT_LEN_PER_ROUND < 32 * max_snarks { 1 } else { 0 };
 
-    pi_rounds + chunk_hash_rounds + data_hash_rounds + padding_round
+    data_hash_rounds + padding_round
 }
 
 /// Return
@@ -35,9 +39,14 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     let mut digest_indices = vec![];
     let mut round_ctr = 0;
 
+    let keccak_f_rows = get_num_rows_per_update();
+    let inner_round_rows = get_num_rows_per_round();
+
     for preimage in preimages.iter().take(MAX_AGG_SNARKS + 1) {
         //  136 = 17 * 8 is the size in bytes of each
         //  input chunk that can be processed by Keccak circuit using absorb
+
+        //  For example, if num_rows_per_inner_round for Keccak is 12, then
         //  each chunk of size 136 needs 300 Keccak circuit rows to prove
         //  which consists of 12 Keccak rows for each of 24 + 1 Keccak circuit rounds
         //  digest only happens at the end of the last input chunk with
@@ -46,17 +55,21 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
         let mut preimage_padded = preimage.clone();
         preimage_padded.resize(INPUT_LEN_PER_ROUND * num_rounds, 0);
         for (i, round) in preimage_padded.chunks(INPUT_LEN_PER_ROUND).enumerate() {
+            let f_round_offset = round_ctr * keccak_f_rows;
             // indices for preimages
             for (j, _chunk) in round.chunks(8).into_iter().enumerate() {
+                let inner_offset = f_round_offset + (j + 1) * inner_round_rows;
                 for k in 0..8 {
-                    preimage_indices.push(round_ctr * 300 + j * 12 + k + 12)
+                    preimage_indices.push(inner_offset + k);
                 }
             }
             // indices for digests
             if i == num_rounds - 1 {
                 for j in 0..4 {
+                    let inner_offset = 
+                        f_round_offset + j * inner_round_rows + (keccak_f_rows - inner_round_rows * (DIGEST_LEN / 8));
                     for k in 0..8 {
-                        digest_indices.push(round_ctr * 300 + j * 12 + k + 252)
+                        digest_indices.push(inner_offset + k);
                     }
                 }
             }
@@ -64,20 +77,23 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
         }
     }
     // last hash is for data_hash and has various length, so we output all the possible cells
-    for _i in 0..3 {
+    for _i in 0..get_data_hash_keccak_updates(MAX_AGG_SNARKS) {
         for (j, _) in (0..INPUT_LEN_PER_ROUND)
             .into_iter()
             .chunks(8)
             .into_iter()
             .enumerate()
         {
+            let inner_offset = round_ctr * keccak_f_rows + (j + 1) * inner_round_rows;
             for k in 0..8 {
-                preimage_indices.push(round_ctr * 300 + j * 12 + k + 12)
+                preimage_indices.push(inner_offset + k);
             }
         }
         for j in 0..4 {
+            let inner_offset = 
+                round_ctr * keccak_f_rows + j * inner_round_rows + (keccak_f_rows - inner_round_rows * (DIGEST_LEN / 8));
             for k in 0..8 {
-                digest_indices.push(round_ctr * 300 + j * 12 + k + 252)
+                digest_indices.push(inner_offset + k);
             }
         }
         round_ctr += 1;
