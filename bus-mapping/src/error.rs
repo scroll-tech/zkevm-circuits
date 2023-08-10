@@ -6,7 +6,7 @@ use ethers_providers::ProviderError;
 use std::error::Error as StdError;
 
 use crate::geth_errors::{
-    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_INVALID_OP_CODE, GETH_ERR_OUT_OF_GAS,
+    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS,
     GETH_ERR_STACK_OVERFLOW, GETH_ERR_STACK_UNDERFLOW, GETH_ERR_WRITE_PROTECTION,
 };
 
@@ -211,8 +211,6 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
         ExecError::StackUnderflow
     } else if error.starts_with(GETH_ERR_WRITE_PROTECTION) {
         ExecError::WriteProtection
-    } else if error.starts_with(GETH_ERR_INVALID_OP_CODE) {
-        ExecError::InvalidOpcode
     } else {
         panic!("Unknown GethExecStep.error: {error}");
     }
