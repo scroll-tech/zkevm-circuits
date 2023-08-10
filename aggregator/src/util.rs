@@ -18,22 +18,6 @@ use crate::{
 
 use std::env::var;
 
-pub(crate) fn keccak_round_capacity(num_rows: usize) -> Option<usize> {
-    if num_rows > 0 {
-        // Subtract two for unusable rows
-        Some(num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
-    } else {
-        None
-    }
-}
-
-pub(crate) fn get_num_rows_per_round() -> usize {
-    var("KECCAK_ROWS")
-        .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
-        .parse()
-        .expect("Cannot parse KECCAK_ROWS env var as usize")
-}
-
 /// Return
 /// - the indices of the rows that contain the input preimages
 /// - the indices of the rows that contain the output digest

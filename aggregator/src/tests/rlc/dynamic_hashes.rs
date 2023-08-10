@@ -9,7 +9,7 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use zkevm_circuits::{
     keccak_circuit::{
-        keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuitConfigArgs,
+        keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuitConfigArgs, KeccakCircuit
     },
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuitConfig},
@@ -18,7 +18,6 @@ use zkevm_circuits::{
 use crate::{
     aggregation::RlcConfig,
     constants::{LOG_DEGREE, ROWS_PER_ROUND},
-    util::keccak_round_capacity,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -95,7 +94,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
         let witness = multi_keccak(
             &[hash_preimage.clone()],
             challenge,
-            keccak_round_capacity(1 << LOG_DEGREE),
+            KeccakCircuit::<Fr>::capacity_for_row(1 << LOG_DEGREE),
         )
         .unwrap();
 

@@ -31,7 +31,7 @@ use crate::{
         MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
     },
     util::{
-        assert_conditional_equal, assert_equal, assert_exist, get_indices, keccak_round_capacity,
+        assert_conditional_equal, assert_equal, assert_exist, get_indices,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
     AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
