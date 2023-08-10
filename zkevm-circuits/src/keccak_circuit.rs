@@ -1073,6 +1073,17 @@ impl<F: Field> KeccakCircuit<F> {
         }
     }
 
+    /// The number of keccak_f's that can be done for
+    /// a particular row number depending on current Keccak params
+    pub fn capacity_for_row(num_rows: usize) -> Option<usize> {
+        if num_rows > 0 {
+            // Subtract two for unusable rows
+            Some(num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
+        } else {
+            None
+        }
+    }
+
     /// Sets the witness using the data to be hashed
     pub(crate) fn generate_witness(&self, challenges: Challenges<Value<F>>) -> Vec<KeccakRow<F>> {
         multi_keccak(self.inputs.as_slice(), challenges, self.capacity())
