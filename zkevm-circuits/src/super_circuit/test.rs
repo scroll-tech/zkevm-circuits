@@ -537,8 +537,6 @@ fn serial_test_super_circuit_2tx_2max_tx() {
 #[cfg(feature = "scroll")]
 #[test]
 fn test_super_circuit_ec_ops_txs() {
-    use bus_mapping::circuit_input_builder::PrecompileEcParams;
-
     let block = block_ec_ops();
     const MAX_TXS: usize = 3;
     const MAX_CALLDATA: usize = 320;
@@ -557,11 +555,7 @@ fn test_super_circuit_ec_ops_txs() {
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
         max_rlp_rows: 800,
-        max_ec_ops: PrecompileEcParams {
-            ec_add: 1,
-            ec_mul: 1,
-            ec_pairing: 1,
-        },
+        ..Default::default()
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
