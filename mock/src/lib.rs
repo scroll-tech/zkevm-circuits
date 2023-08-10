@@ -35,7 +35,7 @@ lazy_static! {
     /// Mock DIFFICULTY value
     pub static ref MOCK_DIFFICULTY: Word = Word::from(0x200000u64);
     /// Mock DIFFICULTY value for l2geth (always 0)
-    pub static ref MOCK_DIFFICULTY_L2GETH: Word = Word::from(0x0u64);    
+    pub static ref MOCK_DIFFICULTY_L2GETH: Word = Word::from(0x0u64);
     /// Mock accounts loaded with ETH to use for test cases.
     pub static ref MOCK_ACCOUNTS: Vec<Address> = vec![
         address!("0x000000000000000000000000000000000cafe111"),

@@ -70,14 +70,14 @@ mod stackonlyop_tests {
         word, Bytecode, Word,
     };
     use itertools::Itertools;
-    use mock::{
-        test_ctx::{helpers::*, TestContext},
-        MOCK_BASEFEE, MOCK_GASLIMIT,
-    };
     #[cfg(not(feature = "scroll"))]
     use mock::MOCK_DIFFICULTY;
     #[cfg(feature = "scroll")]
     use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
+    use mock::{
+        test_ctx::{helpers::*, TestContext},
+        MOCK_BASEFEE, MOCK_GASLIMIT,
+    };
     use pretty_assertions::assert_eq;
     use std::ops::{BitOr, BitXor};
 
@@ -157,8 +157,9 @@ mod stackonlyop_tests {
             .find(|step| step.exec_state == ExecState::Op(opcode))
             .unwrap();
 
-        assert_eq!(step.error, 
-            Some(crate::error::ExecError::InvalidOpcode), 
+        assert_eq!(
+            step.error,
+            Some(crate::error::ExecError::InvalidOpcode),
             "expected invalid op code for not implement op code"
         );
     }
@@ -449,7 +450,7 @@ mod stackonlyop_tests {
                     BASEFEE
                     STOP
                 },
-            );    
+            );
         } else {
             stack_only_opcode_impl::<0, 1>(
                 OpcodeId::BASEFEE,
@@ -459,7 +460,7 @@ mod stackonlyop_tests {
                 },
                 vec![],
                 vec![StackOp::new(1, StackAddress(1023), *MOCK_BASEFEE)],
-            );    
+            );
         }
     }
 }
