@@ -754,10 +754,7 @@ pub fn gen_begin_tx_ops(
                     CallContextField::CallDataOffset,
                     call.call_data_offset.into(),
                 ),
-                (
-                    CallContextField::CallDataLength,
-                    state.tx.input.len().into(),
-                ),
+                (CallContextField::CallDataLength, 0.into()),
                 (CallContextField::Value, call.value),
                 (CallContextField::IsStatic, (call.is_static as usize).into()),
                 (CallContextField::LastCalleeId, 0.into()),
