@@ -13,10 +13,7 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
 use crate::{
     aggregation::RlcConfig,
     constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS},
-    DEFAULT_KECCAK_ROWS, NUM_ROUNDS,
 };
-
-use std::env::var;
 
 /// Return
 /// - the indices of the rows that contain the input preimages
