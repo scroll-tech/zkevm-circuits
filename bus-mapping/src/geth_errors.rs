@@ -8,3 +8,5 @@ pub const GETH_ERR_OUT_OF_GAS: &str = "out of gas";
 pub const GETH_ERR_GAS_UINT_OVERFLOW: &str = "gas uint64 overflow";
 /// Geth error message for write protection
 pub const GETH_ERR_WRITE_PROTECTION: &str = "write protection";
+/// Geth error message for invalid opcode
+pub const GETH_ERR_INVALID_OP_CODE: &str = "invalid opcode";
