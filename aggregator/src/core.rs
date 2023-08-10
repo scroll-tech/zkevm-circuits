@@ -28,7 +28,6 @@ use zkevm_circuits::{
 use crate::{
     constants::{
         CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
-        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
     },
     util::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
@@ -249,7 +248,7 @@ pub(crate) fn extract_hash_cells(
                 // sanity
                 assert_eq!(
                     hash_input_cells.len(),
-                    MAX_KECCAK_ROUNDS * INPUT_LEN_PER_ROUND
+                    max_keccak_updates * INPUT_LEN_PER_ROUND
                 );
                 assert_eq!(hash_output_cells.len(), (MAX_AGG_SNARKS + 4) * DIGEST_LEN);
 
