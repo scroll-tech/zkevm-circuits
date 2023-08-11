@@ -434,12 +434,10 @@ impl CopyEvent {
 
     /// Whether the RLC of data must be computed.
     pub fn has_rlc(&self) -> bool {
-        match (self.src_type, self.dst_type) {
-            (CopyDataType::RlcAcc, _) => true,
-            (_, CopyDataType::RlcAcc) => true,
-            (_, CopyDataType::Bytecode) => true,
-            _ => false,
-        }
+        matches!(
+            (self.src_type, self.dst_type),
+            (CopyDataType::RlcAcc, _) | (_, CopyDataType::RlcAcc) | (_, CopyDataType::Bytecode)
+        )
     }
 
     /// The RW counter of the first RW lookup performed by this copy event.
