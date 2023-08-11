@@ -13,7 +13,7 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, CachedRegion, Cell,
+            not, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -96,7 +96,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let copy_rw_increase = cb.query_cell();
         let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, "", copy_rw_increase.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [range.end_offset()]);
 
         // Case A in the specs.
         // not work for memory word rw counter increase now.
@@ -139,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 code_hash.expr(),
                 CopyDataType::Bytecode.expr(),
                 range.offset(),
-                range.address(),
+                range.end_offset(),
                 0.expr(),
                 range.length(),
                 deployed_bytecode_rlc.expr(),
@@ -286,7 +286,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     cb.next.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
                     range.offset(),
-                    range.address(),
+                    range.end_offset(),
                     return_data_offset.expr(),
                     copy_length.min(),
                     0.expr(),
@@ -355,7 +355,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.is_revert
             .assign(region, offset, opcode, F::from(OpcodeId::REVERT.as_u64()))?;
 
-        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let [memory_offset, length] = [(); 2].map(|_| rws.next().stack_value());
+        rws.next(); // skip
+
         let range = self.range.assign(region, offset, memory_offset, length)?;
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
@@ -390,14 +394,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         if call.is_create && call.is_success {
             // read memory word and get real copy bytes
-            let deployed_bytecode: Vec<u8> = get_copy_bytes(
-                block,
-                step,
-                3,
-                3 + copy_rwc_inc as usize,
-                shift,
-                valid_length,
-            );
+            let deployed_bytecode: Vec<u8> =
+                get_copy_bytes(&mut rws, copy_rwc_inc as usize, shift, valid_length);
 
             self.deployed_bytecode_rlc.assign(
                 region,
@@ -430,17 +428,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
 
             if !deployed_bytecode.is_empty() {
-                let prev_code_hash = block.rws[step.rw_indices[3 + copy_rwc_inc as usize + 4]]
-                    .account_codehash_pair()
-                    .0;
+                rws.offset_add(5);
+                let prev_code_hash = rws.next().account_codehash_pair().1;
                 self.prev_code_hash
                     .assign(region, offset, region.code_hash(prev_code_hash))?;
                 #[cfg(feature = "scroll")]
                 {
-                    let prev_keccak_code_hash = block.rws
-                        [step.rw_indices[3 + copy_rwc_inc as usize + 6]]
-                        .account_keccak_codehash_pair()
-                        .0;
+                    rws.next();
+                    let prev_keccak_code_hash = rws.next().account_keccak_codehash_pair().1;
                     self.prev_keccak_code_hash.assign(
                         region,
                         offset,

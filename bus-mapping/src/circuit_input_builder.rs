@@ -633,6 +633,14 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         "keccak total len after txs: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
+    // Ecrecover
+    keccak_inputs.extend_from_slice(&keccak_inputs_sign_verify(
+        &block.precompile_events.get_ecrecover_events(),
+    ));
+    log::debug!(
+        "keccak total len after ecrecover: {}",
+        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
+    );
     // PI circuit
     keccak_inputs.extend(keccak_inputs_pi_circuit(
         block.chain_id,

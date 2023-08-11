@@ -122,6 +122,8 @@ mod test {
                 ]
             }"#,
             // Insufficient balance to buy gas
+            // for l2geth test it is considered as l1msg tx and valid
+            #[cfg(not(feature = "scroll"))]
             r#"{
                 "block_constants": {
                     "gas_limit": "0x52080"
@@ -150,7 +152,7 @@ mod test {
                 ]
             }"#,
         ] {
-            assert!(trace(config).is_err())
+            assert!(trace(config).is_err(), "consider correct {config}")
         }
     }
 }

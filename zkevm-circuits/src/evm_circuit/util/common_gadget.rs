@@ -33,6 +33,7 @@ use halo2_proofs::{
 mod tx_l1_fee;
 mod tx_l1_msg;
 
+use crate::evm_circuit::util::StepRws;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
@@ -716,8 +717,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, "", sum::expr(&gas_word.cells[N_BYTES_GAS..]));
-        let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(
+            cb,
+            [cd_address.end_offset(), rd_address.end_offset()],
+        );
 
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&value.cells));
@@ -1254,21 +1257,16 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
 }
 
 /// get real copy bytes from rw memory words according to shift and copy size
-pub(crate) fn get_copy_bytes<F: Field>(
-    block: &Block<F>,
-    step: &ExecStep,
-    begin_rw_index: usize,
-    end_rw_index: usize,
+pub(crate) fn get_copy_bytes(
+    rws: &mut StepRws,
+    copy_rwc_inc: usize,
     shift: u64,
     copy_size: u64,
 ) -> Vec<u8> {
     // read real copy bytes from padded memory words
-    let padded_bytes: Vec<u8> = (begin_rw_index..end_rw_index)
-        .map(|i| {
-            let mut bytes = block.rws[step.rw_indices[i]]
-                .memory_word_pair()
-                .0
-                .to_le_bytes();
+    let padded_bytes: Vec<u8> = (0..copy_rwc_inc)
+        .map(|_| {
+            let mut bytes = rws.next().memory_word_pair().0.to_le_bytes();
             bytes.reverse();
             bytes
         })
