@@ -643,6 +643,8 @@ impl<
             .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
         self.sig_circuit
             .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
+        self.ecc_circuit
+            .synthesize_sub(&config.ecc_circuit, challenges, layouter)?;
         self.modexp_circuit
             .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
         self.state_circuit
@@ -804,7 +806,7 @@ impl<
         log::debug!("super circuit needs k = {}", k);
 
         let circuit =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA,MAX_INNER_BLOCKS,  MOCK_RANDOMNESS>::new_from_block(&block);
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA,MAX_INNER_BLOCKS, MOCK_RANDOMNESS>::new_from_block(&block);
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))

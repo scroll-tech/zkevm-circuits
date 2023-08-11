@@ -160,7 +160,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 create.code_hash_word_rlc(),
                 CopyDataType::Bytecode.expr(),
                 init_code.offset(),
-                init_code.address(),
+                init_code.end_offset(),
                 0.expr(),
                 init_code.length(),
                 init_code_rlc.expr(),
@@ -333,7 +333,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             },
         );
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [init_code.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [init_code.end_offset()]);
 
         let init_code_word_size = ConstantDivisionGadget::construct(
             cb,

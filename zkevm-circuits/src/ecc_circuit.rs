@@ -4,7 +4,7 @@
 use std::marker::PhantomData;
 
 use bus_mapping::{
-    circuit_input_builder::{EcAddOp, EcMulOp, EcPairingOp},
+    circuit_input_builder::{EcAddOp, EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
     precompile::PrecompileCalls,
 };
 use eth_types::{Field, ToScalar};
@@ -176,7 +176,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let keccak_powers = std::iter::successors(Some(Value::known(F::one())), |coeff| {
             Some(challenges.keccak_input() * coeff)
         })
-        .take(4 * 192)
+        .take(N_PAIRING_PER_OP * N_BYTES_PER_PAIR)
         .map(|x| QuantumCell::Witness(x))
         .collect_vec();
 
@@ -561,12 +561,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 };
                 G1Assigned {
                     decomposed,
-                    x_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                    x_rlc: ecc_chip.field_chip().range().gate().inner_product(
                         ctx,
                         x_cells,
                         powers_of_rand.iter().cloned(),
                     ),
-                    y_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                    y_rlc: ecc_chip.field_chip().range().gate().inner_product(
                         ctx,
                         y_cells,
                         powers_of_rand.iter().cloned(),
@@ -593,22 +593,22 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 };
                 G2Assigned {
                     decomposed,
-                    x_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                    x_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
                         ctx,
                         x_c0_cells,
                         powers_of_rand.iter().cloned(),
                     ),
-                    x_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                    x_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
                         ctx,
                         x_c1_cells,
                         powers_of_rand.iter().cloned(),
                     ),
-                    y_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                    y_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
                         ctx,
                         y_c0_cells,
                         powers_of_rand.iter().cloned(),
                     ),
-                    y_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                    y_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
                         ctx,
                         y_c1_cells,
                         powers_of_rand.iter().cloned(),
@@ -628,18 +628,17 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 std::iter::empty()
                     .chain(g1.decomposed.x_cells.iter().rev())
                     .chain(g1.decomposed.y_cells.iter().rev())
-                    .chain(g2.decomposed.x_c0_cells.iter().rev())
                     .chain(g2.decomposed.x_c1_cells.iter().rev())
-                    .chain(g2.decomposed.y_c0_cells.iter().rev())
+                    .chain(g2.decomposed.x_c0_cells.iter().rev())
                     .chain(g2.decomposed.y_c1_cells.iter().rev())
+                    .chain(g2.decomposed.y_c0_cells.iter().rev())
                     .cloned()
-                    .rev()
                     .collect::<Vec<QuantumCell<F>>>()
             })
             .collect::<Vec<QuantumCell<F>>>();
-        let input_rlc = pairing_chip.fp_chip.range.gate.inner_product(
+        let input_rlc = ecc_chip.field_chip().range().gate().inner_product(
             ctx,
-            input_cells,
+            input_cells.into_iter().rev(),
             powers_of_rand.iter().cloned(),
         );
 
@@ -662,12 +661,14 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             fp12_chip.is_equal(ctx, &gt, &one)
         };
 
+        let op_output = ecc_chip.field_chip().range().gate().load_witness(
+            ctx,
+            Value::known(op.output.to_scalar().expect("EcPairing output = {0, 1}")),
+        );
         ecc_chip.field_chip().range().gate().assert_equal(
             ctx,
             QuantumCell::Existing(success),
-            QuantumCell::Witness(Value::known(
-                op.output.to_scalar().expect("EcPairing output = {0, 1}"),
-            )),
+            QuantumCell::Existing(op_output),
         );
 
         log::trace!("[ECC] EcPairingAssignment END:");

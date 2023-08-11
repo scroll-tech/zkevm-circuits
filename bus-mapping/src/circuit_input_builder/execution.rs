@@ -1101,10 +1101,10 @@ impl EcPairingPair {
     /// Returns the big-endian representation of the G2 point in the pair.
     pub fn g2_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
             .chain(self.g2_point.x.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
             .chain(self.g2_point.y.c1.to_bytes().iter().rev())
+            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
             .cloned()
             .collect()
     }
@@ -1114,10 +1114,10 @@ impl EcPairingPair {
         std::iter::empty()
             .chain(self.g1_point.x.to_bytes().iter().rev())
             .chain(self.g1_point.y.to_bytes().iter().rev())
-            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
             .chain(self.g2_point.x.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
             .chain(self.g2_point.y.c1.to_bytes().iter().rev())
+            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
             .cloned()
             .collect()
     }

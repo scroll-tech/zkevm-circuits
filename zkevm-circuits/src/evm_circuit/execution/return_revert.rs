@@ -90,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let copy_rw_increase = cb.query_cell();
         let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, "", copy_rw_increase.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [range.end_offset()]);
 
         // Case A in the specs.
         // not work for memory word rw counter increase now.
@@ -133,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 code_hash.expr(),
                 CopyDataType::Bytecode.expr(),
                 range.offset(),
-                range.address(),
+                range.end_offset(),
                 0.expr(),
                 range.length(),
                 deployed_bytecode_rlc.expr(),
@@ -280,7 +280,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     cb.next.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
                     range.offset(),
-                    range.address(),
+                    range.end_offset(),
                     return_data_offset.expr(),
                     copy_length.min(),
                     0.expr(),
