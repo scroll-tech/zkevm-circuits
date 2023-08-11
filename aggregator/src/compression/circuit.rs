@@ -5,7 +5,10 @@ use std::fs::File;
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Fq, G1Affine},
+    halo2curves::{
+        bn256::{Fq, G1Affine, G2Affine},
+        pairing::Engine,
+    },
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
@@ -174,6 +177,8 @@ impl CompressionCircuit {
         snark: Snark,
         has_accumulator: bool,
         rng: impl Rng + Send,
+        g2: &G2Affine,
+        s_g2: &G2Affine,
     ) -> Result<Self, snark_verifier::Error> {
         let svk = params.get_g()[0].into();
 
@@ -182,7 +187,7 @@ impl CompressionCircuit {
         // in case not first time:
         // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
         let (accumulator, as_proof) =
-            extract_accumulators_and_proof(params, &[snark.clone()], rng)?;
+            extract_accumulators_and_proof(params, &[snark.clone()], rng, g2, s_g2)?;
 
         // the instance for the outer circuit is
         // - new accumulator, consists of 12 elements
@@ -191,6 +196,16 @@ impl CompressionCircuit {
         // it is important that new accumulator is the first 12 elements
         // as specified in CircuitExt::accumulator_indices()
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
+
+        // sanity check on the accumulator
+        {
+            let left = Bn256::pairing(&lhs, g2);
+            let right = Bn256::pairing(&rhs, s_g2);
+            log::trace!("compression circuit acc check: left {:?}", left);
+            log::trace!("compression circuit acc check: right {:?}", right);
+            assert_eq!(left, right, "accumulator check failed");
+        }
+
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<Fq, Fr, { LIMBS }, { BITS }>)
             .concat();

@@ -8,10 +8,8 @@ use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, Circui
 
 use crate::{
     aggregation::AggregationCircuit, batch::BatchHash, constants::MAX_AGG_SNARKS, layer_0,
-    ChunkHash,
+    tests::mock_chunk::MockChunkCircuit, ChunkHash,
 };
-
-use super::mock_chunk::MockChunkCircuit;
 
 #[test]
 fn test_aggregation_circuit() {
@@ -127,6 +125,8 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
         [real_snarks, padded_snarks].concat().as_ref(),
         rng,
         batch_hash,
+        &params.g2(),
+        &params.s_g2(),
     )
     .unwrap()
 }
