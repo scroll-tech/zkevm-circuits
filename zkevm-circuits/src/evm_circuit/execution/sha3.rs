@@ -61,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::RlcAcc.expr(),
                 memory_address.offset(),
-                memory_address.address(),
+                memory_address.end_offset(),
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
                 rlc_acc.expr(),
@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         });
         cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
