@@ -660,7 +660,6 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             let one = fp12_chip.load_constant(ctx, Fq12::one());
             fp12_chip.is_equal(ctx, &gt, &one)
         };
-        log::info!("success = {:?}", success.value);
 
         let op_output = ecc_chip.field_chip().range().gate().load_witness(
             ctx,
