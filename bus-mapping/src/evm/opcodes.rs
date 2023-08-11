@@ -886,7 +886,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             AccountField::Balance,
             caller_balance,
             caller_balance_prev,
-        )?;    
+        )?;
     }
 
     let block_info = state
@@ -897,7 +897,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
-    let coinbase_reward = if state.tx.tx_type.is_l1_msg(){
+    let coinbase_reward = if state.tx.tx_type.is_l1_msg() {
         Word::zero()
     } else {
         effective_tip * gas_cost + state.tx_ctx.l1_fee
@@ -951,14 +951,14 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance = coinbase_balance_prev + coinbase_reward;
 
-    if !state.tx.tx_type.is_l1_msg(){
+    if !state.tx.tx_type.is_l1_msg() {
         state.account_write(
             &mut exec_step,
             block_info.coinbase,
             AccountField::Balance,
             coinbase_balance,
             coinbase_balance_prev,
-        )?;    
+        )?;
     }
 
     // handle tx receipt tag
