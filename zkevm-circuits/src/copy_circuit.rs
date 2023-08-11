@@ -223,6 +223,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // Detect the first row of an event. When true, both reader and writer are initialized.
             let is_first = meta.query_advice(is_first, CURRENT);
             // Detect the last step of an event. This works on both reader and writer rows.
+            // This is a boolean since is_last cannot be true on both rows because of constraint
+            // "is_last == 0 when q_step == 1" and the alternating values of q_step.
             let is_last_step =
                 meta.query_advice(is_last, CURRENT) + meta.query_advice(is_last, NEXT_ROW);
             // Whether this row is part of an event but not the last step. When true, the next step
