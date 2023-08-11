@@ -1517,7 +1517,7 @@ pub struct CopyTable {
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
     /// TxLog. This also now includes various precompile calls, hence will take up more cells.
-    pub tag: BinaryNumberConfig<CopyDataType, 4>,
+    pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
@@ -1561,6 +1561,11 @@ impl CopyTable {
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
+        assert!(
+            copy_event.src_type != CopyDataType::Padding
+                && copy_event.dst_type != CopyDataType::Padding,
+            "Padding is an internal type"
+        );
 
         let mut assignments = Vec::new();
         // rlc_acc
@@ -1702,15 +1707,6 @@ impl CopyTable {
                     .unwrap()
             } else {
                 F::from(thread.addr)
-            };
-
-            match copy_event.src_type {
-                CopyDataType::Precompile(_) => panic!("XXX src CopyDataType::Precompile"),
-                _ => {}
-            };
-            match copy_event.dst_type {
-                CopyDataType::Precompile(_) => panic!("XXX dst CopyDataType::Precompile"),
-                _ => {}
             };
 
             assignments.push((
