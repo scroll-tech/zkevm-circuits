@@ -203,7 +203,12 @@ impl CompressionCircuit {
             let right = Bn256::pairing(&rhs, s_g2);
             log::trace!("compression circuit acc check: left {:?}", left);
             log::trace!("compression circuit acc check: right {:?}", right);
-            assert_eq!(left, right, "accumulator check failed");
+
+            if left != right {
+                return Err(snark_verifier::Error::AssertionFailure(format!(
+                    "accumulator check failed {left:?} {right:?}",
+                )));
+            }
         }
 
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
