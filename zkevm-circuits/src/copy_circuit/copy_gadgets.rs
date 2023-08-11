@@ -363,24 +363,17 @@ pub fn constrain_event_rlc_acc<F: Field>(
         );
     });
 
+    cb.require_zero("", meta.query_advice(is_precompiled, CURRENT));
+    cb.require_zero("", meta.query_advice(is_precompiled, NEXT_ROW));
+
     // Check the rlc_acc given in the event if any of:
-    // - Precompile => *
-    // - * => Precompile
-    // - Memory => Bytecode
-    // - TxCalldata => Bytecode
+    // - RlcAcc => *
     // - * => RlcAcc
+    // - * => Bytecode
     let rlc_acc_cond = sum::expr([
-        meta.query_advice(is_precompiled, CURRENT),
-        meta.query_advice(is_precompiled, NEXT_ROW),
-        and::expr([
-            meta.query_advice(is_memory, CURRENT),
-            meta.query_advice(is_bytecode, NEXT_ROW),
-        ]),
-        and::expr([
-            meta.query_advice(is_tx_calldata, CURRENT),
-            meta.query_advice(is_bytecode, NEXT_ROW),
-        ]),
+        tag.value_equals(CopyDataType::RlcAcc, CURRENT)(meta),
         tag.value_equals(CopyDataType::RlcAcc, NEXT_ROW)(meta),
+        meta.query_advice(is_bytecode, NEXT_ROW),
     ]);
 
     cb.condition(rlc_acc_cond * meta.query_advice(is_last, NEXT_ROW), |cb| {

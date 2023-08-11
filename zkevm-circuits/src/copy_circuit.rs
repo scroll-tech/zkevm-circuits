@@ -585,6 +585,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             // if the memory copy operation is related to precompile calls.
             let is_precompiled = CopyDataType::precompile_types().contains(tag);
+            assert!(!is_precompiled, "CopyDataType::Precompile is deprecated");
             region.assign_advice(
                 || format!("is_precompiled at row: {}", *offset),
                 self.is_precompiled,

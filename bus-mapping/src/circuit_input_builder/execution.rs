@@ -448,6 +448,16 @@ impl CopyEvent {
         self.dst_type == CopyDataType::Memory || self.dst_type == CopyDataType::TxLog
     }
 
+    /// Whether the RLC of data must be computed.
+    pub fn has_rlc(&self) -> bool {
+        match (self.src_type, self.dst_type) {
+            (CopyDataType::RlcAcc, _) => true,
+            (_, CopyDataType::RlcAcc) => true,
+            (_, CopyDataType::Bytecode) => true,
+            _ => false,
+        }
+    }
+
     /// The RW counter of the first RW lookup performed by this copy event.
     pub fn rw_counter_start(&self) -> u64 {
         usize::from(self.rw_counter_start) as u64

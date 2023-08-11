@@ -1564,7 +1564,7 @@ impl CopyTable {
 
         let mut assignments = Vec::new();
         // rlc_acc
-        let rlc_acc = {
+        let rlc_acc = if copy_event.has_rlc() {
             let values = copy_event
                 .copy_bytes
                 .bytes
@@ -1576,6 +1576,8 @@ impl CopyTable {
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
+        } else {
+            Value::known(F::zero())
         };
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
@@ -1702,6 +1704,15 @@ impl CopyTable {
                 F::from(thread.addr)
             };
 
+            match copy_event.src_type {
+                CopyDataType::Precompile(_) => panic!("XXX src CopyDataType::Precompile"),
+                _ => {}
+            };
+            match copy_event.dst_type {
+                CopyDataType::Precompile(_) => panic!("XXX dst CopyDataType::Precompile"),
+                _ => {}
+            };
+
             assignments.push((
                 thread.tag,
                 [
@@ -1710,17 +1721,7 @@ impl CopyTable {
                     (Value::known(addr), "addr"),
                     (Value::known(F::from(thread.addr_end)), "src_addr_end"),
                     (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
-                    (
-                        match (copy_event.src_type, copy_event.dst_type) {
-                            (CopyDataType::Precompile(_), _) => rlc_acc,
-                            (_, CopyDataType::Precompile(_)) => rlc_acc,
-                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
-                            (CopyDataType::TxCalldata, CopyDataType::Bytecode) => rlc_acc,
-                            (_, CopyDataType::RlcAcc) => rlc_acc,
-                            _ => Value::known(F::zero()),
-                        },
-                        "rlc_acc",
-                    ),
+                    (rlc_acc, "rlc_acc"),
                     (Value::known(F::from(rw_counter)), "rw_counter"),
                     (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
                 ],
