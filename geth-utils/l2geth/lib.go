@@ -15,6 +15,7 @@ import (
 //
 //export CreateTrace
 func CreateTrace(configStr *C.char) *C.char {
+	fmt.Printf("%s", C.GoString(configStr))
 	var config TraceConfig
 	err := json.Unmarshal([]byte(C.GoString(configStr)), &config)
 	if err != nil {
