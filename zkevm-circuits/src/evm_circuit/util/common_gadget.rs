@@ -34,7 +34,6 @@ use halo2_proofs::{
 mod tx_l1_fee;
 mod tx_l1_msg;
 
-use crate::evm_circuit::util::StepRws;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
