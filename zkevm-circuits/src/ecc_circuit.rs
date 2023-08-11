@@ -44,10 +44,10 @@ mod test;
 mod util;
 use util::{
     EcAddAssigned, EcMulAssigned, EcOpsAssigned, EcPairingAssigned, G1Assigned, G1Decomposed,
-    G2Assigned, G2Decomposed, ScalarAssigned, ScalarDecomposed,
+    G2Assigned, G2Decomposed, ScalarAssigned,
 };
 
-use self::util::LOG_TOTAL_NUM_ROWS;
+use self::util::{EcAddDecomposed, EcMulDecomposed, EcPairingDecomposed, LOG_TOTAL_NUM_ROWS};
 
 macro_rules! log_context_cursor {
     ($ctx: ident) => {{
@@ -203,20 +203,19 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 
                 let mut ctx = config.fp_config.new_context(region);
 
-                macro_rules! assign_ec_op {
-                    ($op_type:ident, $ops:expr, $n_ops:expr, $assign_fn:ident) => {
+                macro_rules! decompose_ec_op {
+                    ($op_type:ident, $ops:expr, $n_ops:expr, $decompose_fn:ident) => {
                         $ops.iter()
                             .filter(|op| !op.skip_by_ecc_circuit())
                             .chain(std::iter::repeat(&$op_type::default()))
                             .take($n_ops)
                             .map(|op| {
-                                self.$assign_fn(
+                                self.$decompose_fn(
                                     &mut ctx,
                                     &ecc_chip,
                                     &fr_chip,
                                     &pairing_chip,
                                     &fp12_chip,
-                                    &keccak_powers,
                                     &op,
                                 )
                             })
@@ -224,21 +223,42 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     };
                 }
 
+                macro_rules! assign_ec_op {
+                    ($decomposed_ops:expr, $assign_fn:ident) => {
+                        $decomposed_ops
+                            .iter()
+                            .map(|decomposed_op| {
+                                self.$assign_fn(&mut ctx, decomposed_op, &ecc_chip, &keccak_powers)
+                            })
+                            .collect_vec()
+                    };
+                }
+
                 // P + Q == R
-                let ec_adds_assigned =
-                    assign_ec_op!(EcAddOp, self.add_ops, self.max_add_ops, assign_ec_add_op);
+                let ec_adds_decomposed =
+                    decompose_ec_op!(EcAddOp, self.add_ops, self.max_add_ops, decompose_ec_add_op);
 
                 // s.P = R
-                let ec_muls_assigned =
-                    assign_ec_op!(EcMulOp, self.mul_ops, self.max_mul_ops, assign_ec_mul_op);
+                let ec_muls_decomposed =
+                    decompose_ec_op!(EcMulOp, self.mul_ops, self.max_mul_ops, decompose_ec_mul_op);
 
                 // e(G1 . G2) * ... * e(G1 . G2) -> Gt
-                let ec_pairings_assigned = assign_ec_op!(
+                let ec_pairings_decomposed = decompose_ec_op!(
                     EcPairingOp,
                     self.pairing_ops,
                     self.max_pairing_ops,
-                    assign_ec_pairing_op
+                    decompose_ec_pairing_op
                 );
+
+                // finalize after first phase.
+                config.fp_config.finalize(&mut ctx);
+
+                let ec_adds_assigned = assign_ec_op!(ec_adds_decomposed, assign_ec_add);
+                let ec_muls_assigned = assign_ec_op!(ec_muls_decomposed, assign_ec_mul);
+                let ec_pairings_assigned = assign_ec_op!(ec_pairings_decomposed, assign_ec_pairing);
+
+                // finalize after second phase (RLC).
+                config.fp_config.finalize(&mut ctx);
 
                 Ok(EcOpsAssigned {
                     ec_adds_assigned,
@@ -326,12 +346,11 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                         idx,
                     );
                     // Scalar s
-                    ec_mul_assigned
-                        .scalar_s
-                        .decomposed
-                        .scalar
-                        .native
-                        .copy_advice(&mut region, config.ecc_table.arg3_rlc, idx);
+                    ec_mul_assigned.scalar_s.scalar.native.copy_advice(
+                        &mut region,
+                        config.ecc_table.arg3_rlc,
+                        idx,
+                    );
                     // R_x
                     ec_mul_assigned.point_r.x_rlc.copy_advice(
                         &mut region,
@@ -402,23 +421,164 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         Ok(())
     }
 
+    fn assign_ec_add(
+        &self,
+        ctx: &mut Context<F>,
+        ec_add_decomposed: &EcAddDecomposed<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        keccak_powers: &[QuantumCell<F>],
+    ) -> EcAddAssigned<F> {
+        EcAddAssigned {
+            point_p: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_p.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_p.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+            point_q: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_q.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_q.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+            point_r: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_r.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_r.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+        }
+    }
+
+    fn assign_ec_mul(
+        &self,
+        ctx: &mut Context<F>,
+        ec_mul_decomposed: &EcMulDecomposed<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        keccak_powers: &[QuantumCell<F>],
+    ) -> EcMulAssigned<F> {
+        EcMulAssigned {
+            point_p: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_p.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_p.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+            scalar_s: ec_mul_decomposed.scalar_s.clone(),
+            point_r: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_r.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_r.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+        }
+    }
+
+    fn assign_ec_pairing(
+        &self,
+        ctx: &mut Context<F>,
+        ec_pairing_decomposed: &EcPairingDecomposed<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        keccak_powers: &[QuantumCell<F>],
+    ) -> EcPairingAssigned<F> {
+        EcPairingAssigned {
+            g1s: ec_pairing_decomposed
+                .g1s
+                .iter()
+                .map(|g1_decomposed| G1Assigned {
+                    x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                        ctx,
+                        g1_decomposed.x_cells.clone(),
+                        keccak_powers.iter().cloned(),
+                    ),
+                    y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                        ctx,
+                        g1_decomposed.y_cells.clone(),
+                        keccak_powers.iter().cloned(),
+                    ),
+                })
+                .collect_vec(),
+            g2s: ec_pairing_decomposed
+                .g2s
+                .iter()
+                .map(|g2_decomposed| G2Assigned {
+                    x_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                        ctx,
+                        g2_decomposed.x_c0_cells.clone(),
+                        keccak_powers.iter().cloned(),
+                    ),
+                    x_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                        ctx,
+                        g2_decomposed.x_c1_cells.clone(),
+                        keccak_powers.iter().cloned(),
+                    ),
+                    y_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                        ctx,
+                        g2_decomposed.y_c0_cells.clone(),
+                        keccak_powers.iter().cloned(),
+                    ),
+                    y_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                        ctx,
+                        g2_decomposed.y_c1_cells.clone(),
+                        keccak_powers.iter().cloned(),
+                    ),
+                })
+                .collect_vec(),
+            input_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                ctx,
+                ec_pairing_decomposed.input_cells.clone().into_iter().rev(),
+                keccak_powers.iter().cloned(),
+            ),
+            success: ec_pairing_decomposed.success,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn assign_ec_add_op(
+    fn decompose_ec_add_op(
         &self,
         ctx: &mut Context<F>,
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         _fr_chip: &FpConfig<F, Fr>,
         _pairing_chip: &PairingChip<F>,
         _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
-        powers_of_rand: &[QuantumCell<F>],
         op: &EcAddOp,
-    ) -> EcAddAssigned<F> {
+    ) -> EcAddDecomposed<F> {
         log::trace!("[ECC] ==> EcAdd Assignmnet START:");
         log_context_cursor!(ctx);
 
-        let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
-        let point_q = self.assign_g1(ctx, ecc_chip, op.q, powers_of_rand);
-        let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+        let point_p = self.assign_g1(ctx, ecc_chip, op.p);
+        let point_q = self.assign_g1(ctx, ecc_chip, op.q);
+        let point_r = self.assign_g1(ctx, ecc_chip, op.r);
 
         log::trace!("[ECC] EcAdd Inputs Assigned:");
         log_context_cursor!(ctx);
@@ -438,24 +598,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let rand_point = ecc_chip.load_random_point::<G1Affine>(ctx);
 
         // check if P == (0, 0), Q == (0, 0), R == (0, 0)
-        let p_x_is_zero = ecc_chip
-            .field_chip
-            .is_zero(ctx, &point_p.decomposed.ec_point.x);
-        let p_y_is_zero = ecc_chip
-            .field_chip
-            .is_zero(ctx, &point_p.decomposed.ec_point.y);
-        let q_x_is_zero = ecc_chip
-            .field_chip
-            .is_zero(ctx, &point_q.decomposed.ec_point.x);
-        let q_y_is_zero = ecc_chip
-            .field_chip
-            .is_zero(ctx, &point_q.decomposed.ec_point.y);
-        let r_x_is_zero = ecc_chip
-            .field_chip
-            .is_zero(ctx, &point_r.decomposed.ec_point.x);
-        let r_y_is_zero = ecc_chip
-            .field_chip
-            .is_zero(ctx, &point_r.decomposed.ec_point.y);
+        let p_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_p.ec_point.x);
+        let p_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_p.ec_point.y);
+        let q_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_q.ec_point.x);
+        let q_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_q.ec_point.y);
+        let r_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.x);
+        let r_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.y);
         let point_p_is_zero = ecc_chip.field_chip.range().gate().and(
             ctx,
             QuantumCell::Existing(p_x_is_zero),
@@ -473,22 +621,22 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         );
 
         // sum1 = if P == (0, 0) then r else r + P
-        let sum1 = ecc_chip.add_unequal(ctx, &rand_point, &point_p.decomposed.ec_point, true);
+        let sum1 = ecc_chip.add_unequal(ctx, &rand_point, &point_p.ec_point, true);
         let sum1 = ecc_chip.select(ctx, &rand_point, &sum1, &point_p_is_zero);
 
         // sum2 = if Q == (0, 0) then sum1 else sum1 + Q
-        let sum2 = ecc_chip.add_unequal(ctx, &sum1, &point_q.decomposed.ec_point, true);
+        let sum2 = ecc_chip.add_unequal(ctx, &sum1, &point_q.ec_point, true);
         let sum2 = ecc_chip.select(ctx, &sum1, &sum2, &point_q_is_zero);
 
         // sum3 = if R == (0, 0) then sum2 else sum2 - R
-        let sum3 = ecc_chip.sub_unequal(ctx, &sum2, &point_r.decomposed.ec_point, true);
+        let sum3 = ecc_chip.sub_unequal(ctx, &sum2, &point_r.ec_point, true);
         let sum3 = ecc_chip.select(ctx, &sum2, &sum3, &point_r_is_zero);
 
         ecc_chip.assert_equal(ctx, &rand_point, &sum3);
 
         log::trace!("[ECC] EcAdd Assignmnet END:");
         log_context_cursor!(ctx);
-        EcAddAssigned {
+        EcAddDecomposed {
             point_p,
             point_q,
             point_r,
@@ -496,39 +644,38 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn assign_ec_mul_op(
+    fn decompose_ec_mul_op(
         &self,
         ctx: &mut Context<F>,
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         fr_chip: &FpConfig<F, Fr>,
         _pairing_chip: &PairingChip<F>,
         _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
-        powers_of_rand: &[QuantumCell<F>],
         op: &EcMulOp,
-    ) -> EcMulAssigned<F> {
+    ) -> EcMulDecomposed<F> {
         log::trace!("[ECC] ==> EcMul Assignmnet START:");
         log_context_cursor!(ctx);
 
-        let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
+        let point_p = self.assign_g1(ctx, ecc_chip, op.p);
         let scalar_s = self.assign_fr(ctx, fr_chip, op.s);
-        let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+        let point_r = self.assign_g1(ctx, ecc_chip, op.r);
 
         log::trace!("[ECC] EcMul Inputs Assigned:");
         log_context_cursor!(ctx);
 
         let point_r_got = ecc_chip.scalar_mult(
             ctx,
-            &point_p.decomposed.ec_point,
-            &scalar_s.decomposed.scalar.limbs().to_vec(),
+            &point_p.ec_point,
+            &scalar_s.scalar.limbs().to_vec(),
             fr_chip.limb_bits,
             4, // TODO: window bits?
         );
-        ecc_chip.assert_equal(ctx, &point_r.decomposed.ec_point, &point_r_got);
+        ecc_chip.assert_equal(ctx, &point_r.ec_point, &point_r_got);
 
         log::trace!("[ECC] EcMul Assignmnet END:");
         log_context_cursor!(ctx);
 
-        EcMulAssigned {
+        EcMulDecomposed {
             point_p,
             scalar_s,
             point_r,
@@ -536,16 +683,15 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn assign_ec_pairing_op(
+    fn decompose_ec_pairing_op(
         &self,
         ctx: &mut Context<F>,
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         _fr_chip: &FpConfig<F, Fr>,
         pairing_chip: &PairingChip<F>,
         fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
-        powers_of_rand: &[QuantumCell<F>],
         op: &EcPairingOp,
-    ) -> EcPairingAssigned<F> {
+    ) -> EcPairingDecomposed<F> {
         log::trace!("[ECC] ==> EcPairing Assignment START:");
         log_context_cursor!(ctx);
 
@@ -554,23 +700,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .iter()
             .map(|pair| {
                 let (x_cells, y_cells) = self.decompose_g1(pair.g1_point);
-                let decomposed = G1Decomposed {
+                G1Decomposed {
                     ec_point: pairing_chip.load_private_g1(ctx, Value::known(pair.g1_point)),
-                    x_cells: x_cells.clone(),
-                    y_cells: y_cells.clone(),
-                };
-                G1Assigned {
-                    decomposed,
-                    x_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        x_cells,
-                        powers_of_rand.iter().cloned(),
-                    ),
-                    y_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        y_cells,
-                        powers_of_rand.iter().cloned(),
-                    ),
+                    x_cells,
+                    y_cells,
                 }
             })
             .collect_vec();
@@ -584,35 +717,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .map(|pair| {
                 let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
                     self.decompose_g2(pair.g2_point);
-                let decomposed = G2Decomposed {
+                G2Decomposed {
                     ec_point: pairing_chip.load_private_g2(ctx, Value::known(pair.g2_point)),
-                    x_c0_cells: x_c0_cells.clone(),
-                    x_c1_cells: x_c1_cells.clone(),
-                    y_c0_cells: y_c0_cells.clone(),
-                    y_c1_cells: y_c1_cells.clone(),
-                };
-                G2Assigned {
-                    decomposed,
-                    x_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        x_c0_cells,
-                        powers_of_rand.iter().cloned(),
-                    ),
-                    x_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        x_c1_cells,
-                        powers_of_rand.iter().cloned(),
-                    ),
-                    y_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        y_c0_cells,
-                        powers_of_rand.iter().cloned(),
-                    ),
-                    y_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        y_c1_cells,
-                        powers_of_rand.iter().cloned(),
-                    ),
+                    x_c0_cells,
+                    x_c1_cells,
+                    y_c0_cells,
+                    y_c1_cells,
                 }
             })
             .collect_vec();
@@ -626,21 +736,16 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .zip_eq(g2s.iter())
             .flat_map(|(g1, g2)| {
                 std::iter::empty()
-                    .chain(g1.decomposed.x_cells.iter().rev())
-                    .chain(g1.decomposed.y_cells.iter().rev())
-                    .chain(g2.decomposed.x_c1_cells.iter().rev())
-                    .chain(g2.decomposed.x_c0_cells.iter().rev())
-                    .chain(g2.decomposed.y_c1_cells.iter().rev())
-                    .chain(g2.decomposed.y_c0_cells.iter().rev())
+                    .chain(g1.x_cells.iter().rev())
+                    .chain(g1.y_cells.iter().rev())
+                    .chain(g2.x_c1_cells.iter().rev())
+                    .chain(g2.x_c0_cells.iter().rev())
+                    .chain(g2.y_c1_cells.iter().rev())
+                    .chain(g2.y_c0_cells.iter().rev())
                     .cloned()
                     .collect::<Vec<QuantumCell<F>>>()
             })
             .collect::<Vec<QuantumCell<F>>>();
-        let input_rlc = ecc_chip.field_chip().range().gate().inner_product(
-            ctx,
-            input_cells.into_iter().rev(),
-            powers_of_rand.iter().cloned(),
-        );
 
         log::trace!("[ECC] EcPairing Inputs RLC Assigned:");
         log_context_cursor!(ctx);
@@ -648,7 +753,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let pairs = g1s
             .iter()
             .zip(g2s.iter())
-            .map(|(g1, g2)| (&g1.decomposed.ec_point, &g2.decomposed.ec_point))
+            .map(|(g1, g2)| (&g1.ec_point, &g2.ec_point))
             .collect_vec();
 
         let success = {
@@ -674,10 +779,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcPairingAssignment END:");
         log_context_cursor!(ctx);
 
-        EcPairingAssigned {
+        EcPairingDecomposed {
             g1s,
             g2s,
-            input_rlc,
+            input_cells,
             success,
         }
     }
@@ -687,27 +792,13 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         ctx: &mut Context<F>,
         fp_chip: &EccChip<F, FpConfig<F, Fq>>,
         g1: G1Affine,
-        powers_of_rand: &[QuantumCell<F>],
-    ) -> G1Assigned<F> {
+    ) -> G1Decomposed<F> {
         let ec_point = fp_chip.load_private(ctx, (Value::known(g1.x), Value::known(g1.y)));
         let (x_cells, y_cells) = self.decompose_g1(g1);
-        let decomposed = G1Decomposed {
+        G1Decomposed {
             ec_point,
-            x_cells: x_cells.clone(),
-            y_cells: x_cells.clone(),
-        };
-        G1Assigned {
-            decomposed,
-            x_rlc: fp_chip.field_chip().range.gate.inner_product(
-                ctx,
-                x_cells,
-                powers_of_rand.iter().cloned(),
-            ),
-            y_rlc: fp_chip.field_chip().range.gate.inner_product(
-                ctx,
-                y_cells,
-                powers_of_rand.iter().cloned(),
-            ),
+            x_cells,
+            y_cells,
         }
     }
 
@@ -756,8 +847,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         s: Fr,
     ) -> ScalarAssigned<F> {
         let scalar = fr_chip.load_private(ctx, FpConfig::<F, Fr>::fe_to_witness(&Value::known(s)));
-        let decomposed = ScalarDecomposed { scalar };
-        ScalarAssigned { decomposed }
+        ScalarAssigned { scalar }
     }
 }
 

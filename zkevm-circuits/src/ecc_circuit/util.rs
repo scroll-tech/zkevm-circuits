@@ -19,17 +19,13 @@ pub struct G1Decomposed<F: Field> {
 }
 
 pub struct G1Assigned<F: Field> {
-    pub decomposed: G1Decomposed<F>,
     pub x_rlc: AssignedValue<F>,
     pub y_rlc: AssignedValue<F>,
 }
 
-pub struct ScalarDecomposed<F: Field> {
-    pub scalar: CRTInteger<F>,
-}
-
+#[derive(Clone)]
 pub struct ScalarAssigned<F: Field> {
-    pub decomposed: ScalarDecomposed<F>,
+    pub scalar: CRTInteger<F>,
 }
 
 pub struct G2Decomposed<F: Field> {
@@ -41,11 +37,16 @@ pub struct G2Decomposed<F: Field> {
 }
 
 pub struct G2Assigned<F: Field> {
-    pub decomposed: G2Decomposed<F>,
     pub x_c0_rlc: AssignedValue<F>,
     pub x_c1_rlc: AssignedValue<F>,
     pub y_c0_rlc: AssignedValue<F>,
     pub y_c1_rlc: AssignedValue<F>,
+}
+
+pub struct EcAddDecomposed<F: Field> {
+    pub point_p: G1Decomposed<F>,
+    pub point_q: G1Decomposed<F>,
+    pub point_r: G1Decomposed<F>,
 }
 
 pub struct EcAddAssigned<F: Field> {
@@ -54,10 +55,23 @@ pub struct EcAddAssigned<F: Field> {
     pub point_r: G1Assigned<F>,
 }
 
+pub struct EcMulDecomposed<F: Field> {
+    pub point_p: G1Decomposed<F>,
+    pub scalar_s: ScalarAssigned<F>,
+    pub point_r: G1Decomposed<F>,
+}
+
 pub struct EcMulAssigned<F: Field> {
     pub point_p: G1Assigned<F>,
     pub scalar_s: ScalarAssigned<F>,
     pub point_r: G1Assigned<F>,
+}
+
+pub struct EcPairingDecomposed<F: Field> {
+    pub g1s: Vec<G1Decomposed<F>>,
+    pub g2s: Vec<G2Decomposed<F>>,
+    pub input_cells: Vec<QuantumCell<F>>,
+    pub success: AssignedValue<F>,
 }
 
 pub struct EcPairingAssigned<F: Field> {
