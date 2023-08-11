@@ -54,15 +54,8 @@ fn test_mock_compression() {
             param.downsize(k1);
             param
         };
-        let compression_circuit = CompressionCircuit::new(
-            &param,
-            layer_0_snark,
-            true,
-            &mut rng,
-            &param.g2(),
-            &param.s_g2(),
-        )
-        .unwrap();
+        let compression_circuit =
+            CompressionCircuit::new(&param, layer_0_snark, true, &mut rng).unwrap();
         let instance = compression_circuit.instances();
         println!("instance length {:?}", instance.len());
 

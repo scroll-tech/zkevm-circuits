@@ -125,8 +125,6 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
         [real_snarks, padded_snarks].concat().as_ref(),
         rng,
         batch_hash,
-        &params.g2(),
-        &params.s_g2(),
     )
     .unwrap()
 }

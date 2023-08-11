@@ -2,7 +2,7 @@ use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
+        bn256::{Bn256, Fq, Fr, G1Affine},
         pairing::Engine,
     },
     plonk::{Circuit, ConstraintSystem, Error, Selector},
@@ -66,8 +66,6 @@ impl AggregationCircuit {
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
         batch_hash: BatchHash,
-        g2: &G2Affine,
-        s_g2: &G2Affine,
     ) -> Result<Self, snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
@@ -98,14 +96,19 @@ impl AggregationCircuit {
         let svk = params.get_g()[0].into();
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
-        let (accumulator, as_proof) =
-            extract_accumulators_and_proof(params, snarks_with_padding, rng, g2, s_g2)?;
+        let (accumulator, as_proof) = extract_accumulators_and_proof(
+            params,
+            snarks_with_padding,
+            rng,
+            &params.g2(),
+            &params.s_g2(),
+        )?;
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
 
         // sanity check on the accumulator
         {
-            let left = Bn256::pairing(&lhs, g2);
-            let right = Bn256::pairing(&rhs, s_g2);
+            let left = Bn256::pairing(&lhs, &params.g2());
+            let right = Bn256::pairing(&rhs, &params.s_g2());
             log::trace!("aggregation circuit acc check: left {:?}", left);
             log::trace!("aggregation circuit acc check: right {:?}", right);
             if left != right {

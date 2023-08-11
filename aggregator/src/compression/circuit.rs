@@ -6,7 +6,7 @@ use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     halo2curves::{
-        bn256::{Fq, G1Affine, G2Affine},
+        bn256::{Fq, G1Affine},
         pairing::Engine,
     },
     plonk::{Circuit, ConstraintSystem, Error},
@@ -177,8 +177,6 @@ impl CompressionCircuit {
         snark: Snark,
         has_accumulator: bool,
         rng: impl Rng + Send,
-        g2: &G2Affine,
-        s_g2: &G2Affine,
     ) -> Result<Self, snark_verifier::Error> {
         let svk = params.get_g()[0].into();
 
@@ -186,8 +184,13 @@ impl CompressionCircuit {
         // it is turned into an accumulator via KzgAs accumulation scheme
         // in case not first time:
         // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
-        let (accumulator, as_proof) =
-            extract_accumulators_and_proof(params, &[snark.clone()], rng, g2, s_g2)?;
+        let (accumulator, as_proof) = extract_accumulators_and_proof(
+            params,
+            &[snark.clone()],
+            rng,
+            &params.g2(),
+            &params.s_g2(),
+        )?;
 
         // the instance for the outer circuit is
         // - new accumulator, consists of 12 elements
@@ -199,8 +202,8 @@ impl CompressionCircuit {
 
         // sanity check on the accumulator
         {
-            let left = Bn256::pairing(&lhs, g2);
-            let right = Bn256::pairing(&rhs, s_g2);
+            let left = Bn256::pairing(&lhs, &params.g2());
+            let right = Bn256::pairing(&rhs, &params.s_g2());
             log::trace!("compression circuit acc check: left {:?}", left);
             log::trace!("compression circuit acc check: right {:?}", right);
 
