@@ -121,6 +121,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         let effective_fee = cb.query_word_rlc();
         // TODO: contraint l1 fee
+        // notice for non-scroll feature we do not apply l1msg
         #[cfg(not(feature = "scroll"))]
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee, l1_fee == 0",
