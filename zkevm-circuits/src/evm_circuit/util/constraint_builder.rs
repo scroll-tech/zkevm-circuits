@@ -1357,8 +1357,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn exp_table_lookup(
         &mut self,
-        identifier: Expression<F>,
-        is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
@@ -1366,8 +1364,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.add_lookup(
             "exponentiation lookup",
             Lookup::ExpTable {
-                identifier,
-                is_last,
                 base_limbs,
                 exponent_lo_hi,
                 exponentiation_lo_hi,

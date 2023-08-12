@@ -2059,8 +2059,6 @@ impl<F: Field> LookupTable<F> for ExpTable {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_fixed(self.is_step, Rotation::cur()),
-            meta.query_advice(self.identifier, Rotation::cur()),
-            meta.query_advice(self.is_last, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::next()),
             meta.query_advice(self.base_limb, Rotation(2)),

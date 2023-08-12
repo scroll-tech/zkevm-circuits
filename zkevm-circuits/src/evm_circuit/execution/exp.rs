@@ -35,8 +35,6 @@ pub(crate) struct ExponentiationGadget<F> {
     exponent_hi_is_zero: IsZeroGadget<F>,
     /// Gadget to check if low 128-bit part of exponent is one or not.
     exponent_lo_is_one: IsEqualGadget<F>,
-    /// Whether there is a single step in the exponentiation trace.
-    single_step: Cell<F>,
     /// Gadget to check the byte-size of exponent.
     exponent_byte_size: ByteSizeGadget<F>,
 }
@@ -119,10 +117,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             );
         });
         // If exponent > 1, i.e. exponent != 0 && exponent != 1:
-        // We do two lookups to the exponentiation table. If exponent == 2, there is
-        // only a single step in the exponentiation by squaring trace. In this
-        // case, is_first == is_last == true for that step.
-        let single_step = cb.query_cell();
         cb.condition(
             and::expr([
                 not::expr(exponent_is_zero_expr),
@@ -135,12 +129,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     from_bytes::expr(&base_rlc.cells[0x10..0x18]),
                     from_bytes::expr(&base_rlc.cells[0x18..0x20]),
                 ];
-                let identifier = cb.curr.state.rw_counter.expr() + cb.rw_counter_offset();
-                // lookup for first step, i.e.
-                // (is_last, base, exponent, exponentiation)
+                // lookup (base, exponent, exponentiation)
                 cb.exp_table_lookup(
-                    identifier.clone(),
-                    single_step.expr(),
                     base_limbs.clone(),
                     [exponent_lo.clone(), exponent_hi.clone()],
                     [exponentiation_lo.clone(), exponentiation_hi.clone()],
@@ -185,7 +175,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             exponent_lo_is_zero,
             exponent_hi_is_zero,
             exponent_lo_is_one,
-            single_step,
             exponent_byte_size,
         }
     }
@@ -224,10 +213,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             .assign(region, offset, exponent_hi_scalar)?;
         self.exponent_lo_is_one
             .assign(region, offset, exponent_lo_scalar, F::one())?;
-
-        let single_step = exponent.eq(&U256::from(2u64));
-        self.single_step
-            .assign(region, offset, Value::known(F::from(single_step as u64)))?;
 
         self.exponent_byte_size
             .assign(region, offset, ByteOrWord::Word(exponent))?;
