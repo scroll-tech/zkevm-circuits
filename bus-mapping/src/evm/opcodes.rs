@@ -928,36 +928,15 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             coinbase_account.code_hash.to_word()
         },
     );
-    if coinbase_account.is_empty() && !coinbase_reward.is_zero() {
-        state.account_write(
-            &mut exec_step,
-            block_info.coinbase,
-            AccountField::CodeHash,
-            CodeDB::empty_code_hash().to_word(),
-            Word::zero(),
-        )?;
-
-        #[cfg(feature = "scroll")]
-        {
-            state.account_write(
-                &mut exec_step,
-                block_info.coinbase,
-                AccountField::KeccakCodeHash,
-                crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
-                Word::zero(),
-            )?;
-        }
-    }
-    let coinbase_balance_prev = coinbase_account.balance;
-    let coinbase_balance = coinbase_balance_prev + coinbase_reward;
 
     if !state.tx.tx_type.is_l1_msg() {
-        state.account_write(
+        state.transfer_to(
             &mut exec_step,
             block_info.coinbase,
-            AccountField::Balance,
-            coinbase_balance,
-            coinbase_balance_prev,
+            !coinbase_account.is_empty(),
+            false,
+            coinbase_reward,
+            false,
         )?;
     }
 

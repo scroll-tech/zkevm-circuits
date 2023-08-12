@@ -397,7 +397,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4114279215a005bc675e386011e594e1d9b800918cea18fcadadcce864a2046b"
 dependencies = [
  "borsh-derive",
- "hashbrown 0.12.3",
+ "hashbrown 0.13.2",
 ]
 
 [[package]]
@@ -1274,9 +1274,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.8.1"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "elliptic-curve"
@@ -4022,7 +4022,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d470e29e933dac4101180fd6574971892315c414cf2961a192729089687cc9b"
 dependencies = [
  "derive_more",
- "primitive-types 0.11.1",
+ "primitive-types 0.12.1",
  "rlp",
  "ruint-macro",
  "rustc_version 0.4.0",
@@ -5487,6 +5487,7 @@ dependencies = [
  "cli-table",
  "criterion",
  "ctor",
+ "either",
  "env_logger 0.9.3",
  "eth-types",
  "ethers-core",
