@@ -48,7 +48,7 @@ fn run<F: Field, const MUST_FAIL: bool>(
 trait GenRand {
     fn gen_rand<R: RngCore + CryptoRng>(r: &mut R) -> Self;
 
-    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self;
+    fn gen_rand_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self;
 }
 
 impl GenRand for EcAddOp {
@@ -59,7 +59,7 @@ impl GenRand for EcAddOp {
         Self { p, q, r }
     }
 
-    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
+    fn gen_rand_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
         let valid = Self::gen_rand(r);
         Self {
             p: valid.p,
@@ -77,7 +77,7 @@ impl GenRand for EcMulOp {
         Self { p, s, r }
     }
 
-    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
+    fn gen_rand_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
         let valid = Self::gen_rand(r);
         Self {
             p: valid.p,
@@ -115,7 +115,7 @@ impl GenRand for EcPairingOp {
         }
     }
 
-    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
+    fn gen_rand_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
         let mut valid = Self::gen_rand(r);
         match r.gen::<bool>() {
             // change output.
@@ -146,7 +146,7 @@ fn gen<T: GenRand, R: RngCore + CryptoRng>(mut r: &mut R, max_len: usize) -> Vec
 fn gen_neg<T: GenRand, R: RngCore + CryptoRng>(mut r: &mut R, max_len: usize) -> Vec<T> {
     std::iter::repeat(0)
         .take(max_len)
-        .map(move |_| T::gen_rang_neg(&mut r))
+        .map(move |_| T::gen_rand_neg(&mut r))
         .collect()
 }
 #[test]
