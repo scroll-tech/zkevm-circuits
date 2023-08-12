@@ -12,11 +12,11 @@ use halo2_proofs::{
     dev::MockProver,
     halo2curves::bn256::{Fr, G1Affine, G2Affine},
 };
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng, RngCore};
 
 use crate::ecc_circuit::EccCircuit;
 
-fn run<F: Field>(
+fn run<F: Field, const MUST_FAIL: bool>(
     k: u32,
     max_ec_ops: PrecompileEcParams,
     add_ops: Vec<EcAddOp>,
@@ -37,11 +37,18 @@ fn run<F: Field>(
         Ok(prover) => prover,
         Err(e) => panic!("{e:#?}"),
     };
-    assert_eq!(prover.verify(), Ok(()));
+
+    if MUST_FAIL {
+        assert!(prover.verify().is_err())
+    } else {
+        assert!(prover.verify().is_ok())
+    }
 }
 
 trait GenRand {
     fn gen_rand<R: RngCore + CryptoRng>(r: &mut R) -> Self;
+
+    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self;
 }
 
 impl GenRand for EcAddOp {
@@ -51,6 +58,15 @@ impl GenRand for EcAddOp {
         let r = p.add(&q).into();
         Self { p, q, r }
     }
+
+    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
+        let valid = Self::gen_rand(r);
+        Self {
+            p: valid.p,
+            q: valid.q,
+            r: valid.r.add(&G1Affine::generator()).into(),
+        }
+    }
 }
 
 impl GenRand for EcMulOp {
@@ -59,6 +75,15 @@ impl GenRand for EcMulOp {
         let s = <Fr as halo2_proofs::arithmetic::Field>::random(&mut r);
         let r = p.mul(&s).into();
         Self { p, s, r }
+    }
+
+    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
+        let valid = Self::gen_rand(r);
+        Self {
+            p: valid.p,
+            s: valid.s,
+            r: valid.r.add(&G1Affine::generator()).into(),
+        }
     }
 }
 
@@ -89,6 +114,26 @@ impl GenRand for EcPairingOp {
             output: eth_types::U256::one(),
         }
     }
+
+    fn gen_rang_neg<R: RngCore + CryptoRng>(r: &mut R) -> Self {
+        let mut valid = Self::gen_rand(r);
+        match r.gen::<bool>() {
+            // change output.
+            true => Self {
+                pairs: valid.pairs,
+                output: eth_types::U256::one() - valid.output,
+            },
+            // change a point in one of the pairs.
+            false => {
+                valid.pairs[0].g1_point =
+                    valid.pairs[0].g1_point.add(&G1Affine::generator()).into();
+                Self {
+                    pairs: valid.pairs,
+                    output: valid.output,
+                }
+            }
+        }
+    }
 }
 
 fn gen<T: GenRand, R: RngCore + CryptoRng>(mut r: &mut R, max_len: usize) -> Vec<T> {
@@ -98,23 +143,41 @@ fn gen<T: GenRand, R: RngCore + CryptoRng>(mut r: &mut R, max_len: usize) -> Vec
         .collect()
 }
 
+fn gen_neg<T: GenRand, R: RngCore + CryptoRng>(mut r: &mut R, max_len: usize) -> Vec<T> {
+    std::iter::repeat(0)
+        .take(max_len)
+        .map(move |_| T::gen_rang_neg(&mut r))
+        .collect()
+}
 #[test]
-fn test_ecc_circuit() {
+fn test_ecc_circuit_positive() {
     use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
     use halo2_proofs::halo2curves::bn256::Fr;
 
     let mut rng = rand::thread_rng();
 
-    run::<Fr>(
+    run::<Fr, false>(
         LOG_TOTAL_NUM_ROWS,
-        PrecompileEcParams {
-            ec_add: 50,
-            ec_mul: 50,
-            ec_pairing: 2,
-        },
+        PrecompileEcParams::default(),
         gen(&mut rng, 9),
         gen(&mut rng, 9),
         gen(&mut rng, 1),
+    )
+}
+
+#[test]
+fn test_ecc_circuit_negative() {
+    use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
+    use halo2_proofs::halo2curves::bn256::Fr;
+
+    let mut rng = rand::thread_rng();
+
+    run::<Fr, true>(
+        LOG_TOTAL_NUM_ROWS,
+        PrecompileEcParams::default(),
+        gen_neg(&mut rng, 9),
+        gen_neg(&mut rng, 9),
+        gen_neg(&mut rng, 1),
     )
 }
 
@@ -125,10 +188,12 @@ fn variadic_size_check() {
 
     let mut rng = rand::thread_rng();
 
+    let default_params = PrecompileEcParams::default();
+
     let circuit = EccCircuit::<Fr, 9> {
-        max_add_ops: 50,
-        max_mul_ops: 50,
-        max_pairing_ops: 2,
+        max_add_ops: default_params.ec_add,
+        max_mul_ops: default_params.ec_mul,
+        max_pairing_ops: default_params.ec_pairing,
         add_ops: gen(&mut rng, 25),
         mul_ops: gen(&mut rng, 20),
         pairing_ops: gen(&mut rng, 2),
@@ -137,9 +202,9 @@ fn variadic_size_check() {
     let prover1 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
 
     let circuit = EccCircuit::<Fr, 9> {
-        max_add_ops: 50,
-        max_mul_ops: 50,
-        max_pairing_ops: 2,
+        max_add_ops: default_params.ec_add,
+        max_mul_ops: default_params.ec_mul,
+        max_pairing_ops: default_params.ec_pairing,
         add_ops: gen(&mut rng, 20),
         mul_ops: gen(&mut rng, 15),
         pairing_ops: gen(&mut rng, 1),
