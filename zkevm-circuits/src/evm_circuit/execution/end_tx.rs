@@ -278,9 +278,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        for (i, idx) in step.rw_indices.iter().copied().enumerate() {
-            log::trace!("#{i} {:?}", block.rws[idx]);
-        }
         let mut rws = StepRws::new(block, step);
         rws.offset_add(2);
 
