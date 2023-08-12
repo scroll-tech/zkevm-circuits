@@ -23,8 +23,10 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToLittleEndian, ToScalar};
-use gadgets::util::not;
+use eth_types::{
+    evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, Field, ToLittleEndian, ToScalar,
+};
+use gadgets::util::{and, not};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -32,6 +34,7 @@ use strum::EnumCount;
 pub(crate) struct EndTxGadget<F> {
     tx_id: Cell<F>,
     tx_gas: Cell<F>,
+    tx_type: Cell<F>,
     max_refund: ConstantDivisionGadget<F, N_BYTES_GAS>,
     refund: Cell<F>,
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
@@ -51,6 +54,7 @@ pub(crate) struct EndTxGadget<F> {
     current_cumulative_gas_used: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
     is_persistent: Cell<F>,
+    tx_is_l1msg: IsEqualGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -62,10 +66,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 
-        let [tx_gas, tx_caller_address] =
-            [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
-                .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+        let [tx_gas, tx_caller_address, tx_type] = [
+            TxContextFieldTag::Gas,
+            TxContextFieldTag::CallerAddress,
+            TxContextFieldTag::TxType,
+        ]
+        .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
         let tx_gas_price = cb.tx_context_as_word(tx_id.expr(), TxContextFieldTag::GasPrice, None);
+        let tx_is_l1msg =
+            IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
 
         // Calculate effective gas to refund
         let gas_used = tx_gas.expr() - cb.curr.state.gas_left.expr();
@@ -84,12 +93,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
-        let gas_fee_refund = UpdateBalanceGadget::construct(
-            cb,
-            tx_caller_address.expr(),
-            vec![mul_gas_price_by_refund.product().clone()],
-            None,
-        );
+        let gas_fee_refund = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+            UpdateBalanceGadget::construct(
+                cb,
+                tx_caller_address.expr(),
+                vec![mul_gas_price_by_refund.product().clone()],
+                None,
+            )
+        });
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
@@ -111,12 +122,17 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         let effective_fee = cb.query_word_rlc();
         // TODO: contraint l1 fee
+        // notice for non-scroll feature we do not apply l1msg
         #[cfg(not(feature = "scroll"))]
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee, l1_fee == 0",
             mul_effective_tip_by_gas_used.product().expr(),
             effective_fee.expr(),
         );
+
+        cb.condition(tx_is_l1msg.expr(), |cb| {
+            cb.require_zero("effective fee is zero for l1 msg", effective_fee.expr());
+        });
 
         let coinbase_codehash = cb.query_cell_phase2();
         cb.account_read(
@@ -222,6 +238,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         Self {
             tx_id,
             tx_gas,
+            tx_type,
             max_refund,
             refund,
             effective_refund,
@@ -241,6 +258,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             current_cumulative_gas_used,
             is_first_tx,
             is_persistent,
+            tx_is_l1msg,
         }
     }
 
@@ -264,6 +282,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_gas
             .assign(region, offset, Value::known(F::from(tx.gas)))?;
+        self.tx_type
+            .assign(region, offset, Value::known(F::from(tx.tx_type as u64)))?;
+        self.tx_is_l1msg.assign(
+            region,
+            offset,
+            F::from(tx.tx_type as u64),
+            F::from(TxType::L1Msg as u64),
+        )?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
         self.refund
             .assign(region, offset, Value::known(F::from(refund)))?;
@@ -448,7 +474,9 @@ mod test {
                     COINBASE
                     EXTCODEHASH
                 }), /* EXTCODEHASH will return 0 for the first tx and the empty code hash for
-                     * the second tx. */
+                     * the second tx.
+                     * for `scroll` feature they would be 0 in both txs
+                     */
                 |mut txs, accs| {
                     txs[0]
                         .to(accs[0].address)
