@@ -1863,10 +1863,6 @@ pub struct ExpTable {
     pub q_enable: Column<Fixed>,
     /// Whether the row is the start of a step.
     pub is_step: Column<Fixed>,
-    /// An identifier for every exponentiation trace, at the moment this is the
-    /// read-write counter at the time of the lookups done to the
-    /// exponentiation table.
-    pub identifier: Column<Advice>,
     /// Whether this row is the last row in the exponentiation operation's
     /// trace.
     pub is_last: Column<Advice>,
@@ -1884,7 +1880,6 @@ impl ExpTable {
         Self {
             q_enable: meta.fixed_column(),
             is_step: meta.fixed_column(),
-            identifier: meta.advice_column(),
             is_last: meta.advice_column(),
             base_limb: meta.advice_column(),
             exponent_lo_hi: meta.advice_column(),
@@ -1894,10 +1889,9 @@ impl ExpTable {
 
     /// Given an exponentiation event and randomness, get assignments to the
     /// exponentiation table.
-    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 5]> {
+    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 4]> {
         let mut assignments = Vec::new();
         let base_limbs = split_u256_limb64(&exp_event.base);
-        let identifier = F::from(exp_event.identifier as u64);
         let mut exponent = exp_event.exponent;
         for (step_idx, exp_step) in exp_event.steps.iter().rev().enumerate() {
             let is_last = if step_idx == exp_event.steps.len() - 1 {
@@ -1910,7 +1904,6 @@ impl ExpTable {
 
             // row 1
             assignments.push([
-                identifier,
                 is_last,
                 base_limbs[0].as_u64().into(),
                 exponent_lo
@@ -1922,7 +1915,6 @@ impl ExpTable {
             ]);
             // row 2
             assignments.push([
-                identifier,
                 F::zero(),
                 base_limbs[1].as_u64().into(),
                 exponent_hi
@@ -1934,7 +1926,6 @@ impl ExpTable {
             ]);
             // row 3
             assignments.push([
-                identifier,
                 F::zero(),
                 base_limbs[2].as_u64().into(),
                 F::zero(),
@@ -1942,14 +1933,13 @@ impl ExpTable {
             ]);
             // row 4
             assignments.push([
-                identifier,
                 F::zero(),
                 base_limbs[3].as_u64().into(),
                 F::zero(),
                 F::zero(),
             ]);
             for _ in ROWS_PER_STEP..OFFSET_INCREMENT {
-                assignments.push([F::zero(), F::zero(), F::zero(), F::zero(), F::zero()]);
+                assignments.push([F::zero(), F::zero(), F::zero(), F::zero()]);
             }
 
             // update intermediate exponent.
@@ -2008,7 +1998,7 @@ impl ExpTable {
                 }
 
                 // pad an empty row
-                let row = [F::from_u128(0); 5];
+                let row = [F::from_u128(0); 4];
                 region.assign_fixed(
                     || format!("exponentiation table row {offset}"),
                     self.q_enable,
@@ -2035,7 +2025,6 @@ impl<F: Field> LookupTable<F> for ExpTable {
         vec![
             self.q_enable.into(),
             self.is_step.into(),
-            self.identifier.into(),
             self.is_last.into(),
             self.base_limb.into(),
             self.exponent_lo_hi.into(),
@@ -2047,7 +2036,6 @@ impl<F: Field> LookupTable<F> for ExpTable {
         vec![
             String::from("q_enable"),
             String::from("is_step"),
-            String::from("identifier"),
             String::from("is_last"),
             String::from("base_limb"),
             String::from("exponent_lo_hi"),

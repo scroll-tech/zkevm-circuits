@@ -1,7 +1,7 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, split_u256, sum, Expr};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use gadgets::util::{and, not, split_u256, Expr};
+use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
     step::ExecutionState,
@@ -12,7 +12,7 @@ use crate::evm_circuit::{
         },
         from_bytes,
         math_gadget::{ByteOrWord, ByteSizeGadget, IsEqualGadget, IsZeroGadget},
-        CachedRegion, Cell, Word,
+        CachedRegion, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -131,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                 ];
                 // lookup (base, exponent, exponentiation)
                 cb.exp_table_lookup(
-                    base_limbs.clone(),
+                    base_limbs,
                     [exponent_lo.clone(), exponent_hi.clone()],
                     [exponentiation_lo.clone(), exponentiation_hi.clone()],
                 );

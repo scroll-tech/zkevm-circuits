@@ -124,13 +124,6 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 d_hi_next,
             );
 
-            // Identifier does not change over the steps of an exponentiation trace.
-            cb.require_equal(
-                "identifier does not change",
-                meta.query_advice(exp_table.identifier, Rotation::cur()),
-                meta.query_advice(exp_table.identifier, Rotation(OFFSET_INCREMENT as i32)),
-            );
-
             // The circuit must end with a last step. Since there is a fixed 1 in is_final_event,
             // eventually is_last=1.
             cb.require_zero(
