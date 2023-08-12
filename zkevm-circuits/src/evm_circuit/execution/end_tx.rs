@@ -114,25 +114,25 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
 
-        let effective_fee = cb.query_word_rlc();
-
         let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
-            let mul_effective_tip_by_gas_used = MulWordByU64Gadget::construct(
+            MulWordByU64Gadget::construct(
                 cb,
                 effective_tip,
                 gas_used.clone() - effective_refund.min(),
-            );
+            )
+        });
 
-            // TODO: contraint l1 fee
-            // notice for non-scroll feature we do not apply l1msg
-            #[cfg(not(feature = "scroll"))]
+        let effective_fee = cb.query_word_rlc();
+
+        // TODO: contraint l1 fee
+        // notice for non-scroll feature we do not apply l1msg
+        #[cfg(not(feature = "scroll"))]
+        cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
             cb.require_equal(
                 "tx_fee == l1_fee + l2_fee, l1_fee == 0",
                 mul_effective_tip_by_gas_used.product().expr(),
                 effective_fee.expr(),
             );
-
-            mul_effective_tip_by_gas_used
         });
 
         cb.condition(tx_is_l1msg.expr(), |cb| {
