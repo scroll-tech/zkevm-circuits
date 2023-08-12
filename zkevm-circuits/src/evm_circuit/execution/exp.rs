@@ -25,10 +25,6 @@ pub(crate) struct ExponentiationGadget<F> {
     same_context: SameContextGadget<F>,
     /// RLC-encoded integer base that will be exponentiated.
     base: Word<F>,
-    /// RLC-encoded representation for base * base, i.e. base^2
-    base_sq: Word<F>,
-    /// RLC-encoded representation for zero.
-    zero_rlc: Word<F>,
     /// RLC-encoded exponent for the exponentiation operation.
     exponent: Word<F>,
     /// RLC-encoded result of the exponentiation.
@@ -92,13 +88,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         let exponent_is_one_expr =
             and::expr([exponent_lo_is_one.expr(), exponent_hi_is_zero.expr()]);
 
-        let zero_rlc = cb.query_word_rlc();
-        cb.require_zero(
-            "base * base + c == base^2 (c == 0)",
-            sum::expr(&zero_rlc.cells),
-        );
-        let base_sq = cb.query_word_rlc();
-
         // If exponent == 0, base^exponent == 1, which implies:
         // 1. Low bytes of exponentiation == 1
         // 2. High bytes of exponentiation == 0
@@ -146,10 +135,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     from_bytes::expr(&base_rlc.cells[0x10..0x18]),
                     from_bytes::expr(&base_rlc.cells[0x18..0x20]),
                 ];
-                let (base_sq_lo, base_sq_hi) = (
-                    from_bytes::expr(&base_sq.cells[0x00..0x10]),
-                    from_bytes::expr(&base_sq.cells[0x10..0x20]),
-                );
                 let identifier = cb.curr.state.rw_counter.expr() + cb.rw_counter_offset();
                 // lookup for first step, i.e.
                 // (is_last, base, exponent, exponentiation)
@@ -159,14 +144,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     base_limbs.clone(),
                     [exponent_lo.clone(), exponent_hi.clone()],
                     [exponentiation_lo.clone(), exponentiation_hi.clone()],
-                );
-                // lookup for last step, i.e. (is_last, base, 2, base^2)
-                cb.exp_table_lookup(
-                    identifier,
-                    1.expr(),
-                    base_limbs,
-                    [2.expr(), 0.expr()], // exponent == 2
-                    [base_sq_lo.expr(), base_sq_hi.expr()],
                 );
             },
         );
@@ -203,8 +180,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         Self {
             same_context,
             base: base_rlc,
-            base_sq,
-            zero_rlc,
             exponent: exponent_rlc,
             exponentiation: exponentiation_rlc,
             exponent_lo_is_zero,
@@ -250,11 +225,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         self.exponent_lo_is_one
             .assign(region, offset, exponent_lo_scalar, F::one())?;
 
-        let (base_sq, _) = base.overflowing_mul(base);
-        self.zero_rlc
-            .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
-        self.base_sq
-            .assign(region, offset, Some(base_sq.to_le_bytes()))?;
         let single_step = exponent.eq(&U256::from(2u64));
         self.single_step
             .assign(region, offset, Value::known(F::from(single_step as u64)))?;
