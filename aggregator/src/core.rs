@@ -78,7 +78,12 @@ pub(crate) fn extract_accumulators_and_proof(
             let right = Bn256::pairing(rhs, s_g2);
             log::trace!("acc extraction {}-th acc check: left {:?}", i, left);
             log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
-            assert_eq!(left, right, "accumulator check failed");
+            if left != right {
+                return Err(snark_verifier::Error::AssertionFailure(format!(
+                    "accumulator check failed {left:?} {right:?}, index {i}",
+                )));
+            }
+            //assert_eq!(left, right, "accumulator check failed");
         }
     }
 
