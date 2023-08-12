@@ -963,7 +963,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             )?;
         }
     }
-    if !state.tx.tx_type.is_l1_msg() || !coinbase_reward.is_zero() {
+    if !state.tx.tx_type.is_l1_msg() && !coinbase_reward.is_zero() {
         let coinbase_balance_prev = coinbase_account.balance;
         let coinbase_balance = coinbase_balance_prev + coinbase_reward;
         state.account_write(
