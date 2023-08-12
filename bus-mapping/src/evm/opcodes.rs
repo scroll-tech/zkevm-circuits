@@ -929,41 +929,42 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         },
     );
 
-    if coinbase_account.is_empty() && !coinbase_reward.is_zero() {
-        state.account_read(
-            &mut exec_step,
-            block_info.coinbase,
-            AccountField::CodeHash,
-            Word::zero(),
-        );
-
-        state.account_write(
-            &mut exec_step,
-            block_info.coinbase,
-            AccountField::CodeHash,
-            CodeDB::empty_code_hash().to_word(),
-            Word::zero(),
-        )?;
-
-        #[cfg(feature = "scroll")]
-        {
+    if !state.tx.tx_type.is_l1_msg() && !coinbase_reward.is_zero() {
+        if coinbase_account.is_empty() {
             state.account_read(
                 &mut exec_step,
                 block_info.coinbase,
-                AccountField::KeccakCodeHash,
+                AccountField::CodeHash,
                 Word::zero(),
             );
 
             state.account_write(
                 &mut exec_step,
                 block_info.coinbase,
-                AccountField::KeccakCodeHash,
-                crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
+                AccountField::CodeHash,
+                CodeDB::empty_code_hash().to_word(),
                 Word::zero(),
             )?;
+
+            #[cfg(feature = "scroll")]
+            {
+                state.account_read(
+                    &mut exec_step,
+                    block_info.coinbase,
+                    AccountField::KeccakCodeHash,
+                    Word::zero(),
+                );
+
+                state.account_write(
+                    &mut exec_step,
+                    block_info.coinbase,
+                    AccountField::KeccakCodeHash,
+                    crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
+                    Word::zero(),
+                )?;
+            }
         }
-    }
-    if !state.tx.tx_type.is_l1_msg() && !coinbase_reward.is_zero() {
+
         let coinbase_balance_prev = coinbase_account.balance;
         let coinbase_balance = coinbase_balance_prev + coinbase_reward;
         state.account_write(

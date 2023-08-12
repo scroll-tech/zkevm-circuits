@@ -220,7 +220,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
                         9.expr() - is_first_tx.expr()
-                            + not::expr(tx_is_l1msg.expr()) * coinbase_transfer.rw_delta(),
+                            + not::expr(tx_is_l1msg.expr())
+                                * (coinbase_transfer.rw_delta() + 1.expr()),
                     ),
                     ..StepStateTransition::any()
                 });
@@ -228,7 +229,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
 
         let rw_counter_delta = 8.expr() - is_first_tx.expr()
-            + not::expr(tx_is_l1msg.expr()) * coinbase_transfer.rw_delta();
+            + not::expr(tx_is_l1msg.expr()) * (coinbase_transfer.rw_delta() + 1.expr());
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
@@ -277,6 +278,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        for (i, idx) in step.rw_indices.iter().copied().enumerate() {
+            log::trace!("#{i} {:?}", block.rws[idx]);
+        }
         let mut rws = StepRws::new(block, step);
         rws.offset_add(2);
 
