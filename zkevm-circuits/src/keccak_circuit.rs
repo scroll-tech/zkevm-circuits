@@ -140,6 +140,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 s_next[i][j] = cell.at_offset(meta, get_num_rows_per_round() as i32).expr();
             }
         }
+        log::debug!("- Post states:");
+        log::debug!("Columns: {}", cell_manager.get_width());
         // Absorb data
         let absorb_from = cell_manager.query_cell(meta);
         let absorb_data = cell_manager.query_cell(meta);
