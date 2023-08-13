@@ -13,6 +13,7 @@ num = "0.4"
 sha3 = "0.10"
 array-init = "2.0.0"
 bus-mapping = { path = "../bus-mapping" }
+either = "1.9"
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
 ethers-core = "0.17.0"

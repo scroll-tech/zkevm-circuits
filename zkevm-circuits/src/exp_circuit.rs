@@ -165,6 +165,13 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             cb.require_zero("is_odd is boolean (hi == 0)", remainder_hi);
             cb.require_boolean("is_odd is boolean (lo is boolean)", is_odd.clone());
 
+            // Parity check mul gadget was assigned correctly.
+            let (two_limb0, two_limb1, two_limb2, two_limb3) = parity_check.a_limbs_cur(meta);
+            cb.require_equal("parity check a = 2", two_limb0.expr(), 2.expr());
+            for col in [two_limb1, two_limb2, two_limb3] {
+                cb.require_zero("parity check a = 2 (other limbs are 0)", col.expr());
+            }
+
             // There should be no overflow in the parity check mul gadget.
             cb.require_zero("no overflow in parity check mul gadget", parity_check.overflow.clone());
 

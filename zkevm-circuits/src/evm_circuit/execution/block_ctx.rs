@@ -147,11 +147,13 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
     }
 }
 
+#[cfg(not(feature = "scroll"))]
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxU256Gadget<F> {
     value_u256: BlockCtxGadget<F, N_BYTES_WORD>,
 }
 
+#[cfg(not(feature = "scroll"))]
 impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
     const NAME: &'static str = "BLOCKCTXU256";
 
@@ -185,6 +187,52 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         Ok(())
     }
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct DifficulityGadget<F> {
+    same_context: SameContextGadget<F>,
+}
+
+impl<F: Field> ExecutionGadget<F> for DifficulityGadget<F> {
+    const NAME: &'static str = "DIFFICULITY";
+
+    const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU256;
+
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        cb.stack_push(0.expr());
+        let opcode = cb.query_cell();
+        // State transition
+        let step_state_transition = StepStateTransition {
+            rw_counter: Delta(1.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(-OpcodeId::DIFFICULTY.constant_gas_cost().expr()),
+            ..Default::default()
+        };
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+
+        Self { same_context }
+    }
+
+    fn assign_exec_step(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        _block: &Block<F>,
+        _: &Transaction,
+        _: &Call,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        self.same_context.assign_exec_step(region, offset, step)?;
+
+        Ok(())
+    }
+}
+
+// notice in scroll ,the BASEFEE is invalid and difficulity has been
+// changed
+#[cfg(feature = "scroll")]
+pub(crate) use DifficulityGadget as BlockCtxU256Gadget;
 
 #[cfg(test)]
 mod test {

@@ -1328,40 +1328,20 @@ mod test {
         }
     }
 
-    // notice, "invalid" test would not work until bus-mapping put calling fail case being handle
-    // in normal CallOp, i.e. return None in
+    // notice, "invalid" test would not actuall work until bus-mapping put calling fail case being
+    // handle in normal CallOp, i.e. return None in
     // bus_mapping::circuit_input_builder::input_state_ref::CircuitInputStateRef::get_step_err
     // for unsuccess (call.is_success is false) call
-    #[ignore]
+    // current it is handled by the dummy "precompile error" gadget
+    #[cfg(feature = "scroll")]
     #[test]
     fn precompile_modexp_test_invalid() {
-        use eth_types::evm_types::Gas;
-
         for test_vector in TEST_INVALID_VECTOR.iter() {
             let bytecode = test_vector.with_call_op(OpcodeId::STATICCALL);
 
             CircuitTestBuilder::new_from_test_ctx(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
             )
-            .geth_data_modifier(Box::new(|block| {
-                let steps = &mut block.geth_traces[0].struct_logs;
-                let step_len = steps.len();
-                let call_step = &mut steps[step_len - 3];
-                assert_eq!(call_step.op, OpcodeId::STATICCALL);
-                call_step.refund.0 = 0;
-                let next_gas = Gas(call_step.gas.0 - call_step.gas_cost.0);
-
-                let pop_step = &mut steps[step_len - 2];
-                assert_eq!(pop_step.op, OpcodeId::POP);
-                pop_step.gas = next_gas;
-                pop_step.stack.0[0] = 0.into();
-                let next_gas = Gas(pop_step.gas.0 - pop_step.gas_cost.0);
-                let final_step = &mut steps[step_len - 1];
-                assert_eq!(final_step.op, OpcodeId::STOP);
-                final_step.gas = next_gas;
-
-                // println!("trace {:?}", block.geth_traces);
-            }))
             .run();
         }
     }
