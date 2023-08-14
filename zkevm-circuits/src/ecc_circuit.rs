@@ -92,10 +92,15 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
     ) -> Self {
         let num_limbs = 3;
         let limb_bits = 88;
+        #[cfg(feature = "onephase")]
+        let num_advice = [33];
+        #[cfg(not(feature = "onephase"))]
+        let num_advice = [33, 1];
+
         let fp_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
-            &[33], // num advice
+            &num_advice,
             &[17], // num lookup advice
             1,     // num fixed
             13,    // lookup bits
@@ -251,16 +256,22 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     decompose_ec_pairing_op
                 );
 
-                // finalize after first phase.
-                config.fp_config.finalize(&mut ctx);
-                ctx.next_phase();
+                #[cfg(not(feature = "onephase"))]
+                {
+                    // finalize after first phase.
+                    config.fp_config.finalize(&mut ctx);
+                    ctx.next_phase();
+                }
 
                 let ec_adds_assigned = assign_ec_op!(ec_adds_decomposed, assign_ec_add);
                 let ec_muls_assigned = assign_ec_op!(ec_muls_decomposed, assign_ec_mul);
                 let ec_pairings_assigned = assign_ec_op!(ec_pairings_decomposed, assign_ec_pairing);
 
-                // finalize after second phase (RLC).
-                config.fp_config.finalize(&mut ctx);
+                #[cfg(not(feature = "onephase"))]
+                {
+                    // finalize after second phase (RLC).
+                    config.fp_config.finalize(&mut ctx);
+                }
 
                 Ok(EcOpsAssigned {
                     ec_adds_assigned,
