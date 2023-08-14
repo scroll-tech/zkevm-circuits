@@ -106,14 +106,20 @@ pub struct TxCircuitTester<F: Field> {
 
 impl<F: Field> TxCircuitTester<F> {
     /// Return a new TxCircuit
-    pub fn new(max_txs: usize, max_calldata: usize, chain_id: u64, txs: Vec<Transaction>) -> Self {
+    pub fn new(
+        max_txs: usize,
+        max_calldata: usize,
+        chain_id: u64,
+        start_l1_queue_index: u64,
+        txs: Vec<Transaction>,
+    ) -> Self {
         TxCircuitTester::<F> {
             sig_circuit: SigCircuit {
                 max_verif: max_txs,
                 signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
                 _marker: PhantomData,
             },
-            tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, txs),
+            tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, start_l1_queue_index, txs),
         }
     }
 }
@@ -126,7 +132,8 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
         let max_txs = block.circuits_params.max_txs;
         let chain_id = block.chain_id;
         let max_calldata = block.circuits_params.max_calldata;
-        Self::new(max_txs, max_calldata, chain_id, txs)
+        let start_l1_queue_index = block.start_l1_queue_index;
+        Self::new(max_txs, max_calldata, chain_id, start_l1_queue_index, txs)
     }
 
     fn synthesize_sub(

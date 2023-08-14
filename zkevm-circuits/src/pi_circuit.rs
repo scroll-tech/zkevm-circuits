@@ -1361,7 +1361,8 @@ impl<F: Field> PiCircuitConfig<F> {
                 .into_iter()
                 .map(|_| BlockContext::padding(public_data.chain_id)),
         ) {
-            // note that
+            // Note that the num_txs field in block table is different from num_txs
+            // of the chunk data hash. They are not necessarily equal.
             let num_txs = public_data
                 .transactions
                 .iter()
