@@ -21,7 +21,10 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToScalar, U256,
+};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -64,6 +67,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
+        // constrain op codes
+        cb.require_in_set(
+            "RETURN_REVERT state is for RETURN or REVERT",
+            opcode.expr(),
+            vec![OpcodeId::RETURN.expr(), OpcodeId::REVERT.expr()],
+        );
+
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         cb.stack_pop(offset.expr());
@@ -72,12 +82,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
         cb.require_boolean("is_success is boolean", is_success.expr());
-        // cb.require_equal(
-        // "if is_success, opcode is RETURN. if not, opcode is REVERT",
-        // opcode.expr(),
-        // is_success.expr() * OpcodeId::RETURN.expr()
-        // + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
-        // );
 
         // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
         // the call is, or is not, a create, root, or successful. See the specs at

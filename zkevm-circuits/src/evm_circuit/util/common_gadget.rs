@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
@@ -1571,6 +1571,123 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
 
     pub(crate) fn not_overflow(&self) -> Expression<F> {
         self.not_overflow.expr()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CommonReturnDataCopyGadget<F> {
+    is_data_offset_within_u64: IsZeroGadget<F>,
+    /// sum of data offset + size
+    sum: AddWordsGadget<F, 2, false>,
+    // remainder_end = (data_offset + size) mod U256
+    is_remainder_end_within_u64: IsZeroGadget<F>,
+    // when remainder end is within Uint64, check if it exceeds return data size.
+    is_remainder_end_exceed_len: LtGadget<F, N_BYTES_U64>,
+}
+
+/// common gadget for successful and error cases of returndatacopy
+impl<F: Field> CommonReturnDataCopyGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        return_data_length: Expression<F>,
+        is_overflow: Expression<F>,
+    ) -> Self {
+        let data_offset = cb.query_word_rlc();
+        let size_word = cb.query_word_rlc();
+        let remainder_end = cb.query_word_rlc();
+
+        // Check if `data_offset` is Uint64 overflow.
+        let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
+        let is_data_offset_within_u64 =
+            IsZeroGadget::construct(cb, "data_offset not overflow", data_offset_larger_u64);
+
+        let sum: AddWordsGadget<F, 2, false> =
+            AddWordsGadget::construct(cb, [data_offset, size_word], remainder_end.clone());
+
+        // Need to check if `data_offset + size` is U256 overflow via `AddWordsGadget` carry. If
+        // yes, it should be also an error of return data out of bound.
+        let is_end_u256_overflow = sum.carry().as_ref().unwrap();
+        let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
+        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, "", remainder_end_larger_u64);
+
+        // check if `remainder_end` exceeds return data length.
+        let is_remainder_end_exceed_len = LtGadget::construct(
+            cb,
+            return_data_length.expr(),
+            from_bytes::expr(&remainder_end.cells[..N_BYTES_U64]),
+        );
+
+        // enusre it is expected overflow condition.
+        cb.require_equal(
+            "check if [data_offset > u64::MAX, data_offset + size > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
+            or::expr([
+                // data_offset > u64::MAX
+                not::expr(is_data_offset_within_u64.expr()),
+                // data_offset + size > U256::MAX
+                is_end_u256_overflow.expr(),
+                // remainder_end > u64::MAX
+                not::expr(is_remainder_end_within_u64.expr()),
+                // remainder_end > return_data_length
+                is_remainder_end_exceed_len.expr(),
+            ]),
+            is_overflow,
+        );
+
+        Self {
+            is_data_offset_within_u64,
+            sum,
+            is_remainder_end_within_u64,
+            is_remainder_end_exceed_len,
+        }
+    }
+
+    /// the first addend is data_offset
+    pub(crate) fn data_offset(&self) -> &Word<F> {
+        &self.sum.addends()[0]
+    }
+
+    /// the second added is size
+    pub(crate) fn size(&self) -> &Word<F> {
+        &self.sum.addends()[1]
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        data_offset: U256,
+        size: U256,
+        return_data_size: U256,
+    ) -> Result<u64, Error> {
+        let data_offset_overflow = data_offset.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+
+        self.is_data_offset_within_u64
+            .assign(region, offset, F::from(data_offset_overflow))?;
+
+        let remainder_end = data_offset.overflowing_add(size).0;
+        self.sum
+            .assign(region, offset, [data_offset, size], remainder_end)?;
+        let remainder_end_overflow = remainder_end.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.is_remainder_end_within_u64
+            .assign(region, offset, F::from(remainder_end_overflow))?;
+
+        // check if it exceeds last callee return data length
+        let remainder_end_u64 = remainder_end.low_u64();
+        let return_length: F = return_data_size.to_scalar().unwrap();
+        self.is_remainder_end_exceed_len.assign(
+            region,
+            offset,
+            return_length,
+            F::from(remainder_end_u64),
+        )?;
+
+        // NOTE: return value not use for now.
+        Ok(1u64)
     }
 }
 

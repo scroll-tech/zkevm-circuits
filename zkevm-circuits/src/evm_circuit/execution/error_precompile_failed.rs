@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            CachedRegion, Cell, Word,
+            sum, CachedRegion, Cell, Word,
         },
     },
     table::CallContextFieldTag,
@@ -47,6 +47,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::DELEGATECALL.expr());
         let is_staticcall =
             IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::STATICCALL.expr());
+
+        // constrain op code
+        // NOTE: this precompile gadget is for dummy use at the moment, the real error handling for
+        // precompile will be done in each precompile gadget in the future. won't add step
+        // state transition constraint here as well.
+        cb.require_true(
+            "opcode is one of [call, callcode, staticcall, delegatecall]",
+            sum::expr(vec![
+                is_call.expr(),
+                is_callcode.expr(),
+                is_delegatecall.expr(),
+                is_staticcall.expr(),
+            ]),
+        );
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
