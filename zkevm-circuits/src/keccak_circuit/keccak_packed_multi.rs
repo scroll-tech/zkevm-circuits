@@ -603,6 +603,14 @@ pub(crate) fn keccak<F: Field>(
             absorb_data.assign(&mut region, 0, absorb_row.absorb);
             absorb_result.assign(&mut region, 0, absorb_row.result);
 
+            // Column padding
+            if get_num_rows_per_round() > 28 {
+                for _ in 28..get_num_rows_per_round() {
+                    let padding_cell = cell_manager.query_cell_value();
+                    padding_cell.assign(&mut region, 0, F::zero());
+                }
+            }
+
             // Absorb
             cell_manager.start_region();
             let part_size = get_num_bits_per_absorb_lookup();
