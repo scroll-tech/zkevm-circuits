@@ -16,7 +16,7 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     sig_circuit::SigCircuit,
     table::{
-        BlockContextFieldTag::CumNumTxs,
+        BlockContextFieldTag::{CumNumTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
             BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
@@ -52,6 +52,7 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
+    less_than::{LtChip, LtConfig, LtInstruction},
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
@@ -72,16 +73,6 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::Fixed;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
-use crate::{
-    table::{
-        BlockContextFieldTag::{CumNumTxs, NumTxs},
-        TxFieldTag::ChainID,
-    },
-}
-use gadgets::{
-    comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
-    less_than::{LtChip, LtConfig, LtInstruction},
-};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 23;
@@ -213,6 +204,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sig_table,
             u8_table,
             u16_table,
+            challenges,
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = tx_table.q_enable;
@@ -773,6 +765,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cum_num_txs - num_txs
             },
             |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
+            u8_table.into(),
         );
 
         // last non-padding tx must have tx_id == cum_num_txs
