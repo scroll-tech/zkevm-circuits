@@ -1207,7 +1207,7 @@ mod test {
             .cartesian_product(stacks.into_iter())
             .cartesian_product(callees.into_iter())
         {
-            test_ok(caller_for_insufficient_balance(opcode, stack), callee);
+            test_ok(caller_for_insufficient_balance(opcode, stack), callee, None);
         }
     }
 
@@ -1218,7 +1218,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn callop_recursive() {
         for opcode in TEST_CALL_OPCODES {
@@ -1226,7 +1225,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn callop_simple() {
         let stacks = [
@@ -1278,7 +1276,7 @@ mod test {
                 ..Default::default()
             },
         ];
-        let callees = [callee(bytecode! {})];
+        let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
 
         TEST_CALL_OPCODES
             .iter()
@@ -1286,7 +1284,7 @@ mod test {
             .cartesian_product(callees.into_iter())
             .par_bridge()
             .for_each(|((opcode, stack), callee)| {
-                test_ok(caller(opcode, stack, true), callee);
+                test_ok(caller(opcode, stack, true), callee, None);
             });
     }
 
@@ -1302,7 +1300,7 @@ mod test {
 
         TEST_CALL_OPCODES
             .iter()
-            .for_each(|opcode| test_ok(caller(opcode, stack, true), callee(bytecode! {})));
+            .for_each(|opcode| test_ok(caller(opcode, stack, true), callee(bytecode! {}), None));
     }
 
     #[derive(Clone, Copy, Debug, Default)]
@@ -1429,7 +1427,7 @@ mod test {
         ];
 
         for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
-            test_ok(caller, callee);
+            test_ok(caller, callee, None);
         }
     }
 
@@ -1438,10 +1436,11 @@ mod test {
         test_ok(
             caller(&OpcodeId::CALL, Stack::default(), true),
             callee(bytecode! {}),
+            None,
         );
     }
 
-    fn test_ok(caller: Account, callee: Account) {
+    fn test_ok(caller: Account, callee: Account, max_rws: Option<usize>) {
         let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
@@ -1473,7 +1472,7 @@ mod test {
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
-                max_rws: 500,
+                max_rws: max_rws.unwrap_or(500),
                 ..Default::default()
             })
             .run();
@@ -1546,6 +1545,7 @@ mod test {
                 ..Default::default()
             },
             callee(callee_bytecode),
+            Some(10000),
         );
     }
 

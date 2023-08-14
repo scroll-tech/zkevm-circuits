@@ -234,7 +234,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        debug_assert!(
+        assert!(
             self.condition.is_none(),
             "Nested condition is not supported"
         );
@@ -246,7 +246,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         if self.max_degree > 0 {
-            debug_assert!(
+            assert!(
                 degree <= self.max_degree,
                 "Expression {} degree too high: {} > {}",
                 name,
@@ -1472,7 +1472,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         // We need to subtract IMPLICIT_DEGREE from MAX_DEGREE because all expressions
         // will be multiplied by state selector and q_step/q_step_first
         // selector.
-        debug_assert!(
+        assert!(
             degree <= MAX_DEGREE - IMPLICIT_DEGREE,
             "Expression {} degree too high: {} > {}",
             name,
