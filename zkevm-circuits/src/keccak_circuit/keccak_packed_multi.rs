@@ -26,6 +26,29 @@ pub fn get_num_rows_per_round() -> usize {
 pub fn get_num_rows_per_update() -> usize {
     get_num_rows_per_round() *(NUM_ROUNDS + 1)
 }
+/// Obtain the column position of the hash inputs
+/// within cell_manager for an inner round.
+/// This value is determined by the number of rows allocated
+/// to each inner round and target part_size for u64
+pub fn get_input_bytes_col_cell_manager() -> usize {
+    let mut col: usize = 0;
+    let inner_round_num_rows = get_num_rows_per_round();
+    
+    col += 28 / inner_round_num_rows;
+    if inner_round_num_rows * col < 28 {
+        col += 1;
+    }
+
+    let part_size = get_num_bits_per_absorb_lookup();
+    let part_length = WordParts::new(part_size, 0, false).parts.len();
+
+    let mut absorb_parts_col = part_length / inner_round_num_rows;
+    if inner_round_num_rows * absorb_parts_col < part_length {
+        absorb_parts_col += 1;
+    }
+
+    col + absorb_parts_col * 2 + 1
+}
 
 pub(crate) fn keccak_unusable_rows() -> usize {
     const UNUSABLE_ROWS_BY_KECCAK_ROWS: [usize; 24] = [

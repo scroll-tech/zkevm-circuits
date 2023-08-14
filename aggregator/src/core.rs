@@ -221,8 +221,7 @@ pub(crate) fn extract_hash_cells(
                     let row = keccak_config.set_row(&mut region, offset, keccak_row)?;
 
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
-                        // 10-th column is Keccak input in Keccak circuit
-                        hash_input_cells.push(row[10].clone());
+                        hash_input_cells.push(row[keccak_packed_multi::get_input_bytes_col_cell_manager() + 4].clone());
                         cur_preimage_index = preimage_indices_iter.next();
                     }
                     if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
