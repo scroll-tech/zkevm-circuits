@@ -1,5 +1,7 @@
-pub(crate) mod compression;
-pub(crate) mod mock_chunk;
+mod aggregation;
+mod compression;
+mod mock_chunk;
+mod rlc;
 
 #[macro_export]
 macro_rules! layer_0 {
@@ -15,9 +17,8 @@ macro_rules! layer_0 {
         };
 
         let pk = gen_pk(
-            &param,
-            &$circuit,
-            Some(&$path.join(Path::new("layer_0.pkey"))),
+            &param, &$circuit, None,
+            // Some(&$path.join(Path::new("layer_0.pkey"))),
         );
         log::trace!("finished layer 0 pk generation for circuit");
 

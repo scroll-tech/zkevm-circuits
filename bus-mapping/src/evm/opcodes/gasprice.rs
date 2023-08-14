@@ -51,7 +51,10 @@ mod gasprice_tests {
         Error,
     };
     use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, Word};
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{
+        test_ctx::{helpers::*, TestContext},
+        MOCK_WALLETS,
+    };
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -67,10 +70,10 @@ mod gasprice_tests {
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            account_0_code_wallet_0_no_code(code),
             |mut txs, accs| {
                 txs[0]
-                    .from(accs[1].address)
+                    .from(MOCK_WALLETS[0].clone())
                     .to(accs[0].address)
                     .gas_price(two_gwei);
             },

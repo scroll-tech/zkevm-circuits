@@ -154,23 +154,10 @@ impl<F: Field> ConstraintBuilder<F> {
                 "first access reads don't change value",
                 q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
             );
-            // FIXME
-            // precompile should be warm
-            // https://github.com/scroll-tech/zkevm-circuits/issues/343
-            // If we decide to implement optional access list of tx later,
-            // we need to revist this constraint.
-            cb.condition(
-                not::expr(
-                    q.tag_matches(RwTableTag::TxAccessListAccount)
-                        + q.tag_matches(RwTableTag::TxAccessListAccountStorage),
-                ),
-                |cb| {
-                    cb.require_equal(
-                        "value_prev column is initial_value for first access",
-                        q.value_prev_column(),
-                        q.initial_value.clone(),
-                    );
-                },
+            cb.require_equal(
+                "value_prev column is initial_value for first access",
+                q.value_prev_column(),
+                q.initial_value.clone(),
             );
         });
 

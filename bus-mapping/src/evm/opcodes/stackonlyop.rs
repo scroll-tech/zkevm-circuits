@@ -70,9 +70,13 @@ mod stackonlyop_tests {
         word, Bytecode, Word,
     };
     use itertools::Itertools;
+    #[cfg(not(feature = "scroll"))]
+    use mock::MOCK_DIFFICULTY;
+    #[cfg(feature = "scroll")]
+    use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
     use mock::{
         test_ctx::{helpers::*, TestContext},
-        MOCK_BASEFEE, MOCK_DIFFICULTY, MOCK_GASLIMIT,
+        MOCK_BASEFEE, MOCK_GASLIMIT,
     };
     use pretty_assertions::assert_eq;
     use std::ops::{BitOr, BitXor};
@@ -125,6 +129,38 @@ mod stackonlyop_tests {
                 .into_iter()
                 .map(|push| (RW::WRITE, push))
                 .collect_vec()
+        );
+    }
+
+    fn stack_only_opcode_not_impl<const N_POP: usize, const N_PUSH: usize>(
+        opcode: OpcodeId,
+        code: Bytecode,
+    ) {
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.exec_state == ExecState::Op(opcode))
+            .unwrap();
+
+        assert_eq!(
+            step.error,
+            Some(crate::error::ExecError::InvalidOpcode),
+            "expected invalid op code for not implement op code"
         );
     }
 
@@ -407,14 +443,24 @@ mod stackonlyop_tests {
 
     #[test]
     fn basefee_opcode_impl() {
-        stack_only_opcode_impl::<0, 1>(
-            OpcodeId::BASEFEE,
-            bytecode! {
-                BASEFEE
-                STOP
-            },
-            vec![],
-            vec![StackOp::new(1, StackAddress(1023), *MOCK_BASEFEE)],
-        );
+        if cfg!(feature = "scroll") {
+            stack_only_opcode_not_impl::<0, 1>(
+                OpcodeId::INVALID(0x48),
+                bytecode! {
+                    BASEFEE
+                    STOP
+                },
+            );
+        } else {
+            stack_only_opcode_impl::<0, 1>(
+                OpcodeId::BASEFEE,
+                bytecode! {
+                    BASEFEE
+                    STOP
+                },
+                vec![],
+                vec![StackOp::new(1, StackAddress(1023), *MOCK_BASEFEE)],
+            );
+        }
     }
 }

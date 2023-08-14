@@ -608,6 +608,21 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         fee: Option<Word>,
     ) -> Result<(), Error> {
+        self.transfer_from_with_fee(step, sender, value, fee)?;
+        self.transfer_to(step, receiver, receiver_exists, must_create, value, true)?;
+        Ok(())
+    }
+
+    /// Push 1 reversible [`AccountOp`] to update `sender`'s balance by
+    /// `value`. If `fee` is existing (not None), also need to push 1
+    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
+    pub fn transfer_from_with_fee(
+        &mut self,
+        step: &mut ExecStep,
+        sender: Address,
+        value: Word,
+        fee: Option<Word>,
+    ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
@@ -644,6 +659,32 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance_prev,
             sender_balance
         );
+        if !value.is_zero() {
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Push 1 [`AccountOp`] to update `receiver`'s balance by `value`.
+    /// If `receiver` doesn't exist, also need to push 1 [`AccountOp`]
+    /// to create `receiver`.
+    pub fn transfer_to(
+        &mut self,
+        step: &mut ExecStep,
+        receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
+        value: Word,
+        reversible: bool,
+    ) -> Result<(), Error> {
         // If receiver doesn't exist, create it
         if (!receiver_exists && !value.is_zero()) || must_create {
             let account = self.sdb.get_account(&receiver).1.clone();
@@ -653,15 +694,17 @@ impl<'a> CircuitInputStateRef<'a> {
                 CodeDB::empty_code_hash().to_word()
             };
             self.account_read(step, receiver, AccountField::CodeHash, prev_code_hash);
-            self.push_op_reversible(
-                step,
-                AccountOp {
-                    address: receiver,
-                    field: AccountField::CodeHash,
-                    value: CodeDB::empty_code_hash().to_word(),
-                    value_prev: prev_code_hash,
-                },
-            )?;
+            let write_op = AccountOp::new(
+                receiver,
+                AccountField::CodeHash,
+                CodeDB::empty_code_hash().to_word(),
+                prev_code_hash,
+            );
+            if reversible {
+                self.push_op_reversible(step, write_op)?;
+            } else {
+                self.push_op(step, RW::WRITE, write_op);
+            }
             #[cfg(feature = "scroll")]
             {
                 let prev_keccak_code_hash = if account.is_empty() {
@@ -675,31 +718,24 @@ impl<'a> CircuitInputStateRef<'a> {
                     AccountField::KeccakCodeHash,
                     prev_keccak_code_hash,
                 );
-                self.push_op_reversible(
-                    step,
-                    AccountOp {
-                        address: receiver,
-                        field: AccountField::KeccakCodeHash,
-                        value: KECCAK_CODE_HASH_ZERO.to_word(),
-                        value_prev: prev_keccak_code_hash,
-                    },
-                )?;
+                let write_op = AccountOp::new(
+                    receiver,
+                    AccountField::KeccakCodeHash,
+                    KECCAK_CODE_HASH_ZERO.to_word(),
+                    prev_keccak_code_hash,
+                );
+                if reversible {
+                    self.push_op_reversible(step, write_op)?;
+                } else {
+                    self.push_op(step, RW::WRITE, write_op);
+                }
+                // TODO: set code size to 0?
             }
         }
         if value.is_zero() {
             // Skip transfer if value == 0
             return Ok(());
         }
-
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
-                value: sender_balance,
-                value_prev: sender_balance_prev,
-            },
-        )?;
 
         let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
@@ -710,15 +746,17 @@ impl<'a> CircuitInputStateRef<'a> {
             receiver_balance_prev,
             receiver_balance
         );
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
-                value: receiver_balance,
-                value_prev: receiver_balance_prev,
-            },
-        )?;
+        let write_op = AccountOp::new(
+            receiver,
+            AccountField::Balance,
+            receiver_balance,
+            receiver_balance_prev,
+        );
+        if reversible {
+            self.push_op_reversible(step, write_op)?;
+        } else {
+            self.push_op(step, RW::WRITE, write_op);
+        }
 
         Ok(())
     }
@@ -1274,11 +1312,19 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
             OpcodeId::STOP => [Word::zero(); 2],
+            OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::STATICCALL | OpcodeId::DELEGATECALL => {
+                let return_data_length = match exec_step.exec_state {
+                    ExecState::Precompile(_) => self.caller_ctx()?.return_data.len().into(),
+                    _ => Word::zero(),
+                };
+                [Word::zero(), return_data_length]
+            }
             OpcodeId::REVERT | OpcodeId::RETURN => {
                 let offset = geth_step.stack.nth_last(0)?;
                 let length = geth_step.stack.nth_last(1)?;
                 // This is the convention we are using for memory addresses so that there is no
                 // memory expansion cost when the length is 0.
+                // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
                 if length.is_zero() {
                     [Word::zero(); 2]
                 } else {
@@ -1309,10 +1355,17 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 0
             };
-            geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost
+            geth_step.gas.0
+                - memory_expansion_gas_cost
+                - code_deposit_cost
+                - if geth_step.op == OpcodeId::SELFDESTRUCT {
+                    GasCost::SELFDESTRUCT.as_u64()
+                } else {
+                    0
+                }
         };
 
-        let caller_gas_left = geth_step_next.gas.0 - gas_refund;
+        let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).unwrap_or_else(|| panic!("caller_gas_left underflow geth_step_next.gas {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", geth_step_next.gas.0, gas_refund, exec_step, geth_step));
 
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
@@ -1843,12 +1896,21 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((vec![], vec![], vec![]));
         }
 
+        let caller_memory = self.caller_ctx()?.memory.clone();
+        let call_data_length = self.call()?.call_data_length;
+        let call_data_offset = self.call()?.call_data_offset;
+        let call_data = if call_data_length != 0 {
+            let ends = call_data_offset + call_data_length;
+            &caller_memory.0[..ends as usize]
+        } else {
+            &caller_memory.0[..call_data_offset as usize]
+        };
         let call_ctx = self.call_ctx_mut()?;
         let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
             src_addr.into().0,
             dst_addr.into().0,
             copy_length,
-            &call_ctx.call_data,
+            call_data,
             &mut call_ctx.memory,
         );
 
@@ -1896,12 +1958,20 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let last_callee_memory = self.call()?.last_callee_memory.clone();
+        let return_data_length = self.call()?.last_callee_return_data_length;
+        let return_data_offset = self.call()?.last_callee_return_data_offset;
+        let return_data: &[u8] = if return_data_length != 0 {
+            let ends = return_data_offset + return_data_length;
+            &last_callee_memory.0[..ends as usize]
+        } else {
+            &last_callee_memory.0[..return_data_offset as usize]
+        };
         let call_ctx = self.call_ctx_mut()?;
         let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
             src_addr.into().0,
             dst_addr.into().0,
             copy_length,
-            &last_callee_memory.0,
+            return_data,
             &mut call_ctx.memory,
         );
         let read_slot_bytes = self.call()?.last_callee_memory.read_chunk(src_range);

@@ -16,8 +16,8 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{
-        CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEcParams,
+        BigModExp, CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEcParams, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
     },
     precompile::PrecompileCalls,
 };
@@ -29,7 +29,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Layouter, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::Fq,
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -45,6 +45,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
+use halo2_proofs::plonk::TableColumn;
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
@@ -174,6 +175,8 @@ pub enum TxFieldTag {
     TxHashRLC,
     /// TxHash: Hash of the transaction with the signature
     TxHash,
+    /// TxType: Type of the transaction
+    TxType,
     /// The block number in which this tx is included.
     BlockNumber,
 }
@@ -813,6 +816,8 @@ pub struct PoseidonTable {
     pub input1: Column<Advice>,
     /// control
     pub control: Column<Advice>,
+    /// domain spec
+    pub domain_spec: Column<Advice>,
     /// heading_mark
     pub heading_mark: Column<Advice>,
 }
@@ -825,6 +830,7 @@ impl<F: Field> LookupTable<F> for PoseidonTable {
             self.input0.into(),
             self.input1.into(),
             self.control.into(),
+            self.domain_spec.into(),
             self.heading_mark.into(),
         ]
     }
@@ -836,6 +842,7 @@ impl<F: Field> LookupTable<F> for PoseidonTable {
             String::from("input0"),
             String::from("input1"),
             String::from("control"),
+            String::from("domain spec"),
             String::from("heading_mark"),
         ]
     }
@@ -856,6 +863,7 @@ impl PoseidonTable {
             input0: meta.advice_column(),
             input1: meta.advice_column(),
             control: meta.advice_column(),
+            domain_spec: meta.advice_column(),
             heading_mark: meta.advice_column(),
         }
     }
@@ -906,7 +914,7 @@ impl PoseidonTable {
         region: &mut Region<'_, F>,
         hashes: impl Iterator<Item = &'d [Value<F>]>,
     ) -> Result<(), Error> {
-        self.assign(region, 0, [Value::known(F::zero()); 5].as_slice())?;
+        self.assign(region, 0, [Value::known(F::zero()); 6].as_slice())?;
         for (offset, row) in hashes.enumerate() {
             self.assign(region, offset + 1, row)?;
         }
@@ -927,7 +935,7 @@ impl PoseidonTable {
         use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
-            || "poseidon table",
+            || "poseidon codehash table",
             |mut region| {
                 let mut offset = 0;
                 let poseidon_table_columns =
@@ -937,7 +945,7 @@ impl PoseidonTable {
                     || "poseidon table all-zero row",
                     self.q_enable,
                     offset,
-                    || Value::known(F::one()),
+                    || Value::known(F::zero()),
                 )?;
                 for column in poseidon_table_columns.iter().copied() {
                     region.assign_advice(
@@ -948,26 +956,26 @@ impl PoseidonTable {
                     )?;
                 }
                 offset += 1;
-                let nil_hash =
-                    Value::known(CodeDB::empty_code_hash().to_word().to_scalar().unwrap());
-                region.assign_fixed(
-                    || "poseidon table nil input row",
-                    self.q_enable,
-                    offset,
-                    || Value::known(F::one()),
-                )?;
-                for (column, value) in poseidon_table_columns
-                    .iter()
-                    .copied()
-                    .zip(once(nil_hash).chain(repeat(Value::known(F::zero()))))
-                {
-                    region.assign_advice(
-                        || "poseidon table nil input row",
-                        column,
-                        offset,
-                        || value,
-                    )?;
-                }
+                // let nil_hash =
+                //     Value::known(CodeDB::empty_code_hash().to_word().to_scalar().unwrap());
+                // region.assign_fixed(
+                //     || "poseidon table nil input row",
+                //     self.q_enable,
+                //     offset,
+                //     || Value::known(F::one()),
+                // )?;
+                // for (column, value) in poseidon_table_columns
+                //     .iter()
+                //     .copied()
+                //     .zip(once(nil_hash).chain(repeat(Value::known(F::zero()))))
+                // {
+                //     region.assign_advice(
+                //         || "poseidon table nil input row",
+                //         column,
+                //         offset,
+                //         || value,
+                //     )?;
+                // }
                 offset += 1;
 
                 for input in inputs.clone() {
@@ -1000,6 +1008,7 @@ impl PoseidonTable {
                             once(ref_hash)
                                 .chain(row.map(Value::known))
                                 .chain(once(Value::known(control_len_as_flag)))
+                                .chain(once(Value::known(F::zero()))) // always use domain 0 in codehash
                                 .chain(once(Value::known(if first_row {
                                     F::one()
                                 } else {
@@ -1369,16 +1378,21 @@ impl KeccakTable {
         region: &mut Region<F>,
         offset: usize,
         values: [Value<F>; 4],
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let mut res = vec![];
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
             .iter()
             .zip(values.iter())
         {
-            region.assign_advice(|| format!("assign {offset}"), column, offset, || *value)?;
+            res.push(region.assign_advice(
+                || format!("assign {offset}"),
+                column,
+                offset,
+                || *value,
+            )?);
         }
-        Ok(())
+        Ok(res)
     }
-
     /// Provide this function for the case that we want to consume a keccak
     /// table but without running the full keccak circuit
     pub fn dev_load<'a, F: Field>(
@@ -2220,22 +2234,23 @@ impl SigTable {
             |mut region| {
                 let signatures: Vec<SignData> = block.get_sign_data(false);
 
+                let evm_word = challenges.evm_word();
                 for (offset, sign_data) in signatures.iter().enumerate() {
-                    let msg_hash_rlc = challenges.keccak_input().map(|challenge| {
+                    let msg_hash_rlc = evm_word.map(|challenge| {
                         rlc::value(
-                            sign_data.msg_hash.to_bytes().iter().rev().collect_vec(),
+                            sign_data.msg_hash.to_bytes().iter().collect_vec(),
                             challenge,
                         )
                     });
-                    let sig_r_rlc = challenges.keccak_input().map(|challenge| {
+                    let sig_r_rlc = evm_word.map(|challenge| {
                         rlc::value(
-                            sign_data.signature.0.to_bytes().iter().rev().collect_vec(),
+                            sign_data.signature.0.to_bytes().iter().collect_vec(),
                             challenge,
                         )
                     });
-                    let sig_s_rlc = challenges.keccak_input().map(|challenge| {
+                    let sig_s_rlc = evm_word.map(|challenge| {
                         rlc::value(
-                            sign_data.signature.1.to_bytes().iter().rev().collect_vec(),
+                            sign_data.signature.1.to_bytes().iter().collect_vec(),
                             challenge,
                         )
                     });
@@ -2503,7 +2518,7 @@ impl EccTable {
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
-                keccak_rand.map(|r| rlc::value(&pairing_op.to_bytes_le(), r)),
+                keccak_rand.map(|r| rlc::value(pairing_op.to_bytes_be().iter().rev(), r)),
                 Value::known(
                     pairing_op
                         .output
@@ -2540,6 +2555,192 @@ impl EccTable {
                 Ok(())
             },
         )
+    }
+}
+
+/// Lookup table embedded in the modexp circuit for precompile.
+#[derive(Clone, Copy, Debug)]
+pub struct ModExpTable {
+    /// Use for indicate beginning of a limbs group
+    pub q_head: Column<Fixed>,
+    /// base represented by limbs
+    pub base: Column<Advice>,
+    /// exp represented by limbs
+    pub exp: Column<Advice>,
+    /// modulus represented by limbs
+    pub modulus: Column<Advice>,
+    /// result represented by limbs
+    pub result: Column<Advice>,
+}
+
+impl ModExpTable {
+    /// Construct the modexp table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        let ret = Self {
+            q_head: meta.fixed_column(),
+            base: meta.advice_column(),
+            exp: meta.advice_column(),
+            modulus: meta.advice_column(),
+            result: meta.advice_column(),
+        };
+        meta.enable_equality(ret.base);
+        meta.enable_equality(ret.exp);
+        meta.enable_equality(ret.modulus);
+        meta.enable_equality(ret.result);
+        ret
+    }
+
+    /// helper for devide a U256 into 3 108bit limbs
+    pub fn split_u256_108bit_limbs(word: &Word) -> [u128; 3] {
+        let bit108 = 1u128 << 108;
+        let (next, limb0) = word.div_mod(U256::from(bit108));
+        let (limb2, limb1) = next.div_mod(U256::from(bit108));
+        [limb0.as_u128(), limb1.as_u128(), limb2.as_u128()]
+    }
+
+    /// helper for obtain the modulus of a U256 in Fr
+    pub fn native_u256<F: Field>(word: &Word) -> F {
+        let minus1 = -F::one();
+        let (div, _) = word.div_mod(Word::from_little_endian(minus1.to_repr().as_ref()));
+        let div = div.checked_add(Word::from(1u64)).unwrap();
+        let mut bytes = [0u8; 64];
+        div.to_little_endian(&mut bytes[..32]);
+        F::from_bytes_wide(&bytes)
+    }
+
+    /// fill a blank 4-row region start from offset for empty lookup
+    pub fn fill_blank<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "modexp table blank region",
+            |mut region| {
+                for i in 0..4 {
+                    // fill last totally 0 row
+                    region.assign_fixed(
+                        || "modexp table blank head row",
+                        self.q_head,
+                        i,
+                        || Value::known(F::zero()),
+                    )?;
+                    for &col in [&self.base, &self.exp, &self.modulus, &self.result] {
+                        region.assign_advice(
+                            || "modexp table blank limb row",
+                            col,
+                            i,
+                            || Value::known(F::zero()),
+                        )?;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
+
+    /// Get assignments to the modexp table. Meant to be used for dev purposes.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        events: &[BigModExp],
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "modexp table",
+            |mut region| {
+                let mut offset = 0usize;
+
+                for event in events {
+                    for i in 0..4 {
+                        region.assign_fixed(
+                            || format!("modexp table head {}", offset + i),
+                            self.q_head,
+                            offset + i,
+                            || Value::known(if i == 0 { F::one() } else { F::zero() }),
+                        )?;
+                    }
+
+                    let base_limbs = Self::split_u256_108bit_limbs(&event.base);
+                    let exp_limbs = Self::split_u256_108bit_limbs(&event.exponent);
+                    let modulus_limbs = Self::split_u256_108bit_limbs(&event.modulus);
+                    let result_limbs = Self::split_u256_108bit_limbs(&event.result);
+
+                    for i in 0..3 {
+                        for (limbs, &col) in [base_limbs, exp_limbs, modulus_limbs, result_limbs]
+                            .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                        {
+                            region.assign_advice(
+                                || format!("modexp table limb row {}", offset + i),
+                                col,
+                                offset + i,
+                                || Value::known(F::from_u128(limbs[i])),
+                            )?;
+                        }
+                    }
+
+                    // native is not used by lookup (and in fact it can be omitted in dev)
+                    for (word, &col) in [
+                        &event.base,
+                        &event.exponent,
+                        &event.modulus,
+                        &event.result,
+                    ]
+                    .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                    {
+                        region.assign_advice(
+                            || format!("modexp table native row {}", offset + 3),
+                            col,
+                            offset + 3,
+                            || Value::<F>::known(Self::native_u256(word)),
+                        )?;
+                    }
+
+                    offset += 4;
+                }
+
+                Ok(())
+            },
+        )?;
+        self.fill_blank(layouter)
+    }
+}
+
+impl<F: Field> LookupTable<F> for ModExpTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_head.into(),
+            self.base.into(),
+            self.exp.into(),
+            self.modulus.into(),
+            self.result.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("is_head"),
+            String::from("base"),
+            String::from("exp"),
+            String::from("modulus"),
+            String::from("result"),
+        ]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            // ignore the is_valid field as the EVM circuit's use-case (Ecrecover precompile) does
+            // not care whether the signature is valid or not. It only cares about the recovered
+            // address.
+            meta.query_fixed(self.q_head, Rotation::cur()),
+            meta.query_advice(self.base, Rotation::cur()),
+            meta.query_advice(self.exp, Rotation::cur()),
+            meta.query_advice(self.modulus, Rotation::cur()),
+            meta.query_advice(self.result, Rotation::cur()),
+            meta.query_advice(self.base, Rotation::next()),
+            meta.query_advice(self.exp, Rotation::next()),
+            meta.query_advice(self.modulus, Rotation::next()),
+            meta.query_advice(self.result, Rotation::next()),
+            meta.query_advice(self.base, Rotation(2)),
+            meta.query_advice(self.exp, Rotation(2)),
+            meta.query_advice(self.modulus, Rotation(2)),
+            meta.query_advice(self.result, Rotation(2)),
+        ]
     }
 }
 
@@ -2600,7 +2801,7 @@ impl PowOfRandTable {
     }
 
     /// Assign values to the table.
-    pub fn dev_load<F: Field>(
+    pub fn assign<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
@@ -2610,7 +2811,8 @@ impl PowOfRandTable {
             || "power of randomness table",
             |mut region| {
                 let pows_of_rand =
-                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r)).take(128);
+                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r))
+                        .take(N_PAIRING_PER_OP * N_BYTES_PER_PAIR);
 
                 for (idx, pow_of_rand) in pows_of_rand.enumerate() {
                     region.assign_fixed(
@@ -2670,5 +2872,48 @@ impl<F: Field> LookupTable<F> for PowOfRandTable {
             meta.query_fixed(self.exponent, Rotation::cur()),
             meta.query_advice(self.pow_of_rand, Rotation::cur()),
         ]
+    }
+}
+
+/// Lookup table for [0, MAX) range
+#[derive(Clone, Copy, Debug)]
+pub struct RangeTable<const MAX: usize>(TableColumn);
+
+/// Type Alias of u8 table, [0, 1 << 8)
+pub type U8Table = RangeTable<{ 1 << 8 }>;
+/// Type Alias of u16 table, [0, 1 << 16)
+pub type U16Table = RangeTable<{ 1 << 16 }>;
+
+impl<const MAX: usize> RangeTable<MAX> {
+    /// Construct the range table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        let inner = meta.lookup_table_column();
+        meta.annotate_lookup_column(inner, || format!("range table [0, {MAX})"));
+        Self(inner)
+    }
+
+    /// Assign values to the table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || format!("range table [0, {MAX})"),
+            |mut table| {
+                for i in 0..MAX {
+                    table.assign_cell(
+                        || format!("range at offset = {i}"),
+                        self.0,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<const MAX: usize> From<RangeTable<MAX>> for TableColumn {
+    fn from(table: RangeTable<MAX>) -> TableColumn {
+        table.0
     }
 }

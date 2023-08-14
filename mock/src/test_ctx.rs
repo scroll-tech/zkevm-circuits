@@ -267,7 +267,8 @@ pub fn gen_geth_traces(
 /// builder pattern used to construct [`TestContext`]s.
 pub mod helpers {
     use super::*;
-    use crate::MOCK_ACCOUNTS;
+    use crate::{MOCK_ACCOUNTS, MOCK_WALLETS};
+    use ethers_signers::Signer;
 
     /// Generate a simple setup which adds balance to two default accounts from
     /// [`static@MOCK_ACCOUNTS`]:
@@ -281,6 +282,23 @@ pub mod helpers {
                 .balance(eth(10))
                 .code(code);
             accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10));
+        }
+    }
+
+    /// Generate a setup which adds balance to two default accounts,
+    /// the receiver is from
+    /// [`static@MOCK_ACCOUNTS`]:
+    /// - 0x000000000000000000000000000000000cafe111
+    /// and sender is a random wallet account from the first of
+    /// [`static@MOCK_WALLETS`];
+    /// And injects the provided bytecode into the first one.
+    pub fn account_0_code_wallet_0_no_code(code: Bytecode) -> impl FnOnce([&mut MockAccount; 2]) {
+        |accs| {
+            accs[0]
+                .address(MOCK_ACCOUNTS[0])
+                .balance(eth(10))
+                .code(code);
+            accs[1].address(MOCK_WALLETS[0].address()).balance(eth(10));
         }
     }
 

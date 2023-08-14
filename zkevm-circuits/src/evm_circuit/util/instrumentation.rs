@@ -106,6 +106,9 @@ impl Instrument {
                     CellType::Lookup(Table::Sig) => {
                         report.sig_table = data_entry;
                     }
+                    CellType::Lookup(Table::ModExp) => {
+                        report.modexp_table = data_entry;
+                    }
                     CellType::Lookup(Table::Ecc) => {
                         report.ecc_table = data_entry;
                     }
@@ -139,6 +142,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) keccak_table: StateReportRow,
     pub(crate) exp_table: StateReportRow,
     pub(crate) sig_table: StateReportRow,
+    pub(crate) modexp_table: StateReportRow,
     pub(crate) ecc_table: StateReportRow,
     pub(crate) pow_of_rand_table: StateReportRow,
 }
