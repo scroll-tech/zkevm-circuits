@@ -320,7 +320,7 @@ impl<F: Field> PaddingGadget<F> {
         cd_len: Expression<F>,
         input_len: Expression<F>,
     ) -> Self {
-        let is_cd_len_zero = IsZeroGadget::construct(cb, "", cd_len.expr());
+        let is_cd_len_zero = IsZeroGadget::construct(cb, cd_len.expr());
         let padded_rlc = cb.query_cell_phase2();
         let power_of_rand = cb.query_cell_phase2();
 
