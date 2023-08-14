@@ -395,11 +395,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         } else {
             tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0
         };
-        let tx_l2_fee = tx.gas_price * gas_used;
         log::trace!(
-            "tx_l1_fee: {}, tx_l2_fee: {}, coinbase_reward: {}",
+            "tx_l1_fee: {}, , coinbase_reward: {}",
             tx_l1_fee,
-            tx_l2_fee,
             coinbase_reward
         );
         let effective_fee = if tx.tx_type.is_l1_msg() {
@@ -410,18 +408,18 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 offset,
                 !coinbase_codehash.is_zero(),
                 false,
-                tx_l2_fee + tx_l1_fee,
+                coinbase_reward + tx_l1_fee,
                 &mut rws,
             )?;
             let coinbase_balance_pair = result.receiver_balance_pair.unwrap();
             coinbase_balance_pair.0 - coinbase_balance_pair.1
         };
-        if effective_fee != tx_l2_fee + tx_l1_fee {
+        if effective_fee != coinbase_reward + tx_l1_fee {
             log::error!(
-                "end_tx assign: effective_fee ({}) != tx_l1_fee ({}) + tx_l2_fee ({})",
+                "end_tx assign: effective_fee ({}) != tx_l1_fee ({}) + coinbase_reward ({})",
                 effective_fee,
                 tx_l1_fee,
-                tx_l2_fee
+                coinbase_reward
             );
         }
         self.tx_l1_fee.assign(
