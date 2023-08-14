@@ -9,16 +9,14 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use zkevm_circuits::{
     keccak_circuit::{
-        keccak_packed_multi::{multi_keccak, self}, KeccakCircuitConfig, KeccakCircuitConfigArgs, KeccakCircuit
+        keccak_packed_multi::{self, multi_keccak},
+        KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
     },
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuitConfig},
 };
 
-use crate::{
-    aggregation::RlcConfig,
-    constants::LOG_DEGREE,
-};
+use crate::{aggregation::RlcConfig, constants::LOG_DEGREE};
 
 #[derive(Default, Debug, Clone)]
 struct DynamicHashCircuit {

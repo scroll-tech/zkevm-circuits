@@ -1,3 +1,7 @@
+use crate::{
+    aggregation::RlcConfig,
+    constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS},
+};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Region},
@@ -9,10 +13,8 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
     gates::{flex_gate::FlexGateConfig, GateInstructions},
     AssignedValue, Context,
 };
-use zkevm_circuits::keccak_circuit::keccak_packed_multi::{get_num_rows_per_round, get_num_rows_per_update};
-use crate::{
-    aggregation::RlcConfig,
-    constants::{DIGEST_LEN, INPUT_LEN_PER_ROUND, MAX_AGG_SNARKS},
+use zkevm_circuits::keccak_circuit::keccak_packed_multi::{
+    get_num_rows_per_round, get_num_rows_per_update,
 };
 
 // Calculates the maximum keccak updates (1 absorb, or 1 f-box invoke)
@@ -26,7 +28,11 @@ pub(crate) fn get_max_keccak_updates(max_snarks: usize) -> usize {
 }
 pub(crate) fn get_data_hash_keccak_updates(max_snarks: usize) -> usize {
     let data_hash_rounds = (32 * max_snarks) / INPUT_LEN_PER_ROUND;
-    let padding_round = if data_hash_rounds * INPUT_LEN_PER_ROUND < 32 * max_snarks { 1 } else { 0 };
+    let padding_round = if data_hash_rounds * INPUT_LEN_PER_ROUND < 32 * max_snarks {
+        1
+    } else {
+        0
+    };
 
     data_hash_rounds + padding_round
 }
@@ -66,8 +72,9 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
             // indices for digests
             if i == num_rounds - 1 {
                 for j in 0..4 {
-                    let inner_offset = 
-                        f_round_offset + j * inner_round_rows + (keccak_f_rows - inner_round_rows * (DIGEST_LEN / 8));
+                    let inner_offset = f_round_offset
+                        + j * inner_round_rows
+                        + (keccak_f_rows - inner_round_rows * (DIGEST_LEN / 8));
                     for k in 0..8 {
                         digest_indices.push(inner_offset + k);
                     }
@@ -90,8 +97,9 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
             }
         }
         for j in 0..4 {
-            let inner_offset = 
-                round_ctr * keccak_f_rows + j * inner_round_rows + (keccak_f_rows - inner_round_rows * (DIGEST_LEN / 8));
+            let inner_offset = round_ctr * keccak_f_rows
+                + j * inner_round_rows
+                + (keccak_f_rows - inner_round_rows * (DIGEST_LEN / 8));
             for k in 0..8 {
                 digest_indices.push(inner_offset + k);
             }

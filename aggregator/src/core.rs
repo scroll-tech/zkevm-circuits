@@ -20,15 +20,16 @@ use snark_verifier_sdk::{
     Snark,
 };
 use zkevm_circuits::{
-    keccak_circuit::{keccak_packed_multi::{multi_keccak, self}, KeccakCircuitConfig, KeccakCircuit},
+    keccak_circuit::{
+        keccak_packed_multi::{self, multi_keccak},
+        KeccakCircuit, KeccakCircuitConfig,
+    },
     table::LookupTable,
     util::Challenges,
 };
 
 use crate::{
-    constants::{
-        CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
-    },
+    constants::{CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS},
     util::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
@@ -221,7 +222,10 @@ pub(crate) fn extract_hash_cells(
                     let row = keccak_config.set_row(&mut region, offset, keccak_row)?;
 
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
-                        hash_input_cells.push(row[keccak_packed_multi::get_input_bytes_col_cell_manager() + 4].clone());
+                        hash_input_cells.push(
+                            row[keccak_packed_multi::get_input_bytes_col_cell_manager() + 4]
+                                .clone(),
+                        );
                         cur_preimage_index = preimage_indices_iter.next();
                     }
                     if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
@@ -229,8 +233,7 @@ pub(crate) fn extract_hash_cells(
                         hash_output_cells.push(row.last().unwrap().clone()); // sage unwrap
                         cur_digest_index = digest_indices_iter.next();
                     }
-                    if offset % keccak_f_rows == 0 && offset / keccak_f_rows <= max_keccak_updates
-                    {
+                    if offset % keccak_f_rows == 0 && offset / keccak_f_rows <= max_keccak_updates {
                         // first column is is_final
                         is_final_cells.push(row[0].clone());
                         // second column is data rlc
