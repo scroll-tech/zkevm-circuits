@@ -267,11 +267,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 let ec_muls_assigned = assign_ec_op!(ec_muls_decomposed, assign_ec_mul);
                 let ec_pairings_assigned = assign_ec_op!(ec_pairings_decomposed, assign_ec_pairing);
 
-                #[cfg(not(feature = "onephase"))]
-                {
-                    // finalize after second phase (RLC).
-                    config.fp_config.finalize(&mut ctx);
-                }
+                // Finalize the Fp config always at the end of assignment.
+                let lookup_cells = config.fp_config.finalize(&mut ctx);
+                log::info!("total number of lookup cells: {}", lookup_cells);
+                ctx.print_stats(&["EccCircuit: FpConfig context"]);
 
                 Ok(EcOpsAssigned {
                     ec_adds_assigned,
