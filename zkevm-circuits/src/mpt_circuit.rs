@@ -15,7 +15,7 @@ use itertools::Itertools;
 use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
 
 impl PoseidonLookup for PoseidonTable {
-    fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 5]) {
+    fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 6]) {
         (
             self.q_enable,
             [
@@ -23,6 +23,7 @@ impl PoseidonLookup for PoseidonTable {
                 self.input0,
                 self.input1,
                 self.control,
+                self.domain_spec,
                 self.heading_mark,
             ],
         )
@@ -102,9 +103,10 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
     }
 
     fn min_num_rows_block(block: &witness::Block<Fr>) -> (usize, usize) {
-        // FIXME
         (
-            block.circuits_params.max_mpt_rows,
+            // For an empty storage proof, we may need to lookup the canonical representations of
+            // three different keys. Each lookup requires 32 rows.
+            3 * 32 * block.mpt_updates.len(),
             block.circuits_params.max_mpt_rows,
         )
     }

@@ -34,6 +34,12 @@ pub struct Call {
     pub return_data_offset: u64,
     /// The length of return data
     pub return_data_length: u64,
+    /// Last Callee's id.
+    pub last_callee_id: usize,
+    /// last callee's return data offset
+    pub last_callee_return_data_offset: u64,
+    /// last callee's return data length
+    pub last_callee_return_data_length: u64,
     /// The ether amount of the transaction
     pub value: Word,
     /// Indicate if this call halts successfully.

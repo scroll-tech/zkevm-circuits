@@ -97,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         // Calculate the next memory size and the gas cost for this memory
         // access
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
@@ -239,7 +239,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, word, Word};
     use mock::{
         generate_mock_call_bytecode,
         test_ctx::{helpers::*, TestContext},
@@ -362,5 +362,23 @@ mod test {
     fn calldatacopy_gadget_overflow_memory_offset_and_zero_length() {
         test_root_ok(0x40, 0, 0x40.into(), Word::MAX);
         test_internal_ok(0x40, 0x40, 0, 0x10.into(), Word::MAX);
+    }
+
+    #[test]
+    fn calldatacopy_unaligned_data() {
+        // calldatacopy_d0(cdc_0_1_2)_g0_v0
+        test_internal_ok(0xf, 0x10, 2, 1.into(), 0x0.into());
+
+        // copy source out of bounds
+        test_internal_ok(0xf, 0x10, 0x9, 0x20.into(), 0x0.into());
+
+        // calldatacopy_d4(cdc_0_neg6_ff)_g0_v0
+        test_internal_ok(
+            0xf,
+            0x10,
+            0x09,
+            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa"),
+            0x0.into(),
+        );
     }
 }

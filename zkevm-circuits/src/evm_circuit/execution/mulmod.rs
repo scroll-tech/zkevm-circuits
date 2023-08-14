@@ -32,7 +32,7 @@ pub(crate) struct MulModGadget<F> {
     a_reduced: util::Word<F>,
     d: util::Word<F>,
     e: util::Word<F>,
-    modword: ModGadget<F>,
+    modword: ModGadget<F, true>,
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,
     n_is_zero: IsZeroGadget<F>,
@@ -193,11 +193,11 @@ mod test {
 
         let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
         if !ok {
-            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+            ctb = ctb.evm_checks(Some(Box::new(|prover, gate_rows, lookup_rows| {
                 assert!(prover
                     .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
                     .is_err())
-            }));
+            })));
         };
         ctb.run()
     }

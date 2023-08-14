@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
             LtGadget::construct(cb, MAX_INIT_CODE_SIZE.expr(), memory_address.length());
 
         let minimum_word_size = MemoryWordSizeGadget::construct(cb, memory_address.length());
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
 
         let keccak_gas_cost = minimum_word_size.expr()
             * select::expr(

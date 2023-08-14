@@ -99,7 +99,26 @@ impl WitnessGenerator {
     pub fn dump(&self) {
         log::info!("account data {:#?}", self.accounts);
     }
-
+    /// get account proof
+    pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
+        self.trie.prove(address.as_bytes()).unwrap()
+    }
+    /// get storage proof
+    pub fn storage_proof(&self, address: Address, key: Word) -> Vec<Vec<u8>> {
+        let (_storage_key, key) = {
+            let mut word_buf = [0u8; 32];
+            key.to_big_endian(word_buf.as_mut_slice());
+            (hash_zktrie_key(&word_buf), HexBytes(word_buf))
+        };
+        // TODO: use or_else to optimize
+        let default_trie = &ZktrieState::default()
+            .zk_db
+            .borrow_mut()
+            .new_trie(&ZkTrieHash::default())
+            .unwrap();
+        let trie: &ZkTrie = self.storages.get(&address).unwrap_or(default_trie);
+        trie.prove(key.as_ref()).unwrap()
+    }
     fn trace_storage_update(
         &mut self,
         address: Address,
@@ -315,7 +334,7 @@ impl WitnessGenerator {
                         // TODO: fix (hypothetical) inconsistency where CREATE gadget allows nonce
                         // to be 1 << 64, but mpt circuit does not support this.
                         assert!(new_val <= Word::from(u64::MAX) + Word::one());
-                        assert_eq!(old_val.as_u64(), acc_data.nonce);
+                        //assert_eq!(old_val.as_u64(), acc_data.nonce);
                         acc_data.nonce = new_val.as_u64();
                     }
                     MPTProofType::BalanceChanged => {
@@ -417,7 +436,7 @@ fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
     let bt_high = Fr::from_u128(u128::from_be_bytes(first_16bytes));
     let bt_low = Fr::from_u128(u128::from_be_bytes(last_16bytes));
 
-    let hash = Fr::hash([bt_high, bt_low]);
+    let hash = Fr::hash_with_domain([bt_high, bt_low], Fr::from(512));
 
     U256::from_little_endian(hash.to_repr().as_ref())
 }
@@ -461,15 +480,17 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
     let mut path_part: BigUint = Default::default();
     let mut path = Vec::new();
 
-    for (left, right) in trie_proof.path.iter() {
+    for ((left, right), &node_type) in trie_proof.path.iter().zip(&trie_proof.path_type) {
         let is_bit_one = key.bit(0);
         path.push(if is_bit_one {
             SMTNode {
+                node_type,
                 value: smt_hash_from_u256(right),
                 sibling: smt_hash_from_u256(left),
             }
         } else {
             SMTNode {
+                node_type,
                 value: smt_hash_from_u256(left),
                 sibling: smt_hash_from_u256(right),
             }
@@ -482,6 +503,7 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
     }
 
     let leaf = trie_proof.key.as_ref().map(|h| SMTNode {
+        node_type: trie_proof.key_type.expect("key type should has been set"),
         value: smt_hash_from_bytes(trie_proof.data.as_ref()),
         sibling: smt_hash_from_bytes(h.as_bytes()),
     });

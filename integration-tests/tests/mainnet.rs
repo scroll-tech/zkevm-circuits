@@ -1,5 +1,5 @@
 use bus_mapping::{
-    circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams},
+    circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams, PrecompileEcParams},
     Error::JSONRpcError,
 };
 use halo2_proofs::{
@@ -10,6 +10,7 @@ use halo2_proofs::{
 };
 use integration_tests::{get_client, log_init, CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
 use zkevm_circuits::{
+    copy_circuit::CopyCircuit,
     evm_circuit::{witness::block_convert, EvmCircuit},
     keccak_circuit::keccak_packed_multi::multi_keccak,
     rlp_circuit_fsm::RlpCircuit,
@@ -33,6 +34,11 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_exp_steps: 1000,
     max_evm_rows: 0,
     max_rlp_rows: 33000,
+    max_ec_ops: PrecompileEcParams {
+        ec_add: 10,
+        ec_mul: 10,
+        ec_pairing: 4,
+    },
 };
 
 #[tokio::test]
@@ -56,6 +62,7 @@ async fn test_mock_prove_tx() {
         max_exp_steps: 5000,
         max_evm_rows: 0,
         max_rlp_rows: 42000,
+        ..Default::default()
     };
 
     let cli = BuilderClient::new(cli, params).await.unwrap();
@@ -77,15 +84,22 @@ async fn test_mock_prove_tx() {
 }
 
 fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &witness::Block<Fr>) -> MockProver<Fr> {
-    let k = block.get_test_degree();
+    let num_row = C::min_num_rows_block(block).1;
+    let k = zkevm_circuits::util::log2_ceil(num_row + 256);
+    let k = k.max(22);
     log::debug!("{} circuit needs k = {}", *CIRCUIT, k);
-    debug_assert!(k <= 22);
+    //debug_assert!(k <= 22);
     let circuit = C::new_from_block(block);
     MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
 }
 fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
+    if *CIRCUIT == "none" {
+        return Vec::new();
+    }
     let prover = if *CIRCUIT == "evm" {
         test_with::<EvmCircuit<Fr>>(block)
+    } else if *CIRCUIT == "copy" {
+        test_with::<CopyCircuit<Fr>>(block)
     } else if *CIRCUIT == "rlp" {
         test_with::<RlpCircuit<Fr, Transaction>>(block)
     } else if *CIRCUIT == "tx" {
@@ -113,7 +127,7 @@ async fn test_circuit_all_block() {
         let cli = get_client();
         let params = CircuitsParams {
             max_rws: 4_000_000,
-            max_copy_rows: 4_000_000,
+            max_copy_rows: 0, // dynamic
             max_txs: 350,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
@@ -123,6 +137,7 @@ async fn test_circuit_all_block() {
             max_exp_steps: 100_000,
             max_evm_rows: 0,
             max_rlp_rows: 2_070_000,
+            ..Default::default()
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let builder = cli.gen_inputs(block_num).await;
@@ -141,7 +156,7 @@ async fn test_circuit_all_block() {
             return;
         }
 
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         let errs = test_witness_block(&block);
         log::info!(
             "test {} circuit, block number: {} err num {:?}",

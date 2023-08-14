@@ -284,11 +284,13 @@ pub struct EIP1186ProofResponse {
     /// The balance of the account
     pub balance: U256,
     /// The keccak hash of the code of the account
+    #[serde(default)]
     pub keccak_code_hash: H256,
     /// The poseidon hash of the code of the account
     #[serde(alias = "poseidonCodeHash")]
     pub code_hash: H256,
     /// Size of the code, i.e. code length
+    #[serde(default)]
     pub code_size: U256,
     /// The nonce of the account
     pub nonce: U256,
@@ -313,6 +315,7 @@ struct GethExecStepInternal {
     depth: u16,
     error: Option<String>,
     // stack is in hex 0x prefixed
+    #[serde(default)]
     stack: Vec<DebugU256>,
     // memory is in chunks of 32 bytes, in hex
     #[serde(default)]
@@ -368,6 +371,7 @@ impl fmt::Debug for GethExecStep {
             .field("op", &self.op)
             .field("gas", &format_args!("{}", self.gas.0))
             .field("gas_cost", &format_args!("{}", self.gas_cost.0))
+            .field("refund", &format_args!("{}", self.refund.0))
             .field("depth", &self.depth)
             .field("error", &self.error)
             .field("stack", &self.stack)

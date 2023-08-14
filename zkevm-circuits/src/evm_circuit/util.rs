@@ -199,14 +199,14 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     pub fn code_hash(&self, n: U256) -> Value<F> {
-        self.challenges.evm_word().map(|r| {
-            if cfg!(feature = "poseidon-codehash") {
-                // only FieldExt is not enough for ToScalar trait so we have to make workaround
-                rlc::value(&n.to_le_bytes(), F::from(256u64))
-            } else {
-                rlc::value(&n.to_le_bytes(), r)
-            }
-        })
+        if cfg!(feature = "poseidon-codehash") {
+            // only FieldExt is not enough for ToScalar trait so we have to make workaround
+            Value::known(rlc::value(&n.to_le_bytes(), F::from(256u64)))
+        } else {
+            self.challenges
+                .evm_word()
+                .map(|r| rlc::value(&n.to_le_bytes(), r))
+        }
     }
 
     pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
@@ -723,6 +723,10 @@ impl<'a> StepRws<'a> {
     }
     /// Increment the step rw operation offset by `offset`.
     pub(crate) fn offset_add(&mut self, offset: usize) {
+        self.offset += offset
+    }
+    /// Set the step rw operation offset by `offset`.
+    pub(crate) fn offset_set(&mut self, offset: usize) {
         self.offset = offset
     }
     /// Return the next rw operation from the step.

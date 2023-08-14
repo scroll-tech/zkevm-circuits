@@ -234,7 +234,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        debug_assert!(
+        assert!(
             self.condition.is_none(),
             "Nested condition is not supported"
         );
@@ -246,7 +246,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         if self.max_degree > 0 {
-            debug_assert!(
+            assert!(
                 degree <= self.max_degree,
                 "Expression {} degree too high: {} > {}",
                 name,
@@ -321,7 +321,7 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     }
 }
 
-pub(crate) type BoxedClosure<F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>)>;
+pub(crate) type BoxedClosure<'a, F, R> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) -> R + 'a>;
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
@@ -569,7 +569,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn range_lookup(&mut self, value: Expression<F>, range: u64) {
         let (name, tag) = match range {
+            3 => ("Range3", FixedTableTag::Range3),
             5 => ("Range5", FixedTableTag::Range5),
+            8 => ("Range8", FixedTableTag::Range8),
             16 => ("Range16", FixedTableTag::Range16),
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
@@ -1334,7 +1336,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 rwc_inc: rwc_inc.clone(),
             },
         );
-        // TODO: constrain the value of rwc_inc.
+
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
     }
 
@@ -1362,7 +1364,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Sig Table
-
     pub(crate) fn sig_table_lookup(
         &mut self,
         msg_hash_rlc: Expression<F>,
@@ -1379,6 +1380,35 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 sig_r_rlc: sig_r_rlc.expr(),
                 sig_s_rlc: sig_s_rlc.expr(),
                 recovered_addr: recovered_addr.expr(),
+            },
+        );
+    }
+
+    // Ecc Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ecc_table_lookup(
+        &mut self,
+        op_type: Expression<F>,
+        arg1_rlc: Expression<F>,
+        arg2_rlc: Expression<F>,
+        arg3_rlc: Expression<F>,
+        arg4_rlc: Expression<F>,
+        input_rlc: Expression<F>,
+        output1_rlc: Expression<F>,
+        output2_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "ecc table",
+            Lookup::EccTable {
+                op_type,
+                arg1_rlc,
+                arg2_rlc,
+                arg3_rlc,
+                arg4_rlc,
+                input_rlc,
+                output1_rlc,
+                output2_rlc,
             },
         );
     }
@@ -1417,13 +1447,32 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // ModExp table
+    pub(crate) fn modexp_table_lookup(
+        &mut self,
+        base_limbs: [Expression<F>; 3],
+        exp_limbs: [Expression<F>; 3],
+        modulus_limbs: [Expression<F>; 3],
+        result_limbs: [Expression<F>; 3],
+    ) {
+        self.add_lookup(
+            "u256 exponentiation modulus lookup",
+            Lookup::ModExpTable {
+                base_limbs,
+                exp_limbs,
+                modulus_limbs,
+                result_limbs,
+            },
+        );
+    }
+
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         // We need to subtract IMPLICIT_DEGREE from MAX_DEGREE because all expressions
         // will be multiplied by state selector and q_step/q_step_first
         // selector.
-        debug_assert!(
+        assert!(
             degree <= MAX_DEGREE - IMPLICIT_DEGREE,
             "Expression {} degree too high: {} > {}",
             name,
@@ -1450,12 +1499,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// used for constraining the internal states for precompile calls. Each precompile call
     /// expects a different cell layout, but since the next state can be at the most one precompile
     /// state, we can re-use cells assigned across all those conditions.
-    pub(crate) fn constrain_mutually_exclusive_next_step(
+    pub(crate) fn constrain_mutually_exclusive_next_step<R: Expr<F>>(
         &mut self,
         conditions: Vec<Expression<F>>,
         next_states: Vec<ExecutionState>,
-        constraints: Vec<BoxedClosure<F>>,
-    ) {
+        constraints: Vec<BoxedClosure<F, R>>,
+    ) -> Expression<F> {
         assert_eq!(conditions.len(), constraints.len());
         assert_eq!(conditions.len(), next_states.len());
         self.require_boolean(
@@ -1466,14 +1515,16 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         // record the heights of all columns (for the next step) as we begin cell assignment.
         let start_heights = self.next.cell_manager.get_heights();
 
+        let mut conditional_outputs: Vec<R> = Vec::with_capacity(constraints.len());
         let mut max_end_heights: Vec<usize> = vec![0usize; start_heights.len()];
         for ((&next_state, condition), constraint) in next_states
             .iter()
-            .zip(conditions.into_iter())
+            .zip(conditions.clone().into_iter())
             .zip(constraints.into_iter())
         {
             // constraint the next step.
-            self.constrain_next_step(next_state, Some(condition), constraint);
+            let r = self.constrain_next_step(next_state, Some(condition), constraint);
+            conditional_outputs.push(r);
 
             // get the column heights at the end of querying cells in the above constraints.
             let end_heights = self.next.cell_manager.get_heights();
@@ -1490,6 +1541,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
         // reset height of next step to the maximum heights of each column.
         self.next.cell_manager.reset_heights_to(&max_end_heights);
+
+        sum::expr(
+            conditions
+                .into_iter()
+                .zip(conditional_outputs.iter())
+                .map(|(cond, r)| cond * r.expr())
+                .collect::<Vec<Expression<F>>>(),
+        )
     }
 
     /// This function needs to be used with extra precaution. You need to make

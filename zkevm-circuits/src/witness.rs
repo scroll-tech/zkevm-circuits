@@ -12,7 +12,7 @@ mod call;
 pub use call::Call;
 
 mod mpt;
-pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
+pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates, WithdrawProof};
 
 mod receipt;
 pub use receipt::Receipt;

@@ -19,13 +19,14 @@ pub struct PrecompileGadget<F> {
     address: BinaryNumberGadget<F, 4>,
     pad_right: LtGadget<F, N_BYTES_U64>,
     padding_gadget: PaddingGadget<F>,
+    pub(crate) precompile_call_gas_cost: Expression<F>,
 }
 
 impl<F: Field> PrecompileGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        is_success: Expression<F>,
+        _is_success: Expression<F>,
         callee_address: Expression<F>,
         _caller_id: Expression<F>,
         _cd_offset: Expression<F>,
@@ -52,10 +53,15 @@ impl<F: Field> PrecompileGadget<F> {
                 address.value_equals(PrecompileCalls::Bn128Add),
             ]);
             let len_96 = address.value_equals(PrecompileCalls::Bn128Mul);
+            let len_192 = address.value_equals(PrecompileCalls::Modexp);
             select::expr(
                 len_128,
                 128.expr(),
-                select::expr(len_96, 96.expr(), cd_length.expr()),
+                select::expr(
+                    len_96,
+                    96.expr(),
+                    select::expr(len_192, 192.expr(), cd_length.expr()),
+                ),
             )
         };
         let pad_right = LtGadget::construct(cb, cd_length.expr(), input_len.expr());
@@ -77,14 +83,6 @@ impl<F: Field> PrecompileGadget<F> {
                 input_bytes_rlc.expr(),
             );
         });
-
-        // TODO: is it possible to avoid this? Just a little messy, but `padding_gadget`,
-        // `input_bytes_rlc` and `output_bytes_rlc` will get dropped later, but the boxed closure
-        // lives longer.
-        let padded_rlc1 = padding_gadget.padded_rlc();
-        let input_bytes_rlc1 = input_bytes_rlc.expr();
-        let output_bytes_rlc1 = output_bytes_rlc.expr();
-        let output_bytes_rlc2 = output_bytes_rlc.expr();
 
         let conditions = vec![
             address.value_equals(PrecompileCalls::Ecrecover),
@@ -108,8 +106,9 @@ impl<F: Field> PrecompileGadget<F> {
             ExecutionState::PrecompileBn256Pairing,
             ExecutionState::PrecompileBlake2f,
         ];
-        let constraints: Vec<BoxedClosure<F>> = vec![
+        let constraints: Vec<BoxedClosure<F, Cell<F>>> = vec![
             Box::new(|cb| {
+                /* Ecrecover */
                 let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
@@ -118,6 +117,7 @@ impl<F: Field> PrecompileGadget<F> {
                     cb.query_cell_phase2(),
                     cb.query_keccak_rlc::<N_BYTES_ACCOUNT_ADDRESS>(),
                 );
+                let gas_cost = cb.query_cell();
                 let (r_pow_32, r_pow_64, r_pow_96) = {
                     let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
                     let r_pow_16 = challenges[15].clone();
@@ -128,7 +128,7 @@ impl<F: Field> PrecompileGadget<F> {
                 };
                 cb.require_equal(
                     "input bytes (RLC) = [msg_hash | sig_v_rlc | sig_r | sig_s]",
-                    padded_rlc1,
+                    padding_gadget.padded_rlc(),
                     (msg_hash_rlc.expr() * r_pow_96)
                         + (sig_v_rlc.expr() * r_pow_64)
                         + (sig_r_rlc.expr() * r_pow_32)
@@ -137,42 +137,152 @@ impl<F: Field> PrecompileGadget<F> {
                 // RLC of output bytes always equals RLC of the recovered address.
                 cb.require_equal(
                     "output bytes (RLC) = recovered address",
-                    output_bytes_rlc1.expr(),
+                    output_bytes_rlc.expr(),
                     recovered_addr_rlc.expr(),
                 );
                 // If the address was not recovered, RLC(address) == RLC(output) == 0.
                 cb.condition(not::expr(recovered.expr()), |cb| {
-                    cb.require_zero("output bytes == 0", output_bytes_rlc1);
+                    cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
                 });
+                gas_cost
             }),
-            Box::new(|_cb| { /* Sha256 */ }),
-            Box::new(|_cb| { /* Ripemd160 */ }),
             Box::new(|cb| {
-                cb.condition(is_success, |cb| {
-                    cb.require_equal(
-                        "input and output bytes are the same",
-                        input_bytes_rlc1,
-                        output_bytes_rlc2,
-                    );
-                    cb.require_equal(
-                        "input length and precompile return length are the same",
-                        cd_length,
-                        precompile_return_length,
-                    );
-                });
+                /* Sha256 */
+                cb.query_cell()
             }),
-            Box::new(|_cb| { /* Modexp */ }),
-            Box::new(|_cb| { /* Bn128Add */ }),
-            Box::new(|_cb| { /* Bn128Mul */ }),
-            Box::new(|_cb| { /* Bn128Pairing */ }),
-            Box::new(|_cb| { /* Blake2F */ }),
+            Box::new(|cb| {
+                /* Ripemd160 */
+                cb.query_cell()
+            }),
+            Box::new(|cb| {
+                /* Identity */
+                let gas_cost = cb.query_cell();
+                cb.require_equal(
+                    "input and output bytes are the same",
+                    input_bytes_rlc.expr(),
+                    output_bytes_rlc.expr(),
+                );
+                cb.require_equal(
+                    "input length and precompile return length are the same",
+                    cd_length,
+                    precompile_return_length,
+                );
+                gas_cost
+            }),
+            Box::new(|cb| {
+                /* Modexp */
+                let (input_bytes_acc_copied, output_bytes_acc_copied) =
+                    (cb.query_cell_phase2(), cb.query_cell_phase2());
+                let gas_cost = cb.query_cell();
+                cb.require_equal(
+                    "copy padded input bytes",
+                    padding_gadget.padded_rlc(),
+                    input_bytes_acc_copied.expr(),
+                );
+                cb.require_equal(
+                    "copy output bytes",
+                    output_bytes_rlc.clone(),
+                    output_bytes_acc_copied.expr(),
+                );
+                gas_cost
+            }),
+            Box::new(|cb| {
+                /* EcAdd */
+                let (p_x_rlc, p_y_rlc, q_x_rlc, q_y_rlc, r_x_rlc, r_y_rlc) = (
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                );
+                let gas_cost = cb.query_cell();
+                let (r_pow_32, r_pow_64, r_pow_96) = {
+                    let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+                    let r_pow_16 = challenges[15].clone();
+                    let r_pow_32 = r_pow_16.square();
+                    let r_pow_64 = r_pow_32.expr().square();
+                    let r_pow_96 = r_pow_64.expr() * r_pow_32.expr();
+                    (r_pow_32, r_pow_64, r_pow_96)
+                };
+                cb.require_equal(
+                    "input bytes (RLC) = [ p_x | p_y | q_x | q_y ]",
+                    padding_gadget.padded_rlc(),
+                    (p_x_rlc.expr() * r_pow_96)
+                        + (p_y_rlc.expr() * r_pow_64)
+                        + (q_x_rlc.expr() * r_pow_32.expr())
+                        + q_y_rlc.expr(),
+                );
+                // RLC of output bytes always equals RLC of result elliptic curve point R.
+                cb.require_equal(
+                    "output bytes (RLC) = [ r_x | r_y ]",
+                    output_bytes_rlc.expr(),
+                    r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
+                );
+                gas_cost
+            }),
+            Box::new(|cb| {
+                /* EcMul */
+                let (p_x_rlc, p_y_rlc, scalar_s_raw_rlc, r_x_rlc, r_y_rlc) = (
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                );
+                let gas_cost = cb.query_cell();
+                let (r_pow_32, r_pow_64) = {
+                    let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+                    let r_pow_16 = challenges[15].clone();
+                    let r_pow_32 = r_pow_16.square();
+                    let r_pow_64 = r_pow_32.expr().square();
+                    (r_pow_32, r_pow_64)
+                };
+                cb.require_equal(
+                    "input bytes (RLC) = [ p_x | p_y | s ]",
+                    padding_gadget.padded_rlc(),
+                    (p_x_rlc.expr() * r_pow_64)
+                        + (p_y_rlc.expr() * r_pow_32.expr())
+                        + scalar_s_raw_rlc.expr(),
+                );
+                // RLC of output bytes always equals RLC of result elliptic curve point R.
+                cb.require_equal(
+                    "output bytes (RLC) = [ r_x | r_y ]",
+                    output_bytes_rlc.expr(),
+                    r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
+                );
+                gas_cost
+            }),
+            Box::new(|cb| {
+                /* EcPairing */
+                let (evm_input_rlc, output) = (cb.query_cell_phase2(), cb.query_bool());
+                let gas_cost = cb.query_cell();
+                cb.require_equal(
+                    "input bytes (RLC) equality",
+                    padding_gadget.padded_rlc(),
+                    evm_input_rlc.expr(),
+                );
+                // RLC of output bytes always equals boolean result of pairing check.
+                cb.require_equal(
+                    "output bytes (RLC) equality",
+                    output_bytes_rlc.expr(),
+                    output.expr(),
+                );
+                gas_cost
+            }),
+            Box::new(|cb| {
+                /* Blake2F */
+                cb.query_cell()
+            }),
         ];
-        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
+        let precompile_call_gas_cost =
+            cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self {
             address,
             pad_right,
             padding_gadget,
+            precompile_call_gas_cost,
         }
     }
 

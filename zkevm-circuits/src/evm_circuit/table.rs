@@ -13,7 +13,9 @@ use strum_macros::EnumIter;
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
+    Range3,
     Range5,
+    Range8,
     Range16,
     Range32,
     Range64,
@@ -37,8 +39,14 @@ impl FixedTableTag {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
+            Self::Range3 => {
+                Box::new((0..3).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
             Self::Range5 => {
                 Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
+            Self::Range8 => {
+                Box::new((0..8).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range16 => {
                 Box::new((0..16).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
@@ -144,6 +152,8 @@ pub(crate) enum Table {
     Keccak,
     Exp,
     Sig,
+    ModExp,
+    Ecc,
     PowOfRand,
 }
 
@@ -301,6 +311,22 @@ pub(crate) enum Lookup<F> {
         sig_s_rlc: Expression<F>,
         recovered_addr: Expression<F>,
     },
+    ModExpTable {
+        base_limbs: [Expression<F>; 3],
+        exp_limbs: [Expression<F>; 3],
+        modulus_limbs: [Expression<F>; 3],
+        result_limbs: [Expression<F>; 3],
+    },
+    EccTable {
+        op_type: Expression<F>,
+        arg1_rlc: Expression<F>,
+        arg2_rlc: Expression<F>,
+        arg3_rlc: Expression<F>,
+        arg4_rlc: Expression<F>,
+        input_rlc: Expression<F>,
+        output1_rlc: Expression<F>,
+        output2_rlc: Expression<F>,
+    },
     PowOfRandTable {
         exponent: Expression<F>,
         pow_of_rand: Expression<F>,
@@ -325,6 +351,8 @@ impl<F: Field> Lookup<F> {
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
             Self::SigTable { .. } => Table::Sig,
+            Self::ModExpTable { .. } => Table::ModExp,
+            Self::EccTable { .. } => Table::Ecc,
             Self::PowOfRandTable { .. } => Table::PowOfRand,
             Self::Conditional(_, lookup) => lookup.table(),
         }
@@ -461,6 +489,45 @@ impl<F: Field> Lookup<F> {
                 sig_r_rlc.clone(),
                 sig_s_rlc.clone(),
                 recovered_addr.clone(),
+            ],
+            Self::ModExpTable {
+                base_limbs,
+                exp_limbs,
+                modulus_limbs,
+                result_limbs,
+            } => vec![
+                1.expr(), // q_head
+                base_limbs[0].clone(),
+                exp_limbs[0].clone(),
+                modulus_limbs[0].clone(),
+                result_limbs[0].clone(),
+                base_limbs[1].clone(),
+                exp_limbs[1].clone(),
+                modulus_limbs[1].clone(),
+                result_limbs[1].clone(),
+                base_limbs[2].clone(),
+                exp_limbs[2].clone(),
+                modulus_limbs[2].clone(),
+                result_limbs[2].clone(),
+            ],
+            Self::EccTable {
+                op_type,
+                arg1_rlc,
+                arg2_rlc,
+                arg3_rlc,
+                arg4_rlc,
+                input_rlc,
+                output1_rlc,
+                output2_rlc,
+            } => vec![
+                op_type.expr(),
+                arg1_rlc.expr(),
+                arg2_rlc.expr(),
+                arg3_rlc.expr(),
+                arg4_rlc.expr(),
+                input_rlc.expr(),
+                output1_rlc.expr(),
+                output2_rlc.expr(),
             ],
             Self::PowOfRandTable {
                 exponent,

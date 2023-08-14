@@ -477,8 +477,59 @@ pub fn gen_begin_tx_ops(
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
-    // Add 3 RW read operations for transaction L1 fee.
-    gen_tx_l1_fee_ops(state, &mut exec_step);
+    let caller_address = call.caller_address;
+
+    if state.tx.tx_type.is_l1_msg() {
+        // for l1 message, no need to add rw op, but we must check
+        // caller for its existent status
+
+        // notice the caller must existed after a l1msg tx, so we
+        // create it here
+        let caller_acc = state.sdb.get_account(&caller_address).1.clone();
+
+        state.account_read(
+            &mut exec_step,
+            caller_address,
+            AccountField::CodeHash,
+            caller_acc.code_hash_read().to_word(),
+        );
+
+        if caller_acc.is_empty() {
+            log::info!("create account for {:?} inside l1msg tx", caller_address);
+
+            // notice the op is not reversible, since the nonce increasing is
+            // inreversible
+            state.account_write(
+                &mut exec_step,
+                caller_address,
+                AccountField::CodeHash,
+                caller_acc.code_hash.to_word(),
+                Word::zero(),
+            )?;
+
+            #[cfg(feature = "scroll")]
+            {
+                state.account_write(
+                    &mut exec_step,
+                    caller_address,
+                    AccountField::KeccakCodeHash,
+                    caller_acc.keccak_code_hash.to_word(),
+                    Word::zero(),
+                )?;
+            }
+        }
+    } else {
+        // else, add 3 RW read operations for transaction L1 fee.
+        gen_tx_l1_fee_ops(state, &mut exec_step);
+    }
+    // the rw delta before is:
+    // + for non-l1 msg tx: 3 (rw for fee oracle contrace)
+    // + for scroll l1-msg tx:
+    //   * caller existed: 1 (read codehash)
+    //   * caller not existed: 3 (read codehash and create account)
+    // + for non-scroll l1-msg tx:
+    //   * caller existed: 1 (read codehash)
+    //   * caller not existed: 2 (read codehash and create account)
 
     for (field, value) in [
         (CallContextField::TxId, state.tx_ctx.id().into()),
@@ -496,20 +547,33 @@ pub fn gen_begin_tx_ops(
     }
 
     // Increase caller's nonce
-    let caller_address = call.caller_address;
-    let mut nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
-    debug_assert!(nonce_prev <= state.tx.nonce.into());
-    while nonce_prev < state.tx.nonce.into() {
-        nonce_prev = state.sdb.increase_nonce(&caller_address).into();
-        log::warn!("[debug] increase nonce to {}", nonce_prev);
-    }
+    let nonce_prev = state.sdb.get_nonce(&caller_address);
+    //debug_assert!(nonce_prev <= state.tx.nonce);
+    //while nonce_prev < state.tx.nonce {
+    //    state.sdb.increase_nonce(&caller_address);
+    //    nonce_prev = state.sdb.get_nonce(&caller_address);
+    //    log::warn!("[debug] increase nonce to {}", nonce_prev);
+    //}
     state.account_write(
         &mut exec_step,
         caller_address,
         AccountField::Nonce,
-        nonce_prev + 1,
-        nonce_prev,
+        (nonce_prev + 1).into(),
+        nonce_prev.into(),
     )?;
+
+    // Add precompile contract address to access list
+    for address in 1..=9 {
+        let address = eth_types::Address::from_low_u64_be(address);
+        let is_warm_prev = !state.sdb.add_account_to_access_list(address);
+        state.tx_accesslist_account_write(
+            &mut exec_step,
+            state.tx_ctx.id(),
+            address,
+            true,
+            is_warm_prev,
+        )?;
+    }
 
     // Add caller, callee and coinbase (only for Shanghai) to access list.
     #[cfg(feature = "shanghai")]
@@ -757,7 +821,10 @@ pub fn gen_begin_tx_ops(
             exec_step.gas_cost = real_gas_cost;
         }
     } else {
-        debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        // EIP2930 not implemented
+        if state.tx.access_list.is_none() {
+            debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+        }
     }
 
     log::trace!("begin_tx_step: {:?}", exec_step);
@@ -812,13 +879,15 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    state.account_write(
-        &mut exec_step,
-        call.caller_address,
-        AccountField::Balance,
-        caller_balance,
-        caller_balance_prev,
-    )?;
+    if !state.tx.tx_type.is_l1_msg() {
+        state.account_write(
+            &mut exec_step,
+            call.caller_address,
+            AccountField::Balance,
+            caller_balance,
+            caller_balance_prev,
+        )?;
+    }
 
     let block_info = state
         .block
@@ -828,9 +897,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
-    let coinbase_reward = effective_tip * gas_cost + state.tx_ctx.l1_fee;
+    let coinbase_reward = if state.tx.tx_type.is_l1_msg() {
+        Word::zero()
+    } else {
+        effective_tip * gas_cost + state.tx_ctx.l1_fee
+    };
     log::trace!(
-        "coinbase reward = ({} - {}) * ({} - {} - {}) = {}",
+        "coinbase reward = ({} - {}) * ({} - {} - {}) = {} or 0 for l1 msg",
         state.tx.gas_price,
         block_info.base_fee,
         state.tx.gas,
@@ -838,6 +911,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         effective_refund,
         coinbase_reward
     );
+
     let (found, coinbase_account) = state.sdb.get_account_mut(&block_info.coinbase);
     if !found {
         log::error!("coinbase account not found: {}", block_info.coinbase);
@@ -854,35 +928,17 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             coinbase_account.code_hash.to_word()
         },
     );
-    if coinbase_account.is_empty() && !coinbase_reward.is_zero() {
-        state.account_write(
+
+    if !state.tx.tx_type.is_l1_msg() {
+        state.transfer_to(
             &mut exec_step,
             block_info.coinbase,
-            AccountField::CodeHash,
-            CodeDB::empty_code_hash().to_word(),
-            Word::zero(),
+            !coinbase_account.is_empty(),
+            false,
+            coinbase_reward,
+            false,
         )?;
-
-        #[cfg(feature = "scroll")]
-        {
-            state.account_write(
-                &mut exec_step,
-                block_info.coinbase,
-                AccountField::KeccakCodeHash,
-                crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
-                Word::zero(),
-            )?;
-        }
     }
-    let coinbase_balance_prev = coinbase_account.balance;
-    let coinbase_balance = coinbase_balance_prev + coinbase_reward;
-    state.account_write(
-        &mut exec_step,
-        block_info.coinbase,
-        AccountField::Balance,
-        coinbase_balance,
-        coinbase_balance_prev,
-    )?;
 
     // handle tx receipt tag
     state.tx_receipt_write(
@@ -1074,6 +1130,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, false)?;
+    state.handle_return(&mut exec_step, geth_steps, true)?;
     Ok(vec![exec_step])
 }

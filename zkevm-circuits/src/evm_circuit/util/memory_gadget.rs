@@ -92,7 +92,7 @@ pub(crate) trait CommonMemoryAddressGadget<F: FieldExt> {
     fn length(&self) -> Expression<F>;
 
     /// Return valid memory offset plus length.
-    fn address(&self) -> Expression<F>;
+    fn end_offset(&self) -> Expression<F>;
 }
 
 /// Convert the dynamic memory offset and length from random linear combination
@@ -170,7 +170,7 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
         from_bytes::expr(&self.memory_length.cells)
     }
 
-    fn address(&self) -> Expression<F> {
+    fn end_offset(&self) -> Expression<F> {
         self.offset() + self.length()
     }
 }
@@ -320,7 +320,7 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
     }
 
     /// Return expanded address if within range, otherwise return 0.
-    fn address(&self) -> Expression<F> {
+    fn end_offset(&self) -> Expression<F> {
         select::expr(
             self.length_is_zero.expr(),
             0.expr(),

@@ -6,7 +6,10 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{
+        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEvents,
+    },
     Error,
 };
 use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
@@ -50,8 +53,6 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
-    /// IO to/from precompile Ecrecover calls.
-    pub ecrecover_events: Vec<SignData>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Withdraw root
@@ -64,6 +65,8 @@ pub struct Block<F> {
     pub mpt_updates: MptUpdates,
     /// Chain ID
     pub chain_id: u64,
+    /// IO to/from precompile calls.
+    pub precompile_events: PrecompileEvents,
 }
 
 /// ...
@@ -71,21 +74,6 @@ pub struct Block<F> {
 pub struct BlockContexts {
     /// Hashmap that maps block number to its block context.
     pub ctxs: BTreeMap<u64, BlockContext>,
-}
-
-impl BlockContexts {
-    /// ..
-    pub fn first(&self) -> &BlockContext {
-        self.ctxs.iter().next().unwrap().1
-    }
-    /// ..
-    pub fn first_or_default(&self) -> BlockContext {
-        self.ctxs
-            .iter()
-            .next()
-            .map(|(_k, v)| v.clone())
-            .unwrap_or_default()
-    }
 }
 
 impl<F: Field> Block<F> {
@@ -108,25 +96,37 @@ impl<F: Field> Block<F> {
         let mut signatures: Vec<SignData> = self
             .txs
             .iter()
-            .map(|tx| {
-                if tx.tx_type.is_l1_msg() {
-                    // dummy signature
-                    Ok(SignData::default())
-                } else {
-                    tx.sign_data()
-                }
-            })
+            // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
-        signatures.extend_from_slice(&self.ecrecover_events);
-        if padding {
-            let max_verif = self.circuits_params.max_txs;
-            signatures.resize(
-                max_verif,
-                Transaction::dummy(self.chain_id).sign_data().unwrap(),
-            )
+        signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
+        if padding && self.txs.len() < self.circuits_params.max_txs {
+            // padding tx's sign data
+            signatures.push(Transaction::dummy(self.chain_id).sign_data().unwrap());
         }
         signatures
+    }
+
+    /// Get EcAdd operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_add_ops(&self) -> Vec<EcAddOp> {
+        self.precompile_events.get_ec_add_events()
+    }
+
+    /// Get EcMul operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_mul_ops(&self) -> Vec<EcMulOp> {
+        self.precompile_events.get_ec_mul_events()
+    }
+
+    /// Get EcPairing operations from all precompiled contract calls in this block.
+    pub(crate) fn get_ec_pairing_ops(&self) -> Vec<EcPairingOp> {
+        self.precompile_events.get_ec_pairing_events()
+    }
+
+    /// Get BigModexp operations from all precompiled contract calls in this block.
+    pub(crate) fn get_big_modexp(&self) -> Vec<BigModExp> {
+        self.precompile_events.get_modexp_events()
     }
 }
 
@@ -447,7 +447,6 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        ecrecover_events: block.ecrecover_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params
@@ -459,6 +458,7 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
+        precompile_events: block.precompile_events.clone(),
     })
 }
 

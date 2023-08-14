@@ -25,12 +25,19 @@ lazy_static! {
 static FILED_ERROR_READ: &str = "invalid input field";
 static FILED_ERROR_OUT: &str = "output field fail";
 
-extern "C" fn hash_scheme(a: *const u8, b: *const u8, out: *mut u8) -> *const i8 {
+extern "C" fn hash_scheme(
+    a: *const u8,
+    b: *const u8,
+    domain: *const u8,
+    out: *mut u8,
+) -> *const i8 {
     use std::slice;
     let a: [u8; 32] =
         TryFrom::try_from(unsafe { slice::from_raw_parts(a, 32) }).expect("length specified");
     let b: [u8; 32] =
         TryFrom::try_from(unsafe { slice::from_raw_parts(b, 32) }).expect("length specified");
+    let domain: [u8; 32] =
+        TryFrom::try_from(unsafe { slice::from_raw_parts(domain, 32) }).expect("length specified");
     let out = unsafe { slice::from_raw_parts_mut(out, 32) };
 
     let fa = Fr::from_bytes(&a);
@@ -45,8 +52,14 @@ extern "C" fn hash_scheme(a: *const u8, b: *const u8, out: *mut u8) -> *const i8
     } else {
         return FILED_ERROR_READ.as_ptr().cast();
     };
+    let fdomain = Fr::from_bytes(&domain);
+    let fdomain = if fdomain.is_some().into() {
+        fdomain.unwrap()
+    } else {
+        return FILED_ERROR_READ.as_ptr().cast();
+    };
 
-    let h = Fr::hash([fa, fb]);
+    let h = Fr::hash_with_domain([fa, fb], fdomain);
     let repr_h = h.to_repr();
     if repr_h.len() == 32 {
         out.copy_from_slice(repr_h.as_ref());
@@ -56,9 +69,13 @@ extern "C" fn hash_scheme(a: *const u8, b: *const u8, out: *mut u8) -> *const i8
     }
 }
 
-const NODE_TYPE_MIDDLE: u8 = 0;
-const NODE_TYPE_LEAF: u8 = 1;
-const NODE_TYPE_EMPTY: u8 = 2;
+const NODE_TYPE_MIDDLE_0: u8 = 6;
+const NODE_TYPE_MIDDLE_1: u8 = 7;
+const NODE_TYPE_MIDDLE_2: u8 = 8;
+const NODE_TYPE_MIDDLE_3: u8 = 9;
+const NODE_TYPE_LEAF: u8 = 4;
+const NODE_TYPE_EMPTY: u8 = 5;
+const SECURE_HASH_DOMAIN: u64 = 512;
 
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub(crate) struct AccountData {
@@ -151,8 +168,11 @@ impl CanRead for StorageData {
 pub(crate) struct TrieProof<T> {
     pub data: T,
     pub key: Option<H256>,
+    pub key_type: Option<u64>,
     // the path from top to bottom, in (left child, right child) form
     pub path: Vec<(U256, U256)>,
+    // the path type from top to bottom
+    pub path_type: Vec<u64>,
 }
 
 pub(crate) type AccountProof = TrieProof<AccountData>;
@@ -169,6 +189,7 @@ where
 
     fn try_from(src: BytesArray<BYTES>) -> Result<Self, Self::Error> {
         let mut path: Vec<(U256, U256)> = Vec::new();
+        let mut path_type: Vec<u64> = Vec::new();
         for data in src.0 {
             let mut rd = data;
             let mut prefix = [0; 1];
@@ -181,23 +202,29 @@ where
                     let data = T::parse_leaf(data)?;
                     return Ok(Self {
                         key: Some(key),
+                        key_type: Some(prefix[0] as u64),
                         data,
                         path,
+                        path_type,
                     });
                 }
                 NODE_TYPE_EMPTY => {
                     return Ok(Self {
                         path,
+                        path_type,
+                        key_type: Some(prefix[0] as u64),
                         ..Default::default()
                     });
                 }
-                NODE_TYPE_MIDDLE => {
+                NODE_TYPE_MIDDLE_0 | NODE_TYPE_MIDDLE_1 | NODE_TYPE_MIDDLE_2
+                | NODE_TYPE_MIDDLE_3 => {
                     let mut buf: [u8; 32] = [0; 32];
                     rd.read_exact(&mut buf)?;
                     let left = U256::from_big_endian(&buf);
                     rd.read_exact(&mut buf)?;
                     let right = U256::from_big_endian(&buf);
                     path.push((left, right));
+                    path_type.push(prefix[0] as u64);
                 }
                 _ => (),
             }
@@ -225,7 +252,7 @@ pub(crate) fn verify_proof_leaf<T: Default>(inp: TrieProof<T>, key_buf: &[u8; 32
         let rev_key_bytes: Vec<u8> = key.to_fixed_bytes().into_iter().rev().collect();
         let key_fr = Fr::from_bytes(&rev_key_bytes.try_into().unwrap()).unwrap();
 
-        let secure_hash = Fr::hash([bt_high, bt_low]);
+        let secure_hash = Fr::hash_with_domain([bt_high, bt_low], Fr::from(SECURE_HASH_DOMAIN));
 
         if key_fr == secure_hash {
             inp
