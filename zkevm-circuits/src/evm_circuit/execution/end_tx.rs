@@ -136,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
             mul_effective_tip_by_gas_used.product().expr()
-                + gadgets::util::select::expr(tx_is_l1msg.expr(), tx_l1_fee.tx_l1_fee(), 0.expr()),
+                + gadgets::util::select::expr(tx_is_l1msg.expr(), tx_l1_fee.expr(), 0.expr()),
             effective_fee.expr(),
         );
 
@@ -394,7 +394,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0
         };
         log::trace!(
-            "tx_l1_fee: {}, , coinbase_reward: {}",
+            "tx_l1_fee: {}, coinbase_reward: {}",
             tx_l1_fee,
             coinbase_reward
         );
