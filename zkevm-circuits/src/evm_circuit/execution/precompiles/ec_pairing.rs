@@ -81,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         cb.pow_of_rand_lookup(64.expr(), rand_pow_64.expr());
 
         cb.require_equal(
-            "ecPairing: gas cost",
+            "gas cost",
             gas_cost.expr(),
             GasCost::PRECOMPILE_BN256PAIRING.expr()
                 + n_pairs.expr() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
@@ -107,12 +107,16 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
 
         let evm_input_g1_rlc = array_init::array_init(|_| cb.query_cell_phase2());
         let evm_input_g2_rlc = array_init::array_init(|_| cb.query_cell_phase2());
-        let is_g1_identity = evm_input_g1_rlc
-            .clone()
-            .map(|g1_rlc| IsZeroGadget::construct(cb, "ecPairing: is G1 zero", g1_rlc.expr()));
-        let is_g2_identity = evm_input_g2_rlc
-            .clone()
-            .map(|g2_rlc| IsZeroGadget::construct(cb, "ecPairing: is G2 zero", g2_rlc.expr()));
+        let is_g1_identity = evm_input_g1_rlc.clone().map(|g1_rlc| {
+            cb.annotation("is G1 zero", |cb| {
+                IsZeroGadget::construct(cb, g1_rlc.expr())
+            })
+        });
+        let is_g2_identity = evm_input_g2_rlc.clone().map(|g2_rlc| {
+            cb.annotation("is G2 zero", |cb| {
+                IsZeroGadget::construct(cb, g2_rlc.expr())
+            })
+        });
 
         let padding_g1_g2_rlc = rlc::expr(
             &EcPairingPair::ecc_padding()

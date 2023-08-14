@@ -286,7 +286,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             code_hash_previous.expr(),
         );
 
-        let code_hash_is_zero = IsZeroGadget::construct(cb, "", code_hash_previous.expr());
+        let code_hash_is_zero = IsZeroGadget::construct(cb, code_hash_previous.expr());
         let code_hash_is_empty =
             IsEqualGadget::construct(cb, code_hash_previous.expr(), cb.empty_code_hash_rlc());
         let not_address_collision = code_hash_is_zero.expr() + code_hash_is_empty.expr();

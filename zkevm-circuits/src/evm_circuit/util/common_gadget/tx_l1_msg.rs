@@ -37,8 +37,9 @@ impl<F: Field> TxL1MsgGadget<F> {
         let tx_is_l1msg =
             IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
         let caller_codehash = cb.query_cell_phase2();
-        let is_caller_empty =
-            IsZeroGadget::construct(cb, "is caller address not existed", caller_codehash.expr());
+        let is_caller_empty = cb.annotation("is caller address not existed", |cb| {
+            IsZeroGadget::construct(cb, caller_codehash.expr())
+        });
 
         cb.condition(tx_is_l1msg.expr(), |cb| {
             cb.account_read(

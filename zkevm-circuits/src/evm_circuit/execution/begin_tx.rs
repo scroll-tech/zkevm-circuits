@@ -153,13 +153,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_persistent.expr(),
         ); // rwc_delta += 1
 
-        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, "", tx_caller_address.expr());
+        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
             tx_caller_address_is_zero.expr(),
             false.expr(),
         );
-        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, "", tx_callee_address.expr());
+        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
         cb.condition(tx_is_create.expr(), |cb| {
             cb.require_equal(
                 "Contract creation tx expects callee address to be zero",
@@ -297,7 +297,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let account_code_hash = cb.query_cell_phase2();
         let account_code_hash_is_empty =
             IsEqualGadget::construct(cb, account_code_hash.expr(), cb.empty_code_hash_rlc());
-        let account_code_hash_is_zero = IsZeroGadget::construct(cb, "", account_code_hash.expr());
+        let account_code_hash_is_zero = IsZeroGadget::construct(cb, account_code_hash.expr());
         let account_code_hash_is_empty_or_zero =
             account_code_hash_is_empty.expr() + account_code_hash_is_zero.expr();
         #[cfg(feature = "scroll")]
@@ -306,7 +306,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_code_hash = cb.query_cell_phase2();
         let call_code_hash_is_empty =
             IsEqualGadget::construct(cb, call_code_hash.expr(), cb.empty_code_hash_rlc());
-        let call_code_hash_is_zero = IsZeroGadget::construct(cb, "", call_code_hash.expr());
+        let call_code_hash_is_zero = IsZeroGadget::construct(cb, call_code_hash.expr());
         let call_code_hash_is_empty_or_zero =
             call_code_hash_is_empty.expr() + call_code_hash_is_zero.expr();
 
