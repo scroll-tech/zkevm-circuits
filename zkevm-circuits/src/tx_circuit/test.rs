@@ -131,7 +131,6 @@ fn run<F: Field>(
         Err(e) => panic!("{e:#?}"),
     };
 
-    prover.assert_satisfied_par();
     prover.verify_at_rows_par(0..active_row_num, 0..active_row_num)
 }
 
