@@ -16,13 +16,14 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell, CellType, Word,
+            not, or, Cell, CellType, StepRws, Word,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
     witness::{Block, Call, ExecStep},
 };
+use either::Either;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
@@ -31,8 +32,10 @@ use halo2_proofs::{
 };
 
 mod tx_l1_fee;
+mod tx_l1_msg;
 
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
+pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
@@ -366,7 +369,442 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     }
 }
 
-// TODO: Merge with TransferGadget
+#[derive(Default)]
+pub(crate) struct TransferGadgetAssignResult {
+    pub(crate) gas_fee: Option<U256>,
+    pub(crate) sender_balance_sub_fee_pair: Option<(U256, U256)>,
+    pub(crate) sender_balance_sub_value_pair: Option<(U256, U256)>,
+    pub(crate) receiver_balance_pair: Option<(U256, U256)>,
+    pub(crate) account_code_hash: Option<U256>,
+    #[cfg(feature = "scroll")]
+    pub(crate) account_keccak_code_hash: Option<U256>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TransferFromGadgetImpl<F, WithFeeGadget> {
+    pub(crate) value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+    sender_sub_fee: WithFeeGadget,
+    sender_sub_value: UpdateBalanceGadget<F, 2, false>,
+}
+pub(crate) type TransferFromGadget<F> = TransferFromGadgetImpl<F, ()>;
+pub(crate) type TransferFromWithGasFeeGadget<F> =
+    TransferFromGadgetImpl<F, UpdateBalanceGadget<F, 2, false>>;
+
+pub(crate) trait TransferFromAssign<F: Field> {
+    fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<TransferGadgetAssignResult, Error>;
+}
+
+pub(crate) trait TransferGadgetInfo<F: Field> {
+    fn value_is_zero(&self) -> Expression<F>;
+    fn rw_delta(&self) -> Expression<F>;
+}
+
+impl<F: Field> TransferFromGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        value: Word<F>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero =
+            IsZeroGadget::construct(cb, "transfer from is zero value", value.expr());
+        Self::construct_with_is_zero(
+            cb,
+            sender_address,
+            value,
+            Either::Left(value_is_zero),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn construct_with_is_zero(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        value: Word<F>,
+        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero_expr = value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone());
+        let sender_sub_value = cb.condition(not::expr(value_is_zero_expr), |cb| {
+            UpdateBalanceGadget::construct(
+                cb,
+                sender_address,
+                vec![value.clone()],
+                Some(reversion_info),
+            )
+        });
+        Self {
+            value_is_zero,
+            sender_sub_fee: (),
+            sender_sub_value,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
+        value: U256,
+    ) -> Result<(), Error> {
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
+        self.sender_sub_value.assign(
+            region,
+            offset,
+            prev_sender_balance_sub_value,
+            vec![value],
+            sender_balance_sub_value,
+        )
+    }
+}
+
+impl<F: Field> TransferFromAssign<F> for TransferFromGadget<F> {
+    fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<TransferGadgetAssignResult, Error> {
+        let sender_balance_sub_value_pair = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        self.assign(region, offset, sender_balance_sub_value_pair, value)?;
+        Ok(TransferGadgetAssignResult {
+            sender_balance_sub_value_pair: Some(sender_balance_sub_value_pair),
+            ..Default::default()
+        })
+    }
+}
+
+impl<F: Field> TransferFromWithGasFeeGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        value: Word<F>,
+        gas_fee: Word<F>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero =
+            IsZeroGadget::construct(cb, "transfer from with gas is zero value", value.expr());
+        Self::construct_with_is_zero(
+            cb,
+            sender_address,
+            value,
+            gas_fee,
+            Either::Left(value_is_zero),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn construct_with_is_zero(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        value: Word<F>,
+        gas_fee: Word<F>,
+        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero_expr = value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone());
+        let sender_sub_fee =
+            UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
+        let sender_sub_value = cb.condition(not::expr(value_is_zero_expr), |cb| {
+            UpdateBalanceGadget::construct(
+                cb,
+                sender_address,
+                vec![value.clone()],
+                Some(reversion_info),
+            )
+        });
+        Self {
+            value_is_zero,
+            sender_sub_fee,
+            sender_sub_value,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        (sender_balance_sub_fee, prev_sender_balance_sub_fee): (U256, U256),
+        (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
+        value: U256,
+        gas_fee: U256,
+    ) -> Result<(), Error> {
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
+        self.sender_sub_fee.assign(
+            region,
+            offset,
+            prev_sender_balance_sub_fee,
+            vec![gas_fee],
+            sender_balance_sub_fee,
+        )?;
+        self.sender_sub_value.assign(
+            region,
+            offset,
+            prev_sender_balance_sub_value,
+            vec![value],
+            sender_balance_sub_value,
+        )
+    }
+}
+
+impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
+    fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<TransferGadgetAssignResult, Error> {
+        let sender_balance_sub_fee_pair = rws.next().account_balance_pair();
+        let gas_fee = sender_balance_sub_fee_pair.1 - sender_balance_sub_fee_pair.0;
+        let sender_balance_sub_value_pair = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        self.assign(
+            region,
+            offset,
+            sender_balance_sub_fee_pair,
+            sender_balance_sub_value_pair,
+            value,
+            gas_fee,
+        )?;
+        Ok(TransferGadgetAssignResult {
+            gas_fee: Some(gas_fee),
+            sender_balance_sub_fee_pair: Some(sender_balance_sub_fee_pair),
+            sender_balance_sub_value_pair: Some(sender_balance_sub_value_pair),
+            ..Default::default()
+        })
+    }
+}
+
+impl<F: Field, WithFeeGadget> TransferGadgetInfo<F> for TransferFromGadgetImpl<F, WithFeeGadget> {
+    fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone())
+    }
+
+    fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (sender) Balance (Not Reversible tx fee)
+        1.expr() +
+        // +1 Write Account (sender) Balance
+        not::expr(self.value_is_zero())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TransferToGadget<F> {
+    pub(crate) value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+    receiver: UpdateBalanceGadget<F, 2, true>,
+    receiver_exists: Expression<F>,
+    must_create: Expression<F>,
+}
+
+impl<F: Field> TransferToGadget<F> {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        receiver_address: Expression<F>,
+        receiver_exists: Expression<F>,
+        must_create: Expression<F>,
+        prev_code_hash: Expression<F>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
+        value: Word<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) -> Self {
+        let value_is_zero = IsZeroGadget::construct(cb, "transfer to is zero value", value.expr());
+        Self::construct_with_is_zero(
+            cb,
+            receiver_address,
+            receiver_exists,
+            must_create,
+            prev_code_hash,
+            #[cfg(feature = "scroll")]
+            prev_keccak_code_hash,
+            value,
+            Either::Left(value_is_zero),
+            reversion_info,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct_with_is_zero(
+        cb: &mut EVMConstraintBuilder<F>,
+        receiver_address: Expression<F>,
+        receiver_exists: Expression<F>,
+        must_create: Expression<F>,
+        prev_code_hash: Expression<F>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
+        value: Word<F>,
+        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        mut reversion_info: Option<&mut ReversionInfo<F>>,
+    ) -> Self {
+        let value_is_zero_expr = value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone());
+        // If receiver doesn't exist, create it
+        cb.condition(
+            or::expr([
+                not::expr(value_is_zero_expr.expr()) * not::expr(receiver_exists.clone()),
+                must_create.clone(),
+            ]),
+            |cb| {
+                cb.account_read(
+                    receiver_address.clone(),
+                    AccountFieldTag::CodeHash,
+                    prev_code_hash.expr(),
+                );
+                cb.account_write(
+                    receiver_address.clone(),
+                    AccountFieldTag::CodeHash,
+                    cb.empty_code_hash_rlc(),
+                    prev_code_hash.expr(),
+                    reversion_info.as_deref_mut(),
+                );
+                #[cfg(feature = "scroll")]
+                {
+                    cb.account_read(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        prev_keccak_code_hash.expr(),
+                    );
+
+                    cb.account_write(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        cb.empty_keccak_hash_rlc(),
+                        prev_keccak_code_hash.expr(),
+                        reversion_info.as_deref_mut(),
+                    );
+                }
+            },
+        );
+        let receiver = cb.condition(not::expr(value_is_zero_expr), |cb| {
+            UpdateBalanceGadget::construct(cb, receiver_address, vec![value], reversion_info)
+        });
+        Self {
+            value_is_zero,
+            receiver,
+            receiver_exists,
+            must_create,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        (receiver_balance, prev_receiver_balance): (U256, U256),
+        value: U256,
+    ) -> Result<(), Error> {
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
+        self.receiver.assign(
+            region,
+            offset,
+            prev_receiver_balance,
+            vec![value],
+            receiver_balance,
+        )
+    }
+
+    pub(crate) fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        receiver_exists: bool,
+        must_create: bool,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<TransferGadgetAssignResult, Error> {
+        if let Either::Left(value_is_zero) = &self.value_is_zero {
+            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+        }
+        let result = if (!receiver_exists && !value.is_zero()) || must_create {
+            TransferGadgetAssignResult {
+                account_code_hash: {
+                    rws.next(); // codehash read
+                    Some(rws.next().account_codehash_pair().1)
+                },
+                #[cfg(feature = "scroll")]
+                account_keccak_code_hash: {
+                    rws.next(); // keccak codehash read
+                    Some(rws.next().account_keccak_codehash_pair().1)
+                },
+                ..Default::default()
+            }
+        } else {
+            Default::default()
+        };
+        let (receiver_balance, prev_receiver_balance) = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        debug_assert_eq!(receiver_balance, prev_receiver_balance + value);
+        self.receiver.assign(
+            region,
+            offset,
+            prev_receiver_balance,
+            vec![value],
+            receiver_balance,
+        )?;
+
+        Ok(TransferGadgetAssignResult {
+            account_code_hash: result.account_code_hash,
+            #[cfg(feature = "scroll")]
+            account_keccak_code_hash: result.account_keccak_code_hash,
+            receiver_balance_pair: Some((receiver_balance, prev_receiver_balance)),
+            ..Default::default()
+        })
+    }
+}
+
+impl<F: Field> TransferGadgetInfo<F> for TransferToGadget<F> {
+    fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone())
+    }
+
+    fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
+        or::expr([
+            not::expr(self.value_is_zero()) * not::expr(self.receiver_exists.clone()),
+            self.must_create.clone(),
+        ]) * if cfg!(feature = "scroll") {
+            4.expr()
+        } else {
+            2.expr()
+        } +
+            // +1 Write Account (receiver) Balance
+            not::expr(self.value_is_zero())
+    }
+}
+
 /// The TransferWithGasFeeGadget handles an irreversible gas fee subtraction to
 /// the sender and a transfer of value from sender to receiver.  The value
 /// transfer is only performed if the value is not zero.  If the transfer is
@@ -374,14 +812,15 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 /// setting it's code_hash = EMPTY_HASH.   The receiver account is also created
 /// unconditionally if must_create is true.  This gadget is used in BeginTx.
 #[derive(Clone, Debug)]
-pub(crate) struct TransferWithGasFeeGadget<F> {
-    sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
-    sender_sub_value: UpdateBalanceGadget<F, 2, false>,
-    receiver: UpdateBalanceGadget<F, 2, true>,
-    receiver_exists: Expression<F>,
-    must_create: Expression<F>,
-    pub(crate) value_is_zero: IsZeroGadget<F>,
+pub(crate) struct TransferGadgetImpl<F, TransferFromGadget> {
+    value_is_zero: IsZeroGadget<F>,
+    from: TransferFromGadget,
+    to: TransferToGadget<F>,
 }
+
+pub(crate) type TransferWithGasFeeGadget<F> =
+    TransferGadgetImpl<F, TransferFromWithGasFeeGadget<F>>;
+pub(crate) type TransferGadget<F> = TransferGadgetImpl<F, TransferFromGadget<F>>;
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
     #[allow(clippy::too_many_arguments)]
@@ -397,85 +836,107 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let sender_sub_fee =
-            UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
-        let value_is_zero = IsZeroGadget::construct(cb, "", value.expr());
-        // If receiver doesn't exist, create it
-        cb.condition(
-            or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.clone()),
-                must_create.clone(),
-            ]),
-            |cb| {
-                cb.account_read(
-                    receiver_address.clone(),
-                    AccountFieldTag::CodeHash,
-                    prev_code_hash.expr(),
-                );
-                cb.account_write(
-                    receiver_address.clone(),
-                    AccountFieldTag::CodeHash,
-                    cb.empty_code_hash_rlc(),
-                    prev_code_hash.expr(),
-                    Some(reversion_info),
-                );
-                #[cfg(feature = "scroll")]
-                {
-                    cb.account_read(
-                        receiver_address.clone(),
-                        AccountFieldTag::KeccakCodeHash,
-                        prev_keccak_code_hash.expr(),
-                    );
-
-                    cb.account_write(
-                        receiver_address.clone(),
-                        AccountFieldTag::KeccakCodeHash,
-                        cb.empty_keccak_hash_rlc(),
-                        prev_keccak_code_hash.expr(),
-                        Some(reversion_info),
-                    );
-                }
-            },
+        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let from = TransferFromWithGasFeeGadget::construct_with_is_zero(
+            cb,
+            sender_address,
+            value.clone(),
+            gas_fee,
+            Either::Right(value_is_zero.expr()),
+            reversion_info,
         );
-        // Skip transfer if value == 0
-        let (sender_sub_value, receiver) = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            let sender_sub_value = UpdateBalanceGadget::construct(
-                cb,
-                sender_address,
-                vec![value.clone()],
-                Some(reversion_info),
-            );
-            let receiver = UpdateBalanceGadget::construct(
-                cb,
-                receiver_address,
-                vec![value],
-                Some(reversion_info),
-            );
-            (sender_sub_value, receiver)
-        });
-
-        Self {
-            sender_sub_fee,
-            sender_sub_value,
-            receiver,
+        let to = TransferToGadget::construct_with_is_zero(
+            cb,
+            receiver_address,
             receiver_exists,
             must_create,
+            prev_code_hash,
+            #[cfg(feature = "scroll")]
+            prev_keccak_code_hash,
+            value,
+            Either::Right(value_is_zero.expr()),
+            Some(reversion_info),
+        );
+        Self {
             value_is_zero,
+            from,
+            to,
         }
     }
+}
 
-    pub(crate) fn rw_delta(&self) -> Expression<F> {
-        // +1 Write Account (sender) Balance (Not Reversible tx fee)
-        1.expr() +
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
-            self.must_create.clone()]
-        ) * if cfg!(feature = "scroll") {4.expr()} else {2.expr()} +
-        // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
+impl<F: Field> TransferGadget<F> {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        receiver_address: Expression<F>,
+        receiver_exists: Expression<F>,
+        must_create: Expression<F>,
+        prev_code_hash: Expression<F>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
+        value: Word<F>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let from = TransferFromGadget::construct_with_is_zero(
+            cb,
+            sender_address.expr(),
+            value.clone(),
+            Either::Right(value_is_zero.expr()),
+            reversion_info,
+        );
+        let to = TransferToGadget::construct_with_is_zero(
+            cb,
+            receiver_address,
+            receiver_exists,
+            must_create,
+            prev_code_hash,
+            #[cfg(feature = "scroll")]
+            prev_keccak_code_hash,
+            value,
+            Either::Right(value_is_zero.expr()),
+            Some(reversion_info),
+        );
+        Self {
+            value_is_zero,
+            from,
+            to,
+        }
+    }
+}
+
+impl<F: Field, G: TransferFromAssign<F> + TransferGadgetInfo<F>> TransferGadgetImpl<F, G> {
+    pub(crate) fn assign_from_rws(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        receiver_exists: bool,
+        must_create: bool,
+        value: U256,
+        rws: &mut StepRws,
+    ) -> Result<TransferGadgetAssignResult, Error> {
+        self.value_is_zero
+            .assign_value(region, offset, region.word_rlc(value))?;
+        let TransferGadgetAssignResult {
+            gas_fee,
+            sender_balance_sub_fee_pair,
+            sender_balance_sub_value_pair,
+            ..
+        } = self.from.assign_from_rws(region, offset, value, rws)?;
+        let to_result =
+            self.to
+                .assign_from_rws(region, offset, receiver_exists, must_create, value, rws)?;
+
+        Ok(TransferGadgetAssignResult {
+            gas_fee,
+            sender_balance_sub_fee_pair,
+            sender_balance_sub_value_pair,
+            account_code_hash: to_result.account_code_hash,
+            #[cfg(feature = "scroll")]
+            account_keccak_code_hash: to_result.account_keccak_code_hash,
+            receiver_balance_pair: to_result.receiver_balance_pair,
+        })
     }
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
@@ -483,199 +944,24 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
-            self.must_create.clone()]
+            not::expr(self.value_is_zero()) * not::expr(self.to.receiver_exists.clone()),
+            self.to.must_create.clone()]
         ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        (sender_balance_sub_fee, prev_sender_balance_sub_fee): (U256, U256),
-        (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
-        (receiver_balance, prev_receiver_balance): (U256, U256),
-        value: U256,
-        gas_fee: U256,
-    ) -> Result<(), Error> {
-        self.sender_sub_fee.assign(
-            region,
-            offset,
-            prev_sender_balance_sub_fee,
-            vec![gas_fee],
-            sender_balance_sub_fee,
-        )?;
-        self.sender_sub_value.assign(
-            region,
-            offset,
-            prev_sender_balance_sub_value,
-            vec![value],
-            sender_balance_sub_value,
-        )?;
-        self.receiver.assign(
-            region,
-            offset,
-            prev_receiver_balance,
-            vec![value],
-            receiver_balance,
-        )?;
-        self.value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
-        Ok(())
+        not::expr(self.value_is_zero()) * 2.expr()
     }
 }
 
-/// The TransferGadget handles a transfer of value from sender to receiver.  The
-/// transfer is only performed if the value is not zero.  If the transfer is
-/// performed and the receiver account doesn't exist, it will be created by
-/// setting it's code_hash = EMPTY_HASH. This gadget is used in callop.
-#[derive(Clone, Debug)]
-pub(crate) struct TransferGadget<F> {
-    sender: UpdateBalanceGadget<F, 2, false>,
-    receiver: UpdateBalanceGadget<F, 2, true>,
-    must_create: Expression<F>,
-    receiver_exists: Expression<F>,
-    pub(crate) value_is_zero: IsZeroGadget<F>,
-}
-
-impl<F: Field> TransferGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        receiver_address: Expression<F>,
-        receiver_exists: Expression<F>,
-        must_create: Expression<F>,
-        value: Word<F>,
-        reversion_info: &mut ReversionInfo<F>,
-    ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "", value.expr());
-        // If receiver doesn't exist, create it
-        cb.condition(
-            or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
-                must_create.clone(),
-            ]),
-            |cb| {
-                // TODO: if we use create opcode to deploy a new contract at an address where eth
-                // balanace is not 0, it will not work well.
-                // We need to merge `TransferGadget` with `TransferWithGasFeeGadget` later
-                // similar to bus mapping.
-                cb.account_read(
-                    receiver_address.clone(),
-                    AccountFieldTag::CodeHash,
-                    0.expr(),
-                );
-                cb.account_write(
-                    receiver_address.clone(),
-                    AccountFieldTag::CodeHash,
-                    cb.empty_code_hash_rlc(),
-                    0.expr(),
-                    Some(reversion_info),
-                );
-                #[cfg(feature = "scroll")]
-                {
-                    cb.account_read(
-                        receiver_address.clone(),
-                        AccountFieldTag::KeccakCodeHash,
-                        0.expr(),
-                    );
-                    cb.account_write(
-                        receiver_address.clone(),
-                        AccountFieldTag::KeccakCodeHash,
-                        cb.empty_keccak_hash_rlc(),
-                        0.expr(),
-                        Some(reversion_info),
-                    );
-                }
-            },
-        );
-        // Skip transfer if value == 0
-        let (sender, receiver) = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            let sender = UpdateBalanceGadget::construct(
-                cb,
-                sender_address,
-                vec![value.clone()],
-                Some(reversion_info),
-            );
-            let receiver = UpdateBalanceGadget::construct(
-                cb,
-                receiver_address,
-                vec![value],
-                Some(reversion_info),
-            );
-            (sender, receiver)
-        });
-
-        Self {
-            must_create,
-            receiver_exists,
-            sender,
-            receiver,
-            value_is_zero,
-        }
+impl<F: Field, G: TransferFromAssign<F> + TransferGadgetInfo<F>> TransferGadgetInfo<F>
+    for TransferGadgetImpl<F, G>
+{
+    fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero.expr()
     }
 
-    pub(crate) fn sender(&self) -> &UpdateBalanceGadget<F, 2, false> {
-        &self.sender
-    }
-
-    pub(crate) fn receiver(&self) -> &UpdateBalanceGadget<F, 2, true> {
-        &self.receiver
-    }
-
-    pub(crate) fn rw_delta(&self) -> Expression<F> {
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
-            self.must_create.clone()]
-        ) * if cfg!(feature = "scroll") {4.expr()} else {2.expr()} +
-        // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
-    }
-
-    pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        // if feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
-            self.must_create.clone(),
-        ]) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
-        // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        (sender_balance, sender_balance_prev): (U256, U256),
-        (receiver_balance, receiver_balance_prev): (U256, U256),
-        value: U256,
-    ) -> Result<(), Error> {
-        self.sender.assign(
-            region,
-            offset,
-            sender_balance_prev,
-            vec![value],
-            sender_balance,
-        )?;
-        self.receiver.assign(
-            region,
-            offset,
-            receiver_balance_prev,
-            vec![value],
-            receiver_balance,
-        )?;
-        self.value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
-        Ok(())
+    fn rw_delta(&self) -> Expression<F> {
+        self.from.rw_delta() + self.to.rw_delta()
     }
 }
 
@@ -749,8 +1035,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, "", sum::expr(&gas_word.cells[N_BYTES_GAS..]));
-        let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(
+            cb,
+            [cd_address.end_offset(), rd_address.end_offset()],
+        );
 
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&value.cells));
@@ -1287,21 +1575,16 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
 }
 
 /// get real copy bytes from rw memory words according to shift and copy size
-pub(crate) fn get_copy_bytes<F: Field>(
-    block: &Block<F>,
-    step: &ExecStep,
-    begin_rw_index: usize,
-    end_rw_index: usize,
+pub(crate) fn get_copy_bytes(
+    rws: &mut StepRws,
+    copy_rwc_inc: usize,
     shift: u64,
     copy_size: u64,
 ) -> Vec<u8> {
     // read real copy bytes from padded memory words
-    let padded_bytes: Vec<u8> = (begin_rw_index..end_rw_index)
-        .map(|i| {
-            let mut bytes = block.rws[step.rw_indices[i]]
-                .memory_word_pair()
-                .0
-                .to_le_bytes();
+    let padded_bytes: Vec<u8> = (0..copy_rwc_inc)
+        .map(|_| {
+            let mut bytes = rws.next().memory_word_pair().0.to_le_bytes();
             bytes.reverse();
             bytes
         })

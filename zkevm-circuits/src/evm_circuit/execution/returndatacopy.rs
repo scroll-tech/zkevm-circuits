@@ -110,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
         // memory.
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             dst_memory_addr.length(),
@@ -324,7 +324,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_rws: 2048,
-                max_copy_rows: 1795,
+                max_copy_rows: 1796,
                 ..Default::default()
             })
             .run();

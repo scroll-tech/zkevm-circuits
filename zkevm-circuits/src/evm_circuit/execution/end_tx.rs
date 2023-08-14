@@ -4,7 +4,7 @@ use crate::{
         param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::UpdateBalanceGadget,
+            common_gadget::{TransferGadgetInfo, TransferToGadget, UpdateBalanceGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
                 MulWordByU64Gadget,
             },
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -23,8 +23,10 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToLittleEndian, ToScalar};
-use gadgets::util::{and, not};
+use eth_types::{
+    evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, Field, ToLittleEndian, ToScalar,
+};
+use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -32,6 +34,7 @@ use strum::EnumCount;
 pub(crate) struct EndTxGadget<F> {
     tx_id: Cell<F>,
     tx_gas: Cell<F>,
+    tx_type: Cell<F>,
     max_refund: ConstantDivisionGadget<F, N_BYTES_GAS>,
     refund: Cell<F>,
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
@@ -43,12 +46,14 @@ pub(crate) struct EndTxGadget<F> {
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: Cell<F>,
     coinbase_codehash: Cell<F>,
+    #[cfg(feature = "scroll")]
+    coinbase_keccak_codehash: Cell<F>,
     coinbase_codehash_is_zero: IsZeroGadget<F>,
-    coinbase_reward_is_zero: IsZeroGadget<F>,
-    coinbase_reward: UpdateBalanceGadget<F, 2, true>,
+    coinbase_transfer: TransferToGadget<F>,
     current_cumulative_gas_used: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
     is_persistent: Cell<F>,
+    tx_is_l1msg: IsEqualGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -60,10 +65,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 
-        let [tx_gas, tx_caller_address] =
-            [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
-                .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+        let [tx_gas, tx_caller_address, tx_type] = [
+            TxContextFieldTag::Gas,
+            TxContextFieldTag::CallerAddress,
+            TxContextFieldTag::TxType,
+        ]
+        .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
         let tx_gas_price = cb.tx_context_as_word(tx_id.expr(), TxContextFieldTag::GasPrice, None);
+        let tx_is_l1msg =
+            IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
 
         // Calculate effective gas to refund
         let gas_used = tx_gas.expr() - cb.curr.state.gas_left.expr();
@@ -82,12 +92,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
-        let gas_fee_refund = UpdateBalanceGadget::construct(
-            cb,
-            tx_caller_address.expr(),
-            vec![mul_gas_price_by_refund.product().clone()],
-            None,
-        );
+        let gas_fee_refund = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+            UpdateBalanceGadget::construct(
+                cb,
+                tx_caller_address.expr(),
+                vec![mul_gas_price_by_refund.product().clone()],
+                None,
+            )
+        });
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
@@ -101,20 +113,31 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let effective_tip = cb.query_word_rlc();
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
-        let mul_effective_tip_by_gas_used = MulWordByU64Gadget::construct(
-            cb,
-            effective_tip,
-            gas_used.clone() - effective_refund.min(),
-        );
+
+        let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+            MulWordByU64Gadget::construct(
+                cb,
+                effective_tip,
+                gas_used.clone() - effective_refund.min(),
+            )
+        });
 
         let effective_fee = cb.query_word_rlc();
+
         // TODO: contraint l1 fee
+        // notice for non-scroll feature we do not apply l1msg
         #[cfg(not(feature = "scroll"))]
-        cb.require_equal(
-            "tx_fee == l1_fee + l2_fee, l1_fee == 0",
-            mul_effective_tip_by_gas_used.product().expr(),
-            effective_fee.expr(),
-        );
+        cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+            cb.require_equal(
+                "tx_fee == l1_fee + l2_fee, l1_fee == 0",
+                mul_effective_tip_by_gas_used.product().expr(),
+                effective_fee.expr(),
+            );
+        });
+
+        cb.condition(tx_is_l1msg.expr(), |cb| {
+            cb.require_zero("effective fee is zero for l1 msg", effective_fee.expr());
+        });
 
         let coinbase_codehash = cb.query_cell_phase2();
         cb.account_read(
@@ -122,37 +145,27 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             AccountFieldTag::CodeHash,
             coinbase_codehash.expr(),
         );
+        #[cfg(feature = "scroll")]
+        let coinbase_keccak_codehash = cb.query_cell_phase2();
+
         let coinbase_codehash_is_zero =
             IsZeroGadget::construct(cb, "coinbase_codehash_is_zero", coinbase_codehash.expr());
 
-        let coinbase_reward_is_zero =
-            IsZeroGadget::construct(cb, "coinbase_reward_is_zero", effective_fee.expr());
         // If coinbase account balance will become positive because of this tx, update its codehash
         // from 0 to the empty codehash.
-        let create_coinbase_account = and::expr(&[
-            coinbase_codehash_is_zero.expr(),
-            not::expr(coinbase_reward_is_zero.expr()),
-        ]);
-        cb.condition(create_coinbase_account.clone(), |cb| {
-            cb.account_write(
+        let coinbase_transfer = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+            TransferToGadget::construct(
+                cb,
                 coinbase.expr(),
-                AccountFieldTag::CodeHash,
-                cb.empty_code_hash_rlc(),
-                0.expr(),
+                not::expr(coinbase_codehash_is_zero.expr()),
+                false.expr(),
+                coinbase_codehash.expr(),
+                #[cfg(feature = "scroll")]
+                coinbase_keccak_codehash.expr(),
+                effective_fee.clone(),
                 None,
-            );
-            #[cfg(feature = "scroll")]
-            cb.account_write(
-                coinbase.expr(),
-                AccountFieldTag::KeccakCodeHash,
-                cb.empty_keccak_hash_rlc(),
-                0.expr(),
-                None,
-            );
+            )
         });
-
-        let coinbase_reward =
-            UpdateBalanceGadget::construct(cb, coinbase.expr(), vec![effective_fee.clone()], None);
 
         // constrain tx receipt fields
         cb.tx_receipt_lookup(
@@ -206,30 +219,17 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        11.expr() - is_first_tx.expr()
-                            + create_coinbase_account.clone() * {
-                                if cfg!(feature = "scroll") {
-                                    2 // keccak code hash + poseidon code hash
-                                } else {
-                                    1
-                                }
-                                .expr()
-                            },
+                        9.expr() - is_first_tx.expr()
+                            + not::expr(tx_is_l1msg.expr())
+                                * (coinbase_transfer.rw_delta() + 1.expr()),
                     ),
                     ..StepStateTransition::any()
                 });
             },
         );
 
-        let rw_counter_delta = 10.expr() - is_first_tx.expr()
-            + create_coinbase_account * {
-                if cfg!(feature = "scroll") {
-                    2 // keccak code hash + poseidon code hash
-                } else {
-                    1
-                }
-            }
-            .expr();
+        let rw_counter_delta = 8.expr() - is_first_tx.expr()
+            + not::expr(tx_is_l1msg.expr()) * (coinbase_transfer.rw_delta() + 1.expr());
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
@@ -246,6 +246,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         Self {
             tx_id,
             tx_gas,
+            tx_type,
             max_refund,
             refund,
             effective_refund,
@@ -257,12 +258,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             mul_effective_tip_by_gas_used,
             coinbase,
             coinbase_codehash,
+            #[cfg(feature = "scroll")]
+            coinbase_keccak_codehash,
             coinbase_codehash_is_zero,
-            coinbase_reward_is_zero,
-            coinbase_reward,
+            coinbase_transfer,
             current_cumulative_gas_used,
             is_first_tx,
             is_persistent,
+            tx_is_l1msg,
         }
     }
 
@@ -275,15 +278,24 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let mut rws = StepRws::new(block, step);
+        rws.offset_add(2);
+
         let gas_used = tx.gas - step.gas_left;
-        let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
-        let (caller_balance, caller_balance_prev) =
-            block.rws[step.rw_indices[3]].account_value_pair();
+        let (refund, _) = rws.next().tx_refund_value_pair();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_gas
             .assign(region, offset, Value::known(F::from(tx.gas)))?;
+        self.tx_type
+            .assign(region, offset, Value::known(F::from(tx.tx_type as u64)))?;
+        self.tx_is_l1msg.assign(
+            region,
+            offset,
+            F::from(tx.tx_type as u64),
+            F::from(TxType::L1Msg as u64),
+        )?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
         self.refund
             .assign(region, offset, Value::known(F::from(refund)))?;
@@ -311,13 +323,16 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.gas_fee_refund.assign(
-            region,
-            offset,
-            caller_balance_prev,
-            vec![gas_fee_refund],
-            caller_balance,
-        )?;
+        if !tx.tx_type.is_l1_msg() {
+            let (caller_balance, caller_balance_prev) = rws.next().account_value_pair();
+            self.gas_fee_refund.assign(
+                region,
+                offset,
+                caller_balance_prev,
+                vec![gas_fee_refund],
+                caller_balance,
+            )?;
+        }
         let context = &block.context.ctxs[&tx.block_number];
         let effective_tip = tx.gas_price - context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
@@ -326,21 +341,28 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             [effective_tip, context.base_fee],
             tx.gas_price,
         )?;
-        let coinbase_reward = effective_tip * (gas_used - effective_refund);
-        let (coinbase_codehash, _) = block.rws[step.rw_indices[4]].account_codehash_pair();
-        let coinbase_created = coinbase_codehash.is_zero() && !coinbase_reward.is_zero();
+        let coinbase_reward = if tx.tx_type.is_l1_msg() {
+            0.into()
+        } else {
+            effective_tip * (gas_used - effective_refund)
+        };
+        let (coinbase_codehash, _) = rws.next().account_codehash_pair();
         let coinbase_codehash_rlc = region.code_hash(coinbase_codehash);
         self.coinbase_codehash
             .assign(region, offset, coinbase_codehash_rlc)?;
         self.coinbase_codehash_is_zero
             .assign_value(region, offset, coinbase_codehash_rlc)?;
-        self.mul_effective_tip_by_gas_used.assign(
-            region,
-            offset,
-            effective_tip,
-            gas_used - effective_refund,
-            coinbase_reward,
-        )?;
+
+        if !tx.tx_type.is_l1_msg() {
+            self.mul_effective_tip_by_gas_used.assign(
+                region,
+                offset,
+                effective_tip,
+                gas_used - effective_refund,
+                coinbase_reward,
+            )?;
+        }
+
         self.coinbase.assign(
             region,
             offset,
@@ -352,30 +374,24 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             ),
         )?;
 
-        let (coinbase_balance, coinbase_balance_prev) = block.rws[step.rw_indices[5
-            + usize::from(coinbase_created) * {
-                if cfg!(feature = "scroll") {
-                    2
-                } else {
-                    1
-                }
-            }]]
-        .account_balance_pair();
-        let effective_fee = coinbase_balance - coinbase_balance_prev;
+        log::trace!("coinbase_reward = {coinbase_reward}");
+        let effective_fee = if tx.tx_type.is_l1_msg() {
+            0.into()
+        } else {
+            let result = self.coinbase_transfer.assign_from_rws(
+                region,
+                offset,
+                !coinbase_codehash.is_zero(),
+                false,
+                coinbase_reward,
+                &mut rws,
+            )?;
+            let coinbase_balance_pair = result.receiver_balance_pair.unwrap();
+            coinbase_balance_pair.0 - coinbase_balance_pair.1
+        };
+        debug_assert_eq!(coinbase_reward, effective_fee);
         self.effective_fee
             .assign(region, offset, Some(effective_fee.to_le_bytes()))?;
-        self.coinbase_reward.assign(
-            region,
-            offset,
-            coinbase_balance_prev,
-            vec![effective_fee],
-            coinbase_balance,
-        )?;
-        self.coinbase_reward_is_zero.assign_value(
-            region,
-            offset,
-            region.word_rlc(effective_fee),
-        )?;
 
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
@@ -474,7 +490,9 @@ mod test {
                     COINBASE
                     EXTCODEHASH
                 }), /* EXTCODEHASH will return 0 for the first tx and the empty code hash for
-                     * the second tx. */
+                     * the second tx.
+                     * for `scroll` feature they would be 0 in both txs
+                     */
                 |mut txs, accs| {
                     txs[0]
                         .to(accs[0].address)

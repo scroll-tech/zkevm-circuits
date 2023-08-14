@@ -15,7 +15,11 @@ mod dev;
 mod test;
 
 use crate::{
-    evm_circuit::util::{not, rlc},
+    evm_circuit::{
+        util::{not, rlc},
+        EvmCircuit,
+    },
+    keccak_circuit::KeccakCircuit,
     sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
@@ -107,10 +111,13 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
         // halo2-ecc's ECDSA config
         //
-        // - num_advice: 36
-        // - num_lookup_advice: 17
+        // get the following parameters by running
+        // `cargo test --release --package zkevm-circuits --lib sig_circuit::test::sign_verify --
+        // --nocapture`
+        // - num_advice: 56
+        // - num_lookup_advice: 8
         // - num_fixed: 1
-        // - lookup_bits: 13
+        // - lookup_bits: 19
         // - limb_bits: 88
         // - num_limbs: 3
         //
@@ -119,9 +126,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             meta,
             FpStrategy::Simple,
             &num_advice,
-            &[17],
+            &[8],
             1,
-            13,
+            LOG_TOTAL_NUM_ROWS - 1,
             88,
             3,
             modulus::<Fp>(),
@@ -213,12 +220,26 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
     fn new_from_block(block: &crate::witness::Block<F>) -> Self {
+        assert!(block.circuits_params.max_txs <= MAX_NUM_SIG);
+
         SigCircuit {
-            // TODO: seperate max_verif with max_txs?
-            max_verif: block.circuits_params.max_txs,
+            max_verif: MAX_NUM_SIG,
             signatures: block.get_sign_data(true),
             _marker: Default::default(),
         }
+    }
+
+    /// Returns number of unusable rows of the SubCircuit, which should be
+    /// `meta.blinding_factors() + 1`.
+    fn unusable_rows() -> usize {
+        [
+            KeccakCircuit::<F>::unusable_rows(),
+            EvmCircuit::<F>::unusable_rows(),
+            // may include additional subcircuits here
+        ]
+        .into_iter()
+        .max()
+        .unwrap()
     }
 
     fn synthesize_sub(
@@ -235,8 +256,26 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
-        let row_num = Self::min_num_rows(block.circuits_params.max_txs);
-        (row_num, row_num)
+        let row_num = Self::min_num_rows();
+
+        let ecdsa_verif_count = block
+            .txs
+            .iter()
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .count()
+            + block.precompile_events.get_ecrecover_events().len();
+        // Reserve one ecdsa verification for padding tx such that the bad case in which some tx
+        // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
+        // circuit won't have more space for the padding tx's ECDSA verification. Then the
+        // prover won't be able to produce any valid proof.
+        let max_num_verif = MAX_NUM_SIG - 1;
+
+        // Instead of showing actual minimum row usage,
+        // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
+        // This functionality allows l2geth to decide if additional ops can be added.
+        let min_row_num = (row_num / max_num_verif) * ecdsa_verif_count;
+
+        (min_row_num, row_num)
     }
 }
 
@@ -252,32 +291,20 @@ impl<F: Field> SigCircuit<F> {
 
     /// Return the minimum number of rows required to prove an input of a
     /// particular size.
-    /// TODO: minus 256?
-    pub fn min_num_rows(num_verif: usize) -> usize {
+    pub fn min_num_rows() -> usize {
+        // SigCircuit can't determine usable rows independently.
+        // Instead, the blinding area is determined by other advise columns with most counts of
+        // rotation queries. This value is typically determined by either the Keccak or EVM
+        // circuit.
+
         // the cells are allocated vertically, i.e., given a TOTAL_NUM_ROWS * NUM_ADVICE
         // matrix, the allocator will try to use all the cells in the first column, then
         // the second column, etc.
-        let row_num = 1 << LOG_TOTAL_NUM_ROWS;
-        let col_num = calc_required_advices(num_verif);
-        if num_verif * CELLS_PER_SIG > col_num * row_num {
-            log::error!(
-                "ecdsa chip not enough rows. rows: {}, advice {}, num of sigs {}, cells per sig {}",
-                row_num,
-                col_num,
-                num_verif,
-                CELLS_PER_SIG
-            )
-        } else {
-            log::debug!(
-                "ecdsa chip: rows: {}, advice {}, num of sigs {}, cells per sig {}",
-                row_num,
-                col_num,
-                num_verif,
-                CELLS_PER_SIG
-            )
-        }
 
-        row_num
+        let max_blinding_factor = Self::unusable_rows() - 1;
+
+        // same formula as halo2-lib's FlexGate
+        (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3)
     }
 }
 
@@ -767,12 +794,12 @@ impl<F: Field> SigCircuit<F> {
 
                 // IMPORTANT: Move to Phase2 before RLC
                 log::info!("before proceeding to the next phase");
-                ctx.print_stats(&["Range"]);
 
                 #[cfg(not(feature = "onephase"))]
                 {
                     // finalize the current lookup table before moving to next phase
                     ecdsa_chip.finalize(&mut ctx);
+                    ctx.print_stats(&["ECDSA context"]);
                     ctx.next_phase();
                 }
 
@@ -829,7 +856,7 @@ impl<F: Field> SigCircuit<F> {
                 let lookup_cells = ecdsa_chip.finalize(&mut ctx);
                 log::info!("total number of lookup cells: {}", lookup_cells);
 
-                ctx.print_stats(&["Range"]);
+                ctx.print_stats(&["ECDSA context"]);
                 Ok(assigned_keccak_values_and_sigs
                     .iter()
                     .map(|a| a.1.clone())

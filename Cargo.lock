@@ -146,7 +146,7 @@ checksum = "b9ccdd8f2a161be9bd5c023df56f1b2a0bd1d83872ae53b71a84a12c9bf6e842"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -1274,9 +1274,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.8.1"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "elliptic-curve"
@@ -1330,7 +1330,7 @@ checksum = "48016319042fb7c87b78d2993084a831793a897a5cd1a2a67cab9d1eeb4b7d76"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -1971,7 +1971,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -2192,9 +2192,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2-gate-generator"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/halo2gategen.git#35b137de2f71c37dfbd236842b868013c46739d1"
+dependencies = [
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4#892726037d18d122b6ee30843eb12ef80c18ce10"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.5#1c11b6c9b1245073a76c3ce7100b6798060f7cb8"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -2216,7 +2232,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#aab39d5c107fdeec62ce7d2aeec6b72de681ba23"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#4d8a405a97ce445c88fc8ec40f9a2dd0a661c697"
 dependencies = [
  "ark-std",
  "blake2b_simd",
@@ -3293,7 +3309,7 @@ dependencies = [
  "pest_meta",
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -3388,7 +3404,7 @@ checksum = "d1fef411b303e3e12d534fb6e7852de82da56edd937d895125821fb7c09436c7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -3491,11 +3507,14 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0619#50015b7cfbd5fe3263ec683cb291396c1b99cd1f"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0723#1652d54bf7ca9d8f286b53fe077d9efefdcf6d5f"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",
  "lazy_static",
+ "log",
+ "rand",
+ "rand_xorshift",
  "thiserror",
 ]
 
@@ -3980,6 +3999,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmd160-circuits"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#31c41ca4365dcf2b6ed4f2cdcd3dc8d2e8f080df"
+dependencies = [
+ "halo2-gate-generator",
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "ruint"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4294,7 +4330,7 @@ checksum = "d9735b638ccc51c28bf6914d90a2e9725b377144fc612c49a611fddd1b631d68"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -4469,7 +4505,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#12c306ec57849921e690221b10b8a08189868d4a"
 dependencies = [
  "bytes",
  "ethereum-types 0.14.1",
@@ -4493,7 +4529,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#12c306ec57849921e690221b10b8a08189868d4a"
 dependencies = [
  "bincode",
  "env_logger 0.10.0",
@@ -4637,9 +4673,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.22"
+version = "2.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2efbeae7acf4eabd6bcdcbd11c92f45231ddda7539edc7806bd1a04a03b24616"
+checksum = "b60f673f44a8255b9c8c657daf66a596d435f2da81a555b06dc644d080ba45e0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4752,7 +4788,7 @@ checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -4826,7 +4862,7 @@ checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -4932,7 +4968,7 @@ checksum = "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
 ]
 
 [[package]]
@@ -5153,7 +5189,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
  "wasm-bindgen-shared",
 ]
 
@@ -5187,7 +5223,7 @@ checksum = "54681b18a46765f095758388f2d0cf16eb8d4169b639ab575a8f5693af210c7b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.22",
+ "syn 2.0.27",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -5451,6 +5487,7 @@ dependencies = [
  "cli-table",
  "criterion",
  "ctor",
+ "either",
  "env_logger 0.9.3",
  "eth-types",
  "ethers-core",
@@ -5478,6 +5515,7 @@ dependencies = [
  "rand_chacha",
  "rand_xorshift",
  "rayon",
+ "rmd160-circuits",
  "serde",
  "serde_json",
  "sha3 0.10.8",
@@ -5490,8 +5528,8 @@ dependencies = [
 
 [[package]]
 name = "zktrie"
-version = "0.1.2"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#1a5562f663a81ff903383db69dc6c9404b63e69d"
+version = "0.2.0"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.6#83318659773604fa565e2ebeb810a6d3746f0af4"
 dependencies = [
  "gobuild 0.1.0-alpha.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         cb.stack_pop(memory_address.offset_rlc());
         cb.stack_pop(memory_address.length_rlc());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
 
         let insufficient_gas = LtGadget::construct(
             cb,

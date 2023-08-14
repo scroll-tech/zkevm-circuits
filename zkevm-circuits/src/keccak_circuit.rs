@@ -924,7 +924,8 @@ impl<F: Field> KeccakCircuitConfig<F> {
             )?;
         }
 
-        self.keccak_table.assign_row(
+        // table values
+        let mut res = self.keccak_table.assign_row(
             region,
             offset,
             [
@@ -936,7 +937,6 @@ impl<F: Field> KeccakCircuitConfig<F> {
         )?;
 
         // Cell values
-        let mut res = vec![];
         for (idx, (bit, column)) in row
             .cell_values
             .iter()
