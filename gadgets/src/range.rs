@@ -83,14 +83,11 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> UIntRangeCheckChip<F, 
                 .collect::<Vec<_>>()
         });
 
-        for offset in 0..N_EXPR {
-            for column in u16_repr {
-                meta.lookup(concat!("u16 cell range check"), |meta| {
-                    let q_enable = q_enable.clone()(meta);
-                    let cell = meta.query_advice(column, Rotation(offset as i32));
-                    vec![(q_enable * cell, u16_table)]
-                });
-            }
+        for column in u16_repr {
+            meta.lookup(concat!("u16 cell range check"), |meta| {
+                let cell = meta.query_advice(column, Rotation(0 as i32));
+                vec![(cell, u16_table)]
+            });
         }
 
         UIntRangeCheckConfig {
