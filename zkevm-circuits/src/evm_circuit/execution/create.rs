@@ -804,6 +804,7 @@ mod test {
             PUSH10(memory_value)
             PUSH1(memory_address)
             MSTORE
+            CALLDATASIZE
             PUSH2(5)
             PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap())
         };

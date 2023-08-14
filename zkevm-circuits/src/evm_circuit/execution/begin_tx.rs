@@ -412,10 +412,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     call_callee_address.expr(),
                 ),
                 (CallContextFieldTag::CallDataOffset, 0.expr()),
-                (
-                    CallContextFieldTag::CallDataLength,
-                    tx_call_data_length.expr(),
-                ),
+                (CallContextFieldTag::CallDataLength, 0.expr()),
                 (CallContextFieldTag::Value, tx_value.expr()),
                 (CallContextFieldTag::IsStatic, 0.expr()),
                 (CallContextFieldTag::LastCalleeId, 0.expr()),
@@ -1234,6 +1231,7 @@ mod test {
             PUSH1(0)
             MSTORE
 
+            CALLDATASIZE
             PUSH1(2)
             PUSH1(0)
             RETURN

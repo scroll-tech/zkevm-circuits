@@ -1,7 +1,10 @@
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
+    halo2curves::{
+        bn256::{Bn256, Fq, Fr, G1Affine},
+        pairing::Engine,
+    },
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -93,9 +96,28 @@ impl AggregationCircuit {
         let svk = params.get_g()[0].into();
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
-        let (accumulator, as_proof) =
-            extract_accumulators_and_proof(params, snarks_with_padding, rng)?;
+        let (accumulator, as_proof) = extract_accumulators_and_proof(
+            params,
+            snarks_with_padding,
+            rng,
+            &params.g2(),
+            &params.s_g2(),
+        )?;
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
+
+        // sanity check on the accumulator
+        {
+            let left = Bn256::pairing(&lhs, &params.g2());
+            let right = Bn256::pairing(&rhs, &params.s_g2());
+            log::trace!("aggregation circuit acc check: left {:?}", left);
+            log::trace!("aggregation circuit acc check: right {:?}", right);
+            if left != right {
+                return Err(snark_verifier::Error::AssertionFailure(format!(
+                    "accumulator check failed {left:?} {right:?}",
+                )));
+            }
+        }
+
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
             .concat();

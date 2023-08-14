@@ -99,12 +99,16 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
 #[inline]
 // assert two cells have same value
 // (NOT constraining equality in circuit)
-pub(crate) fn assert_equal<F: Field>(a: &AssignedCell<F, F>, b: &AssignedCell<F, F>) {
+pub(crate) fn assert_equal<F: Field>(
+    a: &AssignedCell<F, F>,
+    b: &AssignedCell<F, F>,
+    description: &str,
+) {
     let mut t1 = F::default();
     let mut t2 = F::default();
     a.value().map(|f| t1 = *f);
     b.value().map(|f| t2 = *f);
-    assert_eq!(t1, t2)
+    assert_eq!(t1, t2, "{description}",)
 }
 
 #[inline]
@@ -114,6 +118,7 @@ pub(crate) fn assert_conditional_equal<F: Field>(
     a: &AssignedCell<F, F>,
     b: &AssignedCell<F, F>,
     cond: &AssignedCell<F, F>,
+    description: &str,
 ) {
     let mut t1 = F::default();
     let mut t2 = F::default();
@@ -122,7 +127,7 @@ pub(crate) fn assert_conditional_equal<F: Field>(
     b.value().map(|f| t2 = *f);
     cond.value().map(|f| c = *f);
     if c == F::one() {
-        assert_eq!(t1, t2)
+        assert_eq!(t1, t2, "{description}",)
     }
 }
 
