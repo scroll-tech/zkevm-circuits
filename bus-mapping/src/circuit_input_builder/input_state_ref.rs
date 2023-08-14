@@ -608,6 +608,21 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         fee: Option<Word>,
     ) -> Result<(), Error> {
+        self.transfer_from_with_fee(step, sender, value, fee)?;
+        self.transfer_to(step, receiver, receiver_exists, must_create, value, true)?;
+        Ok(())
+    }
+
+    /// Push 1 reversible [`AccountOp`] to update `sender`'s balance by
+    /// `value`. If `fee` is existing (not None), also need to push 1
+    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
+    pub fn transfer_from_with_fee(
+        &mut self,
+        step: &mut ExecStep,
+        sender: Address,
+        value: Word,
+        fee: Option<Word>,
+    ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
@@ -644,6 +659,32 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance_prev,
             sender_balance
         );
+        if !value.is_zero() {
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Push 1 [`AccountOp`] to update `receiver`'s balance by `value`.
+    /// If `receiver` doesn't exist, also need to push 1 [`AccountOp`]
+    /// to create `receiver`.
+    pub fn transfer_to(
+        &mut self,
+        step: &mut ExecStep,
+        receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
+        value: Word,
+        reversible: bool,
+    ) -> Result<(), Error> {
         // If receiver doesn't exist, create it
         if (!receiver_exists && !value.is_zero()) || must_create {
             let account = self.sdb.get_account(&receiver).1.clone();
@@ -653,15 +694,17 @@ impl<'a> CircuitInputStateRef<'a> {
                 CodeDB::empty_code_hash().to_word()
             };
             self.account_read(step, receiver, AccountField::CodeHash, prev_code_hash);
-            self.push_op_reversible(
-                step,
-                AccountOp {
-                    address: receiver,
-                    field: AccountField::CodeHash,
-                    value: CodeDB::empty_code_hash().to_word(),
-                    value_prev: prev_code_hash,
-                },
-            )?;
+            let write_op = AccountOp::new(
+                receiver,
+                AccountField::CodeHash,
+                CodeDB::empty_code_hash().to_word(),
+                prev_code_hash,
+            );
+            if reversible {
+                self.push_op_reversible(step, write_op)?;
+            } else {
+                self.push_op(step, RW::WRITE, write_op);
+            }
             #[cfg(feature = "scroll")]
             {
                 let prev_keccak_code_hash = if account.is_empty() {
@@ -675,15 +718,17 @@ impl<'a> CircuitInputStateRef<'a> {
                     AccountField::KeccakCodeHash,
                     prev_keccak_code_hash,
                 );
-                self.push_op_reversible(
-                    step,
-                    AccountOp {
-                        address: receiver,
-                        field: AccountField::KeccakCodeHash,
-                        value: KECCAK_CODE_HASH_ZERO.to_word(),
-                        value_prev: prev_keccak_code_hash,
-                    },
-                )?;
+                let write_op = AccountOp::new(
+                    receiver,
+                    AccountField::KeccakCodeHash,
+                    KECCAK_CODE_HASH_ZERO.to_word(),
+                    prev_keccak_code_hash,
+                );
+                if reversible {
+                    self.push_op_reversible(step, write_op)?;
+                } else {
+                    self.push_op(step, RW::WRITE, write_op);
+                }
                 // TODO: set code size to 0?
             }
         }
@@ -691,16 +736,6 @@ impl<'a> CircuitInputStateRef<'a> {
             // Skip transfer if value == 0
             return Ok(());
         }
-
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
-                value: sender_balance,
-                value_prev: sender_balance_prev,
-            },
-        )?;
 
         let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
@@ -711,15 +746,17 @@ impl<'a> CircuitInputStateRef<'a> {
             receiver_balance_prev,
             receiver_balance
         );
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
-                value: receiver_balance,
-                value_prev: receiver_balance_prev,
-            },
-        )?;
+        let write_op = AccountOp::new(
+            receiver,
+            AccountField::Balance,
+            receiver_balance,
+            receiver_balance_prev,
+        );
+        if reversible {
+            self.push_op_reversible(step, write_op)?;
+        } else {
+            self.push_op(step, RW::WRITE, write_op);
+        }
 
         Ok(())
     }

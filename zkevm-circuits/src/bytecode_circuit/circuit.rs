@@ -177,6 +177,18 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             ]))
         });
 
+        // constrain bytecode_table's tag
+        meta.create_gate("bytecode_table tag column is bool", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_boolean(
+                "cur.tag is bool",
+                meta.query_advice(bytecode_table.tag, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         // When is_header ->
         // assert cur.index == 0
         // assert cur.value == cur.length

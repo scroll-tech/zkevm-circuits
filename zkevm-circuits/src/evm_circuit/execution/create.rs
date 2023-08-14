@@ -663,30 +663,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 caller balance // 15 + rw_offset
                 callee balance // 16 + rw_offset
              */
-            rws.offset_add(2);
-            #[cfg(feature = "scroll")]
-            {
-                rws.next();
-                let keccak_code_hash_previous = rws.next().account_keccak_codehash_pair().1;
-                self.keccak_code_hash_previous.assign(
-                    region,
-                    offset,
-                    region.word_rlc(keccak_code_hash_previous),
-                )?; // Read Write empty Keccak code hash.
-            }
-            let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                [(); 2].map(|_| rws.next().account_balance_pair())
-            } else {
-                [(0.into(), 0.into()), (0.into(), 0.into())]
-            };
+            // rws.offset_add(2);
+            let _transfer_assign_result = self
+                .transfer
+                .assign_from_rws(region, offset, false, true, value, &mut rws)?;
 
-            self.transfer.assign(
+            #[cfg(feature = "scroll")]
+            self.keccak_code_hash_previous.assign(
                 region,
                 offset,
-                caller_balance_pair,
-                callee_balance_pair,
-                value,
-            )?;
+                region.word_rlc(_transfer_assign_result.account_keccak_code_hash.unwrap()),
+            )?; // Read Write empty Keccak code hash.
         }
 
         let (_next_memory_word_size, memory_expansion_gas_cost) = self.memory_expansion.assign(

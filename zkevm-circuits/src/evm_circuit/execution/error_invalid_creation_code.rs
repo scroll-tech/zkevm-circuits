@@ -4,9 +4,12 @@ use crate::{
         param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, from_bytes,
-            math_gadget::IsEqualGadget, memory_gadget::MemoryWordAddress, CachedRegion, Cell,
-            RandomLinearCombination, Word,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::EVMConstraintBuilder,
+            from_bytes,
+            math_gadget::IsEqualGadget,
+            memory_gadget::{MemoryMask, MemoryWordAddress},
+            CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,6 +28,7 @@ pub(crate) struct ErrorInvalidCreationCodeGadget<F> {
     value_left: Word<F>,
     first_byte: Cell<F>,
     is_first_byte_invalid: IsEqualGadget<F>,
+    mask: MemoryMask<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -57,7 +61,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             value_left.expr(),
             None,
         );
-        // let first_byte = value_left.cells[address_word.shift()];
+
+        // first_byte come from address_word
+        let mask = MemoryMask::construct(cb, &address_word.shift_bits(), 1.expr());
+        mask.require_equal_unaligned_byte(cb, first_byte.expr(), &value_left);
         // constrain first byte is 0xef
         let is_first_byte_invalid = IsEqualGadget::construct(cb, first_byte.expr(), 0xef.expr());
 
@@ -81,6 +88,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             memory_address: address_word,
             length,
             value_left,
+            mask,
             common_error_gadget,
         }
     }
@@ -128,6 +136,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             F::from(0xef_u64),
         )?;
 
+        let shift = memory_offset.as_u64() % 32;
+        self.mask.assign(region, offset, shift, true)?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
         Ok(())
