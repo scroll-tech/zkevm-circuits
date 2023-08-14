@@ -856,6 +856,10 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         Word::from(call.is_persistent as u8),
     );
 
+    if !state.tx.tx_type.is_l1_msg() {
+        gen_tx_l1_fee_ops(state, &mut exec_step);
+    }
+
     let refund = state.sdb.refund();
     state.push_op(
         &mut exec_step,
