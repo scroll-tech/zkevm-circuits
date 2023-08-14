@@ -44,7 +44,7 @@ mod test;
 mod util;
 use util::{
     EcAddAssigned, EcMulAssigned, EcOpsAssigned, EcPairingAssigned, G1Assigned, G1Decomposed,
-    G2Assigned, G2Decomposed, ScalarAssigned,
+    G2Decomposed, ScalarAssigned,
 };
 
 use self::util::{EcAddDecomposed, EcMulDecomposed, EcPairingDecomposed, LOG_TOTAL_NUM_ROWS};
@@ -150,6 +150,7 @@ pub struct EccCircuit<F: Field, const XI_0: i64> {
 }
 
 impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
+    /// Assign witness from the ecXX ops to the circuit.
     pub(crate) fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -252,6 +253,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 
                 // finalize after first phase.
                 config.fp_config.finalize(&mut ctx);
+                ctx.next_phase();
 
                 let ec_adds_assigned = assign_ec_op!(ec_adds_decomposed, assign_ec_add);
                 let ec_muls_assigned = assign_ec_op!(ec_muls_decomposed, assign_ec_mul);
@@ -421,148 +423,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         Ok(())
     }
 
-    fn assign_ec_add(
-        &self,
-        ctx: &mut Context<F>,
-        ec_add_decomposed: &EcAddDecomposed<F>,
-        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
-        keccak_powers: &[QuantumCell<F>],
-    ) -> EcAddAssigned<F> {
-        EcAddAssigned {
-            point_p: G1Assigned {
-                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_add_decomposed.point_p.x_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_add_decomposed.point_p.y_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-            },
-            point_q: G1Assigned {
-                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_add_decomposed.point_q.x_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_add_decomposed.point_q.y_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-            },
-            point_r: G1Assigned {
-                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_add_decomposed.point_r.x_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_add_decomposed.point_r.y_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-            },
-        }
-    }
-
-    fn assign_ec_mul(
-        &self,
-        ctx: &mut Context<F>,
-        ec_mul_decomposed: &EcMulDecomposed<F>,
-        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
-        keccak_powers: &[QuantumCell<F>],
-    ) -> EcMulAssigned<F> {
-        EcMulAssigned {
-            point_p: G1Assigned {
-                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_mul_decomposed.point_p.x_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_mul_decomposed.point_p.y_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-            },
-            scalar_s: ec_mul_decomposed.scalar_s.clone(),
-            point_r: G1Assigned {
-                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_mul_decomposed.point_r.x_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                    ctx,
-                    ec_mul_decomposed.point_r.y_cells.clone(),
-                    keccak_powers.iter().cloned(),
-                ),
-            },
-        }
-    }
-
-    fn assign_ec_pairing(
-        &self,
-        ctx: &mut Context<F>,
-        ec_pairing_decomposed: &EcPairingDecomposed<F>,
-        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
-        keccak_powers: &[QuantumCell<F>],
-    ) -> EcPairingAssigned<F> {
-        EcPairingAssigned {
-            g1s: ec_pairing_decomposed
-                .g1s
-                .iter()
-                .map(|g1_decomposed| G1Assigned {
-                    x_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        g1_decomposed.x_cells.clone(),
-                        keccak_powers.iter().cloned(),
-                    ),
-                    y_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        g1_decomposed.y_cells.clone(),
-                        keccak_powers.iter().cloned(),
-                    ),
-                })
-                .collect_vec(),
-            g2s: ec_pairing_decomposed
-                .g2s
-                .iter()
-                .map(|g2_decomposed| G2Assigned {
-                    x_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        g2_decomposed.x_c0_cells.clone(),
-                        keccak_powers.iter().cloned(),
-                    ),
-                    x_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        g2_decomposed.x_c1_cells.clone(),
-                        keccak_powers.iter().cloned(),
-                    ),
-                    y_c0_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        g2_decomposed.y_c0_cells.clone(),
-                        keccak_powers.iter().cloned(),
-                    ),
-                    y_c1_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                        ctx,
-                        g2_decomposed.y_c1_cells.clone(),
-                        keccak_powers.iter().cloned(),
-                    ),
-                })
-                .collect_vec(),
-            input_rlc: ecc_chip.field_chip().range().gate().inner_product(
-                ctx,
-                ec_pairing_decomposed.input_cells.clone().into_iter().rev(),
-                keccak_powers.iter().cloned(),
-            ),
-            success: ec_pairing_decomposed.success,
-        }
-    }
-
+    /// Decomposes an EcAdd operation to return each G1 element as cells representing its byte
+    /// form.
     #[allow(clippy::too_many_arguments)]
     fn decompose_ec_add_op(
         &self,
@@ -643,6 +505,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         }
     }
 
+    /// Decomposes an EcMul operation to return each G1 element as cells representing its byte
+    /// form.
     #[allow(clippy::too_many_arguments)]
     fn decompose_ec_mul_op(
         &self,
@@ -682,6 +546,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         }
     }
 
+    /// Decomposes an EcPairing operation and returns cells that represent the LE-bytes of all
+    /// (G1, G2) pairs. In phase2 they will be RLC'd with the keccak randomness.
     #[allow(clippy::too_many_arguments)]
     fn decompose_ec_pairing_op(
         &self,
@@ -780,13 +646,117 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log_context_cursor!(ctx);
 
         EcPairingDecomposed {
-            g1s,
-            g2s,
             input_cells,
             success,
         }
     }
 
+    /// Handles Phase2 for EcAdd operation and returns the RLC'd x and y co-ordinates of the G1
+    /// elements.
+    fn assign_ec_add(
+        &self,
+        ctx: &mut Context<F>,
+        ec_add_decomposed: &EcAddDecomposed<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        keccak_powers: &[QuantumCell<F>],
+    ) -> EcAddAssigned<F> {
+        EcAddAssigned {
+            point_p: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_p.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_p.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+            point_q: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_q.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_q.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+            point_r: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_r.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_add_decomposed.point_r.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+        }
+    }
+
+    /// Handles Phase2 for EcMul operation and returns the RLC'd x and y co-ordinates of the G1
+    /// elements, and the assigned scalar field element.
+    fn assign_ec_mul(
+        &self,
+        ctx: &mut Context<F>,
+        ec_mul_decomposed: &EcMulDecomposed<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        keccak_powers: &[QuantumCell<F>],
+    ) -> EcMulAssigned<F> {
+        EcMulAssigned {
+            point_p: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_p.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_p.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+            scalar_s: ec_mul_decomposed.scalar_s.clone(),
+            point_r: G1Assigned {
+                x_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_r.x_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+                y_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                    ctx,
+                    ec_mul_decomposed.point_r.y_cells.clone(),
+                    keccak_powers.iter().cloned(),
+                ),
+            },
+        }
+    }
+
+    /// Handles Phase2 for EcPairing operation and returns the RLC'd input bytes.
+    fn assign_ec_pairing(
+        &self,
+        ctx: &mut Context<F>,
+        ec_pairing_decomposed: &EcPairingDecomposed<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        keccak_powers: &[QuantumCell<F>],
+    ) -> EcPairingAssigned<F> {
+        EcPairingAssigned {
+            input_rlc: ecc_chip.field_chip().range().gate().inner_product(
+                ctx,
+                ec_pairing_decomposed.input_cells.clone().into_iter().rev(),
+                keccak_powers.iter().cloned(),
+            ),
+            success: ec_pairing_decomposed.success,
+        }
+    }
+
+    /// Assign the G1 EcPoint and return its decomposed state.
     fn assign_g1(
         &self,
         ctx: &mut Context<F>,
@@ -802,6 +772,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         }
     }
 
+    /// Decompose G1 element into cells representing its x and y co-ordinates.
     fn decompose_g1(&self, g1: G1Affine) -> (Vec<QuantumCell<F>>, Vec<QuantumCell<F>>) {
         (
             g1.x.to_bytes()
@@ -815,6 +786,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         )
     }
 
+    /// Decompose G2 element into cells representing all coefficients of its x and y co-ordinates.
     fn decompose_g2(&self, g2: G2Affine) -> [Vec<QuantumCell<F>>; 4] {
         [
             g2.x.c0
@@ -840,6 +812,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         ]
     }
 
+    /// Assign a scalar field element and return its assigned state.
     fn assign_fr(
         &self,
         ctx: &mut Context<F>,
