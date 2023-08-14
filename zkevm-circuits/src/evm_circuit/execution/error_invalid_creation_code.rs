@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::EVMConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::{MemoryMask, MemoryWordAddress},
@@ -16,7 +16,7 @@ use crate::{
     util::Expr,
 };
 
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for code store oog and max code size exceed
@@ -39,7 +39,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-
+        // constrain opcodes
+        cb.require_equal(
+            "ErrorInvalidCreationCode checking at RETURN in create context",
+            opcode.expr(),
+            OpcodeId::RETURN.expr(),
+        );
         let first_byte = cb.query_cell();
 
         //let address = cb.query_word_rlc();

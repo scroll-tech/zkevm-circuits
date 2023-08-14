@@ -5,7 +5,10 @@ use std::fs::File;
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Fq, G1Affine},
+    halo2curves::{
+        bn256::{Fq, G1Affine},
+        pairing::Engine,
+    },
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
@@ -181,8 +184,13 @@ impl CompressionCircuit {
         // it is turned into an accumulator via KzgAs accumulation scheme
         // in case not first time:
         // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
-        let (accumulator, as_proof) =
-            extract_accumulators_and_proof(params, &[snark.clone()], rng)?;
+        let (accumulator, as_proof) = extract_accumulators_and_proof(
+            params,
+            &[snark.clone()],
+            rng,
+            &params.g2(),
+            &params.s_g2(),
+        )?;
 
         // the instance for the outer circuit is
         // - new accumulator, consists of 12 elements
@@ -191,6 +199,21 @@ impl CompressionCircuit {
         // it is important that new accumulator is the first 12 elements
         // as specified in CircuitExt::accumulator_indices()
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
+
+        // sanity check on the accumulator
+        {
+            let left = Bn256::pairing(&lhs, &params.g2());
+            let right = Bn256::pairing(&rhs, &params.s_g2());
+            log::trace!("compression circuit acc check: left {:?}", left);
+            log::trace!("compression circuit acc check: right {:?}", right);
+
+            if left != right {
+                return Err(snark_verifier::Error::AssertionFailure(format!(
+                    "accumulator check failed {left:?} {right:?}",
+                )));
+            }
+        }
+
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<Fq, Fr, { LIMBS }, { BITS }>)
             .concat();

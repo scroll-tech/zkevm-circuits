@@ -692,7 +692,7 @@ impl<F: Field> ExecutionConfig<F> {
                 challenges,
                 G::EXECUTION_STATE,
             );
-            G::configure(&mut cb);
+            cb.annotation(G::NAME, |cb| G::configure(cb));
             let (_, _, height) = cb.build();
             height
         };
@@ -706,7 +706,7 @@ impl<F: Field> ExecutionConfig<F> {
             G::EXECUTION_STATE,
         );
 
-        let gadget = G::configure(&mut cb);
+        let gadget = cb.annotation(G::NAME, |cb| G::configure(cb));
 
         Self::configure_gadget_impl(
             meta,

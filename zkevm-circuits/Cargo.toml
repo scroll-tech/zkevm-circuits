@@ -64,7 +64,7 @@ cli-table = "0.4"
 paste = "1.0"
 
 [features]
-default = ["test", "test-circuits", "shanghai"]
+default = ["test", "test-circuits", "shanghai", "debug-annotations"]
 test = ["ethers-signers", "mock", "bus-mapping/test"]
 
 # Currently, when the "scroll" feature is enabled, unittests use a CGO scroll-evm to generate execution traces.
@@ -84,3 +84,5 @@ warn-unimplemented = ["eth-types/warn-unimplemented"]
 onephase = [] # debug only
 zktrie = []
 poseidon-codehash = []
+
+debug-annotations = []

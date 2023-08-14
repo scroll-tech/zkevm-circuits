@@ -86,10 +86,16 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         let modword = ModGadget::construct(cb, [&scalar_s_raw, &n, &scalar_s]);
 
         // Conditions for dealing with infinity/empty points and zero/empty scalar
-        let p_x_is_zero = IsZeroGadget::construct(cb, "ecMul(P_x)", point_p_x_rlc.expr());
-        let p_y_is_zero = IsZeroGadget::construct(cb, "ecMul(P_y)", point_p_y_rlc.expr());
+        let p_x_is_zero = cb.annotation("ecMul(P_x)", |cb| {
+            IsZeroGadget::construct(cb, point_p_x_rlc.expr())
+        });
+        let p_y_is_zero = cb.annotation("ecMul(P_y)", |cb| {
+            IsZeroGadget::construct(cb, point_p_y_rlc.expr())
+        });
         let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
-        let s_is_zero = IsZeroGadget::construct(cb, "ecMul(s)", scalar_s.expr());
+        let s_is_zero = cb.annotation("ecMul(P_y)", |cb| {
+            IsZeroGadget::construct(cb, scalar_s.expr())
+        });
 
         cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
             cb.require_equal(

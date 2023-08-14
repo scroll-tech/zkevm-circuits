@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{iter, marker::PhantomData, str::FromStr};
+use std::{collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -47,8 +47,11 @@ use once_cell::sync::Lazy;
 use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     pi_circuit::param::{COINBASE_OFFSET, DIFFICULTY_OFFSET},
-    table::BlockContextFieldTag::{
-        BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumTxs, Number, Timestamp,
+    table::{
+        BlockContextFieldTag,
+        BlockContextFieldTag::{
+            BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumTxs, Number, Timestamp,
+        },
     },
     util::rlc_be_bytes,
 };
@@ -70,6 +73,8 @@ pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY
 pub struct PublicData {
     /// chain id
     pub chain_id: u64,
+    /// Start L1 QueueIndex
+    pub start_l1_queue_index: u64,
     /// Block Transactions
     pub transactions: Vec<Transaction>,
     /// Block contexts
@@ -84,6 +89,7 @@ impl Default for PublicData {
     fn default() -> Self {
         PublicData {
             chain_id: 0,
+            start_l1_queue_index: 0,
             transactions: vec![],
             prev_state_root: H256::zero(),
             withdraw_trie_root: H256::zero(),
@@ -93,16 +99,53 @@ impl Default for PublicData {
 }
 
 impl PublicData {
+    fn get_num_txs(&self) -> BTreeMap<u64, u64> {
+        let mut num_txs_in_blocks = BTreeMap::new();
+        // short for total number of l1 msgs popped before
+        let mut total_l1_popped = self.start_l1_queue_index;
+        log::debug!("start_l1_queue_index: {}", total_l1_popped);
+        for &block_num in self.block_ctxs.ctxs.keys() {
+            let num_l2_txs = self
+                .transactions
+                .iter()
+                .filter(|tx| !tx.tx_type.is_l1_msg() && tx.block_number == block_num)
+                .count() as u64;
+            let num_l1_msgs = self
+                .transactions
+                .iter()
+                .filter(|tx| tx.tx_type.is_l1_msg() && tx.block_number == block_num)
+                // tx.nonce alias for queue_index for l1 msg tx
+                .map(|tx| tx.nonce)
+                .max()
+                .map_or(0, |max_queue_index| max_queue_index - total_l1_popped + 1);
+            total_l1_popped += num_l1_msgs;
+
+            let num_txs = num_l2_txs + num_l1_msgs;
+            num_txs_in_blocks.insert(block_num, num_txs);
+
+            log::trace!(
+                "[block {}] total_l1_popped: {}, num_l1_msgs: {}, num_l2_txs: {}, num_txs: {}",
+                block_num,
+                total_l1_popped,
+                num_l1_msgs,
+                num_l2_txs,
+                num_txs
+            );
+        }
+
+        num_txs_in_blocks
+    }
+
     /// Compute the bytes for dataHash from the verifier's perspective.
     fn data_bytes(&self) -> Vec<u8> {
+        let num_txs_in_blocks = self.get_num_txs();
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
-                let num_txs = self
-                    .transactions
-                    .iter()
-                    .filter(|tx| tx.block_number == *block_num)
-                    .count() as u16;
-
+                let num_txs = num_txs_in_blocks
+                    .get(block_num)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("get num_txs in block {block_num}"))
+                    as u16;
                 iter::empty()
                     // Block Values
                     .chain(block.number.as_u64().to_be_bytes())
@@ -153,6 +196,8 @@ impl PublicData {
 
     fn get_pi(&self) -> H256 {
         let data_hash = H256(keccak256(self.data_bytes()));
+        log::debug!("data hash: {}", hex::encode(data_hash.to_fixed_bytes()));
+
         let pi_bytes = self.pi_bytes(data_hash);
         let pi_hash = keccak256(pi_bytes);
 
@@ -541,6 +586,16 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                     meta.query_advice(cum_num_txs, Rotation::cur()) + num_txs,
                 );
 
+                cb.condition(meta.query_fixed(is_block_num_txs, Rotation::cur()), |cb| {
+                    cb.require_equal(
+                        "block_table.value' == cum_num_txs' if block_table.tag == Nums",
+                        meta.query_advice(block_table.value, Rotation::next()),
+                        meta.query_advice(cum_num_txs, Rotation::next()),
+                    );
+                });
+
+                // NOTE: cum_num_txs is already enforced to start with 0 using copy constraint.
+
                 cb.gate(meta.query_fixed(q_block_tag, Rotation::cur()))
             }
         );
@@ -605,6 +660,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .iter()
             .map(|tx| tx.hash)
             .collect::<Vec<H256>>();
+        let num_txs_in_blocks = public_data.get_num_txs();
 
         let mut offset = 0;
         let mut block_copy_cells = vec![];
@@ -636,11 +692,9 @@ impl<F: Field> PiCircuitConfig<F> {
             .enumerate()
         {
             let is_rpi_padding = i >= block_values.ctxs.len();
-            let num_txs = public_data
-                .transactions
-                .iter()
-                .filter(|tx| tx.block_number == block.number.as_u64())
-                .count() as u16;
+            let block_num = block.number.as_u64();
+            let num_txs = num_txs_in_blocks.get(&block_num).cloned().unwrap_or(0) as u16;
+            log::debug!("num_txs in block {}: {}", block_num, num_txs);
 
             // Assign fields in pi columns and connect them to block table
             let fields = vec![
@@ -668,10 +722,15 @@ impl<F: Field> PiCircuitConfig<F> {
                     false,
                     challenges,
                 )?;
-                block_copy_cells.push((
-                    cells[RPI_CELL_IDX].clone(),
-                    block_table_offset + block_offset,
-                ));
+                // do not copy num_txs to block table as the meaning of num_txs
+                // in block table is len(block.txs), and this is different from num_l1_msgs +
+                // num_l2_txs
+                if block_offset != NUM_TXS_OFFSET {
+                    block_copy_cells.push((
+                        cells[RPI_CELL_IDX].clone(),
+                        block_table_offset + block_offset,
+                    ));
+                }
             }
 
             block_table_offset += BLOCK_LEN;
@@ -1274,6 +1333,12 @@ impl<F: Field> PiCircuitConfig<F> {
                 || Value::known(F::zero()),
             )?;
         }
+        region.assign_fixed(
+            || "tag of first row of block table",
+            self.block_table.tag,
+            offset,
+            || Value::known(F::from(BlockContextFieldTag::Null as u64)),
+        )?;
         for column in block_table_columns
             .iter()
             .chain(iter::once(&self.cum_num_txs))
@@ -1290,11 +1355,13 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut cum_num_txs = 0usize;
         let mut block_value_cells = vec![];
         let block_ctxs = &public_data.block_ctxs;
+        // let num_txs_in_blocks = public_data.get_num_txs();
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
             (block_ctxs.ctxs.len()..max_inner_blocks)
                 .into_iter()
                 .map(|_| BlockContext::padding(public_data.chain_id)),
         ) {
+            // note that
             let num_txs = public_data
                 .transactions
                 .iter()
@@ -1363,10 +1430,12 @@ impl<F: Field> PiCircuitConfig<F> {
                     )?;
                 }
                 if *tag == CumNumTxs {
+                    // only increase cum_num_txs when the block_table.tag = CumNumTxs
                     cum_num_txs_field = F::from(cum_num_txs as u64);
                 }
                 if offset == 1 {
                     assert_eq!(cum_num_txs_field, F::zero());
+                    // use copy constraint to make sure that cum_num_txs starts with 0
                     region.assign_advice_from_constant(
                         || "cum_num_txs",
                         self.cum_num_txs,
@@ -1414,6 +1483,7 @@ impl<F: Field> PiCircuit<F> {
         let chain_id = block.chain_id;
         let public_data = PublicData {
             chain_id,
+            start_l1_queue_index: block.start_l1_queue_index,
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
             prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),

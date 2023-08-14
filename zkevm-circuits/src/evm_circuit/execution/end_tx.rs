@@ -148,8 +148,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         #[cfg(feature = "scroll")]
         let coinbase_keccak_codehash = cb.query_cell_phase2();
 
-        let coinbase_codehash_is_zero =
-            IsZeroGadget::construct(cb, "coinbase_codehash_is_zero", coinbase_codehash.expr());
+        let coinbase_codehash_is_zero = cb.annotation("coinbase_codehash_is_zero", |cb| {
+            IsZeroGadget::construct(cb, coinbase_codehash.expr())
+        });
 
         // If coinbase account balance will become positive because of this tx, update its codehash
         // from 0 to the empty codehash.

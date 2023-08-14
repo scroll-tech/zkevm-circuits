@@ -412,8 +412,9 @@ impl<F: Field> TransferFromGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero =
-            IsZeroGadget::construct(cb, "transfer from is zero value", value.expr());
+        let value_is_zero = cb.annotation("transfer from is zero value", |cb| {
+            IsZeroGadget::construct(cb, value.expr())
+        });
         Self::construct_with_is_zero(
             cb,
             sender_address,
@@ -497,8 +498,7 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero =
-            IsZeroGadget::construct(cb, "transfer from with gas is zero value", value.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         Self::construct_with_is_zero(
             cb,
             sender_address,
@@ -633,7 +633,9 @@ impl<F: Field> TransferToGadget<F> {
         value: Word<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "transfer to is zero value", value.expr());
+        let value_is_zero = cb.annotation("transfer to is zero value", |cb| {
+            IsZeroGadget::construct(cb, value.expr())
+        });
         Self::construct_with_is_zero(
             cb,
             receiver_address,
@@ -836,7 +838,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         let from = TransferFromWithGasFeeGadget::construct_with_is_zero(
             cb,
             sender_address,
@@ -878,7 +880,9 @@ impl<F: Field> TransferGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let value_is_zero = cb.annotation("transfer is zero value", |cb| {
+            IsZeroGadget::construct(cb, value.expr())
+        });
         let from = TransferFromGadget::construct_with_is_zero(
             cb,
             sender_address.expr(),
@@ -1034,14 +1038,14 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         });
 
         // Recomposition of random linear combination to integer
-        let gas_is_u64 = IsZeroGadget::construct(cb, "", sum::expr(&gas_word.cells[N_BYTES_GAS..]));
+        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             [cd_address.end_offset(), rd_address.end_offset()],
         );
 
         // construct common gadget
-        let value_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&value.cells));
+        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
@@ -1056,7 +1060,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         );
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_code_hash_rlc());
-        let callee_not_exists = IsZeroGadget::construct(cb, "", phase2_callee_code_hash.expr());
+        let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
 
         Self {
             is_success,
@@ -1231,7 +1235,7 @@ impl<F: Field> SstoreGasGadget<F> {
         let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
         let original_eq_prev =
             IsEqualGadget::construct(cb, original_value.expr(), value_prev.expr());
-        let original_is_zero = IsZeroGadget::construct(cb, "", original_value.expr());
+        let original_is_zero = IsZeroGadget::construct(cb, original_value.expr());
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -1525,8 +1529,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word_rlc();
-        let not_overflow =
-            IsZeroGadget::construct(cb, "", sum::expr(&original.cells[VALID_BYTES..]));
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
 
         Self {
             original,
@@ -1598,8 +1601,7 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
 
         // Check if `data_offset` is Uint64 overflow.
         let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
-        let is_data_offset_within_u64 =
-            IsZeroGadget::construct(cb, "data_offset not overflow", data_offset_larger_u64);
+        let is_data_offset_within_u64 = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
         let sum: AddWordsGadget<F, 2, false> =
             AddWordsGadget::construct(cb, [data_offset, size_word], remainder_end.clone());
@@ -1608,7 +1610,7 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
         // yes, it should be also an error of return data out of bound.
         let is_end_u256_overflow = sum.carry().as_ref().unwrap();
         let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
-        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, "", remainder_end_larger_u64);
+        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, remainder_end_larger_u64);
 
         // check if `remainder_end` exceeds return data length.
         let is_remainder_end_exceed_len = LtGadget::construct(
