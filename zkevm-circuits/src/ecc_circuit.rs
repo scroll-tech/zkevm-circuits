@@ -1,7 +1,7 @@
 //! The ECC circuit is responsible for verifying ECC-related operations from precompiled contract
 //! calls, namely, EcAdd, EcMul and EcPairing.
 
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
 use bus_mapping::{
     circuit_input_builder::{EcAddOp, EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
@@ -14,6 +14,7 @@ use halo2_base::{
     Context, QuantumCell, SKIP_FIRST_PASS,
 };
 use halo2_ecc::{
+    bigint::CRTInteger,
     bn254::pairing::PairingChip,
     ecc::EccChip,
     fields::{
@@ -575,9 +576,17 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .pairs
             .iter()
             .map(|pair| {
+                let ec_point = pairing_chip.load_private_g1(ctx, Value::known(pair.g1_point));
                 let (x_cells, y_cells) = self.decompose_g1(pair.g1_point);
+                let powers_of_256 =
+                    iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
+                        .take(32)
+                        .map(|x| QuantumCell::Constant(x))
+                        .collect_vec();
+                self.assert_crt_repr(ctx, ecc_chip, &ec_point.x, &x_cells, &powers_of_256);
+                self.assert_crt_repr(ctx, ecc_chip, &ec_point.y, &y_cells, &powers_of_256);
                 G1Decomposed {
-                    ec_point: pairing_chip.load_private_g1(ctx, Value::known(pair.g1_point)),
+                    ec_point,
                     x_cells,
                     y_cells,
                 }
@@ -591,10 +600,44 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .pairs
             .iter()
             .map(|pair| {
+                let ec_point = pairing_chip.load_private_g2(ctx, Value::known(pair.g2_point));
                 let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
                     self.decompose_g2(pair.g2_point);
+                let powers_of_256 =
+                    iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
+                        .take(32)
+                        .map(|x| QuantumCell::Constant(x))
+                        .collect_vec();
+                self.assert_crt_repr(
+                    ctx,
+                    ecc_chip,
+                    &ec_point.x.coeffs[0],
+                    &x_c0_cells,
+                    &powers_of_256,
+                );
+                self.assert_crt_repr(
+                    ctx,
+                    ecc_chip,
+                    &ec_point.x.coeffs[1],
+                    &x_c1_cells,
+                    &powers_of_256,
+                );
+                self.assert_crt_repr(
+                    ctx,
+                    ecc_chip,
+                    &ec_point.y.coeffs[0],
+                    &y_c0_cells,
+                    &powers_of_256,
+                );
+                self.assert_crt_repr(
+                    ctx,
+                    ecc_chip,
+                    &ec_point.y.coeffs[1],
+                    &y_c1_cells,
+                    &powers_of_256,
+                );
                 G2Decomposed {
-                    ec_point: pairing_chip.load_private_g2(ctx, Value::known(pair.g2_point)),
+                    ec_point,
                     x_c0_cells,
                     x_c1_cells,
                     y_c0_cells,
@@ -770,15 +813,58 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
     fn assign_g1(
         &self,
         ctx: &mut Context<F>,
-        fp_chip: &EccChip<F, FpConfig<F, Fq>>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         g1: G1Affine,
     ) -> G1Decomposed<F> {
-        let ec_point = fp_chip.load_private(ctx, (Value::known(g1.x), Value::known(g1.y)));
+        let ec_point = ecc_chip.load_private(ctx, (Value::known(g1.x), Value::known(g1.y)));
         let (x_cells, y_cells) = self.decompose_g1(g1);
+        let powers_of_256 = iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
+            .take(32)
+            .map(|x| QuantumCell::Constant(x))
+            .collect_vec();
+        self.assert_crt_repr(ctx, ecc_chip, &ec_point.x, &x_cells, &powers_of_256);
+        self.assert_crt_repr(ctx, ecc_chip, &ec_point.y, &y_cells, &powers_of_256);
         G1Decomposed {
             ec_point,
             x_cells,
             y_cells,
+        }
+    }
+
+    /// Assert that a CRT integer's bytes representation is correct.
+    fn assert_crt_repr(
+        &self,
+        ctx: &mut Context<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        crt_int: &CRTInteger<F>,
+        bytes: &[QuantumCell<F>],
+        powers_of_256: &[QuantumCell<F>],
+    ) {
+        debug_assert_eq!(bytes.len(), 32);
+        debug_assert!(powers_of_256.len() >= 11);
+
+        let [limb1, limb2, limb3] = [
+            bytes[0..11].to_vec(),
+            bytes[11..22].to_vec(),
+            bytes[22..32].to_vec(),
+        ]
+        .map(|limb_bytes| {
+            ecc_chip.field_chip().range().gate().inner_product(
+                ctx,
+                limb_bytes,
+                powers_of_256[0..11].to_vec(),
+            )
+        });
+
+        for (&limb_recovered, &limb_value) in [limb1, limb2, limb3]
+            .iter()
+            .zip_eq(crt_int.truncation.limbs.iter())
+        {
+            ecc_chip.field_chip().range().gate().assert_equal(
+                ctx,
+                QuantumCell::Existing(limb_recovered),
+                QuantumCell::Existing(limb_value),
+            );
         }
     }
 
