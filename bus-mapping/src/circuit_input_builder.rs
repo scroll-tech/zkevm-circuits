@@ -644,6 +644,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     // PI circuit
     keccak_inputs.extend(keccak_inputs_pi_circuit(
         block.chain_id,
+        block.start_l1_queue_index,
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
@@ -736,17 +737,41 @@ pub fn get_dummy_tx_hash() -> H256 {
 
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
+    start_l1_queue_index: u64,
     prev_state_root: Word,
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
 ) -> Vec<Vec<u8>> {
+    let mut total_l1_popped = start_l1_queue_index;
+    log::debug!(
+        "start_l1_queue_index in keccak_inputs: {}",
+        start_l1_queue_index
+    );
     let data_bytes = iter::empty()
-        .chain(block_headers.iter().flat_map(|(block_num, block)| {
-            let num_txs = transactions
+        .chain(block_headers.iter().flat_map(|(&block_num, block)| {
+            let num_l2_txs = transactions
                 .iter()
-                .filter(|tx| tx.block_num == *block_num)
-                .count() as u16;
+                .filter(|tx| !tx.tx_type.is_l1_msg() && tx.block_num == block_num)
+                .count() as u64;
+            let num_l1_msgs = transactions
+                .iter()
+                .filter(|tx| tx.tx_type.is_l1_msg() && tx.block_num == block_num)
+                // tx.nonce alias for queue_index for l1 msg tx
+                .map(|tx| tx.nonce)
+                .max()
+                .map_or(0, |max_queue_index| max_queue_index - total_l1_popped + 1);
+            total_l1_popped += num_l1_msgs;
+
+            let num_txs = (num_l2_txs + num_l1_msgs) as u16;
+            log::debug!(
+                "[block {}] total_l1_popped: {}, num_l1_msgs: {}, num_l2_txs: {}, num_txs: {}",
+                block_num,
+                total_l1_popped,
+                num_l1_msgs,
+                num_l2_txs,
+                num_txs,
+            );
 
             iter::empty()
                 // Block Values
@@ -760,6 +785,10 @@ fn keccak_inputs_pi_circuit(
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
         .collect::<Vec<u8>>();
     let data_hash = H256(keccak256(&data_bytes));
+    log::debug!(
+        "chunk data hash: {}",
+        hex::encode(data_hash.to_fixed_bytes())
+    );
     let after_state_root = block_headers
         .last_key_value()
         .map(|(_, blk)| blk.eth_block.state_root)

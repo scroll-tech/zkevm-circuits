@@ -24,6 +24,7 @@ use halo2_proofs::{
         Expression::{self, Constant},
     },
 };
+use itertools::Itertools;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
@@ -234,7 +235,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        debug_assert!(
+        assert!(
             self.condition.is_none(),
             "Nested condition is not supported"
         );
@@ -246,7 +247,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         if self.max_degree > 0 {
-            debug_assert!(
+            assert!(
                 degree <= self.max_degree,
                 "Expression {} degree too high: {} > {}",
                 name,
@@ -306,10 +307,15 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
     pub(crate) max_inner_degree: (&'static str, usize),
+    #[cfg(feature = "debug-annotations")]
+    annotations: Vec<String>,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        #[cfg(feature = "debug-annotations")]
+        let name =
+            Box::leak(format!("{}: {}", self.annotations.iter().join(">"), name).into_boxed_str());
         let constraint = self.split_expression(
             name,
             constraint * self.condition_expr(),
@@ -351,6 +357,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
             max_inner_degree: ("", 0),
+            annotations: Vec::new(),
         }
     }
 
@@ -1472,7 +1479,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         // We need to subtract IMPLICIT_DEGREE from MAX_DEGREE because all expressions
         // will be multiplied by state selector and q_step/q_step_first
         // selector.
-        debug_assert!(
+        assert!(
             degree <= MAX_DEGREE - IMPLICIT_DEGREE,
             "Expression {} degree too high: {} > {}",
             name,
@@ -1491,6 +1498,24 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.conditions.push(condition);
         let ret = constraint(self);
         self.conditions.pop();
+        ret
+    }
+
+    /// Annotation constraint
+    /// if feature "debug-annotations" is enabled, it will push the annotation
+    /// into the annotation stack.
+    /// if feature "debug-annotations" is disabled, it's a no-op.
+
+    pub(crate) fn annotation<R>(
+        &mut self,
+        annotation: impl AsRef<str>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        #[cfg(feature = "debug-annotations")]
+        self.annotations.push(annotation.as_ref().to_string());
+        let ret = constraint(self);
+        #[cfg(feature = "debug-annotations")]
+        self.annotations.pop();
         ret
     }
 

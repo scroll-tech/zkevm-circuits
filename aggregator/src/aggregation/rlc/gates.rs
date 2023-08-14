@@ -16,7 +16,7 @@ impl RlcConfig {
         region.assign_fixed(|| "const zero", self.fixed, 0, || Value::known(Fr::zero()))?;
         region.assign_fixed(|| "const one", self.fixed, 1, || Value::known(Fr::one()))?;
         region.assign_fixed(|| "const two", self.fixed, 2, || Value::known(Fr::from(2)))?;
-        region.assign_fixed(|| "const four", self.fixed, 3, || Value::known(Fr::from(4)))?;
+        region.assign_fixed(|| "const five", self.fixed, 3, || Value::known(Fr::from(5)))?;
         region.assign_fixed(|| "const nine", self.fixed, 4, || Value::known(Fr::from(9)))?;
         region.assign_fixed(|| "const 32", self.fixed, 5, || Value::known(Fr::from(32)))?;
         region.assign_fixed(
@@ -62,7 +62,7 @@ impl RlcConfig {
     }
 
     #[inline]
-    pub(crate) fn four_cell(&self, region_index: RegionIndex) -> Cell {
+    pub(crate) fn five_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
             row_offset: 3,
@@ -430,7 +430,16 @@ impl RlcConfig {
         }
 
         // sanity check
-        assert_equal(&acc, input);
+        assert_equal(
+            &acc,
+            input,
+            format!(
+                "acc does not match input: {:?} {:?}",
+                &acc.value(),
+                &input.value(),
+            )
+            .as_str(),
+        );
 
         region.constrain_equal(acc.cell(), input.cell())?;
 

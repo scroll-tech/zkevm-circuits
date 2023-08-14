@@ -1,21 +1,20 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{CommonReturnDataCopyGadget, SameContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::RangeCheckGadget,
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            CachedRegion, Cell, MemoryAddress,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -23,7 +22,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -39,9 +38,8 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     /// The data is copied to memory. To verify this
     /// copy operation we need the MemoryAddressGadget.
     dst_memory_addr: MemoryAddressGadget<F>,
-    /// Holds the memory address for the offset in return data from where we
-    /// read.
-    data_offset: MemoryAddress<F>,
+    /// check if overflow
+    check_overflow_gadget: CommonReturnDataCopyGadget<F>,
     /// Opcode RETURNDATACOPY has a dynamic gas cost:
     /// gas_code = static_gas * minimum_word_size + memory_expansion_cost
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -51,8 +49,6 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     /// RW inverse counter from the copy table at the start of related copy
     /// steps.
     copy_rwc_inc: Cell<F>,
-    /// Out of bound check circuit.
-    in_bound_check: RangeCheckGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
@@ -64,18 +60,27 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let opcode = cb.query_cell();
 
         let dest_offset = cb.query_cell_phase2();
-        let data_offset = cb.query_word_rlc();
-        let size = cb.query_word_rlc();
+        let return_data_size: Cell<F> = cb.query_cell();
 
+        let size: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> = cb.query_word_rlc();
+        // enusre no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
+        // state
+        let check_overflow_gadget =
+            CommonReturnDataCopyGadget::construct(cb, return_data_size.expr(), false.expr());
+        // in normal case, size = CommonReturnDataCopyGadget::size
+        cb.require_equal(
+            "size = CommonReturnDataCopyGadget::size",
+            size.expr(),
+            check_overflow_gadget.size().expr(),
+        );
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
-        cb.stack_pop(data_offset.expr());
+        cb.stack_pop(check_overflow_gadget.data_offset().expr());
         cb.stack_pop(size.expr());
 
         // 2. Add lookup constraint in the call context for the returndatacopy field.
         let last_callee_id = cb.query_cell();
         let return_data_offset = cb.query_cell();
-        let return_data_size = cb.query_cell();
         cb.call_context_lookup(
             false.expr(),
             None,
@@ -95,18 +100,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             return_data_size.expr(),
         );
 
-        // 3. contraints for copy: copy overflow check
-        // i.e., offset + size <= return_data_size
-        let in_bound_check = RangeCheckGadget::construct(
-            cb,
-            return_data_size.expr()
-                - (from_bytes::expr(&data_offset.cells) + from_bytes::expr(&size.cells)),
-        );
-
         // 4. memory copy
         // Construct memory address in the destination (memory) to which we copy memory.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_offset, size);
-
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
         // memory.
@@ -124,7 +120,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 CopyDataType::Memory.expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                return_data_offset.expr() + from_bytes::expr(&data_offset.cells),
+                return_data_offset.expr()
+                    + from_bytes::expr(&check_overflow_gadget.data_offset().cells[..N_BYTES_U64]),
                 return_data_offset.expr() + return_data_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
@@ -159,11 +156,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             return_data_offset,
             return_data_size,
             dst_memory_addr,
-            data_offset,
+            check_overflow_gadget,
             memory_expansion,
             memory_copier_gas,
             copy_rwc_inc,
-            in_bound_check,
         }
     }
 
@@ -180,16 +176,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         let [dest_offset, data_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
-
-        self.data_offset.assign(
-            region,
-            offset,
-            Some(
-                data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
 
         let [last_callee_id, return_data_offset, return_data_size] = [
             (3, CallContextFieldTag::LastCalleeId),
@@ -254,13 +240,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             ),
         )?;
 
-        self.in_bound_check.assign(
-            region,
-            offset,
-            (return_data_size - (data_offset + size))
-                .to_scalar()
-                .expect("unexpected U256 -> Scalar conversion failure"),
-        )?;
+        self.check_overflow_gadget
+            .assign(region, offset, data_offset, size, return_data_size)?;
 
         Ok(())
     }
@@ -370,7 +351,7 @@ mod test {
     #[test]
     fn returndatacopy_gadget_overflow_offset_and_zero_length() {
         test_ok_internal(0, 0x20, 0, 0x20, Word::MAX);
+        test_ok_internal(0, 0x10, 0x10, 0x10, 0x20.into());
+        test_ok_internal(0, 0x10, 0x10, 0, 0x2000000.into());
     }
-    //     test_ok_internal(0, 0x10, 0x10, 0x10, 0x20.into());
-    //     test_ok_internal(0, 0x10, 0x10, 0, 0x2000000.into());
 }
