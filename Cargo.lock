@@ -38,6 +38,7 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "halo2_proofs",
+ "hex",
  "itertools",
  "log",
  "rand",
