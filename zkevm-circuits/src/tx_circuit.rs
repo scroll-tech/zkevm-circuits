@@ -791,36 +791,43 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             });
 
             // non-last tx in cur block
-            cb.condition(block_num_unchanged.expr(), |cb| {
-                cb.require_equal(
-                    "total_l1_popped' = tx.is_l1_msg ? queue_index + 1 : total_l1_popped",
-                    meta.query_advice(total_l1_popped_before, Rotation::next()),
-                    select::expr(
-                        meta.query_advice(is_l1_msg, Rotation::cur()),
-                        meta.query_advice(queue_index, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(total_l1_popped_before, Rotation::cur()),
-                    ),
-                );
+            cb.condition(
+                and::expr([
+                    // see the comment below
+                    not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                    block_num_unchanged.expr(),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "total_l1_popped' = tx.is_l1_msg ? queue_index + 1 : total_l1_popped",
+                        meta.query_advice(total_l1_popped_before, Rotation::next()),
+                        select::expr(
+                            meta.query_advice(is_l1_msg, Rotation::cur()),
+                            meta.query_advice(queue_index, Rotation::cur()) + 1.expr(),
+                            meta.query_advice(total_l1_popped_before, Rotation::cur()),
+                        ),
+                    );
 
-                cb.require_equal(
-                    "num_all_txs' - num_all_txs",
-                    meta.query_advice(num_all_txs_acc, Rotation::next())
-                        - meta.query_advice(num_all_txs_acc, Rotation::cur()),
-                    select::expr(
-                        meta.query_advice(is_l1_msg, Rotation::next()),
-                        // if next tx is l1_msg,
-                        //  - num_l1_msgs increase by (queue_index' - tlp_before + 1)
-                        //  - num_l2_txs does not increase
-                        meta.query_advice(tx_nonce, Rotation::next())
-                            - meta.query_advice(total_l1_popped_before, Rotation::cur())
-                            + 1.expr(),
-                        // if next tx is l2 tx,
-                        //  - num_l1_msgs does not increase,
-                        //  - num_l2_txs increase by 1.
-                        1.expr(),
-                    ),
-                );
-            });
+                    cb.require_equal(
+                        "num_all_txs' - num_all_txs",
+                        meta.query_advice(num_all_txs_acc, Rotation::next())
+                            - meta.query_advice(num_all_txs_acc, Rotation::cur()),
+                        select::expr(
+                            meta.query_advice(is_l1_msg, Rotation::next()),
+                            // if next tx is l1_msg,
+                            //  - num_l1_msgs increase by (queue_index' - tlp_before + 1)
+                            //  - num_l2_txs does not increase
+                            meta.query_advice(tx_nonce, Rotation::next())
+                                - meta.query_advice(total_l1_popped_before, Rotation::cur())
+                                + 1.expr(),
+                            // if next tx is l2 tx,
+                            //  - num_l1_msgs does not increase,
+                            //  - num_l2_txs increase by 1.
+                            1.expr(),
+                        ),
+                    );
+                },
+            );
 
             // last tx in cur block (next tx is the first tx in next block)
             // and cur block is not the last block (s.t. we can init next block's num_all_txs)
