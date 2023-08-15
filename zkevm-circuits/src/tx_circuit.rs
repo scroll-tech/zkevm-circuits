@@ -790,7 +790,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 let block_num_diff = meta.query_advice(block_num, Rotation::next())
                     - meta.query_advice(block_num, Rotation::cur());
 
-                vec![(lookup_condition * block_num_diff, u16_table.clone().into())]
+                vec![(lookup_condition * block_num_diff, u16_table.into())]
             },
         );
 
