@@ -797,9 +797,10 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             gas_cost_gadget.dynamic_gas.max(),
         );
 
-        let restore_context_gadget = RestoreContextGadget::construct(
+        let restore_context_gadget = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
+            gas_cost.expr(),
             0.expr(),
             0.expr(),
             input.modulus_len(),

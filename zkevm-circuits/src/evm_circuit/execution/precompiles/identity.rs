@@ -71,9 +71,10 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let restore_context = RestoreContextGadget::construct(
+        let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
+            gas_cost.expr(),
             0.expr(),
             0x00.expr(),             // ReturnDataOffset
             call_data_length.expr(), // ReturnDataLength
@@ -105,15 +106,12 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.gas_cost.assign(
-            region,
-            offset,
-            Value::known(F::from(
-                GasCost::PRECOMPILE_IDENTITY_BASE.0
-                    + ((call.call_data_length + (N_BYTES_WORD as u64) - 1) / (N_BYTES_WORD as u64))
-                        * GasCost::PRECOMPILE_IDENTITY_PER_WORD.0,
-            )),
-        )?;
+        let gas_cost = GasCost::PRECOMPILE_IDENTITY_BASE.0
+            + ((call.call_data_length + (N_BYTES_WORD as u64) - 1) / (N_BYTES_WORD as u64))
+                * GasCost::PRECOMPILE_IDENTITY_PER_WORD.0;
+        debug_assert_eq!(gas_cost, step.gas_cost);
+        self.gas_cost
+            .assign(region, offset, Value::known(F::from(gas_cost)))?;
         self.input_word_size.assign(
             region,
             offset,

@@ -102,7 +102,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         )?;
 
         let callee_code_hash = call.code_hash;
-        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
+        let callee_acc = state.sdb.get_account(&callee_address).1;
+        let callee_exists = !callee_acc.is_empty();
 
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
@@ -219,13 +220,19 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             gas_cost,
             memory_expansion_gas_cost
         );
+        let stipend = if has_value {
+            GAS_STIPEND_CALL_WITH_VALUE
+        } else {
+            0
+        };
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
+        let callee_gas_left_with_stipend = callee_gas_left + stipend;
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
         if geth_steps[0].op == OpcodeId::CALL
             && geth_steps[1].depth == geth_steps[0].depth + 1
-            && geth_steps[1].gas.0 != callee_gas_left + if has_value { 2300 } else { 0 }
+            && geth_steps[1].gas.0 != callee_gas_left_with_stipend
         {
             // panic with full info
             let info1 = format!("callee_gas_left {callee_gas_left} gas_specified {gas_specified} gas_cost {gas_cost} is_warm {is_warm} has_value {has_value} current_memory_word_size {curr_memory_word_size} next_memory_word_size {next_memory_word_size}, memory_expansion_gas_cost {memory_expansion_gas_cost}");
@@ -243,8 +250,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 geth_steps[0], geth_steps[1], call, info1, info2
             );
             debug_assert_eq!(
-                geth_steps[1].gas.0,
-                callee_gas_left + if has_value { 2300 } else { 0 },
+                geth_steps[1].gas.0, callee_gas_left_with_stipend,
                 "{full_ctx}"
             );
         }
@@ -256,6 +262,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 let precompile_call: PrecompileCalls = code_address.0[19].into();
 
                 // get the result of the precompile call.
+                // For failed call, it will cost all gas provided.
                 let (result, precompile_call_gas_cost) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
@@ -264,7 +271,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     } else {
                         &[]
                     },
-                    callee_gas_left,
+                    callee_gas_left_with_stipend,
                 );
 
                 // mutate the callee memory by at least the precompile call's result that will be
@@ -323,7 +330,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost).into(),
+                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
@@ -456,33 +463,17 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     (input_bytes, output_bytes, returned_bytes),
                 )?;
 
+                // Set gas left and gas cost for precompile step.
+                precompile_step.gas_left = Gas(callee_gas_left_with_stipend);
+                precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
                 // Make the Precompile execution step to handle return logic and restore to caller
                 // context (similar as STOP and RETURN).
                 state.handle_return(&mut precompile_step, geth_steps, true)?;
 
-                let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
                 debug_assert_eq!(
-                    real_cost
-                        + if has_value && !callee_exists {
-                            GAS_STIPEND_CALL_WITH_VALUE
-                        } else {
-                            0
-                        },
-                    gas_cost + precompile_call_gas_cost
+                    geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost + stipend,
+                    geth_steps[1].gas.0
                 );
-                exec_step.gas_cost = GasCost(gas_cost + precompile_call_gas_cost);
-                if real_cost != exec_step.gas_cost.0 {
-                    log::warn!(
-                        "precompile gas fixed from {} to {}, step {:?}",
-                        exec_step.gas_cost.0,
-                        real_cost,
-                        geth_steps[0]
-                    );
-                }
-
-                // Set gas left and gas cost for precompile step.
-                precompile_step.gas_left = Gas(callee_gas_left);
-                precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
 
                 Ok(vec![exec_step, precompile_step])
             }
@@ -496,18 +487,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
                 state.handle_return(&mut exec_step, geth_steps, false)?;
-
-                // FIXME
-                let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                if real_cost != exec_step.gas_cost.0 {
-                    log::warn!(
-                        "empty call gas fixed from {} to {}, step {:?}",
-                        exec_step.gas_cost.0,
-                        real_cost,
-                        geth_steps[0]
-                    );
-                }
-                exec_step.gas_cost = GasCost(real_cost);
 
                 Ok(vec![exec_step])
             }
@@ -524,7 +503,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_step.gas.0 - geth_step.gas_cost.0).into(),
+                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (

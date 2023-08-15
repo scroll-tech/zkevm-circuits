@@ -1334,8 +1334,10 @@ impl<'a> CircuitInputStateRef<'a> {
             _ => [Word::zero(), Word::zero()],
         };
 
-        let gas_refund = if exec_step.error.is_some() || exec_step.is_precompiled() {
+        let gas_refund = if exec_step.error.is_some() {
             0
+        } else if exec_step.is_precompiled() {
+            exec_step.gas_left.0 - exec_step.gas_cost.0
         } else {
             let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
             let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
@@ -1365,8 +1367,15 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
         };
 
-        let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).unwrap_or_else(|| panic!("caller_gas_left underflow geth_step_next.gas {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", geth_step_next.gas.0, gas_refund, exec_step, geth_step));
-
+        let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).unwrap_or_else(
+            || {
+                panic!("caller_gas_left underflow geth_step_next.gas {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", 
+                    geth_step_next.gas.0,
+                    gas_refund,
+                    exec_step,
+                    geth_step);
+            }
+        );
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
             (

@@ -69,8 +69,6 @@ pub(crate) struct CallOpGadget<F> {
     is_depth_ok: LtGadget<F, N_BYTES_U64>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
-    // FIXME: free cells, only used in empty codehash (empty account and precompiles)
-    step_gas_cost: Cell<F>,
     // to handle precompile calls
     is_code_address_zero: IsZeroGadget<F>,
     is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
@@ -288,10 +286,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
-        let step_gas_cost = cb.query_cell();
         let memory_expansion = call_gadget.memory_expansion.clone();
 
-        // handle precompile calls.
+        // 1. handle precompile calls.
         let (
             precompile_gadget,
             precompile_input_bytes_rlc,
@@ -359,7 +356,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                     (
                         CallContextFieldTag::GasLeft,
-                        cb.curr.state.gas_left.expr() - step_gas_cost.expr(),
+                        cb.curr.state.gas_left.expr() - gas_cost.expr() - callee_gas_left.clone(),
                     ),
                     (
                         CallContextFieldTag::MemorySize,
@@ -467,6 +464,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     + precompile_output_rws.expr()
                     + precompile_return_rws.expr();
 
+                // Give gas stipend if value is not zero
+                let callee_gas_left = callee_gas_left.expr()
+                    + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
+
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     call_id: To(callee_call_id.expr()),
@@ -477,7 +478,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(precompile_output_rws.expr()),
-                    reversible_write_counter: To(0.expr()),
+                    reversible_write_counter: Delta(transfer_rwc_delta.expr()),
                     ..StepStateTransition::default()
                 });
 
@@ -495,22 +496,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     precompile_output_bytes_rlc.expr(),
                     precompile_return_bytes_rlc.expr(),
                 );
-                cb.condition(
-                    // FIXME: skipping the gas cost checks for SHA2-256, RIPEMD-160 and BLAKE2F
-                    // until they are implemented in zkevm-circuits.
-                    not::expr(cb.next.execution_state_selector([
-                        ExecutionState::PrecompileSha256,
-                        ExecutionState::PrecompileRipemd160,
-                        ExecutionState::PrecompileBlake2f,
-                    ])),
-                    |cb| {
-                        cb.require_equal(
-                            "precompile call: step gas cost",
-                            step_gas_cost.expr(),
-                            gas_cost.expr() + precompile_gadget.precompile_call_gas_cost.expr(),
-                        );
-                    },
-                );
 
                 (
                     precompile_gadget,
@@ -521,7 +506,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             },
         );
 
-        // handle calls to accounts with no code.
+        // 2. handle calls to accounts with no code.
         cb.condition(
             and::expr([
                 no_callee_code.expr(),
@@ -537,17 +522,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
                 }
-            },
-        ); // rwc_delta += 3 for empty account
+                // rwc_delta += 3 for empty account
 
-        // handle calls to empty accounts without precompile.
-        cb.condition(
-            and::expr([
-                call_gadget.is_empty_code_hash.expr(),
-                is_precheck_ok.expr(),
-                not::expr(is_precompile.expr()),
-            ]),
-            |cb| {
+                // TODO: update comments below
+                //
+                // For CALL opcode, it has an extra stack pop `value` (+1) and if the value is
+                // not zero, two account write for `transfer` call (+2).
+                //
                 // For CALLCODE opcode, it has an extra stack pop `value` and one account read
                 // for caller balance (+2).
                 //
@@ -567,8 +548,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     rw_counter: Delta(rw_counter_delta),
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
-                    gas_left: Delta(-step_gas_cost.expr()),
-
+                    gas_left: Delta(
+                        call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr()
+                            - gas_cost.clone(),
+                    ),
                     memory_word_size: To(memory_expansion.next_memory_word_size()),
                     // For CALL opcode, `transfer` invocation has two account write if value is not
                     // zero.
@@ -578,7 +561,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             },
         );
 
-        // handle ErrDepth or ErrInsufficientBalance step transition
+        // 4. handle ErrDepth or ErrInsufficientBalance step transition
         cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
@@ -603,7 +586,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             });
         });
 
-        // handle all other calls.
+        // 3. Call to account with non-empty code.
         cb.condition(
             and::expr(&[
                 not::expr(no_callee_code.expr()),
@@ -746,7 +729,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_depth_ok,
             one_64th_gas,
             capped_callee_gas_left,
-            step_gas_cost,
             // precompile related fields.
             is_code_address_zero,
             is_precompile_lt,
@@ -809,7 +791,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             [(); 5].map(|_| rws.next().stack_value());
         // log::trace!("rw_offset {:?}", rw_offset);
         let callee_code_hash = rws.next().account_codehash_pair().0;
-        let callee_exists = !callee_code_hash.is_zero() || is_precompile;
+        let callee_exists = !callee_code_hash.is_zero();
 
         let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
 
@@ -832,7 +814,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let transfer_assign_result = self.transfer.assign_from_rws(
                 region,
                 offset,
-                callee_exists,
+                callee_exists || is_precompile,
                 false,
                 value,
                 &mut rws,
@@ -945,8 +927,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             !callee_exists,
         )?;
         let gas_available = step.gas_left - gas_cost;
-        self.step_gas_cost
-            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         self.one_64th_gas
             .assign(region, offset, gas_available.into())?;
         self.capped_callee_gas_left.assign(
