@@ -522,6 +522,15 @@ pub fn gen_begin_tx_ops(
         // else, add 3 RW read operations for transaction L1 fee.
         gen_tx_l1_fee_ops(state, &mut exec_step);
     }
+
+    log::trace!("write tx l1fee {}", state.tx.l1_fee());
+    state.call_context_write(
+        &mut exec_step,
+        call.call_id,
+        CallContextField::L1Fee,
+        Word::from(state.tx.l1_fee()),
+    );
+
     // the rw delta before is:
     // + for non-l1 msg tx: 3 (rw for fee oracle contrace)
     // + for scroll l1-msg tx:
@@ -530,6 +539,7 @@ pub fn gen_begin_tx_ops(
     // + for non-scroll l1-msg tx:
     //   * caller existed: 1 (read codehash)
     //   * caller not existed: 2 (read codehash and create account)
+    // * write l1fee call context
 
     for (field, value) in [
         (CallContextField::TxId, state.tx_ctx.id().into()),
@@ -855,10 +865,12 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         CallContextField::IsPersistent,
         Word::from(call.is_persistent as u8),
     );
-
-    if !state.tx.tx_type.is_l1_msg() {
-        gen_tx_l1_fee_ops(state, &mut exec_step);
-    }
+    state.call_context_read(
+        &mut exec_step,
+        call.call_id,
+        CallContextField::L1Fee,
+        Word::from(state.tx.l1_fee()),
+    );
 
     let refund = state.sdb.refund();
     state.push_op(

@@ -133,10 +133,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_msg.is_l1_msg(),
             tx_l1_msg.rw_delta(),
             tx_l1_fee.rw_delta(),
-        );
+        ) + 1.expr();
 
         // the cost caused by l1
         let l1_fee_cost = select::expr(tx_l1_msg.is_l1_msg(), 0.expr(), tx_l1_fee.tx_l1_fee());
+        cb.call_context_lookup(
+            1.expr(),
+            Some(call_id.expr()),
+            CallContextFieldTag::L1Fee,
+            l1_fee_cost.expr(),
+        ); // rwc_delta += 1
 
         cb.call_context_lookup(
             1.expr(),
@@ -762,6 +768,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         } else {
             3
         });
+
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
+
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
         debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::TxId as u64));

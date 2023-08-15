@@ -521,6 +521,9 @@ pub enum CallContextFieldTag {
     MemorySize,
     /// ReversibleWriteCounter
     ReversibleWriteCounter,
+
+    /// L1Fee
+    L1Fee,
 }
 impl_expr!(CallContextFieldTag);
 

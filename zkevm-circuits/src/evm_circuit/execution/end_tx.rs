@@ -4,9 +4,7 @@ use crate::{
         param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::{
-                TransferGadgetInfo, TransferToGadget, TxL1FeeGadget, UpdateBalanceGadget,
-            },
+            common_gadget::{TransferGadgetInfo, TransferToGadget, UpdateBalanceGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
@@ -57,7 +55,7 @@ pub(crate) struct EndTxGadget<F> {
     is_first_tx: IsEqualGadget<F>,
     is_persistent: Cell<F>,
     tx_is_l1msg: IsEqualGadget<F>,
-    tx_l1_fee: TxL1FeeGadget<F>,
+    tx_l1_fee: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -68,6 +66,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
+        let tx_l1_fee = cb.call_context(None, CallContextFieldTag::L1Fee);
 
         let [tx_gas, tx_caller_address, tx_type, tx_data_gas_cost] = [
             TxContextFieldTag::Gas,
@@ -80,9 +79,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         let tx_is_l1msg =
             IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
-        let tx_l1_fee = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
-            TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
-        });
 
         // Calculate effective gas to refund
         let gas_used = tx_gas.expr() - cb.curr.state.gas_left.expr();
@@ -133,10 +129,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         let effective_fee = cb.query_word_rlc();
 
+        cb.condition(tx_is_l1msg.expr(), |cb| {
+            cb.require_zero("l1fee is 0 for l1msg", tx_l1_fee.expr());
+        });
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
-            mul_effective_tip_by_gas_used.product().expr()
-                + gadgets::util::select::expr(tx_is_l1msg.expr(), tx_l1_fee.expr(), 0.expr()),
+            tx_l1_fee.expr() + mul_effective_tip_by_gas_used.product().expr(),
             effective_fee.expr(),
         );
 
@@ -225,17 +223,17 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        9.expr() - is_first_tx.expr()
+                        10.expr() - is_first_tx.expr()
                             + not::expr(tx_is_l1msg.expr())
-                                * (coinbase_transfer.rw_delta() + 4.expr()),
+                                * (coinbase_transfer.rw_delta() + 1.expr()),
                     ),
                     ..StepStateTransition::any()
                 });
             },
         );
 
-        let rw_counter_delta = 8.expr() - is_first_tx.expr()
-            + not::expr(tx_is_l1msg.expr()) * (coinbase_transfer.rw_delta() + 4.expr());
+        let rw_counter_delta = 9.expr() - is_first_tx.expr()
+            + not::expr(tx_is_l1msg.expr()) * (coinbase_transfer.rw_delta() + 1.expr());
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
@@ -287,10 +285,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let mut rws = StepRws::new(block, step);
-        rws.offset_add(2);
-        if !tx.tx_type.is_l1_msg() {
-            rws.offset_add(3); // 3 l1 fee rw
-        }
+        rws.offset_add(3);
 
         let gas_used = tx.gas - step.gas_left;
         let (refund, _) = rws.next().tx_refund_value_pair();
@@ -420,13 +415,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 coinbase_reward
             );
         }
-        self.tx_l1_fee.assign(
-            region,
-            offset,
-            tx.l1_fee,
-            tx.l1_fee_committed,
-            tx.tx_data_gas_cost,
-        )?;
+        self.tx_l1_fee
+            .assign(region, offset, Value::known(F::from(tx_l1_fee)))?;
         self.effective_fee
             .assign(region, offset, Some(effective_fee.to_le_bytes()))?;
 
