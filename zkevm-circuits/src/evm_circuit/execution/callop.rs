@@ -359,7 +359,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                     (
                         CallContextFieldTag::GasLeft,
-                        cb.curr.state.gas_left.expr() - step_gas_cost.expr(),
+                        cb.curr.state.gas_left.expr()
+                            + call_gadget.has_value.expr() * GAS_STIPEND_CALL_WITH_VALUE.expr()
+                            - step_gas_cost.expr(),
                     ),
                     (
                         CallContextFieldTag::MemorySize,
@@ -477,7 +479,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(precompile_output_rws.expr()),
-                    reversible_write_counter: To(0.expr()),
+                    reversible_write_counter: To(transfer_rwc_delta),
                     ..StepStateTransition::default()
                 });
 
@@ -809,7 +811,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             [(); 5].map(|_| rws.next().stack_value());
         // log::trace!("rw_offset {:?}", rw_offset);
         let callee_code_hash = rws.next().account_codehash_pair().0;
-        let callee_exists = !callee_code_hash.is_zero() || is_precompile;
+        let callee_exists = !callee_code_hash.is_zero();
 
         let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
 
@@ -832,7 +834,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let transfer_assign_result = self.transfer.assign_from_rws(
                 region,
                 offset,
-                callee_exists,
+                callee_exists || is_precompile,
                 false,
                 value,
                 &mut rws,
@@ -1662,8 +1664,6 @@ mod test_precompiles {
     };
     use paste::paste;
 
-    // FIXME: enable this test
-    #[ignore]
     #[test]
     fn call_precompile_with_value() {
         let callee_code = bytecode! {

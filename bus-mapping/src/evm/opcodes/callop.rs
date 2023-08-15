@@ -323,7 +323,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost).into(),
+                        (geth_steps[0].gas.0
+                            + if has_value {
+                                GAS_STIPEND_CALL_WITH_VALUE
+                            } else {
+                                0
+                            }
+                            - gas_cost
+                            - precompile_call_gas_cost)
+                            .into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
@@ -463,7 +471,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
                 debug_assert_eq!(
                     real_cost
-                        + if has_value && !callee_exists {
+                        + if has_value {
                             GAS_STIPEND_CALL_WITH_VALUE
                         } else {
                             0
