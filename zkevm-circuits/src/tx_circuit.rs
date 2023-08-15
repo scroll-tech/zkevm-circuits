@@ -771,6 +771,29 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.query_advice(block_num, Rotation::cur()),
         );
 
+        meta.lookup(
+            "block_num' - block_num >= 1 if block_num changed for non-padding tx",
+            |meta| {
+                // Block nums like this [1, 3, 5, 4, 0] is rejected by this. But [1, 2, 3, 5, 0] is
+                // acceptable.
+                let lookup_condition = and::expr([
+                    // if next tx is padding, then its block num is 0 (i.e. may have block num
+                    // transition 5 -> 0)
+                    not::expr(meta.query_advice(is_padding_tx, Rotation::next())),
+                    // if tx table is full of real txs, then the last tx's next row is calldata.
+                    // we could have block num transition 5 -> 0.
+                    not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                    not::expr(block_num_unchanged.expr()),
+                    meta.query_advice(is_tag_block_num, Rotation::cur()),
+                ]);
+
+                let block_num_diff = meta.query_advice(block_num, Rotation::next())
+                    - meta.query_advice(block_num, Rotation::cur());
+
+                vec![(lookup_condition * block_num_diff, u16_table.clone().into())]
+            },
+        );
+
         meta.create_gate("num_all_txs in a block", |meta| {
             let mut cb = BaseConstraintBuilder::default();
             let queue_index = tx_nonce;
