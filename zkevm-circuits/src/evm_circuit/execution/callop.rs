@@ -103,8 +103,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
+        // rwc_delta = 0
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        // rwc_delta = 1
         let mut reversion_info = cb.reversion_info_read(None);
+        // rwc_delta = 3
         let [is_static, depth, current_callee_address] = [
             CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
@@ -112,13 +115,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
+        // rwc_delta = 6
         let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
                 cb.call_context(None, CallContextFieldTag::CallerAddress),
                 cb.call_context_as_word(None, CallContextFieldTag::Value),
             )
         });
-
+        // rwc_delta = 6 + is_delegatecall * 2
         let call_gadget: CommonCallGadget<F, MemoryAddressGadget<F>, true> =
             CommonCallGadget::construct(
                 cb,
@@ -127,6 +131,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 is_delegatecall.expr(),
                 is_staticcall.expr(),
             );
+        // rwc_delta = 14 + is_call_or_callcode + is_delegatecall * 2
         cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {
             cb.require_zero(
                 "for non call/call code, value is zero",
@@ -156,9 +161,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_warm_prev.expr(),
             Some(&mut reversion_info),
         );
+        // rwc_delta = 15 + is_call_or_callcode + is_delegatecall * 2
 
         // Propagate rw_counter_end_of_reversion and is_persistent
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
+        // rwc_delta = 17 + is_call_or_callcode + is_delegatecall * 2
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
@@ -185,6 +192,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             AccountFieldTag::Balance,
             caller_balance_word.expr(),
         );
+        // rwc_delta = 18 + is_call_or_callcode + is_delegatecall * 2
         let is_insufficient_balance =
             LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value);
         // depth < 1025
@@ -250,6 +258,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 &mut callee_reversion_info,
             )
         });
+        // rwc_delta = 18 + is_call_or_callcode + transfer + is_delegatecall * 2
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
@@ -341,7 +350,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         field_tag,
                         value,
                     );
-                } // rwc_delta += 7 for precompile
+                }
+                // rwc_delta = 25 + is_call_or_callcode + transfer + is_delegatecall * 2
 
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -374,7 +384,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, value);
-                } // rwc_delta += 8 for precompile
+                }
+                // rwc_delta = 33 + is_call_or_callcode + transfer + is_delegatecall * 2
 
                 // copy table lookup to verify the copying of bytes:
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
@@ -452,8 +463,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     },
                 );
 
-                let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero()) * 2.expr();
+                let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
+                let transfer_reversible_rwc_delta: halo2_proofs::plonk::Expression<F> =
+                    is_call.expr() * transfer.reversible_w_delta();
                 // +15 call context lookups for precompile.
                 let rw_counter_delta = 33.expr()
                     + is_call.expr() * 1.expr()
@@ -478,7 +490,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(precompile_output_rws.expr()),
-                    reversible_write_counter: Delta(transfer_rwc_delta.expr()),
+                    reversible_write_counter: To(transfer_reversible_rwc_delta.expr()),
                     ..StepStateTransition::default()
                 });
 
@@ -522,22 +534,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
                 }
-                // rwc_delta += 3 for empty account
+                // rwc_delta = 21 + is_call_or_callcode + transfer + is_delegatecall * 2
 
-                // TODO: update comments below
-                //
-                // For CALL opcode, it has an extra stack pop `value` (+1) and if the value is
-                // not zero, two account write for `transfer` call (+2).
-                //
-                // For CALLCODE opcode, it has an extra stack pop `value` and one account read
-                // for caller balance (+2).
+                // For CALL/CALLCODE opcode, it has an extra stack pop `value` (+1)
                 //
                 // For DELEGATECALL opcode, it has two extra call context lookups for current
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
-                let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero()) * 2.expr();
+                let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
+                let transfer_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
                 // +3 call context lookups for empty accounts.
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
@@ -553,9 +559,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             - gas_cost.clone(),
                     ),
                     memory_word_size: To(memory_expansion.next_memory_word_size()),
-                    // For CALL opcode, `transfer` invocation has two account write if value is not
-                    // zero.
-                    reversible_write_counter: Delta(1.expr() + transfer_rwc_delta),
+                    reversible_write_counter: Delta(
+                        1.expr() + transfer_reversible_rwc_delta.expr(),
+                    ),
                     ..StepStateTransition::default()
                 });
             },
@@ -571,6 +577,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             ] {
                 cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
             }
+            // rwc_delta = 21 + is_call_or_callcode + transfer + is_delegatecall * 2
 
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(22.expr()),
@@ -619,6 +626,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, value);
                 }
+                // rwc_delta = 23 + is_call_or_callcode + transfer + is_delegatecall * 2
 
                 // Setup next call's context.
                 let cd_address = call_gadget.cd_address.clone();
@@ -666,6 +674,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         value,
                     );
                 }
+                // rwc_delta = 41 + is_call_or_callcode + transfer + is_delegatecall * 2
 
                 // Give gas stipend if value is not zero
                 let callee_gas_left = callee_gas_left
@@ -681,8 +690,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
-                let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero()) * 2.expr();
+                let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
+                let transfer_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
                 let rw_counter_delta = 41.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
@@ -695,9 +704,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     is_create: To(false.expr()),
                     code_hash: To(call_gadget.phase2_callee_code_hash.expr()),
                     gas_left: To(callee_gas_left),
-                    // For CALL opcode, `transfer` invocation has two account write if value is not
-                    // zero.
-                    reversible_write_counter: To(transfer_rwc_delta),
+                    reversible_write_counter: To(transfer_reversible_rwc_delta),
                     ..StepStateTransition::new_context()
                 });
             },

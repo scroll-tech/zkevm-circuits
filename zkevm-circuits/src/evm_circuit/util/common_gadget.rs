@@ -626,7 +626,9 @@ impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
     }
 }
 
-impl<F: Field, WithFeeGadget> TransferGadgetInfo<F> for TransferFromGadgetImpl<F, WithFeeGadget> {
+impl<F: Field> TransferGadgetInfo<F>
+    for TransferFromGadgetImpl<F, UpdateBalanceGadget<F, 2, false>>
+{
     fn value_is_zero(&self) -> Expression<F> {
         self.value_is_zero
             .as_ref()
@@ -636,6 +638,19 @@ impl<F: Field, WithFeeGadget> TransferGadgetInfo<F> for TransferFromGadgetImpl<F
     fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         1.expr() +
+        // +1 Write Account (sender) Balance
+        not::expr(self.value_is_zero())
+    }
+}
+
+impl<F: Field> TransferGadgetInfo<F> for TransferFromGadgetImpl<F, ()> {
+    fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone())
+    }
+
+    fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance
         not::expr(self.value_is_zero())
     }
