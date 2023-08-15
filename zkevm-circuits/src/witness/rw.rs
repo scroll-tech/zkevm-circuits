@@ -844,6 +844,7 @@ impl From<&operation::OperationContainer> for RwMap {
                         CallContextField::ReversibleWriteCounter => {
                             CallContextFieldTag::ReversibleWriteCounter
                         }
+                        CallContextField::L1Fee => CallContextFieldTag::L1Fee,
                     },
                     value: op.op().value,
                 })
