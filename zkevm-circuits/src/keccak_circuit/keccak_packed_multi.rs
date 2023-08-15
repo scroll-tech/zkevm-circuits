@@ -24,7 +24,7 @@ pub fn get_num_rows_per_round() -> usize {
 /// function (consisting of nr = 12 + 2*l inner rounds)
 /// within Keccak circuit
 pub fn get_num_rows_per_update() -> usize {
-    get_num_rows_per_round() *(NUM_ROUNDS + 1)
+    get_num_rows_per_round() * (NUM_ROUNDS + 1)
 }
 /// Obtain the column position of the hash inputs
 /// within cell_manager for an inner round.
@@ -33,7 +33,7 @@ pub fn get_num_rows_per_update() -> usize {
 pub fn get_input_bytes_col_cell_manager() -> usize {
     let mut col: usize = 0;
     let inner_round_num_rows = get_num_rows_per_round();
-    
+
     col += 28 / inner_round_num_rows;
     if inner_round_num_rows * col < 28 {
         col += 1;
