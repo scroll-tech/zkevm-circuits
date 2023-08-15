@@ -33,7 +33,7 @@ use itertools::Itertools;
 use log::error;
 
 use crate::{
-    evm_circuit::EvmCircuit,
+    evm_circuit::{param::N_BYTES_WORD, EvmCircuit},
     keccak_circuit::KeccakCircuit,
     table::{EccTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
@@ -43,12 +43,12 @@ use crate::{
 mod dev;
 mod test;
 mod util;
-use util::{
-    EcAddAssigned, EcMulAssigned, EcOpsAssigned, EcPairingAssigned, G1Assigned, G1Decomposed,
-    G2Decomposed, ScalarAssigned,
-};
 
-use self::util::{EcAddDecomposed, EcMulDecomposed, EcPairingDecomposed, LOG_TOTAL_NUM_ROWS};
+use util::{
+    EcAddAssigned, EcAddDecomposed, EcMulAssigned, EcMulDecomposed, EcOpsAssigned,
+    EcPairingAssigned, EcPairingDecomposed, G1Assigned, G1Decomposed, G2Decomposed, ScalarAssigned,
+    LOG_TOTAL_NUM_ROWS,
+};
 
 macro_rules! log_context_cursor {
     ($ctx: ident) => {{
@@ -187,6 +187,11 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         .map(|x| QuantumCell::Witness(x))
         .collect_vec();
 
+        let powers_of_256 = iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
+            .take(N_BYTES_WORD)
+            .map(|x| QuantumCell::Constant(x))
+            .collect_vec();
+
         let ecc_chip = EccChip::<F, FpConfig<F, Fq>>::construct(config.fp_config.clone());
         let fr_chip = FpConfig::<F, Fr>::construct(
             config.fp_config.range.clone(),
@@ -223,6 +228,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                                     &fr_chip,
                                     &pairing_chip,
                                     &fp12_chip,
+                                    &powers_of_256,
                                     &op,
                                 )
                             })
@@ -444,14 +450,15 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         _fr_chip: &FpConfig<F, Fr>,
         _pairing_chip: &PairingChip<F>,
         _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
+        powers_of_256: &[QuantumCell<F>],
         op: &EcAddOp,
     ) -> EcAddDecomposed<F> {
         log::trace!("[ECC] ==> EcAdd Assignmnet START:");
         log_context_cursor!(ctx);
 
-        let point_p = self.assign_g1(ctx, ecc_chip, op.p);
-        let point_q = self.assign_g1(ctx, ecc_chip, op.q);
-        let point_r = self.assign_g1(ctx, ecc_chip, op.r);
+        let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_256);
+        let point_q = self.assign_g1(ctx, ecc_chip, op.q, powers_of_256);
+        let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_256);
 
         log::trace!("[ECC] EcAdd Inputs Assigned:");
         log_context_cursor!(ctx);
@@ -526,14 +533,15 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         fr_chip: &FpConfig<F, Fr>,
         _pairing_chip: &PairingChip<F>,
         _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
+        powers_of_256: &[QuantumCell<F>],
         op: &EcMulOp,
     ) -> EcMulDecomposed<F> {
         log::trace!("[ECC] ==> EcMul Assignmnet START:");
         log_context_cursor!(ctx);
 
-        let point_p = self.assign_g1(ctx, ecc_chip, op.p);
+        let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_256);
         let scalar_s = self.assign_fr(ctx, fr_chip, op.s);
-        let point_r = self.assign_g1(ctx, ecc_chip, op.r);
+        let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_256);
 
         log::trace!("[ECC] EcMul Inputs Assigned:");
         log_context_cursor!(ctx);
@@ -567,6 +575,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         _fr_chip: &FpConfig<F, Fr>,
         pairing_chip: &PairingChip<F>,
         fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, XI_0>,
+        powers_of_256: &[QuantumCell<F>],
         op: &EcPairingOp,
     ) -> EcPairingDecomposed<F> {
         log::trace!("[ECC] ==> EcPairing Assignment START:");
@@ -578,13 +587,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .map(|pair| {
                 let ec_point = pairing_chip.load_private_g1(ctx, Value::known(pair.g1_point));
                 let (x_cells, y_cells) = self.decompose_g1(pair.g1_point);
-                let powers_of_256 =
-                    iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
-                        .take(32)
-                        .map(|x| QuantumCell::Constant(x))
-                        .collect_vec();
-                self.assert_crt_repr(ctx, ecc_chip, &ec_point.x, &x_cells, &powers_of_256);
-                self.assert_crt_repr(ctx, ecc_chip, &ec_point.y, &y_cells, &powers_of_256);
+                self.assert_crt_repr(ctx, ecc_chip, &ec_point.x, &x_cells, powers_of_256);
+                self.assert_crt_repr(ctx, ecc_chip, &ec_point.y, &y_cells, powers_of_256);
                 G1Decomposed {
                     ec_point,
                     x_cells,
@@ -603,38 +607,33 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 let ec_point = pairing_chip.load_private_g2(ctx, Value::known(pair.g2_point));
                 let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
                     self.decompose_g2(pair.g2_point);
-                let powers_of_256 =
-                    iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
-                        .take(32)
-                        .map(|x| QuantumCell::Constant(x))
-                        .collect_vec();
                 self.assert_crt_repr(
                     ctx,
                     ecc_chip,
                     &ec_point.x.coeffs[0],
                     &x_c0_cells,
-                    &powers_of_256,
+                    powers_of_256,
                 );
                 self.assert_crt_repr(
                     ctx,
                     ecc_chip,
                     &ec_point.x.coeffs[1],
                     &x_c1_cells,
-                    &powers_of_256,
+                    powers_of_256,
                 );
                 self.assert_crt_repr(
                     ctx,
                     ecc_chip,
                     &ec_point.y.coeffs[0],
                     &y_c0_cells,
-                    &powers_of_256,
+                    powers_of_256,
                 );
                 self.assert_crt_repr(
                     ctx,
                     ecc_chip,
                     &ec_point.y.coeffs[1],
                     &y_c1_cells,
-                    &powers_of_256,
+                    powers_of_256,
                 );
                 G2Decomposed {
                     ec_point,
@@ -815,15 +814,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         ctx: &mut Context<F>,
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
         g1: G1Affine,
+        powers_of_256: &[QuantumCell<F>],
     ) -> G1Decomposed<F> {
         let ec_point = ecc_chip.load_private(ctx, (Value::known(g1.x), Value::known(g1.y)));
         let (x_cells, y_cells) = self.decompose_g1(g1);
-        let powers_of_256 = iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
-            .take(32)
-            .map(|x| QuantumCell::Constant(x))
-            .collect_vec();
-        self.assert_crt_repr(ctx, ecc_chip, &ec_point.x, &x_cells, &powers_of_256);
-        self.assert_crt_repr(ctx, ecc_chip, &ec_point.y, &y_cells, &powers_of_256);
+        self.assert_crt_repr(ctx, ecc_chip, &ec_point.x, &x_cells, powers_of_256);
+        self.assert_crt_repr(ctx, ecc_chip, &ec_point.y, &y_cells, powers_of_256);
         G1Decomposed {
             ec_point,
             x_cells,
@@ -843,7 +839,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         debug_assert_eq!(bytes.len(), 32);
         debug_assert!(powers_of_256.len() >= 11);
 
-        let [limb1, limb2, limb3] = [
+        let limbs = [
             bytes[0..11].to_vec(),
             bytes[11..22].to_vec(),
             bytes[22..32].to_vec(),
@@ -856,10 +852,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             )
         });
 
-        for (&limb_recovered, &limb_value) in [limb1, limb2, limb3]
-            .iter()
-            .zip_eq(crt_int.truncation.limbs.iter())
-        {
+        for (&limb_recovered, &limb_value) in limbs.iter().zip_eq(crt_int.truncation.limbs.iter()) {
             ecc_chip.field_chip().range().gate().assert_equal(
                 ctx,
                 QuantumCell::Existing(limb_recovered),
