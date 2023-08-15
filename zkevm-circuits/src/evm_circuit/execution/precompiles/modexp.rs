@@ -1,5 +1,6 @@
-use eth_types::{Field, ToScalar, U256};
-use gadgets::util::{self, Expr};
+use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
+use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -8,18 +9,21 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::{N_BITS_U8, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
+            math_gadget::{
+                BinaryNumberGadget, BitLengthGadget, ByteOrWord, ByteSizeGadget,
+                ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
+            },
             rlc, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
-use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
 
 #[derive(Clone, Debug)]
 struct RandPowRepresent<F, const BIT_LIMIT: usize> {
@@ -172,11 +176,7 @@ impl<F: Field> SizeRepresent<F> {
             .iter()
             .map(Cell::expr)
             .collect::<Vec<_>>();
-        let is_rest_field_zero = IsZeroGadget::construct(
-            cb,
-            "if length field exceed 1 byte",
-            expr_from_bytes(&len_blank_bytes),
-        );
+        let is_rest_field_zero = IsZeroGadget::construct(cb, expr_from_bytes(&len_blank_bytes));
         let len_effect_bytes = len_bytes[(32 - SIZE_REPRESENT_BYTES)..]
             .iter()
             .map(Cell::expr)
@@ -442,7 +442,9 @@ impl<F: Field> ModExpOutputs<F> {
         modulus_len: Expression<F>,
     ) -> Self {
         let output_len = inner_success * modulus_len;
-        let is_result_zero = IsZeroGadget::construct(cb, "if output len is nil", output_len);
+        let is_result_zero = cb.annotation("if output len is nil", |cb| {
+            IsZeroGadget::construct(cb, output_len)
+        });
 
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
@@ -547,6 +549,144 @@ impl<F: Field> Limbs<F> {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct ModExpGasCost<F> {
+    max_length: MinMaxGadget<F, 1>,
+    words: ConstantDivisionGadget<F, 1>,
+    exp_is_zero: IsZeroGadget<F>,
+    exp_byte_size: ByteSizeGadget<F>,
+    exp_msb_bit_length: BitLengthGadget<F>,
+    exp_msb: BinaryNumberGadget<F, N_BITS_U8>,
+    calc_gas: ConstantDivisionGadget<F, N_BYTES_U64>,
+    dynamic_gas: MinMaxGadget<F, N_BYTES_U64>,
+}
+
+impl<F: Field> ModExpGasCost<F> {
+    fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        b_size: &SizeRepresent<F>,
+        exp: &[Cell<F>; N_BYTES_WORD],
+        m_size: &SizeRepresent<F>,
+    ) -> Self {
+        let max_length = MinMaxGadget::construct(cb, b_size.value(), m_size.value());
+        let words = ConstantDivisionGadget::construct(cb, max_length.max() + 7.expr(), 8);
+        let multiplication_complexity = words.quotient() * words.quotient();
+        let exp_is_zero = IsZeroGadget::construct(cb, expr_from_bytes(exp));
+
+        let (exp_byte_size, exp_msb, exp_msb_bit_length) =
+            cb.condition(not::expr(exp_is_zero.expr()), |cb| {
+                let exp_byte_size = ByteSizeGadget::construct(
+                    cb,
+                    exp.iter()
+                        .rev()
+                        .map(Expr::expr)
+                        .collect::<Vec<Expression<F>>>()
+                        .try_into()
+                        .unwrap(),
+                );
+                let exp_msb =
+                    BinaryNumberGadget::construct(cb, exp_byte_size.most_significant_value.expr());
+                let exp_msb_bit_length = BitLengthGadget::construct(
+                    cb,
+                    exp_msb
+                        .bits
+                        .iter()
+                        .rev()
+                        .map(Expr::expr)
+                        .collect::<Vec<Expression<F>>>()
+                        .try_into()
+                        .unwrap(),
+                );
+                (exp_byte_size, exp_msb, exp_msb_bit_length)
+            });
+        let exp_bit_length =
+            (exp_byte_size.size() - 1.expr()) * N_BITS_U8.expr() + exp_msb_bit_length.size();
+
+        // We already restrict Esize <= 32. So we can completely ignore the branch concerning
+        // Esize > 32. We only care about whether or not exponent is zero.
+        let iteration_count = select::expr(
+            exp_is_zero.expr(),
+            0.expr(),
+            exp_bit_length.expr() - 1.expr(),
+        );
+        let calc_gas =
+            ConstantDivisionGadget::construct(cb, multiplication_complexity * iteration_count, 3);
+        let dynamic_gas = MinMaxGadget::construct(
+            cb,
+            GasCost::PRECOMPILE_MODEXP_MIN.expr(),
+            calc_gas.quotient(),
+        );
+
+        Self {
+            max_length,
+            words,
+            exp_is_zero,
+            exp_byte_size,
+            exp_msb,
+            exp_msb_bit_length,
+            calc_gas,
+            dynamic_gas,
+        }
+    }
+
+    fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        b_size: &U256,
+        m_size: &U256,
+        exponent: &[u8; MODEXP_SIZE_LIMIT],
+    ) -> Result<u64, Error> {
+        self.max_length.assign(
+            region,
+            offset,
+            b_size.to_scalar().expect("Bsize is within scalar field"),
+            m_size.to_scalar().expect("Msize is within scalar field"),
+        )?;
+        self.words
+            .assign(region, offset, b_size.max(m_size).as_u128() + 7u128)?;
+        let exp_word = U256::from_big_endian(exponent);
+        self.exp_is_zero.assign(
+            region,
+            offset,
+            exp_word
+                .to_scalar()
+                .expect("exponent is within scalar field"),
+        )?;
+        self.exp_byte_size
+            .assign(region, offset, ByteOrWord::Word(exp_word))?;
+        let exp_byte_size = (exp_word.bits() + 7) / 8;
+        let exp_msb = if exp_byte_size > 0 {
+            exponent[N_BYTES_WORD - exp_byte_size]
+        } else {
+            0
+        };
+        self.exp_msb.assign(region, offset, exp_msb)?;
+        self.exp_msb_bit_length
+            .assign(region, offset, ByteOrWord::Byte(exp_msb))?;
+        let exp_bit_length = exp_word.bits();
+        let max_length = b_size.max(m_size);
+        let words = (max_length + 7) / 8;
+        let multiplication_complexity = words * words;
+        let iteration_count = if exp_word.is_zero() {
+            0
+        } else {
+            exp_bit_length - 1
+        };
+        let numerator = multiplication_complexity * iteration_count;
+        self.calc_gas.assign(region, offset, numerator.as_u128())?;
+        self.dynamic_gas.assign(
+            region,
+            offset,
+            F::from(GasCost::PRECOMPILE_MODEXP_MIN.0),
+            F::from((numerator / 3).as_u64()),
+        )?;
+        let gas_cost = std::cmp::max(GasCost::PRECOMPILE_MODEXP_MIN.0, (numerator / 3).as_u64());
+
+        Ok(gas_cost)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct ModExpGadget<F> {
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -563,6 +703,8 @@ pub struct ModExpGadget<F> {
 
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
+    gas_cost: Cell<F>,
+    gas_cost_gadget: ModExpGasCost<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
 
@@ -575,6 +717,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         // we 'copy' the acc_bytes cell inside call_op step, so it must be the first query cells
         let input_bytes_acc = cb.query_cell_phase2();
         let output_bytes_acc = cb.query_cell_phase2();
+        let gas_cost = cb.query_cell();
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -646,6 +789,14 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output.bytes_rlc(),
         );
 
+        let gas_cost_gadget =
+            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
+        cb.require_equal(
+            "modexp: gas cost",
+            gas_cost.expr(),
+            gas_cost_gadget.dynamic_gas.max(),
+        );
+
         let restore_context_gadget = RestoreContextGadget::construct(
             cb,
             is_success.expr(),
@@ -670,6 +821,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output,
             input_bytes_acc,
             output_bytes_acc,
+            gas_cost,
+            gas_cost_gadget,
             garbage_bytes_holder,
         }
     }
@@ -684,8 +837,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
-            //println!("exp data: {:?}", data);
-
             self.input
                 .assign(region, offset, (data.valid, data.input_lens, data.inputs))?;
 
@@ -734,6 +885,16 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             self.input_bytes_acc
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
+
+            let gas_cost = self.gas_cost_gadget.assign(
+                region,
+                offset,
+                &data.input_lens[0],
+                &data.input_lens[2],
+                &data.inputs[1],
+            )?;
+            self.gas_cost
+                .assign(region, offset, Value::known(F::from(gas_cost)))?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
             return Err(Error::Synthesis);
@@ -1032,7 +1193,7 @@ mod test {
                         PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000008"))
                         PUSH1(0x60)
                         MSTORE
-                        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000009"))
+                        PUSH32(word!("0x1000000000000000000000000000000000000000000000000000000000000009"))
                         PUSH1(0x80)
                         MSTORE
                         PUSH32(word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"))
@@ -1165,40 +1326,20 @@ mod test {
         }
     }
 
-    // notice, "invalid" test would not work until bus-mapping put calling fail case being handle
-    // in normal CallOp, i.e. return None in
+    // notice, "invalid" test would not actuall work until bus-mapping put calling fail case being
+    // handle in normal CallOp, i.e. return None in
     // bus_mapping::circuit_input_builder::input_state_ref::CircuitInputStateRef::get_step_err
     // for unsuccess (call.is_success is false) call
-    #[ignore]
+    // current it is handled by the dummy "precompile error" gadget
+    #[cfg(feature = "scroll")]
     #[test]
     fn precompile_modexp_test_invalid() {
-        use eth_types::evm_types::Gas;
-
         for test_vector in TEST_INVALID_VECTOR.iter() {
             let bytecode = test_vector.with_call_op(OpcodeId::STATICCALL);
 
             CircuitTestBuilder::new_from_test_ctx(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
             )
-            .geth_data_modifier(Box::new(|block| {
-                let steps = &mut block.geth_traces[0].struct_logs;
-                let step_len = steps.len();
-                let call_step = &mut steps[step_len - 3];
-                assert_eq!(call_step.op, OpcodeId::STATICCALL);
-                call_step.refund.0 = 0;
-                let next_gas = Gas(call_step.gas.0 - call_step.gas_cost.0);
-
-                let pop_step = &mut steps[step_len - 2];
-                assert_eq!(pop_step.op, OpcodeId::POP);
-                pop_step.gas = next_gas;
-                pop_step.stack.0[0] = 0.into();
-                let next_gas = Gas(pop_step.gas.0 - pop_step.gas_cost.0);
-                let final_step = &mut steps[step_len - 1];
-                assert_eq!(final_step.op, OpcodeId::STOP);
-                final_step.gas = next_gas;
-
-                // println!("trace {:?}", block.geth_traces);
-            }))
             .run();
         }
     }

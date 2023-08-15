@@ -13,7 +13,9 @@ use strum_macros::EnumIter;
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
+    Range3,
     Range5,
+    Range8,
     Range16,
     Range32,
     Range64,
@@ -37,8 +39,14 @@ impl FixedTableTag {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
+            Self::Range3 => {
+                Box::new((0..3).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
             Self::Range5 => {
                 Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
+            Self::Range8 => {
+                Box::new((0..8).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range16 => {
                 Box::new((0..16).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))

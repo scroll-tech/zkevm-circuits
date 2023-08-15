@@ -522,6 +522,15 @@ pub fn gen_begin_tx_ops(
         // else, add 3 RW read operations for transaction L1 fee.
         gen_tx_l1_fee_ops(state, &mut exec_step);
     }
+
+    log::trace!("write tx l1fee {}", state.tx.l1_fee());
+    state.call_context_write(
+        &mut exec_step,
+        call.call_id,
+        CallContextField::L1Fee,
+        Word::from(state.tx.l1_fee()),
+    );
+
     // the rw delta before is:
     // + for non-l1 msg tx: 3 (rw for fee oracle contrace)
     // + for scroll l1-msg tx:
@@ -530,6 +539,7 @@ pub fn gen_begin_tx_ops(
     // + for non-scroll l1-msg tx:
     //   * caller existed: 1 (read codehash)
     //   * caller not existed: 2 (read codehash and create account)
+    // * write l1fee call context
 
     for (field, value) in [
         (CallContextField::TxId, state.tx_ctx.id().into()),
@@ -754,10 +764,7 @@ pub fn gen_begin_tx_ops(
                     CallContextField::CallDataOffset,
                     call.call_data_offset.into(),
                 ),
-                (
-                    CallContextField::CallDataLength,
-                    state.tx.input.len().into(),
-                ),
+                (CallContextField::CallDataLength, 0.into()),
                 (CallContextField::Value, call.value),
                 (CallContextField::IsStatic, (call.is_static as usize).into()),
                 (CallContextField::LastCalleeId, 0.into()),
@@ -858,6 +865,12 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         CallContextField::IsPersistent,
         Word::from(call.is_persistent as u8),
     );
+    state.call_context_read(
+        &mut exec_step,
+        call.call_id,
+        CallContextField::L1Fee,
+        Word::from(state.tx.l1_fee()),
+    );
 
     let refund = state.sdb.refund();
     state.push_op(
@@ -879,13 +892,15 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    state.account_write(
-        &mut exec_step,
-        call.caller_address,
-        AccountField::Balance,
-        caller_balance,
-        caller_balance_prev,
-    )?;
+    if !state.tx.tx_type.is_l1_msg() {
+        state.account_write(
+            &mut exec_step,
+            call.caller_address,
+            AccountField::Balance,
+            caller_balance,
+            caller_balance_prev,
+        )?;
+    }
 
     let block_info = state
         .block
@@ -895,9 +910,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
-    let coinbase_reward = effective_tip * gas_cost + state.tx_ctx.l1_fee;
+    let coinbase_reward = if state.tx.tx_type.is_l1_msg() {
+        Word::zero()
+    } else {
+        effective_tip * gas_cost + state.tx_ctx.l1_fee
+    };
     log::trace!(
-        "coinbase reward = ({} - {}) * ({} - {} - {}) = {}",
+        "coinbase reward = ({} - {}) * ({} - {} - {}) = {} or 0 for l1 msg",
         state.tx.gas_price,
         block_info.base_fee,
         state.tx.gas,
@@ -905,6 +924,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         effective_refund,
         coinbase_reward
     );
+
     let (found, coinbase_account) = state.sdb.get_account_mut(&block_info.coinbase);
     if !found {
         log::error!("coinbase account not found: {}", block_info.coinbase);
@@ -921,35 +941,17 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             coinbase_account.code_hash.to_word()
         },
     );
-    if coinbase_account.is_empty() && !coinbase_reward.is_zero() {
-        state.account_write(
+
+    if !state.tx.tx_type.is_l1_msg() {
+        state.transfer_to(
             &mut exec_step,
             block_info.coinbase,
-            AccountField::CodeHash,
-            CodeDB::empty_code_hash().to_word(),
-            Word::zero(),
+            !coinbase_account.is_empty(),
+            false,
+            coinbase_reward,
+            false,
         )?;
-
-        #[cfg(feature = "scroll")]
-        {
-            state.account_write(
-                &mut exec_step,
-                block_info.coinbase,
-                AccountField::KeccakCodeHash,
-                crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
-                Word::zero(),
-            )?;
-        }
     }
-    let coinbase_balance_prev = coinbase_account.balance;
-    let coinbase_balance = coinbase_balance_prev + coinbase_reward;
-    state.account_write(
-        &mut exec_step,
-        block_info.coinbase,
-        AccountField::Balance,
-        coinbase_balance,
-        coinbase_balance_prev,
-    )?;
 
     // handle tx receipt tag
     state.tx_receipt_write(

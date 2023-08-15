@@ -65,6 +65,8 @@ pub struct Block<F> {
     pub mpt_updates: MptUpdates,
     /// Chain ID
     pub chain_id: u64,
+    /// StartL1QueueIndex
+    pub start_l1_queue_index: u64,
     /// IO to/from precompile calls.
     pub precompile_events: PrecompileEvents,
 }
@@ -458,8 +460,24 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
+        start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
     })
+}
+
+/// Convert a block struct in bus-mapping to a witness block used in circuits
+pub fn block_convert_with_l1_queue_index<F: Field>(
+    block: &circuit_input_builder::Block,
+    code_db: &bus_mapping::state_db::CodeDB,
+    start_l1_queue_index: u64,
+) -> Result<Block<F>, Error> {
+    let mut block = block.clone();
+    // keccak_inputs_pi_circuit needs correct start_l1_queue_index
+    // but at this time it can be start_l1_queue_index of last block inside the chunk
+    // TODO kunxian: any better solution
+    block.start_l1_queue_index = start_l1_queue_index;
+    let witness_block = block_convert(&block, code_db)?;
+    Ok(witness_block)
 }
 
 /// Attach witness block with mpt states

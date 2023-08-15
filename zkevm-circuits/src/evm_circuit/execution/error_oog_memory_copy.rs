@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         let tx_id = cb.query_cell();
 
         let is_extcodecopy =
-            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::EXTCODECOPY.expr());
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::EXTCODECOPY.expr());
 
         cb.condition(is_extcodecopy.expr(), |cb| {
             cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, tx_id.expr());
@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         cb.stack_pop(src_offset.expr());
         cb.stack_pop(dst_memory_addr.length_rlc());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             dst_memory_addr.length(),

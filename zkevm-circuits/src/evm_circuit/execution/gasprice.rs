@@ -105,10 +105,10 @@ mod test {
         // Get the execution steps from the external tracer
         let ctx = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(bytecode),
+            account_0_code_wallet_0_no_code(bytecode),
             |mut txs, accs| {
                 txs[0]
-                    .from(accs[1].address)
+                    .from(mock::MOCK_WALLETS[0].clone())
                     .to(accs[0].address)
                     .gas_price(two_gwei);
             },

@@ -93,7 +93,14 @@ impl TransactionContext {
             reversion_groups: Vec::new(),
             l1_fee: geth_trace.l1_fee,
         };
-        tx_ctx.push_call_ctx(0, eth_tx.input.to_vec());
+        tx_ctx.push_call_ctx(
+            0,
+            if eth_tx.to.is_none() {
+                Vec::new()
+            } else {
+                eth_tx.input.to_vec()
+            },
+        );
 
         Ok(tx_ctx)
     }
@@ -344,7 +351,7 @@ impl Transaction {
                 code_hash,
                 depth: 1,
                 value: eth_tx.value,
-                call_data_length: eth_tx.input.len().try_into().unwrap(),
+                call_data_length: 0,
                 ..Default::default()
             }
         };

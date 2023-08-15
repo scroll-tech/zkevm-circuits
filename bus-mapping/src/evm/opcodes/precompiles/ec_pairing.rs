@@ -64,12 +64,12 @@ pub(crate) fn opt_data(
                             .unwrap();
                     G2Affine {
                         x: Fq2 {
-                            c0: g2_x1,
-                            c1: g2_x2,
+                            c0: g2_x2,
+                            c1: g2_x1,
                         },
                         y: Fq2 {
-                            c0: g2_y1,
-                            c1: g2_y2,
+                            c0: g2_y2,
+                            c1: g2_y1,
                         },
                     }
                 };
