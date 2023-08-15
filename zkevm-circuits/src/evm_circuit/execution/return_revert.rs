@@ -9,7 +9,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsZeroGadget, MinMaxGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, MinMaxGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
@@ -31,6 +31,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
     opcode: Cell<F>,
+    // check if it is REVERT opcode
+    is_revert: IsEqualGadget<F>,
 
     range: MemoryAddressGadget<F>,
     deployed_bytecode_rlc: Cell<F>,
@@ -66,6 +68,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let opcode = cb.query_cell();
 
         cb.opcode_lookup(opcode.expr(), 1.expr());
+        let is_revert = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::REVERT.expr());
 
         // constrain op codes
         cb.require_in_set(
@@ -293,6 +296,18 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             },
         );
 
+        // handle revert case
+        cb.condition(is_revert.expr(), |cb| {
+            // "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            // constrain RwCounterEndOfReversion
+            let rw_counter_end_of_step =
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+            cb.require_equal(
+                "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+                reversion_info.rw_counter_end_of_reversion(),
+                rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+            );
+        });
         // Without this, copy_rw_increase would be unconstrained for non-create root
         // calls.
         cb.condition(not::expr(is_create) * is_root, |cb| {
@@ -304,6 +319,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         Self {
             opcode,
+            is_revert,
             range,
             deployed_bytecode_rlc,
             is_success,
@@ -334,11 +350,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.opcode.assign(
-            region,
-            offset,
-            Value::known(F::from(step.opcode.unwrap().as_u64())),
-        )?;
+        let opcode = F::from(step.opcode.unwrap().as_u64());
+        self.opcode.assign(region, offset, Value::known(opcode))?;
+
+        self.is_revert
+            .assign(region, offset, opcode, F::from(OpcodeId::REVERT.as_u64()))?;
 
         let mut rws = StepRws::new(block, step);
 
