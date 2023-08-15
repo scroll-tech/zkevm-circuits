@@ -284,7 +284,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::NumAllTxs as u64)),
                     Value::known(current_block_number),
-                    Value::known(F::from(num_all_txs as u64)),
+                    Value::known(F::from(num_all_txs)),
                 ],
             ],
             self.block_hash_assignments(randomness),
