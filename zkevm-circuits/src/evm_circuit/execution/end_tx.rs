@@ -9,6 +9,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
+            from_bytes,
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
                 MulWordByU64Gadget,
@@ -26,7 +27,7 @@ use crate::{
 use eth_types::{
     evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, Field, ToLittleEndian, ToScalar,
 };
-use gadgets::util::not;
+use gadgets::util::{not, select};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -134,8 +135,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         });
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
-            tx_l1_fee.expr() + mul_effective_tip_by_gas_used.product().expr(),
-            effective_fee.expr(),
+            tx_l1_fee.expr()
+                + select::expr(
+                    tx_is_l1msg.expr(),
+                    0.expr(),
+                    from_bytes::expr(&mul_effective_tip_by_gas_used.product().cells[..16]),
+                ),
+            from_bytes::expr(&effective_fee.cells[..16]),
         );
 
         cb.condition(tx_is_l1msg.expr(), |cb| {
