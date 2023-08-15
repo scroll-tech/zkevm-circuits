@@ -16,7 +16,7 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     sig_circuit::SigCircuit,
     table::{
-        BlockContextFieldTag::CumNumTxs,
+        BlockContextFieldTag::{CumNumTxs, NumAllTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
             BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
@@ -213,11 +213,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // In more detail, all txs in same block are grouped together and we iterate over
         // its txs to get `num_all_txs`.
         //
-        //  | is_l1_msg | queue_index | total_l1_popped_before |  num_l1_msgs  |
+        //  | is_l1_msg | queue_index | total_l1_popped_before |  num_all_txs  |
         //  |    true   |     q1      |           c            |    q1-c+1     |
-        //  |    false  |             |         q1+1           |    q1-c+1     |
-        //  |    true   |     q2      |         q1+1           |    q2-c+1     |
-        //  |    true   |     q3      |         q2+1           |    q3-c+1     |
+        //  |    false  |             |         q1+1           |    q1-c+2     |
+        //  |    true   |     q2      |         q1+1           |    q2-c+2     |
+        //  |    true   |     q3      |         q2+1           |    q3-c+2     |
 
         let tx_nonce = meta.advice_column();
         let block_num = meta.advice_column();
@@ -727,7 +727,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         ///////////////////////////////////////////////////////////////////////
         ///////////////  constraints on num_all_txs  // ///////////////////////
         ///////////////////////////////////////////////////////////////////////
-        meta.create_gate("tx_nonce", |meta| {
+        meta.create_gate("copy tx_nonce", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.condition(is_nonce(meta), |cb| {
@@ -741,7 +741,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        meta.create_gate("block_num", |meta| {
+        meta.create_gate("copy block_num", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.condition(meta.query_advice(is_tag_block_num, Rotation::cur()), |cb| {
@@ -771,28 +771,22 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.query_advice(block_num, Rotation::cur()),
         );
 
-        meta.lookup(
-            "block_num' - block_num >= 1 if block_num changed for non-padding tx",
-            |meta| {
-                // Block nums like this [1, 3, 5, 4, 0] is rejected by this. But [1, 2, 3, 5, 0] is
-                // acceptable.
-                let lookup_condition = and::expr([
-                    // if next tx is padding, then its block num is 0 (i.e. may have block num
-                    // transition 5 -> 0)
-                    not::expr(meta.query_advice(is_padding_tx, Rotation::next())),
-                    // if tx table is full of real txs, then the last tx's next row is calldata.
-                    // we could have block num transition 5 -> 0.
-                    not::expr(meta.query_advice(is_calldata, Rotation::next())),
-                    not::expr(block_num_unchanged.expr()),
-                    meta.query_advice(is_tag_block_num, Rotation::cur()),
-                ]);
+        meta.lookup("block_num is non-decreasing till padding txs", |meta| {
+            // Block nums like this [1, 3, 5, 4, 0] is rejected by this. But [1, 2, 3, 5, 0] is
+            // acceptable.
+            let lookup_condition = and::expr([
+                // next row should not belong to a padding tx
+                not::expr(meta.query_advice(is_padding_tx, Rotation::next())),
+                // next row should not be in the calldata region
+                not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                meta.query_advice(is_tag_block_num, Rotation::cur()),
+            ]);
 
-                let block_num_diff = meta.query_advice(block_num, Rotation::next())
-                    - meta.query_advice(block_num, Rotation::cur());
+            let block_num_diff = meta.query_advice(block_num, Rotation::next())
+                - meta.query_advice(block_num, Rotation::cur());
 
-                vec![(lookup_condition * block_num_diff, u16_table.into())]
-            },
-        );
+            vec![(lookup_condition * block_num_diff, u16_table.into())]
+        });
 
         meta.create_gate("num_all_txs in a block", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -800,7 +794,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             // first tx in tx table
             cb.condition(meta.query_fixed(q_second, Rotation::cur()), |cb| {
                 cb.require_equal(
-                    "first block's first tx's num_l1_msgs",
+                    "num_all_txs_acc = is_l1_msg ? queue_index - total_l1_popped_before + 1 : 1",
                     meta.query_advice(num_all_txs_acc, Rotation::cur()),
                     select::expr(
                         meta.query_advice(is_l1_msg, Rotation::cur()),
@@ -831,21 +825,17 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         ),
                     );
 
+                    // num_all_txs_acc' - num_all_txs_acc = is_l1_msg' ? queue_index' -
+                    // total_l1_popped + 1 : 1
                     cb.require_equal(
-                        "num_all_txs' - num_all_txs",
+                        "num_all_txs_acc' - num_all_txs_acc",
                         meta.query_advice(num_all_txs_acc, Rotation::next())
                             - meta.query_advice(num_all_txs_acc, Rotation::cur()),
                         select::expr(
                             meta.query_advice(is_l1_msg, Rotation::next()),
-                            // if next tx is l1_msg,
-                            //  - num_l1_msgs increase by (queue_index' - tlp_before + 1)
-                            //  - num_l2_txs does not increase
                             meta.query_advice(tx_nonce, Rotation::next())
                                 - meta.query_advice(total_l1_popped_before, Rotation::cur())
                                 + 1.expr(),
-                            // if next tx is l2 tx,
-                            //  - num_l1_msgs does not increase,
-                            //  - num_l2_txs increase by 1.
                             1.expr(),
                         ),
                     );
@@ -879,20 +869,16 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     );
 
                     // init new block's num_all_txs
+                    // num_all_txs_acc' = is_l1_msg' ? queue_index' - total_l1_popped_before' + 1 :
+                    // 1
                     cb.require_equal(
                         "init new block's num_all_txs",
                         meta.query_advice(num_all_txs_acc, Rotation::next()),
                         select::expr(
                             meta.query_advice(is_l1_msg, Rotation::next()),
-                            // first tx is l1 msg
-                            //  - num_l1_msgs equals to (queue_index' - tlp_before + 1)
-                            //  - num_l2_txs is zero
                             meta.query_advice(tx_nonce, Rotation::next())
                                 - meta.query_advice(total_l1_popped_before, Rotation::next())
                                 + 1.expr(),
-                            // first tx is l2 tx
-                            //  - num_l1_msgs is zero
-                            //  - num_l2_txs is one
                             1.expr(),
                         ),
                     );
