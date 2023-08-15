@@ -887,8 +887,28 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
+        meta.lookup_any("num_all_txs in block table", |meta| {
+            let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
+            let block_num = meta.query_advice(tx_table.value, Rotation::cur());
+            let num_all_txs_acc = meta.query_advice(num_all_txs_acc, Rotation::cur());
+
+            let input_expr = vec![NumAllTxs.expr(), block_num, num_all_txs_acc];
+            let table_expr = block_table.table_exprs(meta);
+            let condition = and::expr([
+                is_tag_block_num,
+                not::expr(block_num_unchanged.expr()), // the last tx in each block
+                not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
+            ]);
+
+            input_expr
+                .into_iter()
+                .zip(table_expr.into_iter())
+                .map(|(input, table)| (input * condition.clone(), table))
+                .collect::<Vec<_>>()
+        });
+
         ///////////////////////////////////////////////////////////////////////
-        ///////////////  constraints on BlockNum  /////////////////////////////
+        ///////  constraints on block_table's num_txs & num_cum_txs  //////////
         ///////////////////////////////////////////////////////////////////////
         meta.create_gate("is_padding_tx", |meta| {
             let is_tag_caller_addr = is_caller_addr(meta);
@@ -1839,53 +1859,84 @@ impl<F: Field> TxCircuit<F> {
         txs_len * TX_LEN + call_data_len
     }
 
+    // assign num_txs, cum_num_txs, num_all_txs only as we only lookup into
+    // block table for these three fields and this is mainly used for unit-test
     fn assign_dev_block_table(
         &self,
         config: TxCircuitConfig<F>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
+        let mut total_l1_popped_before = 0;
         let block_nums = self
             .txs
             .iter()
             .map(|tx| tx.block_number)
             .collect::<BTreeSet<u64>>();
         let mut num_txs_in_blocks = BTreeMap::new();
+        let mut num_all_txs_in_blocks: BTreeMap<u64, u64> = BTreeMap::new();
         for tx in self.txs.iter() {
             if let Some(num_txs) = num_txs_in_blocks.get_mut(&tx.block_number) {
                 *num_txs += 1;
             } else {
                 num_txs_in_blocks.insert(tx.block_number, 1_usize);
             }
+
+            if let Some(num_all_txs) = num_all_txs_in_blocks.get_mut(&tx.block_number) {
+                if tx.tx_type.is_l1_msg() {
+                    *num_all_txs += tx.nonce - total_l1_popped_before + 1;
+                    total_l1_popped_before = tx.nonce + 1;
+                } else {
+                    *num_all_txs += 1;
+                }
+            } else {
+                let num_all_txs = if tx.tx_type.is_l1_msg() {
+                    tx.nonce - total_l1_popped_before + 1
+                } else {
+                    1
+                };
+                num_all_txs_in_blocks.insert(tx.block_number, num_all_txs);
+            }
         }
+        log::debug!("block_nums: {:?}", block_nums);
+        log::debug!("num_all_txs: {:?}", num_all_txs_in_blocks);
 
         layouter.assign_region(
             || "dev block table",
             |mut region| {
-                for (offset, (block_num, cum_num_txs)) in iter::once((0, 0))
+                for (offset, (block_num, cum_num_txs, num_all_txs)) in iter::once((0, 0, 0))
                     .chain(block_nums.iter().scan(0, |cum_num_txs, block_num| {
+                        let num_all_txs = num_all_txs_in_blocks[block_num];
                         *cum_num_txs += num_txs_in_blocks[block_num];
-                        Some((*block_num, *cum_num_txs))
+
+                        Some((*block_num, *cum_num_txs, num_all_txs))
                     }))
                     .enumerate()
                 {
-                    region.assign_fixed(
-                        || "block_table.tag",
-                        config.block_table.tag,
-                        offset,
-                        || Value::known(F::from(CumNumTxs as u64)),
-                    )?;
-                    region.assign_advice(
-                        || "block_table.index",
-                        config.block_table.index,
-                        offset,
-                        || Value::known(F::from(block_num)),
-                    )?;
-                    region.assign_advice(
-                        || "block_table.value",
-                        config.block_table.value,
-                        offset,
-                        || Value::known(F::from(cum_num_txs as u64)),
-                    )?;
+                    for (j, (tag, value)) in
+                        [(CumNumTxs, cum_num_txs as u64), (NumAllTxs, num_all_txs)]
+                            .into_iter()
+                            .enumerate()
+                    {
+                        let row = offset * 2 + j;
+                        region.assign_fixed(
+                            || "block_table.tag",
+                            config.block_table.tag,
+                            row,
+                            || Value::known(F::from(tag as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "block_table.index",
+                            config.block_table.index,
+                            row,
+                            || Value::known(F::from(block_num)),
+                        )?;
+                        region.assign_advice(
+                            || "block_table.value",
+                            config.block_table.value,
+                            row,
+                            || Value::known(F::from(value)),
+                        )?;
+                    }
                 }
                 Ok(())
             },
@@ -2153,6 +2204,12 @@ impl<F: Field> TxCircuit<F> {
                     ] {
                         let (tx_id_next, cur_block_num, next_block_num) = match tag {
                             BlockNumber => {
+                                log::debug!(
+                                    "tx_id: {}, block_num: {}, num_all_txs_acc: {}",
+                                    i,
+                                    tx.block_number,
+                                    num_all_txs_acc
+                                );
                                 if i == sigs.len() - 1 {
                                     (
                                         self.txs
