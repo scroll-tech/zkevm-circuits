@@ -15,10 +15,15 @@ const MAX_DEGREE: usize = 9;
 /// Obtain the rows required for 1 iteration of f-box's inner round
 /// function (consisting of 5 phases) within Keccak circuit
 pub fn get_num_rows_per_round() -> usize {
-    var("KECCAK_ROWS")
+    let r = var("KECCAK_ROWS")
         .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
         .parse()
-        .expect("Cannot parse KECCAK_ROWS env var as usize")
+        .expect("Cannot parse KECCAK_ROWS env var as usize");
+    assert!(
+        r >= 9 && r <= 32,
+        "env variable KECCAK_ROWS must be in range [9, 32]."
+    );
+    r
 }
 /// Obtain the rows required for 1 iteration of the f-box
 /// function (consisting of nr = 12 + 2*l inner rounds)
