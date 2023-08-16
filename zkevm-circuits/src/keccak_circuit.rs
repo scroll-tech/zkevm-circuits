@@ -1071,12 +1071,7 @@ impl<F: Field> KeccakCircuit<F> {
 
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> Option<usize> {
-        if self.num_rows > 0 {
-            // Subtract two for unusable rows
-            Some(self.num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
-        } else {
-            None
-        }
+        Self::capacity_for_row(self.num_rows)
     }
 
     /// The number of keccak_f's that can be done for
