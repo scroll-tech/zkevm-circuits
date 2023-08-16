@@ -39,8 +39,8 @@ pub fn get_input_bytes_col_idx_in_cell_manager() -> usize {
     let mut col: usize = 0;
     let inner_round_num_rows = get_num_rows_per_round();
 
-    col += 28 / inner_round_num_rows;
-    if inner_round_num_rows * col < 28 {
+    col += NUM_SETUP_VARS_FOR_ROUND / inner_round_num_rows;
+    if inner_round_num_rows * col < NUM_SETUP_VARS_FOR_ROUND {
         col += 1;
     }
 
