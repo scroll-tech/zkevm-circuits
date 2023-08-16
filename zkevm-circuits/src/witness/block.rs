@@ -7,7 +7,8 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{
-        self, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent, PrecompileEvents,
+        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEvents,
     },
     Error,
 };
@@ -64,6 +65,8 @@ pub struct Block<F> {
     pub mpt_updates: MptUpdates,
     /// Chain ID
     pub chain_id: u64,
+    /// StartL1QueueIndex
+    pub start_l1_queue_index: u64,
     /// IO to/from precompile calls.
     pub precompile_events: PrecompileEvents,
 }
@@ -73,21 +76,6 @@ pub struct Block<F> {
 pub struct BlockContexts {
     /// Hashmap that maps block number to its block context.
     pub ctxs: BTreeMap<u64, BlockContext>,
-}
-
-impl BlockContexts {
-    /// ..
-    pub fn first(&self) -> &BlockContext {
-        self.ctxs.iter().next().unwrap().1
-    }
-    /// ..
-    pub fn first_or_default(&self) -> BlockContext {
-        self.ctxs
-            .iter()
-            .next()
-            .map(|(_k, v)| v.clone())
-            .unwrap_or_default()
-    }
 }
 
 impl<F: Field> Block<F> {
@@ -110,23 +98,15 @@ impl<F: Field> Block<F> {
         let mut signatures: Vec<SignData> = self
             .txs
             .iter()
-            .map(|tx| {
-                if tx.tx_type.is_l1_msg() {
-                    // dummy signature
-                    Ok(SignData::default())
-                } else {
-                    tx.sign_data()
-                }
-            })
+            // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
         signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
-        if padding {
-            let max_verif = self.circuits_params.max_txs;
-            signatures.resize(
-                max_verif,
-                Transaction::dummy(self.chain_id).sign_data().unwrap(),
-            )
+        if padding && self.txs.len() < self.circuits_params.max_txs {
+            // padding tx's sign data
+            signatures.push(Transaction::dummy(self.chain_id).sign_data().unwrap());
         }
         signatures
     }
@@ -144,6 +124,11 @@ impl<F: Field> Block<F> {
     /// Get EcPairing operations from all precompiled contract calls in this block.
     pub(crate) fn get_ec_pairing_ops(&self) -> Vec<EcPairingOp> {
         self.precompile_events.get_ec_pairing_events()
+    }
+
+    /// Get BigModexp operations from all precompiled contract calls in this block.
+    pub(crate) fn get_big_modexp(&self) -> Vec<BigModExp> {
+        self.precompile_events.get_modexp_events()
     }
 }
 
@@ -475,8 +460,24 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
+        start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
     })
+}
+
+/// Convert a block struct in bus-mapping to a witness block used in circuits
+pub fn block_convert_with_l1_queue_index<F: Field>(
+    block: &circuit_input_builder::Block,
+    code_db: &bus_mapping::state_db::CodeDB,
+    start_l1_queue_index: u64,
+) -> Result<Block<F>, Error> {
+    let mut block = block.clone();
+    // keccak_inputs_pi_circuit needs correct start_l1_queue_index
+    // but at this time it can be start_l1_queue_index of last block inside the chunk
+    // TODO kunxian: any better solution
+    block.start_l1_queue_index = start_l1_queue_index;
+    let witness_block = block_convert(&block, code_db)?;
+    Ok(witness_block)
 }
 
 /// Attach witness block with mpt states

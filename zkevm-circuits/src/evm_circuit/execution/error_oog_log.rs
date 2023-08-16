@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
 
         let gas_cost = GasCost::LOG.as_u64().expr()
             + GasCost::LOG.as_u64().expr() * topic_count

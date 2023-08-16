@@ -43,6 +43,7 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
                 poseidon_table.input0,
                 poseidon_table.input1,
                 poseidon_table.control,
+                poseidon_table.domain_spec,
                 poseidon_table.heading_mark,
             ],
         );
@@ -62,15 +63,15 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         // without any feature we just synthesis an empty poseidon circuit
         #[cfg(feature = "zktrie")]
         {
-            let triples = get_storage_poseidon_witness(block);
-            if triples.len() > max_hashes {
+            let mpt_hashes = get_storage_poseidon_witness(block);
+            if mpt_hashes.len() > max_hashes {
                 log::error!(
                     "poseidon max_hashes: {:?} not enough. {:?} needed by zktrie proof",
                     max_hashes,
-                    triples.len()
+                    mpt_hashes.len()
                 );
             }
-            poseidon_table_data.constant_inputs_with_check(&triples);
+            poseidon_table_data.fixed_inputs(&mpt_hashes);
         }
         #[cfg(feature = "poseidon-codehash")]
         {
@@ -93,22 +94,70 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let acc = 0;
-        #[cfg(feature = "zktrie")]
-        let acc = {
-            let mut cnt = acc;
-            cnt += get_storage_poseidon_witness(block).len();
-            cnt
-        };
-        #[cfg(feature = "poseidon-codehash")]
-        let acc = {
-            let mut cnt = acc;
-            use crate::bytecode_circuit::bytecode_unroller::unroll_to_hash_input_default;
-            for bytecode in block.bytecodes.values() {
-                cnt += unroll_to_hash_input_default::<F>(bytecode.bytes.iter().copied()).len();
+        let mut path_hash_counter: std::collections::HashSet<[u8; 32]> = Default::default();
+        let mut account_counter: std::collections::HashSet<[u8; 32]> = Default::default();
+        let mut storage_counter: std::collections::HashSet<[u8; 32]> = Default::default();
+        let mut key_counter: std::collections::HashSet<[u8; 32]> = Default::default();
+        for smt_trace in &block.mpt_updates.smt_traces {
+            // for a smt trace there are mutiple sources for hashes:
+            // + account path, each layer (include the root) cost 1 hashes
+            path_hash_counter.insert(smt_trace.account_path[0].root.0);
+            for node in &smt_trace.account_path[0].path {
+                path_hash_counter.insert(node.value.0);
             }
-            cnt
-        };
+            for node in &smt_trace.account_path[1].path {
+                path_hash_counter.insert(node.value.0);
+            }
+
+            // + the hashes required for leaf is dynamic and depended
+            // on the type of mpt updates, here we suppose to count
+            // all of the 4 hashes once
+            if let Some(node) = smt_trace.account_path[0].leaf {
+                account_counter.insert(node.value.0);
+            }
+            if let Some(node) = smt_trace.account_path[1].leaf {
+                account_counter.insert(node.value.0);
+            }
+
+            // + and the address key
+            key_counter.insert(smt_trace.account_key.0);
+
+            // + state path, like account path
+            if let Some(path) = &smt_trace.state_path[0] {
+                for node in &path.path {
+                    path_hash_counter.insert(node.value.0);
+                }
+            }
+
+            if let Some(path) = &smt_trace.state_path[1] {
+                for node in &path.path {
+                    path_hash_counter.insert(node.value.0);
+                }
+            }
+
+            // + state leaf
+            if let Some(node) = smt_trace.state_path[0].as_ref().and_then(|pt| pt.leaf) {
+                storage_counter.insert(node.value.0);
+            }
+            if let Some(node) = smt_trace.state_path[1].as_ref().and_then(|pt| pt.leaf) {
+                storage_counter.insert(node.value.0);
+            }
+
+            // + the storage key
+            if let Some(hash) = smt_trace.state_key {
+                key_counter.insert(hash.0);
+            }
+        }
+
+        let mut acc = path_hash_counter.len()
+            + key_counter.len()
+            + account_counter.len() * 4
+            + storage_counter.len();
+
+        for bytecode in block.bytecodes.values() {
+            acc += bytecode.bytes.len() / HASH_BLOCK_STEP_SIZE + 1;
+        }
+
         let acc = acc * F::hash_block_size();
         (acc, block.circuits_params.max_mpt_rows.max(acc))
     }
@@ -166,7 +215,9 @@ impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
 }
 
 #[cfg(feature = "zktrie")]
-fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> Vec<(F, F, F)> {
+fn get_storage_poseidon_witness<F: Field>(
+    block: &crate::witness::Block<F>,
+) -> Vec<([F; 2], F, Option<F>)> {
     use itertools::Itertools;
     use mpt_zktrie::mpt_circuits::{gadgets::mpt_update::hash_traces, types::Proof};
     hash_traces(
@@ -180,7 +231,13 @@ fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> V
             .collect_vec(),
     )
     .into_iter()
-    .unique_by(|(a, b, c)| (a.to_bytes(), b.to_bytes(), c.to_bytes()))
-    .map(|(a, b, c)| (a.into(), b.into(), c.into()))
+    .unique_by(|(inp, domain, hash)| {
+        (
+            inp.map(|f| f.to_bytes()),
+            domain.to_bytes(),
+            hash.to_bytes(),
+        )
+    })
+    .map(|(inp, domain, hash)| (inp.map(F::from), domain.into(), Some(F::from(hash))))
     .collect()
 }

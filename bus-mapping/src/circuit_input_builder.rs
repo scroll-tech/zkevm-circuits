@@ -36,8 +36,8 @@ use ethers_core::{
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
-    CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp, EcMulOp,
-    EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    BigModExp, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp,
+    EcMulOp, EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
     PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 use hex::decode_to_slice;
@@ -63,6 +63,16 @@ pub struct PrecompileEcParams {
     pub ec_mul: usize,
     /// Maximum number of EcPairing ops supported in one block.
     pub ec_pairing: usize,
+}
+
+impl Default for PrecompileEcParams {
+    fn default() -> Self {
+        Self {
+            ec_add: 50,
+            ec_mul: 50,
+            ec_pairing: 2,
+        }
+    }
 }
 
 /// Circuit Setup Parameters
@@ -123,11 +133,7 @@ impl Default for CircuitsParams {
             max_evm_rows: 0,
             max_keccak_rows: 0,
             max_rlp_rows: 1000,
-            max_ec_ops: PrecompileEcParams {
-                ec_add: 50,
-                ec_mul: 50,
-                ec_pairing: 2,
-            },
+            max_ec_ops: PrecompileEcParams::default(),
         }
     }
 }
@@ -478,7 +484,11 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
         // Sanity check for transaction L1 fee.
-        let tx_l1_fee = tx.l1_fee();
+        let tx_l1_fee = if tx.tx_type.is_l1_msg() {
+            0
+        } else {
+            tx.l1_fee()
+        };
         if tx_l1_fee != geth_trace.l1_fee {
             log::error!(
                 "Mismatch tx_l1_fee: calculated = {}, real = {}",
@@ -525,7 +535,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
                 if geth_step.op.is_push_with_data() {
-                    format!("{:?}", geth_trace.struct_logs[index + 1].stack.last())
+                    format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
@@ -577,7 +587,13 @@ impl<'a> CircuitInputBuilder {
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )
-                } else {
+                } else if matches!(geth_step.op, OpcodeId::RETURN) {
+		    format!(
+                        "{:?} {:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                    )
+		} else {
                     "".to_string()
                 }
             );
@@ -623,9 +639,18 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         "keccak total len after txs: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
+    // Ecrecover
+    keccak_inputs.extend_from_slice(&keccak_inputs_sign_verify(
+        &block.precompile_events.get_ecrecover_events(),
+    ));
+    log::debug!(
+        "keccak total len after ecrecover: {}",
+        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
+    );
     // PI circuit
     keccak_inputs.extend(keccak_inputs_pi_circuit(
         block.chain_id,
+        block.start_l1_queue_index,
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
@@ -718,17 +743,41 @@ pub fn get_dummy_tx_hash() -> H256 {
 
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
+    start_l1_queue_index: u64,
     prev_state_root: Word,
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
 ) -> Vec<Vec<u8>> {
+    let mut total_l1_popped = start_l1_queue_index;
+    log::debug!(
+        "start_l1_queue_index in keccak_inputs: {}",
+        start_l1_queue_index
+    );
     let data_bytes = iter::empty()
-        .chain(block_headers.iter().flat_map(|(block_num, block)| {
-            let num_txs = transactions
+        .chain(block_headers.iter().flat_map(|(&block_num, block)| {
+            let num_l2_txs = transactions
                 .iter()
-                .filter(|tx| tx.block_num == *block_num)
-                .count() as u16;
+                .filter(|tx| !tx.tx_type.is_l1_msg() && tx.block_num == block_num)
+                .count() as u64;
+            let num_l1_msgs = transactions
+                .iter()
+                .filter(|tx| tx.tx_type.is_l1_msg() && tx.block_num == block_num)
+                // tx.nonce alias for queue_index for l1 msg tx
+                .map(|tx| tx.nonce)
+                .max()
+                .map_or(0, |max_queue_index| max_queue_index - total_l1_popped + 1);
+            total_l1_popped += num_l1_msgs;
+
+            let num_txs = (num_l2_txs + num_l1_msgs) as u16;
+            log::debug!(
+                "[block {}] total_l1_popped: {}, num_l1_msgs: {}, num_l2_txs: {}, num_txs: {}",
+                block_num,
+                total_l1_popped,
+                num_l1_msgs,
+                num_l2_txs,
+                num_txs,
+            );
 
             iter::empty()
                 // Block Values
@@ -742,6 +791,10 @@ fn keccak_inputs_pi_circuit(
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
         .collect::<Vec<u8>>();
     let data_hash = H256(keccak256(&data_bytes));
+    log::debug!(
+        "chunk data hash: {}",
+        hex::encode(data_hash.to_fixed_bytes())
+    );
     let after_state_root = block_headers
         .last_key_value()
         .map(|(_, blk)| blk.eth_block.state_root)
@@ -1028,10 +1081,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         _prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = BlockHead::new(self.chain_id, history_hashes, eth_block)?;
-        let mut builder =
-            CircuitInputBuilder::new_from_headers(self.circuits_params, sdb, code_db, &[block]);
-
+        let block = Block::new(
+            self.chain_id,
+            history_hashes,
+            eth_block,
+            self.circuits_params,
+        )?;
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, &block);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }

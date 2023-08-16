@@ -5,30 +5,13 @@ mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
 
-use std::marker::PhantomData;
-
-use crate::util::is_zero::{IsZeroChip, IsZeroConfig};
-use eth_types::Field;
-use gadgets::{
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
-    is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    util::{and, not, select, sum, Expr},
-};
-use halo2_proofs::{
-    circuit::{Chip, Layouter, Region, Value},
-    plonk::{
-        Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
-    },
-    poly::Rotation,
-};
-use itertools::Itertools;
-use strum::IntoEnumIterator;
-
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, RlpFsmRlpTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
+    table::{LookupTable, RlpFsmRlpTable, U8Table},
+    util::{
+        is_zero::{IsZeroChip, IsZeroConfig},
+        Challenges, SubCircuit, SubCircuitConfig,
+    },
     witness::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
@@ -37,43 +20,23 @@ use crate::{
         Transaction,
     },
 };
-
-/// Fixed table to check if a value is a byte, i.e. 0 <= value < 256.
-#[derive(Clone, Debug)]
-pub struct Range256Table(Column<Fixed>);
-
-impl<F: Field> LookupTable<F> for Range256Table {
-    fn columns(&self) -> Vec<Column<halo2_proofs::plonk::Any>> {
-        vec![self.0.into()]
-    }
-
-    fn annotations(&self) -> Vec<String> {
-        vec![String::from("byte_value")]
-    }
-}
-
-impl Range256Table {
-    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self(meta.fixed_column())
-    }
-
-    pub(crate) fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
-            || "RLP Range256 table",
-            |mut region| {
-                for row in 0..256 {
-                    region.assign_fixed(
-                        || "RLP range256",
-                        self.0,
-                        row,
-                        || Value::known(F::from(row as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )
-    }
-}
+use eth_types::Field;
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
+    is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
+    util::{and, not, select, sum, Expr},
+};
+use halo2_proofs::{
+    circuit::{Layouter, Region, Value},
+    plonk::{
+        Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
+    },
+    poly::Rotation,
+};
+use itertools::Itertools;
+use std::marker::PhantomData;
+use strum::IntoEnumIterator;
 
 /// Data table allows us a lookup argument from the RLP circuit to check the byte value at an index
 /// while decoding a tx of a given format.
@@ -320,8 +283,8 @@ pub struct RlpCircuitConfig<F> {
     data_table: RlpFsmDataTable,
     /// ROM table
     rom_table: RlpFsmRomTable,
-    /// Range256 table
-    range256_table: Range256Table,
+    /// Range u8 table
+    u8_table: U8Table,
 }
 
 impl<F: Field> RlpCircuitConfig<F> {
@@ -330,7 +293,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         rom_table: RlpFsmRomTable,
         data_table: RlpFsmDataTable,
-        range256_table: Range256Table,
+        u8_table: U8Table,
         rlp_table: RlpFsmRlpTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
@@ -599,17 +562,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
-        meta.lookup_any("byte value check", |meta| {
+        meta.lookup("byte value check", |meta| {
             let cond = and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 not::expr(is_padding_in_dt.expr(Rotation::cur())(meta)),
             ]);
 
-            vec![meta.query_advice(data_table.byte_value, Rotation::cur())]
-                .into_iter()
-                .zip(range256_table.table_exprs(meta).into_iter())
-                .map(|(arg, table)| (cond.expr() * arg, table))
-                .collect()
+            vec![(
+                cond * meta.query_advice(data_table.byte_value, Rotation::cur()),
+                u8_table.into(),
+            )]
         });
 
         debug_assert!(meta.degree() <= 9);
@@ -681,6 +643,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cmp_enabled,
                     |meta| meta.query_advice(byte_value, Rotation::cur()),
                     |_| $value.expr(),
+                    u8_table.into(),
                 );
             };
         }
@@ -691,6 +654,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cmp_enabled,
                     |_| $value.expr(),
                     |meta| meta.query_advice(byte_value, Rotation::cur()),
+                    u8_table.into(),
                 );
             };
         }
@@ -773,18 +737,21 @@ impl<F: Field> RlpCircuitConfig<F> {
             cmp_enabled,
             |meta| meta.query_advice(tag_idx, Rotation::cur()),
             |meta| meta.query_advice(tag_length, Rotation::cur()),
+            u8_table.into(),
         );
         let mlength_lte_0x20 = ComparatorChip::configure(
             meta,
             cmp_enabled,
             |meta| meta.query_advice(max_length, Rotation::cur()),
             |_meta| 0x20.expr(),
+            u8_table.into(),
         );
         let tlength_lte_mlength = ComparatorChip::configure(
             meta,
             cmp_enabled,
             |meta| meta.query_advice(tag_length, Rotation::cur()),
             |meta| meta.query_advice(max_length, Rotation::cur()),
+            u8_table.into(),
         );
         let depth_check = IsEqualChip::configure(
             meta,
@@ -816,29 +783,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             byte_value,
             |meta| meta.advice_column(),
         );
-
-        // constrain diff belong to range256 table for each comparator
-        let mut diffs = vec![];
-        diffs.extend(byte_value_gte_0x80.lt_chip.config().diff);
-        diffs.extend(byte_value_gte_0xb8.lt_chip.config().diff);
-        diffs.extend(byte_value_gte_0xc0.lt_chip.config().diff);
-        diffs.extend(byte_value_gte_0xf8.lt_chip.config().diff);
-        diffs.extend(byte_value_lte_0x80.lt_chip.config().diff);
-        diffs.extend(byte_value_lte_0xb8.lt_chip.config().diff);
-        diffs.extend(byte_value_lte_0xc0.lt_chip.config().diff);
-        diffs.extend(byte_value_lte_0xf8.lt_chip.config().diff);
-        diffs.extend(tidx_lte_tlength.lt_chip.config().diff);
-        diffs.extend(mlength_lte_0x20.lt_chip.config().diff);
-        diffs.extend(tlength_lte_mlength.lt_chip.config().diff);
-
-        for diff in diffs {
-            meta.lookup_any("diff in range256", |meta| {
-                let diff = meta.query_advice(diff, Rotation::cur());
-                let range256 = meta.query_fixed(range256_table.0, Rotation::cur());
-
-                vec![(diff, range256)]
-            });
-        }
 
         // constraints on the booleans that we use to reduce degree
         meta.create_gate("booleans for reducing degree (part one)", |meta| {
@@ -1514,7 +1458,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             // internal tables
             data_table,
             rom_table,
-            range256_table,
+            u8_table,
         }
     }
 
@@ -1895,7 +1839,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         debug_assert!(sm_rows.len() <= last_row);
 
-        self.range256_table.load(layouter)?;
         self.rom_table.load(layouter)?;
 
         log::debug!("num_sm_rows: {}", sm_rows.len());
@@ -1950,6 +1893,8 @@ impl<F: Field> RlpCircuitConfig<F> {
 pub struct RlpCircuitConfigArgs<F: Field> {
     /// RLP table.
     pub rlp_table: RlpFsmRlpTable,
+    /// u8 table
+    pub u8_table: U8Table,
     /// Challenge API.
     pub challenges: Challenges<Expression<F>>,
 }
@@ -1960,13 +1905,12 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
     fn new(meta: &mut ConstraintSystem<F>, args: Self::ConfigArgs) -> Self {
         let data_table = RlpFsmDataTable::construct(meta);
         let rom_table = RlpFsmRomTable::construct(meta);
-        let range256_table = Range256Table::construct(meta);
 
         Self::configure(
             meta,
             rom_table,
             data_table,
-            range256_table,
+            args.u8_table,
             args.rlp_table,
             &args.challenges,
         )

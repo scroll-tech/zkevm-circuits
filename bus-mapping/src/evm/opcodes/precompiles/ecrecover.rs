@@ -1,6 +1,6 @@
 use eth_types::{
     sign_types::{recover_pk, SignData},
-    Bytes, ToBigEndian,
+    Bytes, ToBigEndian, ToLittleEndian,
 };
 use halo2_proofs::halo2curves::secp256k1::Fq;
 
@@ -33,13 +33,13 @@ pub(crate) fn opt_data(
         ) {
             let sign_data = SignData {
                 signature: (
-                    Fq::from_bytes(&aux_data.sig_r.to_be_bytes()).unwrap(),
-                    Fq::from_bytes(&aux_data.sig_s.to_be_bytes()).unwrap(),
+                    Fq::from_bytes(&aux_data.sig_r.to_le_bytes()).unwrap(),
+                    Fq::from_bytes(&aux_data.sig_s.to_le_bytes()).unwrap(),
                     sig_v,
                 ),
                 pk: recovered_pk,
                 msg: Bytes::default(),
-                msg_hash: Fq::from_bytes(&aux_data.msg_hash.to_be_bytes()).unwrap(),
+                msg_hash: Fq::from_bytes(&aux_data.msg_hash.to_le_bytes()).unwrap(),
             };
             assert_eq!(aux_data.recovered_addr, sign_data.get_addr());
             (

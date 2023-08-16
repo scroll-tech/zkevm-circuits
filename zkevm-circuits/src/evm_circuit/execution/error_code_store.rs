@@ -15,7 +15,10 @@ use crate::{
     util::Expr,
 };
 
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field,
+};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -40,6 +43,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        // constrain opcodes
+        cb.require_equal(
+            "ErrorCodeStore checking at RETURN in create context",
+            opcode.expr(),
+            OpcodeId::RETURN.expr(),
+        );
 
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();

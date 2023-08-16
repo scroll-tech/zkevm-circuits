@@ -43,7 +43,7 @@ fn test_mock_compression() {
     let params = gen_srs(k1);
 
     // Proof for test circuit
-    let circuit = MockChunkCircuit::random(&mut rng, true);
+    let circuit = MockChunkCircuit::random(&mut rng, false, false);
     let layer_0_snark = layer_0!(circuit, MockChunkCircuit, params, k0, path);
 
     std::env::set_var("COMPRESSION_CONFIG", "./configs/compression_wide.config");
@@ -89,7 +89,7 @@ fn test_two_layer_proof_compression() {
     let mut rng = test_rng();
     let layer_2_params = gen_srs(k2);
 
-    let circuit = MockChunkCircuit::random(&mut rng, true);
+    let circuit = MockChunkCircuit::random(&mut rng, false, false);
     let layer_0_snark = layer_0!(circuit, MockChunkCircuit, layer_2_params, k0, path);
 
     std::env::set_var("COMPRESSION_CONFIG", "./configs/compression_wide.config");

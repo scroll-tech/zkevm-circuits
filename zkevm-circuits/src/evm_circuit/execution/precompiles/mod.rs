@@ -21,6 +21,8 @@ pub use ec_add::EcAddGadget;
 mod ecrecover;
 pub use ecrecover::EcrecoverGadget;
 
+mod modexp;
+pub use modexp::ModExpGadget;
 mod ec_mul;
 pub use ec_mul::EcMulGadget;
 
@@ -40,6 +42,7 @@ pub struct BasePrecompileGadget<F, const S: ExecutionState> {
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
     restore_context: RestoreContextGadget<F>,
+    gas_cost: Cell<F>,
 }
 
 impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGadget<F, S> {
@@ -48,6 +51,7 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
     const NAME: &'static str = "BASE_PRECOMPILE";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let gas_cost = cb.query_cell();
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
@@ -66,12 +70,18 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let restore_context = RestoreContextGadget::construct(
+        let last_callee_return_data_length = match Self::EXECUTION_STATE {
+            ExecutionState::PrecompileSha256 | ExecutionState::PrecompileRipemd160 => 0x20,
+            ExecutionState::PrecompileBlake2f => 0x40,
+            _ => unreachable!("{} should not use the base gadget", Self::EXECUTION_STATE),
+        };
+        let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
+            gas_cost.expr(),
             0.expr(),
-            0.expr(),
-            0.expr(),
+            0.expr(),                              // ReturnDataOffset
+            last_callee_return_data_length.expr(), // ReturnDataLength
             0.expr(),
             0.expr(),
         );
@@ -85,6 +95,7 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             return_data_offset,
             return_data_length,
             restore_context,
+            gas_cost,
         }
     }
 
@@ -97,6 +108,8 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        self.gas_cost
+            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         self.is_success.assign(
             region,
             offset,

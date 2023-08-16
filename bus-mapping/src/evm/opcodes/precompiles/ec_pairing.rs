@@ -1,7 +1,8 @@
 use eth_types::{ToLittleEndian, U256};
 use halo2_proofs::halo2curves::{
-    bn256::{Fq, Fq2, G1Affine, G2Affine},
+    bn256::{multi_miller_loop, Fq, Fq2, G1Affine, G2Affine, Gt},
     group::cofactor::CofactorCurveAffine,
+    pairing::MillerLoopResult,
 };
 
 use crate::{
@@ -64,12 +65,12 @@ pub(crate) fn opt_data(
                             .unwrap();
                     G2Affine {
                         x: Fq2 {
-                            c0: g2_x1,
-                            c1: g2_x2,
+                            c0: g2_x2,
+                            c1: g2_x1,
                         },
                         y: Fq2 {
-                            c0: g2_y1,
-                            c1: g2_y2,
+                            c0: g2_y2,
+                            c1: g2_y1,
                         },
                     }
                 };
@@ -84,6 +85,7 @@ pub(crate) fn opt_data(
                 (ecc_circuit_pair, evm_circuit_pair)
             })
             .unzip();
+        // pad the pairs to make them of fixed size: N_PAIRING_PER_OP.
         ecc_pairs.resize(N_PAIRING_PER_OP, EcPairingPair::ecc_padding());
         evm_pairs.resize(N_PAIRING_PER_OP, EcPairingPair::evm_padding());
         (
@@ -111,6 +113,20 @@ pub(crate) fn opt_data(
             }),
         )
     };
+
+    debug_assert_eq!(
+        {
+            let gt = multi_miller_loop(&[
+                (&op.pairs[0].g1_point, &op.pairs[0].g2_point.into()),
+                (&op.pairs[1].g1_point, &op.pairs[1].g2_point.into()),
+                (&op.pairs[2].g1_point, &op.pairs[2].g2_point.into()),
+                (&op.pairs[3].g1_point, &op.pairs[3].g2_point.into()),
+            ]);
+            let gt = gt.final_exponentiation();
+            gt.eq(&Gt::identity()) as u8
+        },
+        pairing_check
+    );
 
     (
         Some(PrecompileEvent::EcPairing(Box::new(op))),

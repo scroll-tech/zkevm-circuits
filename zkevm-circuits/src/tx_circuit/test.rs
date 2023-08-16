@@ -114,10 +114,9 @@ fn run<F: Field>(
     max_txs: usize,
     max_calldata: usize,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let k = max(
-        19,
-        log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
-    );
+    let active_row_num = TxCircuit::<F>::min_num_rows(max_txs, max_calldata);
+
+    let k = max(20, log2_ceil(active_row_num));
     let circuit = TxCircuitTester::<F> {
         sig_circuit: SigCircuit {
             max_verif: max_txs,
@@ -131,10 +130,11 @@ fn run<F: Field>(
         Err(e) => panic!("{e:#?}"),
     };
 
-    prover.verify_par()
+    prover.verify_at_rows_par(0..active_row_num, 0..active_row_num)
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_2tx_2max_tx() {
     const NUM_TXS: usize = 2;
     const MAX_TXS: usize = 4;
@@ -163,6 +163,7 @@ fn tx_circuit_2tx_2max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_0tx_1max_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -174,6 +175,7 @@ fn tx_circuit_0tx_1max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_1tx_1max_tx() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -187,6 +189,7 @@ fn tx_circuit_1tx_1max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_1tx_2max_tx() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 320;
@@ -200,6 +203,7 @@ fn tx_circuit_1tx_2max_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_l1_msg_tx() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 400;
@@ -213,6 +217,7 @@ fn tx_circuit_l1_msg_tx() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_bad_address() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;
@@ -225,6 +230,7 @@ fn tx_circuit_bad_address() {
 }
 
 #[test]
+#[cfg(feature = "scroll")]
 fn tx_circuit_to_is_zero() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 32;

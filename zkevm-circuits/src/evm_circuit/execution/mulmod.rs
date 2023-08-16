@@ -68,7 +68,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
-        let n_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&n.cells));
+        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let lt = LtWordGadget::construct(cb, &r, &n);
         cb.add_constraint(
             " (1 - (r < n) - (n==0)) ",
@@ -193,11 +193,11 @@ mod test {
 
         let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
         if !ok {
-            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+            ctb = ctb.evm_checks(Some(Box::new(|prover, gate_rows, lookup_rows| {
                 assert!(prover
                     .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
                     .is_err())
-            }));
+            })));
         };
         ctb.run()
     }

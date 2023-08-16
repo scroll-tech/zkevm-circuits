@@ -63,6 +63,12 @@ impl fmt::Debug for Stack {
     }
 }
 
+impl Default for Stack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Serialize for Stack {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

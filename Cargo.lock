@@ -38,6 +38,7 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "halo2_proofs",
+ "hex",
  "itertools",
  "log",
  "rand",
@@ -1274,9 +1275,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.8.1"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "elliptic-curve"
@@ -2192,9 +2193,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2-gate-generator"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/halo2gategen.git#35b137de2f71c37dfbd236842b868013c46739d1"
+dependencies = [
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4#892726037d18d122b6ee30843eb12ef80c18ce10"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.5#1c11b6c9b1245073a76c3ce7100b6798060f7cb8"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -2216,7 +2233,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#4d8a405a97ce445c88fc8ec40f9a2dd0a661c697"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#01f0b5260445a9190299af7b06b766c1e925fdaf"
 dependencies = [
  "ark-std",
  "blake2b_simd",
@@ -3491,11 +3508,14 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0619#50015b7cfbd5fe3263ec683cb291396c1b99cd1f"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0723#1652d54bf7ca9d8f286b53fe077d9efefdcf6d5f"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",
  "lazy_static",
+ "log",
+ "rand",
+ "rand_xorshift",
  "thiserror",
 ]
 
@@ -3977,6 +3997,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "rmd160-circuits"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#31c41ca4365dcf2b6ed4f2cdcd3dc8d2e8f080df"
+dependencies = [
+ "halo2-gate-generator",
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
 ]
 
 [[package]]
@@ -4469,7 +4506,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#12c306ec57849921e690221b10b8a08189868d4a"
 dependencies = [
  "bytes",
  "ethereum-types 0.14.1",
@@ -4493,7 +4530,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a530941eb9a6151c46d5546ca818d04bbd286c02"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#12c306ec57849921e690221b10b8a08189868d4a"
 dependencies = [
  "bincode",
  "env_logger 0.10.0",
@@ -5451,6 +5488,7 @@ dependencies = [
  "cli-table",
  "criterion",
  "ctor",
+ "either",
  "env_logger 0.9.3",
  "eth-types",
  "ethers-core",
@@ -5478,6 +5516,7 @@ dependencies = [
  "rand_chacha",
  "rand_xorshift",
  "rayon",
+ "rmd160-circuits",
  "serde",
  "serde_json",
  "sha3 0.10.8",
@@ -5490,8 +5529,8 @@ dependencies = [
 
 [[package]]
 name = "zktrie"
-version = "0.1.2"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#1a5562f663a81ff903383db69dc6c9404b63e69d"
+version = "0.2.0"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.6#83318659773604fa565e2ebeb810a6d3746f0af4"
 dependencies = [
  "gobuild 0.1.0-alpha.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
