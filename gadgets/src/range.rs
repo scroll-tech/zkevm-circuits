@@ -85,7 +85,7 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> UIntRangeCheckChip<F, 
 
         for column in u16_repr {
             meta.lookup(concat!("u16 cell range check"), |meta| {
-                let cell = meta.query_advice(column, Rotation(0 as i32));
+                let cell = meta.query_advice(column, Rotation::cur());
                 vec![(cell, u16_table)]
             });
         }
