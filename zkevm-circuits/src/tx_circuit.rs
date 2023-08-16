@@ -16,7 +16,7 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     sig_circuit::SigCircuit,
     table::{
-        BlockContextFieldTag::{CumNumTxs, NumTxs},
+        BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
             BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
@@ -31,7 +31,7 @@ use crate::{
     },
     witness,
     witness::{
-        rlp_fsm::Tag,
+        rlp_fsm::{Tag, ValueTagLength},
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
         RlpTag,
         RlpTag::{GasCost, Len, Null, RLC},
@@ -68,7 +68,6 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::witness::rlp_fsm::ValueTagLength;
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::Fixed;
@@ -103,11 +102,11 @@ pub struct TxCircuitConfig<F: Field> {
     // This is only true at the first row of calldata part of tx table
     q_calldata_first: Column<Fixed>,
     q_calldata_last: Column<Fixed>,
+    // A selector which is enabled at 2nd row
+    q_second: Column<Fixed>,
     tx_table: TxTable,
     tx_tag_bits: BinaryNumberConfig<TxFieldTag, 5>,
 
-    // A selector which is enabled at 2nd row
-    q_second: Column<Fixed>,
     tx_type: Column<Advice>,
     tx_type_bits: BinaryNumberConfig<TxType, 3>,
     // The associated rlp tag to lookup in the RLP table
@@ -136,6 +135,13 @@ pub struct TxCircuitConfig<F: Field> {
     is_l1_msg: Column<Advice>,
     is_chain_id: Column<Advice>,
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
+
+    /// Columns for computing num_l1_msgs and num_l2_txs
+    tx_nonce: Column<Advice>,
+    block_num: Column<Advice>,
+    block_num_unchanged: IsEqualConfig<F>,
+    num_all_txs_acc: Column<Advice>,
+    total_l1_popped_before: Column<Advice>,
 
     /// Columns for accumulating call_data_length and call_data_gas_cost
     /// A boolean advice column, which is turned on only for the last byte in
@@ -212,9 +218,32 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = tx_table.q_enable;
+
         let q_second = meta.fixed_column();
         let q_calldata_first = meta.fixed_column();
         let q_calldata_last = meta.fixed_column();
+        // Since we allow skipping l1 txs that could cause potential circuit overflow,
+        // the num_all_txs (num_l1_msgs + num_l2_txs) in the input to get chunk data hash
+        // does not necessarily equal to num_txs (self.txs.len()) in block table.
+        // Therefore we calculated two numbers (num_l1_msgs, num_l2_txs) in tx circuit
+        // and then asserts that `num_l1_msgs + num_l2_txs = num_all_txs` in pi circuit.
+        //
+        // In more detail, all txs in same block are grouped together and we iterate over
+        // its txs to get `num_all_txs`.
+        //
+        //  | is_l1_msg | queue_index | total_l1_popped_before |  num_all_txs  |
+        //  |    true   |     q1      |           c            |    q1-c+1     |
+        //  |    false  |             |         q1+1           |    q1-c+2     |
+        //  |    true   |     q2      |         q1+1           |    q2-c+2     |
+        //  |    true   |     q3      |         q2+1           |    q3-c+2     |
+
+        let tx_nonce = meta.advice_column();
+        let block_num = meta.advice_column();
+
+        let total_l1_popped_before = meta.advice_column();
+        // num_all_txs = num_l1_msgs + num_l2_txs
+        let num_all_txs_acc = meta.advice_column();
+
         // tag, rlp_tag, tx_type, is_none
         let tx_type = meta.advice_column();
         let rlp_tag = meta.advice_column();
@@ -333,7 +362,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.advice_column_in(SecondPhase), // value is at 2nd phase
         );
 
-        // tx_id transition
+        // tx_id transition in the fixed part of tx table
         meta.create_gate("tx_id starts with 1", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -345,7 +374,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(meta.query_fixed(q_second, Rotation::cur()))
         });
-        meta.create_gate("tx_id transition", |meta| {
+        meta.create_gate("tx_id transition in the fixed part of tx table", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             // if tag_next == Nonce, then tx_id' = tx_id + 1
@@ -365,26 +394,32 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         meta.query_advice(tx_table.tx_id, Rotation::next()),
                         meta.query_advice(tx_table.tx_id, Rotation::cur()),
                     );
-                    cb.require_equal(
-                        "tx_type does not change",
-                        meta.query_advice(tx_type, Rotation::next()),
-                        meta.query_advice(tx_type, Rotation::cur()),
-                    );
+                    // tx meta infos that extracted at some row and need to be copied to all rows of
+                    // same tx
+                    let tx_meta_info_fields = vec![
+                        ("tx_type", tx_type),             // extracted at SigV row
+                        ("is_padding_tx", is_padding_tx), // extracted at CallerAddress row
+                        ("sv_address", sv_address),       // extracted at ChainID row
+                        ("block_num", block_num),         // extracted at BlockNum row
+                        ("total_l1_popped_before", total_l1_popped_before),
+                        ("num_txs", num_txs),
+                        ("cum_num_txs", cum_num_txs),
+                        ("num_all_txs_acc", num_all_txs_acc),
+                        // is_l1_msg does not need to spread out as it's extracted from tx_type
+
+                        // these do not need to spread out as they are related to tx_table.tag
+                        // (which is fixed col) is_chain_id,
+                        // is_caller_address, is_tag_block_num, is_calldata
+                    ];
+                    for (col_name, meta_info) in tx_meta_info_fields {
+                        cb.require_equal(
+                            col_name,
+                            meta.query_advice(meta_info, Rotation::next()),
+                            meta.query_advice(meta_info, Rotation::cur()),
+                        );
+                    }
                 },
             );
-
-            cb.condition(tx_id_unchanged.is_equal_expression.expr(), |cb| {
-                cb.require_equal(
-                    "sv_address does not change",
-                    meta.query_advice(sv_address, Rotation::next()),
-                    meta.query_advice(sv_address, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "is_padding_tx does not change",
-                    meta.query_advice(is_padding_tx, Rotation::next()),
-                    meta.query_advice(is_padding_tx, Rotation::cur()),
-                );
-            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -743,19 +778,209 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
 
         ///////////////////////////////////////////////////////////////////////
-        ///////////////  constraints on BlockNum  /////////////////////////////
+        ///////////////  constraints on num_all_txs  // ///////////////////////
+        ///////////////////////////////////////////////////////////////////////
+        meta.create_gate("copy tx_nonce", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(is_nonce(meta), |cb| {
+                cb.require_equal(
+                    "tx_nonce = tx_table.value if tag == Nonce",
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                    meta.query_advice(tx_nonce, Rotation::cur()),
+                );
+            });
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("copy block_num", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(meta.query_advice(is_tag_block_num, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "block_num = tx_table.value if tag == BlockNum",
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                    meta.query_advice(block_num, Rotation::cur()),
+                );
+            });
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        // block num is the last row of each tx's fixed rows and since block num is
+        // copied to TX_LEN rows. The row at which tag = BlockNum and tx_id = i,
+        // its next row has tx_id = i+1. That is, we can use Rotation::next() to get next
+        // tx's all meta-infos (including block_num, tx_nonce, num_all_txs_acc, ...)
+        let block_num_unchanged = IsEqualChip::configure(
+            meta,
+            |meta| {
+                and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_tag_block_num, Rotation::cur()),
+                ])
+            },
+            |meta| meta.query_advice(block_num, Rotation::next()),
+            |meta| meta.query_advice(block_num, Rotation::cur()),
+        );
+
+        meta.lookup("block_num is non-decreasing till padding txs", |meta| {
+            // Block nums like this [1, 3, 5, 4, 0] is rejected by this. But [1, 2, 3, 5, 0] is
+            // acceptable.
+            let lookup_condition = and::expr([
+                // next row should not belong to a padding tx
+                not::expr(meta.query_advice(is_padding_tx, Rotation::next())),
+                // next row should not be in the calldata region
+                not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                meta.query_advice(is_tag_block_num, Rotation::cur()),
+            ]);
+
+            let block_num_diff = meta.query_advice(block_num, Rotation::next())
+                - meta.query_advice(block_num, Rotation::cur());
+
+            vec![(lookup_condition * block_num_diff, u16_table.into())]
+        });
+
+        meta.create_gate("num_all_txs in a block", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            let queue_index = tx_nonce;
+            // first tx in tx table
+            cb.condition(meta.query_fixed(q_second, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "num_all_txs_acc = is_l1_msg ? queue_index - total_l1_popped_before + 1 : 1",
+                    meta.query_advice(num_all_txs_acc, Rotation::cur()),
+                    select::expr(
+                        meta.query_advice(is_l1_msg, Rotation::cur()),
+                        // first tx is l1 msg
+                        meta.query_advice(queue_index, Rotation::cur())
+                            - meta.query_advice(total_l1_popped_before, Rotation::cur())
+                            + 1.expr(),
+                        1.expr(),
+                    ),
+                );
+            });
+
+            // non-last tx in cur block
+            cb.condition(
+                and::expr([
+                    // see the comment below
+                    not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                    block_num_unchanged.expr(),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "total_l1_popped' = tx.is_l1_msg ? queue_index + 1 : total_l1_popped",
+                        meta.query_advice(total_l1_popped_before, Rotation::next()),
+                        select::expr(
+                            meta.query_advice(is_l1_msg, Rotation::cur()),
+                            meta.query_advice(queue_index, Rotation::cur()) + 1.expr(),
+                            meta.query_advice(total_l1_popped_before, Rotation::cur()),
+                        ),
+                    );
+
+                    // num_all_txs_acc' - num_all_txs_acc = is_l1_msg' ? queue_index' -
+                    // total_l1_popped + 1 : 1
+                    cb.require_equal(
+                        "num_all_txs_acc' - num_all_txs_acc",
+                        meta.query_advice(num_all_txs_acc, Rotation::next())
+                            - meta.query_advice(num_all_txs_acc, Rotation::cur()),
+                        select::expr(
+                            meta.query_advice(is_l1_msg, Rotation::next()),
+                            meta.query_advice(tx_nonce, Rotation::next())
+                                - meta.query_advice(total_l1_popped_before, Rotation::cur())
+                                + 1.expr(),
+                            1.expr(),
+                        ),
+                    );
+                },
+            );
+
+            // last tx in cur block (next tx is the first tx in next block)
+            // and cur block is not the last block (s.t. we can init next block's num_all_txs)
+            cb.condition(
+                and::expr([
+                    // We need this condition because if this is the last tx of fixed part of tx
+                    // table, not(block_num_unchanged.expr()) is very likely to
+                    // be true. Since it does not make sense to assign values
+                    // to `num_all_txs` col in the calldata part of tx table.
+                    // Therefore we can skip assign any values to fixed part related cols
+                    // (e.g. block_num, tx_type, is_padding_tx, ....). The witness assignment of
+                    // calldata part need only make sure that (is_final,
+                    // calldata_gas_cost_acc) are correctly assigned.
+                    not::expr(meta.query_advice(is_calldata, Rotation::next())),
+                    not::expr(block_num_unchanged.expr()),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "total_l1_popped' = tx.is_l1_msg ? queue_index + 1 : total_l1_popped",
+                        meta.query_advice(total_l1_popped_before, Rotation::next()),
+                        select::expr(
+                            meta.query_advice(is_l1_msg, Rotation::cur()),
+                            meta.query_advice(queue_index, Rotation::cur()) + 1.expr(),
+                            meta.query_advice(total_l1_popped_before, Rotation::cur()),
+                        ),
+                    );
+
+                    // init new block's num_all_txs
+                    // num_all_txs_acc' = is_l1_msg' ? queue_index' - total_l1_popped_before' + 1 :
+                    // 1
+                    cb.require_equal(
+                        "init new block's num_all_txs",
+                        meta.query_advice(num_all_txs_acc, Rotation::next()),
+                        select::expr(
+                            meta.query_advice(is_l1_msg, Rotation::next()),
+                            meta.query_advice(tx_nonce, Rotation::next())
+                                - meta.query_advice(total_l1_popped_before, Rotation::next())
+                                + 1.expr(),
+                            1.expr(),
+                        ),
+                    );
+                },
+            );
+
+            // no constraints on last tx in the fixed part of tx table
+
+            cb.gate(and::expr([
+                meta.query_fixed(tx_table.q_enable, Rotation::cur()),
+                // we are in the fixed part of tx table
+                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
+                // calculate num_all_txs at tag = BlockNum row
+                meta.query_advice(is_tag_block_num, Rotation::cur()),
+            ]))
+        });
+
+        meta.lookup_any("num_all_txs in block table", |meta| {
+            let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
+            let block_num = meta.query_advice(tx_table.value, Rotation::cur());
+            let num_all_txs_acc = meta.query_advice(num_all_txs_acc, Rotation::cur());
+
+            let input_expr = vec![NumAllTxs.expr(), block_num, num_all_txs_acc];
+            let table_expr = block_table.table_exprs(meta);
+            let condition = and::expr([
+                is_tag_block_num,
+                not::expr(block_num_unchanged.expr()), // the last tx in each block
+                not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
+            ]);
+
+            input_expr
+                .into_iter()
+                .zip(table_expr.into_iter())
+                .map(|(input, table)| (input * condition.clone(), table))
+                .collect::<Vec<_>>()
+        });
+
+        ///////////////////////////////////////////////////////////////////////
+        ///////  constraints on block_table's num_txs & num_cum_txs  //////////
         ///////////////////////////////////////////////////////////////////////
         meta.create_gate("is_padding_tx", |meta| {
             let is_tag_caller_addr = is_caller_addr(meta);
             let mut cb = BaseConstraintBuilder::default();
 
-            // the offset between CallerAddress and BlockNumber
-            let offset = usize::from(BlockNumber) - usize::from(CallerAddress);
             // if tag == CallerAddress
             cb.condition(is_tag_caller_addr.expr(), |cb| {
                 cb.require_equal(
                     "is_padding_tx = true if caller_address = 0",
-                    meta.query_advice(is_padding_tx, Rotation(offset as i32)),
+                    meta.query_advice(is_padding_tx, Rotation::cur()),
                     value_is_zero.expr(Rotation::cur())(meta),
                 );
             });
@@ -1086,6 +1311,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         Self {
             minimum_rows: meta.minimum_rows(),
+            q_second,
             q_calldata_first,
             q_calldata_last,
             tx_tag_bits: tag_bits,
@@ -1095,7 +1321,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_none,
             tx_value_rlc,
             tx_value_length,
-            q_second,
             u8_table,
             u16_table,
             tx_id_is_zero,
@@ -1108,6 +1333,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cum_num_txs,
             is_padding_tx,
             lookup_conditions,
+            tx_nonce,
+            block_num,
+            block_num_unchanged,
+            num_all_txs_acc,
+            total_l1_popped_before,
             is_l1_msg,
             is_chain_id,
             is_final,
@@ -1461,6 +1691,10 @@ impl<F: Field> TxCircuitConfig<F> {
         is_final: Option<bool>,
         calldata_gas_cost_acc: Option<u64>,
         calldata_rlc: Option<Value<F>>,
+        cur_block_num: Option<u64>,
+        next_block_number: Option<u64>,
+        num_all_txs_acc: Option<u64>,
+        total_l1_popped_before: Option<u64>,
     ) -> Result<(), Error> {
         // assign to tag, rlp_tag, is_none
         let tag_chip = BinaryNumberChip::construct(self.tx_tag_bits);
@@ -1498,6 +1732,39 @@ impl<F: Field> TxCircuitConfig<F> {
             self.tx_value_length,
             *offset,
             || Value::known(F::from(be_bytes_length.unwrap_or(0) as u64)),
+        )?;
+
+        let block_num_unchanged_chip = IsEqualChip::construct(self.block_num_unchanged.clone());
+        block_num_unchanged_chip.assign(
+            region,
+            *offset,
+            Value::known(F::from(next_block_number.unwrap_or(0))),
+            Value::known(F::from(cur_block_num.unwrap_or(0))),
+        )?;
+        region.assign_advice(
+            || "tx_nonce",
+            self.tx_nonce,
+            *offset,
+            || Value::known(F::from(tx.map_or(0, |tx| tx.nonce))),
+        )?;
+        region.assign_advice(
+            || "block_num",
+            self.block_num,
+            *offset,
+            || Value::known(F::from(cur_block_num.unwrap_or(0))),
+        )?;
+        region.assign_advice(
+            || "num_all_txs_acc",
+            self.num_all_txs_acc,
+            *offset,
+            || Value::known(F::from(num_all_txs_acc.unwrap_or(0))),
+        )?;
+
+        region.assign_advice(
+            || "total_l1_popped_before",
+            self.total_l1_popped_before,
+            *offset,
+            || Value::known(F::from(total_l1_popped_before.unwrap_or(0))),
         )?;
 
         // assign to lookup condition columns
@@ -1795,6 +2062,8 @@ pub struct TxCircuit<F: Field> {
     pub txs: Vec<Transaction>,
     /// Chain ID
     pub chain_id: u64,
+    /// Start L1 Queue Index
+    pub start_l1_queue_index: u64,
     /// Size
     pub size: usize,
     _marker: PhantomData<F>,
@@ -1802,7 +2071,13 @@ pub struct TxCircuit<F: Field> {
 
 impl<F: Field> TxCircuit<F> {
     /// Return a new TxCircuit
-    pub fn new(max_txs: usize, max_calldata: usize, chain_id: u64, txs: Vec<Transaction>) -> Self {
+    pub fn new(
+        max_txs: usize,
+        max_calldata: usize,
+        chain_id: u64,
+        start_l1_queue_index: u64,
+        txs: Vec<Transaction>,
+    ) -> Self {
         log::info!(
             "TxCircuit::new(max_txs = {}, max_calldata = {}, chain_id = {})",
             max_txs,
@@ -1817,6 +2092,7 @@ impl<F: Field> TxCircuit<F> {
             txs,
             size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
+            start_l1_queue_index,
             _marker: PhantomData::default(),
         }
     }
@@ -1867,72 +2143,89 @@ impl<F: Field> TxCircuit<F> {
         txs_len * TX_LEN + call_data_len
     }
 
+    // assign num_txs, cum_num_txs, num_all_txs only as we only lookup into
+    // block table for these three fields and this is mainly used for unit-test
     fn assign_dev_block_table(
         &self,
         config: TxCircuitConfig<F>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
+        let mut total_l1_popped_before = 0;
         let block_nums = self
             .txs
             .iter()
             .map(|tx| tx.block_number)
             .collect::<BTreeSet<u64>>();
         let mut num_txs_in_blocks = BTreeMap::new();
+        let mut num_all_txs_in_blocks: BTreeMap<u64, u64> = BTreeMap::new();
         for tx in self.txs.iter() {
             if let Some(num_txs) = num_txs_in_blocks.get_mut(&tx.block_number) {
                 *num_txs += 1;
             } else {
                 num_txs_in_blocks.insert(tx.block_number, 1_usize);
             }
+
+            if let Some(num_all_txs) = num_all_txs_in_blocks.get_mut(&tx.block_number) {
+                if tx.tx_type.is_l1_msg() {
+                    *num_all_txs += tx.nonce - total_l1_popped_before + 1;
+                    total_l1_popped_before = tx.nonce + 1;
+                } else {
+                    *num_all_txs += 1;
+                }
+            } else {
+                let num_all_txs = if tx.tx_type.is_l1_msg() {
+                    tx.nonce - total_l1_popped_before + 1
+                } else {
+                    1
+                };
+                num_all_txs_in_blocks.insert(tx.block_number, num_all_txs);
+            }
         }
+        log::debug!("block_nums: {:?}", block_nums);
+        log::debug!("num_all_txs: {:?}", num_all_txs_in_blocks);
 
         layouter.assign_region(
             || "dev block table",
             |mut region| {
-                for (offset, (block_num, cum_num_txs, num_txs)) in iter::once((0, 0, 0))
-                    .chain(block_nums.iter().scan(0, |cum_num_txs, block_num| {
-                        let num_txs = num_txs_in_blocks[block_num];
-                        *cum_num_txs += num_txs;
-                        Some((*block_num, *cum_num_txs, num_txs))
-                    }))
-                    .enumerate()
+                for (offset, (block_num, num_txs, cum_num_txs, num_all_txs)) in
+                    iter::once((0, 0, 0, 0))
+                        .chain(block_nums.iter().scan(0, |cum_num_txs, block_num| {
+                            let num_txs = num_txs_in_blocks[block_num];
+                            let num_all_txs = num_all_txs_in_blocks[block_num];
+                            *cum_num_txs += num_txs;
+
+                            Some((*block_num, num_txs, *cum_num_txs, num_all_txs))
+                        }))
+                        .enumerate()
                 {
-                    region.assign_fixed(
-                        || "block_table.tag",
-                        config.block_table.tag,
-                        2 * offset,
-                        || Value::known(F::from(CumNumTxs as u64)),
-                    )?;
-                    region.assign_advice(
-                        || "block_table.index",
-                        config.block_table.index,
-                        2 * offset,
-                        || Value::known(F::from(block_num)),
-                    )?;
-                    region.assign_advice(
-                        || "block_table.value",
-                        config.block_table.value,
-                        2 * offset,
-                        || Value::known(F::from(cum_num_txs as u64)),
-                    )?;
-                    region.assign_fixed(
-                        || "block_table.tag",
-                        config.block_table.tag,
-                        2 * offset + 1,
-                        || Value::known(F::from(NumTxs as u64)),
-                    )?;
-                    region.assign_advice(
-                        || "block_table.index",
-                        config.block_table.index,
-                        2 * offset + 1,
-                        || Value::known(F::from(block_num)),
-                    )?;
-                    region.assign_advice(
-                        || "block_table.value",
-                        config.block_table.value,
-                        2 * offset + 1,
-                        || Value::known(F::from(num_txs as u64)),
-                    )?;
+                    for (j, (tag, value)) in [
+                        (NumTxs, num_txs as u64),
+                        (CumNumTxs, cum_num_txs as u64),
+                        (NumAllTxs, num_all_txs),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let row = offset * 3 + j;
+                        region.assign_fixed(
+                            || "block_table.tag",
+                            config.block_table.tag,
+                            row,
+                            || Value::known(F::from(tag as u64)),
+                        )?;
+                        region.assign_advice(
+                            || "block_table.index",
+                            config.block_table.index,
+                            row,
+                            || Value::known(F::from(block_num)),
+                        )?;
+                        region.assign_advice(
+                            || "block_table.value",
+                            config.block_table.value,
+                            row,
+                            || Value::known(F::from(value)),
+                        )?;
+                    }
                 }
                 Ok(())
             },
@@ -1944,6 +2237,7 @@ impl<F: Field> TxCircuit<F> {
         config: &TxCircuitConfig<F>,
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
+        start_l1_queue_index: u64,
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
     ) -> Result<(), Error> {
@@ -1959,6 +2253,8 @@ impl<F: Field> TxCircuit<F> {
                 let mut cum_num_txs;
                 let mut num_txs;
                 let mut is_padding_tx;
+                let mut num_all_txs_acc = 0;
+                let mut total_l1_popped_before = start_l1_queue_index;
                 // Empty entry
                 config.assign_row(
                     &mut region,
@@ -1969,6 +2265,10 @@ impl<F: Field> TxCircuit<F> {
                     TxFieldTag::Null,
                     Value::known(F::zero()),
                     challenges.keccak_input().map(|_| F::zero()),
+                    None,
+                    None,
+                    None,
+                    None,
                     None,
                     None,
                     None,
@@ -2011,10 +2311,36 @@ impl<F: Field> TxCircuit<F> {
                             .count();
                         log::info!("num_txs: {}", num_txs);
                         is_padding_tx = false;
+                        let mut init_new_block = |tx: &Transaction| {
+                            if tx.tx_type.is_l1_msg() {
+                                let queue_index = tx.nonce;
+                                num_all_txs_acc = queue_index - total_l1_popped_before + 1;
+                                total_l1_popped_before = queue_index + 1;
+                            } else {
+                                // total_l1_popped_before do not change
+                                num_all_txs_acc = 1;
+                            }
+                        };
+                        // first tx of all or first tx of next block
+                        if i == 0 || tx.block_number != self.txs[i - 1].block_number {
+                            init_new_block(tx);
+                        } else {
+                            // same block
+                            if tx.tx_type.is_l1_msg() {
+                                let queue_index = tx.nonce;
+                                num_all_txs_acc += queue_index - total_l1_popped_before + 1;
+                                total_l1_popped_before = queue_index + 1;
+                            } else {
+                                // total_l1_popped_before do not change
+                                num_all_txs_acc += 1;
+                            }
+                        }
                     } else {
                         cum_num_txs = 0;
                         num_txs = 0;
                         is_padding_tx = true;
+                        // padding_tx is an l2 tx
+                        num_all_txs_acc = (i - self.txs.len() + 1) as u64;
                     }
 
                     let tx_sign_hash = {
@@ -2242,20 +2568,36 @@ impl<F: Field> TxCircuit<F> {
                             Value::known(F::from(tx.block_number)),
                         ),
                     ] {
-                        let tx_id_next = match tag {
+                        let (tx_id_next, cur_block_num, next_block_num) = match tag {
                             BlockNumber => {
+                                log::debug!(
+                                    "tx_id: {}, block_num: {}, num_all_txs_acc: {}",
+                                    i,
+                                    tx.block_number,
+                                    num_all_txs_acc
+                                );
                                 if i == sigs.len() - 1 {
-                                    self.txs
-                                        .iter()
-                                        .enumerate()
-                                        .find(|(_i, tx)| !tx.call_data.is_empty())
-                                        .map(|(i, _tx)| i + 1)
-                                        .unwrap_or_else(|| 0)
+                                    (
+                                        self.txs
+                                            .iter()
+                                            .enumerate()
+                                            .find(|(_i, tx)| !tx.call_data.is_empty())
+                                            .map(|(i, _tx)| i + 1)
+                                            .unwrap_or_else(|| 0),
+                                        tx.block_number,
+                                        0,
+                                    )
                                 } else {
-                                    i + 2
+                                    // tx_id in tx table starts with 1
+                                    if i + 1 >= self.txs.len() {
+                                        (i + 2, tx.block_number, padding_txs[0].block_number)
+                                    } else {
+                                        (i + 2, tx.block_number, self.txs[i + 1].block_number)
+                                    }
                                 }
                             }
-                            _ => i + 1,
+                            _ => (i + 1, tx.block_number, tx.block_number), /* tx_id in tx table
+                                                                             * starts with 1 */
                         };
                         config.assign_row(
                             &mut region,
@@ -2275,6 +2617,10 @@ impl<F: Field> TxCircuit<F> {
                             None,
                             None,
                             None,
+                            Some(cur_block_num),
+                            Some(next_block_num),
+                            Some(num_all_txs_acc),
+                            Some(total_l1_popped_before),
                         )?;
                         let sv_address: F = sign_data.get_addr().to_scalar().unwrap();
                         region.assign_advice(
@@ -2346,6 +2692,10 @@ impl<F: Field> TxCircuit<F> {
                             Some(is_final),
                             Some(calldata_gas_cost),
                             Some(calldata_rlc),
+                            None,
+                            None,
+                            None,
+                            None,
                         )?;
                     }
                 }
@@ -2432,6 +2782,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.chain_id,
+            block.start_l1_queue_index,
             block.txs.clone(),
         )
     }
@@ -2508,7 +2859,14 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             }
         }
 
-        self.assign(config, challenges, layouter, sign_datas, &padding_txs)?;
+        self.assign(
+            config,
+            challenges,
+            layouter,
+            self.start_l1_queue_index,
+            sign_datas,
+            &padding_txs,
+        )?;
 
         Ok(())
     }

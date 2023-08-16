@@ -1192,11 +1192,15 @@ pub enum BlockContextFieldTag {
     /// add it here for convenience.
     ChainId,
     /// In a multi-block setup, this variant represents the total number of txs
-    /// included in this block.
+    /// included (executed) in this block.
     NumTxs,
     /// In a multi-block setup, this variant represents the cumulative number of
     /// txs included up to this block, including the txs in this block.
     CumNumTxs,
+    /// In a multi-block setup, this variant represents the total number of txs
+    /// included in this block which also taking skipped l1 msgs into account.
+    /// This could possibly be larger than NumTxs.
+    NumAllTxs,
 }
 impl_expr!(BlockContextFieldTag);
 
@@ -1257,7 +1261,7 @@ impl BlockTable {
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
                         .count();
                     cum_num_txs += num_txs;
-                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
+                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, 0, challenges) {
                         region.assign_fixed(
                             || format!("block table row {offset}"),
                             self.tag,
