@@ -146,14 +146,14 @@ impl<F: Field> MulAddChip<F> {
             .chain([col0, col1, col2, col3].map(|col| (col, 6)))
             .collect::<Vec<_>>();
 
-        let carry_lo_expr = |meta: &mut VirtualCells<F>| {
+        let query_carry_lo_expr = |meta: &mut VirtualCells<F>| {
             carry_lo_cols
                 .iter()
                 .map(|(col, rot)| meta.query_advice(*col, Rotation(*rot)))
                 .collect::<Vec<Expression<F>>>()
         };
 
-        let carry_hi_expr = |meta: &mut VirtualCells<F>| {
+        let query_carry_hi_expr = |meta: &mut VirtualCells<F>| {
             carry_hi_cols
                 .iter()
                 .map(|(col, rot)| meta.query_advice(*col, Rotation(*rot)))
@@ -185,8 +185,8 @@ impl<F: Field> MulAddChip<F> {
             let d_lo = meta.query_advice(col2, Rotation(2));
             let d_hi = meta.query_advice(col3, Rotation(2));
 
-            let carry_los = carry_lo_expr(meta);
-            let carry_his = carry_hi_expr(meta);
+            let carry_los = query_carry_lo_expr(meta);
+            let carry_his = query_carry_hi_expr(meta);
 
             let carry_lo_expr = expr_from_bytes(&carry_los);
             let carry_hi_expr = expr_from_bytes(&carry_his);
