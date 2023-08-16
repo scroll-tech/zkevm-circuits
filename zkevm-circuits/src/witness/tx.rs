@@ -385,6 +385,7 @@ impl Transaction {
             tag_idx: 0,
             tag_length: 0,
             tag_value_acc: Value::known(F::zero()),
+            tag_bytes_rlc: Value::known(F::zero()),
             byte_idx: 0,
             depth: 0,
         };
@@ -453,6 +454,8 @@ impl Transaction {
                             assert!(!cur.tag.is_list());
                             is_output = true;
                             cur.tag_value_acc = Value::known(F::from(byte_value as u64));
+                            cur.tag_bytes_rlc = cur.tag_value_acc;
+                            cur.tag_length = 1;
 
                             // state transitions
                             next.state = DecodeTagStart;
@@ -462,6 +465,8 @@ impl Transaction {
                             is_output = true;
                             is_none = true;
                             cur.tag_value_acc = Value::known(F::zero());
+                            cur.tag_bytes_rlc = cur.tag_value_acc;
+                            cur.tag_length = 0;
 
                             // state transitions
                             next.state = DecodeTagStart;
@@ -474,6 +479,7 @@ impl Transaction {
                             next.tag_length = (byte_value - 0x80) as usize;
                             next.tag_value_acc =
                                 Value::known(F::from(rlp_bytes[cur.byte_idx + 1] as u64));
+                            next.tag_bytes_rlc = next.tag_value_acc;
                             next.state = State::Bytes;
                         } else if byte_value < 0xc0 {
                             // assertions
@@ -493,6 +499,7 @@ impl Transaction {
                                 rlp_tag = RlpTag::Len;
                             }
                             cur.tag_value_acc = Value::known(F::from(u64::from(byte_value - 0xc0)));
+                            cur.tag_length = 1;
 
                             // state transitions
                             let num_bytes_of_new_list = usize::from(byte_value - 0xc0);
@@ -537,6 +544,8 @@ impl Transaction {
                         next.tag_idx = cur.tag_idx + 1;
                         next.tag_value_acc = cur.tag_value_acc * b
                             + Value::known(F::from(rlp_bytes[cur.byte_idx + 1] as u64));
+                        next.tag_bytes_rlc = cur.tag_bytes_rlc * keccak_rand
+                            + Value::known(F::from(rlp_bytes[cur.byte_idx + 1] as u64));
                     } else {
                         // assertions
                         is_output = true;
@@ -564,6 +573,7 @@ impl Transaction {
                         next.tag_length = lb_len;
                         next.tag_value_acc =
                             Value::known(F::from(u64::from(rlp_bytes[cur.byte_idx + 1])));
+                        next.tag_bytes_rlc = next.tag_value_acc;
                         next.state = State::Bytes;
                     }
                 }
@@ -648,6 +658,13 @@ impl Transaction {
                 RlpTag::Tag(_) => cur.tag_value_acc,
                 RlpTag::Null => unreachable!("Null is not used"),
             };
+            let (tag_bytes_rlc, tag_length) = match rlp_tag {
+                // Len | RLC | GasCost are just meta-info extracted from keccak input bytes
+                RlpTag::Len => (Value::known(F::zero()), cur.tag_length),
+                RlpTag::RLC | RlpTag::GasCost => (Value::known(F::zero()), 0),
+                RlpTag::Tag(_) => (cur.tag_bytes_rlc, cur.tag_length),
+                RlpTag::Null => unreachable!("Null is not used"),
+            };
 
             witness.push(RlpFsmWitnessRow {
                 rlp_table: RlpTable {
@@ -655,6 +672,8 @@ impl Transaction {
                     format,
                     rlp_tag,
                     tag_value,
+                    tag_bytes_rlc,
+                    tag_length,
                     is_output,
                     is_none,
                 },
@@ -667,7 +686,6 @@ impl Transaction {
                     byte_rev_idx: rlp_bytes.len() - cur.byte_idx,
                     byte_value,
                     tag_idx: cur.tag_idx,
-                    tag_length: cur.tag_length,
                     tag_acc_value: cur.tag_value_acc,
                     depth: cur.depth,
                     bytes_rlc,

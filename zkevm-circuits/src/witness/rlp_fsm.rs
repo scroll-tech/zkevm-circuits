@@ -1,9 +1,58 @@
-use eth_types::Field;
+use eth_types::{Address, Field, H160, U256};
 use gadgets::{impl_expr, util::Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 use strum_macros::EnumIter;
 
 use crate::util::Challenges;
+
+pub(crate) trait ValueTagLength {
+    fn tag_length(&self) -> u32;
+}
+
+impl ValueTagLength for u64 {
+    fn tag_length(&self) -> u32 {
+        // note that 0_u64 is encoded as [0x80] in RLP
+        // see the relevant code at https://github.com/paritytech/parity-common/blob/master/rlp/src/impls.rs#L208
+        (64 - self.leading_zeros() + 7) / 8
+    }
+}
+
+impl ValueTagLength for usize {
+    fn tag_length(&self) -> u32 {
+        // usize is treated as same as u64
+        (*self as u64).tag_length()
+    }
+}
+
+impl ValueTagLength for U256 {
+    fn tag_length(&self) -> u32 {
+        // note that U256::zero() is encoded as [0x80] in RLP
+        // see the relevant code at https://github.com/paritytech/parity-common/blob/impl-rlp-v0.3.0/primitive-types/src/lib.rs#L117
+        (256 - self.leading_zeros() + 7) / 8
+    }
+}
+
+impl ValueTagLength for H160 {
+    fn tag_length(&self) -> u32 {
+        20
+    }
+}
+
+impl ValueTagLength for Option<Address> {
+    fn tag_length(&self) -> u32 {
+        if self.is_none() {
+            0
+        } else {
+            self.unwrap().tag_length()
+        }
+    }
+}
+
+impl ValueTagLength for Vec<u8> {
+    fn tag_length(&self) -> u32 {
+        self.len() as u32
+    }
+}
 
 /// RLP tags
 #[derive(Default, Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
@@ -511,6 +560,12 @@ pub struct RlpTable<F: FieldExt> {
     pub rlp_tag: RlpTag,
     /// The tag's value
     pub tag_value: Value<F>,
+    /// RLC of the tag's big-endian bytes
+    pub tag_bytes_rlc: Value<F>,
+    /// Length of the tag's big-endian bytes
+    /// Note that we use (tag_bytes_rlc, tag_length) to identify
+    /// the tag's dynamic-sized big-endian bytes
+    pub tag_length: usize,
     /// If current row is for output
     pub is_output: bool,
     /// If current tag's value is None.
@@ -536,8 +591,6 @@ pub struct StateMachine<F: FieldExt> {
     pub byte_value: u8,
     /// The index of the actual bytes of tag
     pub tag_idx: usize,
-    /// The length of the actual bytes of tag
-    pub tag_length: usize,
     /// The accumulated value of bytes up to `tag_idx` of tag
     /// In most cases, RlpTable.tag_value == StateMachine.tag_value_acc.
     /// However, for RlpTag::Len, we have
@@ -581,4 +634,5 @@ pub(crate) struct SmState<F: Field> {
     pub(crate) tag_idx: usize,
     pub(crate) tag_length: usize,
     pub(crate) tag_value_acc: Value<F>,
+    pub(crate) tag_bytes_rlc: Value<F>,
 }
