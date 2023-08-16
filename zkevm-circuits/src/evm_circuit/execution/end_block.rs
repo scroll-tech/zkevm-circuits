@@ -227,6 +227,6 @@ mod test {
     // EndBlocks at the end after the trace steps
     #[test]
     fn end_block_padding() {
-        test_circuit(50);
+        test_circuit(100);
     }
 }

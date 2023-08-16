@@ -97,9 +97,10 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             );
         });
 
-        let restore_context = RestoreContextGadget::construct(
+        let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
+            gas_cost.expr(),
             0.expr(),
             0x00.expr(), // ReturnDataOffset
             0x40.expr(), // ReturnDataLength

@@ -65,6 +65,16 @@ pub struct PrecompileEcParams {
     pub ec_pairing: usize,
 }
 
+impl Default for PrecompileEcParams {
+    fn default() -> Self {
+        Self {
+            ec_add: 50,
+            ec_mul: 50,
+            ec_pairing: 2,
+        }
+    }
+}
+
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
@@ -123,11 +133,7 @@ impl Default for CircuitsParams {
             max_evm_rows: 0,
             max_keccak_rows: 0,
             max_rlp_rows: 1000,
-            max_ec_ops: PrecompileEcParams {
-                ec_add: 50,
-                ec_mul: 50,
-                ec_pairing: 2,
-            },
+            max_ec_ops: PrecompileEcParams::default(),
         }
     }
 }

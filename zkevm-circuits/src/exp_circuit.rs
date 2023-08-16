@@ -9,8 +9,8 @@ mod test;
 pub use dev::ExpCircuit as TestExpCircuit;
 
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
-    table::{ExpTable, LookupTable},
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    table::{ExpTable, LookupTable, U16Table},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -25,8 +25,6 @@ use halo2_proofs::{
     plonk::{Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
 };
-
-use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 use param::*;
 use std::{marker::PhantomData, ops::Add};
 
@@ -37,30 +35,54 @@ pub struct ExpCircuitConfig<F> {
     pub q_enable: Column<Fixed>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
+    /// u16 lookup table,
+    pub u16_table: U16Table,
     /// Multiplication gadget for verification of each step.
     pub mul_gadget: MulAddConfig<F>,
     /// Multiplication gadget to perform 2*n + k.
     pub parity_check: MulAddConfig<F>,
 }
 
+/// Arguments to configure Exp circuit
+pub struct ExpCircuitArgs {
+    /// The Exponentiation circuit's table.
+    pub exp_table: ExpTable,
+    /// u16 lookup table,
+    pub u16_table: U16Table,
+}
+
 impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
-    type ConfigArgs = ExpTable;
+    type ConfigArgs = ExpCircuitArgs;
 
     /// Return a new ExpCircuitConfig
-    fn new(meta: &mut ConstraintSystem<F>, exp_table: Self::ConfigArgs) -> Self {
+    fn new(
+        meta: &mut ConstraintSystem<F>,
+        ExpCircuitArgs {
+            exp_table,
+            u16_table,
+        }: Self::ConfigArgs,
+    ) -> Self {
         let q_enable = exp_table.q_enable;
-        let mul_gadget = MulAddChip::configure(meta, |meta| {
-            and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_fixed(exp_table.is_step, Rotation::cur()),
-            ])
-        });
-        let parity_check = MulAddChip::configure(meta, |meta| {
-            and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_fixed(exp_table.is_step, Rotation::cur()),
-            ])
-        });
+        let mul_gadget = MulAddChip::configure(
+            meta,
+            |meta| {
+                and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_fixed(exp_table.is_step, Rotation::cur()),
+                ])
+            },
+            u16_table.into(),
+        );
+        let parity_check = MulAddChip::configure(
+            meta,
+            |meta| {
+                and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_fixed(exp_table.is_step, Rotation::cur()),
+                ])
+            },
+            u16_table.into(),
+        );
 
         // multiplier <- 2^64
         let two = U256::from(2);
@@ -69,14 +91,14 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         meta.create_gate("verify all but the last step", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // base limbs MUST be the same across all steps. Since each step consumes 7 rows
+            // base limbs MUST be the same across all steps. Since each step consumes 8 rows
             // (check MulAddChip), we check the current step's rotation `i`
-            // against `i + 7`.
+            // against `i + 8`.
             for i in 0..4 {
                 cb.require_equal(
                     "base_limb[i] is the same across all steps",
                     meta.query_advice(exp_table.base_limb, Rotation(i)),
-                    meta.query_advice(exp_table.base_limb, Rotation(i + 7)),
+                    meta.query_advice(exp_table.base_limb, Rotation(i + OFFSET_INCREMENT as i32)),
                 );
             }
 
@@ -103,7 +125,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             cb.require_equal(
                 "identifier does not change",
                 meta.query_advice(exp_table.identifier, Rotation::cur()),
-                meta.query_advice(exp_table.identifier, Rotation(7)),
+                meta.query_advice(exp_table.identifier, Rotation(OFFSET_INCREMENT as i32)),
             );
 
             cb.gate(and::expr([
@@ -183,12 +205,12 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 ]), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (lo::next == lo::cur - 1)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(7)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(OFFSET_INCREMENT as i32)),
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(0)) - 1.expr(),
                 );
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur - 1 (hi::next == hi::cur)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(1 + OFFSET_INCREMENT as i32)),
                     meta.query_advice(exp_table.exponent_lo_hi, Rotation(1)),
                 );
 
@@ -227,12 +249,12 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 let exponent_next_hi = limb2 + (limb3 * multiplier);
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate next lo)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(7)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(OFFSET_INCREMENT as i32)),
                     exponent_next_lo,
                 );
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2 (equate next hi)",
-                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(8)),
+                    meta.query_advice(exp_table.exponent_lo_hi, Rotation(1 + OFFSET_INCREMENT as i32)),
                     exponent_next_hi,
                 );
 
@@ -286,6 +308,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         Self {
             q_enable,
             exp_table,
+            u16_table,
             mul_gadget,
             parity_check,
         }
@@ -399,7 +422,7 @@ impl<F: Field> ExpCircuitConfig<F> {
                     || Value::known(F::zero()),
                 )?;
             }
-            // mul_chip has 7 rows, exp_table has 4 rows. So we increment the offset by
+            // mul_chip has 8 rows, exp_table has 4 rows. So we increment the offset by
             // the maximum number of rows taken up by any gadget within the
             // exponentiation circuit.
             *offset += OFFSET_INCREMENT;
@@ -448,12 +471,10 @@ impl<F: Field> ExpCircuitConfig<F> {
             self.mul_gadget.col1,
             self.mul_gadget.col2,
             self.mul_gadget.col3,
-            self.mul_gadget.col4,
             self.parity_check.col0,
             self.parity_check.col1,
             self.parity_check.col2,
             self.parity_check.col3,
-            self.parity_check.col4,
         ]);
         for i in 0..UNUSABLE_EXP_ROWS {
             for column in &all_columns {
@@ -514,20 +535,20 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         // - Rotation(1)
         // - Rotation(2)
         // - Rotation(3)
-        // - Rotation(7)
         // - Rotation(8)
         // - Rotation(9)
         // - Rotation(10)
-        // Also column col2 and col3 of are queried at 8 distinct rotations at
+        // - Rotation(11)
+        // Also column col2 and col3 of are queried at 9 distinct rotations at
         // - Rotation(0)
         // - Rotation(1)
         // - Rotation(2)
         // - Rotation(3)
-        // - Rotation(4)
         // - Rotation(5)
         // - Rotation(6)
-        // - Rotation(9)
-        // so returns 11 unusable rows.
+        // - Rotation(7)
+        // - Rotation(10)
+        // so returns max(8, 8) + 3 unusable rows.
         11
     }
 

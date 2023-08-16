@@ -120,6 +120,29 @@ impl<F: Field> RestoreContextGadget<F> {
         memory_expansion_cost: Expression<F>,
         reversible_write_counter_increase: Expression<F>,
     ) -> Self {
+        Self::construct2(
+            cb,
+            is_success,
+            0.expr(),
+            subsequent_rw_lookups,
+            return_data_offset,
+            return_data_length,
+            memory_expansion_cost,
+            reversible_write_counter_increase,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct2(
+        cb: &mut EVMConstraintBuilder<F>,
+        is_success: Expression<F>,
+        gas_cost: Expression<F>,
+        // Expression for the number of rw lookups that occur after this gadget is constructed.
+        subsequent_rw_lookups: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+        memory_expansion_cost: Expression<F>,
+        reversible_write_counter_increase: Expression<F>,
+    ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
         let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
@@ -171,12 +194,17 @@ impl<F: Field> RestoreContextGadget<F> {
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * return_data_length;
 
-        let gas_refund =
-            if cb.execution_state().halts_in_exception() || cb.execution_state().is_precompiled() {
-                0.expr() // no gas refund if call halts in exception
-            } else {
-                cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
-            };
+        let gas_refund = if cb.execution_state().halts_in_exception() {
+            0.expr() // no gas refund if call halts in exception
+        } else if cb.execution_state().is_precompiled() {
+            // TODO: merge with next branch?
+            cb.curr.state.gas_left.expr() - gas_cost.expr()
+        } else {
+            cb.curr.state.gas_left.expr()
+                - gas_cost.expr()
+                - memory_expansion_cost
+                - code_deposit_cost
+        };
 
         let gas_left = caller_gas_left.expr() + gas_refund;
 
@@ -598,7 +626,7 @@ impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
     }
 }
 
-impl<F: Field, WithFeeGadget> TransferGadgetInfo<F> for TransferFromGadgetImpl<F, WithFeeGadget> {
+impl<F: Field> TransferGadgetInfo<F> for TransferFromWithGasFeeGadget<F> {
     fn value_is_zero(&self) -> Expression<F> {
         self.value_is_zero
             .as_ref()
@@ -608,6 +636,19 @@ impl<F: Field, WithFeeGadget> TransferGadgetInfo<F> for TransferFromGadgetImpl<F
     fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         1.expr() +
+        // +1 Write Account (sender) Balance
+        not::expr(self.value_is_zero())
+    }
+}
+
+impl<F: Field> TransferGadgetInfo<F> for TransferFromGadget<F> {
+    fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone())
+    }
+
+    fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance
         not::expr(self.value_is_zero())
     }
