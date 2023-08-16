@@ -210,12 +210,8 @@ impl<F: Field> MulAddChip<F> {
             let check_b = t2.expr() + t3.expr() * pow_of_two::<F>(64) + c_hi + carry_lo_expr
                 - (d_hi + carry_hi_expr * pow_of_two::<F>(128));
 
-            let unused_cells =
-                [col0, col1, col2, col3].map(|col| meta.query_advice(col, Rotation(7)));
-
             [check_a, check_b]
                 .into_iter()
-                .chain(unused_cells)
                 .map(move |poly| q_enable.clone() * poly)
         });
 
