@@ -3,7 +3,7 @@
 //! only constrain input expressions to be in given range
 //! do not output the result
 //!
-//! u8 check can either use U8Table or group every 2 values and lookup U16Table
+//! u8 check can either use U8Table
 //! u16 check can use U16Table directly
 
 use crate::util::Expr;
