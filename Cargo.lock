@@ -2174,47 +2174,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2-base"
-version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#2c225864227e74b207d9f4b9e08c4d5f1afc69a1"
-dependencies = [
- "ff",
- "halo2_proofs",
- "itertools",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand_chacha",
- "rustc-hash",
-]
-
-[[package]]
 name = "halo2-ecc"
 version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?tag=v0.1.0#2c225864227e74b207d9f4b9e08c4d5f1afc69a1"
 dependencies = [
  "ff",
  "group",
- "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?tag=v0.1.0)",
- "itertools",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand",
- "rand_chacha",
- "rand_core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "halo2-ecc"
-version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#2c225864227e74b207d9f4b9e08c4d5f1afc69a1"
-dependencies = [
- "ff",
- "group",
- "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
+ "halo2-base",
  "itertools",
  "num-bigint",
  "num-integer",
@@ -4540,12 +4506,12 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?tag=v0.1.0#12c306ec57849921e690221b10b8a08189868d4a"
+source = "git+https://github.com/scroll-tech/snark-verifier?tag=v0.1.1#11a09d4a37c31c659b29e2dac0ceb544a776ad7b"
 dependencies = [
  "bytes",
  "ethereum-types 0.14.1",
- "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
- "halo2-ecc 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
+ "halo2-base",
+ "halo2-ecc",
  "hex",
  "itertools",
  "lazy_static",
@@ -4564,12 +4530,12 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?tag=v0.1.0#12c306ec57849921e690221b10b8a08189868d4a"
+source = "git+https://github.com/scroll-tech/snark-verifier?tag=v0.1.1#11a09d4a37c31c659b29e2dac0ceb544a776ad7b"
 dependencies = [
  "bincode",
  "env_logger 0.10.0",
  "ethereum-types 0.14.1",
- "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
+ "halo2-base",
  "hex",
  "itertools",
  "lazy_static",
@@ -5527,8 +5493,8 @@ dependencies = [
  "ethers-core",
  "ethers-signers",
  "gadgets",
- "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?tag=v0.1.0)",
- "halo2-ecc 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?tag=v0.1.0)",
+ "halo2-base",
+ "halo2-ecc",
  "halo2_proofs",
  "hex",
  "itertools",
