@@ -209,8 +209,12 @@ impl<F: Field> MulAddChip<F> {
                 + a_limbs[3].clone() * b_limbs[2].clone()
                 + a_limbs[3].clone() * b_limbs[3].clone();
 
+            // t0 + t1 * 2^64 + c_lo, fits in 193 bits, decomposed in d_lo (128 bits) and carry_lo
+            // (72 bits).
             let check_a = t0.expr() + t1.expr() * pow_of_two::<F>(64) + c_lo
                 - (d_lo + carry_lo_expr.clone() * pow_of_two::<F>(128));
+            // t2 + t3 * 2^64 + c_hi + carry_lo, fits in 194 bits, decomposed in d_hi (128 bits) and
+            // carry_hi (72 bits)
             let check_b = t2.expr() + t3.expr() * pow_of_two::<F>(64) + c_hi + carry_lo_expr
                 - (d_hi + carry_hi_expr * pow_of_two::<F>(128));
 
