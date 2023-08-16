@@ -20,6 +20,10 @@ use zkevm_circuits::keccak_circuit::keccak_packed_multi::{
 // Calculates the maximum keccak updates (1 absorb, or 1 f-box invoke)
 // needed for the number of snarks
 pub(crate) fn get_max_keccak_updates(max_snarks: usize) -> usize {
+    // The public input hash for the batch is derived from hashing
+    // chain_id || chunk_0's prev_state || chunk_k-1's post_state ||
+    // chunk_k-1's withdraw_root || batch_data_hash.
+    // In total there're 168 bytes. Therefore 2 pi rounds are required.
     let pi_rounds = 2;
     let chunk_hash_rounds = 2 * max_snarks;
     let data_hash_rounds = get_data_hash_keccak_updates(max_snarks);
