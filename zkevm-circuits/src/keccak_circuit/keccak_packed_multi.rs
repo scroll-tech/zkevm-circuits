@@ -35,7 +35,7 @@ pub fn get_num_rows_per_update() -> usize {
 /// within cell_manager for an inner round.
 /// This value is determined by the number of rows allocated
 /// to each inner round and target part_size for u64
-pub fn get_input_bytes_col_cell_manager() -> usize {
+pub fn get_input_bytes_col_idx_in_cell_manager() -> usize {
     let mut col: usize = 0;
     let inner_round_num_rows = get_num_rows_per_round();
 

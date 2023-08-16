@@ -244,7 +244,7 @@ pub(crate) fn extract_hash_cells(
 
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
                         hash_input_cells.push(
-                            row[keccak_packed_multi::get_input_bytes_col_cell_manager() + 4]
+                            row[keccak_packed_multi::get_input_bytes_col_idx_in_cell_manager() + 4]
                                 .clone(),
                         );
                         cur_preimage_index = preimage_indices_iter.next();
