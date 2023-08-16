@@ -86,7 +86,7 @@ impl AggregationConfig {
         let columns = keccak_circuit_config.cell_manager.columns();
 
         // enabling equality for preimage column
-        meta.enable_equality(columns[keccak_circuit_config.preimage_column].advice);
+        meta.enable_equality(columns[keccak_circuit_config.preimage_column_index].advice);
         // enable equality for the digest column
         meta.enable_equality(columns.last().unwrap().advice);
         // enable equality for the data RLC column

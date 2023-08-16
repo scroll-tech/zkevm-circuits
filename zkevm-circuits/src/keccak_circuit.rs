@@ -66,7 +66,7 @@ pub struct KeccakCircuitConfig<F> {
     chi_base_table: [TableColumn; 2],
     pack_table: [TableColumn; 2],
     /// The column for enabling copy constraints in aggregator
-    pub preimage_column: usize,
+    pub preimage_column_index: usize,
     _marker: PhantomData<F>,
 }
 
@@ -189,7 +189,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         log::debug!("- Post absorb:");
         log::debug!("Lookups: {}", lookup_counter);
         log::debug!("Columns: {}", cell_manager.get_width());
-        let preimage_column: usize = cell_manager.get_width() + 1;
+        let preimage_column_index: usize = cell_manager.get_width() + 1;
         total_lookup_counter += lookup_counter;
 
         // Process inputs.
@@ -868,7 +868,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             normalize_6,
             chi_base_table,
             pack_table,
-            preimage_column,
+            preimage_column_index,
             _marker: PhantomData,
         }
     }
