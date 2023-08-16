@@ -1642,8 +1642,6 @@ mod test_precompiles {
     };
     use paste::paste;
 
-    // FIXME: enable this test
-    #[ignore]
     #[test]
     fn call_precompile_with_value() {
         let callee_code = bytecode! {
