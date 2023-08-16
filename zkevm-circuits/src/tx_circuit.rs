@@ -195,7 +195,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // tag, rlp_tag, tx_type, is_none
         let tx_type = meta.advice_column();
         let rlp_tag = meta.advice_column();
-        let tx_value_rlc = meta.advice_column();
+        let tx_value_rlc = meta.advice_column_in(SecondPhase);
         let tx_value_length = meta.advice_column();
         let is_none = meta.advice_column();
         let tag_bits = BinaryNumberChip::configure(meta, q_enable, Some(tx_table.tag.into()));
