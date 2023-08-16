@@ -102,8 +102,8 @@ pub struct TxCircuitConfig<F: Field> {
     // This is only true at the first row of calldata part of tx table
     q_calldata_first: Column<Fixed>,
     q_calldata_last: Column<Fixed>,
-    // A selector which is enabled at 2nd row
-    q_second: Column<Fixed>,
+    // A selector which is enabled at 1st row
+    q_first: Column<Fixed>,
     tx_table: TxTable,
     tx_tag_bits: BinaryNumberConfig<TxFieldTag, 5>,
 
@@ -136,7 +136,7 @@ pub struct TxCircuitConfig<F: Field> {
     is_chain_id: Column<Advice>,
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
 
-    /// Columns for computing num_l1_msgs and num_l2_txs
+    /// Columns for computing num_all_txs
     tx_nonce: Column<Advice>,
     block_num: Column<Advice>,
     block_num_unchanged: IsEqualConfig<F>,
@@ -219,7 +219,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
     ) -> Self {
         let q_enable = tx_table.q_enable;
 
-        let q_second = meta.fixed_column();
+        let q_first = meta.fixed_column();
         let q_calldata_first = meta.fixed_column();
         let q_calldata_last = meta.fixed_column();
         // Since we allow skipping l1 txs that could cause potential circuit overflow,
@@ -366,14 +366,16 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("tx_id starts with 1", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
+            // the first row in tx table are all-zero rows
             cb.require_equal(
                 "tx_id == 1",
-                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                meta.query_advice(tx_table.tx_id, Rotation::next()),
                 1.expr(),
             );
 
-            cb.gate(meta.query_fixed(q_second, Rotation::cur()))
+            cb.gate(meta.query_fixed(q_first, Rotation::cur()))
         });
+
         meta.create_gate("tx_id transition in the fixed part of tx table", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -845,7 +847,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
             let queue_index = tx_nonce;
             // first tx in tx table
-            cb.condition(meta.query_fixed(q_second, Rotation::cur()), |cb| {
+            cb.condition(meta.query_fixed(q_first, Rotation::next()), |cb| {
                 cb.require_equal(
                     "num_all_txs_acc = is_l1_msg ? queue_index - total_l1_popped_before + 1 : 1",
                     meta.query_advice(num_all_txs_acc, Rotation::cur()),
@@ -1311,7 +1313,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         Self {
             minimum_rows: meta.minimum_rows(),
-            q_second,
+            q_first,
             q_calldata_first,
             q_calldata_last,
             tx_tag_bits: tag_bits,
@@ -2281,9 +2283,9 @@ impl<F: Field> TxCircuit<F> {
                 )?;
 
                 region.assign_fixed(
-                    || "q_second",
-                    config.q_second,
-                    1,
+                    || "q_first",
+                    config.q_first,
+                    0,
                     || Value::known(F::one()),
                 )?;
                 let zero_rlc = challenges.keccak_input().map(|_| F::zero());
