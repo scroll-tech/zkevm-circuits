@@ -341,6 +341,7 @@ impl<F: Field> SigCircuit<F> {
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
         let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
+        ecc_chip.assert_is_on_curve::<Secp256k1Affine>(ctx, &pk_assigned);
 
         // build Fq chip from Fp chip
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
