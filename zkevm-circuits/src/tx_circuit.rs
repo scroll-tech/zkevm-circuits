@@ -1227,7 +1227,7 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_id_next: usize,
         tag: TxFieldTag,
         value: Value<F>,
-        be_bytes_rlc: Option<Value<F>>,
+        be_bytes_rlc: Value<F>,
         be_bytes_length: Option<u32>,
         rlp_tag: Option<RlpTag>,
         is_none: Option<bool>,
@@ -1264,7 +1264,7 @@ impl<F: Field> TxCircuitConfig<F> {
             || "value_be_bytes_rlc",
             self.tx_value_rlc,
             *offset,
-            || be_bytes_rlc.map_or(Value::known(F::zero()), |rlc| rlc),
+            || be_bytes_rlc,
         )?;
         region.assign_advice(
             || "value_be_bytes_length",
@@ -1697,7 +1697,7 @@ impl<F: Field> TxCircuit<F> {
                     !sigs.is_empty() as usize, // tx_id_next
                     TxFieldTag::Null,
                     Value::known(F::zero()),
-                    None,
+                    challenges.keccak_input().map(|_| F::zero()),
                     None,
                     None,
                     None,
@@ -1706,6 +1706,7 @@ impl<F: Field> TxCircuit<F> {
                     None,
                     None,
                 )?;
+                let zero_rlc = challenges.keccak_input().map(|_| F::zero());
 
                 // Assign all tx fields except for call data
                 for (i, sign_data) in sigs.iter().enumerate() {
@@ -1742,12 +1743,9 @@ impl<F: Field> TxCircuit<F> {
                         // need to be in same order as that tx table load function uses
                         (
                             Nonce,
-                            Some(Tag::Nonce.into()),
+                            Some(Tag::Nonce.into()), // lookup into RLP table
                             Some(tx.nonce == 0),
-                            Some(rlc_be_bytes(
-                                &tx.nonce.to_be_bytes(),
-                                challenges.keccak_input(),
-                            )),
+                            rlc_be_bytes(&tx.nonce.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.nonce.tag_length()),
                             Value::known(F::from(tx.nonce)),
                         ),
@@ -1755,10 +1753,7 @@ impl<F: Field> TxCircuit<F> {
                             Gas,
                             Some(Tag::Gas.into()),
                             Some(tx.gas == 0),
-                            Some(rlc_be_bytes(
-                                &tx.gas.to_be_bytes(),
-                                challenges.keccak_input(),
-                            )),
+                            rlc_be_bytes(&tx.gas.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.gas.tag_length()),
                             Value::known(F::from(tx.gas)),
                         ),
@@ -1766,10 +1761,7 @@ impl<F: Field> TxCircuit<F> {
                             GasPrice,
                             Some(Tag::GasPrice.into()),
                             Some(tx.gas_price.is_zero()),
-                            Some(rlc_be_bytes(
-                                &tx.gas_price.to_be_bytes(),
-                                challenges.keccak_input(),
-                            )),
+                            rlc_be_bytes(&tx.gas_price.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.gas_price.tag_length()),
                             challenges
                                 .evm_word()
@@ -1779,10 +1771,10 @@ impl<F: Field> TxCircuit<F> {
                             CallerAddress,
                             Some(Tag::Sender.into()),
                             None,
-                            Some(rlc_be_bytes(
+                            rlc_be_bytes(
                                 &tx.caller_address.to_fixed_bytes(),
                                 challenges.keccak_input(),
-                            )),
+                            ),
                             Some(tx.caller_address.tag_length()),
                             Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
                         ),
@@ -1790,9 +1782,11 @@ impl<F: Field> TxCircuit<F> {
                             CalleeAddress,
                             Some(Tag::To.into()),
                             Some(tx.callee_address.is_none()),
-                            Some(tx.callee_address.map_or(Value::known(F::zero()), |callee| {
-                                rlc_be_bytes(&callee.to_fixed_bytes(), challenges.keccak_input())
-                            })),
+                            rlc_be_bytes(
+                                &tx.callee_address
+                                    .map_or(vec![], |callee| callee.to_fixed_bytes().to_vec()),
+                                challenges.keccak_input(),
+                            ),
                             Some(tx.callee_address.tag_length()),
                             Value::known(
                                 tx.callee_address
@@ -1803,9 +1797,9 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             IsCreate,
+                            None, // do not lookup into RLP table
                             None,
-                            None,
-                            None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.is_create as u64)),
                         ),
@@ -1813,10 +1807,7 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::Value,
                             Some(Tag::Value.into()),
                             Some(tx.value.is_zero()),
-                            Some(rlc_be_bytes(
-                                &tx.value.to_be_bytes(),
-                                challenges.keccak_input(),
-                            )),
+                            rlc_be_bytes(&tx.value.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.value.tag_length()),
                             challenges
                                 .evm_word()
@@ -1826,7 +1817,7 @@ impl<F: Field> TxCircuit<F> {
                             CallDataRLC,
                             Some(Tag::Data.into()),
                             Some(tx.call_data.is_empty()),
-                            Some(rlc_be_bytes(&tx.call_data, challenges.keccak_input())),
+                            rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
                             Some(tx.call_data.tag_length()),
                             rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
                         ),
@@ -1834,7 +1825,7 @@ impl<F: Field> TxCircuit<F> {
                             CallDataLength,
                             None,
                             None,
-                            None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.call_data.len() as u64)),
                         ),
@@ -1842,7 +1833,7 @@ impl<F: Field> TxCircuit<F> {
                             CallDataGasCost,
                             None,
                             None,
-                            None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.call_data_gas_cost)),
                         ),
@@ -1850,7 +1841,7 @@ impl<F: Field> TxCircuit<F> {
                             TxDataGasCost,
                             Some(GasCost),
                             None,
-                            None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.tx_data_gas_cost)),
                         ),
@@ -1858,10 +1849,7 @@ impl<F: Field> TxCircuit<F> {
                             ChainID,
                             None,
                             None,
-                            Some(rlc_be_bytes(
-                                &tx.chain_id.to_be_bytes(),
-                                challenges.keccak_input(),
-                            )),
+                            rlc_be_bytes(&tx.chain_id.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.chain_id.tag_length()),
                             Value::known(F::from(tx.chain_id)),
                         ),
@@ -1869,7 +1857,7 @@ impl<F: Field> TxCircuit<F> {
                             SigV,
                             Some(Tag::SigV.into()),
                             Some(tx.v.is_zero()),
-                            Some(rlc_be_bytes(&tx.v.to_be_bytes(), challenges.keccak_input())),
+                            rlc_be_bytes(&tx.v.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.v.tag_length()),
                             Value::known(F::from(tx.v)),
                         ),
@@ -1877,7 +1865,7 @@ impl<F: Field> TxCircuit<F> {
                             SigR,
                             Some(Tag::SigR.into()),
                             Some(tx.r.is_zero()),
-                            Some(rlc_be_bytes(&tx.r.to_be_bytes(), challenges.keccak_input())),
+                            rlc_be_bytes(&tx.r.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.r.tag_length()),
                             challenges
                                 .evm_word()
@@ -1887,7 +1875,7 @@ impl<F: Field> TxCircuit<F> {
                             SigS,
                             Some(Tag::SigS.into()),
                             Some(tx.s.is_zero()),
-                            Some(rlc_be_bytes(&tx.s.to_be_bytes(), challenges.keccak_input())),
+                            rlc_be_bytes(&tx.s.to_be_bytes(), challenges.keccak_input()),
                             Some(tx.s.tag_length()),
                             challenges
                                 .evm_word()
@@ -1897,7 +1885,7 @@ impl<F: Field> TxCircuit<F> {
                             TxSignLength,
                             Some(Len),
                             Some(false),
-                            None,
+                            zero_rlc,
                             Some(rlp_unsigned_tx_be_bytes.len().tag_length()),
                             Value::known(F::from(rlp_unsigned_tx_be_bytes.len() as u64)),
                         ),
@@ -1905,7 +1893,7 @@ impl<F: Field> TxCircuit<F> {
                             TxSignRLC,
                             Some(RLC),
                             Some(false),
-                            None,
+                            zero_rlc,
                             None,
                             challenges.keccak_input().map(|rand| {
                                 rlp_unsigned_tx_be_bytes
@@ -1913,12 +1901,12 @@ impl<F: Field> TxCircuit<F> {
                                     .fold(F::zero(), |acc, byte| acc * rand + F::from(*byte as u64))
                             }),
                         ),
-                        (TxSignHash, None, None, None, None, tx_sign_hash),
+                        (TxSignHash, None, None, zero_rlc, None, tx_sign_hash),
                         (
                             TxHashLength,
                             Some(Len),
                             Some(false),
-                            None,
+                            zero_rlc,
                             Some(rlp_signed_tx_be_bytes.len().tag_length()),
                             Value::known(F::from(rlp_signed_tx_be_bytes.len() as u64)),
                         ),
@@ -1926,7 +1914,7 @@ impl<F: Field> TxCircuit<F> {
                             TxHashRLC,
                             Some(RLC),
                             Some(false),
-                            None,
+                            zero_rlc,
                             None,
                             challenges.keccak_input().map(|rand| {
                                 rlp_signed_tx_be_bytes
@@ -1938,7 +1926,7 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::TxHash,
                             None,
                             None,
-                            None,
+                            zero_rlc,
                             None,
                             challenges.evm_word().map(|challenge| {
                                 tx.hash
@@ -1953,7 +1941,7 @@ impl<F: Field> TxCircuit<F> {
                             BlockNumber,
                             None,
                             None,
-                            None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.block_number)),
                         ),
@@ -2037,7 +2025,7 @@ impl<F: Field> TxCircuit<F> {
                             tx_id_next, // tx_id_next
                             CallData,
                             Value::known(F::from(*byte as u64)),
-                            None,
+                            zero_rlc,
                             None,
                             None,
                             None,
