@@ -508,14 +508,9 @@ mod test {
 
             fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.complex_selector();
-                let u8_table = meta.lookup_table_column();
                 let u16_table = meta.lookup_table_column();
-                let mul_config = MulAddChip::configure(
-                    meta,
-                    |meta| meta.query_selector(q_enable),
-                    u8_table,
-                    u16_table,
-                );
+                let mul_config =
+                    MulAddChip::configure(meta, |meta| meta.query_selector(q_enable), u16_table);
                 Self::Config {
                     q_enable,
                     mul_config,
@@ -528,21 +523,6 @@ mod test {
                 mut layouter: impl halo2_proofs::circuit::Layouter<F>,
             ) -> Result<(), halo2_proofs::plonk::Error> {
                 let chip = MulAddChip::construct(config.mul_config);
-
-                layouter.assign_table(
-                    || "u8 table",
-                    |mut table| {
-                        for i in 0..=255 {
-                            table.assign_cell(
-                                || format!("u8 table row {i}"),
-                                chip.config.u8_table,
-                                i,
-                                || Value::known(F::from(i as u64)),
-                            )?;
-                        }
-                        Ok(())
-                    },
-                )?;
 
                 layouter.assign_table(
                     || "u16 table",
