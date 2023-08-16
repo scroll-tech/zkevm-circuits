@@ -20,7 +20,7 @@ pub fn get_num_rows_per_round() -> usize {
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize");
     assert!(
-        r >= 9,
+        r >= NUM_BYTES_PER_WORD + 1,
         "env variable KECCAK_ROWS must be greater than (NUM_BYTES_PER_WORD + 1)."
     );
     r
