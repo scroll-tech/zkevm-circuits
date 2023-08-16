@@ -307,6 +307,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 reversion_info.rw_counter_end_of_reversion(),
                 rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
             );
+            //  when REVERT happens, current call must be failed.
+            cb.condition(is_revert.expr(), |cb| {
+                cb.require_zero("is_success is false when is_revert", is_success.expr());
+            });
         });
         // Without this, copy_rw_increase would be unconstrained for non-create root
         // calls.
