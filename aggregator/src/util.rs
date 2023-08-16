@@ -25,7 +25,7 @@ pub(crate) fn get_max_keccak_updates(max_snarks: usize) -> usize {
     // chunk_k-1's withdraw_root || batch_data_hash.
     // In total there're 168 bytes. Therefore 2 pi rounds are required.
     let pi_rounds = 2;
-    // Hash for each chunk is derived from hashing the chunk's 
+    // Hash for each chunk is derived from hashing the chunk's
     // chain_id || prev_state || post_state || withdraw_root || data_hash
     // Each chunk hash therefore also requires 2 keccak rounds for 168 bytes.
     let chunk_hash_rounds = 2 * max_snarks;
