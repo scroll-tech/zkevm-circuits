@@ -297,6 +297,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
 
+        let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
+        let rw_counter_delta = 18.expr()
+            + is_call.expr() * 1.expr()
+            + transfer_rwc_delta.expr()
+            + is_callcode.expr()
+            + is_delegatecall.expr() * 2.expr();
+        let caller_reversible_rwc_delta = 1.expr(); // AccessList
+        let callee_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
+
         // 1. handle precompile calls.
         let (
             precompile_gadget,
@@ -463,15 +472,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     },
                 );
 
-                let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
-                let transfer_reversible_rwc_delta: halo2_proofs::plonk::Expression<F> =
-                    is_call.expr() * transfer.reversible_w_delta();
                 // +15 call context lookups for precompile.
-                let rw_counter_delta = 33.expr()
-                    + is_call.expr() * 1.expr()
-                    + transfer_rwc_delta.expr()
-                    + is_callcode.expr()
-                    + is_delegatecall.expr() * 2.expr()
+                let rw_counter_delta = 15.expr()
+                    + rw_counter_delta.expr()
                     + precompile_input_rws.expr()
                     + precompile_output_rws.expr()
                     + precompile_return_rws.expr();
@@ -490,7 +493,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(precompile_output_rws.expr()),
-                    reversible_write_counter: To(transfer_reversible_rwc_delta.expr()),
+                    reversible_write_counter: To(callee_reversible_rwc_delta.expr()),
                     ..StepStateTransition::default()
                 });
 
@@ -542,14 +545,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
-                let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
-                let transfer_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
                 // +3 call context lookups for empty accounts.
-                let rw_counter_delta = 21.expr()
-                    + is_call.expr() * 1.expr()
-                    + transfer_rwc_delta.clone()
-                    + is_callcode.expr()
-                    + is_delegatecall.expr() * 2.expr();
+                let rw_counter_delta = 3.expr() + rw_counter_delta.expr();
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     program_counter: Delta(1.expr()),
@@ -560,7 +557,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                     memory_word_size: To(memory_expansion.next_memory_word_size()),
                     reversible_write_counter: Delta(
-                        1.expr() + transfer_reversible_rwc_delta.expr(),
+                        caller_reversible_rwc_delta.expr() + callee_reversible_rwc_delta.expr(),
                     ),
                     ..StepStateTransition::default()
                 });
@@ -579,8 +576,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             }
             // rwc_delta = 21 + is_call_or_callcode + transfer + is_delegatecall * 2
 
+            let rw_counter_delta = 3.expr() + rw_counter_delta.expr();
+
             cb.require_step_state_transition(StepStateTransition {
-                rw_counter: Delta(22.expr()),
+                rw_counter: Delta(rw_counter_delta.expr()),
                 program_counter: Delta(1.expr()),
                 stack_pointer: Delta(stack_pointer_delta.expr()),
                 gas_left: Delta(
@@ -588,7 +587,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         - gas_cost.clone(),
                 ),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
-                reversible_write_counter: Delta(1.expr()),
+                reversible_write_counter: Delta(caller_reversible_rwc_delta.expr()),
                 ..StepStateTransition::default()
             });
         });
@@ -690,13 +689,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
-                let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
-                let transfer_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
-                let rw_counter_delta = 41.expr()
-                    + is_call.expr() * 1.expr()
-                    + transfer_rwc_delta.clone()
-                    + is_callcode.expr()
-                    + is_delegatecall.expr() * 2.expr();
+                let rw_counter_delta = 23.expr() + rw_counter_delta.expr();
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     call_id: To(callee_call_id.expr()),
@@ -704,7 +697,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     is_create: To(false.expr()),
                     code_hash: To(call_gadget.phase2_callee_code_hash.expr()),
                     gas_left: To(callee_gas_left),
-                    reversible_write_counter: To(transfer_reversible_rwc_delta),
+                    reversible_write_counter: To(callee_reversible_rwc_delta.expr()),
                     ..StepStateTransition::new_context()
                 });
             },

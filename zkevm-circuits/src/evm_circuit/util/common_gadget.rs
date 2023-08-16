@@ -626,9 +626,7 @@ impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
     }
 }
 
-impl<F: Field> TransferGadgetInfo<F>
-    for TransferFromGadgetImpl<F, UpdateBalanceGadget<F, 2, false>>
-{
+impl<F: Field> TransferGadgetInfo<F> for TransferFromWithGasFeeGadget<F> {
     fn value_is_zero(&self) -> Expression<F> {
         self.value_is_zero
             .as_ref()
@@ -643,7 +641,7 @@ impl<F: Field> TransferGadgetInfo<F>
     }
 }
 
-impl<F: Field> TransferGadgetInfo<F> for TransferFromGadgetImpl<F, ()> {
+impl<F: Field> TransferGadgetInfo<F> for TransferFromGadget<F> {
     fn value_is_zero(&self) -> Expression<F> {
         self.value_is_zero
             .as_ref()
