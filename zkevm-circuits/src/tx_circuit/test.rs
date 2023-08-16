@@ -138,7 +138,7 @@ fn run<F: Field>(
 #[cfg(feature = "scroll")]
 fn tx_circuit_2tx_2max_tx() {
     const NUM_TXS: usize = 2;
-    const MAX_TXS: usize = 4;
+    const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 32;
 
     assert_eq!(

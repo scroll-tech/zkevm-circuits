@@ -2081,6 +2081,10 @@ pub struct RlpFsmRlpTable {
     pub rlp_tag: Column<Advice>,
     /// The actual value of the current tag being decoded.
     pub tag_value: Column<Advice>,
+    /// RLC of the tag's big-endian bytes
+    pub tag_bytes_rlc: Column<Advice>,
+    /// The actual length of bytes of the current tag being decoded.
+    pub tag_length: Column<Advice>,
     /// Whether or not the row emits an output value.
     pub is_output: Column<Advice>,
     /// Whether or not the current tag's value was nil.
@@ -2095,6 +2099,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             self.format.into(),
             self.rlp_tag.into(),
             self.tag_value.into(),
+            self.tag_bytes_rlc.into(),
+            self.tag_length.into(),
             self.is_output.into(),
             self.is_none.into(),
         ]
@@ -2107,6 +2113,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             String::from("format"),
             String::from("rlp_tag"),
             String::from("tag_value_acc"),
+            String::from("tag_bytes_rlc"),
+            String::from("tag_length"),
             String::from("is_output"),
             String::from("is_none"),
         ]
@@ -2122,6 +2130,8 @@ impl RlpFsmRlpTable {
             format: meta.advice_column(),
             rlp_tag: meta.advice_column(),
             tag_value: meta.advice_column_in(SecondPhase),
+            tag_bytes_rlc: meta.advice_column_in(SecondPhase),
+            tag_length: meta.advice_column(),
             is_output: meta.advice_column(),
             is_none: meta.advice_column(),
         }
@@ -2175,6 +2185,16 @@ impl RlpFsmRlpTable {
                             Value::known(F::from(usize::from(row.rlp_tag) as u64)),
                         ),
                         ("tag_value", self.tag_value.into(), row.tag_value),
+                        (
+                            "tag_bytes_rlc",
+                            self.tag_bytes_rlc.into(),
+                            row.tag_bytes_rlc,
+                        ),
+                        (
+                            "tag_length",
+                            self.tag_length.into(),
+                            Value::known(F::from(row.tag_length as u64)),
+                        ),
                         ("is_output", self.is_output.into(), Value::known(F::one())),
                         (
                             "is_none",
