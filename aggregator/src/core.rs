@@ -27,7 +27,7 @@ use zkevm_circuits::{
         keccak_packed_multi::{self, multi_keccak},
         KeccakCircuit, KeccakCircuitConfig,
     },
-    table::LookupTable,
+    table::{KeccakTable, LookupTable},
     util::Challenges,
 };
 
@@ -244,8 +244,13 @@ pub(crate) fn extract_hash_cells(
 
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
                         hash_input_cells.push(
-                            row[keccak_packed_multi::get_input_bytes_col_idx_in_cell_manager() + 4]
-                                .clone(),
+                            row[keccak_packed_multi::get_input_bytes_col_idx_in_cell_manager()
+                                + <KeccakTable as LookupTable<Fr>>::columns(
+                                    &keccak_config.keccak_table,
+                                )
+                                .len()
+                                - 1]
+                            .clone(),
                         );
                         cur_preimage_index = preimage_indices_iter.next();
                     }
