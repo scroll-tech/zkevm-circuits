@@ -1,4 +1,5 @@
 /// The number of rows assigned for each step in an exponentiation trace.
+/// It's max(MulAddChipRows, ExpCircuitRows) = max(8, 7) = 8
 pub(crate) const OFFSET_INCREMENT: usize = 8usize;
 /// The number of rows required for the exponentiation table within the circuit
 /// for each step.
