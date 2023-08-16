@@ -20,8 +20,8 @@ pub fn get_num_rows_per_round() -> usize {
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize");
     assert!(
-        r >= 9 && r <= 32,
-        "env variable KECCAK_ROWS must be in range [9, 32]."
+        r >= 9,
+        "env variable KECCAK_ROWS must be greater than (NUM_BYTES_PER_WORD + 1)."
     );
     r
 }
