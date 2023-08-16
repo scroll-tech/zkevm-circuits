@@ -221,8 +221,9 @@ impl<F: Field> MulAddChip<F> {
                     [col0, col1, col2, col3, col4].map(|col| meta.query_advice(col, Rotation(7))),
                 );
 
-            [check_a, check_b, sum::expr(unused_cells)]
+            [check_a, check_b]
                 .into_iter()
+                .chain(unused_cells)
                 .map(move |poly| q_enable.clone() * poly)
         });
 
