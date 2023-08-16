@@ -317,7 +317,6 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             meta,
             ExpCircuitArgs {
                 exp_table,
-                u8_table,
                 u16_table,
             },
         );

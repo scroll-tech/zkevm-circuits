@@ -10,7 +10,7 @@ pub use dev::ExpCircuit as TestExpCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{ExpTable, LookupTable, U16Table, U8Table},
+    table::{ExpTable, LookupTable, U16Table},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -35,8 +35,6 @@ pub struct ExpCircuitConfig<F> {
     pub q_enable: Column<Fixed>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
-    /// u8 lookup table,
-    pub u8_table: U8Table,
     /// u16 lookup table,
     pub u16_table: U16Table,
     /// Multiplication gadget for verification of each step.
@@ -49,8 +47,6 @@ pub struct ExpCircuitConfig<F> {
 pub struct ExpCircuitArgs {
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
-    /// u8 lookup table,
-    pub u8_table: U8Table,
     /// u16 lookup table,
     pub u16_table: U16Table,
 }
@@ -63,7 +59,6 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         ExpCircuitArgs {
             exp_table,
-            u8_table,
             u16_table,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -76,7 +71,6 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                     meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 ])
             },
-            u8_table.into(),
             u16_table.into(),
         );
         let parity_check = MulAddChip::configure(
@@ -87,7 +81,6 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                     meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 ])
             },
-            u8_table.into(),
             u16_table.into(),
         );
 
@@ -315,7 +308,6 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         Self {
             q_enable,
             exp_table,
-            u8_table,
             u16_table,
             mul_gadget,
             parity_check,
@@ -479,12 +471,10 @@ impl<F: Field> ExpCircuitConfig<F> {
             self.mul_gadget.col1,
             self.mul_gadget.col2,
             self.mul_gadget.col3,
-            self.mul_gadget.col4,
             self.parity_check.col0,
             self.parity_check.col1,
             self.parity_check.col2,
             self.parity_check.col3,
-            self.parity_check.col4,
         ]);
         for i in 0..UNUSABLE_EXP_ROWS {
             for column in &all_columns {
@@ -554,13 +544,12 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         // - Rotation(1)
         // - Rotation(2)
         // - Rotation(3)
-        // - Rotation(4)
         // - Rotation(5)
         // - Rotation(6)
         // - Rotation(7)
         // - Rotation(10)
-        // so returns max(8, 9) + 3 unusable rows.
-        12
+        // so returns max(8, 8) + 3 unusable rows.
+        11
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
