@@ -227,6 +227,7 @@ impl<F: Field> MulAddChip<F> {
                 .map(move |poly| q_enable.clone() * poly)
         });
 
+        // range check for a, b on first two rows
         let range_check_64_config = UIntRangeCheckChip::configure(
             meta,
             q_enable.clone(),
@@ -242,6 +243,7 @@ impl<F: Field> MulAddChip<F> {
             u16_table,
         );
 
+        // range check for c, d on third row
         let range_check_128_config = UIntRangeCheckChip::configure(
             meta,
             q_enable.clone(),
