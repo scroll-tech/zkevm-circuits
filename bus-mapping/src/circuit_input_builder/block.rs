@@ -88,6 +88,8 @@ pub struct BlockHead {
     pub difficulty: Word,
     /// base fee
     pub base_fee: Word,
+    /// start l1 queue index
+    pub start_l1_queue_index: u64,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
@@ -108,6 +110,49 @@ impl BlockHead {
         Ok(Self {
             chain_id,
             history_hashes,
+            start_l1_queue_index: 0,
+            coinbase: eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+            gas_limit: eth_block.gas_limit.low_u64(),
+            number: eth_block
+                .number
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
+                .low_u64()
+                .into(),
+            timestamp: eth_block.timestamp,
+            difficulty: if eth_block.difficulty.is_zero() {
+                eth_block
+                    .mix_hash
+                    .unwrap_or_default()
+                    .to_fixed_bytes()
+                    .into()
+            } else {
+                eth_block.difficulty
+            },
+            base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
+            eth_block: eth_block.clone(),
+        })
+    }
+
+    /// Create a new block.
+    pub fn new_with_l1_queue_index(
+        chain_id: u64,
+        start_l1_queue_index: u64,
+        history_hashes: Vec<Word>,
+        eth_block: &eth_types::Block<eth_types::Transaction>,
+    ) -> Result<Self, Error> {
+        if eth_block.base_fee_per_gas.is_none() {
+            // FIXME: resolve this once we have proper EIP-1559 support
+            log::debug!(
+                "This does not look like a EIP-1559 block - base_fee_per_gas defaults to zero"
+            );
+        }
+
+        Ok(Self {
+            chain_id,
+            history_hashes,
+            start_l1_queue_index,
             coinbase: eth_block
                 .author
                 .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
@@ -163,6 +208,8 @@ pub struct Block {
     pub circuits_params: CircuitsParams,
     /// chain id
     pub chain_id: u64,
+    /// start_l1_queue_index
+    pub start_l1_queue_index: u64,
     /// IO to/from the precompiled contract calls.
     pub precompile_events: PrecompileEvents,
 }
@@ -213,6 +260,41 @@ impl Block {
             ..Default::default()
         };
         let info = BlockHead::new(chain_id, history_hashes, eth_block)?;
+        block.headers.insert(info.number.as_u64(), info);
+        Ok(block)
+    }
+
+    /// Create a new block.
+    pub fn new_with_l1_queue_index(
+        chain_id: u64,
+        start_l1_queue_index: u64,
+        history_hashes: Vec<Word>,
+        eth_block: &eth_types::Block<eth_types::Transaction>,
+        circuits_params: CircuitsParams,
+    ) -> Result<Self, Error> {
+        let mut block = Self {
+            block_steps: BlockSteps {
+                end_block_not_last: ExecStep {
+                    exec_state: ExecState::EndBlock,
+                    ..ExecStep::default()
+                },
+                end_block_last: ExecStep {
+                    exec_state: ExecState::EndBlock,
+                    ..ExecStep::default()
+                },
+            },
+            exp_events: Vec::new(),
+            chain_id,
+            start_l1_queue_index,
+            circuits_params,
+            ..Default::default()
+        };
+        let info = BlockHead::new_with_l1_queue_index(
+            chain_id,
+            start_l1_queue_index,
+            history_hashes,
+            eth_block,
+        )?;
         block.headers.insert(info.number.as_u64(), info);
         Ok(block)
     }

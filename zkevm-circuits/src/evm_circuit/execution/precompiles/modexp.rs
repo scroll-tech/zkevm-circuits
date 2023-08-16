@@ -176,11 +176,7 @@ impl<F: Field> SizeRepresent<F> {
             .iter()
             .map(Cell::expr)
             .collect::<Vec<_>>();
-        let is_rest_field_zero = IsZeroGadget::construct(
-            cb,
-            "if length field exceed 1 byte",
-            expr_from_bytes(&len_blank_bytes),
-        );
+        let is_rest_field_zero = IsZeroGadget::construct(cb, expr_from_bytes(&len_blank_bytes));
         let len_effect_bytes = len_bytes[(32 - SIZE_REPRESENT_BYTES)..]
             .iter()
             .map(Cell::expr)
@@ -446,7 +442,9 @@ impl<F: Field> ModExpOutputs<F> {
         modulus_len: Expression<F>,
     ) -> Self {
         let output_len = inner_success * modulus_len;
-        let is_result_zero = IsZeroGadget::construct(cb, "if output len is nil", output_len);
+        let is_result_zero = cb.annotation("if output len is nil", |cb| {
+            IsZeroGadget::construct(cb, output_len)
+        });
 
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
@@ -572,7 +570,7 @@ impl<F: Field> ModExpGasCost<F> {
         let max_length = MinMaxGadget::construct(cb, b_size.value(), m_size.value());
         let words = ConstantDivisionGadget::construct(cb, max_length.max() + 7.expr(), 8);
         let multiplication_complexity = words.quotient() * words.quotient();
-        let exp_is_zero = IsZeroGadget::construct(cb, "modexp: exponent", expr_from_bytes(exp));
+        let exp_is_zero = IsZeroGadget::construct(cb, expr_from_bytes(exp));
 
         let (exp_byte_size, exp_msb, exp_msb_bit_length) =
             cb.condition(not::expr(exp_is_zero.expr()), |cb| {
@@ -799,9 +797,10 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             gas_cost_gadget.dynamic_gas.max(),
         );
 
-        let restore_context_gadget = RestoreContextGadget::construct(
+        let restore_context_gadget = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
+            gas_cost.expr(),
             0.expr(),
             0.expr(),
             input.modulus_len(),

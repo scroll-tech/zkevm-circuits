@@ -93,6 +93,12 @@ pub trait ToLittleEndian {
     fn to_le_bytes(&self) -> [u8; 32];
 }
 
+/// Trait used to convert a scalar value to a 16x u16 array in little endian.
+pub trait ToU16LittleEndian {
+    /// Convert the value to a 16x u16 array in little endian.
+    fn to_le_u16_array(&self) -> [u16; 16];
+}
+
 // We use our own declaration of another U256 in order to implement a custom
 // deserializer that can parse U256 when returned by structLogs fields in geth
 // debug_trace* methods, which don't contain the `0x` prefix.
@@ -156,6 +162,26 @@ impl ToLittleEndian for U256 {
         let mut bytes = [0u8; 32];
         self.to_little_endian(&mut bytes);
         bytes
+    }
+}
+
+impl ToU16LittleEndian for U256 {
+    /// Encode the value as 16x u16 array in little endian.
+    ///
+    /// eg. 0xaabb_ccdd_eeff_0011_2233_4455_6677_8899_bbaa_ddcc_ffee_1100_3322_5544_7766_9988
+    /// -> [
+    ///     0x9988, 0x7766, 0x5544, 0x3322, 0x1100, 0xffee, 0xddcc, 0xbbaa,
+    ///     0x8899, 0x6677, 0x4455, 0x2233, 0x0011, 0xeeff, 0xccdd, 0xaabb,
+    ///   ]
+    fn to_le_u16_array(&self) -> [u16; 16] {
+        let mut u16_array: [u16; 16] = [0; 16];
+        for (idx, u64_cell) in self.0.into_iter().enumerate() {
+            u16_array[idx * 4] = (u64_cell & 0xffff) as u16;
+            u16_array[idx * 4 + 1] = ((u64_cell >> 16) & 0xffff) as u16;
+            u16_array[idx * 4 + 2] = ((u64_cell >> 32) & 0xffff) as u16;
+            u16_array[idx * 4 + 3] = ((u64_cell >> 48) & 0xffff) as u16;
+        }
+        u16_array
     }
 }
 
@@ -487,6 +513,19 @@ macro_rules! word_map {
 mod tests {
     use super::*;
     use crate::evm_types::{memory::Memory, opcode_ids::OpcodeId, stack::Stack};
+
+    #[test]
+    fn test_to_u16_array() {
+        assert_eq!(
+            U256::from_str("0xaabbccddeeff00112233445566778899bbaaddccffee11003322554477669988")
+                .unwrap()
+                .to_le_u16_array(),
+            [
+                0x9988, 0x7766, 0x5544, 0x3322, 0x1100, 0xffee, 0xddcc, 0xbbaa, 0x8899, 0x6677,
+                0x4455, 0x2233, 0x0011, 0xeeff, 0xccdd, 0xaabb
+            ]
+        );
+    }
 
     #[test]
     fn deserialize_geth_exec_trace2() {

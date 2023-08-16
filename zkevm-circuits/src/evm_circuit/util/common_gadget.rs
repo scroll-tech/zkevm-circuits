@@ -120,6 +120,29 @@ impl<F: Field> RestoreContextGadget<F> {
         memory_expansion_cost: Expression<F>,
         reversible_write_counter_increase: Expression<F>,
     ) -> Self {
+        Self::construct2(
+            cb,
+            is_success,
+            0.expr(),
+            subsequent_rw_lookups,
+            return_data_offset,
+            return_data_length,
+            memory_expansion_cost,
+            reversible_write_counter_increase,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct2(
+        cb: &mut EVMConstraintBuilder<F>,
+        is_success: Expression<F>,
+        gas_cost: Expression<F>,
+        // Expression for the number of rw lookups that occur after this gadget is constructed.
+        subsequent_rw_lookups: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+        memory_expansion_cost: Expression<F>,
+        reversible_write_counter_increase: Expression<F>,
+    ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
         let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
@@ -171,12 +194,17 @@ impl<F: Field> RestoreContextGadget<F> {
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * return_data_length;
 
-        let gas_refund =
-            if cb.execution_state().halts_in_exception() || cb.execution_state().is_precompiled() {
-                0.expr() // no gas refund if call halts in exception
-            } else {
-                cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
-            };
+        let gas_refund = if cb.execution_state().halts_in_exception() {
+            0.expr() // no gas refund if call halts in exception
+        } else if cb.execution_state().is_precompiled() {
+            // TODO: merge with next branch?
+            cb.curr.state.gas_left.expr() - gas_cost.expr()
+        } else {
+            cb.curr.state.gas_left.expr()
+                - gas_cost.expr()
+                - memory_expansion_cost
+                - code_deposit_cost
+        };
 
         let gas_left = caller_gas_left.expr() + gas_refund;
 
@@ -412,8 +440,9 @@ impl<F: Field> TransferFromGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero =
-            IsZeroGadget::construct(cb, "transfer from is zero value", value.expr());
+        let value_is_zero = cb.annotation("transfer from is zero value", |cb| {
+            IsZeroGadget::construct(cb, value.expr())
+        });
         Self::construct_with_is_zero(
             cb,
             sender_address,
@@ -497,8 +526,7 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero =
-            IsZeroGadget::construct(cb, "transfer from with gas is zero value", value.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         Self::construct_with_is_zero(
             cb,
             sender_address,
@@ -598,7 +626,7 @@ impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
     }
 }
 
-impl<F: Field, WithFeeGadget> TransferGadgetInfo<F> for TransferFromGadgetImpl<F, WithFeeGadget> {
+impl<F: Field> TransferGadgetInfo<F> for TransferFromWithGasFeeGadget<F> {
     fn value_is_zero(&self) -> Expression<F> {
         self.value_is_zero
             .as_ref()
@@ -608,6 +636,19 @@ impl<F: Field, WithFeeGadget> TransferGadgetInfo<F> for TransferFromGadgetImpl<F
     fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         1.expr() +
+        // +1 Write Account (sender) Balance
+        not::expr(self.value_is_zero())
+    }
+}
+
+impl<F: Field> TransferGadgetInfo<F> for TransferFromGadget<F> {
+    fn value_is_zero(&self) -> Expression<F> {
+        self.value_is_zero
+            .as_ref()
+            .either(|gadget| gadget.expr(), |expr| expr.clone())
+    }
+
+    fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance
         not::expr(self.value_is_zero())
     }
@@ -633,7 +674,9 @@ impl<F: Field> TransferToGadget<F> {
         value: Word<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "transfer to is zero value", value.expr());
+        let value_is_zero = cb.annotation("transfer to is zero value", |cb| {
+            IsZeroGadget::construct(cb, value.expr())
+        });
         Self::construct_with_is_zero(
             cb,
             receiver_address,
@@ -836,7 +879,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         let from = TransferFromWithGasFeeGadget::construct_with_is_zero(
             cb,
             sender_address,
@@ -878,7 +921,9 @@ impl<F: Field> TransferGadget<F> {
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, "transfer is zero value", value.expr());
+        let value_is_zero = cb.annotation("transfer is zero value", |cb| {
+            IsZeroGadget::construct(cb, value.expr())
+        });
         let from = TransferFromGadget::construct_with_is_zero(
             cb,
             sender_address.expr(),
@@ -1034,14 +1079,14 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         });
 
         // Recomposition of random linear combination to integer
-        let gas_is_u64 = IsZeroGadget::construct(cb, "", sum::expr(&gas_word.cells[N_BYTES_GAS..]));
+        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             [cd_address.end_offset(), rd_address.end_offset()],
         );
 
         // construct common gadget
-        let value_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&value.cells));
+        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
@@ -1056,7 +1101,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         );
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_code_hash_rlc());
-        let callee_not_exists = IsZeroGadget::construct(cb, "", phase2_callee_code_hash.expr());
+        let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
 
         Self {
             is_success,
@@ -1231,7 +1276,7 @@ impl<F: Field> SstoreGasGadget<F> {
         let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
         let original_eq_prev =
             IsEqualGadget::construct(cb, original_value.expr(), value_prev.expr());
-        let original_is_zero = IsZeroGadget::construct(cb, "", original_value.expr());
+        let original_is_zero = IsZeroGadget::construct(cb, original_value.expr());
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -1525,8 +1570,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word_rlc();
-        let not_overflow =
-            IsZeroGadget::construct(cb, "", sum::expr(&original.cells[VALID_BYTES..]));
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
 
         Self {
             original,
@@ -1598,8 +1642,7 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
 
         // Check if `data_offset` is Uint64 overflow.
         let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
-        let is_data_offset_within_u64 =
-            IsZeroGadget::construct(cb, "data_offset not overflow", data_offset_larger_u64);
+        let is_data_offset_within_u64 = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
         let sum: AddWordsGadget<F, 2, false> =
             AddWordsGadget::construct(cb, [data_offset, size_word], remainder_end.clone());
@@ -1608,7 +1651,7 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
         // yes, it should be also an error of return data out of bound.
         let is_end_u256_overflow = sum.carry().as_ref().unwrap();
         let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
-        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, "", remainder_end_larger_u64);
+        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, remainder_end_larger_u64);
 
         // check if `remainder_end` exceeds return data length.
         let is_remainder_end_exceed_len = LtGadget::construct(

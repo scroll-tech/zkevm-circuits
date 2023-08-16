@@ -133,10 +133,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_msg.is_l1_msg(),
             tx_l1_msg.rw_delta(),
             tx_l1_fee.rw_delta(),
-        );
+        ) + 1.expr();
 
         // the cost caused by l1
         let l1_fee_cost = select::expr(tx_l1_msg.is_l1_msg(), 0.expr(), tx_l1_fee.tx_l1_fee());
+        cb.call_context_lookup(
+            1.expr(),
+            Some(call_id.expr()),
+            CallContextFieldTag::L1Fee,
+            l1_fee_cost.expr(),
+        ); // rwc_delta += 1
 
         cb.call_context_lookup(
             1.expr(),
@@ -153,13 +159,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_persistent.expr(),
         ); // rwc_delta += 1
 
-        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, "", tx_caller_address.expr());
+        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
             tx_caller_address_is_zero.expr(),
             false.expr(),
         );
-        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, "", tx_callee_address.expr());
+        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
         cb.condition(tx_is_create.expr(), |cb| {
             cb.require_equal(
                 "Contract creation tx expects callee address to be zero",
@@ -297,7 +303,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let account_code_hash = cb.query_cell_phase2();
         let account_code_hash_is_empty =
             IsEqualGadget::construct(cb, account_code_hash.expr(), cb.empty_code_hash_rlc());
-        let account_code_hash_is_zero = IsZeroGadget::construct(cb, "", account_code_hash.expr());
+        let account_code_hash_is_zero = IsZeroGadget::construct(cb, account_code_hash.expr());
         let account_code_hash_is_empty_or_zero =
             account_code_hash_is_empty.expr() + account_code_hash_is_zero.expr();
         #[cfg(feature = "scroll")]
@@ -306,7 +312,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_code_hash = cb.query_cell_phase2();
         let call_code_hash_is_empty =
             IsEqualGadget::construct(cb, call_code_hash.expr(), cb.empty_code_hash_rlc());
-        let call_code_hash_is_zero = IsZeroGadget::construct(cb, "", call_code_hash.expr());
+        let call_code_hash_is_zero = IsZeroGadget::construct(cb, call_code_hash.expr());
         let call_code_hash_is_empty_or_zero =
             call_code_hash_is_empty.expr() + call_code_hash_is_zero.expr();
 
@@ -412,10 +418,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     call_callee_address.expr(),
                 ),
                 (CallContextFieldTag::CallDataOffset, 0.expr()),
-                (
-                    CallContextFieldTag::CallDataLength,
-                    tx_call_data_length.expr(),
-                ),
+                (CallContextFieldTag::CallDataLength, 0.expr()),
                 (CallContextFieldTag::Value, tx_value.expr()),
                 (CallContextFieldTag::IsStatic, 0.expr()),
                 (CallContextFieldTag::LastCalleeId, 0.expr()),
@@ -765,6 +768,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         } else {
             3
         });
+
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
+
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
         debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::TxId as u64));
@@ -1234,6 +1242,7 @@ mod test {
             PUSH1(0)
             MSTORE
 
+            CALLDATASIZE
             PUSH1(2)
             PUSH1(0)
             RETURN

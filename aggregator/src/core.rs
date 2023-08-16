@@ -1,7 +1,10 @@
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::{
+        bn256::{Bn256, Fr, G1Affine, G2Affine},
+        pairing::Engine,
+    },
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
@@ -45,6 +48,8 @@ pub(crate) fn extract_accumulators_and_proof(
     params: &ParamsKZG<Bn256>,
     snarks: &[Snark],
     rng: impl Rng + Send,
+    g2: &G2Affine,
+    s_g2: &G2Affine,
 ) -> Result<(KzgAccumulator<G1Affine, NativeLoader>, Vec<u8>), Error> {
     let svk = params.get_g()[0].into();
 
@@ -65,6 +70,22 @@ pub(crate) fn extract_accumulators_and_proof(
             Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
         })
         .collect::<Vec<_>>();
+    // sanity check on the accumulator
+    {
+        for (i, acc) in accumulators.iter().enumerate() {
+            let KzgAccumulator { lhs, rhs } = acc;
+            let left = Bn256::pairing(lhs, g2);
+            let right = Bn256::pairing(rhs, s_g2);
+            log::trace!("acc extraction {}-th acc check: left {:?}", i, left);
+            log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
+            if left != right {
+                return Err(snark_verifier::Error::AssertionFailure(format!(
+                    "accumulator check failed {left:?} {right:?}, index {i}",
+                )));
+            }
+            //assert_eq!(left, right, "accumulator check failed");
+        }
+    }
 
     let mut transcript_write =
         PoseidonTranscript::<NativeLoader, Vec<u8>>::from_spec(vec![], POSEIDON_SPEC.clone());
@@ -337,6 +358,12 @@ fn copy_constraints(
                     assert_equal(
                         &batch_pi_hash_preimage[i + PREV_STATE_ROOT_INDEX],
                         &chunk_pi_hash_preimages[0][i + PREV_STATE_ROOT_INDEX],
+                        format!(
+                            "chunk and batch's prev_state_root do not match: {:?} {:?}",
+                            &batch_pi_hash_preimage[i + PREV_STATE_ROOT_INDEX].value(),
+                            &chunk_pi_hash_preimages[0][i + PREV_STATE_ROOT_INDEX].value(),
+                        )
+                        .as_str(),
                     );
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + PREV_STATE_ROOT_INDEX].cell(),
@@ -347,6 +374,13 @@ fn copy_constraints(
                     assert_equal(
                         &batch_pi_hash_preimage[i + POST_STATE_ROOT_INDEX],
                         &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + POST_STATE_ROOT_INDEX],
+                        format!(
+                            "chunk and batch's post_state_root do not match: {:?} {:?}",
+                            &batch_pi_hash_preimage[i + POST_STATE_ROOT_INDEX].value(),
+                            &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + POST_STATE_ROOT_INDEX]
+                                .value(),
+                        )
+                        .as_str(),
                     );
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + POST_STATE_ROOT_INDEX].cell(),
@@ -357,6 +391,13 @@ fn copy_constraints(
                     assert_equal(
                         &batch_pi_hash_preimage[i + WITHDRAW_ROOT_INDEX],
                         &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + WITHDRAW_ROOT_INDEX],
+                        format!(
+                            "chunk and batch's withdraw_root do not match: {:?} {:?}",
+                            &batch_pi_hash_preimage[i + WITHDRAW_ROOT_INDEX].value(),
+                            &chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + WITHDRAW_ROOT_INDEX]
+                                .value(),
+                        )
+                        .as_str(),
                     );
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + WITHDRAW_ROOT_INDEX].cell(),
@@ -365,14 +406,23 @@ fn copy_constraints(
                 }
 
                 // 5 assert hashes use a same chain id
-                for chunk_pi_hash_preimage in chunk_pi_hash_preimages.iter() {
+                for (i, chunk_pi_hash_preimage) in chunk_pi_hash_preimages.iter().enumerate() {
                     for (lhs, rhs) in batch_pi_hash_preimage
                         .iter()
                         .take(CHAIN_ID_LEN)
                         .zip(chunk_pi_hash_preimage.iter().take(CHAIN_ID_LEN))
                     {
                         // sanity check
-                        assert_equal(lhs, rhs);
+                        assert_equal(
+                            lhs,
+                            rhs,
+                            format!(
+                                "chunk_{i} and batch's chain id do not match: {:?} {:?}",
+                                &lhs.value(),
+                                &rhs.value(),
+                            )
+                            .as_str(),
+                        );
                         region.constrain_equal(lhs.cell(), rhs.cell())?;
                     }
                 }
@@ -459,11 +509,11 @@ pub(crate) fn conditional_constraints(
                 // 5,6,7,8       | 32                  | 0, 1, 0
                 // 9,10          | 64                  | 0, 0, 1
 
-                let four = {
-                    let four = rlc_config.load_private(&mut region, &Fr::from(4), &mut offset)?;
-                    let four_cell = rlc_config.four_cell(four.cell().region_index);
-                    region.constrain_equal(four_cell, four.cell())?;
-                    four
+                let five = {
+                    let five = rlc_config.load_private(&mut region, &Fr::from(5), &mut offset)?;
+                    let five_cell = rlc_config.five_cell(five.cell().region_index);
+                    region.constrain_equal(five_cell, five.cell())?;
+                    five
                 };
                 let nine = {
                     let nine = rlc_config.load_private(&mut region, &Fr::from(9), &mut offset)?;
@@ -474,7 +524,7 @@ pub(crate) fn conditional_constraints(
                 let flag1 = rlc_config.is_smaller_than(
                     &mut region,
                     &num_valid_snarks,
-                    &four,
+                    &five,
                     &mut offset,
                 )?;
                 let not_flag1 = rlc_config.not(&mut region, &flag1, &mut offset)?;
@@ -595,6 +645,13 @@ pub(crate) fn conditional_constraints(
                             &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
                             &potential_batch_data_hash_preimage[i * DIGEST_LEN + j],
                             &chunk_is_valid_cells[i],
+                            format!(
+                                "chunk_{i}'s data hash does not match batch's: {:?} {:?} {:?}",
+                                &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX].value(),
+                                &potential_batch_data_hash_preimage[i * DIGEST_LEN + j].value(),
+                                &chunk_is_valid_cells[i].value()
+                            )
+                            .as_str(),
                         );
                         rlc_config.conditional_enforce_equal(
                             &mut region,
@@ -614,6 +671,13 @@ pub(crate) fn conditional_constraints(
                             &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j],
                             &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j],
                             &chunk_is_valid_cells[i + 1],
+                            format!(
+                                "chunk_{i} is not continuous: {:?} {:?} {:?}",
+                                &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j].value(),
+                                &chunk_pi_hash_preimages[i][POST_STATE_ROOT_INDEX + j].value(),
+                                &chunk_is_valid_cells[i + 1].value(),
+                            )
+                            .as_str(),
                         );
                         rlc_config.conditional_enforce_equal(
                             &mut region,
@@ -724,7 +788,16 @@ pub(crate) fn conditional_constraints(
                 )?;
 
                 // sanity check
-                assert_equal(&data_hash_inputs_len, &data_hash_inputs_len_rec);
+                assert_equal(
+                    &data_hash_inputs_len,
+                    &data_hash_inputs_len_rec,
+                    format!(
+                        "data_hash_input_len do not match: {:?} {:?}",
+                        &data_hash_inputs_len.value(),
+                        &data_hash_inputs_len_rec.value(),
+                    )
+                    .as_str(),
+                );
                 region.constrain_equal(
                     data_hash_inputs_len.cell(),
                     data_hash_inputs_len_rec.cell(),

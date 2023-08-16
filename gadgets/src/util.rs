@@ -210,6 +210,18 @@ pub fn expr_from_bytes<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
     value
 }
 
+/// Given a u16-array-representation of an expression, it computes and returns
+/// the single expression.
+pub fn expr_from_u16<F: FieldExt, E: Expr<F>>(u16s: &[E]) -> Expression<F> {
+    let mut value = 0.expr();
+    let mut multiplier = F::one();
+    for u16 in u16s.iter() {
+        value = value + u16.expr() * multiplier;
+        multiplier *= F::from(2u64.pow(16));
+    }
+    value
+}
+
 /// Returns 2**by as FieldExt
 pub fn pow_of_two<F: FieldExt>(by: usize) -> F {
     F::from(2).pow(&[by as u64, 0, 0, 0])

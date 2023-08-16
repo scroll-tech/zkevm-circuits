@@ -64,31 +64,27 @@ use crate::{
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
     ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
-    exp_circuit::{ExpCircuit, ExpCircuitConfig},
+    exp_circuit::{ExpCircuit, ExpCircuitArgs, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     modexp_circuit::{ModExpCircuit, ModExpCircuitConfig},
+    pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
+    rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
-    util::{log2_ceil, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block},
-};
-
-#[cfg(feature = "zktrie")]
-use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
-
-use crate::util::Challenges;
-
-use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
         TxTable, U16Table, U8Table,
     },
+    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    util::{circuit_stats, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block, Transaction},
 };
 
-use crate::util::circuit_stats;
+#[cfg(feature = "zktrie")]
+use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
+
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
@@ -101,12 +97,6 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use snark_verifier_sdk::CircuitExt;
-
-use crate::{
-    pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
-    rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
-    witness::Transaction,
-};
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
@@ -323,7 +313,13 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         );
         log_circuit_info(meta, "state circuit");
 
-        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
+        let exp_circuit = ExpCircuitConfig::new(
+            meta,
+            ExpCircuitArgs {
+                exp_table,
+                u16_table,
+            },
+        );
         log_circuit_info(meta, "exp circuit");
 
         let evm_circuit = EvmCircuitConfig::new(

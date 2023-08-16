@@ -46,7 +46,7 @@ use eth_types::{
         TxType::{Eip155, L1Msg, PreEip155},
     },
     sign_types::SignData,
-    Address, Field, ToAddress, ToLittleEndian, ToScalar,
+    Address, Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar,
 };
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
@@ -68,11 +68,13 @@ use std::{
     marker::PhantomData,
 };
 
+use crate::witness::rlp_fsm::ValueTagLength;
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::Fixed;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
+use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 23;
@@ -112,6 +114,8 @@ pub struct TxCircuitConfig<F: Field> {
     rlp_tag: Column<Advice>,
     // Whether tag's RLP-encoded value is 0x80 = rlp([])
     is_none: Column<Advice>,
+    tx_value_length: Column<Advice>,
+    tx_value_rlc: Column<Advice>,
 
     u8_table: U8Table,
     u16_table: U16Table,
@@ -214,6 +218,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // tag, rlp_tag, tx_type, is_none
         let tx_type = meta.advice_column();
         let rlp_tag = meta.advice_column();
+        let tx_value_rlc = meta.advice_column_in(SecondPhase);
+        let tx_value_length = meta.advice_column();
         let is_none = meta.advice_column();
         let tag_bits = BinaryNumberChip::configure(meta, q_enable, Some(tx_table.tag.into()));
         let tx_type_bits = BinaryNumberChip::configure(meta, q_enable, Some(tx_type.into()));
@@ -701,6 +707,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             meta,
             q_enable,
             rlp_tag,
+            tx_value_rlc,
+            tx_value_length,
             tx_type_bits,
             tx_id_is_zero.clone(),
             is_none,
@@ -1085,6 +1093,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_type_bits,
             rlp_tag,
             is_none,
+            tx_value_rlc,
+            tx_value_length,
             q_second,
             u8_table,
             u16_table,
@@ -1123,6 +1133,8 @@ impl<F: Field> TxCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         rlp_tag: Column<Advice>,
+        tx_value_rlc: Column<Advice>,
+        tx_value_length: Column<Advice>,
         tx_type_bits: BinaryNumberConfig<TxType, 3>,
         tx_id_is_zero: IsZeroConfig<F>,
         is_none: Column<Advice>,
@@ -1256,6 +1268,8 @@ impl<F: Field> TxCircuitConfig<F> {
             let enable = and::expr([meta.query_fixed(q_enable, Rotation::cur()), is_l1_msg(meta)]);
             let hash_format = L1MsgHash.expr();
             let tag_value = 0x7E.expr();
+            let tag_bytes_rlc = 0x7E.expr();
+            let tag_length = 1.expr();
 
             let input_exprs = vec![
                 1.expr(), // q_enable = true
@@ -1263,6 +1277,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 hash_format,
                 RLPTxType.expr(),
                 tag_value,
+                tag_bytes_rlc,
+                tag_length,
                 1.expr(), // is_output = true
                 0.expr(), // is_none = false
             ];
@@ -1296,11 +1312,13 @@ impl<F: Field> TxCircuitConfig<F> {
                 sign_format,
                 rlp_tag,
                 meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(tx_value_rlc, Rotation::cur()),
+                meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
                 is_none,
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1332,11 +1350,13 @@ impl<F: Field> TxCircuitConfig<F> {
                 hash_format,
                 rlp_tag,
                 meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(tx_value_rlc, Rotation::cur()),
+                meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
                 is_none,
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1431,6 +1451,8 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_id_next: usize,
         tag: TxFieldTag,
         value: Value<F>,
+        be_bytes_rlc: Value<F>,
+        be_bytes_length: Option<u32>,
         rlp_tag: Option<RlpTag>,
         is_none: Option<bool>,
         is_padding_tx: Option<bool>,
@@ -1464,6 +1486,18 @@ impl<F: Field> TxCircuitConfig<F> {
             self.is_none,
             *offset,
             || Value::known(F::from(is_none.unwrap_or(false) as u64)),
+        )?;
+        region.assign_advice(
+            || "value_be_bytes_rlc",
+            self.tx_value_rlc,
+            *offset,
+            || be_bytes_rlc,
+        )?;
+        region.assign_advice(
+            || "value_be_bytes_length",
+            self.tx_value_length,
+            *offset,
+            || Value::known(F::from(be_bytes_length.unwrap_or(0) as u64)),
         )?;
 
         // assign to lookup condition columns
@@ -1934,6 +1968,8 @@ impl<F: Field> TxCircuit<F> {
                     !sigs.is_empty() as usize, // tx_id_next
                     TxFieldTag::Null,
                     Value::known(F::zero()),
+                    challenges.keccak_input().map(|_| F::zero()),
+                    None,
                     None,
                     None,
                     None,
@@ -1950,6 +1986,7 @@ impl<F: Field> TxCircuit<F> {
                     1,
                     || Value::known(F::one()),
                 )?;
+                let zero_rlc = challenges.keccak_input().map(|_| F::zero());
 
                 // Assign all tx fields except for call data
                 for (i, sign_data) in sigs.iter().enumerate() {
@@ -1990,18 +2027,22 @@ impl<F: Field> TxCircuit<F> {
                         })
                     };
                     log::debug!("calldata len: {}", tx.call_data.len());
-                    for (tag, rlp_tag, is_none, value) in [
+                    for (tag, rlp_tag, is_none, be_bytes_rlc, be_bytes_length, value) in [
                         // need to be in same order as that tx table load function uses
                         (
                             Nonce,
-                            Some(Tag::Nonce.into()),
+                            Some(Tag::Nonce.into()), // lookup into RLP table
                             Some(tx.nonce == 0),
+                            rlc_be_bytes(&tx.nonce.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.nonce.tag_length()),
                             Value::known(F::from(tx.nonce)),
                         ),
                         (
                             GasPrice,
                             Some(Tag::GasPrice.into()),
                             Some(tx.gas_price.is_zero()),
+                            rlc_be_bytes(&tx.gas_price.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.gas_price.tag_length()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
@@ -2010,18 +2051,31 @@ impl<F: Field> TxCircuit<F> {
                             Gas,
                             Some(Tag::Gas.into()),
                             Some(tx.gas == 0),
+                            rlc_be_bytes(&tx.gas.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.gas.tag_length()),
                             Value::known(F::from(tx.gas)),
                         ),
                         (
                             CallerAddress,
                             Some(Tag::Sender.into()),
                             None,
+                            rlc_be_bytes(
+                                &tx.caller_address.to_fixed_bytes(),
+                                challenges.keccak_input(),
+                            ),
+                            Some(tx.caller_address.tag_length()),
                             Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
                         ),
                         (
                             CalleeAddress,
                             Some(Tag::To.into()),
                             Some(tx.callee_address.is_none()),
+                            rlc_be_bytes(
+                                &tx.callee_address
+                                    .map_or(vec![], |callee| callee.to_fixed_bytes().to_vec()),
+                                challenges.keccak_input(),
+                            ),
+                            Some(tx.callee_address.tag_length()),
                             Value::known(
                                 tx.callee_address
                                     .unwrap_or(Address::zero())
@@ -2031,7 +2085,9 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             IsCreate,
+                            None, // do not lookup into RLP table
                             None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.is_create as u64)),
                         ),
@@ -2039,6 +2095,8 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::Value,
                             Some(Tag::Value.into()),
                             Some(tx.value.is_zero()),
+                            rlc_be_bytes(&tx.value.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.value.tag_length()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.value.to_le_bytes(), challenge)),
@@ -2048,10 +2106,14 @@ impl<F: Field> TxCircuit<F> {
                             Some(Tag::Data.into()),
                             Some(tx.call_data.is_empty()),
                             rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
+                            Some(tx.call_data.tag_length()),
+                            rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
                         ),
                         (
                             CallDataLength,
                             None,
+                            None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.call_data.len() as u64)),
                         ),
@@ -2059,30 +2121,40 @@ impl<F: Field> TxCircuit<F> {
                             CallDataGasCost,
                             None,
                             None,
+                            zero_rlc,
+                            None,
                             Value::known(F::from(tx.call_data_gas_cost)),
                         ),
                         (
                             TxDataGasCost,
                             Some(GasCost),
                             None,
+                            zero_rlc,
+                            None,
                             Value::known(F::from(tx.tx_data_gas_cost)),
                         ),
                         (
                             ChainID,
                             Some(Tag::ChainId.into()),
-                            None,
+                            Some(tx.chain_id.is_zero()),
+                            rlc_be_bytes(&tx.chain_id.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.chain_id.tag_length()),
                             Value::known(F::from(tx.chain_id)),
                         ),
                         (
                             SigV,
                             Some(Tag::SigV.into()),
                             Some(tx.v.is_zero()),
+                            rlc_be_bytes(&tx.v.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.v.tag_length()),
                             Value::known(F::from(tx.v)),
                         ),
                         (
                             SigR,
                             Some(Tag::SigR.into()),
                             Some(tx.r.is_zero()),
+                            rlc_be_bytes(&tx.r.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.r.tag_length()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.r.to_le_bytes(), challenge)),
@@ -2091,6 +2163,8 @@ impl<F: Field> TxCircuit<F> {
                             SigS,
                             Some(Tag::SigS.into()),
                             Some(tx.s.is_zero()),
+                            rlc_be_bytes(&tx.s.to_be_bytes(), challenges.keccak_input()),
+                            Some(tx.s.tag_length()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.s.to_le_bytes(), challenge)),
@@ -2099,29 +2173,37 @@ impl<F: Field> TxCircuit<F> {
                             TxSignLength,
                             Some(Len),
                             Some(false),
+                            zero_rlc,
+                            Some(rlp_unsigned_tx_be_bytes.len().tag_length()),
                             Value::known(F::from(rlp_unsigned_tx_be_bytes.len() as u64)),
                         ),
                         (
                             TxSignRLC,
                             Some(RLC),
                             Some(false),
+                            zero_rlc,
+                            None,
                             challenges.keccak_input().map(|rand| {
                                 rlp_unsigned_tx_be_bytes
                                     .iter()
                                     .fold(F::zero(), |acc, byte| acc * rand + F::from(*byte as u64))
                             }),
                         ),
-                        (TxSignHash, None, None, tx_sign_hash),
+                        (TxSignHash, None, None, zero_rlc, None, tx_sign_hash),
                         (
                             TxHashLength,
                             Some(Len),
                             Some(false),
+                            zero_rlc,
+                            Some(rlp_signed_tx_be_bytes.len().tag_length()),
                             Value::known(F::from(rlp_signed_tx_be_bytes.len() as u64)),
                         ),
                         (
                             TxHashRLC,
                             Some(RLC),
                             Some(false),
+                            zero_rlc,
+                            None,
                             challenges.keccak_input().map(|rand| {
                                 rlp_signed_tx_be_bytes
                                     .iter()
@@ -2131,6 +2213,8 @@ impl<F: Field> TxCircuit<F> {
                         (
                             TxFieldTag::TxHash,
                             None,
+                            None,
+                            zero_rlc,
                             None,
                             challenges.evm_word().map(|challenge| {
                                 tx.hash
@@ -2145,11 +2229,15 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::TxType,
                             None,
                             None,
+                            zero_rlc,
+                            None,
                             Value::known(F::from(tx.tx_type as u64)),
                         ),
                         (
                             BlockNumber,
                             None,
+                            None,
+                            zero_rlc,
                             None,
                             Value::known(F::from(tx.block_number)),
                         ),
@@ -2177,6 +2265,8 @@ impl<F: Field> TxCircuit<F> {
                             tx_id_next, // tx_id_next
                             tag,
                             value,
+                            be_bytes_rlc,
+                            be_bytes_length,
                             rlp_tag,
                             is_none,
                             Some(is_padding_tx),
@@ -2246,6 +2336,8 @@ impl<F: Field> TxCircuit<F> {
                             tx_id_next, // tx_id_next
                             CallData,
                             Value::known(F::from(*byte as u64)),
+                            zero_rlc,
+                            None,
                             None,
                             None,
                             None,

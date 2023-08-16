@@ -679,6 +679,8 @@ pub enum CallContextField {
     MemorySize,
     /// ReversibleWriteCounter
     ReversibleWriteCounter,
+    /// L1Fee
+    L1Fee,
 }
 
 /// Represents an CallContext read/write operation.
