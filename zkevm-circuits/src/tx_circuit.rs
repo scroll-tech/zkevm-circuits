@@ -2282,12 +2282,7 @@ impl<F: Field> TxCircuit<F> {
                     None,
                 )?;
 
-                region.assign_fixed(
-                    || "q_first",
-                    config.q_first,
-                    0,
-                    || Value::known(F::one()),
-                )?;
+                region.assign_fixed(|| "q_first", config.q_first, 0, || Value::known(F::one()))?;
                 let zero_rlc = challenges.keccak_input().map(|_| F::zero());
 
                 // Assign all tx fields except for call data
