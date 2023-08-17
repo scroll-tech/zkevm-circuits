@@ -957,7 +957,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, code_address)?;
         self.is_precompile_lt
             .assign(region, offset, code_address, 0x0Au64.into())?;
-        let precompile_return_length = if is_precompile_call {
+        log::debug!("callop is precompile call {}", is_precompile_call);
+        let precompile_return_length = if is_precompile_call && is_precheck_ok {
             rws.offset_add(14); // skip
             let value_rw = rws.next();
             assert_eq!(
@@ -994,7 +995,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             input_rws,
             output_rws,
             return_rws,
-        ) = if is_precompiled(&callee_address.to_address()) {
+        ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
+            // only frist pass precheck, then consider precompile rws 
             let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
                 min(input_len, cd_length.as_usize())
