@@ -239,19 +239,16 @@ pub(crate) fn extract_hash_cells(
 
                 let timer = start_timer!(|| "assign row");
                 log::trace!("witness length: {}", witness.len());
+                let input_bytes_col_idx =
+                    keccak_packed_multi::get_input_bytes_col_idx_in_cell_manager()
+                        + <KeccakTable as LookupTable<Fr>>::columns(&keccak_config.keccak_table)
+                            .len()
+                        - 1;
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row = keccak_config.set_row(&mut region, offset, keccak_row)?;
 
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
-                        hash_input_cells.push(
-                            row[keccak_packed_multi::get_input_bytes_col_idx_in_cell_manager()
-                                + <KeccakTable as LookupTable<Fr>>::columns(
-                                    &keccak_config.keccak_table,
-                                )
-                                .len()
-                                - 1]
-                            .clone(),
-                        );
+                        hash_input_cells.push(row[input_bytes_col_idx].clone());
                         cur_preimage_index = preimage_indices_iter.next();
                     }
                     if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
