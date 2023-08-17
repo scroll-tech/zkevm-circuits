@@ -999,7 +999,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             output_rws,
             return_rws,
         ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
-            // only frist pass precheck, then consider precompile rws
             let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
                 min(input_len, cd_length.as_usize())
