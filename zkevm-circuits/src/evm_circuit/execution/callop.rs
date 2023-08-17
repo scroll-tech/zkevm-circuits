@@ -131,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 is_delegatecall.expr(),
                 is_staticcall.expr(),
             );
-        // rwc_delta = 14 + is_call_or_callcode + is_delegatecall * 2
+        // rwc_delta = 6 + is_delegatecall * 2 + call_gadget.rw_delta()
         cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {
             cb.require_zero(
                 "for non call/call code, value is zero",
@@ -161,11 +161,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_warm_prev.expr(),
             Some(&mut reversion_info),
         );
-        // rwc_delta = 15 + is_call_or_callcode + is_delegatecall * 2
+        // rwc_delta = 7 + is_delegatecall * 2 + call_gadget.rw_delta()
 
         // Propagate rw_counter_end_of_reversion and is_persistent
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
-        // rwc_delta = 17 + is_call_or_callcode + is_delegatecall * 2
+        // rwc_delta = 7 + is_delegatecall * 2 + call_gadget.rw_delta() +
+        // callee_reversion_info.rw_delta()
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
@@ -192,7 +193,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             AccountFieldTag::Balance,
             caller_balance_word.expr(),
         );
-        // rwc_delta = 18 + is_call_or_callcode + is_delegatecall * 2
+        // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
+        // callee_reversion_info.rw_delta()
         let is_insufficient_balance =
             LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value);
         // depth < 1025
@@ -258,7 +260,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 &mut callee_reversion_info,
             )
         });
-        // rwc_delta = 18 + is_call_or_callcode + transfer + is_delegatecall * 2
+        // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
+        // callee_reversion_info.rw_delta() + transfer.rw_delta()
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
@@ -297,12 +300,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
 
-        let transfer_rwc_delta = is_call.expr() * transfer.rw_delta();
-        let rw_counter_delta = 18.expr()
-            + is_call.expr() * 1.expr()
-            + transfer_rwc_delta.expr()
-            + is_callcode.expr()
-            + is_delegatecall.expr() * 2.expr();
+        let transfer_rwc_delta = is_call.expr() * is_precheck_ok.expr() * transfer.rw_delta();
+        let rw_counter_delta = 8.expr()
+            + is_delegatecall.expr() * 2.expr()
+            + call_gadget.rw_delta()
+            + callee_reversion_info.rw_delta()
+            + transfer_rwc_delta.expr();
         let caller_reversible_rwc_delta = 1.expr(); // AccessList
         let callee_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
 
