@@ -11,6 +11,7 @@ pub(crate) const NUM_BITS_PER_WORD: usize = NUM_BYTES_PER_WORD * NUM_BITS_PER_BY
 pub(crate) const KECCAK_WIDTH: usize = 5 * 5;
 pub(crate) const KECCAK_WIDTH_IN_BITS: usize = KECCAK_WIDTH * NUM_BITS_PER_WORD;
 pub(crate) const NUM_ROUNDS: usize = 24;
+pub(crate) const NUM_SETUP_VARS_FOR_ROUND: usize = KECCAK_WIDTH + 3; // 25 state vars, absorb_from, absorb_data, absorb_result
 pub(crate) const NUM_WORDS_TO_ABSORB: usize = 17;
 pub(crate) const NUM_WORDS_TO_SQUEEZE: usize = 4;
 pub(crate) const ABSORB_WIDTH_PER_ROW: usize = NUM_BITS_PER_WORD;
