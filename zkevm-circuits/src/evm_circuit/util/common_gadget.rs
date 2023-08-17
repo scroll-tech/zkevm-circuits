@@ -1028,6 +1028,12 @@ pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool
     pub is_empty_code_hash: IsEqualGadget<F>,
 
     pub callee_not_exists: IsZeroGadget<F>,
+
+    // save information
+    is_call: Expression<F>,
+    is_callcode: Expression<F>,
+    is_delegatecall: Expression<F>,
+    is_staticcall: Expression<F>,
 }
 
 impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CALL: bool>
@@ -1067,7 +1073,9 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         cb.stack_pop(callee_address_word.expr());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
-        cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
+        cb.condition(is_call.expr() + is_callcode.expr(), |cb| {
+            cb.stack_pop(value.expr())
+        });
         cb.stack_pop(cd_address.offset_rlc());
         cb.stack_pop(cd_address.length_rlc());
         cb.stack_pop(rd_address.offset_rlc());
@@ -1117,6 +1125,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             phase2_callee_code_hash,
             is_empty_code_hash,
             callee_not_exists,
+            is_call,
+            is_callcode,
+            is_delegatecall,
+            is_staticcall,
         }
     }
 
@@ -1227,6 +1239,12 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         } + memory_expansion_gas_cost;
 
         Ok(gas_cost)
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        6.expr() + self.is_call.expr() + self.is_callcode.expr() + // 6 + (is_call + is_callcode) stack pop
+        1.expr() + // 1 stack push
+        1.expr() // 1 Read Account (callee) CodeHash
     }
 }
 
