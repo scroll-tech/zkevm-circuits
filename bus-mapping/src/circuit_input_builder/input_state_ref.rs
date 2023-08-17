@@ -1411,8 +1411,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-        let discard_return_data =
-            call.is_create() && geth_step.op == OpcodeId::RETURN || is_err;
+        let discard_return_data = call.is_create() && geth_step.op == OpcodeId::RETURN || is_err;
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
