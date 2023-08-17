@@ -65,6 +65,8 @@ pub struct KeccakCircuitConfig<F> {
     normalize_6: [TableColumn; 2],
     chi_base_table: [TableColumn; 2],
     pack_table: [TableColumn; 2],
+    /// The column for enabling copy constraints in aggregator
+    pub preimage_column_index: usize,
     _marker: PhantomData<F>,
 }
 
@@ -138,6 +140,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 s_next[i][j] = cell.at_offset(meta, get_num_rows_per_round() as i32).expr();
             }
         }
+        log::debug!("- Post states:");
+        log::debug!("Columns: {}", cell_manager.get_width());
         // Absorb data
         let absorb_from = cell_manager.query_cell(meta);
         let absorb_data = cell_manager.query_cell(meta);
@@ -185,6 +189,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         log::debug!("- Post absorb:");
         log::debug!("Lookups: {}", lookup_counter);
         log::debug!("Columns: {}", cell_manager.get_width());
+        let preimage_column_index: usize = cell_manager.get_width() + 1;
         total_lookup_counter += lookup_counter;
 
         // Process inputs.
@@ -863,6 +868,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             normalize_6,
             chi_base_table,
             pack_table,
+            preimage_column_index,
             _marker: PhantomData,
         }
     }
@@ -1065,9 +1071,15 @@ impl<F: Field> KeccakCircuit<F> {
 
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> Option<usize> {
-        if self.num_rows > 0 {
+        Self::capacity_for_row(self.num_rows)
+    }
+
+    /// The number of keccak_f's that can be done for
+    /// a particular row number depending on current Keccak params
+    pub fn capacity_for_row(num_rows: usize) -> Option<usize> {
+        if num_rows > 0 {
             // Subtract two for unusable rows
-            Some(self.num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
+            Some(num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
         } else {
             None
         }

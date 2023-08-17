@@ -228,6 +228,7 @@ impl BlockContext {
         &self,
         num_txs: usize,
         cum_num_txs: usize,
+        num_all_txs: u64,
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
@@ -279,6 +280,11 @@ impl BlockContext {
                     Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
                     Value::known(current_block_number),
                     Value::known(F::from(cum_num_txs as u64)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::NumAllTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(num_all_txs)),
                 ],
             ],
             self.block_hash_assignments(randomness),

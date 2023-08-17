@@ -23,18 +23,18 @@ use snark_verifier_sdk::{
     Snark,
 };
 use zkevm_circuits::{
-    keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuitConfig},
-    table::LookupTable,
+    keccak_circuit::{
+        keccak_packed_multi::{self, multi_keccak},
+        KeccakCircuit, KeccakCircuitConfig,
+    },
+    table::{KeccakTable, LookupTable},
     util::Challenges,
 };
 
 use crate::{
-    constants::{
-        CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
-        MAX_KECCAK_ROUNDS, ROWS_PER_ROUND,
-    },
+    constants::{CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS},
     util::{
-        assert_conditional_equal, assert_equal, assert_exist, get_indices, keccak_round_capacity,
+        assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
     AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
@@ -185,7 +185,9 @@ pub(crate) fn extract_hash_cells(
     preimages: &[Vec<u8>],
 ) -> Result<ExtractedHashCells, Error> {
     let mut is_first_time = true;
-    let num_rows = 1 << LOG_DEGREE;
+    let keccak_capacity = KeccakCircuit::<Fr>::capacity_for_row(1 << LOG_DEGREE);
+    let max_keccak_updates = get_max_keccak_updates(MAX_AGG_SNARKS);
+    let keccak_f_rows = keccak_packed_multi::get_num_rows_per_update();
 
     let timer = start_timer!(|| ("multi keccak").to_string());
     // preimages consists of the following parts
@@ -202,7 +204,7 @@ pub(crate) fn extract_hash_cells(
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
-    let witness = multi_keccak(preimages, challenges, keccak_round_capacity(num_rows))
+    let witness = multi_keccak(preimages, challenges, keccak_capacity)
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
     end_timer!(timer);
 
@@ -237,12 +239,16 @@ pub(crate) fn extract_hash_cells(
 
                 let timer = start_timer!(|| "assign row");
                 log::trace!("witness length: {}", witness.len());
+                let input_bytes_col_idx =
+                    keccak_packed_multi::get_input_bytes_col_idx_in_cell_manager()
+                        + <KeccakTable as LookupTable<Fr>>::columns(&keccak_config.keccak_table)
+                            .len()
+                        - 1;
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row = keccak_config.set_row(&mut region, offset, keccak_row)?;
 
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
-                        // 10-th column is Keccak input in Keccak circuit
-                        hash_input_cells.push(row[10].clone());
+                        hash_input_cells.push(row[input_bytes_col_idx].clone());
                         cur_preimage_index = preimage_indices_iter.next();
                     }
                     if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
@@ -250,8 +256,7 @@ pub(crate) fn extract_hash_cells(
                         hash_output_cells.push(row.last().unwrap().clone()); // sage unwrap
                         cur_digest_index = digest_indices_iter.next();
                     }
-                    if offset % ROWS_PER_ROUND == 0 && offset / ROWS_PER_ROUND <= MAX_KECCAK_ROUNDS
-                    {
+                    if offset % keccak_f_rows == 0 && offset / keccak_f_rows <= max_keccak_updates {
                         // first column is is_final
                         is_final_cells.push(row[0].clone());
                         // second column is data rlc
@@ -268,7 +273,7 @@ pub(crate) fn extract_hash_cells(
                 // sanity
                 assert_eq!(
                     hash_input_cells.len(),
-                    MAX_KECCAK_ROUNDS * INPUT_LEN_PER_ROUND
+                    max_keccak_updates * INPUT_LEN_PER_ROUND
                 );
                 assert_eq!(hash_output_cells.len(), (MAX_AGG_SNARKS + 4) * DIGEST_LEN);
 

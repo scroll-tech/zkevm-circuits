@@ -1,9 +1,58 @@
-use eth_types::Field;
+use eth_types::{Address, Field, H160, U256};
 use gadgets::{impl_expr, util::Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 use strum_macros::EnumIter;
 
 use crate::util::Challenges;
+
+pub(crate) trait ValueTagLength {
+    fn tag_length(&self) -> u32;
+}
+
+impl ValueTagLength for u64 {
+    fn tag_length(&self) -> u32 {
+        // note that 0_u64 is encoded as [0x80] in RLP
+        // see the relevant code at https://github.com/paritytech/parity-common/blob/master/rlp/src/impls.rs#L208
+        (64 - self.leading_zeros() + 7) / 8
+    }
+}
+
+impl ValueTagLength for usize {
+    fn tag_length(&self) -> u32 {
+        // usize is treated as same as u64
+        (*self as u64).tag_length()
+    }
+}
+
+impl ValueTagLength for U256 {
+    fn tag_length(&self) -> u32 {
+        // note that U256::zero() is encoded as [0x80] in RLP
+        // see the relevant code at https://github.com/paritytech/parity-common/blob/impl-rlp-v0.3.0/primitive-types/src/lib.rs#L117
+        (256 - self.leading_zeros() + 7) / 8
+    }
+}
+
+impl ValueTagLength for H160 {
+    fn tag_length(&self) -> u32 {
+        20
+    }
+}
+
+impl ValueTagLength for Option<Address> {
+    fn tag_length(&self) -> u32 {
+        if self.is_none() {
+            0
+        } else {
+            self.unwrap().tag_length()
+        }
+    }
+}
+
+impl ValueTagLength for Vec<u8> {
+    fn tag_length(&self) -> u32 {
+        self.len() as u32
+    }
+}
 
 /// RLP tags
 #[derive(Default, Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
@@ -151,13 +200,15 @@ use crate::{
     },
 };
 
-// The number of bytes of list can not larger than 2^24.
-pub(crate) const N_BYTES_LIST: usize = 1 << 24;
+// The number of bytes of list can not be larger than 2^24 = 2^(8*3).
+// This const is meant to be the maximum of tag_length for representing a `LongList`.
+// For example, [0xf9, 0xff, 0xff] has tag_length = 2 and has 0xffff bytes inside.
+pub(crate) const MAX_TAG_LENGTH_OF_LIST: usize = 3;
 pub(crate) const N_BYTES_CALLDATA: usize = 1 << 24;
 
 fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -179,7 +230,7 @@ fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -201,7 +252,7 @@ fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -220,7 +271,7 @@ pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -243,7 +294,7 @@ pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
         (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, N_BYTES_LIST, vec![2]),
+        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (ChainId, Nonce, N_BYTES_U64, vec![3]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
@@ -252,21 +303,26 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
         (TxValue, Data, N_BYTES_WORD, vec![9]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![10, 11]),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![21]), // access_list is none
-        (BeginVector, BeginList, N_BYTES_LIST, vec![12]),
-        (BeginList, AccessListAddress, N_BYTES_LIST, vec![13]),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![21]), // access_list is none
+        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![12]),
+        (
+            BeginList,
+            AccessListAddress,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![13],
+        ),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
             vec![14, 15],
         ),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![18]), /* access_list.storage_keys
-                                                           * is none */
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![18]), /* access_list.storage_keys
+                                                                     * is none */
         (
             BeginVector,
             AccessListStorageKey,
-            N_BYTES_LIST,
+            MAX_TAG_LENGTH_OF_LIST,
             vec![16, 17],
         ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![18]), // finished parsing storage keys
@@ -295,7 +351,7 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, ChainId, N_BYTES_LIST, vec![1]),
+        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (ChainId, Nonce, N_BYTES_U64, vec![2]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![3]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![4]),
@@ -304,20 +360,27 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![7]),
         (TxValue, Data, N_BYTES_WORD, vec![8]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![20]), // access_list is none
-        (BeginVector, BeginList, N_BYTES_LIST, vec![11]),
-        (BeginList, AccessListAddress, N_BYTES_LIST, vec![12]),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
+        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
+        (
+            BeginList,
+            AccessListAddress,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![12],
+        ),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
             vec![13, 14],
         ),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![17]), /* access_list.storage_keys is none */
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![17]), /* access_list.storage_keys
+                                                                     * is
+                                                                     * none */
         (
             BeginVector,
             AccessListStorageKey,
-            N_BYTES_LIST,
+            MAX_TAG_LENGTH_OF_LIST,
             vec![15, 16],
         ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
@@ -497,6 +560,12 @@ pub struct RlpTable<F: FieldExt> {
     pub rlp_tag: RlpTag,
     /// The tag's value
     pub tag_value: Value<F>,
+    /// RLC of the tag's big-endian bytes
+    pub tag_bytes_rlc: Value<F>,
+    /// Length of the tag's big-endian bytes
+    /// Note that we use (tag_bytes_rlc, tag_length) to identify
+    /// the tag's dynamic-sized big-endian bytes
+    pub tag_length: usize,
     /// If current row is for output
     pub is_output: bool,
     /// If current tag's value is None.
@@ -522,8 +591,6 @@ pub struct StateMachine<F: FieldExt> {
     pub byte_value: u8,
     /// The index of the actual bytes of tag
     pub tag_idx: usize,
-    /// The length of the actual bytes of tag
-    pub tag_length: usize,
     /// The accumulated value of bytes up to `tag_idx` of tag
     /// In most cases, RlpTable.tag_value == StateMachine.tag_value_acc.
     /// However, for RlpTag::Len, we have
@@ -567,4 +634,5 @@ pub(crate) struct SmState<F: Field> {
     pub(crate) tag_idx: usize,
     pub(crate) tag_length: usize,
     pub(crate) tag_value_acc: Value<F>,
+    pub(crate) tag_bytes_rlc: Value<F>,
 }
