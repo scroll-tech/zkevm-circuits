@@ -393,6 +393,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 keccak_code_hash.expr(),
             );
             // copy table lookup for init code.
+            cb.condition(is_call_data_empty.expr(), |cb| {
+                cb.require_zero(
+                    "init_code_rlc is zero when calldata is empty",
+                    init_code_rlc.expr(),
+                )
+            });
             cb.condition(not::expr(is_call_data_empty.expr()), |cb| {
                 cb.copy_table_lookup(
                     tx_id.expr(),                    // src_id
