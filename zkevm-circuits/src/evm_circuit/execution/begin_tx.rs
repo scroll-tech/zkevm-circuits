@@ -57,6 +57,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
+    is_call_data_empty: IsZeroGadget<F>,
     tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
     tx_call_data_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
@@ -115,6 +116,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::TxDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+
+        let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_id.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
@@ -390,18 +393,26 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 keccak_code_hash.expr(),
             );
             // copy table lookup for init code.
-            cb.copy_table_lookup(
-                tx_id.expr(),                    // src_id
-                CopyDataType::TxCalldata.expr(), // src_tag
-                cb.curr.state.code_hash.expr(),  // dst_id
-                CopyDataType::Bytecode.expr(),   // dst_tag
-                0.expr(),                        // src_addr
-                tx_call_data_length.expr(),      // src_addr_end
-                0.expr(),                        // dst_addr
-                tx_call_data_length.expr(),      // length
-                init_code_rlc.expr(),            // rlc_acc
-                0.expr(),                        // rwc increase
-            );
+            cb.condition(is_call_data_empty.expr(), |cb| {
+                cb.require_zero(
+                    "init_code_rlc is zero when calldata is empty",
+                    init_code_rlc.expr(),
+                )
+            });
+            cb.condition(not::expr(is_call_data_empty.expr()), |cb| {
+                cb.copy_table_lookup(
+                    tx_id.expr(),                    // src_id
+                    CopyDataType::TxCalldata.expr(), // src_tag
+                    cb.curr.state.code_hash.expr(),  // dst_id
+                    CopyDataType::Bytecode.expr(),   // dst_tag
+                    0.expr(),                        // src_addr
+                    tx_call_data_length.expr(),      // src_addr_end
+                    0.expr(),                        // dst_addr
+                    tx_call_data_length.expr(),      // length
+                    init_code_rlc.expr(),            // rlc_acc
+                    0.expr(),                        // rwc increase
+                )
+            });
 
             cb.account_write(
                 call_callee_address.expr(),
@@ -678,6 +689,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_is_create,
             tx_value,
             tx_call_data_length,
+            is_call_data_empty,
             tx_call_data_word_length,
             tx_call_data_gas_cost,
             tx_data_gas_cost,
@@ -715,6 +727,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        log::trace!("{:#?}", tx);
+        for (i, idx) in step.rw_indices.iter().copied().enumerate() {
+            log::trace!("#{i} {:?}", block.rws[idx]);
+        }
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
@@ -899,6 +915,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(F::from(tx.call_data_length as u64)),
         )?;
+        self.is_call_data_empty
+            .assign(region, offset, F::from(tx.call_data_length as u64))?;
         self.tx_call_data_word_length
             .assign(region, offset, tx.call_data_length as u128 + 31)?;
         self.tx_call_data_gas_cost.assign(
@@ -1038,11 +1056,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use std::vec;
+    use std::{str::FromStr, vec};
 
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, address, bytecode, evm_types::GasCost, word, Bytecode, Word};
+    use eth_types::{self, address, bytecode, evm_types::GasCost, word, Bytecode, Hash, Word};
     use ethers_core::types::Bytes;
 
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
@@ -1363,6 +1381,41 @@ mod test {
                     .input(Bytes::from(vec![0x01, 0x02, 0x03]));
             },
             |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    /// testool case EmptyTransaction3_d0_g0_v0
+    #[test]
+    fn begin_tx_create_empty_tx() {
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"))
+                    .balance(100000000.into());
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .gas_price(Word::from(10))
+                    .gas(Word::from(55000));
+            },
+            |block, _tx| {
+                block
+                    .difficulty(Word::from(0x020000))
+                    .gas_limit(Word::from(1000000))
+                    .number(1)
+                    .timestamp(Word::from(1000))
+                    .parent_hash(
+                        Hash::from_str(
+                            "5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6",
+                        )
+                        .unwrap(),
+                    )
+            },
         )
         .unwrap();
 
