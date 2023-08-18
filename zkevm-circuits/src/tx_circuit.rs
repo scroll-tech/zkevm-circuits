@@ -881,7 +881,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     );
 
                     // num_all_txs_acc' - num_all_txs_acc = is_l1_msg' ? queue_index' -
-                    // total_l1_popped + 1 : 1
+                    // total_l1_popped' + 1 : 1
                     cb.require_equal(
                         "num_all_txs_acc' - num_all_txs_acc",
                         meta.query_advice(num_all_txs_acc, Rotation::next())
@@ -889,7 +889,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         select::expr(
                             meta.query_advice(is_l1_msg, Rotation::next()),
                             meta.query_advice(tx_nonce, Rotation::next())
-                                - meta.query_advice(total_l1_popped_before, Rotation::cur())
+                                - meta.query_advice(total_l1_popped_before, Rotation::next())
                                 + 1.expr(),
                             1.expr(),
                         ),
