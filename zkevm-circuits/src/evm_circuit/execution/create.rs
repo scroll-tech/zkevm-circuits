@@ -65,7 +65,6 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     is_insufficient_balance: LtWordGadget<F>,
     is_nonce_in_range: LtGadget<F, N_BYTES_U64>,
     // check address collision use
-    //callee_address: Word<F>,
     callee_nonce: Cell<F>,
     callee_nonce_is_zero: IsZeroGadget<F>,
     keccak_code_hash: Cell<F>,
@@ -91,7 +90,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let callee_call_id = cb.curr.state.rw_counter.clone();
         let code_hash_previous = cb.query_cell();
         let callee_nonce = cb.query_cell();
-        //let callee_address = cb.query_word_rlc();
 
         #[cfg(feature = "scroll")]
         let keccak_code_hash_previous = cb.query_cell_phase2();
@@ -227,9 +225,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
         // callee address
         cb.account_read(
-            // create.caller_address(),
-            // use correct callee address
-            //from_bytes::expr(&callee_address.cells[..N_BYTES_ACCOUNT_ADDRESS]),
             new_address.clone(),
             AccountFieldTag::Nonce,
             callee_nonce.expr(),
@@ -307,7 +302,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash_is_empty =
             IsEqualGadget::construct(cb, code_hash_previous.expr(), cb.empty_code_hash_rlc());
         let callee_nonce_is_zero = IsZeroGadget::construct(cb, callee_nonce.expr());
-        // code_hash_is_zero 0 + code_hash_is_empty 1 + callee_nonce_is_zero 0
         let not_address_collision = and::expr([
             code_hash_is_zero.expr() + code_hash_is_empty.expr(),
             callee_nonce_is_zero.expr(),
