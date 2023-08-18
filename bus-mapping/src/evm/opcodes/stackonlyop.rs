@@ -47,7 +47,8 @@ impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
 
         if IS_ERR {
             let next_step = geth_steps.get(1);
-            exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
+            let err = state.get_step_err(geth_step, next_step);
+            exec_step.error = err.unwrap();
 
             state.handle_return(&mut exec_step, geth_steps, true)?;
         }

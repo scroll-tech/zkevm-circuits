@@ -1270,11 +1270,14 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step = steps
             .get(0)
             .ok_or(Error::InternalError("invalid index 0"))?;
-        let is_return_revert = (geth_step.op == OpcodeId::REVERT
+        let is_err = exec_step.error.is_some();
+        let is_return_revert_succ = (geth_step.op == OpcodeId::REVERT
             || geth_step.op == OpcodeId::RETURN)
             && exec_step.error.is_none();
 
-        if !is_return_revert && !call.is_success {
+        // successful revert also makes call.is_success == false
+        // but this "successful revert" should not be handled here
+        if !is_return_revert_succ && !call.is_success {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,
@@ -1298,7 +1301,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(());
             }
         }
-
         let caller = self.caller()?.clone();
         let geth_step_next = steps
             .get(1)
@@ -1310,31 +1312,38 @@ impl<'a> CircuitInputStateRef<'a> {
             caller.call_id.into(),
         );
 
-        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
-            OpcodeId::STOP => [Word::zero(); 2],
-            OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::STATICCALL | OpcodeId::DELEGATECALL => {
-                let return_data_length = match exec_step.exec_state {
-                    ExecState::Precompile(_) => self.caller_ctx()?.return_data.len().into(),
-                    _ => Word::zero(),
-                };
-                [Word::zero(), return_data_length]
-            }
-            OpcodeId::REVERT | OpcodeId::RETURN => {
-                let offset = geth_step.stack.nth_last(0)?;
-                let length = geth_step.stack.nth_last(1)?;
-                // This is the convention we are using for memory addresses so that there is no
-                // memory expansion cost when the length is 0.
-                // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
-                if length.is_zero() {
-                    [Word::zero(); 2]
-                } else {
-                    [offset, length]
+        let [last_callee_return_data_offset, last_callee_return_data_length] = if is_err {
+            [Word::zero(), Word::zero()]
+        } else {
+            match geth_step.op {
+                OpcodeId::STOP => [Word::zero(); 2],
+                OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::STATICCALL
+                | OpcodeId::DELEGATECALL => {
+                    let return_data_length = match exec_step.exec_state {
+                        ExecState::Precompile(_) => self.caller_ctx()?.return_data.len().into(),
+                        _ => Word::zero(),
+                    };
+                    [Word::zero(), return_data_length]
                 }
+                OpcodeId::REVERT | OpcodeId::RETURN => {
+                    let offset = geth_step.stack.nth_last(0)?;
+                    let length = geth_step.stack.nth_last(1)?;
+                    // This is the convention we are using for memory addresses so that there is no
+                    // memory expansion cost when the length is 0.
+                    // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
+                    if length.is_zero() {
+                        [Word::zero(); 2]
+                    } else {
+                        [offset, length]
+                    }
+                }
+                _ => [Word::zero(), Word::zero()],
             }
-            _ => [Word::zero(), Word::zero()],
         };
 
-        let gas_refund = if exec_step.error.is_some() {
+        let gas_refund = if is_err {
             0
         } else if exec_step.is_precompiled() {
             exec_step.gas_left.0 - exec_step.gas_cost.0
@@ -1402,8 +1411,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-        let discard_return_data =
-            call.is_create() && geth_step.op == OpcodeId::RETURN || exec_step.error.is_some();
+        let discard_return_data = call.is_create() && geth_step.op == OpcodeId::RETURN || is_err;
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
