@@ -2257,6 +2257,7 @@ impl<F: Field> TxCircuit<F> {
                 let mut is_padding_tx;
                 let mut num_all_txs_acc = 0;
                 let mut total_l1_popped_before = start_l1_queue_index;
+                let mut total_l1_popped_after = start_l1_queue_index;
                 // Empty entry
                 config.assign_row(
                     &mut region,
@@ -2312,9 +2313,10 @@ impl<F: Field> TxCircuit<F> {
                             if tx.tx_type.is_l1_msg() {
                                 let queue_index = tx.nonce;
                                 num_all_txs_acc = queue_index - total_l1_popped_before + 1;
-                                total_l1_popped_before = queue_index + 1;
+                                total_l1_popped_after = queue_index + 1;
                             } else {
-                                // total_l1_popped_before do not change
+                                // next tx's total_l1_popped_before do not change
+                                total_l1_popped_after = total_l1_popped_before;
                                 num_all_txs_acc = 1;
                             }
                         };
@@ -2326,9 +2328,10 @@ impl<F: Field> TxCircuit<F> {
                             if tx.tx_type.is_l1_msg() {
                                 let queue_index = tx.nonce;
                                 num_all_txs_acc += queue_index - total_l1_popped_before + 1;
-                                total_l1_popped_before = queue_index + 1;
+                                total_l1_popped_after = queue_index + 1;
                             } else {
-                                // total_l1_popped_before do not change
+                                // next tx's total_l1_popped_before do not change
+                                total_l1_popped_after = total_l1_popped_before;
                                 num_all_txs_acc += 1;
                             }
                         }
@@ -2627,6 +2630,8 @@ impl<F: Field> TxCircuit<F> {
                             || Value::known(sv_address),
                         )?;
                     }
+                    // set next tx's total_l1_popped_before
+                    total_l1_popped_before = total_l1_popped_after;
                 }
 
                 log::debug!("assigning calldata, offset {}", offset);
