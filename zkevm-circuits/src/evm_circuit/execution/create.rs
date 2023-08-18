@@ -12,7 +12,6 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes,
             math_gadget::{
                 ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
                 LtGadget, LtWordGadget,
