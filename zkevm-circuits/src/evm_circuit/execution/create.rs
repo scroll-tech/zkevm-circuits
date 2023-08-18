@@ -12,6 +12,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
+            from_bytes,
             math_gadget::{
                 ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
                 LtGadget, LtWordGadget,
@@ -63,6 +64,10 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     is_depth_in_range: LtGadget<F, N_BYTES_U64>,
     is_insufficient_balance: LtWordGadget<F>,
     is_nonce_in_range: LtGadget<F, N_BYTES_U64>,
+    // check address collision use
+    //callee_address: Word<F>,
+    callee_nonce: Cell<F>,
+    callee_nonce_is_zero: IsZeroGadget<F>,
     keccak_code_hash: Cell<F>,
     keccak_output: Word<F>,
     // prevous code hash befor creating
@@ -85,6 +90,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
         let code_hash_previous = cb.query_cell();
+        let callee_nonce = cb.query_cell();
+        //let callee_address = cb.query_word_rlc();
+
         #[cfg(feature = "scroll")]
         let keccak_code_hash_previous = cb.query_cell_phase2();
         let opcode = cb.query_cell();
@@ -217,6 +225,15 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             AccountFieldTag::Nonce,
             caller_nonce.expr(),
         );
+        // callee address
+        cb.account_read(
+            // create.caller_address(),
+            // use correct callee address
+            //from_bytes::expr(&callee_address.cells[..N_BYTES_ACCOUNT_ADDRESS]),
+            new_address.clone(),
+            AccountFieldTag::Nonce,
+            callee_nonce.expr(),
+        );
         let is_nonce_in_range = LtGadget::construct(cb, caller_nonce.expr(), u64::MAX.expr());
 
         cb.condition(is_insufficient_balance.expr(), |cb| {
@@ -289,7 +306,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash_is_zero = IsZeroGadget::construct(cb, code_hash_previous.expr());
         let code_hash_is_empty =
             IsEqualGadget::construct(cb, code_hash_previous.expr(), cb.empty_code_hash_rlc());
-        let not_address_collision = code_hash_is_zero.expr() + code_hash_is_empty.expr();
+        let callee_nonce_is_zero = IsZeroGadget::construct(cb, callee_nonce.expr());
+        // code_hash_is_zero 0 + code_hash_is_empty 1 + callee_nonce_is_zero 0
+        let not_address_collision = and::expr([
+            code_hash_is_zero.expr() + code_hash_is_empty.expr(),
+            callee_nonce_is_zero.expr(),
+        ]);
         /*
         // CREATE2 may cause address collision error. And for a tricky
         // case of CREATE, it could also cause this error. e.g. the `to`
@@ -512,6 +534,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             is_depth_in_range,
             is_insufficient_balance,
             is_nonce_in_range,
+            callee_nonce,
+            callee_nonce_is_zero,
             keccak_code_hash,
             keccak_output,
             code_hash_previous,
@@ -612,6 +636,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let caller_balance = rws.next().account_balance_pair().1;
 
         let caller_nonce = rws.next().account_nonce_pair().1.low_u64();
+        let callee_nonce = rws.next().account_nonce_pair().1.low_u64();
 
         let is_precheck_ok =
             call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX;
@@ -644,9 +669,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             code_hash_previous_rlc,
             region.empty_code_hash_rlc(),
         )?;
-        let is_address_collision = !code_hash_previous.0.is_zero()
-            && code_hash_previous.0 != CodeDB::empty_code_hash().to_word();
 
+        self.callee_nonce
+            .assign(region, offset, Value::known(F::from(callee_nonce)))?;
+        self.callee_nonce_is_zero
+            .assign(region, offset, F::from(callee_nonce))?;
+
+        let callee_nonce_is_zero = callee_nonce == 0;
+        let codehash_non_empty = !code_hash_previous.0.is_zero()
+            && code_hash_previous.0 != CodeDB::empty_code_hash().to_word();
+        let is_address_collision = !callee_nonce_is_zero || codehash_non_empty;
         if is_precheck_ok && !is_address_collision {
             /*
             rws:
