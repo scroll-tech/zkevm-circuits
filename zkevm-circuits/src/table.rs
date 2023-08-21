@@ -230,7 +230,7 @@ impl TxTable {
         max_calldata: usize,
         chain_id: u64,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         assert!(
             txs.len() <= max_txs,
             "txs.len() <= max_txs: txs.len()={}, max_txs={}",
@@ -251,14 +251,19 @@ impl TxTable {
             tag: &Column<Fixed>,
             row: &[Value<F>; 4],
             msg: &str,
-        ) -> Result<(), Error> {
+        ) -> Result<AssignedCell<F, F>, Error> {
+            let mut value_cell = None;
             for (index, column) in advice_columns.iter().enumerate() {
-                region.assign_advice(
+                let cell = region.assign_advice(
                     || format!("tx table {msg} row {offset}"),
                     *column,
                     offset,
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
+                // tx_id, index, value
+                if index == 2 {
+                    value_cell = Some(cell);
+                }
             }
             region.assign_fixed(
                 || format!("tx table q_enable row {offset}"),
@@ -272,13 +277,14 @@ impl TxTable {
                 offset,
                 || row[1],
             )?;
-            Ok(())
+            Ok(value_cell.unwrap())
         }
 
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
+                let mut tx_value_cells = vec![];
                 let advice_columns = [self.tx_id, self.index, self.value];
                 assign_row(
                     &mut region,
@@ -312,7 +318,7 @@ impl TxTable {
                     let tx_data = tx.table_assignments_fixed(*challenges);
                     let tx_calldata = tx.table_assignments_dyn(*challenges);
                     for row in tx_data {
-                        assign_row(
+                        tx_value_cells.push(assign_row(
                             &mut region,
                             offset,
                             self.q_enable,
@@ -320,7 +326,7 @@ impl TxTable {
                             &self.tag,
                             &row,
                             "",
-                        )?;
+                        )?);
                         offset += 1;
                     }
                     calldata_assignments.extend(tx_calldata.iter());
@@ -338,7 +344,7 @@ impl TxTable {
                     )?;
                     offset += 1;
                 }
-                Ok(())
+                Ok(tx_value_cells)
             },
         )
     }

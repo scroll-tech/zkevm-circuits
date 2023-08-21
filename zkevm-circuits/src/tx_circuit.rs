@@ -64,6 +64,7 @@ use halo2_proofs::{
 use log::error;
 use num::Zero;
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
     iter,
     marker::PhantomData,
@@ -2363,6 +2364,8 @@ pub struct TxCircuit<F: Field> {
     pub start_l1_queue_index: u64,
     /// Size
     pub size: usize,
+    /// Tx value cells (exported for PI circuit)
+    pub value_cells: RefCell<Option<Vec<AssignedCell<F, F>>>>,
     _marker: PhantomData<F>,
 }
 
@@ -2390,6 +2393,7 @@ impl<F: Field> TxCircuit<F> {
             size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
             start_l1_queue_index,
+            value_cells: RefCell::new(None),
             _marker: PhantomData::default(),
         }
     }
@@ -2782,7 +2786,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             }
         }
 
-        self.assign(
+        let tx_value_cells = self.assign(
             config,
             challenges,
             layouter,
@@ -2790,6 +2794,8 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             sign_datas,
             &padding_txs,
         )?;
+        // export tx value cells
+        *self.value_cells.borrow_mut() = Some(tx_value_cells);
 
         Ok(())
     }
