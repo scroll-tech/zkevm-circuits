@@ -810,6 +810,10 @@ pub(crate) fn conditional_constraints(
                     "candidate 3: {:?}",
                     hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5].value()
                 );
+                log::trace!(
+                    "candidate 4: {:?}",
+                    hash_input_len_cells[MAX_AGG_SNARKS * 2 + 6].value()
+                );
 
                 let mut data_hash_inputs_len_rec = rlc_config.mul(
                     &mut region,
@@ -828,6 +832,13 @@ pub(crate) fn conditional_constraints(
                     &mut region,
                     &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5],
                     &flag3,
+                    &data_hash_inputs_len_rec,
+                    &mut offset,
+                )?;
+                data_hash_inputs_len_rec = rlc_config.mul_add(
+                    &mut region,
+                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 6],
+                    &flag4,
                     &data_hash_inputs_len_rec,
                     &mut offset,
                 )?;
