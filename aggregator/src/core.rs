@@ -517,7 +517,7 @@ pub(crate) fn conditional_constraints(
                 // 1,2,3,4       | 0                   | 1, 0, 0, 0
                 // 5,6,7,8       | 32                  | 0, 1, 0, 0
                 // 9,10,11,12    | 64                  | 0, 0, 1, 0
-                // 13,14,15,16   | 64                  | 0, 0, 0, 1
+                // 13,14,15,16   | 96                  | 0, 0, 0, 1
 
                 let five = {
                     let five = rlc_config.load_private(&mut region, &Fr::from(5), &mut offset)?;
@@ -618,7 +618,7 @@ pub(crate) fn conditional_constraints(
                 // 1,2,3,4       | 0                   | 1, 0, 0, 0
                 // 5,6,7,8       | 32                  | 0, 1, 0, 0
                 // 9,10,11,12    | 64                  | 0, 0, 1, 0
-                // 13,14,15,16   | 64                  | 0, 0, 0, 1
+                // 13,14,15,16   | 96                  | 0, 0, 0, 1
                 for i in 0..4 {
                     for j in 0..8 {
                         // sanity check
