@@ -353,10 +353,9 @@ impl<'a> CircuitInputStateRef<'a> {
         // -- sanity check begin --
         // Verify that a READ doesn't change the field value
         if matches!(rw, RW::READ) && op.value_prev != op.value {
-            log::error!(
+            panic!(
                 "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
-                self.block_ctx.rwc.0,
-                op
+                self.block_ctx.rwc.0, op
             )
         }
         // NOTE: In the State Circuit we use code_hash=0 to encode non-existing
@@ -396,13 +395,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Verify that the previous value matches the account field value in the StateDB
         if op.value_prev != account_value_prev {
-            log::error!(
+            panic!(
                 "RWTable Account field {:?} lookup doesn't match account value
         account: {:?}, rwc: {}, op: {:?}",
-                rw,
-                account,
-                self.block_ctx.rwc.0,
-                op
+                rw, account, self.block_ctx.rwc.0, op
             );
         }
         // Verify that no read is done to a field other than CodeHash to a non-existing
@@ -415,11 +411,9 @@ impl<'a> CircuitInputStateRef<'a> {
         ) && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
             && account.is_empty()
         {
-            log::error!(
+            panic!(
                 "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
-                rw,
-                self.block_ctx.rwc.0,
-                op
+                rw, self.block_ctx.rwc.0, op
             );
         }
         // -- sanity check end --
@@ -1149,65 +1143,10 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let step = &geth_steps[0];
-        // handle return_data
-        let callee_memory = self.call_ctx()?.memory.clone();
-        let (return_data_offset, return_data_length): (usize, usize) = {
-            if self.call()?.is_root {
-                // For root case, we may don't need to specially set to 0?
-                // Reuse the below `match` clauses is ok?
-                // Since this should be the last step, all data like Call/CallCtx will be useless
-                // soon.
-                (0, 0)
-            } else {
-                match step.op {
-                    OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let (offset, length) = if step.error.is_some()
-                            || (self.call()?.is_create() && step.op == OpcodeId::RETURN)
-                        {
-                            (0, 0)
-                        } else {
-                            (
-                                step.stack.nth_last(0)?.low_u64() as usize,
-                                step.stack.nth_last(1)?.as_usize(),
-                            )
-                        };
-                        // At the moment it conflicts with `call_ctx` and `caller_ctx`.
-                        debug_assert_eq!(
-                            &self.caller_ctx_mut()?.return_data,
-                            &callee_memory.0[offset..offset + length]
-                        );
-                        (offset, length)
-                    }
-                    OpcodeId::CALL
-                    | OpcodeId::CALLCODE
-                    | OpcodeId::STATICCALL
-                    | OpcodeId::DELEGATECALL => {
-                        if self
-                            .call()?
-                            .code_address()
-                            .map(|ref addr| is_precompiled(addr))
-                            .unwrap_or(false)
-                        {
-                            let caller_ctx = self.caller_ctx_mut()?;
-                            (0, caller_ctx.return_data.len())
-                        } else {
-                            let caller_ctx = self.caller_ctx_mut()?;
-                            debug_assert!(caller_ctx.return_data.is_empty());
-                            (0, 0)
-                        }
-                    }
-                    _ => {
-                        // common errors (like invalid opcode, out of gas constant) go here
-                        let caller_ctx = self.caller_ctx_mut()?;
-                        debug_assert!(caller_ctx.return_data.is_empty());
-                        (0, 0)
-                    }
-                }
-            }
-        };
 
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
+        let callee_memory = call_ctx.memory.clone();
         let call_success_create: bool =
             call.is_create() && call.is_success && step.op == OpcodeId::RETURN;
 
@@ -1215,7 +1154,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if call_success_create {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
-            let code = call_ctx.memory.read_chunk(MemoryRange::new_with_length(
+            let code = callee_memory.read_chunk(MemoryRange::new_with_length(
                 offset.low_u64(),
                 length.low_u64(),
             ));
@@ -1235,11 +1174,25 @@ impl<'a> CircuitInputStateRef<'a> {
             self.handle_reversion();
         }
 
+        let return_data_length = self
+            .caller_ctx()
+            .map(|c| c.return_data.len() as u64)
+            .unwrap_or_default();
         // If current call has caller.
         if let Ok(caller) = self.caller_mut() {
+            let return_data_offset = if matches!(step.op, OpcodeId::RETURN | OpcodeId::REVERT)
+                && step.error.is_none()
+                && !call_success_create
+            {
+                step.stack.nth_last(0)?.low_u64()
+            } else {
+                // common err, call empty, call precompile
+                0
+            };
+
             caller.last_callee_id = call.call_id;
-            caller.last_callee_return_data_length = return_data_length as u64;
-            caller.last_callee_return_data_offset = return_data_offset as u64;
+            caller.last_callee_return_data_length = return_data_length;
+            caller.last_callee_return_data_offset = return_data_offset;
             caller.last_callee_memory = callee_memory;
         }
 
@@ -1657,7 +1610,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 };
                 let (found, _) = self.sdb.get_account(&address);
                 if found {
-                    log::error!(
+                    log::debug!(
                         "create address collision at {:?}, step {:?}, next_step {:?}",
                         address,
                         step,
