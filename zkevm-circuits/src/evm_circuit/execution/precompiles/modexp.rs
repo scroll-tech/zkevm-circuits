@@ -564,13 +564,16 @@ impl<F: Field> ModExpGasCost<F> {
     fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         b_size: &SizeRepresent<F>,
-        exp: &[Cell<F>; N_BYTES_WORD],
+        exp: &[Cell<F>; MODEXP_SIZE_LIMIT],
         m_size: &SizeRepresent<F>,
     ) -> Self {
         let max_length = MinMaxGadget::construct(cb, b_size.value(), m_size.value());
         let words = ConstantDivisionGadget::construct(cb, max_length.max() + 7.expr(), 8);
         let multiplication_complexity = words.quotient() * words.quotient();
-        let exp_is_zero = IsZeroGadget::construct(cb, expr_from_bytes(exp));
+        let exp_is_zero = IsZeroGadget::construct(
+            cb,
+            rlc::expr(&exp.clone().map(|c| c.expr()), cb.challenges().evm_word()),
+        );
 
         let (exp_byte_size, exp_msb, exp_msb_bit_length) =
             cb.condition(not::expr(exp_is_zero.expr()), |cb| {
@@ -645,12 +648,13 @@ impl<F: Field> ModExpGasCost<F> {
         self.words
             .assign(region, offset, b_size.max(m_size).as_u128() + 7u128)?;
         let exp_word = U256::from_big_endian(exponent);
-        self.exp_is_zero.assign(
+        self.exp_is_zero.assign_value(
             region,
             offset,
-            exp_word
-                .to_scalar()
-                .expect("exponent is within scalar field"),
+            region
+                .challenges()
+                .evm_word()
+                .map(|r| rlc::value(exponent, r)),
         )?;
         self.exp_byte_size
             .assign(region, offset, ByteOrWord::Word(exp_word))?;
