@@ -727,9 +727,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        log::trace!("{:#?}", tx);
         for (i, idx) in step.rw_indices.iter().copied().enumerate() {
-            log::trace!("#{i} {:?}", block.rws[idx]);
+            log::trace!("begin_tx assign rw: #{i} {:?}", block.rws[idx]);
         }
         let zero = eth_types::Word::zero();
 

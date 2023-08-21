@@ -689,6 +689,15 @@ impl OpcodeId {
 
     /// Returns invalid stack pointers of `OpcodeId`
     pub fn invalid_stack_ptrs(&self) -> Vec<u32> {
+        let (min_stack_ptr, max_stack_ptr) = self.valid_stack_ptr_range();
+
+        (0..min_stack_ptr)
+            // Range (1025..=1024) is valid and it should be converted to an empty vector.
+            .chain(max_stack_ptr.checked_add(1).unwrap()..=1024)
+            .collect()
+    }
+    /// Returns valid stack pointer range of `OpcodeId`
+    pub fn valid_stack_ptr_range(&self) -> (u32, u32) {
         let (min_stack_ptr, max_stack_ptr): (u32, u32) = match self {
             // `min_stack_pointer` 0 means stack overflow never happen, for example, `OpcodeId::ADD`
             // can only encounter underflow error, but never encounter overflow error.
@@ -843,11 +852,7 @@ impl OpcodeId {
         };
 
         debug_assert!(max_stack_ptr <= 1024);
-
-        (0..min_stack_ptr)
-            // Range (1025..=1024) is valid and it should be converted to an empty vector.
-            .chain(max_stack_ptr.checked_add(1).unwrap()..=1024)
-            .collect()
+        (min_stack_ptr, max_stack_ptr)
     }
 
     /// Returns `true` if the `OpcodeId` has memory access

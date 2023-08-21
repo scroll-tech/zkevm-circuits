@@ -85,9 +85,9 @@ pub struct Call {
     pub call_data_offset: u64,
     /// Call data length
     pub call_data_length: u64,
-    /// Return data offset
+    /// Return data offset, usually the second last stack parameter of parent call
     pub return_data_offset: u64,
-    /// Return data length
+    /// Return data length, usually the last stack parameter of parent call
     pub return_data_length: u64,
     /// Last Callee's id.
     pub last_callee_id: usize,
