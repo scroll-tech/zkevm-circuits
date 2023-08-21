@@ -1152,7 +1152,6 @@ impl<'a> CircuitInputStateRef<'a> {
         // handle return_data
         let callee_memory = self.call_ctx()?.memory.clone();
         let (return_data_offset, return_data_length): (usize, usize) = {
-            /*
             if self.call()?.is_root {
                 // For root case, we may don't need to specially set to 0?
                 // Reuse the below `match` clauses is ok?
@@ -1160,52 +1159,51 @@ impl<'a> CircuitInputStateRef<'a> {
                 // soon.
                 (0, 0)
             } else {
-                */
-            match step.op {
-                OpcodeId::RETURN | OpcodeId::REVERT => {
-                    let (offset, length) = if step.error.is_some()
-                        || (self.call()?.is_create() && step.op == OpcodeId::RETURN)
-                    {
-                        (0, 0)
-                    } else {
-                        (
-                            step.stack.nth_last(0)?.low_u64() as usize,
-                            step.stack.nth_last(1)?.as_usize(),
-                        )
-                    };
-                    // At the moment it conflicts with `call_ctx` and `caller_ctx`.
-                    debug_assert_eq!(
-                        &self.caller_ctx_mut()?.return_data,
-                        &callee_memory.0[offset..offset + length]
-                    );
-                    (offset, length)
-                }
-                OpcodeId::CALL
-                | OpcodeId::CALLCODE
-                | OpcodeId::STATICCALL
-                | OpcodeId::DELEGATECALL => {
-                    if self
-                        .call()?
-                        .code_address()
-                        .map(|ref addr| is_precompiled(addr))
-                        .unwrap_or(false)
-                    {
-                        let caller_ctx = self.caller_ctx_mut()?;
-                        (0, caller_ctx.return_data.len())
-                    } else {
+                match step.op {
+                    OpcodeId::RETURN | OpcodeId::REVERT => {
+                        let (offset, length) = if step.error.is_some()
+                            || (self.call()?.is_create() && step.op == OpcodeId::RETURN)
+                        {
+                            (0, 0)
+                        } else {
+                            (
+                                step.stack.nth_last(0)?.low_u64() as usize,
+                                step.stack.nth_last(1)?.as_usize(),
+                            )
+                        };
+                        // At the moment it conflicts with `call_ctx` and `caller_ctx`.
+                        debug_assert_eq!(
+                            &self.caller_ctx_mut()?.return_data,
+                            &callee_memory.0[offset..offset + length]
+                        );
+                        (offset, length)
+                    }
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::STATICCALL
+                    | OpcodeId::DELEGATECALL => {
+                        if self
+                            .call()?
+                            .code_address()
+                            .map(|ref addr| is_precompiled(addr))
+                            .unwrap_or(false)
+                        {
+                            let caller_ctx = self.caller_ctx_mut()?;
+                            (0, caller_ctx.return_data.len())
+                        } else {
+                            let caller_ctx = self.caller_ctx_mut()?;
+                            debug_assert!(caller_ctx.return_data.is_empty());
+                            (0, 0)
+                        }
+                    }
+                    _ => {
+                        // common errors (like invalid opcode, out of gas constant) go here
                         let caller_ctx = self.caller_ctx_mut()?;
                         debug_assert!(caller_ctx.return_data.is_empty());
                         (0, 0)
                     }
                 }
-                _ => {
-                    // common errors (like invalid opcode, out of gas constant) go here
-                    let caller_ctx = self.caller_ctx_mut()?;
-                    debug_assert!(caller_ctx.return_data.is_empty());
-                    (0, 0)
-                }
             }
-            //}
         };
 
         let call = self.call()?.clone();
