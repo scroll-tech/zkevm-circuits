@@ -53,7 +53,7 @@ struct Args {
 
     /// do not use cache
     #[clap(long)]
-    no_cache: bool,
+    use_cache: bool,
 
     /// whitelist level from cache result
     #[clap(short, long, value_parser, value_delimiter = ',')]
@@ -159,7 +159,7 @@ fn go() -> Result<()> {
             REPORT_FOLDER, args.suite, timestamp, git_hash
         );
 
-        let cache_file_name = if args.no_cache {
+        let cache_file_name = if !args.use_cache {
             None
         } else {
             let mut history_reports =
