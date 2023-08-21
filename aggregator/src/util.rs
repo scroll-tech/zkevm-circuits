@@ -163,18 +163,20 @@ pub(crate) fn assert_exist<F: Field>(
     b1: &AssignedCell<F, F>,
     b2: &AssignedCell<F, F>,
     b3: &AssignedCell<F, F>,
+    b4: &AssignedCell<F, F>,
 ) {
     let _ = a
         .value()
         .zip(b1.value())
         .zip(b2.value())
         .zip(b3.value())
-        .error_if_known_and(|(((&a, &b1), &b2), &b3)| {
+        .zip(b4.value())
+        .error_if_known_and(|((((&a, &b1), &b2), &b3), &b4)| {
             assert!(
-                a == b1 || a == b2 || a == b3,
-                "a: {a:?}\nb1: {b1:?}\nb2: {b2:?}\nb3: {b3:?}\n",
+                a == b1 || a == b2 || a == b3 || a == b4,
+                "a: {a:?}\nb1: {b1:?}\nb2: {b2:?}\nb3: {b3:?}\nb4: {b3:?}\n",
             );
-            !(a == b1 || a == b2 || a == b3)
+            !(a == b1 || a == b2 || a == b3 || a == b4)
         });
 }
 
