@@ -540,7 +540,7 @@ impl<'a> CircuitInputBuilder {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
                         geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
                         geth_step.stack.nth_last(4),
@@ -550,7 +550,7 @@ impl<'a> CircuitInputBuilder {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
                         geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
                         geth_step.stack.nth_last(4),
@@ -569,32 +569,18 @@ impl<'a> CircuitInputBuilder {
                             "".to_string()
                         }
                     )
-                } else if matches!(geth_step.op, OpcodeId::MLOAD) {
-                    format!(
-                        "{:?}",
-                        geth_step.stack.nth_last(0),
-                    )
-                } else if matches!(geth_step.op, OpcodeId::MSTORE | OpcodeId::MSTORE8) {
-                    format!(
-                        "{:?} {:?}",
-                        geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1),
-                    )
                 } else if matches!(geth_step.op, OpcodeId::SSTORE) {
                     format!(
                         "{:?} {:?} {:?}",
-                        state_ref.call().unwrap().address,
+                        state_ref.call().map(|c| c.address),
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )
-                } else if matches!(geth_step.op, OpcodeId::RETURN) {
-		    format!(
-                        "{:?} {:?}",
-                        geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1),
-                    )
-		} else {
-                    "".to_string()
+                } else {
+                    let stack_input_num = 1024 - geth_step.op.valid_stack_ptr_range().1 as usize;
+                    (0..stack_input_num).into_iter().map(|i|
+                        format!("{:?}",  geth_step.stack.nth_last(i))
+                    ).collect_vec().join(" ")
                 }
             );
             debug_assert_eq!(
