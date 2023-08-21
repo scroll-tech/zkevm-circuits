@@ -168,7 +168,7 @@ fn tx_circuit_2tx_2max_tx() {
 #[cfg(feature = "scroll")]
 fn tx_circuit_0tx_1max_tx() {
     const MAX_TXS: usize = 1;
-    const MAX_CALLDATA: usize = 32;
+    const MAX_CALLDATA: usize = 80;
 
     assert_eq!(
         run::<Fr>(vec![], *mock::MOCK_CHAIN_ID, MAX_TXS, MAX_CALLDATA, 0),
