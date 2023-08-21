@@ -10,8 +10,9 @@ use crate::{
     Error,
 };
 use eth_types::{
-    bytecode::BytecodeElement, evm_types::memory::MemoryWordRange, Bytecode, GethExecStep, ToWord,
-    Word, H256,
+    bytecode::BytecodeElement,
+    evm_types::{memory::MemoryWordRange, OpcodeId},
+    Bytecode, GethExecStep, ToWord, Word, H256,
 };
 use ethers_core::utils::keccak256;
 
@@ -152,14 +153,11 @@ impl Opcode for ReturnRevert {
         }
 
         // Case D in the specs.
-        if !call.is_root && !call.is_create() {
-            for (field, value) in [
-                (CallContextField::ReturnDataOffset, call.return_data_offset),
-                (CallContextField::ReturnDataLength, call.return_data_length),
-            ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value.into());
-            }
-
+        // only when successful deployment case we don't need to keep return data.
+        // namely, when call.is_create() && opcode is revert (successfully revert, not oog revert),
+        // we still need to store return data.
+        // Failed RETURN will not handled by here, so we don't need to check call.is_success.
+        if !call.is_root {
             let return_data = state
                 .call_ctx()?
                 .memory
@@ -167,29 +165,41 @@ impl Opcode for ReturnRevert {
                 .get(offset..offset + length)
                 .unwrap_or_default()
                 .to_vec();
+            if call.is_create() && step.op == OpcodeId::RETURN {
+                state.caller_ctx_mut()?.return_data.clear();
+            } else {
+                state.caller_ctx_mut()?.return_data = return_data;
+            }
+            if !call.is_create() {
+                // store return data to caller memory
+                for (field, value) in [
+                    (CallContextField::ReturnDataOffset, call.return_data_offset),
+                    (CallContextField::ReturnDataLength, call.return_data_length),
+                ] {
+                    state.call_context_read(&mut exec_step, call.call_id, field, value.into());
+                }
 
-            state.caller_ctx_mut()?.return_data = return_data;
+                let return_data_length = usize::try_from(call.return_data_length).unwrap();
+                let copy_length = std::cmp::min(return_data_length, length);
+                if copy_length > 0 {
+                    // reconstruction
+                    let return_offset = call.return_data_offset.try_into().unwrap();
 
-            let return_data_length = usize::try_from(call.return_data_length).unwrap();
-            let copy_length = std::cmp::min(return_data_length, length);
-            if copy_length > 0 {
-                // reconstruction
-                let return_offset = call.return_data_offset.try_into().unwrap();
-
-                handle_copy(
-                    state,
-                    &mut exec_step,
-                    Source {
-                        id: call.call_id,
-                        offset,
-                        length,
-                    },
-                    Destination {
-                        id: call.caller_id,
-                        offset: return_offset,
-                        length: return_data_length,
-                    },
-                )?;
+                    handle_copy(
+                        state,
+                        &mut exec_step,
+                        Source {
+                            id: call.call_id,
+                            offset,
+                            length,
+                        },
+                        Destination {
+                            id: call.caller_id,
+                            offset: return_offset,
+                            length: return_data_length,
+                        },
+                    )?;
+                }
             }
         }
 
