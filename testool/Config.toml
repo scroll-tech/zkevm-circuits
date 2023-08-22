@@ -189,7 +189,7 @@ paths = [
 
 [[skip_paths]]
 desc = "defines asm"
-paths = [ 
+paths = [
     "stackLimitGas_1023Filler.json",
     "stackLimitGas_1024Filler.json",
     "stackLimitGas_1025Filler.json",
@@ -218,7 +218,10 @@ paths = [
     "callToNonExistentFiller.json",
     "tackDepthLimitSECFiller.json",
     "ValueOverflowFiller", # weird 0x:biginteger 0x...
-    "result_mergeEnvConvertionFiller.json" # missing `currentDifficulty`
+	"result_mergeEnvConvertionFiller.json", # missing `currentDifficulty`
+	"result_cancunEnvConvertionFiller.json", # missing `currentDifficulty`
+	"calldatacopy_dejavu2Filler.json", # missing comma
+	"callDataCopyOffsetFiller.json" # missing comma
 ]
 
 [[skip_paths]]
@@ -248,7 +251,7 @@ paths = [
     "RevertRemoteSubCallStorageOOGFiller.yml",
     "loopMulFiller.yml",
     "loopExpFiller.yml",
-    "performanceTesterFiller.yml", 
+    "performanceTesterFiller.yml",
     "SelfDestructFiller.yml",
     "RevertRemoteSubCallStorageOOGFiller.yml",
     "solidityExampleFiller.yml"
