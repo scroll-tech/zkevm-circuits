@@ -393,11 +393,11 @@ impl Results {
                 .create(true)
                 .append(true)
                 .open(path)?;
-            for (test_id, result) in &self.tests {
+            for (_, result) in &self.tests {
                 let entry = format!(
                     "{:?};{};{};{}\n",
                     result.level,
-                    test_id,
+                    result.test_id,
                     urlencoding::encode(&result.details),
                     result.path,
                 );
