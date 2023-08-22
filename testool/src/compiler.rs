@@ -310,7 +310,9 @@ impl Compiler {
             serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
         let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)
-            .map_err(|e| println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n-----"))
+            .map_err(|e| {
+                println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{stdout}\n-----")
+            })
             .unwrap();
         let bytecode = compilation_result
             .contracts
