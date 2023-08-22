@@ -281,16 +281,16 @@ impl Compiler {
     }
 
     /// compiles YUL code
-    pub fn yul(&self, src: &str) -> Result<Bytes> {
-        self.solc(Language::Yul, src)
+    pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        self.solc(Language::Yul, src, evm_version)
     }
 
     /// compiles Solidity code
-    pub fn solidity(&self, src: &str) -> Result<Bytes> {
-        self.solc(Language::Solidity, src)
+    pub fn solidity(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        self.solc(Language::Solidity, src, evm_version)
     }
 
-    fn solc(&self, language: Language, src: &str) -> Result<Bytes> {
+    fn solc(&self, language: Language, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
         if let Some(bytecode) = self
             .cache
             .as_ref()
@@ -304,7 +304,16 @@ impl Compiler {
         let compiler_input = CompilerInput::new_default(language, src);
 
         let stdout = Self::exec(
-            &["run", "-i", "--rm", "solc", "--standard-json", "-"],
+            &[
+                "run",
+                "-i",
+                "--rm",
+                "solc",
+                "--standard-json",
+                "--evm-version",
+                evm_version.unwrap_or("paris"),
+                "-",
+            ],
             serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
         let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)?;
