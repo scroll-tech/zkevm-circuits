@@ -74,14 +74,14 @@ struct CompilerInput {
     sources: HashMap<String, Source>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 enum Language {
     Solidity,
     Yul,
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CompilerSettings {
     optimizer: Optimizer,
