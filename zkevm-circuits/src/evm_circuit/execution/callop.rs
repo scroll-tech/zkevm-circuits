@@ -240,7 +240,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let code_hash_previous = cb.query_cell();
+        let code_hash_previous = cb.query_cell_phase2();
         #[cfg(feature = "scroll")]
         let keccak_code_hash_previous = cb.query_cell_phase2();
         let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {

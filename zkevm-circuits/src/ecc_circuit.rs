@@ -31,6 +31,8 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use log::error;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, EvmCircuit},
@@ -97,14 +99,18 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
         let num_advice = [33];
         #[cfg(not(feature = "onephase"))]
         let num_advice = [33, 1];
+        #[cfg(feature = "onephase")]
+        let num_lookup_advice = [17];
+        #[cfg(not(feature = "onephase"))]
+        let num_lookup_advice = [17, 1];
 
         let fp_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
             &num_advice,
-            &[17], // num lookup advice
-            1,     // num fixed
-            13,    // lookup bits
+            &num_lookup_advice,
+            1,  // num fixed
+            13, // lookup bits
             limb_bits,
             num_limbs,
             modulus::<Fq>(),
@@ -179,14 +185,6 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             return Err(Error::Synthesis);
         }
 
-        // keccak powers of randomness.
-        let keccak_powers = std::iter::successors(Some(Value::known(F::one())), |coeff| {
-            Some(challenges.keccak_input() * coeff)
-        })
-        .take(N_PAIRING_PER_OP * N_BYTES_PER_PAIR)
-        .map(|x| QuantumCell::Witness(x))
-        .collect_vec();
-
         let powers_of_256 = iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
             .take(N_BYTES_WORD)
             .map(|x| QuantumCell::Constant(x))
@@ -236,20 +234,13 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     };
                 }
 
-                macro_rules! assign_ec_op {
-                    ($decomposed_ops:expr, $assign_fn:ident) => {
-                        $decomposed_ops
-                            .iter()
-                            .map(|decomposed_op| {
-                                self.$assign_fn(&mut ctx, decomposed_op, &ecc_chip, &keccak_powers)
-                            })
-                            .collect_vec()
-                    };
-                }
-
-                // P + Q == R
-                let ec_adds_decomposed =
-                    decompose_ec_op!(EcAddOp, self.add_ops, self.max_add_ops, decompose_ec_add_op);
+                // First phase of P + Q == R
+                let ec_adds_decomposed = decompose_ec_op!(
+                    EcAddOp,
+                    self.add_ops,
+                    self.max_add_ops,
+                    decompose_ec_add_op_phase_1
+                );
 
                 // s.P = R
                 let ec_muls_decomposed =
@@ -270,6 +261,32 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     ctx.next_phase();
                 }
 
+                // keccak powers of randomness.
+                let keccak_powers = std::iter::successors(Some(Value::known(F::one())), |coeff| {
+                    Some(challenges.keccak_input() * coeff)
+                })
+                .take(N_PAIRING_PER_OP * N_BYTES_PER_PAIR)
+                .map(|x| QuantumCell::Witness(x))
+                .collect_vec();
+
+                // second phase of P + Q == R
+                self.decompose_ec_add_op_phase_2(
+                    &mut ctx,
+                    &ecc_chip,
+                    &ec_adds_decomposed,
+                    challenges,
+                );
+
+                macro_rules! assign_ec_op {
+                    ($decomposed_ops:expr, $assign_fn:ident) => {
+                        $decomposed_ops
+                            .iter()
+                            .map(|decomposed_op| {
+                                self.$assign_fn(&mut ctx, decomposed_op, &ecc_chip, &keccak_powers)
+                            })
+                            .collect_vec()
+                    };
+                }
                 let ec_adds_assigned = assign_ec_op!(ec_adds_decomposed, assign_ec_add);
                 let ec_muls_assigned = assign_ec_op!(ec_muls_decomposed, assign_ec_mul);
                 let ec_pairings_assigned = assign_ec_op!(ec_pairings_decomposed, assign_ec_pairing);
@@ -440,10 +457,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         Ok(())
     }
 
-    /// Decomposes an EcAdd operation to return each G1 element as cells representing its byte
-    /// form.
+    /// Phase 1 component for decomposing an EcAdd operation to return each G1 element as cells
+    /// representing its byte form.
+    ///
+    /// It only performs decomposition/assignment of three points, without proving their relations.
     #[allow(clippy::too_many_arguments)]
-    fn decompose_ec_add_op(
+    fn decompose_ec_add_op_phase_1(
         &self,
         ctx: &mut Context<F>,
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
@@ -453,7 +472,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_256: &[QuantumCell<F>],
         op: &EcAddOp,
     ) -> EcAddDecomposed<F> {
-        log::trace!("[ECC] ==> EcAdd Assignmnet START:");
+        log::trace!("[ECC] ==> EcAdd Assignment START:");
         log_context_cursor!(ctx);
 
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_256);
@@ -463,64 +482,107 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcAdd Inputs Assigned:");
         log_context_cursor!(ctx);
 
-        // We follow the approach mentioned below to handle many edge cases for the points P, Q and
-        // R so that we can maintain the same fixed and permutation columns and reduce the overall
-        // validation process from the EVM Circuit.
-        //
-        // To check the validity of P + Q == R, we check:
-        // r + P + Q - R == r
-        // where r is a random point on the curve.
-        //
-        // We cover cases such as:
-        // - P == (0, 0) and/or Q == (0, 0)
-        // - P == -Q, i.e. P + Q == R == (0, 0)
-
-        let rand_point = ecc_chip.load_random_point::<G1Affine>(ctx);
-
-        // check if P == (0, 0), Q == (0, 0), R == (0, 0)
-        let p_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_p.ec_point.x);
-        let p_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_p.ec_point.y);
-        let q_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_q.ec_point.x);
-        let q_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_q.ec_point.y);
-        let r_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.x);
-        let r_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.y);
-        let point_p_is_zero = ecc_chip.field_chip.range().gate().and(
-            ctx,
-            QuantumCell::Existing(p_x_is_zero),
-            QuantumCell::Existing(p_y_is_zero),
-        );
-        let point_q_is_zero = ecc_chip.field_chip.range().gate().and(
-            ctx,
-            QuantumCell::Existing(q_x_is_zero),
-            QuantumCell::Existing(q_y_is_zero),
-        );
-        let point_r_is_zero = ecc_chip.field_chip.range().gate().and(
-            ctx,
-            QuantumCell::Existing(r_x_is_zero),
-            QuantumCell::Existing(r_y_is_zero),
-        );
-
-        // sum1 = if P == (0, 0) then r else r + P
-        let sum1 = ecc_chip.add_unequal(ctx, &rand_point, &point_p.ec_point, true);
-        let sum1 = ecc_chip.select(ctx, &rand_point, &sum1, &point_p_is_zero);
-
-        // sum2 = if Q == (0, 0) then sum1 else sum1 + Q
-        let sum2 = ecc_chip.add_unequal(ctx, &sum1, &point_q.ec_point, true);
-        let sum2 = ecc_chip.select(ctx, &sum1, &sum2, &point_q_is_zero);
-
-        // sum3 = if R == (0, 0) then sum2 else sum2 - R
-        let sum3 = ecc_chip.sub_unequal(ctx, &sum2, &point_r.ec_point, true);
-        let sum3 = ecc_chip.select(ctx, &sum2, &sum3, &point_r_is_zero);
-
-        ecc_chip.assert_equal(ctx, &rand_point, &sum3);
-
-        log::trace!("[ECC] EcAdd Assignmnet END:");
-        log_context_cursor!(ctx);
         EcAddDecomposed {
             point_p,
             point_q,
             point_r,
         }
+    }
+
+    /// Phase 2 component for decomposing an EcAdd operation to return each G1 element as cells
+    /// representing its byte form.
+    ///
+    /// It performs proves relations of the decomposed and committed points.
+    #[allow(clippy::too_many_arguments)]
+    fn decompose_ec_add_op_phase_2(
+        &self,
+        ctx: &mut Context<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        ec_decomposed: &[EcAddDecomposed<F>],
+        challenges: &Challenges<Value<F>>,
+    ) {
+        log::trace!("[ECC] ==> EcAdd Assignment START:");
+        log_context_cursor!(ctx);
+
+        let rand_point = {
+            // ideally we want to read a random point via
+            //   `ecc_chip.load_random_point::<G1Affine>(ctx);`
+            // but this function uses internal rng which changes during different phases
+            // this results into an error that `PHASE ERR columnXX not same after phase
+            // Phase(1)`
+            //
+            // so we use an rng from challenge here which ensures the point
+            // remain the same during different phases
+
+            let mut buf = F::default();
+            challenges.keccak_input().map(|x| buf = x);
+            let mut rng = ChaCha20Rng::from_seed(buf.to_repr());
+            let p = G1Affine::random(&mut rng);
+            let G1Affine { x, y } = p;
+            let point = ecc_chip.load_private(ctx, (Value::known(x), Value::known(y)));
+
+            ecc_chip.assert_is_on_curve::<G1Affine>(ctx, &point);
+            point
+        };
+
+        for ec in ec_decomposed.iter() {
+            let EcAddDecomposed {
+                point_p,
+                point_q,
+                point_r,
+            } = ec;
+
+            // We follow the approach mentioned below to handle many edge cases for the points P, Q
+            // and R so that we can maintain the same fixed and permutation columns and
+            // reduce the overall validation process from the EVM Circuit.
+            //
+            // To check the validity of P + Q == R, we check:
+            // r + P + Q - R == r
+            // where r is a random point on the curve.
+            //
+            // We cover cases such as:
+            // - P == (0, 0) and/or Q == (0, 0)
+            // - P == -Q, i.e. P + Q == R == (0, 0)
+
+            // check if P == (0, 0), Q == (0, 0), R == (0, 0)
+            let p_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_p.ec_point.x);
+            let p_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_p.ec_point.y);
+            let q_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_q.ec_point.x);
+            let q_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_q.ec_point.y);
+            let r_x_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.x);
+            let r_y_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.y);
+            let point_p_is_zero = ecc_chip.field_chip.range().gate().and(
+                ctx,
+                QuantumCell::Existing(p_x_is_zero),
+                QuantumCell::Existing(p_y_is_zero),
+            );
+            let point_q_is_zero = ecc_chip.field_chip.range().gate().and(
+                ctx,
+                QuantumCell::Existing(q_x_is_zero),
+                QuantumCell::Existing(q_y_is_zero),
+            );
+            let point_r_is_zero = ecc_chip.field_chip.range().gate().and(
+                ctx,
+                QuantumCell::Existing(r_x_is_zero),
+                QuantumCell::Existing(r_y_is_zero),
+            );
+
+            // sum1 = if P == (0, 0) then r else r + P
+            let sum1 = ecc_chip.add_unequal(ctx, &rand_point, &point_p.ec_point, true);
+            let sum1 = ecc_chip.select(ctx, &rand_point, &sum1, &point_p_is_zero);
+
+            // sum2 = if Q == (0, 0) then sum1 else sum1 + Q
+            let sum2 = ecc_chip.add_unequal(ctx, &sum1, &point_q.ec_point, true);
+            let sum2 = ecc_chip.select(ctx, &sum1, &sum2, &point_q_is_zero);
+
+            // sum3 = if R == (0, 0) then sum2 else sum2 - R
+            let sum3 = ecc_chip.sub_unequal(ctx, &sum2, &point_r.ec_point, true);
+            let sum3 = ecc_chip.select(ctx, &sum2, &sum3, &point_r_is_zero);
+
+            ecc_chip.assert_equal(ctx, &rand_point, &sum3);
+        }
+        log::trace!("[ECC] EcAdd Assignment END:");
+        log_context_cursor!(ctx);
     }
 
     /// Decomposes an EcMul operation to return each G1 element as cells representing its byte
@@ -536,7 +598,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_256: &[QuantumCell<F>],
         op: &EcMulOp,
     ) -> EcMulDecomposed<F> {
-        log::trace!("[ECC] ==> EcMul Assignmnet START:");
+        log::trace!("[ECC] ==> EcMul Assignment START:");
         log_context_cursor!(ctx);
 
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_256);
@@ -555,7 +617,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         );
         ecc_chip.assert_equal(ctx, &point_r.ec_point, &point_r_got);
 
-        log::trace!("[ECC] EcMul Assignmnet END:");
+        log::trace!("[ECC] EcMul Assignment END:");
         log_context_cursor!(ctx);
 
         EcMulDecomposed {
@@ -694,7 +756,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             QuantumCell::Existing(op_output),
         );
 
-        log::trace!("[ECC] EcPairingAssignment END:");
+        log::trace!("[ECC] EcPairing Assignment END:");
         log_context_cursor!(ctx);
 
         EcPairingDecomposed {
