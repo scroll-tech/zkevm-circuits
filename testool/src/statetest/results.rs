@@ -209,6 +209,7 @@ pub struct Results {
 
 impl Results {
     pub fn from_file(path: PathBuf) -> Result<Self> {
+        log::info!("loading results from {}", path.display());
         let mut file = std::fs::File::open(&path)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
