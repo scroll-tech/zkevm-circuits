@@ -222,7 +222,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             AccountFieldTag::Nonce,
             caller_nonce.expr(),
         );
-        
+
         let is_nonce_in_range = LtGadget::construct(cb, caller_nonce.expr(), u64::MAX.expr());
 
         cb.condition(is_insufficient_balance.expr(), |cb| {
@@ -292,13 +292,15 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             code_hash_previous.expr(),
         );
         // callee address's nonce
-        cb.account_read(
-            new_address.clone(),
-            AccountFieldTag::Nonce,
-            callee_nonce.expr(),
-        );
-
         let code_hash_is_zero = IsZeroGadget::construct(cb, code_hash_previous.expr());
+        cb.condition(not::expr(code_hash_is_zero.expr()), |cb| {
+            cb.account_read(
+                new_address.clone(),
+                AccountFieldTag::Nonce,
+                callee_nonce.expr(),
+            );
+        });
+
         let code_hash_is_empty =
             IsEqualGadget::construct(cb, code_hash_previous.expr(), cb.empty_code_hash_rlc());
         let callee_nonce_is_zero = IsZeroGadget::construct(cb, callee_nonce.expr());
@@ -666,7 +668,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // retrieve code_hash for creating address
         let code_hash_previous = rws.next().account_codehash_pair();
-        let callee_nonce = rws.next().account_nonce_pair().1.low_u64();
+        let callee_nonce = if !code_hash_previous.0.is_zero() {
+            rws.next().account_nonce_pair().1.low_u64()
+        } else {
+            0
+        };
 
         let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous

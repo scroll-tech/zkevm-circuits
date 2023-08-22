@@ -201,12 +201,14 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         );
 
         // read callee nonce for address collision checking
-        state.account_read(
-            &mut exec_step,
-            address,
-            AccountField::Nonce,
-            callee_account.nonce,
-        );
+        if !code_hash_previous.is_zero() {
+            state.account_read(
+                &mut exec_step,
+                address,
+                AccountField::Nonce,
+                callee_account.nonce,
+            );
+        }
 
         if is_precheck_ok && !is_address_collision {
             state.transfer(
