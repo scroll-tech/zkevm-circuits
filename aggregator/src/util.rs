@@ -157,24 +157,25 @@ pub(crate) fn assert_conditional_equal<F: Field>(
 
 #[inline]
 // assert a \in (b1, b2, b3)
+// TODO: return Error::Synthesis?
 pub(crate) fn assert_exist<F: Field>(
     a: &AssignedCell<F, F>,
     b1: &AssignedCell<F, F>,
     b2: &AssignedCell<F, F>,
     b3: &AssignedCell<F, F>,
 ) {
-    let mut t1 = F::default();
-    let mut t2 = F::default();
-    let mut t3 = F::default();
-    let mut t4 = F::default();
-    a.value().map(|f| t1 = *f);
-    b1.value().map(|f| t2 = *f);
-    b2.value().map(|f| t3 = *f);
-    b3.value().map(|f| t4 = *f);
-    assert!(
-        t1 == t2 || t1 == t3 || t1 == t4,
-        "t1: {t1:?}\nt2: {t2:?}\nt3: {t3:?}\nt4: {t4:?}\n",
-    )
+    let _ = a
+        .value()
+        .zip(b1.value())
+        .zip(b2.value())
+        .zip(b3.value())
+        .error_if_known_and(|(((&a, &b1), &b2), &b3)| {
+            assert!(
+                a == b1 || a == b2 || a == b3,
+                "a: {a:?}\nb1: {b1:?}\nb2: {b2:?}\nb3: {b3:?}\n",
+            );
+            !(a == b1 || a == b2 || a == b3)
+        });
 }
 
 #[inline]

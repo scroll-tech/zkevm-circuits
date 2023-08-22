@@ -653,6 +653,9 @@ impl<
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
 
         self.pi_circuit
+            .import_tx_values(self.tx_circuit.value_cells.borrow().clone().unwrap());
+
+        self.pi_circuit
             .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
 
         self.pi_circuit.connect_export(
@@ -709,17 +712,6 @@ impl<
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
-
-        let block = self.evm_circuit.block.as_ref().unwrap();
-
-        config.tx_table.load(
-            &mut layouter,
-            &block.txs,
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
-            block.chain_id,
-            &challenges,
-        )?;
 
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;

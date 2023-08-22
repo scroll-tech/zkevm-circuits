@@ -143,7 +143,7 @@ impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
-    pub fn get_test_degree(&self) -> u32 {
+    pub fn get_evm_test_circuit_degree(&self) -> u32 {
         let num_rows_required_for_execution_steps: usize =
             EvmCircuit::<F>::get_num_rows_required(self);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
@@ -162,8 +162,9 @@ impl<F: Field> Block<F> {
             .map(|c| c.copy_bytes.bytes.len() * 2)
             .sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
-        let num_rows_required_for_tx_table: usize =
-            TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;
+        // tx_table load only does tx padding, no calldata padding
+        let num_rows_required_for_tx_table: usize = self.circuits_params.max_txs * TX_LEN
+            + self.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>();
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()

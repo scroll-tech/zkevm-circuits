@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
+use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -653,6 +653,7 @@ impl<F: Field> PiCircuitConfig<F> {
         region: &mut Region<'_, F>,
         public_data: &PublicData,
         block_value_cells: &[AssignedCell<F, F>],
+        tx_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(PiHashExport<F>, Connections<F>), Error> {
         let block_values = &public_data.block_ctxs;
@@ -817,11 +818,7 @@ impl<F: Field> PiCircuitConfig<F> {
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
             region.constrain_equal(
                 tx_hash_cell.cell(),
-                Cell {
-                    region_index: RegionIndex(1), // FIXME: this is not safe
-                    row_offset: i * TX_LEN + TX_HASH_OFFSET,
-                    column: self.tx_table.value.into(),
-                },
+                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].cell(),
             )?;
         }
 
@@ -1476,7 +1473,8 @@ pub struct PiCircuit<F: Field> {
 
     _marker: PhantomData<F>,
 
-    connections: std::cell::RefCell<Option<Connections<F>>>,
+    connections: RefCell<Option<Connections<F>>>,
+    tx_value_cells: RefCell<Option<Vec<AssignedCell<F, F>>>>,
 }
 
 impl<F: Field> PiCircuit<F> {
@@ -1503,12 +1501,18 @@ impl<F: Field> PiCircuit<F> {
             max_inner_blocks,
             _marker: PhantomData,
             connections: Default::default(),
+            tx_value_cells: RefCell::new(None),
         }
     }
 
     /// Return txs
     pub fn txs(&self) -> &[Transaction] {
         &self.public_data.transactions
+    }
+
+    /// Import tx value cells from Tx circuit
+    pub fn import_tx_values(&self, values: Vec<AssignedCell<F, F>>) {
+        *self.tx_value_cells.borrow_mut() = Some(values);
     }
 
     /// Connect the exportings from other circuit when we are in super circuit
@@ -1634,6 +1638,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 config.block_table.annotate_columns_in_region(&mut region);
 
                 // assign block table
+                let tx_value_cells = self
+                    .tx_value_cells
+                    .borrow()
+                    .clone()
+                    .expect("tx_value_cells must have been set");
                 let block_value_cells = config.assign_block_table(
                     &mut region,
                     &self.public_data,
@@ -1645,6 +1654,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     &mut region,
                     &self.public_data,
                     &block_value_cells,
+                    &tx_value_cells,
                     challenges,
                 )?;
 

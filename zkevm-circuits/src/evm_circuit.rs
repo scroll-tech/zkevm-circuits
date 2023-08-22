@@ -727,7 +727,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        let k = block.get_test_degree();
+        let k = block.get_evm_test_circuit_degree();
 
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
@@ -749,7 +749,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        let k = block.get_test_degree();
+        let k = block.get_evm_test_circuit_degree();
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 

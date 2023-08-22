@@ -385,7 +385,7 @@ impl Results {
         self.tests.contains_key(test)
     }
 
-    pub fn _write_cache(&self) -> Result<()> {
+    pub fn write_cache(&self) -> Result<()> {
         if let Some(path) = &self.cache {
             let mut file = std::fs::OpenOptions::new()
                 .read(true)
@@ -395,10 +395,11 @@ impl Results {
                 .open(path)?;
             for (test_id, result) in &self.tests {
                 let entry = format!(
-                    "{:?};{};{}\n",
+                    "{:?};{};{};{}\n",
                     result.level,
                     test_id,
-                    urlencoding::encode(&result.details)
+                    urlencoding::encode(&result.details),
+                    result.path,
                 );
                 file.write_all(entry.as_bytes())?;
             }

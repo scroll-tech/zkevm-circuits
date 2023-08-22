@@ -129,7 +129,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         self.value_left
             .assign(region, offset, Some(word_left.to_le_bytes()))?;
 
-        let bytes = word_left.to_le_bytes();
+        let mut bytes = word_left.to_le_bytes();
+        bytes.reverse();
+
         let first_byte: u8 = bytes[0];
 
         self.first_byte
@@ -186,7 +188,7 @@ mod test {
             PUSH32(0)
             MSTORE
             PUSH2( 5 ) // length to copy
-            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
+            PUSH2(u64::try_from(memory_bytes.len()).unwrap()) // offset
             //PUSH2(0x00) // offset
 
         };

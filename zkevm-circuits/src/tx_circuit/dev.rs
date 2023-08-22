@@ -227,15 +227,6 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             &self.tx_circuit.keccak_inputs()?,
             &challenges,
         )?;
-
-        config.tx_config.tx_table.load(
-            &mut layouter,
-            &self.tx_circuit.txs,
-            self.tx_circuit.max_txs,
-            self.tx_circuit.max_calldata,
-            self.tx_circuit.chain_id,
-            &challenges,
-        )?;
         config.tx_config.rlp_table.dev_load(
             &mut layouter,
             self.tx_circuit

@@ -5,20 +5,20 @@ use crate::{
         util::{
             common_gadget::{CommonErrorGadget, CommonReturnDataCopyGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            CachedRegion, Cell,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToScalar};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     opcode: Cell<F>,
-    memory_offset: Cell<F>,
+    memory_offset: Word<F>,
     // Hold the size of the last callee return data.
     return_data_length: Cell<F>,
     overflow_gadget: CommonReturnDataCopyGadget<F>,
@@ -32,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let memory_offset = cb.query_cell();
+        let memory_offset = cb.query_word_rlc();
         let return_data_length = cb.query_cell();
 
         cb.require_equal(
@@ -90,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
 
         self.memory_offset
-            .assign(region, offset, Value::known(F::from(dest_offset.as_u64())))?;
+            .assign(region, offset, Some(dest_offset.to_le_bytes()))?;
 
         let return_data_length = block.rws[step.rw_indices[3]].call_context_value();
         self.return_data_length.assign(

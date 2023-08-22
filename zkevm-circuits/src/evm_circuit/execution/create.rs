@@ -394,8 +394,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         // ErrNonceUintOverflow occurred.
         cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
-            for field_tag in [
+            cb.call_context_lookup(
+                true.expr(),
+                None,
                 CallContextFieldTag::LastCalleeId,
+                callee_call_id.expr(),
+            );
+            for field_tag in [
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
@@ -468,8 +473,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.condition(
                 not::expr(init_code.has_length()) * not_address_collision.expr(),
                 |cb| {
-                    for field_tag in [
+                    cb.call_context_lookup(
+                        true.expr(),
+                        None,
                         CallContextFieldTag::LastCalleeId,
+                        callee_call_id.expr(),
+                    );
+                    for field_tag in [
                         CallContextFieldTag::LastCalleeReturnDataOffset,
                         CallContextFieldTag::LastCalleeReturnDataLength,
                     ] {
@@ -488,8 +498,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
             // handle address collision.
             cb.condition(not::expr(not_address_collision.expr()), |cb| {
-                for field_tag in [
+                cb.call_context_lookup(
+                    true.expr(),
+                    None,
                     CallContextFieldTag::LastCalleeId,
+                    callee_call_id.expr(),
+                );
+                for field_tag in [
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {

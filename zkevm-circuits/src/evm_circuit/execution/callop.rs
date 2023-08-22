@@ -248,10 +248,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb,
                 caller_address.expr(),
                 callee_address.expr(),
-                or::expr([
-                    not::expr(call_gadget.callee_not_exists.expr()),
-                    is_precompile.expr(),
-                ]),
+                not::expr(call_gadget.callee_not_exists.expr()),
                 0.expr(),
                 code_hash_previous.expr(),
                 #[cfg(feature = "scroll")]
@@ -794,7 +791,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             [U256::zero(), U256::zero()]
         };
         let [gas, callee_address] = [(); 2].map(|_| rws.next().stack_value());
-        let is_precompile = is_precompiled(&callee_address.to_address());
         let value = if is_call || is_callcode {
             rws.next().stack_value()
         } else {
@@ -827,7 +823,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let transfer_assign_result = self.transfer.assign_from_rws(
                 region,
                 offset,
-                callee_exists || is_precompile,
+                callee_exists,
                 false,
                 value,
                 &mut rws,

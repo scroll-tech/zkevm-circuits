@@ -33,11 +33,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.78"
 
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0723"}
-#mpt-circuits = { package = "halo2-mpt-circuits", path = "../../mpt-circuit" }
 misc-precompiled-circuit = { package = "rmd160-circuits", git = "https://github.com/scroll-tech/misc-precompiled-circuit.git", branch = "integration" }
 
-halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
-halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
+halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", tag = "v0.1.0", default-features=false, features=["halo2-pse","display"] }
+halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", tag = "v0.1.0", default-features=false, features=["halo2-pse","display"] }
 
 maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
 
@@ -45,8 +44,8 @@ libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 subtle = "2.4"
 rand_chacha = "0.3"
-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop" }
-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop", default-features=false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.2" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.2", default-features=false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
 hex = "0.4.3"
 rayon = "1.5"
 once_cell = "1.17.0"

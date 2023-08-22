@@ -31,7 +31,9 @@ impl Opcode for Stop {
             CallContextField::IsSuccess,
             1.into(),
         );
-
+        if let Ok(caller) = state.caller_ctx_mut() {
+            caller.return_data.clear();
+        }
         state.handle_return(&mut exec_step, geth_steps, !call.is_root)?;
 
         Ok(vec![exec_step])

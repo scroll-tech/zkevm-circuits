@@ -167,15 +167,6 @@ tests = []
 
 # skipped tests, do not need to be fixed  --------------------------------------------------
 
-[[skip_tests]]
-desc = "geth should emit ErrGasUintOverflow rather than ErrOutOfGas"
-tests = [
-	"MSTORE_Bounds2_d0_g0_v0",
-	"createNameRegistratorOutOfMemoryBonds1_d0_g0_v0",
-	"createNameRegistratorOutOfMemoryBonds0_d0_g0_v0",
-	"CallToNameRegistratorMemOOGAndInsufficientBalance_d0_g0_v0",
-]
-
 # ignored paths -------------------------------------------------------------------------
 
 [[skip_paths]]

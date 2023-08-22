@@ -47,9 +47,13 @@ struct Args {
     #[clap(long)]
     ls: bool,
 
-    /// Cache execution results
+    /// Cache execution results, default to be latest result file
     #[clap(long)]
-    cache: Option<String>,
+    cache: Option<PathBuf>,
+
+    /// do not use cache
+    #[clap(long)]
+    use_cache: bool,
 
     /// whitelist level from cache result
     #[clap(short, long, value_parser, value_delimiter = ',')]
@@ -155,30 +159,55 @@ fn go() -> Result<()> {
             REPORT_FOLDER, args.suite, timestamp, git_hash
         );
 
+        let cache_file_name = if !args.use_cache {
+            None
+        } else {
+            let mut history_reports =
+                glob::glob(format!("{REPORT_FOLDER}/{}.*.*.csv", args.suite).as_str())?
+                    .collect::<Result<Vec<PathBuf>, glob::GlobError>>()?
+                    .into_iter()
+                    .map(|path| {
+                        path.metadata()
+                            .and_then(|meta| meta.created())
+                            .map(|created| (path, created))
+                    })
+                    .collect::<Result<Vec<(PathBuf, SystemTime)>, std::io::Error>>()?;
+            // sort by timestamp
+            history_reports.sort_by_key(|(_, created)| *created);
+            // use latest cache if exists
+            args.cache
+                .or_else(|| history_reports.pop().map(|(path, _)| path))
+        };
+
         // when running a report, the tests result of the containing cache file
         // are used, but by default removing all Ignored tests
         // Another way is to skip the test which level not in whitelist_levels
-        let mut previous_results = if let Some(cache_filename) = args.cache {
+        let mut previous_results = if let Some(cache_filename) = cache_file_name {
             let whitelist_levels = HashSet::<ResultLevel>::from_iter(args.levels);
 
-            let mut previous_results = Results::from_file(PathBuf::from(cache_filename))?;
+            let mut previous_results = Results::from_file(cache_filename).unwrap_or_else(|_| {
+                log::warn!("malformed cache file, won't use cache");
+                Results::default()
+            });
             if !whitelist_levels.is_empty() {
                 // if whitelist is provided, test not in whitelist will be skip
                 previous_results
                     .tests
                     .retain(|_, test| !whitelist_levels.contains(&test.level));
             } else {
-                // by default only skip ignore
-                previous_results
-                    .tests
-                    .retain(|_, test| test.level != ResultLevel::Ignored);
+                // by default skip ignore and success tests
+                previous_results.tests.retain(|_, test| {
+                    test.level == ResultLevel::Ignored || test.level == ResultLevel::Success
+                });
             }
 
             previous_results
         } else {
             Results::default()
         };
+
         previous_results.set_cache(PathBuf::from(csv_filename));
+        previous_results.write_cache()?;
         run_statetests_suite(state_tests, &circuits_config, &suite, &mut previous_results)?;
 
         // filter non-csv files and files from the same commit
@@ -209,7 +238,7 @@ fn go() -> Result<()> {
         info!("{}", html_filename);
     } else {
         let mut results = if let Some(cache_filename) = args.cache {
-            Results::with_cache(PathBuf::from(cache_filename))?
+            Results::with_cache(cache_filename)?
         } else {
             Results::default()
         };

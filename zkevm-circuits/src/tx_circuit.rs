@@ -27,7 +27,7 @@ use crate::{
     },
     util::{
         is_zero::{IsZeroChip, IsZeroConfig},
-        keccak, random_linear_combine_word as rlc, rlc_be_bytes, SubCircuit, SubCircuitConfig,
+        keccak, rlc_be_bytes, SubCircuit, SubCircuitConfig,
     },
     witness,
     witness::{
@@ -46,8 +46,9 @@ use eth_types::{
         TxType::{Eip155, L1Msg, PreEip155},
     },
     sign_types::SignData,
-    Address, Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar,
+    Address, Field, ToAddress, ToBigEndian, ToScalar,
 };
+use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -56,18 +57,20 @@ use gadgets::{
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 use log::error;
 use num::Zero;
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
     iter,
     marker::PhantomData,
 };
 
+use crate::util::Challenges;
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::Fixed;
@@ -92,6 +95,14 @@ enum LookupCondition {
     RlpHashTag,
     // lookup into keccak table
     Keccak,
+}
+
+#[derive(Clone, Debug)]
+struct RlpTableInputValue<F: Field> {
+    tag: RlpTag,
+    is_none: bool,
+    be_bytes_len: u32,
+    be_bytes_rlc: Value<F>,
 }
 
 /// Config for TxCircuit
@@ -992,7 +1003,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // prev block's cum_num_txs < tx_id
         let tx_id_gt_prev_cnt = LtChip::configure(
             meta,
-            |meta| meta.query_fixed(q_enable, Rotation::cur()),
+            |meta| {
+                and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_tag_block_num, Rotation::cur()),
+                ])
+            },
             |meta| {
                 let num_txs = meta.query_advice(num_txs, Rotation::cur());
                 let cum_num_txs = meta.query_advice(cum_num_txs, Rotation::cur());
@@ -1030,7 +1046,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // tx_id <= cum_num_txs
         let tx_id_cmp_cum_num_txs = ComparatorChip::configure(
             meta,
-            |meta| meta.query_fixed(q_enable, Rotation::cur()),
+            |meta| {
+                and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_tag_block_num, Rotation::cur()),
+                ])
+            },
             |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
             |meta| meta.query_advice(cum_num_txs, Rotation::cur()),
             u8_table.into(),
@@ -1671,128 +1692,351 @@ impl<F: Field> TxCircuitConfig<F> {
         });
     }
 
-    /// Assigns a tx circuit row and returns the assigned cell of the value in
-    /// the row.
+    /// Assign 1st empty row with tag = Null
+    fn assign_null_row(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error> {
+        self.assign_common_part(
+            region,
+            *offset,
+            None,
+            1,
+            TxFieldTag::Null,
+            0,
+            Value::known(F::zero()),
+        )?;
+        let (col_anno, col, col_val) = ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64));
+        region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
+
+        *offset += 1;
+        Ok(())
+    }
+
+    /// Assign TX_LEN rows of each tx where tags are not in { Null, CallData }
     #[allow(clippy::too_many_arguments)]
-    fn assign_row(
+    fn assign_fixed_rows(
         &self,
         region: &mut Region<'_, F>,
         offset: &mut usize,
-        tx: Option<&Transaction>,
-        tx_id: usize,
-        tx_id_next: usize,
-        tag: TxFieldTag,
-        value: Value<F>,
-        be_bytes_rlc: Value<F>,
-        be_bytes_length: Option<u32>,
-        rlp_tag: Option<RlpTag>,
-        is_none: Option<bool>,
-        is_padding_tx: Option<bool>,
-        cum_num_txs: Option<usize>,
-        num_txs: Option<usize>,
-        is_final: Option<bool>,
-        calldata_gas_cost_acc: Option<u64>,
-        calldata_rlc: Option<Value<F>>,
-        cur_block_num: Option<u64>,
-        next_block_number: Option<u64>,
-        num_all_txs_acc: Option<u64>,
-        total_l1_popped_before: Option<u64>,
-    ) -> Result<(), Error> {
-        // assign to tag, rlp_tag, is_none
-        let tag_chip = BinaryNumberChip::construct(self.tx_tag_bits);
-        tag_chip.assign(region, *offset, &tag)?;
-        let tx_type = tx.map_or(Default::default(), |tx| tx.tx_type);
-        let tx_type_chip = BinaryNumberChip::construct(self.tx_type_bits);
-        tx_type_chip.assign(region, *offset, &tx_type)?;
+        tx: &Transaction,
+        sign_data: &SignData,
+        next_tx: Option<&Transaction>,
+        total_l1_popped_before: u64,
+        num_all_txs_acc: u64,
+        num_txs: u64,
+        cum_num_txs: u64,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let keccak_input = challenges.keccak_input();
+        let evm_word = challenges.evm_word();
+        let zero_rlc = keccak_input.map(|_| F::zero());
+        let sign_hash = keccak256(tx.rlp_unsigned.as_slice());
+        let hash = keccak256(tx.rlp_signed.as_slice());
+        let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
+        let hash_rlc = rlc_be_bytes(&hash, evm_word);
+        let mut tx_value_cells = vec![];
 
-        region.assign_advice(
-            || "tx_type",
-            self.tx_type,
-            *offset,
-            || Value::known(F::from(usize::from(tx_type) as u64)),
-        )?;
-        region.assign_advice(
-            || "rlp tag",
-            self.rlp_tag,
-            *offset,
-            || Value::known(F::from(usize::from(rlp_tag.unwrap_or(Null)) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_none",
-            self.is_none,
-            *offset,
-            || Value::known(F::from(is_none.unwrap_or(false) as u64)),
-        )?;
-        region.assign_advice(
-            || "value_be_bytes_rlc",
-            self.tx_value_rlc,
-            *offset,
-            || be_bytes_rlc,
-        )?;
-        region.assign_advice(
-            || "value_be_bytes_length",
-            self.tx_value_length,
-            *offset,
-            || Value::known(F::from(be_bytes_length.unwrap_or(0) as u64)),
-        )?;
+        // fixed_rows of a tx
+        let fixed_rows = vec![
+            // need to be in same order as that tx table load function uses
+            (
+                Nonce, // tx field tag
+                Some(RlpTableInputValue {
+                    tag: Tag::Nonce.into(),
+                    is_none: tx.nonce == 0,
+                    be_bytes_len: tx.nonce.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.nonce.to_be_bytes(), keccak_input),
+                }),
+                Value::known(F::from(tx.nonce)),
+            ),
+            (
+                GasPrice,
+                Some(RlpTableInputValue {
+                    tag: Tag::GasPrice.into(),
+                    is_none: tx.gas_price.is_zero(),
+                    be_bytes_len: tx.gas_price.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.gas_price.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.gas_price.to_be_bytes(), evm_word),
+            ),
+            (
+                Gas,
+                Some(RlpTableInputValue {
+                    tag: Tag::Gas.into(),
+                    is_none: tx.gas == 0,
+                    be_bytes_len: tx.gas.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.gas.to_be_bytes(), keccak_input),
+                }),
+                Value::known(F::from(tx.gas)),
+            ),
+            (
+                CallerAddress,
+                Some(RlpTableInputValue {
+                    tag: Tag::Sender.into(),
+                    is_none: false,
+                    be_bytes_len: tx.caller_address.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.caller_address.to_fixed_bytes(), keccak_input),
+                }),
+                Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
+            ),
+            (
+                CalleeAddress,
+                Some(RlpTableInputValue {
+                    tag: Tag::To.into(),
+                    is_none: tx.callee_address.is_none(),
+                    be_bytes_len: tx.callee_address.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(
+                        tx.callee_address
+                            .map_or(vec![], |callee| callee.to_fixed_bytes().to_vec())
+                            .as_slice(),
+                        keccak_input,
+                    ),
+                }),
+                Value::known(
+                    tx.callee_address
+                        .unwrap_or(Address::zero())
+                        .to_scalar()
+                        .expect("tx.to too big"),
+                ),
+            ),
+            (IsCreate, None, Value::known(F::from(tx.is_create as u64))),
+            (
+                TxFieldTag::Value,
+                Some(RlpTableInputValue {
+                    tag: Tag::Value.into(),
+                    is_none: tx.value.is_zero(),
+                    be_bytes_len: tx.value.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.value.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.value.to_be_bytes(), evm_word),
+            ),
+            (
+                CallDataRLC,
+                Some(RlpTableInputValue {
+                    tag: Tag::Data.into(),
+                    is_none: tx.call_data.is_empty(),
+                    be_bytes_len: tx.call_data.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.call_data, keccak_input),
+                }),
+                rlc_be_bytes(&tx.call_data, keccak_input),
+            ),
+            (
+                CallDataLength,
+                None,
+                Value::known(F::from(tx.call_data.len() as u64)),
+            ),
+            (
+                CallDataGasCost,
+                None,
+                Value::known(F::from(tx.call_data_gas_cost)),
+            ),
+            (
+                TxDataGasCost,
+                Some(RlpTableInputValue {
+                    tag: GasCost,
+                    is_none: false,
+                    be_bytes_len: 0,
+                    be_bytes_rlc: zero_rlc,
+                }),
+                Value::known(F::from(tx.tx_data_gas_cost)),
+            ),
+            (
+                ChainID,
+                Some(RlpTableInputValue {
+                    tag: Tag::ChainId.into(),
+                    is_none: tx.chain_id.is_zero(),
+                    be_bytes_len: tx.chain_id.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.chain_id.to_be_bytes(), keccak_input),
+                }),
+                Value::known(F::from(tx.chain_id)),
+            ),
+            (
+                SigV,
+                Some(RlpTableInputValue {
+                    tag: Tag::SigV.into(),
+                    is_none: tx.v.is_zero(),
+                    be_bytes_len: tx.v.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.v.to_be_bytes(), keccak_input),
+                }),
+                Value::known(F::from(tx.v)),
+            ),
+            (
+                SigR,
+                Some(RlpTableInputValue {
+                    tag: Tag::SigR.into(),
+                    is_none: tx.r.is_zero(),
+                    be_bytes_len: tx.r.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.r.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.r.to_be_bytes(), evm_word),
+            ),
+            (
+                SigS,
+                Some(RlpTableInputValue {
+                    tag: Tag::SigS.into(),
+                    is_none: tx.s.is_zero(),
+                    be_bytes_len: tx.s.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.s.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.s.to_be_bytes(), evm_word),
+            ),
+            (
+                TxSignLength,
+                Some(RlpTableInputValue {
+                    tag: Len,
+                    is_none: false,
+                    be_bytes_len: tx.rlp_unsigned.len().tag_length(),
+                    be_bytes_rlc: zero_rlc,
+                }),
+                Value::known(F::from(tx.rlp_unsigned.len() as u64)),
+            ),
+            (
+                TxSignRLC,
+                Some(RlpTableInputValue {
+                    tag: RLC,
+                    is_none: false,
+                    be_bytes_len: 0,
+                    be_bytes_rlc: zero_rlc,
+                }),
+                rlc_be_bytes(&tx.rlp_unsigned, keccak_input),
+            ),
+            (TxSignHash, None, sign_hash_rlc),
+            (
+                TxHashLength,
+                Some(RlpTableInputValue {
+                    tag: Len,
+                    is_none: false,
+                    be_bytes_len: tx.rlp_signed.len().tag_length(),
+                    be_bytes_rlc: zero_rlc,
+                }),
+                Value::known(F::from(tx.rlp_signed.len() as u64)),
+            ),
+            (
+                TxHashRLC,
+                Some(RlpTableInputValue {
+                    tag: RLC,
+                    is_none: false,
+                    be_bytes_len: 0,
+                    be_bytes_rlc: zero_rlc,
+                }),
+                rlc_be_bytes(&tx.rlp_signed, keccak_input),
+            ),
+            (TxFieldTag::TxHash, None, hash_rlc),
+            (
+                TxFieldTag::TxType,
+                None,
+                Value::known(F::from(tx.tx_type as u64)),
+            ),
+            (BlockNumber, None, Value::known(F::from(tx.block_number))),
+        ];
 
-        let block_num_unchanged_chip = IsEqualChip::construct(self.block_num_unchanged.clone());
-        block_num_unchanged_chip.assign(
-            region,
-            *offset,
-            Value::known(F::from(next_block_number.unwrap_or(0))),
-            Value::known(F::from(cur_block_num.unwrap_or(0))),
-        )?;
-        region.assign_advice(
-            || "tx_nonce",
-            self.tx_nonce,
-            *offset,
-            || Value::known(F::from(tx.map_or(0, |tx| tx.nonce))),
-        )?;
-        region.assign_advice(
-            || "block_num",
-            self.block_num,
-            *offset,
-            || Value::known(F::from(cur_block_num.unwrap_or(0))),
-        )?;
-        region.assign_advice(
-            || "num_all_txs_acc",
-            self.num_all_txs_acc,
-            *offset,
-            || Value::known(F::from(num_all_txs_acc.unwrap_or(0))),
-        )?;
+        for (tx_tag, rlp_input, tx_value) in fixed_rows {
+            let rlp_tag = rlp_input.clone().map_or(Null, |input| input.tag);
+            let rlp_is_none = rlp_input.clone().map_or(false, |input| input.is_none);
+            let rlp_be_bytes_len = rlp_input.clone().map_or(0, |input| input.be_bytes_len);
+            let rlp_be_bytes_rlc = rlp_input
+                .clone()
+                .map_or(zero_rlc, |input| input.be_bytes_rlc);
+            let is_l1_msg = tx.tx_type.is_l1_msg();
+            // it's the tx_id of next row
+            let tx_id_next = if tx_tag == BlockNumber {
+                next_tx.map_or(0, |tx| tx.id)
+            } else {
+                tx.id
+            };
 
-        region.assign_advice(
-            || "total_l1_popped_before",
-            self.total_l1_popped_before,
-            *offset,
-            || Value::known(F::from(total_l1_popped_before.unwrap_or(0))),
-        )?;
+            tx_value_cells.push(self.assign_common_part(
+                region,
+                *offset,
+                Some(tx),
+                tx_id_next,
+                tx_tag,
+                0,
+                tx_value,
+            )?);
 
-        // assign to lookup condition columns
-        let is_l1_msg = tx.map(|tx| tx.tx_type.is_l1_msg()).unwrap_or(false);
-        let mut conditions = HashMap::<LookupCondition, Value<F>>::new();
-        if tag == CallData {
-            conditions = vec![
-                (LookupCondition::TxCalldata, Value::known(F::zero())),
-                (LookupCondition::L1MsgHash, Value::known(F::zero())),
-                (LookupCondition::RlpSignTag, Value::known(F::zero())),
-                (LookupCondition::RlpHashTag, Value::known(F::zero())),
-                (LookupCondition::Keccak, Value::known(F::zero())),
-            ]
-            .into_iter()
-            .collect();
-        } else {
-            // lookup to Tx table for CallDataLength and CallDataGasCost
+            // 1st phase columns
+            for (col_anno, col, col_val) in [
+                // rlp table lookup related assignment
+                (
+                    "rlp_tag",
+                    self.rlp_tag,
+                    F::from(usize::from(rlp_tag) as u64),
+                ),
+                ("is_none", self.is_none, F::from(rlp_is_none as u64)),
+                (
+                    "tx_value_length",
+                    self.tx_value_length,
+                    F::from(rlp_be_bytes_len as u64),
+                ),
+                // num_all_txs, num_txs, cum_num_txs related assignment
+                ("tx_nonce", self.tx_nonce, F::from(tx.nonce)),
+                ("block_num", self.block_num, F::from(tx.block_number)),
+                (
+                    "total_l1_popped_before",
+                    self.total_l1_popped_before,
+                    F::from(total_l1_popped_before),
+                ),
+                (
+                    "num_all_txs_acc",
+                    self.num_all_txs_acc,
+                    F::from(num_all_txs_acc),
+                ),
+                ("num_txs", self.num_txs, F::from(num_txs)),
+                ("cum_num_txs", self.cum_num_txs, F::from(cum_num_txs)),
+                // tx meta info
+                (
+                    "is_padding_tx",
+                    self.is_padding_tx,
+                    F::from(tx.caller_address.is_zero() as u64),
+                ),
+                (
+                    "sv_address",
+                    self.sv_address,
+                    sign_data.get_addr().to_scalar().unwrap(),
+                ),
+                // tx_tag related indicator columns
+                (
+                    "is_tag_calldata",
+                    self.is_calldata,
+                    F::from((tx_tag == CallData) as u64),
+                ),
+                (
+                    "is_tag_block_num",
+                    self.is_tag_block_num,
+                    F::from((tx_tag == BlockNumber) as u64),
+                ),
+                (
+                    "is_tag_chain_id",
+                    self.is_chain_id,
+                    F::from((tx_tag == ChainID) as u64),
+                ),
+                (
+                    "is_tag_caller_addr",
+                    self.is_caller_address,
+                    F::from((tx_tag == CallerAddress) as u64),
+                ),
+            ] {
+                region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
+            }
+
+            // 2nd phase columns
+            {
+                let (col_anno, col, col_val) =
+                    ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc);
+                region.assign_advice(|| col_anno, col, *offset, || col_val)?;
+            }
+
+            // lookup conditions
+            let mut conditions = HashMap::<LookupCondition, F>::new();
+            // 1. lookup to Tx table for CallDataLength and CallDataGasCost
             conditions.insert(LookupCondition::TxCalldata, {
-                let is_data_length = tag == CallDataLength;
+                let is_data_length = tx_tag == CallDataLength;
                 if is_data_length {
-                    value.map(|value| F::from(!value.is_zero_vartime() as u64))
+                    F::from(!tx.call_data.is_empty() as u64)
                 } else {
-                    Value::known(F::zero())
+                    F::zero()
                 }
             });
-            // lookup to RLP table for signing (non L1 msg)
+            // 2. lookup to RLP table for signing (non L1 msg)
             conditions.insert(LookupCondition::RlpSignTag, {
                 let sign_set = [
                     Nonce,
@@ -1804,12 +2048,12 @@ impl<F: Field> TxCircuitConfig<F> {
                     TxSignLength,
                     TxSignRLC,
                 ];
-                let is_tag_in_set = sign_set.into_iter().filter(|_tag| tag == *_tag).count() == 1;
+                let is_tag_in_set = sign_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 let case1 = is_tag_in_set && !is_l1_msg;
-                let case2 = (tag == ChainID) && tx.map_or(false, |tx| tx.tx_type.is_eip155_tx());
-                Value::known(F::from((case1 || case2) as u64))
+                let case2 = tx.tx_type.is_eip155_tx() && (tx_tag == ChainID);
+                F::from((case1 || case2) as u64)
             });
-            // lookup to RLP table for hashing (non L1 msg)
+            // 3. lookup to RLP table for hashing (non L1 msg)
             conditions.insert(LookupCondition::RlpHashTag, {
                 let hash_set = [
                     Nonce,
@@ -1825,10 +2069,10 @@ impl<F: Field> TxCircuitConfig<F> {
                     TxHashLength,
                     TxHashRLC,
                 ];
-                let is_tag_in_set = hash_set.into_iter().filter(|_tag| tag == *_tag).count() == 1;
-                Value::known(F::from((!is_l1_msg && is_tag_in_set) as u64))
+                let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
+                F::from((!is_l1_msg && is_tag_in_set) as u64)
             });
-            // lookup to RLP table for hashing (L1 msg)
+            // 4. lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
                 let hash_set = [
                     Nonce,
@@ -1841,132 +2085,184 @@ impl<F: Field> TxCircuitConfig<F> {
                     TxHashRLC,
                 ];
 
-                let is_tag_in_set = hash_set.into_iter().filter(|_tag| tag == *_tag).count() == 1;
-                Value::known(F::from((is_l1_msg && is_tag_in_set) as u64))
+                let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
+                F::from((is_l1_msg && is_tag_in_set) as u64)
             });
-            // lookup to Keccak table for tx_sign_hash and tx_hash
+            // 5. lookup to Keccak table for tx_sign_hash and tx_hash
             conditions.insert(LookupCondition::Keccak, {
-                let case1 = (tag == TxSignLength) && !is_l1_msg;
-                let case2 = tag == TxHashLength;
-                Value::known(F::from((case1 || case2) as u64))
+                let case1 = (tx_tag == TxSignLength) && !is_l1_msg;
+                let case2 = tx_tag == TxHashLength;
+                F::from((case1 || case2) as u64)
             });
-        }
-        for (condition, value) in conditions {
-            region.assign_advice(
-                || format!("lookup condition {condition:?}"),
-                self.lookup_conditions[&condition],
+
+            // lookup conditions are 1st phase cols
+            for (condition, value) in conditions {
+                region.assign_advice(
+                    || format!("lookup condition {condition:?}"),
+                    self.lookup_conditions[&condition],
+                    *offset,
+                    || Value::known(value),
+                )?;
+            }
+
+            // assign chips
+            let block_num_unchanged_chip = IsEqualChip::construct(self.block_num_unchanged.clone());
+            block_num_unchanged_chip.assign(
+                region,
                 *offset,
-                || value,
+                Value::known(F::from(next_tx.map_or(0, |tx| tx.block_number))),
+                Value::known(F::from(tx.block_number)),
             )?;
+            let tx_id_cmp_cum_num_txs =
+                ComparatorChip::construct(self.tx_id_cmp_cum_num_txs.clone());
+            tx_id_cmp_cum_num_txs.assign(
+                region,
+                *offset,
+                F::from(tx.id as u64),
+                F::from(cum_num_txs),
+            )?;
+            let tx_id_gt_prev_cnt = LtChip::construct(self.tx_id_gt_prev_cnt);
+            tx_id_gt_prev_cnt.assign(
+                region,
+                *offset,
+                F::from(cum_num_txs - num_txs),
+                F::from(tx.id as u64),
+            )?;
+
+            *offset += 1;
+        }
+        Ok(tx_value_cells)
+    }
+
+    /// Assign calldata byte rows of each tx
+    fn assign_calldata_rows(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: &mut usize,
+        tx: &Transaction,
+        next_tx: Option<&Transaction>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        // assign to call_data related columns
+        let mut gas_cost_acc = 0;
+        let mut rlc = challenges.keccak_input().map(|_| F::zero());
+        for (idx, byte) in tx.call_data.iter().enumerate() {
+            let is_final = idx == (tx.call_data.len() - 1);
+            gas_cost_acc += if *byte == 0 { 4 } else { 16 };
+            rlc = rlc
+                .zip(challenges.keccak_input())
+                .map(|(rlc, keccak_input)| rlc * keccak_input + F::from(*byte as u64));
+            // the tx id of next row
+            let tx_id_next = if !is_final {
+                tx.id
+            } else {
+                next_tx.map_or(0, |tx| tx.id)
+            };
+
+            self.assign_common_part(
+                region,
+                *offset,
+                Some(tx),
+                tx_id_next,
+                CallData,
+                idx as u64,
+                Value::known(F::from(*byte as u64)),
+            )?;
+
+            // 1st phase columns
+            for (col_anno, col, col_val) in [
+                ("block_num", self.block_num, F::from(tx.block_number)),
+                ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64)),
+                ("is_final", self.is_final, F::from(is_final as u64)),
+                (
+                    "gas_cost_acc",
+                    self.calldata_gas_cost_acc,
+                    F::from(gas_cost_acc),
+                ),
+                ("byte", self.calldata_byte, F::from(*byte as u64)),
+                ("is_calldata", self.is_calldata, F::one()),
+            ] {
+                region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
+            }
+
+            // 2nd phase columns
+            region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || rlc)?;
+
+            *offset += 1;
         }
 
-        // assign to columns which are used to reduce degree
-        region.assign_advice(
-            || "is_l1_msg",
-            self.is_l1_msg,
-            *offset,
-            || Value::known(F::from(is_l1_msg as u64)),
-        )?;
-        region.assign_advice(
-            || "is_tag_block_num",
-            self.is_tag_block_num,
-            *offset,
-            || Value::known(F::from((tag == BlockNumber) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_chain_id",
-            self.is_chain_id,
-            *offset,
-            || Value::known(F::from((tag == ChainID) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_caller_address",
-            self.is_caller_address,
-            *offset,
-            || Value::known(F::from((tag == CallerAddress) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_calldata",
-            self.is_calldata,
-            *offset,
-            || Value::known(F::from((tag == CallData) as u64)),
-        )?;
+        Ok(())
+    }
+
+    // Assigns to common columns in different parts of tx circuit
+    // 1. 1st all zero row
+    // 2. fixed rows of each tx
+    // 3. calldata rows of dynamic size
+    #[allow(clippy::too_many_arguments)]
+    fn assign_common_part(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        tx: Option<&Transaction>,
+        tx_id_next: usize,
+        tag: TxFieldTag,
+        index: u64,
+        value: Value<F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        let (tx_type, tx_id) = if let Some(tx) = tx {
+            (tx.tx_type, tx.id)
+        } else {
+            // tx is None if this row is 1st all-zero row.
+            assert_eq!(offset, 0);
+            (Default::default(), 0)
+        };
+        let tag_chip = BinaryNumberChip::construct(self.tx_tag_bits);
+        tag_chip.assign(region, offset, &tag)?;
+        let tx_type_chip = BinaryNumberChip::construct(self.tx_type_bits);
+        tx_type_chip.assign(region, offset, &tx_type)?;
 
         // assign to is_zero/is_equal chips
         let tx_id_is_zero_chip = IsZeroChip::construct(self.tx_id_is_zero.clone());
-        tx_id_is_zero_chip.assign(region, *offset, Value::known(F::from(tx_id as u64)))?;
+        tx_id_is_zero_chip.assign(region, offset, Value::known(F::from(tx_id as u64)))?;
 
         let value_is_zero_chip = IsZeroChip::construct(self.value_is_zero.clone());
-        value_is_zero_chip.assign(region, *offset, value)?;
+        value_is_zero_chip.assign(region, offset, value)?;
 
         let tx_id_unchanged_chip = IsEqualChip::construct(self.tx_id_unchanged.clone());
         tx_id_unchanged_chip.assign(
             region,
-            *offset,
+            offset,
             Value::known(F::from(tx_id as u64)),
             Value::known(F::from(tx_id_next as u64)),
         )?;
 
-        // assign to call_data related columns
-        region.assign_advice(
-            || "is_final",
-            self.is_final,
-            *offset,
-            || Value::known(F::from(is_final.unwrap_or(false) as u64)),
-        )?;
-        region.assign_advice(
-            || "calldata_gas_cost_acc",
-            self.calldata_gas_cost_acc,
-            *offset,
-            || Value::known(F::from(calldata_gas_cost_acc.unwrap_or_default())),
-        )?;
-        region.assign_advice(
-            || "calldata_rlc",
-            self.calldata_rlc,
-            *offset,
-            || calldata_rlc.unwrap_or(Value::known(F::zero())),
-        )?;
-        if tag == CallData {
-            region.assign_advice(|| "calldata_byte", self.calldata_byte, *offset, || value)?;
+        // fixed columns
+        for (col_anno, col, col_val) in [
+            ("q_enable", self.tx_table.q_enable, F::one()),
+            ("tag", self.tx_table.tag, F::from(usize::from(tag) as u64)),
+        ] {
+            region.assign_fixed(|| col_anno, col, offset, || Value::known(col_val))?;
         }
 
-        // assign to
-        region.assign_advice(
-            || "is_padding_tx",
-            self.is_padding_tx,
-            *offset,
-            || Value::known(F::from(is_padding_tx.unwrap_or(false) as u64)),
-        )?;
-        let tx_id_cmp_cum_num_txs = ComparatorChip::construct(self.tx_id_cmp_cum_num_txs.clone());
-        tx_id_cmp_cum_num_txs.assign(
-            region,
-            *offset,
-            F::from(tx_id as u64),
-            F::from(cum_num_txs.unwrap_or_default() as u64),
-        )?;
-        let tx_id_gt_prev_cnt = LtChip::construct(self.tx_id_gt_prev_cnt);
-        tx_id_gt_prev_cnt.assign(
-            region,
-            *offset,
-            F::from((cum_num_txs.unwrap_or_default() - num_txs.unwrap_or_default()) as u64),
-            F::from(tx_id as u64),
-        )?;
-        region.assign_advice(
-            || "cum_num_txs",
-            self.cum_num_txs,
-            *offset,
-            || Value::known(F::from(cum_num_txs.unwrap_or_default() as u64)),
-        )?;
-        region.assign_advice(
-            || "num_txs",
-            self.num_txs,
-            *offset,
-            || Value::known(F::from(num_txs.unwrap_or_default() as u64)),
-        )?;
+        // 1st phase columns
+        for (col_anno, col, col_val) in [
+            // note that tx_table.index is not assigned in this function
+            ("tx_id", self.tx_table.tx_id, F::from(tx_id as u64)),
+            ("tx_index", self.tx_table.index, F::from(index)),
+            ("tx_type", self.tx_type, F::from(u64::from(tx_type))),
+            (
+                "is_l1_msg",
+                self.is_l1_msg,
+                F::from(tx_type.is_l1_msg() as u64),
+            ),
+        ] {
+            region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
+        }
+        // 2nd phase columns
+        let tx_value_cell =
+            region.assign_advice(|| "tx_value", self.tx_table.value, offset, || value)?;
 
-        *offset += 1;
-
-        Ok(())
+        Ok(tx_value_cell)
     }
 
     fn assign_calldata_zeros(
@@ -2068,6 +2364,8 @@ pub struct TxCircuit<F: Field> {
     pub start_l1_queue_index: u64,
     /// Size
     pub size: usize,
+    /// Tx value cells (exported for PI circuit)
+    pub value_cells: RefCell<Option<Vec<AssignedCell<F, F>>>>,
     _marker: PhantomData<F>,
 }
 
@@ -2095,6 +2393,7 @@ impl<F: Field> TxCircuit<F> {
             size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
             start_l1_queue_index,
+            value_cells: RefCell::new(None),
             _marker: PhantomData::default(),
         }
     }
@@ -2242,8 +2541,8 @@ impl<F: Field> TxCircuit<F> {
         start_l1_queue_index: u64,
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
-    ) -> Result<(), Error> {
-        let last_off = layouter.assign_region(
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        layouter.assign_region(
             || "tx table aux",
             |mut region| {
                 let mut offset = 0;
@@ -2252,63 +2551,41 @@ impl<F: Field> TxCircuit<F> {
 
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
 
-                let mut cum_num_txs;
+                let mut cum_num_txs = 0;
                 let mut num_txs;
-                let mut is_padding_tx;
                 let mut num_all_txs_acc = 0;
                 let mut total_l1_popped_before = start_l1_queue_index;
                 let mut total_l1_popped_after = start_l1_queue_index;
-                // Empty entry
-                config.assign_row(
-                    &mut region,
-                    &mut offset,
-                    None,
-                    0,                         // tx_id
-                    !sigs.is_empty() as usize, // tx_id_next
-                    TxFieldTag::Null,
-                    Value::known(F::zero()),
-                    challenges.keccak_input().map(|_| F::zero()),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )?;
 
+                // 1. Empty entry
                 region.assign_fixed(|| "q_first", config.q_first, 0, || Value::known(F::one()))?;
-                let zero_rlc = challenges.keccak_input().map(|_| F::zero());
+                config.assign_null_row(&mut region, &mut offset)?;
 
-                // Assign all tx fields except for call data
-                for (i, sign_data) in sigs.iter().enumerate() {
-                    let tx = if i < self.txs.len() {
+                // 2. Assign all tx fields except for call data
+                let get_tx = |i: usize| {
+                    if i < self.txs.len() {
                         &self.txs[i]
                     } else {
                         &padding_txs[i - self.txs.len()]
-                    };
+                    }
+                };
+
+                let mut tx_value_cells = vec![];
+                for (i, sign_data) in sigs.iter().enumerate() {
+                    let tx = get_tx(i);
                     let block_num = tx.block_number;
-                    let rlp_unsigned_tx_be_bytes = tx.rlp_unsigned.clone();
-                    let rlp_signed_tx_be_bytes = tx.rlp_signed.clone();
+                    // get each tx's
                     if i < self.txs.len() {
                         cum_num_txs = self
                             .txs
                             .iter()
                             .filter(|tx| tx.block_number <= block_num)
-                            .count();
+                            .count() as u64;
                         num_txs = self
                             .txs
                             .iter()
                             .filter(|tx| tx.block_number == block_num)
-                            .count();
-                        log::info!("num_txs: {}", num_txs);
-                        is_padding_tx = false;
+                            .count() as u64;
                         let mut init_new_block = |tx: &Transaction| {
                             if tx.tx_type.is_l1_msg() {
                                 let queue_index = tx.nonce;
@@ -2336,429 +2613,77 @@ impl<F: Field> TxCircuit<F> {
                             }
                         }
                     } else {
-                        cum_num_txs = 0;
-                        num_txs = 0;
-                        is_padding_tx = true;
+                        num_txs = 0_u64;
                         // padding_tx is an l2 tx
                         num_all_txs_acc = (i - self.txs.len() + 1) as u64;
                     }
-
-                    let tx_sign_hash = {
-                        challenges.evm_word().map(|rand| {
-                            sign_data
-                                .msg
-                                .to_vec()
-                                .into_iter()
-                                .fold(F::zero(), |acc, byte| acc * rand + F::from(byte as u64))
-                        })
+                    let is_last_tx = i == (sigs.len() - 1);
+                    let next_tx = if is_last_tx {
+                        self.txs.iter().find(|tx| !tx.call_data.is_empty())
+                    } else {
+                        Some(get_tx(i+1))
                     };
-                    log::debug!("calldata len: {}", tx.call_data.len());
-                    for (tag, rlp_tag, is_none, be_bytes_rlc, be_bytes_length, value) in [
-                        // need to be in same order as that tx table load function uses
-                        (
-                            Nonce,
-                            Some(Tag::Nonce.into()), // lookup into RLP table
-                            Some(tx.nonce == 0),
-                            rlc_be_bytes(&tx.nonce.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.nonce.tag_length()),
-                            Value::known(F::from(tx.nonce)),
-                        ),
-                        (
-                            GasPrice,
-                            Some(Tag::GasPrice.into()),
-                            Some(tx.gas_price.is_zero()),
-                            rlc_be_bytes(&tx.gas_price.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.gas_price.tag_length()),
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
-                        ),
-                        (
-                            Gas,
-                            Some(Tag::Gas.into()),
-                            Some(tx.gas == 0),
-                            rlc_be_bytes(&tx.gas.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.gas.tag_length()),
-                            Value::known(F::from(tx.gas)),
-                        ),
-                        (
-                            CallerAddress,
-                            Some(Tag::Sender.into()),
-                            None,
-                            rlc_be_bytes(
-                                &tx.caller_address.to_fixed_bytes(),
-                                challenges.keccak_input(),
-                            ),
-                            Some(tx.caller_address.tag_length()),
-                            Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
-                        ),
-                        (
-                            CalleeAddress,
-                            Some(Tag::To.into()),
-                            Some(tx.callee_address.is_none()),
-                            rlc_be_bytes(
-                                &tx.callee_address
-                                    .map_or(vec![], |callee| callee.to_fixed_bytes().to_vec()),
-                                challenges.keccak_input(),
-                            ),
-                            Some(tx.callee_address.tag_length()),
-                            Value::known(
-                                tx.callee_address
-                                    .unwrap_or(Address::zero())
-                                    .to_scalar()
-                                    .expect("tx.to too big"),
-                            ),
-                        ),
-                        (
-                            IsCreate,
-                            None, // do not lookup into RLP table
-                            None,
-                            zero_rlc,
-                            None,
-                            Value::known(F::from(tx.is_create as u64)),
-                        ),
-                        (
-                            TxFieldTag::Value,
-                            Some(Tag::Value.into()),
-                            Some(tx.value.is_zero()),
-                            rlc_be_bytes(&tx.value.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.value.tag_length()),
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.value.to_le_bytes(), challenge)),
-                        ),
-                        (
-                            CallDataRLC,
-                            Some(Tag::Data.into()),
-                            Some(tx.call_data.is_empty()),
-                            rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
-                            Some(tx.call_data.tag_length()),
-                            rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
-                        ),
-                        (
-                            CallDataLength,
-                            None,
-                            None,
-                            zero_rlc,
-                            None,
-                            Value::known(F::from(tx.call_data.len() as u64)),
-                        ),
-                        (
-                            CallDataGasCost,
-                            None,
-                            None,
-                            zero_rlc,
-                            None,
-                            Value::known(F::from(tx.call_data_gas_cost)),
-                        ),
-                        (
-                            TxDataGasCost,
-                            Some(GasCost),
-                            None,
-                            zero_rlc,
-                            None,
-                            Value::known(F::from(tx.tx_data_gas_cost)),
-                        ),
-                        (
-                            ChainID,
-                            Some(Tag::ChainId.into()),
-                            Some(tx.chain_id.is_zero()),
-                            rlc_be_bytes(&tx.chain_id.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.chain_id.tag_length()),
-                            Value::known(F::from(tx.chain_id)),
-                        ),
-                        (
-                            SigV,
-                            Some(Tag::SigV.into()),
-                            Some(tx.v.is_zero()),
-                            rlc_be_bytes(&tx.v.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.v.tag_length()),
-                            Value::known(F::from(tx.v)),
-                        ),
-                        (
-                            SigR,
-                            Some(Tag::SigR.into()),
-                            Some(tx.r.is_zero()),
-                            rlc_be_bytes(&tx.r.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.r.tag_length()),
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.r.to_le_bytes(), challenge)),
-                        ),
-                        (
-                            SigS,
-                            Some(Tag::SigS.into()),
-                            Some(tx.s.is_zero()),
-                            rlc_be_bytes(&tx.s.to_be_bytes(), challenges.keccak_input()),
-                            Some(tx.s.tag_length()),
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.s.to_le_bytes(), challenge)),
-                        ),
-                        (
-                            TxSignLength,
-                            Some(Len),
-                            Some(false),
-                            zero_rlc,
-                            Some(rlp_unsigned_tx_be_bytes.len().tag_length()),
-                            Value::known(F::from(rlp_unsigned_tx_be_bytes.len() as u64)),
-                        ),
-                        (
-                            TxSignRLC,
-                            Some(RLC),
-                            Some(false),
-                            zero_rlc,
-                            None,
-                            challenges.keccak_input().map(|rand| {
-                                rlp_unsigned_tx_be_bytes
-                                    .iter()
-                                    .fold(F::zero(), |acc, byte| acc * rand + F::from(*byte as u64))
-                            }),
-                        ),
-                        (TxSignHash, None, None, zero_rlc, None, tx_sign_hash),
-                        (
-                            TxHashLength,
-                            Some(Len),
-                            Some(false),
-                            zero_rlc,
-                            Some(rlp_signed_tx_be_bytes.len().tag_length()),
-                            Value::known(F::from(rlp_signed_tx_be_bytes.len() as u64)),
-                        ),
-                        (
-                            TxHashRLC,
-                            Some(RLC),
-                            Some(false),
-                            zero_rlc,
-                            None,
-                            challenges.keccak_input().map(|rand| {
-                                rlp_signed_tx_be_bytes
-                                    .iter()
-                                    .fold(F::zero(), |acc, byte| acc * rand + F::from(*byte as u64))
-                            }),
-                        ),
-                        (
-                            TxFieldTag::TxHash,
-                            None,
-                            None,
-                            zero_rlc,
-                            None,
-                            challenges.evm_word().map(|challenge| {
-                                tx.hash
-                                    .to_fixed_bytes()
-                                    .into_iter()
-                                    .fold(F::zero(), |acc, byte| {
-                                        acc * challenge + F::from(byte as u64)
-                                    })
-                            }),
-                        ),
-                        (
-                            TxFieldTag::TxType,
-                            None,
-                            None,
-                            zero_rlc,
-                            None,
-                            Value::known(F::from(tx.tx_type as u64)),
-                        ),
-                        (
-                            BlockNumber,
-                            None,
-                            None,
-                            zero_rlc,
-                            None,
-                            Value::known(F::from(tx.block_number)),
-                        ),
-                    ] {
-                        let (tx_id_next, cur_block_num, next_block_num) = match tag {
-                            BlockNumber => {
-                                log::debug!(
-                                    "tx_id: {}, block_num: {}, num_all_txs_acc: {}",
-                                    i,
-                                    tx.block_number,
-                                    num_all_txs_acc
-                                );
-                                if i == sigs.len() - 1 {
-                                    (
-                                        self.txs
-                                            .iter()
-                                            .enumerate()
-                                            .find(|(_i, tx)| !tx.call_data.is_empty())
-                                            .map(|(i, _tx)| i + 1)
-                                            .unwrap_or_else(|| 0),
-                                        tx.block_number,
-                                        0,
-                                    )
-                                } else {
-                                    // tx_id in tx table starts with 1
-                                    if i + 1 >= self.txs.len() {
-                                        (i + 2, tx.block_number, padding_txs[0].block_number)
-                                    } else {
-                                        (i + 2, tx.block_number, self.txs[i + 1].block_number)
-                                    }
-                                }
-                            }
-                            _ => (i + 1, tx.block_number, tx.block_number), /* tx_id in tx table
-                                                                             * starts with 1 */
-                        };
-                        config.assign_row(
+                    log::debug!(
+                        "[block_num: {}, num_txs: {}, cum_num_txs: {}] tx_id: {}, num_all_txs_acc: {}",
+                        tx.block_number,
+                        num_txs,
+                        cum_num_txs,
+                        i,
+                        num_all_txs_acc,
+                    );
+                    tx_value_cells.extend_from_slice(
+                        config.assign_fixed_rows(
                             &mut region,
                             &mut offset,
-                            Some(tx),
-                            i + 1,      // tx_id
-                            tx_id_next, // tx_id_next
-                            tag,
-                            value,
-                            be_bytes_rlc,
-                            be_bytes_length,
-                            rlp_tag,
-                            is_none,
-                            Some(is_padding_tx),
-                            Some(cum_num_txs),
-                            Some(num_txs),
-                            None,
-                            None,
-                            None,
-                            Some(cur_block_num),
-                            Some(next_block_num),
-                            Some(num_all_txs_acc),
-                            Some(total_l1_popped_before),
-                        )?;
-                        let sv_address: F = sign_data.get_addr().to_scalar().unwrap();
-                        region.assign_advice(
-                            || "sv_address",
-                            config.sv_address,
-                            offset - 1,
-                            || Value::known(sv_address),
-                        )?;
-                    }
+                            tx,
+                            sign_data,
+                            next_tx,
+                            total_l1_popped_before,
+                            num_all_txs_acc,
+                            num_txs,
+                            cum_num_txs,
+                            challenges,
+                        )?.as_slice()
+                    );
                     // set next tx's total_l1_popped_before
                     total_l1_popped_before = total_l1_popped_after;
                 }
-
-                log::debug!("assigning calldata, offset {}", offset);
                 assert_eq!(offset, self.max_txs * TX_LEN + 1);
 
-                // Assign call data
-                let mut calldata_count = 0;
+                let calldata_first_row = self.max_txs * TX_LEN + 1;
+                let calldata_last_row = calldata_first_row + self.max_calldata;
+                // 3. Assign call data of txs
+                // 3.1 padding txs have no calldata bytes
                 for (i, tx) in self.txs.iter().enumerate() {
-                    let mut calldata_gas_cost = 0;
-                    let mut calldata_rlc = Value::known(F::zero());
-                    let calldata_length = tx.call_data.len();
-                    calldata_count += calldata_length;
-                    for (index, byte) in tx.call_data.iter().enumerate() {
-                        assert!(calldata_count < self.max_calldata);
-                        let (tx_id_next, is_final) = if index == calldata_length - 1 {
-                            if i == self.txs.len() - 1 {
-                                (0, true)
-                            } else {
-                                (
-                                    self.txs
-                                        .iter()
-                                        .enumerate()
-                                        .skip(i + 1)
-                                        .find(|(_, tx)| !tx.call_data.is_empty())
-                                        .map(|(j, _)| j + 1)
-                                        .unwrap_or_else(|| 0),
-                                    true,
-                                )
-                            }
-                        } else {
-                            (i + 1, false)
-                        };
-                        calldata_gas_cost += if byte.is_zero() { 4 } else { 16 };
-                        if i == 0 && index == 0 {
-                            region.assign_fixed(
-                                || "q_calldata_first",
-                                config.q_calldata_first,
-                                offset,
-                                || Value::known(F::one()),
-                            )?;
-                        }
-                        calldata_rlc = calldata_rlc
-                            .zip(challenges.keccak_input())
-                            .map(|(rlc, r)| rlc * r + F::from(*byte as u64));
-                        config.assign_row(
-                            &mut region,
-                            &mut offset,
-                            Some(tx),
-                            i + 1,      // tx_id
-                            tx_id_next, // tx_id_next
-                            CallData,
-                            Value::known(F::from(*byte as u64)),
-                            zero_rlc,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(is_final),
-                            Some(calldata_gas_cost),
-                            Some(calldata_rlc),
-                            None,
-                            None,
-                            None,
-                            None,
-                        )?;
-                    }
-                }
-
-                assert!(calldata_count <= self.max_calldata);
-                let q_calldata_last_offset = self.max_txs * TX_LEN + self.max_calldata;
-                if offset == q_calldata_last_offset + 1 {
-                    region.assign_fixed(
-                        || "q_calldata_last",
-                        config.q_calldata_last,
-                        q_calldata_last_offset,
-                        || Value::known(F::one()),
+                    let next_tx = self
+                        .txs
+                        .iter()
+                        .skip(i + 1)
+                        .find(|tx| !tx.call_data.is_empty());
+                    config.assign_calldata_rows(
+                        &mut region,
+                        &mut offset,
+                        tx,
+                        next_tx,
+                        challenges,
                     )?;
                 }
-                debug_assert_eq!(offset, self.max_txs * TX_LEN + 1 + calldata_count);
-
-                Ok(offset)
-            },
-        )?;
-        if last_off + config.minimum_rows > self.size {
-            log::error!(
-                "circuit size not enough, last offset {}, minimum_rows {}, self.size {}",
-                last_off,
-                config.minimum_rows,
-                self.size
-            );
-        }
-        layouter.assign_region(
-            || "tx table (calldata zeros and paddings)",
-            |mut region| {
-                if last_off == self.max_txs * TX_LEN + 1 {
-                    // The txs do not have any call data bytes
-                    // Therefore q_calldata_first is not assigned in prev region.
-                    region.assign_fixed(
-                        || "q_calldata_first",
-                        config.q_calldata_first,
-                        0,
-                        || Value::known(F::one()),
-                    )?;
-                }
-                if last_off < self.max_txs * TX_LEN + 1 + self.max_calldata {
-                    let calldata_count = last_off - self.max_txs * TX_LEN - 1;
-                    region.assign_fixed(
-                        || "q_calldata_last",
-                        config.q_calldata_last,
-                        self.max_calldata - calldata_count - 1,
-                        || Value::known(F::one()),
-                    )?;
-                }
+                assert!(offset <= calldata_last_row, "{offset}, {calldata_last_row}");
+                // 3.2 pad calldata with zeros
                 config.assign_calldata_zeros(
                     &mut region,
-                    0,
-                    self.max_calldata + self.max_txs * TX_LEN + 1 - last_off,
+                    offset,
+                    calldata_last_row,
                 )?;
-                config.assign_paddings(
-                    &mut region,
-                    self.max_calldata + self.max_txs * TX_LEN + 1 - last_off,
-                    self.size - config.minimum_rows - last_off,
-                )?;
+                // 3.3. assign first and last indicators
+                for (col_anno, col, row) in [
+                    ("q_calldata_first", config.q_calldata_first, calldata_first_row),
+                    ("q_calldata_last", config.q_calldata_last, calldata_last_row-1),
+                ] {
+                    region.assign_fixed(|| col_anno, col, row, || Value::known(F::one()))?;
+                }
 
-                Ok(())
+                Ok(tx_value_cells)
             },
         )
     }
@@ -2861,7 +2786,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             }
         }
 
-        self.assign(
+        let tx_value_cells = self.assign(
             config,
             challenges,
             layouter,
@@ -2869,6 +2794,8 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             sign_datas,
             &padding_txs,
         )?;
+        // export tx value cells
+        *self.value_cells.borrow_mut() = Some(tx_value_cells);
 
         Ok(())
     }

@@ -17,41 +17,48 @@ use std::{
 pub fn load_statetests_suite(
     path: &str,
     config: Config,
-    mut compiler: Compiler,
+    compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
     let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
-    let files = glob::glob(path)
+    let tcs = glob::glob(path)
         .context("failed to read glob")?
         .filter_map(|v| v.ok())
         .filter(|f| {
             !skip_paths
                 .iter()
                 .any(|e| f.as_path().to_string_lossy().contains(*e))
-        });
+        })
+        .par_bridge()
+        .filter_map(|file| {
+            file.extension().and_then(|ext| {
+                let ext = &*ext.to_string_lossy();
+                if !["yml", "json"].contains(&ext) {
+                    return None;
+                }
+                let path = file.as_path().to_string_lossy();
+                let tcs = (|| -> Result<Vec<StateTest>> {
+                    let src = std::fs::read_to_string(&file)?;
+                    log::debug!(target: "testool", "Reading file {:?}", file);
+                    let mut tcs = match ext {
+                        "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src)?,
+                        "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src)?,
+                        _ => unreachable!(),
+                    };
 
-    let mut tests = Vec::new();
-    for file in files {
-        if let Some(ext) = file.extension() {
-            let ext = &*ext.to_string_lossy();
-            if !["yml", "json"].contains(&ext) {
-                continue;
-            }
-            let path = file.as_path().to_string_lossy();
-            let src = std::fs::read_to_string(&file)?;
-            log::debug!(target: "testool", "Reading file {:?}", file);
-            let mut tcs = match ext {
-                "yml" => YamlStateTestBuilder::new(&mut compiler).load_yaml(&path, &src)?,
-                "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
-                _ => unreachable!(),
-            };
+                    tcs.retain(|v| !skip_tests.contains(&&v.id));
+                    Ok(tcs)
+                })();
 
-            tcs.retain(|v| !skip_tests.contains(&&v.id));
-            tests.append(&mut tcs);
-        }
-    }
-    Ok(tests)
+                Some(tcs)
+            })
+        })
+        .collect::<Result<Vec<Vec<StateTest>>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<StateTest>>();
+    Ok(tcs)
 }
 
 pub fn run_statetests_suite(

@@ -247,7 +247,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         const NUM_BLINDING_ROWS: usize = 64;
         // Run evm circuit test
         if let Some(evm_checks) = &self.evm_checks {
-            let k = block.get_test_degree();
+            let k = block.get_evm_test_circuit_degree();
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = EvmCircuit::get_test_cicuit_from_block(block.clone());
@@ -277,7 +277,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // Run copy circuit test
         if let Some(copy_checks) = &self.copy_checks {
             let (active_rows, max_rows) = CopyCircuit::<Fr>::min_num_rows_block(&block);
-            let k1 = block.get_test_degree();
+            let k1 = block.get_evm_test_circuit_degree();
             let k2 = log2_ceil(max_rows + NUM_BLINDING_ROWS);
             let k = k1.max(k2);
             let copy_circuit = CopyCircuit::<Fr>::new_from_block(&block);

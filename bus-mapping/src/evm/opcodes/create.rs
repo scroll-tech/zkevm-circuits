@@ -254,7 +254,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // precheck failed
         if !is_precheck_ok {
             for (field, value) in [
-                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeId, callee.call_id.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
@@ -324,12 +324,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         if length == 0 || is_address_collision {
             for (field, value) in [
-                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeId, callee.call_id.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value);
             }
+            state.caller_ctx_mut()?.return_data.clear();
             state.handle_return(&mut exec_step, geth_steps, false)?;
         }
 

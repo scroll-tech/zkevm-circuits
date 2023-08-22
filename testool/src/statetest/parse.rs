@@ -61,7 +61,7 @@ fn decompose_tags(expr: &str) -> HashMap<String, String> {
 
 /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
 /// { LLL }
-pub fn parse_calldata(compiler: &mut Compiler, as_str: &str) -> Result<(Bytes, Option<Label>)> {
+pub fn parse_calldata(compiler: &Compiler, as_str: &str) -> Result<(Bytes, Option<Label>)> {
     let tags = decompose_tags(as_str);
     let label = tags.get(":label").cloned();
 
@@ -96,7 +96,7 @@ pub fn parse_calldata(compiler: &mut Compiler, as_str: &str) -> Result<(Bytes, O
 }
 
 /// parse entry as code, can be 0x, :raw or { LLL }
-pub fn parse_code(compiler: &mut Compiler, as_str: &str) -> Result<Bytes> {
+pub fn parse_code(compiler: &Compiler, as_str: &str) -> Result<Bytes> {
     let tags = decompose_tags(as_str);
 
     let code = if let Some(notag) = tags.get("") {

@@ -148,20 +148,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     let sig = wallet.sign_transaction_sync(&tx);
     let rlp_signed = tx.rlp_signed(&sig).to_vec();
     let tx_hash = keccak256(tx.rlp_signed(&sig));
-    let mut accounts = st.pre;
-    for i in 1..=9 {
-        let mut addr_bytes = [0u8; 20];
-        addr_bytes[19] = i as u8;
-        let address = Address::from(addr_bytes);
-        accounts
-            .entry(address)
-            .or_insert(eth_types::geth_types::Account {
-                // balance: 1.into(),
-                // nonce: 1.into(),
-                address,
-                ..Default::default()
-            });
-    }
+    let accounts = st.pre;
 
     (
         st.id,
@@ -322,14 +309,14 @@ pub fn run_test(
     if !circuits_config.super_circuit {
         let circuits_params = CircuitsParams {
             max_txs: 1,
-            max_rws: 0,
-            max_calldata: 5000,
+            max_rws: 0,      // dynamic
+            max_calldata: 0, // dynamic
             max_bytecode: 5000,
             max_mpt_rows: 5000,
             max_copy_rows: 55000,
-            max_evm_rows: 0,
+            max_evm_rows: 0, // dynamic
             max_exp_steps: 5000,
-            max_keccak_rows: 0,
+            max_keccak_rows: 0, // dynamic?
             max_inner_blocks: 64,
             max_rlp_rows: 6000,
             max_ec_ops: PrecompileEcParams {
