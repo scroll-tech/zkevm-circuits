@@ -131,14 +131,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller_nonce.into(),
         );
 
-        // read callee nonce for address collision checking
-        state.account_read(
-            &mut exec_step,
-            callee.address,
-            AccountField::Nonce,
-            callee_account.nonce,
-        );
-
         // Check if an error of ErrDepth, ErrInsufficientBalance or
         // ErrNonceUintOverflow occurred.
         let is_precheck_ok =
@@ -206,6 +198,14 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             address,
             AccountField::CodeHash,
             code_hash_previous.to_word(),
+        );
+
+        // read callee nonce for address collision checking
+        state.account_read(
+            &mut exec_step,
+            address,
+            AccountField::Nonce,
+            callee_account.nonce,
         );
 
         if is_precheck_ok && !is_address_collision {
