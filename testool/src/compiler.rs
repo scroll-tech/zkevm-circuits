@@ -81,10 +81,11 @@ enum Language {
     Yul,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CompilerSettings {
     optimizer: Optimizer,
+    evm_version: String,
     output_selection: HashMap<String, HashMap<String, Vec<String>>>,
 }
 
@@ -102,7 +103,7 @@ struct Source {
 }
 
 impl CompilerInput {
-    pub fn new_default(language: Language, src: &str) -> Self {
+    pub fn new_default(language: Language, src: &str, evm_version: Option<&str>) -> Self {
         let mut sources = HashMap::new();
         sources.insert(
             "stdin".to_string(),
@@ -112,19 +113,20 @@ impl CompilerInput {
         );
         CompilerInput {
             language,
-            settings: Default::default(),
+            settings: CompilerSettings::new_default(evm_version),
             sources,
         }
     }
 }
 
-impl Default for CompilerSettings {
-    fn default() -> Self {
+impl CompilerSettings {
+    fn new_default(evm_version: Option<&str>) -> Self {
         let mut output_selection = HashMap::new();
         let mut selection = HashMap::new();
         selection.insert("*".to_string(), vec!["evm.bytecode".to_string()]);
         output_selection.insert("*".to_string(), selection);
         CompilerSettings {
+            evm_version: evm_version.unwrap_or("paris").to_string(),
             optimizer: Default::default(),
             output_selection,
         }
@@ -301,22 +303,15 @@ impl Compiler {
         if !self.compile {
             bail!("No way to compile {:?} for '{}'", language, src)
         }
-        let compiler_input = CompilerInput::new_default(language, src);
+        let compiler_input = CompilerInput::new_default(language, src, evm_version);
 
         let stdout = Self::exec(
-            &[
-                "run",
-                "-i",
-                "--rm",
-                "solc",
-                "--standard-json",
-                "--evm-version",
-                evm_version.unwrap_or("paris"),
-                "-",
-            ],
+            &["run", "-i", "--rm", "solc", "--standard-json", "-"],
             serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
-        let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)?;
+        let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)
+            .map_err(|e| println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n-----"))
+            .unwrap();
         let bytecode = compilation_result
             .contracts
             .remove("stdin")

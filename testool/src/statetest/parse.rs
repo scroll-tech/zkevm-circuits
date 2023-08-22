@@ -11,7 +11,7 @@ use regex::Regex;
 type Label = String;
 
 static YUL_FRAGMENT_PARSER: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<code>\{[^}]+})"#).unwrap());
+    Lazy::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<code>\{[\S\s]*)"#).unwrap());
 
 /// returns the element as an address
 pub fn parse_address(as_str: &str) -> Result<Address> {
