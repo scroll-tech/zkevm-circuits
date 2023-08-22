@@ -126,7 +126,7 @@ impl CompilerSettings {
         selection.insert("*".to_string(), vec!["evm.bytecode".to_string()]);
         output_selection.insert("*".to_string(), selection);
         CompilerSettings {
-            evm_version: evm_version.unwrap_or("paris").to_string(),
+            evm_version: evm_version.unwrap_or("berlin").to_string(),
             optimizer: Default::default(),
             output_selection,
         }
