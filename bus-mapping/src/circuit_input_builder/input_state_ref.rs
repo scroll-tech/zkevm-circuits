@@ -1131,18 +1131,33 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Handle a restore and a return step caused by any opcode that causes a return to the
     /// previous call context.
-    /// `caller_ctx.return_data` should be updated **before** this method.
+    /// `caller_ctx.return_data` should be updated **before** this method (except error cases).
     pub fn handle_return(
         &mut self,
         exec_step: &mut ExecStep,
         geth_steps: &[GethExecStep],
         need_restore: bool,
     ) -> Result<(), Error> {
+        let step = &geth_steps[0];
+
+        // For these 6 opcodes, the return data should be handled in opcodes respectively.
+        // For other opcodes/states, return data must be empty.
+        if !matches!(
+            step.op,
+            OpcodeId::RETURN
+                | OpcodeId::REVERT
+                | OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL
+        ) {
+            if let Ok(caller) = self.caller_ctx_mut() {
+                caller.return_data.clear();
+            }
+        }
         if need_restore {
             self.handle_restore_context(exec_step, geth_steps)?;
         }
-
-        let step = &geth_steps[0];
 
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;

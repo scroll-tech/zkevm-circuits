@@ -185,10 +185,9 @@ fn go() -> Result<()> {
         let mut previous_results = if let Some(cache_filename) = cache_file_name {
             let whitelist_levels = HashSet::<ResultLevel>::from_iter(args.levels);
 
-            let mut previous_results = Results::from_file(cache_filename).unwrap_or_else(|_| {
-                log::warn!("malformed cache file, won't use cache");
-                Results::default()
-            });
+            let mut previous_results = Results::from_file(cache_filename).unwrap();
+
+            info!("loaded {} test results", previous_results.tests.len());
             if !whitelist_levels.is_empty() {
                 // if whitelist is provided, test not in whitelist will be skip
                 previous_results

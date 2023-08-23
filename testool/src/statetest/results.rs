@@ -209,6 +209,7 @@ pub struct Results {
 
 impl Results {
     pub fn from_file(path: PathBuf) -> Result<Self> {
+        log::info!("loading results from {}", path.display());
         let mut file = std::fs::File::open(&path)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
@@ -393,11 +394,11 @@ impl Results {
                 .create(true)
                 .append(true)
                 .open(path)?;
-            for (test_id, result) in &self.tests {
+            for result in self.tests.values() {
                 let entry = format!(
                     "{:?};{};{};{}\n",
                     result.level,
-                    test_id,
+                    result.test_id,
                     urlencoding::encode(&result.details),
                     result.path,
                 );
