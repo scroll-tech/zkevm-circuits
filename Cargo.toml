@@ -15,6 +15,7 @@ members = [
     "aggregator"
 ]
 
+
 [patch.crates-io]
 ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v0.17.0" }
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v0.17.0" }
