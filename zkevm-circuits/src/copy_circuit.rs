@@ -92,9 +92,6 @@ pub struct CopyCircuitConfig<F> {
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
     pub is_code: Column<Advice>,
-    /// Indicates whether or not the copy event copies bytes to a precompiled call or copies bytes
-    /// from a precompiled call back to caller.
-    pub is_precompiled: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
     pub is_tx_calldata: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
@@ -166,8 +163,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value_acc = meta.advice_column_in(SecondPhase);
 
         let is_code = meta.advice_column();
-        let (is_precompiled, is_tx_calldata, is_bytecode, is_memory, is_tx_log) = (
-            meta.advice_column(),
+        let (is_tx_calldata, is_bytecode, is_memory, is_tx_log) = (
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -214,7 +210,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             meta,
             q_enable,
             &tag,
-            is_precompiled,
             is_tx_calldata,
             is_bytecode,
             is_memory,
@@ -228,6 +223,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // Detect the first row of an event. When true, both reader and writer are initialized.
             let is_first = meta.query_advice(is_first, CURRENT);
             // Detect the last step of an event. This works on both reader and writer rows.
+            // This is a boolean since is_last cannot be true on both rows because of constraint
+            // "is_last == 0 when q_step == 1" and the alternating values of q_step.
             let is_last_step =
                 meta.query_advice(is_last, CURRENT) + meta.query_advice(is_last, NEXT_ROW);
             // Whether this row is part of an event but not the last step. When true, the next step
@@ -293,18 +290,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 challenges.keccak_input(),
             );
 
-            constrain_event_rlc_acc(
-                cb,
-                meta,
-                is_last_col,
-                value_acc,
-                rlc_acc,
-                is_precompiled,
-                is_memory,
-                is_tx_calldata,
-                is_bytecode,
-                tag,
-            );
+            constrain_event_rlc_acc(cb, meta, is_last_col, value_acc, rlc_acc, is_bytecode, tag);
 
             // Apply the same constraints for the RLCs of words before and after the write.
             let word_rlc_both = [(value_word_rlc, value), (value_word_rlc_prev, value_prev)];
@@ -464,7 +450,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             value_acc,
             is_pad,
             is_code,
-            is_precompiled,
             is_tx_calldata,
             is_bytecode,
             is_memory,
@@ -488,7 +473,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: &mut usize,
-        tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, { CopyDataType::N_BITS }>,
         is_src_end_chip: &IsEqualChip<F>,
         lt_word_end_chip: &IsEqualChip<F>,
         challenges: Challenges<Value<F>>,
@@ -583,14 +568,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 || Value::known(F::from(non_pad_non_mask)),
             )?;
 
-            // if the memory copy operation is related to precompile calls.
-            let is_precompiled = CopyDataType::precompile_types().contains(tag);
-            region.assign_advice(
-                || format!("is_precompiled at row: {}", *offset),
-                self.is_precompiled,
-                *offset,
-                || Value::known(F::from(is_precompiled)),
-            )?;
             region.assign_advice(
                 || format!("is_tx_calldata at row: {}", *offset),
                 self.is_tx_calldata,
@@ -724,7 +701,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         region: &mut Region<F>,
         offset: &mut usize,
         enabled: bool,
-        tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, { CopyDataType::N_BITS }>,
         is_src_end_chip: &IsEqualChip<F>,
         lt_word_end_chip: &IsEqualChip<F>,
     ) -> Result<(), Error> {
@@ -898,7 +875,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         )?;
 
         for column in [
-            self.is_precompiled,
             self.is_tx_calldata,
             self.is_bytecode,
             self.is_memory,

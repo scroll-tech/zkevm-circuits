@@ -1517,7 +1517,7 @@ pub struct CopyTable {
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
     /// TxLog. This also now includes various precompile calls, hence will take up more cells.
-    pub tag: BinaryNumberConfig<CopyDataType, 4>,
+    pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
@@ -1561,10 +1561,15 @@ impl CopyTable {
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
+        assert!(
+            copy_event.src_type != CopyDataType::Padding
+                && copy_event.dst_type != CopyDataType::Padding,
+            "Padding is an internal type"
+        );
 
         let mut assignments = Vec::new();
         // rlc_acc
-        let rlc_acc = {
+        let rlc_acc = if copy_event.has_rlc() {
             let values = copy_event
                 .copy_bytes
                 .bytes
@@ -1576,6 +1581,8 @@ impl CopyTable {
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
+        } else {
+            Value::known(F::zero())
         };
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
@@ -1710,17 +1717,7 @@ impl CopyTable {
                     (Value::known(addr), "addr"),
                     (Value::known(F::from(thread.addr_end)), "src_addr_end"),
                     (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
-                    (
-                        match (copy_event.src_type, copy_event.dst_type) {
-                            (CopyDataType::Precompile(_), _) => rlc_acc,
-                            (_, CopyDataType::Precompile(_)) => rlc_acc,
-                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
-                            (CopyDataType::TxCalldata, CopyDataType::Bytecode) => rlc_acc,
-                            (_, CopyDataType::RlcAcc) => rlc_acc,
-                            _ => Value::known(F::zero()),
-                        },
-                        "rlc_acc",
-                    ),
+                    (rlc_acc, "rlc_acc"),
                     (Value::known(F::from(rw_counter)), "rw_counter"),
                     (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
                 ],
