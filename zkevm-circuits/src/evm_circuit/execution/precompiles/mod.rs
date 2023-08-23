@@ -32,6 +32,9 @@ pub use ec_pairing::EcPairingGadget;
 mod identity;
 pub use identity::IdentityGadget;
 
+#[cfg(test)]
+pub(crate) mod tests;
+
 #[derive(Clone, Debug)]
 pub struct BasePrecompileGadget<F, const S: ExecutionState> {
     is_success: Cell<F>,

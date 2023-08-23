@@ -6,7 +6,7 @@ use halo2_proofs::{
     plonk::*,
 };
 
-mod execution;
+pub(crate) mod execution;
 pub mod param;
 pub(crate) mod step;
 pub mod table;

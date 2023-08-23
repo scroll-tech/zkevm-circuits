@@ -128,7 +128,7 @@ impl ModExpCircuitConfig {
     }
 }
 
-const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 24576;
+pub(crate) const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 24576;
 
 /// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]

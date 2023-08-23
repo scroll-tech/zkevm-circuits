@@ -121,7 +121,7 @@ mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
-mod precompiles;
+pub(crate) mod precompiles;
 mod push;
 mod return_revert;
 mod returndatacopy;
