@@ -394,7 +394,7 @@ impl Results {
                 .create(true)
                 .append(true)
                 .open(path)?;
-            for (_, result) in &self.tests {
+            for result in self.tests.values() {
                 let entry = format!(
                     "{:?};{};{};{}\n",
                     result.level,

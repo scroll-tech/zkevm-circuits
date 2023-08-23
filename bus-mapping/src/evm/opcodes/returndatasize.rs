@@ -28,7 +28,8 @@ impl Opcode for Returndatasize {
 
         // TODO: fix error in deposit_ether.json...
         let real_return_data_len = value.as_usize();
-        let local_return_data_len = state.call_ctx()?.return_data.len();
+        let call_ctx = state.call_ctx()?;
+        let local_return_data_len = call_ctx.return_data.len();
         if real_return_data_len != local_return_data_len {
             log::error!(
                 "return_data.len() != RETURNDATASIZE value, {} != {}, step: {:?}",
