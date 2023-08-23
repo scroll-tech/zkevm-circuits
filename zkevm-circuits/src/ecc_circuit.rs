@@ -489,33 +489,18 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             self.is_on_curve_or_infinity(ctx, ecc_chip, &qx, qx_is_zero, &qy, qy_is_zero);
 
         let point_p = EcPoint::construct(px, py);
-        let p_valid = ecc_chip.field_chip().range().gate().and(
-            ctx,
-            QuantumCell::Existing(px_valid),
-            QuantumCell::Existing(py_valid),
-        );
-        let p_valid = ecc_chip.field_chip().range().gate().and(
-            ctx,
-            QuantumCell::Existing(p_valid),
-            QuantumCell::Existing(p_is_on_curve_or_infinity),
-        );
-
         let point_q = EcPoint::construct(qx, qy);
-        let q_valid = ecc_chip.field_chip().range().gate().and(
-            ctx,
-            QuantumCell::Existing(qx_valid),
-            QuantumCell::Existing(qy_valid),
-        );
-        let q_valid = ecc_chip.field_chip().range().gate().and(
-            ctx,
-            QuantumCell::Existing(q_valid),
-            QuantumCell::Existing(q_is_on_curve_or_infinity),
-        );
 
-        let inputs_valid = ecc_chip.field_chip().range().gate().and(
+        let inputs_valid = ecc_chip.field_chip().range().gate().and_many(
             ctx,
-            QuantumCell::Existing(p_valid),
-            QuantumCell::Existing(q_valid),
+            vec![
+                QuantumCell::Existing(px_valid),
+                QuantumCell::Existing(py_valid),
+                QuantumCell::Existing(p_is_on_curve_or_infinity),
+                QuantumCell::Existing(qx_valid),
+                QuantumCell::Existing(qy_valid),
+                QuantumCell::Existing(q_is_on_curve_or_infinity),
+            ],
         );
         let inputs_invalid = ecc_chip
             .field_chip()
@@ -627,6 +612,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 .field_chip()
                 .load_private(ctx, Value::known(0.into())),
         );
+        // dummy point: we take generator
         let dummy = EcPoint::construct(
             ecc_chip
                 .field_chip()
@@ -637,15 +623,13 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         );
 
         let point_p = EcPoint::construct(px, py);
-        let is_valid = ecc_chip.field_chip().range().gate().and(
+        let is_valid = ecc_chip.field_chip().range().gate().and_many(
             ctx,
-            QuantumCell::Existing(px_valid),
-            QuantumCell::Existing(py_valid),
-        );
-        let is_valid = ecc_chip.field_chip().range().gate().and(
-            ctx,
-            QuantumCell::Existing(is_valid),
-            QuantumCell::Existing(p_is_on_curve_or_infinity),
+            vec![
+                QuantumCell::Existing(px_valid),
+                QuantumCell::Existing(py_valid),
+                QuantumCell::Existing(p_is_on_curve_or_infinity),
+            ],
         );
         let point_p = ecc_chip.select(ctx, &point_p, &dummy, &is_valid);
 
