@@ -88,7 +88,7 @@ struct CompilerSettings {
     output_selection: HashMap<String, HashMap<String, Vec<String>>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct Optimizer {
     enabled: bool,
@@ -127,19 +127,6 @@ impl Default for CompilerSettings {
         CompilerSettings {
             optimizer: Default::default(),
             output_selection,
-        }
-    }
-}
-
-impl Default for Optimizer {
-    fn default() -> Self {
-        let mut details = HashMap::new();
-        details.insert("peephole".to_string(), false);
-        details.insert("inliner".to_string(), false);
-        details.insert("jumpdestRemover".to_string(), false);
-        Optimizer {
-            enabled: false,
-            details,
         }
     }
 }
