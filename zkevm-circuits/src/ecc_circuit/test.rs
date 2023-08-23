@@ -155,8 +155,6 @@ fn test_ecc_circuit_valid_invalid() {
     use halo2_proofs::halo2curves::bn256::Fr;
     use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
-    let mut rng = rand::thread_rng();
-
     lazy_static::lazy_static! {
         static ref EC_ADD_OPS: Vec<EcAddOp> = {
             vec![
@@ -230,6 +228,87 @@ fn test_ecc_circuit_valid_invalid() {
                 },
             ]
         };
+        static ref EC_PAIRING_OPS1: Vec<EcPairingOp> = {
+            vec![
+                // 1. valid: pairing_check == 1
+                {
+                    let alpha = Fr::from(0x102030);
+                    let beta = Fr::from(0x413121);
+                    let point_p = G1Affine::from(G1Affine::generator() * alpha);
+                    let point_p_negated = point_p.neg();
+                    let point_q = G2Affine::from(G2Affine::generator() * beta);
+                    let point_s = G1Affine::from(G1Affine::generator() * alpha * beta);
+                    let point_t = G2Affine::generator();
+                    let pairs = [
+                        EcPairingPair::new(point_p_negated, point_q),
+                        EcPairingPair::new(point_s, point_t),
+                        EcPairingPair::ecc_padding(),
+                        EcPairingPair::ecc_padding(),
+                    ];
+                    EcPairingOp {
+                        pairs,
+                        output: U256::one(),
+                    }
+                },
+                // 2. invalid: field element > Fq::MODULUS, mod p is OK
+                {
+                    let alpha = Fr::from(0x102030);
+                    let beta = Fr::from(0x413121);
+                    let point_p = G1Affine::from(G1Affine::generator() * alpha);
+                    let point_p_negated = point_p.neg();
+                    let point_q = G2Affine::from(G2Affine::generator() * beta);
+                    let point_t = G2Affine::from(G2Affine::generator() * alpha * beta);
+                    let pairs = [
+                        EcPairingPair::new(point_p_negated, point_q),
+                        EcPairingPair {
+                            g1_point: (
+                                word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"),
+                                word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"),
+                            ),
+                            g2_point: (
+                                U256::from_little_endian(&point_t.x.c1.to_bytes()),
+                                U256::from_little_endian(&point_t.x.c0.to_bytes()),
+                                U256::from_little_endian(&point_t.y.c1.to_bytes()),
+                                U256::from_little_endian(&point_t.y.c0.to_bytes()),
+                            ),
+                        },
+                        EcPairingPair::ecc_padding(),
+                        EcPairingPair::ecc_padding(),
+                    ];
+                    EcPairingOp {
+                        pairs,
+                        output: U256::zero(),
+                    }
+                },
+            ]
+        };
+        static ref EC_PAIRING_OPS2: Vec<EcPairingOp> = {
+            vec![
+                // 3. valid: pairing_check == 0
+                {
+                    let alpha = Fr::from(0x102030);
+                    let beta = Fr::from(0x413121);
+                    let gamma = Fr::from(0x591242);
+                    let point_p = G1Affine::from(G1Affine::generator() * alpha);
+                    let point_p_negated = point_p.neg();
+                    let point_q = G2Affine::from(G2Affine::generator() * beta);
+                    let point_s = G1Affine::from(G1Affine::generator() * gamma);
+                    let point_t = G2Affine::generator();
+                    let pairs = [
+                        EcPairingPair::new(point_p_negated, point_q),
+                        EcPairingPair::new(point_s, point_t),
+                        EcPairingPair::ecc_padding(),
+                        EcPairingPair::ecc_padding(),
+                    ];
+                    EcPairingOp {
+                        pairs,
+                        output: U256::zero(),
+                    }
+                },
+                // 4. TODO: invalid: not on curve G1.
+                // 5. TODO: invalid: not on curve G2.
+            ]
+        };
     }
 
     run::<Fr, false>(
@@ -237,7 +316,19 @@ fn test_ecc_circuit_valid_invalid() {
         PrecompileEcParams::default(),
         EC_ADD_OPS.clone(),
         EC_MUL_OPS.clone(),
-        gen(&mut rng, 2, false),
+        EC_PAIRING_OPS1.clone(),
+    );
+
+    run::<Fr, false>(
+        LOG_TOTAL_NUM_ROWS,
+        PrecompileEcParams {
+            ec_add: 0,
+            ec_mul: 0,
+            ec_pairing: 2,
+        },
+        vec![],
+        vec![],
+        EC_PAIRING_OPS2.clone(),
     );
 }
 

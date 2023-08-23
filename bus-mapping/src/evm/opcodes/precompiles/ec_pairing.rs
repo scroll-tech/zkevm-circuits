@@ -40,9 +40,9 @@ pub(crate) fn opt_data(
         );
         // process input bytes.
         let (mut ecc_pairs, mut evm_pairs): (Vec<EcPairingPair>, Vec<EcPairingPair>) = input
-            .chunks_exact(N_BYTES_PER_PAIR)
+            .chunks(N_BYTES_PER_PAIR)
             .map(|chunk| {
-                // process 192 bytes chunk at a time.
+                // process <= 192 bytes chunk at a time.
                 let evm_circuit_pair = EcPairingPair {
                     g1_point: (
                         U256::from_big_endian(&chunk[0x00..0x20]),

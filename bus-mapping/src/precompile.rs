@@ -341,44 +341,6 @@ impl EcMulAuxData {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingAuxData(pub EcPairingOp);
 
-/// Error variants possible during a call to the EcAdd precompiled contract.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EcAddError {
-    /// Provided G1 point not on curve.
-    NotOnCurve,
-}
-
-/// Error variants possible during a call to the EcMul precompiled contract.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EcMulError {
-    /// Provided G1 point not on curve.
-    NotOnCurve,
-}
-
-/// Error variants possible during a call to the EcPairing precompiled contract.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EcPairingError {
-    /// Input bytes are of invalid length. The expected length for input bytes is:
-    /// input_len ∈ {192, 384, 576, 768}
-    InvalidInputSize,
-    /// Provided G1/G2 point not on curve.
-    NotOnCurve,
-}
-
-/// Error variants possible during call to precompiled contracts.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PrecompileError {
-    /// Invalid inputs to the EcAdd call.
-    EcAdd(EcAddError),
-    /// Invalid inputs to the EcMul call.
-    EcMul(EcMulError),
-    /// Invalid inputs to the EcPairing call.
-    EcPairing(EcPairingError),
-}
-
-/// Fallible outcome from a precompiled contract call.
-pub type PrecompileResult<T> = std::result::Result<T, PrecompileError>;
-
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {

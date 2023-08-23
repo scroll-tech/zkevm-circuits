@@ -1134,7 +1134,7 @@ impl EcPairingPair {
     /// Creates a new pair given the G1 and G2 curve points.
     pub fn new(g1_point: G1Affine, g2_point: G2Affine) -> Self {
         let g1_x = U256::from_little_endian(&g1_point.x.to_bytes());
-        let g1_y = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g1_y = U256::from_little_endian(&g1_point.y.to_bytes());
         let g2_x0 = U256::from_little_endian(&g2_point.x.c1.to_bytes());
         let g2_x1 = U256::from_little_endian(&g2_point.x.c0.to_bytes());
         let g2_y0 = U256::from_little_endian(&g2_point.y.c1.to_bytes());
@@ -1187,8 +1187,32 @@ impl EcPairingPair {
     pub fn ecc_padding() -> Self {
         Self {
             g1_point: (U256::zero(), U256::zero()),
-            // TODO: fix G2 -> G2::generator()
-            g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
+            g2_point: (
+                U256([
+                    0x97e485b7aef312c2,
+                    0xf1aa493335a9e712,
+                    0x7260bfb731fb5d25,
+                    0x198e9393920d483a,
+                ]),
+                U256([
+                    0x46debd5cd992f6ed,
+                    0x674322d4f75edadd,
+                    0x426a00665e5c4479,
+                    0x1800deef121f1e76,
+                ]),
+                U256([
+                    0x55acdadcd122975b,
+                    0xbc4b313370b38ef3,
+                    0xec9e99ad690c3395,
+                    0x090689d0585ff075,
+                ]),
+                U256([
+                    0x4ce6cc0166fa7daa,
+                    0xe3d1e7690c43d37b,
+                    0x4aab71808dcb408f,
+                    0x12c85ea5db8c6deb,
+                ]),
+            ),
         }
     }
 

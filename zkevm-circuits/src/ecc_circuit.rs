@@ -684,6 +684,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log_context_cursor!(ctx);
 
         let fp2_chip = Fp2Chip::<F, FpConfig<F, Fq>, Fq2>::construct(pairing_chip.fp_chip.clone());
+        let ecc2_chip = EccChip::construct(fp2_chip.clone());
 
         let decomposed_pairs = op
             .pairs
@@ -793,10 +794,20 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcPairing Inputs RLC Assigned:");
         log_context_cursor!(ctx);
 
+        // dummy G1 point.
+        let dummy_g1 = ecc_chip.load_random_point::<G1Affine>(ctx);
+        let dummy_g2 = ecc2_chip.load_random_point::<G2Affine>(ctx);
         let pairs = decomposed_pairs
             .iter()
-            .map(|(_, g1, g2)| (&g1.ec_point, &g2.ec_point))
+            .map(|(_, g1, g2)| {
+                (ecc_chip.select(ctx, &g1.ec_point, &dummy_g1, &is_valid), {
+                    let selx = fp2_chip.select(ctx, &g2.ec_point.x, &dummy_g2.x, &is_valid);
+                    let sely = fp2_chip.select(ctx, &g2.ec_point.y, &dummy_g2.y, &is_valid);
+                    EcPoint::construct(selx, sely)
+                })
+            })
             .collect_vec();
+        let pairs = pairs.iter().map(|(g1, g2)| (g1, g2)).collect_vec();
 
         let success = {
             let gt = {
@@ -807,6 +818,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             let one = fp12_chip.load_constant(ctx, Fq12::one());
             fp12_chip.is_equal(ctx, &gt, &one)
         };
+        // success == true only if pairing check and validity are both satisfied.
+        let success = ecc_chip.field_chip().range().gate().and(
+            ctx,
+            QuantumCell::Existing(is_valid),
+            QuantumCell::Existing(success),
+        );
 
         let op_output = ecc_chip.field_chip().range().gate().load_witness(
             ctx,
