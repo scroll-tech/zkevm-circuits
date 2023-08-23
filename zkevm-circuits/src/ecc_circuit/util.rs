@@ -85,12 +85,14 @@ pub(super) struct EcMulAssigned<F: Field> {
 
 /// State of EcPairing operation post first phase.
 pub(super) struct EcPairingDecomposed<F: Field> {
+    pub is_valid: AssignedValue<F>,
     pub input_cells: Vec<QuantumCell<F>>,
     pub success: AssignedValue<F>,
 }
 
 /// State of EcPairing operation post second phase.
 pub(super) struct EcPairingAssigned<F: Field> {
+    pub is_valid: AssignedValue<F>,
     /// RLC of (G1, G2) pairs.
     pub input_rlc: AssignedValue<F>,
     pub success: AssignedValue<F>,

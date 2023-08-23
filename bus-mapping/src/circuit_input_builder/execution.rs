@@ -15,16 +15,13 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    GethExecStep, Word, H256, U256,
+    GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
-    halo2curves::{
-        bn256::{Fq, Fr, G1Affine, G2Affine},
-        group::cofactor::CofactorCurveAffine,
-    },
+    halo2curves::bn256::{Fq, Fr, G1Affine, G2Affine},
     plonk::Expression,
 };
 
@@ -1127,18 +1124,32 @@ pub const N_BYTES_PER_PAIR: usize = 192;
 /// Pair of (G1, G2).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingPair {
-    /// G1 point.
-    pub g1_point: G1Affine,
-    /// G2 point.
-    pub g2_point: G2Affine,
+    /// EVM inputs for the G1 point.
+    pub g1_point: (U256, U256),
+    /// EVM inputs for the G2 point.
+    pub g2_point: (U256, U256, U256, U256),
 }
 
 impl EcPairingPair {
+    /// Creates a new pair given the G1 and G2 curve points.
+    pub fn new(g1_point: G1Affine, g2_point: G2Affine) -> Self {
+        let g1_x = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g1_y = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g2_x0 = U256::from_little_endian(&g2_point.x.c1.to_bytes());
+        let g2_x1 = U256::from_little_endian(&g2_point.x.c0.to_bytes());
+        let g2_y0 = U256::from_little_endian(&g2_point.y.c1.to_bytes());
+        let g2_y1 = U256::from_little_endian(&g2_point.y.c0.to_bytes());
+        Self {
+            g1_point: (g1_x, g1_y),
+            g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+        }
+    }
+
     /// Returns the big-endian representation of the G1 point in the pair.
     pub fn g1_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.g1_point.x.to_bytes().iter().rev())
-            .chain(self.g1_point.y.to_bytes().iter().rev())
+            .chain(self.g1_point.0.to_le_bytes().iter().rev())
+            .chain(self.g1_point.1.to_le_bytes().iter().rev())
             .cloned()
             .collect()
     }
@@ -1146,10 +1157,10 @@ impl EcPairingPair {
     /// Returns the big-endian representation of the G2 point in the pair.
     pub fn g2_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.g2_point.x.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.0.to_le_bytes().iter().rev())
+            .chain(self.g2_point.1.to_le_bytes().iter().rev())
+            .chain(self.g2_point.2.to_le_bytes().iter().rev())
+            .chain(self.g2_point.3.to_le_bytes().iter().rev())
             .cloned()
             .collect()
     }
@@ -1157,19 +1168,14 @@ impl EcPairingPair {
     /// Returns the uncompressed big-endian byte representation of the (G1, G2) pair.
     pub fn to_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.g1_point.x.to_bytes().iter().rev())
-            .chain(self.g1_point.y.to_bytes().iter().rev())
-            .chain(self.g2_point.x.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g1_point.0.to_le_bytes().iter().rev())
+            .chain(self.g1_point.1.to_le_bytes().iter().rev())
+            .chain(self.g2_point.0.to_le_bytes().iter().rev())
+            .chain(self.g2_point.1.to_le_bytes().iter().rev())
+            .chain(self.g2_point.2.to_le_bytes().iter().rev())
+            .chain(self.g2_point.3.to_le_bytes().iter().rev())
             .cloned()
             .collect()
-    }
-
-    /// Create a new pair.
-    pub fn new(g1_point: G1Affine, g2_point: G2Affine) -> Self {
-        Self { g1_point, g2_point }
     }
 
     /// Padding pair for ECC circuit. The pairing check is done with a constant number
@@ -1180,8 +1186,9 @@ impl EcPairingPair {
     /// `(G1, G2::Infinity)` is also transformed into `(G1::Infinity, G2::Generator)`.
     pub fn ecc_padding() -> Self {
         Self {
-            g1_point: G1Affine::identity(),
-            g2_point: G2Affine::generator(),
+            g1_point: (U256::zero(), U256::zero()),
+            // TODO: fix G2 -> G2::generator()
+            g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
         }
     }
 
@@ -1190,8 +1197,8 @@ impl EcPairingPair {
     /// with `(G1::Infinity, G2::Infinity)` for simplicity.
     pub fn evm_padding() -> Self {
         Self {
-            g1_point: G1Affine::identity(),
-            g2_point: G2Affine::identity(),
+            g1_point: (U256::zero(), U256::zero()),
+            g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
         }
     }
 }
@@ -1209,12 +1216,30 @@ impl Default for EcPairingOp {
     fn default() -> Self {
         let g1_point = G1Affine::generator();
         let g2_point = G2Affine::generator();
+        let g1_x = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g1_y = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g2_x0 = U256::from_little_endian(&g2_point.x.c1.to_bytes());
+        let g2_x1 = U256::from_little_endian(&g2_point.x.c0.to_bytes());
+        let g2_y0 = U256::from_little_endian(&g2_point.y.c1.to_bytes());
+        let g2_y1 = U256::from_little_endian(&g2_point.y.c0.to_bytes());
         Self {
             pairs: [
-                EcPairingPair { g1_point, g2_point },
-                EcPairingPair { g1_point, g2_point },
-                EcPairingPair { g1_point, g2_point },
-                EcPairingPair { g1_point, g2_point },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
             ],
             output: Word::zero(),
         }
@@ -1233,6 +1258,11 @@ impl EcPairingOp {
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
         false
+    }
+
+    /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
+    pub fn is_valid(&self) -> bool {
+        unimplemented!()
     }
 }
 

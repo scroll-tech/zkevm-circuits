@@ -129,7 +129,9 @@ impl GenRand for EcPairingOp {
                 },
                 // change a point in one of the pairs.
                 false => {
-                    pairs[0].g1_point = pairs[0].g1_point.add(&G1Affine::generator()).into();
+                    let altered: G1Affine = point_p_negated.add(&G1Affine::generator()).into();
+                    pairs[0].g1_point.0 = U256::from_little_endian(&altered.x.to_bytes());
+                    pairs[0].g1_point.1 = U256::from_little_endian(&altered.y.to_bytes());
                     Self { pairs, output }
                 }
             }

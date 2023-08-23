@@ -20,14 +20,15 @@ use halo2_ecc::{
     fields::{
         fp::{FpConfig, FpStrategy},
         fp12::Fp12Chip,
-        FieldChip,
+        fp2::Fp2Chip,
+        FieldChip, FieldExtPoint,
     },
 };
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
     circuit::{Layouter, Value},
     halo2curves::{
-        bn256::{Fq, Fq12, Fr, G1Affine, G2Affine},
+        bn256::{Fq, Fq12, Fq2, Fr, G1Affine, G2Affine},
         CurveAffine,
     },
     plonk::{ConstraintSystem, Error, Expression},
@@ -418,12 +419,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                         idx,
                         || Value::known(F::from(u64::from(PrecompileCalls::Bn128Pairing))),
                     )?;
-                    region.assign_advice(
-                        || "assign ecc_table is_valid",
+                    // is valid.
+                    ec_pairing_assigned.is_valid.copy_advice(
+                        &mut region,
                         config.ecc_table.is_valid,
                         idx,
-                        || Value::known(F::one()),
-                    )?;
+                    );
                     // RLC(input_bytes)
                     ec_pairing_assigned.input_rlc.copy_advice(
                         &mut region,
@@ -480,13 +481,13 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let (py, py_cells, py_valid, py_is_zero) =
             self.precheck_fq(ctx, ecc_chip, op.p.1, powers_of_256);
         let p_is_on_curve_or_infinity =
-            self.is_on_curve_or_infinity(ctx, ecc_chip, &px, px_is_zero, &py, py_is_zero);
+            self.is_on_curveg1_or_infinity(ctx, ecc_chip, &px, px_is_zero, &py, py_is_zero);
         let (qx, qx_cells, qx_valid, qx_is_zero) =
             self.precheck_fq(ctx, ecc_chip, op.q.0, powers_of_256);
         let (qy, qy_cells, qy_valid, qy_is_zero) =
             self.precheck_fq(ctx, ecc_chip, op.q.1, powers_of_256);
         let q_is_on_curve_or_infinity =
-            self.is_on_curve_or_infinity(ctx, ecc_chip, &qx, qx_is_zero, &qy, qy_is_zero);
+            self.is_on_curveg1_or_infinity(ctx, ecc_chip, &qx, qx_is_zero, &qy, qy_is_zero);
 
         let point_p = EcPoint::construct(px, py);
         let point_q = EcPoint::construct(qx, qy);
@@ -601,7 +602,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let (py, py_cells, py_valid, py_is_zero) =
             self.precheck_fq(ctx, ecc_chip, op.p.1, powers_of_256);
         let p_is_on_curve_or_infinity =
-            self.is_on_curve_or_infinity(ctx, ecc_chip, &px, px_is_zero, &py, py_is_zero);
+            self.is_on_curveg1_or_infinity(ctx, ecc_chip, &px, px_is_zero, &py, py_is_zero);
 
         // point at infinity
         let infinity = EcPoint::construct(
@@ -682,78 +683,101 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] ==> EcPairing Assignment START:");
         log_context_cursor!(ctx);
 
-        let g1s = op
+        let fp2_chip = Fp2Chip::<F, FpConfig<F, Fq>, Fq2>::construct(pairing_chip.fp_chip.clone());
+
+        let decomposed_pairs = op
             .pairs
             .iter()
             .map(|pair| {
-                let ec_point = pairing_chip.load_private_g1(ctx, Value::known(pair.g1_point));
-                let (x_cells, y_cells) = self.decompose_g1(pair.g1_point);
-                self.assert_crt_repr(ctx, ecc_chip, &ec_point.x, &x_cells, powers_of_256);
-                self.assert_crt_repr(ctx, ecc_chip, &ec_point.y, &y_cells, powers_of_256);
-                G1Decomposed {
-                    ec_point,
-                    x_cells,
-                    y_cells,
-                }
+                let (g1x, g1x_cells, g1x_valid, g1x_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g1_point.0, powers_of_256);
+                let (g1y, g1y_cells, g1y_valid, g1y_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g1_point.1, powers_of_256);
+                let g1_point = EcPoint::<F, CRTInteger<F>>::construct(g1x, g1y);
+                let (g2x0, g2x0_cells, g2x0_valid, g2x0_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.0, powers_of_256);
+                let (g2x1, g2x1_cells, g2x1_valid, g2x1_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.1, powers_of_256);
+                let (g2y0, g2y0_cells, g2y0_valid, g2y0_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.2, powers_of_256);
+                let (g2y1, g2y1_cells, g2y1_valid, g2y1_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.3, powers_of_256);
+                let g2_point = EcPoint::<F, FieldExtPoint<CRTInteger<F>>>::construct(
+                    FieldExtPoint::construct(vec![g2x1, g2x0]),
+                    FieldExtPoint::construct(vec![g2y1, g2y0]),
+                );
+                let g2x_is_zero = ecc_chip.field_chip().range().gate().and(
+                    ctx,
+                    QuantumCell::Existing(g2x0_is_zero),
+                    QuantumCell::Existing(g2x1_is_zero),
+                );
+                let g2y_is_zero = ecc_chip.field_chip().range().gate().and(
+                    ctx,
+                    QuantumCell::Existing(g2y0_is_zero),
+                    QuantumCell::Existing(g2y1_is_zero),
+                );
+                let g1_is_on_curve_or_infinity = self.is_on_curveg1_or_infinity(
+                    ctx,
+                    ecc_chip,
+                    &g1_point.x,
+                    g1x_is_zero,
+                    &g1_point.y,
+                    g1y_is_zero,
+                );
+                let g2_is_on_curve_or_infinity = self.is_on_curveg2_or_infinity(
+                    ctx,
+                    &fp2_chip,
+                    &g2_point.x,
+                    g2x_is_zero,
+                    &g2_point.y,
+                    g2y_is_zero,
+                );
+                let is_pair_valid = ecc_chip.field_chip().range().gate().and_many(
+                    ctx,
+                    vec![
+                        QuantumCell::Existing(g1x_valid),
+                        QuantumCell::Existing(g1y_valid),
+                        QuantumCell::Existing(g1_is_on_curve_or_infinity),
+                        QuantumCell::Existing(g2x0_valid),
+                        QuantumCell::Existing(g2x1_valid),
+                        QuantumCell::Existing(g2y0_valid),
+                        QuantumCell::Existing(g2y1_valid),
+                        QuantumCell::Existing(g2_is_on_curve_or_infinity),
+                    ],
+                );
+                (
+                    is_pair_valid,
+                    G1Decomposed {
+                        ec_point: g1_point,
+                        x_cells: g1x_cells,
+                        y_cells: g1y_cells,
+                    },
+                    G2Decomposed {
+                        ec_point: g2_point,
+                        x_c0_cells: g2x0_cells,
+                        x_c1_cells: g2x1_cells,
+                        y_c0_cells: g2y0_cells,
+                        y_c1_cells: g2y1_cells,
+                    },
+                )
             })
             .collect_vec();
 
-        log::trace!("[ECC] EcPairing g1s Assigned:");
-        log_context_cursor!(ctx);
+        let is_valid = ecc_chip.field_chip().range().gate().and_many(
+            ctx,
+            decomposed_pairs
+                .iter()
+                .map(|&(is_pair_valid, _, _)| QuantumCell::Existing(is_pair_valid))
+                .collect_vec(),
+        );
 
-        let g2s = op
-            .pairs
-            .iter()
-            .map(|pair| {
-                let ec_point = pairing_chip.load_private_g2(ctx, Value::known(pair.g2_point));
-                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
-                    self.decompose_g2(pair.g2_point);
-                self.assert_crt_repr(
-                    ctx,
-                    ecc_chip,
-                    &ec_point.x.coeffs[0],
-                    &x_c0_cells,
-                    powers_of_256,
-                );
-                self.assert_crt_repr(
-                    ctx,
-                    ecc_chip,
-                    &ec_point.x.coeffs[1],
-                    &x_c1_cells,
-                    powers_of_256,
-                );
-                self.assert_crt_repr(
-                    ctx,
-                    ecc_chip,
-                    &ec_point.y.coeffs[0],
-                    &y_c0_cells,
-                    powers_of_256,
-                );
-                self.assert_crt_repr(
-                    ctx,
-                    ecc_chip,
-                    &ec_point.y.coeffs[1],
-                    &y_c1_cells,
-                    powers_of_256,
-                );
-                G2Decomposed {
-                    ec_point,
-                    x_c0_cells,
-                    x_c1_cells,
-                    y_c0_cells,
-                    y_c1_cells,
-                }
-            })
-            .collect_vec();
-
-        log::trace!("[ECC] EcPairing g2s Assigned:");
+        log::trace!("[ECC] EcPairing g1s and g2s Assigned:");
         log_context_cursor!(ctx);
 
         // RLC over the entire input bytes.
-        let input_cells = g1s
+        let input_cells = decomposed_pairs
             .iter()
-            .zip_eq(g2s.iter())
-            .flat_map(|(g1, g2)| {
+            .flat_map(|(_, g1, g2)| {
                 std::iter::empty()
                     .chain(g1.x_cells.iter().rev())
                     .chain(g1.y_cells.iter().rev())
@@ -769,10 +793,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcPairing Inputs RLC Assigned:");
         log_context_cursor!(ctx);
 
-        let pairs = g1s
+        let pairs = decomposed_pairs
             .iter()
-            .zip(g2s.iter())
-            .map(|(g1, g2)| (&g1.ec_point, &g2.ec_point))
+            .map(|(_, g1, g2)| (&g1.ec_point, &g2.ec_point))
             .collect_vec();
 
         let success = {
@@ -799,6 +822,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log_context_cursor!(ctx);
 
         EcPairingDecomposed {
+            is_valid,
             input_cells,
             success,
         }
@@ -902,6 +926,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         keccak_powers: &[QuantumCell<F>],
     ) -> EcPairingAssigned<F> {
         EcPairingAssigned {
+            is_valid: ec_pairing_decomposed.is_valid,
             input_rlc: ecc_chip.field_chip().range().gate().inner_product(
                 ctx,
                 ec_pairing_decomposed.input_cells.clone().into_iter().rev(),
@@ -985,7 +1010,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 
     /// Get an assigned value that indicates whether the given point is on curve G1 or identity
     /// point.
-    fn is_on_curve_or_infinity(
+    fn is_on_curveg1_or_infinity(
         &self,
         ctx: &mut Context<F>,
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
@@ -1006,6 +1031,36 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let is_on_curve = ecc_chip.field_chip().is_zero(ctx, &diff);
 
         ecc_chip.field_chip().range().gate().or_and(
+            ctx,
+            QuantumCell::Existing(is_on_curve),
+            QuantumCell::Existing(x_is_zero),
+            QuantumCell::Existing(y_is_zero),
+        )
+    }
+
+    /// Get an assigned value that indicates whether the given point is on curve G2 or identity
+    /// point.
+    fn is_on_curveg2_or_infinity(
+        &self,
+        ctx: &mut Context<F>,
+        fp2_chip: &Fp2Chip<F, FpConfig<F, Fq>, Fq2>,
+        x: &FieldExtPoint<CRTInteger<F>>,
+        x_is_zero: AssignedValue<F>,
+        y: &FieldExtPoint<CRTInteger<F>>,
+        y_is_zero: AssignedValue<F>,
+    ) -> AssignedValue<F> {
+        let lhs = fp2_chip.mul_no_carry(ctx, y, y);
+        let mut rhs = fp2_chip.mul(ctx, x, x);
+        rhs = fp2_chip.mul_no_carry(ctx, &rhs, x);
+
+        let b = Fp2Chip::<F, FpConfig<F, Fq>, Fq2>::fe_to_constant(G2Affine::b());
+        rhs = fp2_chip.add_constant_no_carry(ctx, &rhs, b);
+        let mut diff = fp2_chip.sub_no_carry(ctx, &lhs, &rhs);
+        diff = fp2_chip.carry_mod(ctx, &diff);
+
+        let is_on_curve = fp2_chip.is_zero(ctx, &diff);
+
+        fp2_chip.range().gate().or_and(
             ctx,
             QuantumCell::Existing(is_on_curve),
             QuantumCell::Existing(x_is_zero),
