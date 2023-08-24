@@ -52,6 +52,11 @@ impl TxType {
         matches!(*self, TxType::L1Msg)
     }
 
+    /// If this type is Eip155 or not
+    pub fn is_eip155_tx(&self) -> bool {
+        matches!(*self, TxType::Eip155)
+    }
+
     /// Get the type of transaction
     pub fn get_tx_type(tx: &crate::Transaction) -> Self {
         match tx.transaction_type {

@@ -98,11 +98,11 @@ impl Refs {
 }
 
 pub struct JsonStateTestBuilder<'a> {
-    compiler: &'a mut Compiler,
+    compiler: &'a Compiler,
 }
 
 impl<'a> JsonStateTestBuilder<'a> {
-    pub fn new(compiler: &'a mut Compiler) -> Self {
+    pub fn new(compiler: &'a Compiler) -> Self {
         Self { compiler }
     }
 
@@ -379,8 +379,8 @@ mod test {
 "#;
     #[test]
     fn test_json_parse() -> Result<()> {
-        let mut compiler = Compiler::new(true, None)?;
-        let mut builder = JsonStateTestBuilder::new(&mut compiler);
+        let compiler = Compiler::new(true, None)?;
+        let mut builder = JsonStateTestBuilder::new(&compiler);
         let test = builder.load_json("test_path", JSON)?.remove(0);
 
         let acc095e = Address::from_str("0x095e7baea6a6c7c4c2dfeb977efac326af552d87")?;

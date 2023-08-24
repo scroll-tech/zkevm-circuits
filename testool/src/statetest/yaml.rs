@@ -38,11 +38,11 @@ impl Refs {
 }
 
 pub struct YamlStateTestBuilder<'a> {
-    compiler: &'a mut Compiler,
+    compiler: &'a Compiler,
 }
 
 impl<'a> YamlStateTestBuilder<'a> {
-    pub fn new(compiler: &'a mut Compiler) -> Self {
+    pub fn new(compiler: &'a Compiler) -> Self {
         Self { compiler }
     }
 
@@ -569,7 +569,7 @@ arith:
 
     #[test]
     fn combinations() -> Result<()> {
-        let tcs = YamlStateTestBuilder::new(&mut Compiler::default())
+        let tcs = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?
             .into_iter()
             .map(|v| (v.id.clone(), v))
@@ -591,7 +591,7 @@ arith:
 
     #[test]
     fn parse() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let current = tc.remove(0);
 
@@ -665,7 +665,7 @@ arith:
 
     #[test]
     fn result_pass() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
         run_test(t1, TestSuite::default(), CircuitsConfig::default())?;
@@ -673,7 +673,7 @@ arith:
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_storage: "2".into(),
@@ -698,7 +698,7 @@ arith:
     }
     #[test]
     fn bad_balance() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_balance: "1000000000002".into(),
@@ -723,7 +723,7 @@ arith:
 
     #[test]
     fn bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_code: ":raw 0x600200".into(),
@@ -748,7 +748,7 @@ arith:
 
     #[test]
     fn bad_nonce() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_nonce: "2".into(),
@@ -774,7 +774,7 @@ arith:
 
     #[test]
     fn sstore() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0x607760005500".into(),
@@ -791,7 +791,7 @@ arith:
 
     #[test]
     fn marked_as_exception_and_fails() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 gas_limit: "2300".into(),
@@ -806,7 +806,7 @@ arith:
     }
     #[test]
     fn marked_as_exception_but_does_not_fail() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_exception: true,
@@ -823,7 +823,7 @@ arith:
     #[cfg(feature = "warn-unimplemented")]
     #[test]
     fn fail_bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0xF4".into(),

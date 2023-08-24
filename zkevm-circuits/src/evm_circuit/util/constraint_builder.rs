@@ -166,6 +166,10 @@ impl<F: Field> ReversionInfo<F> {
             .assign(region, offset, Value::known(F::from(is_persistent as u64)))?;
         Ok(())
     }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        2.expr()
+    }
 }
 
 pub(crate) trait ConstrainBuilderCommon<F: Field> {

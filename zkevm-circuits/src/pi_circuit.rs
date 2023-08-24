@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
+use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -28,7 +28,7 @@ use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, EvmCircuitExports},
     pi_circuit::param::{
         BASE_FEE_OFFSET, BLOCK_HEADER_BYTES_NUM, BLOCK_LEN, BLOCK_NUM_OFFSET, BYTE_POW_BASE,
-        CHAIN_ID_OFFSET, GAS_LIMIT_OFFSET, KECCAK_DIGEST_SIZE, NUM_TXS_OFFSET, RPI_CELL_IDX,
+        CHAIN_ID_OFFSET, GAS_LIMIT_OFFSET, KECCAK_DIGEST_SIZE, RPI_CELL_IDX,
         RPI_LENGTH_ACC_CELL_IDX, RPI_RLC_ACC_CELL_IDX, TIMESTAMP_OFFSET,
     },
     state_circuit::StateCircuitExports,
@@ -46,11 +46,12 @@ use once_cell::sync::Lazy;
 
 use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
-    pi_circuit::param::{COINBASE_OFFSET, DIFFICULTY_OFFSET},
+    pi_circuit::param::{COINBASE_OFFSET, DIFFICULTY_OFFSET, NUM_ALL_TXS_OFFSET},
     table::{
         BlockContextFieldTag,
         BlockContextFieldTag::{
-            BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumTxs, Number, Timestamp,
+            BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumAllTxs, NumTxs, Number,
+            Timestamp,
         },
     },
     util::rlc_be_bytes,
@@ -99,11 +100,12 @@ impl Default for PublicData {
 }
 
 impl PublicData {
-    fn get_num_txs(&self) -> BTreeMap<u64, u64> {
-        let mut num_txs_in_blocks = BTreeMap::new();
+    // Return num of all txs in each block (taking skipped l1 msgs into account)
+    fn get_num_all_txs(&self) -> BTreeMap<u64, u64> {
+        let mut num_all_txs_in_blocks = BTreeMap::new();
         // short for total number of l1 msgs popped before
         let mut total_l1_popped = self.start_l1_queue_index;
-        log::debug!("start_l1_queue_index: {}", total_l1_popped);
+        log::debug!("[public_data] start_l1_queue_index: {}", total_l1_popped);
         for &block_num in self.block_ctxs.ctxs.keys() {
             let num_l2_txs = self
                 .transactions
@@ -118,33 +120,33 @@ impl PublicData {
                 .map(|tx| tx.nonce)
                 .max()
                 .map_or(0, |max_queue_index| max_queue_index - total_l1_popped + 1);
-            total_l1_popped += num_l1_msgs;
 
             let num_txs = num_l2_txs + num_l1_msgs;
-            num_txs_in_blocks.insert(block_num, num_txs);
+            num_all_txs_in_blocks.insert(block_num, num_txs);
 
-            log::trace!(
-                "[block {}] total_l1_popped: {}, num_l1_msgs: {}, num_l2_txs: {}, num_txs: {}",
+            log::debug!(
+                "[public_data][block {}] total_l1_popped_before: {}, num_l1_msgs: {}, num_l2_txs: {}, num_txs: {}",
                 block_num,
                 total_l1_popped,
                 num_l1_msgs,
                 num_l2_txs,
                 num_txs
             );
+            total_l1_popped += num_l1_msgs;
         }
 
-        num_txs_in_blocks
+        num_all_txs_in_blocks
     }
 
     /// Compute the bytes for dataHash from the verifier's perspective.
     fn data_bytes(&self) -> Vec<u8> {
-        let num_txs_in_blocks = self.get_num_txs();
+        let num_all_txs_in_blocks = self.get_num_all_txs();
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
-                let num_txs = num_txs_in_blocks
+                let num_all_txs = num_all_txs_in_blocks
                     .get(block_num)
                     .cloned()
-                    .unwrap_or_else(|| panic!("get num_txs in block {block_num}"))
+                    .unwrap_or_else(|| panic!("get num_all_txs in block {block_num}"))
                     as u16;
                 iter::empty()
                     // Block Values
@@ -152,7 +154,7 @@ impl PublicData {
                     .chain(block.timestamp.as_u64().to_be_bytes())
                     .chain(block.base_fee.to_be_bytes())
                     .chain(block.gas_limit.to_be_bytes())
-                    .chain(num_txs.to_be_bytes())
+                    .chain(num_all_txs.to_be_bytes())
             }))
             // Tx Hashes
             .chain(
@@ -196,7 +198,10 @@ impl PublicData {
 
     fn get_pi(&self) -> H256 {
         let data_hash = H256(keccak256(self.data_bytes()));
-        log::debug!("data hash: {}", hex::encode(data_hash.to_fixed_bytes()));
+        log::debug!(
+            "[pi] chunk data hash: {}",
+            hex::encode(data_hash.to_fixed_bytes())
+        );
 
         let pi_bytes = self.pi_bytes(data_hash);
         let pi_hash = keccak256(pi_bytes);
@@ -648,6 +653,7 @@ impl<F: Field> PiCircuitConfig<F> {
         region: &mut Region<'_, F>,
         public_data: &PublicData,
         block_value_cells: &[AssignedCell<F, F>],
+        tx_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(PiHashExport<F>, Connections<F>), Error> {
         let block_values = &public_data.block_ctxs;
@@ -660,7 +666,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .iter()
             .map(|tx| tx.hash)
             .collect::<Vec<H256>>();
-        let num_txs_in_blocks = public_data.get_num_txs();
+        let num_all_txs_in_blocks = public_data.get_num_all_txs();
 
         let mut offset = 0;
         let mut block_copy_cells = vec![];
@@ -693,8 +699,12 @@ impl<F: Field> PiCircuitConfig<F> {
         {
             let is_rpi_padding = i >= block_values.ctxs.len();
             let block_num = block.number.as_u64();
-            let num_txs = num_txs_in_blocks.get(&block_num).cloned().unwrap_or(0) as u16;
-            log::debug!("num_txs in block {}: {}", block_num, num_txs);
+            let num_all_txs = num_all_txs_in_blocks.get(&block_num).cloned().unwrap_or(0) as u16;
+            log::debug!(
+                "[pi assign] num_all_txs in block {}: {}",
+                block_num,
+                num_all_txs
+            );
 
             // Assign fields in pi columns and connect them to block table
             let fields = vec![
@@ -708,7 +718,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 ), // timestamp
                 (block.base_fee.to_be_bytes().to_vec(), BASE_FEE_OFFSET), // base_fee
                 (block.gas_limit.to_be_bytes().to_vec(), GAS_LIMIT_OFFSET), // gas_limit
-                (num_txs.to_be_bytes().to_vec(), NUM_TXS_OFFSET),         // num_txs
+                (num_all_txs.to_be_bytes().to_vec(), NUM_ALL_TXS_OFFSET), // num_all_txs
             ];
             for (bytes, block_offset) in fields {
                 let cells = self.assign_field_in_pi(
@@ -722,15 +732,10 @@ impl<F: Field> PiCircuitConfig<F> {
                     false,
                     challenges,
                 )?;
-                // do not copy num_txs to block table as the meaning of num_txs
-                // in block table is len(block.txs), and this is different from num_l1_msgs +
-                // num_l2_txs
-                if block_offset != NUM_TXS_OFFSET {
-                    block_copy_cells.push((
-                        cells[RPI_CELL_IDX].clone(),
-                        block_table_offset + block_offset,
-                    ));
-                }
+                block_copy_cells.push((
+                    cells[RPI_CELL_IDX].clone(),
+                    block_table_offset + block_offset,
+                ));
             }
 
             block_table_offset += BLOCK_LEN;
@@ -813,11 +818,7 @@ impl<F: Field> PiCircuitConfig<F> {
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
             region.constrain_equal(
                 tx_hash_cell.cell(),
-                Cell {
-                    region_index: RegionIndex(1), // FIXME: this is not safe
-                    row_offset: i * TX_LEN + TX_HASH_OFFSET,
-                    column: self.tx_table.value.into(),
-                },
+                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].cell(),
             )?;
         }
 
@@ -1355,26 +1356,35 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut cum_num_txs = 0usize;
         let mut block_value_cells = vec![];
         let block_ctxs = &public_data.block_ctxs;
-        // let num_txs_in_blocks = public_data.get_num_txs();
+        let num_all_txs_in_blocks = public_data.get_num_all_txs();
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
             (block_ctxs.ctxs.len()..max_inner_blocks)
                 .into_iter()
                 .map(|_| BlockContext::padding(public_data.chain_id)),
         ) {
-            // note that
             let num_txs = public_data
                 .transactions
                 .iter()
                 .filter(|tx| tx.block_number == block_ctx.number.as_u64())
                 .count();
+            // unwrap_or(0) for padding block
+            let num_all_txs = num_all_txs_in_blocks
+                .get(&block_ctx.number.as_u64())
+                .cloned()
+                .unwrap_or(0);
             let tag = [
                 Coinbase, Timestamp, Number, Difficulty, GasLimit, BaseFee, ChainId, NumTxs,
-                CumNumTxs,
+                CumNumTxs, NumAllTxs,
             ];
+
+            // index_cells of same block are equal to block_number.
+            let mut index_cells = vec![];
+            let mut block_number_cell = None;
+
             let mut cum_num_txs_field = F::from(cum_num_txs as u64);
             cum_num_txs += num_txs;
             for (row, tag) in block_ctx
-                .table_assignments(num_txs, cum_num_txs, challenges)
+                .table_assignments(num_txs, cum_num_txs, num_all_txs, challenges)
                 .into_iter()
                 .zip(tag.iter())
             {
@@ -1384,9 +1394,6 @@ impl<F: Field> PiCircuitConfig<F> {
                     offset,
                     || row[0],
                 )?;
-                // index_cells of same block are equal to block_number.
-                let mut index_cells = vec![];
-                let mut block_number_cell = None;
                 for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                     let cell = region.assign_advice(
                         || format!("block table row {offset}"),
@@ -1403,15 +1410,6 @@ impl<F: Field> PiCircuitConfig<F> {
                     if *column == self.block_table.value {
                         block_value_cells.push(cell);
                     }
-                }
-                for i in 0..(index_cells.len() - 1) {
-                    region.constrain_equal(index_cells[i].cell(), index_cells[i + 1].cell())?;
-                }
-                if *tag == Number {
-                    region.constrain_equal(
-                        block_number_cell.unwrap().cell(),
-                        index_cells[0].cell(),
-                    )?;
                 }
 
                 region.assign_fixed(
@@ -1452,6 +1450,12 @@ impl<F: Field> PiCircuitConfig<F> {
                 }
                 offset += 1;
             }
+            // block_num == index[0]
+            region.constrain_equal(block_number_cell.unwrap().cell(), index_cells[0].cell())?;
+            // index[i] == index[i+1]
+            for i in 0..(index_cells.len() - 1) {
+                region.constrain_equal(index_cells[i].cell(), index_cells[i + 1].cell())?;
+            }
         }
 
         Ok(block_value_cells)
@@ -1469,7 +1473,8 @@ pub struct PiCircuit<F: Field> {
 
     _marker: PhantomData<F>,
 
-    connections: std::cell::RefCell<Option<Connections<F>>>,
+    connections: RefCell<Option<Connections<F>>>,
+    tx_value_cells: RefCell<Option<Vec<AssignedCell<F, F>>>>,
 }
 
 impl<F: Field> PiCircuit<F> {
@@ -1496,12 +1501,18 @@ impl<F: Field> PiCircuit<F> {
             max_inner_blocks,
             _marker: PhantomData,
             connections: Default::default(),
+            tx_value_cells: RefCell::new(None),
         }
     }
 
     /// Return txs
     pub fn txs(&self) -> &[Transaction] {
         &self.public_data.transactions
+    }
+
+    /// Import tx value cells from Tx circuit
+    pub fn import_tx_values(&self, values: Vec<AssignedCell<F, F>>) {
+        *self.tx_value_cells.borrow_mut() = Some(values);
     }
 
     /// Connect the exportings from other circuit when we are in super circuit
@@ -1627,6 +1638,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 config.block_table.annotate_columns_in_region(&mut region);
 
                 // assign block table
+                let tx_value_cells = self
+                    .tx_value_cells
+                    .borrow()
+                    .clone()
+                    .expect("tx_value_cells must have been set");
                 let block_value_cells = config.assign_block_table(
                     &mut region,
                     &self.public_data,
@@ -1638,6 +1654,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     &mut region,
                     &self.public_data,
                     &block_value_cells,
+                    &tx_value_cells,
                     challenges,
                 )?;
 

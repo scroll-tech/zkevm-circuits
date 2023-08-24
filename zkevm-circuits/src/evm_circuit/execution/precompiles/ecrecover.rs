@@ -129,9 +129,10 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let restore_context = RestoreContextGadget::construct(
+        let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
+            gas_cost.expr(),
             0.expr(),
             0x00.expr(),                                              // ReturnDataOffset
             select::expr(recovered.expr(), 0x20.expr(), 0x00.expr()), // ReturnDataLength

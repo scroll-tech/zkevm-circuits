@@ -7,7 +7,9 @@ const CONFIG_FILE: &str = "Config.toml";
 pub struct Config {
     pub suite: Vec<TestSuite>,
     pub set: Vec<TestsSet>,
+    #[serde(default)]
     pub skip_paths: Vec<SkipPaths>,
+    #[serde(default)]
     pub skip_tests: Vec<SkipTests>,
 }
 

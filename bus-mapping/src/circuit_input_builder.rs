@@ -65,6 +65,16 @@ pub struct PrecompileEcParams {
     pub ec_pairing: usize,
 }
 
+impl Default for PrecompileEcParams {
+    fn default() -> Self {
+        Self {
+            ec_add: 50,
+            ec_mul: 50,
+            ec_pairing: 2,
+        }
+    }
+}
+
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
@@ -102,8 +112,15 @@ pub struct CircuitsParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// Maximum number of rows that the Poseidon Circuit can have
+    pub max_poseidon_rows: usize,
     /// Max number of ECC-related ops supported in the ECC circuit.
     pub max_ec_ops: PrecompileEcParams,
+    /// This number indicate what 100% usage means, for example if we can support up to 2
+    /// ecPairing inside circuit, and max_vertical_circuit_rows is set to 1_000_000,
+    /// then if there is 1 ecPairing in the input, we will return 500_000 as the "row usage"
+    /// for the ec circuit.
+    pub max_vertical_circuit_rows: usize,
 }
 
 impl Default for CircuitsParams {
@@ -122,12 +139,10 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_poseidon_rows: 0,
+            max_vertical_circuit_rows: 0,
             max_rlp_rows: 1000,
-            max_ec_ops: PrecompileEcParams {
-                ec_add: 50,
-                ec_mul: 50,
-                ec_pairing: 2,
-            },
+            max_ec_ops: PrecompileEcParams::default(),
         }
     }
 }
@@ -534,7 +549,7 @@ impl<'a> CircuitInputBuilder {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
                         geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
                         geth_step.stack.nth_last(4),
@@ -544,7 +559,7 @@ impl<'a> CircuitInputBuilder {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
                         geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
                         geth_step.stack.nth_last(4),
@@ -563,32 +578,18 @@ impl<'a> CircuitInputBuilder {
                             "".to_string()
                         }
                     )
-                } else if matches!(geth_step.op, OpcodeId::MLOAD) {
-                    format!(
-                        "{:?}",
-                        geth_step.stack.nth_last(0),
-                    )
-                } else if matches!(geth_step.op, OpcodeId::MSTORE | OpcodeId::MSTORE8) {
-                    format!(
-                        "{:?} {:?}",
-                        geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1),
-                    )
                 } else if matches!(geth_step.op, OpcodeId::SSTORE) {
                     format!(
                         "{:?} {:?} {:?}",
-                        state_ref.call().unwrap().address,
+                        state_ref.call().map(|c| c.address),
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )
-                } else if matches!(geth_step.op, OpcodeId::RETURN) {
-		    format!(
-                        "{:?} {:?}",
-                        geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1),
-                    )
-		} else {
-                    "".to_string()
+                } else {
+                    let stack_input_num = 1024 - geth_step.op.valid_stack_ptr_range().1 as usize;
+                    (0..stack_input_num).into_iter().map(|i|
+                        format!("{:?}",  geth_step.stack.nth_last(i))
+                    ).collect_vec().join(" ")
                 }
             );
             debug_assert_eq!(

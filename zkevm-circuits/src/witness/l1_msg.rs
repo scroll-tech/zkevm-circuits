@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     witness::{
-        rlp_fsm::{N_BYTES_CALLDATA, N_BYTES_LIST},
+        rlp_fsm::{MAX_TAG_LENGTH_OF_LIST, N_BYTES_CALLDATA},
         Format::L1MsgHash,
         RomTableRow,
         Tag::{BeginList, Data, EndList, Gas, Nonce, Sender, To, TxType, Value as TxValue},
@@ -21,7 +21,7 @@ impl Encodable for L1MsgTx {
 pub fn rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
         (TxType, BeginList, 1, vec![1]),
-        (BeginList, Nonce, N_BYTES_LIST, vec![2]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (Nonce, Gas, N_BYTES_U64, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),

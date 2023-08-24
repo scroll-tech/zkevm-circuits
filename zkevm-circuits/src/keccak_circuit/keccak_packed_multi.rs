@@ -12,11 +12,47 @@ use std::{env::var, vec};
 
 const MAX_DEGREE: usize = 9;
 
-pub(crate) fn get_num_rows_per_round() -> usize {
-    var("KECCAK_ROWS")
+/// Obtain the rows required for 1 iteration of f-box's inner round
+/// function (consisting of 5 phases) within Keccak circuit
+pub fn get_num_rows_per_round() -> usize {
+    let r = var("KECCAK_ROWS")
         .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
         .parse()
-        .expect("Cannot parse KECCAK_ROWS env var as usize")
+        .expect("Cannot parse KECCAK_ROWS env var as usize");
+    assert!(
+        r > NUM_BYTES_PER_WORD,
+        "env variable KECCAK_ROWS must be greater than (NUM_BYTES_PER_WORD + 1)."
+    );
+    r
+}
+/// Obtain the rows required for 1 iteration of the f-box
+/// function (consisting of nr = 12 + 2*l inner rounds)
+/// within Keccak circuit
+pub fn get_num_rows_per_update() -> usize {
+    get_num_rows_per_round() * (NUM_ROUNDS + 1)
+}
+/// Obtain the column position of the hash inputs
+/// within cell_manager for an inner round.
+/// This value is determined by the number of rows allocated
+/// to each inner round and target part_size for u64
+pub fn get_input_bytes_col_idx_in_cell_manager() -> usize {
+    let mut col: usize = 0;
+    let inner_round_num_rows = get_num_rows_per_round();
+
+    col += NUM_SETUP_VARS_FOR_ROUND / inner_round_num_rows;
+    if inner_round_num_rows * col < NUM_SETUP_VARS_FOR_ROUND {
+        col += 1;
+    }
+
+    let part_size = get_num_bits_per_absorb_lookup();
+    let part_length = WordParts::new(part_size, 0, false).parts.len();
+
+    let mut absorb_parts_col = part_length / inner_round_num_rows;
+    if inner_round_num_rows * absorb_parts_col < part_length {
+        absorb_parts_col += 1;
+    }
+
+    col + absorb_parts_col * 2 + 1
 }
 
 pub(crate) fn keccak_unusable_rows() -> usize {
@@ -24,7 +60,10 @@ pub(crate) fn keccak_unusable_rows() -> usize {
         53, 67, 63, 59, 45, 79, 77, 75, 73, 71, 69, 67, 65, 63, 61, 59, 57, 71, 89, 107, 107, 107,
         107, 107,
     ];
-    UNUSABLE_ROWS_BY_KECCAK_ROWS[get_num_rows_per_round() - NUM_BYTES_PER_WORD - 1]
+    UNUSABLE_ROWS_BY_KECCAK_ROWS
+        .get(get_num_rows_per_round() - NUM_BYTES_PER_WORD - 1)
+        .cloned()
+        .unwrap_or(107)
 }
 
 pub(crate) fn get_num_bits_per_absorb_lookup() -> usize {
@@ -571,6 +610,14 @@ pub(crate) fn keccak<F: Field>(
             absorb_from.assign(&mut region, 0, absorb_row.from);
             absorb_data.assign(&mut region, 0, absorb_row.absorb);
             absorb_result.assign(&mut region, 0, absorb_row.result);
+
+            // Column padding
+            if get_num_rows_per_round() > 28 {
+                for _ in 28..get_num_rows_per_round() {
+                    let padding_cell = cell_manager.query_cell_value();
+                    padding_cell.assign(&mut region, 0, F::zero());
+                }
+            }
 
             // Absorb
             cell_manager.start_region();

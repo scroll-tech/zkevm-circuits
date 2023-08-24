@@ -27,7 +27,6 @@ use halo2_proofs::{
     },
     plonk::Expression,
 };
-use strum::IntoEnumIterator;
 
 /// An execution step of the EVM.
 #[derive(Clone, Debug)]
@@ -207,16 +206,12 @@ pub enum CopyDataType {
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
     RlcAcc,
-    /// When the source of the copy is a call to a precompiled contract.
-    Precompile(PrecompileCalls),
 }
 impl CopyDataType {
-    /// Get variants that represent a precompile call.
-    pub fn precompile_types() -> Vec<Self> {
-        PrecompileCalls::iter().map(Self::Precompile).collect()
-    }
+    /// How many bits are necessary to represent a copy data type.
+    pub const N_BITS: usize = 3usize;
 }
-const NUM_COPY_DATA_TYPES: usize = 15usize;
+const NUM_COPY_DATA_TYPES: usize = 6usize;
 pub struct CopyDataTypeIter {
     idx: usize,
     back_idx: usize,
@@ -231,15 +226,6 @@ impl CopyDataTypeIter {
             3usize => Some(CopyDataType::TxCalldata),
             4usize => Some(CopyDataType::TxLog),
             5usize => Some(CopyDataType::RlcAcc),
-            6usize => Some(CopyDataType::Precompile(PrecompileCalls::Ecrecover)),
-            7usize => Some(CopyDataType::Precompile(PrecompileCalls::Sha256)),
-            8usize => Some(CopyDataType::Precompile(PrecompileCalls::Ripemd160)),
-            9usize => Some(CopyDataType::Precompile(PrecompileCalls::Identity)),
-            10usize => Some(CopyDataType::Precompile(PrecompileCalls::Modexp)),
-            11usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Add)),
-            12usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Mul)),
-            13usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Pairing)),
-            14usize => Some(CopyDataType::Precompile(PrecompileCalls::Blake2F)),
             _ => None,
         }
     }
@@ -306,7 +292,6 @@ impl From<CopyDataType> for usize {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
-            CopyDataType::Precompile(prec_call) => 5 + usize::from(prec_call),
         }
     }
 }
@@ -320,7 +305,6 @@ impl From<&CopyDataType> for u64 {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
-            CopyDataType::Precompile(prec_call) => 5 + u64::from(*prec_call),
         }
     }
 }
@@ -446,6 +430,14 @@ impl CopyEvent {
     /// Whether the destination performs RW lookups in the state circuit.
     pub fn is_destination_rw(&self) -> bool {
         self.dst_type == CopyDataType::Memory || self.dst_type == CopyDataType::TxLog
+    }
+
+    /// Whether the RLC of data must be computed.
+    pub fn has_rlc(&self) -> bool {
+        matches!(
+            (self.src_type, self.dst_type),
+            (CopyDataType::RlcAcc, _) | (_, CopyDataType::RlcAcc) | (_, CopyDataType::Bytecode)
+        )
     }
 
     /// The RW counter of the first RW lookup performed by this copy event.

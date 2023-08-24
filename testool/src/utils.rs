@@ -44,10 +44,12 @@ impl FromStr for MainnetFork {
             "Berlin" => Self::Berlin,
             "Muir Glacier" => Self::MuirGlacier,
             "Istanbul" => Self::Istanbul,
+            "ConstantinopleFix" => Self::Constantinople,
             "Constantinople" => Self::Constantinople,
             "Byzantium" => Self::Byzantium,
             "Spurious Dragon" => Self::SpuriousDragon,
             "TangeringWhistle" => Self::TangerineWhistle,
+            "EIP158" => Self::TangerineWhistle,
             "Homestead" => Self::Homestead,
             "Frontier" => Self::Frontier,
             _ => bail!(format!("Unknown network '{s}'")),
@@ -64,6 +66,10 @@ impl MainnetFork {
             for network in expect {
                 if let Some(network) = network.strip_prefix(">=") {
                     if crate::utils::TEST_FORK >= crate::utils::MainnetFork::from_str(network)? {
+                        in_network = true;
+                    }
+                } else if let Some(network) = network.strip_prefix("<") {
+                    if crate::utils::TEST_FORK < crate::utils::MainnetFork::from_str(network)? {
                         in_network = true;
                     }
                 } else if crate::utils::TEST_FORK == crate::utils::MainnetFork::from_str(network)? {

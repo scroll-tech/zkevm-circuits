@@ -230,7 +230,7 @@ impl TxTable {
         max_calldata: usize,
         chain_id: u64,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         assert!(
             txs.len() <= max_txs,
             "txs.len() <= max_txs: txs.len()={}, max_txs={}",
@@ -238,10 +238,14 @@ impl TxTable {
             max_txs
         );
         let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
-        assert!(
-            sum_txs_calldata <= max_calldata,
-            "sum_txs_calldata <= max_calldata: sum_txs_calldata={sum_txs_calldata}, max_calldata={max_calldata}",
-        );
+
+        // allow dynamic
+        if max_calldata != 0 {
+            assert!(
+                sum_txs_calldata <= max_calldata,
+                "sum_txs_calldata <= max_calldata: sum_txs_calldata={sum_txs_calldata}, max_calldata={max_calldata}",
+            );
+        }
 
         fn assign_row<F: Field>(
             region: &mut Region<'_, F>,
@@ -251,14 +255,19 @@ impl TxTable {
             tag: &Column<Fixed>,
             row: &[Value<F>; 4],
             msg: &str,
-        ) -> Result<(), Error> {
+        ) -> Result<AssignedCell<F, F>, Error> {
+            let mut value_cell = None;
             for (index, column) in advice_columns.iter().enumerate() {
-                region.assign_advice(
+                let cell = region.assign_advice(
                     || format!("tx table {msg} row {offset}"),
                     *column,
                     offset,
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
+                // tx_id, index, value
+                if index == 2 {
+                    value_cell = Some(cell);
+                }
             }
             region.assign_fixed(
                 || format!("tx table q_enable row {offset}"),
@@ -272,13 +281,14 @@ impl TxTable {
                 offset,
                 || row[1],
             )?;
-            Ok(())
+            Ok(value_cell.unwrap())
         }
 
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
+                let mut tx_value_cells = vec![];
                 let advice_columns = [self.tx_id, self.index, self.value];
                 assign_row(
                     &mut region,
@@ -312,7 +322,7 @@ impl TxTable {
                     let tx_data = tx.table_assignments_fixed(*challenges);
                     let tx_calldata = tx.table_assignments_dyn(*challenges);
                     for row in tx_data {
-                        assign_row(
+                        tx_value_cells.push(assign_row(
                             &mut region,
                             offset,
                             self.q_enable,
@@ -320,7 +330,7 @@ impl TxTable {
                             &self.tag,
                             &row,
                             "",
-                        )?;
+                        )?);
                         offset += 1;
                     }
                     calldata_assignments.extend(tx_calldata.iter());
@@ -338,7 +348,7 @@ impl TxTable {
                     )?;
                     offset += 1;
                 }
-                Ok(())
+                Ok(tx_value_cells)
             },
         )
     }
@@ -521,6 +531,9 @@ pub enum CallContextFieldTag {
     MemorySize,
     /// ReversibleWriteCounter
     ReversibleWriteCounter,
+
+    /// L1Fee
+    L1Fee,
 }
 impl_expr!(CallContextFieldTag);
 
@@ -1202,11 +1215,15 @@ pub enum BlockContextFieldTag {
     /// add it here for convenience.
     ChainId,
     /// In a multi-block setup, this variant represents the total number of txs
-    /// included in this block.
+    /// included (executed) in this block.
     NumTxs,
     /// In a multi-block setup, this variant represents the cumulative number of
     /// txs included up to this block, including the txs in this block.
     CumNumTxs,
+    /// In a multi-block setup, this variant represents the total number of txs
+    /// included in this block which also taking skipped l1 msgs into account.
+    /// This could possibly be larger than NumTxs.
+    NumAllTxs,
 }
 impl_expr!(BlockContextFieldTag);
 
@@ -1267,7 +1284,7 @@ impl BlockTable {
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
                         .count();
                     cum_num_txs += num_txs;
-                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
+                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, 0, challenges) {
                         region.assign_fixed(
                             || format!("block table row {offset}"),
                             self.tag,
@@ -1513,7 +1530,7 @@ pub struct CopyTable {
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
     /// TxLog. This also now includes various precompile calls, hence will take up more cells.
-    pub tag: BinaryNumberConfig<CopyDataType, 4>,
+    pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
@@ -1557,10 +1574,15 @@ impl CopyTable {
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
+        assert!(
+            copy_event.src_type != CopyDataType::Padding
+                && copy_event.dst_type != CopyDataType::Padding,
+            "Padding is an internal type"
+        );
 
         let mut assignments = Vec::new();
         // rlc_acc
-        let rlc_acc = {
+        let rlc_acc = if copy_event.has_rlc() {
             let values = copy_event
                 .copy_bytes
                 .bytes
@@ -1572,6 +1594,8 @@ impl CopyTable {
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
+        } else {
+            Value::known(F::zero())
         };
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
@@ -1706,17 +1730,7 @@ impl CopyTable {
                     (Value::known(addr), "addr"),
                     (Value::known(F::from(thread.addr_end)), "src_addr_end"),
                     (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
-                    (
-                        match (copy_event.src_type, copy_event.dst_type) {
-                            (CopyDataType::Precompile(_), _) => rlc_acc,
-                            (_, CopyDataType::Precompile(_)) => rlc_acc,
-                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
-                            (CopyDataType::TxCalldata, CopyDataType::Bytecode) => rlc_acc,
-                            (_, CopyDataType::RlcAcc) => rlc_acc,
-                            _ => Value::known(F::zero()),
-                        },
-                        "rlc_acc",
-                    ),
+                    (rlc_acc, "rlc_acc"),
                     (Value::known(F::from(rw_counter)), "rw_counter"),
                     (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
                 ],
@@ -2087,6 +2101,10 @@ pub struct RlpFsmRlpTable {
     pub rlp_tag: Column<Advice>,
     /// The actual value of the current tag being decoded.
     pub tag_value: Column<Advice>,
+    /// RLC of the tag's big-endian bytes
+    pub tag_bytes_rlc: Column<Advice>,
+    /// The actual length of bytes of the current tag being decoded.
+    pub tag_length: Column<Advice>,
     /// Whether or not the row emits an output value.
     pub is_output: Column<Advice>,
     /// Whether or not the current tag's value was nil.
@@ -2101,6 +2119,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             self.format.into(),
             self.rlp_tag.into(),
             self.tag_value.into(),
+            self.tag_bytes_rlc.into(),
+            self.tag_length.into(),
             self.is_output.into(),
             self.is_none.into(),
         ]
@@ -2113,6 +2133,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             String::from("format"),
             String::from("rlp_tag"),
             String::from("tag_value_acc"),
+            String::from("tag_bytes_rlc"),
+            String::from("tag_length"),
             String::from("is_output"),
             String::from("is_none"),
         ]
@@ -2128,6 +2150,8 @@ impl RlpFsmRlpTable {
             format: meta.advice_column(),
             rlp_tag: meta.advice_column(),
             tag_value: meta.advice_column_in(SecondPhase),
+            tag_bytes_rlc: meta.advice_column_in(SecondPhase),
+            tag_length: meta.advice_column(),
             is_output: meta.advice_column(),
             is_none: meta.advice_column(),
         }
@@ -2181,6 +2205,16 @@ impl RlpFsmRlpTable {
                             Value::known(F::from(usize::from(row.rlp_tag) as u64)),
                         ),
                         ("tag_value", self.tag_value.into(), row.tag_value),
+                        (
+                            "tag_bytes_rlc",
+                            self.tag_bytes_rlc.into(),
+                            row.tag_bytes_rlc,
+                        ),
+                        (
+                            "tag_length",
+                            self.tag_length.into(),
+                            Value::known(F::from(row.tag_length as u64)),
+                        ),
                         ("is_output", self.is_output.into(), Value::known(F::one())),
                         (
                             "is_none",

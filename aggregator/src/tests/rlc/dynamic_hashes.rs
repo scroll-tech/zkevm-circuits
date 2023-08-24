@@ -9,17 +9,14 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use zkevm_circuits::{
     keccak_circuit::{
-        keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuitConfigArgs,
+        keccak_packed_multi::{self, multi_keccak},
+        KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
     },
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuitConfig},
 };
 
-use crate::{
-    aggregation::RlcConfig,
-    constants::{LOG_DEGREE, ROWS_PER_ROUND},
-    util::keccak_round_capacity,
-};
+use crate::{aggregation::RlcConfig, constants::LOG_DEGREE};
 
 #[derive(Default, Debug, Clone)]
 struct DynamicHashCircuit {
@@ -78,6 +75,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let (config, challenges) = config;
+        let keccak_f_rows = keccak_packed_multi::get_num_rows_per_update();
 
         config
             .keccak_circuit_config
@@ -95,7 +93,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
         let witness = multi_keccak(
             &[hash_preimage.clone()],
             challenge,
-            keccak_round_capacity(1 << LOG_DEGREE),
+            KeccakCircuit::<Fr>::capacity_for_row(1 << LOG_DEGREE),
         )
         .unwrap();
 
@@ -113,7 +111,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
                         config
                             .keccak_circuit_config
                             .set_row(&mut region, offset, keccak_row)?;
-                    if offset % ROWS_PER_ROUND == 0 && data_rlc_cells.len() < 4 {
+                    if offset % keccak_f_rows == 0 && data_rlc_cells.len() < 4 {
                         // second element is data rlc
                         data_rlc_cells.push(row[1].clone());
                     }

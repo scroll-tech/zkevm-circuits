@@ -66,7 +66,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
-        let is_address_collision = callee_account.code_hash != CodeDB::empty_code_hash();
+        let is_address_collision = callee_account.code_hash != CodeDB::empty_code_hash()
+            || callee_account.nonce > Word::zero();
         if !callee_exists && callee.value.is_zero() {
             state.sdb.get_account_mut(&address).1.storage.clear();
         }
@@ -199,6 +200,16 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             code_hash_previous.to_word(),
         );
 
+        // read callee nonce for address collision checking
+        if !code_hash_previous.is_zero() {
+            state.account_read(
+                &mut exec_step,
+                address,
+                AccountField::Nonce,
+                callee_account.nonce,
+            );
+        }
+
         if is_precheck_ok && !is_address_collision {
             state.transfer(
                 &mut exec_step,
@@ -242,9 +253,10 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value);
         }
 
+        // precheck failed
         if !is_precheck_ok {
             for (field, value) in [
-                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeId, callee.call_id.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
@@ -314,12 +326,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         if length == 0 || is_address_collision {
             for (field, value) in [
-                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeId, callee.call_id.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value);
             }
+            state.caller_ctx_mut()?.return_data.clear();
             state.handle_return(&mut exec_step, geth_steps, false)?;
         }
 
