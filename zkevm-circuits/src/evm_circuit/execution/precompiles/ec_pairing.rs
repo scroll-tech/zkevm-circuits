@@ -1,6 +1,6 @@
 use bus_mapping::{
     circuit_input_builder::{EcPairingPair, N_BYTES_PER_PAIR, N_PAIRING_PER_OP},
-    precompile::{PrecompileAuxData, PrecompileCalls},
+    precompile::{EcPairingError, PrecompileAuxData, PrecompileCalls},
 };
 use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::{and, not, or, select, Expr};
@@ -78,24 +78,6 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let (evm_input_rlc, output) = (cb.query_cell_phase2(), cb.query_bool());
         let gas_cost = cb.query_cell();
-        let n_pairs = cb.query_cell();
-        let n_pairs_cmp = BinaryNumberGadget::construct(cb, n_pairs.expr());
-        let rand_pow_64 = cb.query_cell_phase2();
-        let (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576) = {
-            let rand_pow_128 = rand_pow_64.expr() * rand_pow_64.expr();
-            let rand_pow_192 = rand_pow_128.expr() * rand_pow_64.expr();
-            let rand_pow_384 = rand_pow_192.expr() * rand_pow_192.expr();
-            let rand_pow_576 = rand_pow_384.expr() * rand_pow_192.expr();
-            (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576)
-        };
-        cb.pow_of_rand_lookup(64.expr(), rand_pow_64.expr());
-
-        cb.require_equal(
-            "gas cost",
-            gas_cost.expr(),
-            GasCost::PRECOMPILE_BN256PAIRING.expr()
-                + n_pairs.expr() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
-        );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -136,9 +118,9 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                 // q == len(input) // 192
                 let input_div_192 = cb.query_cell();
                 cb.require_in_set(
-                    "len(input) // 192 ∈ { 0, 1, 2, 3 }",
+                    "len(input) // 192 ∈ { 0, 1, 2, 3, 4 }",
                     input_div_192.expr(),
-                    vec![0.expr(), 1.expr(), 2.expr(), 3.expr()],
+                    vec![0.expr(), 1.expr(), 2.expr(), 3.expr(), 4.expr()],
                 );
                 // q * 192 + r == call_data_length
                 cb.require_equal(
@@ -173,13 +155,32 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         //////////////////////////////// INVALID END //////////////////////////////////
 
         ///////////////////////////////// VALID BEGIN /////////////////////////////////
-        let (evm_input_g1_rlc, evm_input_g2_rlc, is_g1_identity, is_g2_identity) = cb.condition(
+        let (
+            n_pairs,
+            n_pairs_cmp,
+            rand_pow_64,
+            evm_input_g1_rlc,
+            evm_input_g2_rlc,
+            is_g1_identity,
+            is_g2_identity,
+        ) = cb.condition(
             // (len(input) == 0) || ((len(input) <= 768) && (len(input) % 192 == 0))
             or::expr([
                 input_is_zero.expr(),
                 and::expr([input_lt_769.expr(), input_mod_192_is_zero.expr()]),
             ]),
             |cb| {
+                let n_pairs = cb.query_cell();
+                let n_pairs_cmp = BinaryNumberGadget::construct(cb, n_pairs.expr());
+                let rand_pow_64 = cb.query_cell_phase2();
+                let (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576) = {
+                    let rand_pow_128 = rand_pow_64.expr() * rand_pow_64.expr();
+                    let rand_pow_192 = rand_pow_128.expr() * rand_pow_64.expr();
+                    let rand_pow_384 = rand_pow_192.expr() * rand_pow_192.expr();
+                    let rand_pow_576 = rand_pow_384.expr() * rand_pow_192.expr();
+                    (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576)
+                };
+                cb.pow_of_rand_lookup(64.expr(), rand_pow_64.expr());
                 let evm_input_g1_rlc = array_init::array_init(|_| cb.query_cell_phase2());
                 let evm_input_g2_rlc = array_init::array_init(|_| cb.query_cell_phase2());
                 let is_g1_identity = evm_input_g1_rlc.clone().map(|g1_rlc| {
@@ -310,7 +311,18 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                     call_data_length.expr(),
                     vec![0.expr(), 192.expr(), 384.expr(), 576.expr(), 768.expr()],
                 );
+                cb.condition(is_success.expr(), |cb| {
+                    cb.require_equal(
+                        "gas cost",
+                        gas_cost.expr(),
+                        GasCost::PRECOMPILE_BN256PAIRING.expr()
+                            + n_pairs.expr() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
+                    );
+                });
                 (
+                    n_pairs,
+                    n_pairs_cmp,
+                    rand_pow_64,
                     evm_input_g1_rlc,
                     evm_input_g2_rlc,
                     is_g1_identity,
@@ -372,64 +384,122 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        if let Some(PrecompileAuxData::EcPairing(aux_data)) = &step.aux_data {
-            let n_pairs = (call.call_data_length as usize) / N_BYTES_PER_PAIR;
+        if let Some(PrecompileAuxData::EcPairing(res_aux_data)) = step.aux_data.clone() {
             let keccak_rand = region.challenges().keccak_input();
 
-            // Consider only call_data_length bytes for EVM input.
-            self.evm_input_rlc.assign(
+            // len(input) related assignment.
+            self.input_is_zero
+                .assign(region, offset, F::from(call.call_data_length))?;
+            self.input_lt_769.assign(
                 region,
                 offset,
-                keccak_rand.map(|r| {
-                    rlc::value(
-                        aux_data
-                            .0
-                            .to_bytes_be()
-                            .iter()
-                            .take(call.call_data_length as usize)
-                            .rev(),
-                        r,
-                    )
-                }),
+                F::from(call.call_data_length),
+                F::from(769),
             )?;
-            // Pairing check output from ecPairing call.
-            self.output.assign(
-                region,
-                offset,
-                Value::known(
-                    aux_data
-                        .0
-                        .output
-                        .to_scalar()
-                        .expect("ecPairing: output in {0, 1}"),
-                ),
-            )?;
-            // Number of pairs provided in the EVM call.
-            self.n_pairs
-                .assign(region, offset, Value::known(F::from(n_pairs as u64)))?;
-            self.n_pairs_cmp.assign(region, offset, n_pairs)?;
-            // keccak_rand ^ 64.
-            self.rand_pow_64
-                .assign(region, offset, keccak_rand.map(|r| r.pow(&[64, 0, 0, 0])))?;
-            // G1, G2 points from EVM.
-            for i in 0..N_PAIRING_PER_OP {
-                let g1_bytes = aux_data.0.pairs[i].g1_bytes_be();
-                let g2_bytes = aux_data.0.pairs[i].g2_bytes_be();
-                let g1_rlc = keccak_rand.map(|r| rlc::value(g1_bytes.iter().rev(), r));
-                let g2_rlc = keccak_rand.map(|r| rlc::value(g2_bytes.iter().rev(), r));
-                self.evm_input_g1_rlc[i].assign(region, offset, g1_rlc)?;
-                self.is_g1_identity[i].assign_value(region, offset, g1_rlc)?;
-                self.evm_input_g2_rlc[i].assign(region, offset, g2_rlc)?;
-                self.is_g2_identity[i].assign_value(region, offset, g2_rlc)?;
+            let (input_div_192, input_mod_192) = (
+                call.call_data_length / (N_BYTES_PER_PAIR as u64),
+                call.call_data_length % (N_BYTES_PER_PAIR as u64),
+            );
+            self.input_div_192
+                .assign(region, offset, Value::known(F::from(input_div_192)))?;
+            self.input_mod_192
+                .assign(region, offset, Value::known(F::from(input_mod_192)))?;
+            self.input_mod_192_lt
+                .assign(region, offset, F::from(input_mod_192), F::from(192))?;
+            self.input_mod_192_is_zero
+                .assign(region, offset, F::from(input_mod_192))?;
+
+            match *res_aux_data {
+                Ok(aux_data) => {
+                    debug_assert!(
+                        call.call_data_length <= (N_PAIRING_PER_OP * N_BYTES_PER_PAIR) as u64,
+                        "len(input) > 768"
+                    );
+                    debug_assert!(
+                        call.call_data_length % (N_BYTES_PER_PAIR as u64) == 0,
+                        "len(input) % 192 != 0"
+                    );
+                    // Consider only call_data_length bytes for EVM input.
+                    self.evm_input_rlc.assign(
+                        region,
+                        offset,
+                        keccak_rand.map(|r| {
+                            rlc::value(
+                                aux_data
+                                    .0
+                                    .to_bytes_be()
+                                    .iter()
+                                    .take(call.call_data_length as usize)
+                                    .rev(),
+                                r,
+                            )
+                        }),
+                    )?;
+                    // Pairing check output from ecPairing call.
+                    self.output.assign(
+                        region,
+                        offset,
+                        Value::known(
+                            aux_data
+                                .0
+                                .output
+                                .to_scalar()
+                                .expect("ecPairing: output in {0, 1}"),
+                        ),
+                    )?;
+                    // Number of pairs provided in the EVM call.
+                    let n_pairs = (call.call_data_length as usize) / N_BYTES_PER_PAIR;
+                    self.n_pairs
+                        .assign(region, offset, Value::known(F::from(n_pairs as u64)))?;
+                    self.n_pairs_cmp.assign(region, offset, n_pairs)?;
+                    // keccak_rand ^ 64.
+                    self.rand_pow_64.assign(
+                        region,
+                        offset,
+                        keccak_rand.map(|r| r.pow(&[64, 0, 0, 0])),
+                    )?;
+                    // G1, G2 points from EVM.
+                    for i in 0..N_PAIRING_PER_OP {
+                        let g1_bytes = aux_data.0.pairs[i].g1_bytes_be();
+                        let g2_bytes = aux_data.0.pairs[i].g2_bytes_be();
+                        let g1_rlc = keccak_rand.map(|r| rlc::value(g1_bytes.iter().rev(), r));
+                        let g2_rlc = keccak_rand.map(|r| rlc::value(g2_bytes.iter().rev(), r));
+                        self.evm_input_g1_rlc[i].assign(region, offset, g1_rlc)?;
+                        self.is_g1_identity[i].assign_value(region, offset, g1_rlc)?;
+                        self.evm_input_g2_rlc[i].assign(region, offset, g2_rlc)?;
+                        self.is_g2_identity[i].assign_value(region, offset, g2_rlc)?;
+                    }
+                    self.gas_cost.assign(
+                        region,
+                        offset,
+                        Value::known(F::from(
+                            GasCost::PRECOMPILE_BN256PAIRING.0
+                                + (n_pairs as u64 * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.0),
+                        )),
+                    )?;
+                }
+                Err(EcPairingError::InvalidInputLen(input_bytes)) => {
+                    debug_assert_eq!(
+                        input_bytes.len(),
+                        call.call_data_length as usize,
+                        "len(input) != call_data_length"
+                    );
+                    debug_assert!(
+                        (call.call_data_length > (N_PAIRING_PER_OP * N_BYTES_PER_PAIR) as u64)
+                            || (call.call_data_length % (N_BYTES_PER_PAIR as u64) != 0),
+                        "len(input) is expected to be invalid",
+                    );
+                    // Consider only call_data_length bytes for EVM input.
+                    self.evm_input_rlc.assign(
+                        region,
+                        offset,
+                        keccak_rand.map(|r| rlc::value(input_bytes.iter().rev(), r)),
+                    )?;
+                    // Pairing check output from ecPairing call.
+                    self.output
+                        .assign(region, offset, Value::known(F::zero()))?;
+                }
             }
-            self.gas_cost.assign(
-                region,
-                offset,
-                Value::known(F::from(
-                    GasCost::PRECOMPILE_BN256PAIRING.0
-                        + (n_pairs as u64 * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.0),
-                )),
-            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecPairing", step.aux_data);
             return Err(Error::Synthesis);
@@ -467,7 +537,6 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
-
         self.restore_context
             .assign(region, offset, block, call, step, 7)
     }

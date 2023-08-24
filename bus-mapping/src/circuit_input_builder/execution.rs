@@ -1286,6 +1286,7 @@ impl EcPairingOp {
 
     /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
     pub fn is_valid(&self) -> bool {
+        // TODO(rohit): implement this
         unimplemented!()
     }
 }

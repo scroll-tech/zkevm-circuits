@@ -4,7 +4,7 @@ use crate::{
     circuit_input_builder::{
         EcPairingOp, EcPairingPair, PrecompileEvent, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
     },
-    precompile::{EcPairingAuxData, PrecompileAuxData},
+    precompile::{EcPairingAuxData, EcPairingError, PrecompileAuxData},
 };
 
 pub(crate) fn opt_data(
@@ -34,13 +34,23 @@ pub(crate) fn opt_data(
     }
 
     let (op, aux_data) = if let Some(input) = input_bytes {
+        if (input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR)
+            || (input.len() % N_BYTES_PER_PAIR != 0)
+        {
+            return (
+                None,
+                Some(PrecompileAuxData::EcPairing(Box::new(Err(
+                    EcPairingError::InvalidInputLen(input),
+                )))),
+            );
+        }
         debug_assert!(
             input.len() % N_BYTES_PER_PAIR == 0
                 && input.len() <= N_PAIRING_PER_OP * N_BYTES_PER_PAIR
         );
         // process input bytes.
         let (mut ecc_pairs, mut evm_pairs): (Vec<EcPairingPair>, Vec<EcPairingPair>) = input
-            .chunks(N_BYTES_PER_PAIR)
+            .chunks_exact(N_BYTES_PER_PAIR)
             .map(|chunk| {
                 // process <= 192 bytes chunk at a time.
                 let evm_circuit_pair = EcPairingPair {
@@ -101,6 +111,6 @@ pub(crate) fn opt_data(
 
     (
         Some(PrecompileEvent::EcPairing(Box::new(op))),
-        Some(PrecompileAuxData::EcPairing(Box::new(aux_data))),
+        Some(PrecompileAuxData::EcPairing(Box::new(Ok(aux_data)))),
     )
 }

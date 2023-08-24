@@ -341,6 +341,15 @@ impl EcMulAuxData {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingAuxData(pub EcPairingOp);
 
+/// Erroneous bytes passed to the EcPairing precompile call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EcPairingError {
+    /// the calldatalength passed to EcPairing precompile call is expected to be:
+    /// 1. len(input) <= 768
+    /// 2. len(input) % 192 == 0
+    InvalidInputLen(Vec<u8>),
+}
+
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
@@ -353,7 +362,7 @@ pub enum PrecompileAuxData {
     /// EcMul.
     EcMul(EcMulAuxData),
     /// EcPairing.
-    EcPairing(Box<EcPairingAuxData>),
+    EcPairing(Box<Result<EcPairingAuxData, EcPairingError>>),
 }
 
 impl Default for PrecompileAuxData {
