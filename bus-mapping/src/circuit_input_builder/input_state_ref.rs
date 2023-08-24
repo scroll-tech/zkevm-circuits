@@ -401,16 +401,11 @@ impl<'a> CircuitInputStateRef<'a> {
                 rw, account, self.block_ctx.rwc.0, op
             );
         }
-        // Verify that no read is done to a field other than CodeHash to a non-existing
+        // Verify that no rw is done to a field other than CodeHash to a non-existing
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT
         // AccountNonExisting proofs lookups).
-        if (!matches!(
-            op.field,
-            AccountField::CodeHash | AccountField::KeccakCodeHash
-        ) && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
-            && account.is_empty()
-        {
+        if account.is_empty() && !matches!(op.field, AccountField::CodeHash) {
             panic!(
                 "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
                 rw, self.block_ctx.rwc.0, op
