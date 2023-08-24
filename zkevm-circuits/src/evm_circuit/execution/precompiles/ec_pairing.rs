@@ -3,7 +3,7 @@ use bus_mapping::{
     precompile::{PrecompileAuxData, PrecompileCalls},
 };
 use eth_types::{evm_types::GasCost, Field, ToScalar};
-use gadgets::util::{or, select, Expr};
+use gadgets::util::{and, not, or, select, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -16,7 +16,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{BinaryNumberGadget, IsZeroGadget},
+            math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
             rlc, CachedRegion, Cell,
         },
     },
@@ -37,6 +37,16 @@ pub struct EcPairingGadget<F> {
     output: Cell<F>,
     /// Gas cost for the precompile call.
     gas_cost: Cell<F>,
+
+    // Verify invalidity of input bytes. We basically check `or(1, 2)` where:
+    // 1. input_len > 4 * 192
+    // 2. input_len % 192 != 0
+    input_is_zero: IsZeroGadget<F>,
+    input_lt_769: LtGadget<F, 2>,
+    input_mod_192: Cell<F>,
+    input_div_192: Cell<F>,
+    input_mod_192_lt: LtGadget<F, 1>,
+    input_mod_192_is_zero: IsZeroGadget<F>,
 
     /// Number of pairs provided through EVM input. Since a maximum of 4 pairs can be supplied from
     /// EVM, we need 3 binary bits for a max value of [1, 0, 0].
@@ -105,134 +115,218 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let evm_input_g1_rlc = array_init::array_init(|_| cb.query_cell_phase2());
-        let evm_input_g2_rlc = array_init::array_init(|_| cb.query_cell_phase2());
-        let is_g1_identity = evm_input_g1_rlc.clone().map(|g1_rlc| {
-            cb.annotation("is G1 zero", |cb| {
-                IsZeroGadget::construct(cb, g1_rlc.expr())
-            })
-        });
-        let is_g2_identity = evm_input_g2_rlc.clone().map(|g2_rlc| {
-            cb.annotation("is G2 zero", |cb| {
-                IsZeroGadget::construct(cb, g2_rlc.expr())
-            })
-        });
-
-        let padding_g1_g2_rlc = rlc::expr(
-            &EcPairingPair::ecc_padding()
-                .to_bytes_be()
-                .iter()
-                .rev()
-                .map(|i| i.expr())
-                .collect::<Vec<Expression<F>>>(),
-            cb.challenges().keccak_input(),
+        // if the precompile call was unsuccessful, the output (pairing check) MUST BE 0.
+        // `is_success` and `output` both are booleans, so:
+        cb.require_boolean(
+            "if the precompile call was unsuccessful, pairing check == 0",
+            is_success.expr() - output.expr(),
         );
-        let ecc_circuit_input_rlcs = evm_input_g1_rlc
-            .clone()
-            .zip(is_g1_identity.clone())
-            .zip(evm_input_g2_rlc.clone().zip(is_g2_identity.clone()))
-            .map(|((g1_rlc, is_g1_identity), (g2_rlc, is_g2_identity))| {
-                select::expr(
-                    or::expr([is_g1_identity.expr(), is_g2_identity.expr()]),
-                    // rlc([G1::identity, G2::generator])
-                    padding_g1_g2_rlc.expr(),
-                    // rlc([g1, g2])
-                    g1_rlc.expr() * rand_pow_128.expr() + g2_rlc.expr(),
+
+        //////////////////////////////// INVALID BEGIN ////////////////////////////////
+        let input_is_zero = IsZeroGadget::construct(cb, call_data_length.expr());
+        let input_lt_769 = LtGadget::construct(cb, call_data_length.expr(), 769.expr());
+        let (input_mod_192, input_div_192, input_mod_192_lt, input_mod_192_is_zero) = cb.condition(
+            and::expr([not::expr(input_is_zero.expr()), input_lt_769.expr()]),
+            |cb| {
+                // r == len(input) % 192
+                let input_mod_192 = cb.query_byte();
+                // r < 192
+                let input_mod_192_lt = LtGadget::construct(cb, input_mod_192.expr(), 192.expr());
+                cb.require_equal("len(input) % 192 < 192", input_mod_192_lt.expr(), 1.expr());
+                // q == len(input) // 192
+                let input_div_192 = cb.query_cell();
+                cb.require_in_set(
+                    "len(input) // 192 ∈ { 0, 1, 2, 3 }",
+                    input_div_192.expr(),
+                    vec![0.expr(), 1.expr(), 2.expr(), 3.expr()],
+                );
+                // q * 192 + r == call_data_length
+                cb.require_equal(
+                    "q * 192 + r == len(input)",
+                    input_div_192.expr() * 192.expr() + input_mod_192.expr(),
+                    call_data_length.expr(),
+                );
+                let input_mod_192_is_zero = IsZeroGadget::construct(cb, input_mod_192.expr());
+                (
+                    input_mod_192,
+                    input_div_192,
+                    input_mod_192_lt,
+                    input_mod_192_is_zero,
                 )
-            });
-        let ecc_circuit_input_rlc = ecc_circuit_input_rlcs[0].expr() * rand_pow_576.expr()
-            + ecc_circuit_input_rlcs[1].expr() * rand_pow_384.expr()
-            + ecc_circuit_input_rlcs[2].expr() * rand_pow_192.expr()
-            + ecc_circuit_input_rlcs[3].expr();
-
-        // Equality checks for EVM input bytes to ecPairing call.
-        cb.condition(n_pairs_cmp.value_equals(0usize), |cb| {
-            cb.require_zero("ecPairing: evm_input_rlc == 0", evm_input_rlc.expr());
-        });
-        cb.condition(n_pairs_cmp.value_equals(1usize), |cb| {
-            cb.require_equal(
-                "ecPairing: evm_input_rlc for 1 pair",
-                evm_input_rlc.expr(),
-                evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr(),
-            );
-        });
-        cb.condition(n_pairs_cmp.value_equals(2usize), |cb| {
-            cb.require_equal(
-                "ecPairing: evm_input_rlc for 2 pairs",
-                evm_input_rlc.expr(),
-                (evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr())
-                    * rand_pow_192.expr()
-                    + evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
-                    + evm_input_g2_rlc[1].expr(),
-            );
-        });
-        cb.condition(n_pairs_cmp.value_equals(3usize), |cb| {
-            cb.require_equal(
-                "ecPairing: evm_input_rlc for 3 pairs",
-                evm_input_rlc.expr(),
-                (evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr())
-                    * rand_pow_384.expr()
-                    + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
-                        + evm_input_g2_rlc[1].expr())
-                        * rand_pow_192.expr()
-                    + evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
-                    + evm_input_g2_rlc[2].expr(),
-            );
-        });
-        cb.condition(n_pairs_cmp.value_equals(4usize), |cb| {
-            cb.require_equal(
-                "ecPairing: evm_input_rlc for 4 pairs",
-                evm_input_rlc.expr(),
-                (evm_input_g1_rlc[0].expr() * rand_pow_128.expr() + evm_input_g2_rlc[0].expr())
-                    * rand_pow_576.expr()
-                    + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
-                        + evm_input_g2_rlc[1].expr())
-                        * rand_pow_384.expr()
-                    + (evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
-                        + evm_input_g2_rlc[2].expr())
-                        * rand_pow_192.expr()
-                    + evm_input_g1_rlc[3].expr() * rand_pow_128.expr()
-                    + evm_input_g2_rlc[3].expr(),
-            );
-        });
-
-        // Covers the following cases:
-        // 1. successful pairing check (where input_rlc == 0).
-        // 2. successful pairing check (where input_rlc != 0).
-        // 3. unsuccessful pairing check.
-        cb.ecc_table_lookup(
-            u64::from(PrecompileCalls::Bn128Pairing).expr(),
-            is_success.expr(),
-            0.expr(),
-            0.expr(),
-            0.expr(),
-            0.expr(),
-            ecc_circuit_input_rlc.expr(),
-            output.expr(),
-            0.expr(),
+            },
         );
+        cb.condition(
+            // (len(input) > 768) || (len(input) % 192 != 0)
+            or::expr([
+                not::expr(input_lt_769.expr()),
+                not::expr(input_mod_192_is_zero.expr()),
+            ]),
+            |cb| {
+                cb.require_equal(
+                    "len(input) is invalid => is_success == false",
+                    is_success.expr(),
+                    false.expr(),
+                );
+                cb.require_zero("pairing check == 0", output.expr());
+            },
+        );
+        //////////////////////////////// INVALID END //////////////////////////////////
 
-        // validate successful call to the precompile ecPairing.
-        cb.condition(is_success.expr(), |cb| {
-            cb.require_equal(
-                "ecPairing: n_pairs * N_BYTES_PER_PAIR == call_data_length",
-                n_pairs.expr() * N_BYTES_PER_PAIR.expr(),
-                call_data_length.expr(),
-            );
-            cb.require_in_set(
-                "ecPairing: input_len ∈ { 0, 192, 384, 576, 768 }",
-                call_data_length.expr(),
-                vec![0.expr(), 192.expr(), 384.expr(), 576.expr(), 768.expr()],
-            );
-        });
+        ///////////////////////////////// VALID BEGIN /////////////////////////////////
+        let (evm_input_g1_rlc, evm_input_g2_rlc, is_g1_identity, is_g2_identity) = cb.condition(
+            // (len(input) == 0) || ((len(input) <= 768) && (len(input) % 192 == 0))
+            or::expr([
+                input_is_zero.expr(),
+                and::expr([input_lt_769.expr(), input_mod_192_is_zero.expr()]),
+            ]),
+            |cb| {
+                let evm_input_g1_rlc = array_init::array_init(|_| cb.query_cell_phase2());
+                let evm_input_g2_rlc = array_init::array_init(|_| cb.query_cell_phase2());
+                let is_g1_identity = evm_input_g1_rlc.clone().map(|g1_rlc| {
+                    cb.annotation("is G1 zero", |cb| {
+                        IsZeroGadget::construct(cb, g1_rlc.expr())
+                    })
+                });
+                let is_g2_identity = evm_input_g2_rlc.clone().map(|g2_rlc| {
+                    cb.annotation("is G2 zero", |cb| {
+                        IsZeroGadget::construct(cb, g2_rlc.expr())
+                    })
+                });
+
+                let padding_g1_g2_rlc = rlc::expr(
+                    &EcPairingPair::ecc_padding()
+                        .to_bytes_be()
+                        .iter()
+                        .rev()
+                        .map(|i| i.expr())
+                        .collect::<Vec<Expression<F>>>(),
+                    cb.challenges().keccak_input(),
+                );
+                let ecc_circuit_input_rlcs = evm_input_g1_rlc
+                    .clone()
+                    .zip(is_g1_identity.clone())
+                    .zip(evm_input_g2_rlc.clone().zip(is_g2_identity.clone()))
+                    .map(|((g1_rlc, is_g1_identity), (g2_rlc, is_g2_identity))| {
+                        select::expr(
+                            or::expr([is_g1_identity.expr(), is_g2_identity.expr()]),
+                            // rlc([G1::identity, G2::generator])
+                            padding_g1_g2_rlc.expr(),
+                            // rlc([g1, g2])
+                            g1_rlc.expr() * rand_pow_128.expr() + g2_rlc.expr(),
+                        )
+                    });
+                let ecc_circuit_input_rlc = ecc_circuit_input_rlcs[0].expr() * rand_pow_576.expr()
+                    + ecc_circuit_input_rlcs[1].expr() * rand_pow_384.expr()
+                    + ecc_circuit_input_rlcs[2].expr() * rand_pow_192.expr()
+                    + ecc_circuit_input_rlcs[3].expr();
+
+                // Equality checks for EVM input bytes to ecPairing call.
+                cb.condition(n_pairs_cmp.value_equals(0usize), |cb| {
+                    cb.require_zero("ecPairing: evm_input_rlc == 0", evm_input_rlc.expr());
+                });
+                cb.condition(n_pairs_cmp.value_equals(1usize), |cb| {
+                    cb.require_equal(
+                        "ecPairing: evm_input_rlc for 1 pair",
+                        evm_input_rlc.expr(),
+                        evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
+                            + evm_input_g2_rlc[0].expr(),
+                    );
+                });
+                cb.condition(n_pairs_cmp.value_equals(2usize), |cb| {
+                    cb.require_equal(
+                        "ecPairing: evm_input_rlc for 2 pairs",
+                        evm_input_rlc.expr(),
+                        (evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
+                            + evm_input_g2_rlc[0].expr())
+                            * rand_pow_192.expr()
+                            + evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
+                            + evm_input_g2_rlc[1].expr(),
+                    );
+                });
+                cb.condition(n_pairs_cmp.value_equals(3usize), |cb| {
+                    cb.require_equal(
+                        "ecPairing: evm_input_rlc for 3 pairs",
+                        evm_input_rlc.expr(),
+                        (evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
+                            + evm_input_g2_rlc[0].expr())
+                            * rand_pow_384.expr()
+                            + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
+                                + evm_input_g2_rlc[1].expr())
+                                * rand_pow_192.expr()
+                            + evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
+                            + evm_input_g2_rlc[2].expr(),
+                    );
+                });
+                cb.condition(n_pairs_cmp.value_equals(4usize), |cb| {
+                    cb.require_equal(
+                        "ecPairing: evm_input_rlc for 4 pairs",
+                        evm_input_rlc.expr(),
+                        (evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
+                            + evm_input_g2_rlc[0].expr())
+                            * rand_pow_576.expr()
+                            + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
+                                + evm_input_g2_rlc[1].expr())
+                                * rand_pow_384.expr()
+                            + (evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
+                                + evm_input_g2_rlc[2].expr())
+                                * rand_pow_192.expr()
+                            + evm_input_g1_rlc[3].expr() * rand_pow_128.expr()
+                            + evm_input_g2_rlc[3].expr(),
+                    );
+                });
+
+                // Covers the following cases:
+                // 1. successful pairing check (where input_rlc == 0, i.e. no input).
+                // 2. successful pairing check (where input_rlc != 0, i.e. input bytes exist).
+                // 3. valid len(input): unsuccessful pairing check (invalid point or not on curve).
+                cb.ecc_table_lookup(
+                    u64::from(PrecompileCalls::Bn128Pairing).expr(),
+                    is_success.expr(),
+                    0.expr(),
+                    0.expr(),
+                    0.expr(),
+                    0.expr(),
+                    ecc_circuit_input_rlc.expr(),
+                    output.expr(),
+                    0.expr(),
+                );
+
+                // since len(input) was valid, we know that we are left with 2 scenarios:
+                // 1. pairing check == true
+                // 2. pairing check == false
+                // 3. invalid inputs:
+                //      - invalid field element
+                //      - point not on G1
+                //      - point not on G2
+                //
+                // however, we know that len(input) % 192 == 0 and len(input) <= 768
+                cb.require_equal(
+                    "ecPairing: n_pairs * N_BYTES_PER_PAIR == call_data_length",
+                    n_pairs.expr() * N_BYTES_PER_PAIR.expr(),
+                    call_data_length.expr(),
+                );
+                cb.require_in_set(
+                    "ecPairing: input_len ∈ { 0, 192, 384, 576, 768 }",
+                    call_data_length.expr(),
+                    vec![0.expr(), 192.expr(), 384.expr(), 576.expr(), 768.expr()],
+                );
+                (
+                    evm_input_g1_rlc,
+                    evm_input_g2_rlc,
+                    is_g1_identity,
+                    is_g2_identity,
+                )
+            },
+        );
+        ///////////////////////////////// VALID END ///////////////////////////////////
 
         let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
             gas_cost.expr(),
             0.expr(),
-            0x00.expr(), // ReturnDataOffset
-            0x20.expr(), // ReturnDataLength
+            0x00.expr(),                                               // ReturnDataOffset
+            select::expr(is_success.expr(), 0x20.expr(), 0x00.expr()), // ReturnDataLength
             0.expr(),
             0.expr(),
         );
@@ -241,6 +335,13 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             evm_input_rlc,
             output,
             gas_cost,
+
+            input_is_zero,
+            input_lt_769,
+            input_mod_192,
+            input_div_192,
+            input_mod_192_lt,
+            input_mod_192_is_zero,
 
             n_pairs,
             n_pairs_cmp,
