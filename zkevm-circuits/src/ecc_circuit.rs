@@ -524,7 +524,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         // - P == (0, 0) and/or Q == (0, 0)
         // - P == -Q, i.e. P + Q == R == (0, 0)
         let res = op.r.unwrap_or(G1Affine::identity());
-        let point_r = self.assign_g1(ctx, ecc_chip, res, powers_of_256);
+        let point_r = self.handle_g1(ctx, ecc_chip, res, powers_of_256);
         let rx_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.x);
         let ry_is_zero = ecc_chip.field_chip.is_zero(ctx, &point_r.ec_point.y);
 
@@ -634,10 +634,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         );
         let point_p = ecc_chip.select(ctx, &point_p, &dummy, &is_valid);
 
-        let scalar_s = self.assign_fr(ctx, fr_chip, op.s);
+        let scalar_s = self.handle_fr(ctx, fr_chip, op.s);
 
         let res = op.r.unwrap_or(G1Affine::identity());
-        let point_r = self.assign_g1(ctx, ecc_chip, res, powers_of_256);
+        let point_r = self.handle_g1(ctx, ecc_chip, res, powers_of_256);
 
         log::trace!("[ECC] EcMul Inputs Assigned:");
         log_context_cursor!(ctx);
@@ -953,8 +953,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         }
     }
 
-    /// Assign the G1 EcPoint and return its decomposed state.
-    fn assign_g1(
+    /// Handle G1 point and return its decomposed state.
+    fn handle_g1(
         &self,
         ctx: &mut Context<F>,
         ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
@@ -972,8 +972,20 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         }
     }
 
-    /// Add some pre-checks to elements that ought to be in Fq, and decompose the word value in the
-    /// process.
+    /// Handle a scalar field element and return its assigned state.
+    fn handle_fr(
+        &self,
+        ctx: &mut Context<F>,
+        fr_chip: &FpConfig<F, Fr>,
+        s: Fr,
+    ) -> ScalarAssigned<F> {
+        let scalar = fr_chip.load_private(ctx, FpConfig::<F, Fr>::fe_to_witness(&Value::known(s)));
+        ScalarAssigned { scalar }
+    }
+
+    /// Precheck a 32-bytes word input supposed to be bn256::Fq and return its CRT integer
+    /// representation. We also return the LE-bytes and assigned values to indicate whether the
+    /// value is within Fq::MODULUS and whether or not it is zero.
     fn precheck_fq(
         &self,
         ctx: &mut Context<F>,
@@ -1025,7 +1037,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         (crt_int, cells.to_vec(), is_lt_mod, is_zero)
     }
 
-    /// Get an assigned value that indicates whether the given point is on curve G1 or identity
+    /// Return an assigned value that indicates whether the given point is on curve G1 or identity
     /// point.
     fn is_on_curveg1_or_infinity(
         &self,
@@ -1055,7 +1067,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         )
     }
 
-    /// Get an assigned value that indicates whether the given point is on curve G2 or identity
+    /// Return an assigned value that indicates whether the given point is on curve G2 or identity
     /// point.
     fn is_on_curveg2_or_infinity(
         &self,
@@ -1085,7 +1097,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         )
     }
 
-    /// Assert that a CRT integer's bytes representation is correct.
+    /// Assert that a CRT integer's bytes representation matches the limb values.
     fn assert_crt_repr(
         &self,
         ctx: &mut Context<F>,
@@ -1131,43 +1143,6 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 .map(|&y| QuantumCell::Witness(Value::known(F::from(u64::from(y)))))
                 .collect_vec(),
         )
-    }
-
-    /// Decompose G2 element into cells representing all coefficients of its x and y co-ordinates.
-    fn decompose_g2(&self, g2: G2Affine) -> [Vec<QuantumCell<F>>; 4] {
-        [
-            g2.x.c0
-                .to_bytes()
-                .iter()
-                .map(|&x| QuantumCell::Witness(Value::known(F::from(u64::from(x)))))
-                .collect_vec(),
-            g2.x.c1
-                .to_bytes()
-                .iter()
-                .map(|&x| QuantumCell::Witness(Value::known(F::from(u64::from(x)))))
-                .collect_vec(),
-            g2.y.c0
-                .to_bytes()
-                .iter()
-                .map(|&y| QuantumCell::Witness(Value::known(F::from(u64::from(y)))))
-                .collect_vec(),
-            g2.y.c1
-                .to_bytes()
-                .iter()
-                .map(|&y| QuantumCell::Witness(Value::known(F::from(u64::from(y)))))
-                .collect_vec(),
-        ]
-    }
-
-    /// Assign a scalar field element and return its assigned state.
-    fn assign_fr(
-        &self,
-        ctx: &mut Context<F>,
-        fr_chip: &FpConfig<F, Fr>,
-        s: Fr,
-    ) -> ScalarAssigned<F> {
-        let scalar = fr_chip.load_private(ctx, FpConfig::<F, Fr>::fe_to_witness(&Value::known(s)));
-        ScalarAssigned { scalar }
     }
 }
 
