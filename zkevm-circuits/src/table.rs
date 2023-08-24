@@ -2531,8 +2531,7 @@ impl EccTable {
         {
             assignments.push([
                 Value::known(F::from(u64::from(PrecompileCalls::Bn128Pairing))),
-                // TODO(rohit): Value::known(F::from(pairing_op.is_valid() as u64)),
-                Value::known(F::one()),
+                Value::known(F::from(pairing_op.is_valid() as u64)),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),

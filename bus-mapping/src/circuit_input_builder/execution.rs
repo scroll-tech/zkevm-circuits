@@ -21,7 +21,7 @@ use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
-    halo2curves::bn256::{Fq, Fr, G1Affine, G2Affine},
+    halo2curves::bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
     plonk::Expression,
 };
 
@@ -1225,6 +1225,35 @@ impl EcPairingPair {
             g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
         }
     }
+
+    fn is_valid(&self) -> bool {
+        let fq_from_u256 = |buf: &mut [u8; 32], u256: U256| -> CtOption<Fq> {
+            u256.to_little_endian(buf);
+            Fq::from_bytes(buf)
+        };
+        let fq2_from_u256s = |buf: &mut [u8; 32], u256s: (U256, U256)| -> CtOption<Fq2> {
+            fq_from_u256(buf, u256s.0).and_then(|c1| {
+                fq_from_u256(buf, u256s.1)
+                    .and_then(|c0| CtOption::new(Fq2::new(c0, c1), 1u8.into()))
+            })
+        };
+        let g1_from_u256s = |buf: &mut [u8; 32], p: (U256, U256)| -> CtOption<G1Affine> {
+            fq_from_u256(buf, p.0)
+                .and_then(|x| fq_from_u256(buf, p.1).and_then(|y| G1Affine::from_xy(x, y)))
+        };
+        let g2_from_u256s = |buf: &mut [u8; 32],
+                             p: (U256, U256, U256, U256)|
+         -> CtOption<G2Affine> {
+            fq2_from_u256s(buf, (p.0, p.1))
+                .and_then(|x| fq2_from_u256s(buf, (p.2, p.3)).and_then(|y| G2Affine::from_xy(x, y)))
+        };
+
+        let mut buf = [0u8; 32];
+        let opt_point_g1: Option<G1Affine> = g1_from_u256s(&mut buf, self.g1_point).into();
+        let opt_point_g2: Option<G2Affine> = g2_from_u256s(&mut buf, self.g2_point).into();
+
+        opt_point_g1.is_some() && opt_point_g2.is_some()
+    }
 }
 
 /// EcPairing operation
@@ -1286,8 +1315,7 @@ impl EcPairingOp {
 
     /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
     pub fn is_valid(&self) -> bool {
-        // TODO(rohit): implement this
-        unimplemented!()
+        self.pairs.iter().all(|pair| pair.is_valid())
     }
 }
 
