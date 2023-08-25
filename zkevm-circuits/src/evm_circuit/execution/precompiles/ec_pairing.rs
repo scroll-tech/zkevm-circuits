@@ -149,6 +149,11 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                     is_success.expr(),
                     false.expr(),
                 );
+                cb.require_equal(
+                    "gas_cost == callee_gas_cost",
+                    gas_cost.expr(),
+                    cb.curr.state.gas_left.expr(),
+                );
                 cb.require_zero("pairing check == 0", output.expr());
             },
         );
@@ -469,14 +474,14 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                         self.evm_input_g2_rlc[i].assign(region, offset, g2_rlc)?;
                         self.is_g2_identity[i].assign_value(region, offset, g2_rlc)?;
                     }
-                    self.gas_cost.assign(
-                        region,
-                        offset,
-                        Value::known(F::from(
-                            GasCost::PRECOMPILE_BN256PAIRING.0
-                                + (n_pairs as u64 * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.0),
-                        )),
-                    )?;
+                    let gas_cost = if call.is_success {
+                        GasCost::PRECOMPILE_BN256PAIRING.0
+                            + (n_pairs as u64 * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.0)
+                    } else {
+                        step.gas_left
+                    };
+                    self.gas_cost
+                        .assign(region, offset, Value::known(F::from(gas_cost)))?;
                 }
                 Err(EcPairingError::InvalidInputLen(input_bytes)) => {
                     debug_assert_eq!(
