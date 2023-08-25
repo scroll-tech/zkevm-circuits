@@ -32,7 +32,7 @@ use eth_types::{
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
-use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
+use ethers_core::utils::{get_contract_address, get_create2_address};
 use log::trace;
 use std::{cmp::max, iter::repeat};
 
@@ -423,13 +423,17 @@ impl<'a> CircuitInputStateRef<'a> {
                     account.balance = op.value;
                 }
                 AccountField::KeccakCodeHash => {
-                    account.keccak_code_hash = H256::from(op.value.to_be_bytes())
+                    let value = H256::from(op.value.to_be_bytes());
+                    account.keccak_code_hash = value;
                 }
                 AccountField::CodeHash => {
                     self.sdb.set_touched(&op.address);
-                    account.code_hash = H256::from(op.value.to_be_bytes())
+                    let value = H256::from(op.value.to_be_bytes());
+                    account.code_hash = value;
                 }
-                AccountField::CodeSize => account.code_size = op.value,
+                AccountField::CodeSize => {
+                    account.code_size = op.value;
+                }
             }
         }
         self.sdb.set_account(&op.address, account);
@@ -1151,7 +1155,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 | OpcodeId::CALLCODE
                 | OpcodeId::DELEGATECALL
                 | OpcodeId::STATICCALL
-        ) {
+        ) || exec_step.error.is_some()
+        {
             if let Ok(caller) = self.caller_ctx_mut() {
                 caller.return_data.clear();
             }
@@ -1159,7 +1164,6 @@ impl<'a> CircuitInputStateRef<'a> {
         if need_restore {
             self.handle_restore_context(exec_step, geth_steps)?;
         }
-
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
         let callee_memory = call_ctx.memory.clone();
@@ -1174,15 +1178,23 @@ impl<'a> CircuitInputStateRef<'a> {
                 offset.low_u64(),
                 length.low_u64(),
             ));
-            let keccak_code_hash = H256(keccak256(&code));
+
+            #[cfg(feature = "scroll")]
+            let keccak_code_hash = H256(ethers_core::utils::keccak256(&code));
             let code_hash = self.code_db.insert(code);
+
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {
                 return Err(Error::AccountNotFound(call.address));
             }
-            callee_account.code_hash = code_hash;
-            callee_account.keccak_code_hash = keccak_code_hash;
-            callee_account.code_size = length;
+
+            // already updated in return_revert.rs with check_update_sdb_account
+            debug_assert_eq!(callee_account.code_hash, code_hash);
+            #[cfg(feature = "scroll")]
+            {
+                debug_assert_eq!(callee_account.code_size, length);
+                debug_assert_eq!(callee_account.keccak_code_hash, keccak_code_hash);
+            }
         }
 
         // Handle reversion if this call doesn't end successfully

@@ -1125,14 +1125,13 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
     if receiver != sender {
-        state.push_op_reversible(
+        state.transfer_to(
             &mut exec_step,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
-                value: receiver_account.balance + value,
-                value_prev: receiver_account.balance,
-            },
+            receiver,
+            !receiver_account.is_empty(),
+            false,
+            value,
+            true,
         )?;
     }
 
