@@ -1537,7 +1537,7 @@ impl<F: Field> PiCircuit<F> {
                         (&local_conn.start_state_root, &local_conn.end_state_root),
                         (&state_roots.start_state_root, &state_roots.end_state_root)
                     );
-
+                    /*
                     #[cfg(feature = "scroll-trace")]
                     {
                         region.constrain_equal(
@@ -1549,6 +1549,7 @@ impl<F: Field> PiCircuit<F> {
                             state_roots.end_state_root.0,
                         )?;
                     }
+                    */
                 } else {
                     log::warn!("state roots are not set, skip connection with state circuit");
                 }

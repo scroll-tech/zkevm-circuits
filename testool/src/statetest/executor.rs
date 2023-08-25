@@ -276,10 +276,15 @@ fn trace_config_to_witness_block_l2(
 
     // copied from super_circuit/test.rs.
     // refactor?
-    std::env::set_var("COINBASE", "0x0000000000000000000000000000000000000000");
-    std::env::set_var("CHAIN_ID", mock::MOCK_CHAIN_ID.to_string());
+    //std::env::set_var("COINBASE", "0x0000000000000000000000000000000000000000");
+    std::env::set_var(
+        "COINBASE",
+        format!("0x{}", hex::encode(block_trace.coinbase.address.unwrap())),
+    );
+    //std::env::set_var("CHAIN_ID", mock::MOCK_CHAIN_ID.to_string());
+    std::env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
     let mut difficulty_be_bytes = [0u8; 32];
-    mock::MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
+    mock::MOCK_DIFFICULTY_L2GETH.to_big_endian(&mut difficulty_be_bytes);
     std::env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
     let mut builder =
         CircuitInputBuilder::new_from_l2_trace(circuits_params, &block_trace, false, false)
