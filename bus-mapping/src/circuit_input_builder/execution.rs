@@ -951,12 +951,6 @@ impl Default for EcAddOp {
 
 impl EcAddOp {
     /// Creates a new EcAdd op given input and output bytes from a precompile call.
-    ///
-    /// Note: At the moment we are handling invalid/erroneous cases for precompiled contract calls
-    /// via a dummy gadget ErrorPrecompileFailure. So we expect the input bytes to be valid, i.e.
-    /// points P and Q are valid points on the curve. In the near future, we should ideally handle
-    /// invalid inputs within the respective precompile call's gadget. And then this function will
-    /// be fallible, since we would handle invalid inputs as well.
     pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
         let fq_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<Fq> {
             buf.copy_from_slice(bytes);
@@ -974,18 +968,16 @@ impl EcAddOp {
         assert_eq!(output.len(), 64);
 
         let mut buf = [0u8; 32];
-        let opt_point_p = g1_from_slice(&mut buf, &input[0x00..0x40]);
-        let opt_point_q = g1_from_slice(&mut buf, &input[0x40..0x80]);
+        let opt_point_p: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x00..0x40]).into();
+        let opt_point_q: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x40..0x80]).into();
         let point_r_evm = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
-        let point_r_cal = opt_point_p.and_then(|point_p| {
-            opt_point_q.and_then(|point_q| {
-                let point_r: G1Affine = point_p.add(&point_q).into();
-                debug_assert_eq!(
-                    point_r_evm, point_r,
-                    "point_r_evm={point_r_evm:?}, point_r_cal={point_r:?}",
-                );
-                CtOption::new(point_r, 1u8.into())
-            })
+        let point_r_cal = opt_point_p.zip(opt_point_q).map(|(point_p, point_q)| {
+            let point_r: G1Affine = point_p.add(&point_q).into();
+            debug_assert_eq!(
+                point_r_evm, point_r,
+                "point_r_evm={point_r_evm:?}, point_r_cal={point_r:?}",
+            );
+            point_r
         });
 
         Self {
@@ -997,7 +989,7 @@ impl EcAddOp {
                 U256::from_big_endian(&input[0x40..0x60]),
                 U256::from_big_endian(&input[0x60..0x80]),
             ),
-            r: point_r_cal.into(),
+            r: point_r_cal,
         }
     }
 
@@ -1069,16 +1061,16 @@ impl EcMulOp {
 
         let mut buf = [0u8; 32];
 
-        let opt_point_p = g1_from_slice(&mut buf, &input[0x00..0x40]);
+        let opt_point_p: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x00..0x40]).into();
         let s = Fr::from_raw(Word::from_big_endian(&input[0x40..0x60]).0);
         let point_r_evm = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
-        let point_r_cal = opt_point_p.and_then(|point_p| {
+        let point_r_cal = opt_point_p.map(|point_p| {
             let point_r: G1Affine = point_p.mul(s).into();
             debug_assert_eq!(
                 point_r_evm, point_r,
                 "point_r_evm={point_r_evm:?}, point_r_cal={point_r:?}",
             );
-            CtOption::new(point_r, 1u8.into())
+            point_r
         });
 
         Self {
@@ -1087,7 +1079,7 @@ impl EcMulOp {
                 U256::from_big_endian(&input[0x20..0x40]),
             ),
             s,
-            r: point_r_cal.into(),
+            r: point_r_cal,
         }
     }
 

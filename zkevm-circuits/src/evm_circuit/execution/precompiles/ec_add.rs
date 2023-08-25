@@ -279,6 +279,7 @@ mod test {
                     call_data_length: 0x80.into(),
                     ret_offset: 0x80.into(),
                     ret_size: 0x40.into(),
+                    gas: 1000.into(),
                     address: PrecompileCalls::Bn128Add.address().to_word(),
                     ..Default::default()
                 },
