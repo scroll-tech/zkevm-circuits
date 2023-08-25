@@ -94,10 +94,13 @@ impl Account {
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero()
+        let is_empty = self.nonce.is_zero()
             && self.balance.is_zero()
-            && self.code_hash.eq(&CodeDB::empty_code_hash())
-            && self.code_size.is_zero()
+            && self.code_hash.eq(&CodeDB::empty_code_hash());
+        if is_empty {
+            debug_assert_eq!(Word::zero(), self.code_size);
+        }
+        is_empty
     }
 
     /// Return the expected read code hash, i.e. in
