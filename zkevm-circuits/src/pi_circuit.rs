@@ -82,6 +82,8 @@ pub struct PublicData {
     pub block_ctxs: BlockContexts,
     /// Previous State Root
     pub prev_state_root: Hash,
+    /// Next State Root
+    pub next_state_root: Hash,
     /// Withdraw Trie Root
     pub withdraw_trie_root: Hash,
 }
@@ -93,6 +95,7 @@ impl Default for PublicData {
             start_l1_queue_index: 0,
             transactions: vec![],
             prev_state_root: H256::zero(),
+            next_state_root: H256::zero(),
             withdraw_trie_root: H256::zero(),
             block_ctxs: Default::default(),
         }
@@ -177,20 +180,12 @@ impl PublicData {
     }
 
     fn pi_bytes(&self, data_hash: H256) -> Vec<u8> {
-        let withdraw_trie_root = self.withdraw_trie_root;
-        let after_state_root = self
-            .block_ctxs
-            .ctxs
-            .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root)
-            .unwrap_or(self.prev_state_root);
-
         iter::empty()
             .chain(self.chain_id.to_be_bytes())
             // state roots
             .chain(self.prev_state_root.to_fixed_bytes())
-            .chain(after_state_root.to_fixed_bytes())
-            .chain(withdraw_trie_root.to_fixed_bytes())
+            .chain(self.next_state_root.to_fixed_bytes())
+            .chain(self.withdraw_trie_root.to_fixed_bytes())
             // data hash
             .chain(data_hash.to_fixed_bytes())
             .collect::<Vec<u8>>()
@@ -889,16 +884,9 @@ impl<F: Field> PiCircuitConfig<F> {
         //  1. prev_state_root
         //  2. after_state_root
         //  3. withdraw_trie_root
-
-        // state_root after applying this batch
-        let after_state_root = block_values
-            .ctxs
-            .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root)
-            .unwrap_or(public_data.prev_state_root);
         let roots = vec![
             public_data.prev_state_root.to_fixed_bytes(),
-            after_state_root.to_fixed_bytes(),
+            public_data.next_state_root.to_fixed_bytes(),
             public_data.withdraw_trie_root.to_fixed_bytes(),
         ];
         let root_cells = roots
@@ -1486,14 +1474,27 @@ impl<F: Field> PiCircuit<F> {
         block: &Block<F>,
     ) -> Self {
         let chain_id = block.chain_id;
+        let next_state_root = block
+            .context
+            .ctxs
+            .last_key_value()
+            .map(|(_, blk)| blk.eth_block.state_root)
+            .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
+        // sanity check
+        assert_eq!(
+            block.mpt_updates.new_root().to_be_bytes(),
+            next_state_root.to_fixed_bytes()
+        );
         let public_data = PublicData {
             chain_id,
             start_l1_queue_index: block.start_l1_queue_index,
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
             prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),
+            next_state_root,
             withdraw_trie_root: H256(block.withdraw_root.to_be_bytes()),
         };
+
         Self {
             public_data,
             max_txs,
