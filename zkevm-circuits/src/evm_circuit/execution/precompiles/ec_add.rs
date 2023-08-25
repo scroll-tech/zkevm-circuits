@@ -26,7 +26,6 @@ pub struct EcAddGadget<F> {
     point_q_y_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
-    gas_cost: Cell<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -59,13 +58,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
         );
-        let gas_cost = cb.query_cell();
-        // TODO: all gas sent to this call will be consumed if `is_success == false`.
-        cb.require_equal(
-            "ecAdd: gas cost",
-            gas_cost.expr(),
-            GasCost::PRECOMPILE_BN256ADD.expr(),
-        );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -78,6 +70,13 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
                 CallContextFieldTag::ReturnDataLength,
             ]
             .map(|tag| cb.call_context(None, tag));
+
+        // all gas sent to this call will be consumed if `is_success == false`.
+        let gas_cost = select::expr(
+            is_success.expr(),
+            GasCost::PRECOMPILE_BN256ADD.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
 
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
@@ -119,7 +118,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_q_y_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
-            gas_cost,
 
             is_success,
             callee_address,
@@ -160,11 +158,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             // FIXME: when we handle invalid inputs (and hence failures in the precompile calls),
             // this will be assigned either fixed gas cost (in case of success) or the
             // entire gas passed to the precompile call (in case of failure).
-            self.gas_cost.assign(
-                region,
-                offset,
-                Value::known(F::from(GasCost::PRECOMPILE_BN256ADD.0)),
-            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecAdd", step.aux_data);
             return Err(Error::Synthesis);
