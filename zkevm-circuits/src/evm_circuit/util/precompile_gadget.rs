@@ -19,7 +19,6 @@ pub struct PrecompileGadget<F> {
     address: BinaryNumberGadget<F, 4>,
     pad_right: LtGadget<F, N_BYTES_U64>,
     padding_gadget: PaddingGadget<F>,
-    pub(crate) precompile_call_gas_cost: Expression<F>,
 }
 
 impl<F: Field> PrecompileGadget<F> {
@@ -106,7 +105,7 @@ impl<F: Field> PrecompileGadget<F> {
             ExecutionState::PrecompileBn256Pairing,
             ExecutionState::PrecompileBlake2f,
         ];
-        let constraints: Vec<BoxedClosure<F, Cell<F>>> = vec![
+        let constraints: Vec<BoxedClosure<F>> = vec![
             Box::new(|cb| {
                 /* Ecrecover */
                 let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
@@ -117,7 +116,6 @@ impl<F: Field> PrecompileGadget<F> {
                     cb.query_cell_phase2(),
                     cb.query_keccak_rlc::<N_BYTES_ACCOUNT_ADDRESS>(),
                 );
-                let gas_cost = cb.query_cell();
                 let (r_pow_32, r_pow_64, r_pow_96) = {
                     let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
                     let r_pow_16 = challenges[15].clone();
@@ -144,19 +142,11 @@ impl<F: Field> PrecompileGadget<F> {
                 cb.condition(not::expr(recovered.expr()), |cb| {
                     cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
                 });
-                gas_cost
             }),
-            Box::new(|cb| {
-                /* Sha256 */
-                cb.query_cell()
-            }),
-            Box::new(|cb| {
-                /* Ripemd160 */
-                cb.query_cell()
-            }),
+            Box::new(|_cb| { /* Sha256 */ }),
+            Box::new(|_cb| { /* Ripemd160 */ }),
             Box::new(|cb| {
                 /* Identity */
-                let gas_cost = cb.query_cell();
                 cb.require_equal(
                     "input and output bytes are the same",
                     input_bytes_rlc.expr(),
@@ -167,13 +157,11 @@ impl<F: Field> PrecompileGadget<F> {
                     cd_length,
                     precompile_return_length,
                 );
-                gas_cost
             }),
             Box::new(|cb| {
                 /* Modexp */
                 let (input_bytes_acc_copied, output_bytes_acc_copied) =
                     (cb.query_cell_phase2(), cb.query_cell_phase2());
-                let gas_cost = cb.query_cell();
                 cb.require_equal(
                     "copy padded input bytes",
                     padding_gadget.padded_rlc(),
@@ -184,7 +172,6 @@ impl<F: Field> PrecompileGadget<F> {
                     output_bytes_rlc.clone(),
                     output_bytes_acc_copied.expr(),
                 );
-                gas_cost
             }),
             Box::new(|cb| {
                 /* EcAdd */
@@ -196,7 +183,6 @@ impl<F: Field> PrecompileGadget<F> {
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                 );
-                let gas_cost = cb.query_cell();
                 let (r_pow_32, r_pow_64, r_pow_96) = {
                     let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
                     let r_pow_16 = challenges[15].clone();
@@ -219,7 +205,6 @@ impl<F: Field> PrecompileGadget<F> {
                     output_bytes_rlc.expr(),
                     r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
                 );
-                gas_cost
             }),
             Box::new(|cb| {
                 /* EcMul */
@@ -230,7 +215,6 @@ impl<F: Field> PrecompileGadget<F> {
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                 );
-                let gas_cost = cb.query_cell();
                 let (r_pow_32, r_pow_64) = {
                     let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
                     let r_pow_16 = challenges[15].clone();
@@ -251,12 +235,10 @@ impl<F: Field> PrecompileGadget<F> {
                     output_bytes_rlc.expr(),
                     r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
                 );
-                gas_cost
             }),
             Box::new(|cb| {
                 /* EcPairing */
                 let (evm_input_rlc, output) = (cb.query_cell_phase2(), cb.query_bool());
-                let gas_cost = cb.query_cell();
                 cb.require_equal(
                     "input bytes (RLC) equality",
                     padding_gadget.padded_rlc(),
@@ -268,21 +250,15 @@ impl<F: Field> PrecompileGadget<F> {
                     output_bytes_rlc.expr(),
                     output.expr(),
                 );
-                gas_cost
             }),
-            Box::new(|cb| {
-                /* Blake2F */
-                cb.query_cell()
-            }),
+            Box::new(|_cb| { /* Blake2F */ }),
         ];
-        let precompile_call_gas_cost =
-            cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
+        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self {
             address,
             pad_right,
             padding_gadget,
-            precompile_call_gas_cost,
         }
     }
 

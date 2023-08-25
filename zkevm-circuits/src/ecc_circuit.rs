@@ -703,16 +703,16 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     self.precheck_fq(ctx, ecc_chip, pair.g1_point.1, powers_of_256);
                 let g1_point = EcPoint::<F, CRTInteger<F>>::construct(g1x, g1y);
                 let (g2x0, g2x0_cells, g2x0_valid, g2x0_is_zero) =
-                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.0, powers_of_256);
-                let (g2x1, g2x1_cells, g2x1_valid, g2x1_is_zero) =
                     self.precheck_fq(ctx, ecc_chip, pair.g2_point.1, powers_of_256);
+                let (g2x1, g2x1_cells, g2x1_valid, g2x1_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.0, powers_of_256);
                 let (g2y0, g2y0_cells, g2y0_valid, g2y0_is_zero) =
-                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.2, powers_of_256);
-                let (g2y1, g2y1_cells, g2y1_valid, g2y1_is_zero) =
                     self.precheck_fq(ctx, ecc_chip, pair.g2_point.3, powers_of_256);
+                let (g2y1, g2y1_cells, g2y1_valid, g2y1_is_zero) =
+                    self.precheck_fq(ctx, ecc_chip, pair.g2_point.2, powers_of_256);
                 let g2_point = EcPoint::<F, FieldExtPoint<CRTInteger<F>>>::construct(
-                    FieldExtPoint::construct(vec![g2x1, g2x0]),
-                    FieldExtPoint::construct(vec![g2y1, g2y0]),
+                    FieldExtPoint::construct(vec![g2x0, g2x1]),
+                    FieldExtPoint::construct(vec![g2y0, g2y1]),
                 );
                 let g2x_is_zero = ecc_chip.field_chip().range().gate().and(
                     ctx,
