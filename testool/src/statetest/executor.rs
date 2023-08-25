@@ -192,6 +192,8 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             chain_config: Some(external_tracer::ChainConfig::shanghai()),
             #[cfg(not(feature = "shanghai"))]
             chain_config: None,
+            #[cfg(feature = "scroll")]
+            l1_queue_index: 0,
         },
         st.result,
     )
@@ -296,7 +298,7 @@ pub fn run_test(
     );
 
     // process the transaction
-    let mut geth_data = eth_types::geth_types::GethData {
+    let geth_data = eth_types::geth_types::GethData {
         chain_id: trace_config.chain_id,
         history_hashes: trace_config.history_hashes.clone(),
         geth_traces: geth_traces.clone(),
@@ -313,10 +315,12 @@ pub fn run_test(
             max_calldata: 0, // dynamic
             max_bytecode: 5000,
             max_mpt_rows: 5000,
-            max_copy_rows: 55000,
-            max_evm_rows: 0, // dynamic
+            max_copy_rows: 0, // dynamic
+            max_evm_rows: 0,  // dynamic
             max_exp_steps: 5000,
             max_keccak_rows: 0, // dynamic?
+            max_poseidon_rows: 0,
+            max_vertical_circuit_rows: 0,
             max_inner_blocks: 64,
             max_rlp_rows: 6000,
             max_ec_ops: PrecompileEcParams {
@@ -340,7 +344,8 @@ pub fn run_test(
             .copy_checks(None)
             .run();
     } else {
-        geth_data.sign(&wallets);
+        // we should have signed tx in into_traceconfig
+        // geth_data.sign(&wallets);
 
         let circuits_params = CircuitsParams {
             max_txs: MAX_TXS,
@@ -352,6 +357,8 @@ pub fn run_test(
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_poseidon_rows: 0,
+            max_vertical_circuit_rows: 0,
             max_inner_blocks: 64,
             max_rlp_rows: 512,
             max_ec_ops: PrecompileEcParams {

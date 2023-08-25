@@ -175,7 +175,19 @@ impl Report {
                 if OUTPUT_ALL_RESULT_LEVELS.contains(&result.level) {
                     Some((id.clone(), result.clone()))
                 } else {
-                    None
+                    // ignore or success
+                    if result.level == ResultLevel::Success {
+                        None
+                    } else {
+                        // ignore
+                        let _big_test = result.details.starts_with("SkipTestMaxGasLimit")
+                            || result.details.starts_with("SkipTestMaxSteps");
+                        if result.details.starts_with("SkipTestSelfDestruct") {
+                            None
+                        } else {
+                            Some((id.clone(), result.clone()))
+                        }
+                    }
                 }
             })
             .collect();

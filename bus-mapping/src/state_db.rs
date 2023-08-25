@@ -129,6 +129,10 @@ pub struct StateDB {
     // Accounts that have been through `SELFDESTRUCT` under the situation that `is_persistent` is
     // `true`. These accounts will be reset once `commit_tx` is called.
     destructed_account: HashSet<Address>,
+    // Accounts that are still "empty", but an Account Rw {value_prev: 0x0, value: empty_code_hash}
+    // has already been applied.
+    // TODO: a better name?
+    touched_account: HashSet<Address>,
     refund: u64,
 }
 
@@ -150,6 +154,19 @@ impl StateDB {
             Some(acc) => (true, acc),
             None => (false, &(*ACCOUNT_ZERO)),
         }
+    }
+
+    /// If the returned value is false, then this address is real non existed address.
+    /// Any non codehash WriteRw cannot be applied.
+    pub fn is_touched(&self, addr: &Address) -> bool {
+        self.touched_account.contains(addr)
+    }
+
+    /// Even though this addr is still empty, an Account Rw {value_prev: 0x0, value:
+    /// empty_code_hash}
+    // has already been applied. So furthur Account Write Rw is allowed.
+    pub fn set_touched(&mut self, addr: &Address) -> bool {
+        self.touched_account.insert(*addr)
     }
 
     /// Get a mutable reference to the [`Account`] at `addr`.  If the
@@ -297,6 +314,7 @@ impl StateDB {
             *ptr = value;
         }
         self.dirty_storage = HashMap::new();
+        self.touched_account = HashSet::new();
         for addr in self.destructed_account.clone() {
             let (_, account) = self.get_account_mut(&addr);
             *account = ACCOUNT_ZERO.clone();

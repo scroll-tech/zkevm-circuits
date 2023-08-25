@@ -54,6 +54,25 @@ impl ValueTagLength for Vec<u8> {
     }
 }
 
+// return the tag length of the top-level BeginList tag
+pub(crate) fn get_rlp_len_tag_length(rlp_bytes: &[u8]) -> u32 {
+    let begin_list_byte = if rlp_bytes[0] < 0xc0 {
+        // it's eip2718 (first byte is transaction type)
+        rlp_bytes[1]
+    } else {
+        rlp_bytes[0]
+    };
+
+    assert!(begin_list_byte >= 0xc0);
+    if begin_list_byte < 0xf8 {
+        // list
+        1
+    } else {
+        // long_list
+        (begin_list_byte - 0xf7).into()
+    }
+}
+
 /// RLP tags
 #[derive(Default, Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
 pub enum Tag {

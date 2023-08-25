@@ -256,7 +256,11 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
-        let row_num = Self::min_num_rows();
+        let row_num = if block.circuits_params.max_vertical_circuit_rows == 0 {
+            Self::min_num_rows()
+        } else {
+            block.circuits_params.max_vertical_circuit_rows
+        };
 
         let ecdsa_verif_count = block
             .txs

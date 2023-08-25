@@ -20,6 +20,7 @@ pub mod error;
 pub mod bytecode;
 pub mod evm_types;
 pub mod geth_types;
+pub mod l2_types;
 pub mod sign_types;
 
 pub use bytecode::Bytecode;

@@ -349,7 +349,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// account in the StateDB, then if the rw operation is a write, apply
     /// it to the corresponding account in the StateDB.
     fn check_update_sdb_account(&mut self, rw: RW, op: &AccountOp) {
-        let account = self.sdb.get_account_mut(&op.address).1;
+        let mut account = self.sdb.get_account_mut(&op.address).1.clone();
         // -- sanity check begin --
         // Verify that a READ doesn't change the field value
         if matches!(rw, RW::READ) && op.value_prev != op.value {
@@ -401,15 +401,12 @@ impl<'a> CircuitInputStateRef<'a> {
                 rw, account, self.block_ctx.rwc.0, op
             );
         }
-        // Verify that no read is done to a field other than CodeHash to a non-existing
+        // Verify that no rw is done to a field other than CodeHash to a non-existing
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT
         // AccountNonExisting proofs lookups).
-        if (!matches!(
-            op.field,
-            AccountField::CodeHash | AccountField::KeccakCodeHash
-        ) && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
-            && account.is_empty()
+        if (account.is_empty() && !self.sdb.is_touched(&op.address))
+            && !matches!(op.field, AccountField::CodeHash)
         {
             panic!(
                 "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
@@ -428,10 +425,14 @@ impl<'a> CircuitInputStateRef<'a> {
                 AccountField::KeccakCodeHash => {
                     account.keccak_code_hash = H256::from(op.value.to_be_bytes())
                 }
-                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
+                AccountField::CodeHash => {
+                    self.sdb.set_touched(&op.address);
+                    account.code_hash = H256::from(op.value.to_be_bytes())
+                }
                 AccountField::CodeSize => account.code_size = op.value,
             }
         }
+        self.sdb.set_account(&op.address, account);
     }
 
     /// Push a read type [`AccountOp`] into the

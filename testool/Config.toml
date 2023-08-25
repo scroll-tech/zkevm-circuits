@@ -173,6 +173,8 @@ tests = []
 desc = "unimplemented"
 paths = [
     "EIP1559",
+    "stExample/eip1559Filler.yml",
+    "stExample/mergeTestFiller.yml",
     "EIP2930",
     "stPreCompiledContracts",
     "stZeroKnowledge"
@@ -181,9 +183,9 @@ paths = [
 [[skip_paths]]
 desc = "too big"
 paths = [
-    "stTimeConsuming",
-    "stExample",
-    "stQuadraticComplexityTest",
+    "stTimeConsuming", # full of useless sstore tests
+#    "stExample",
+#    "stQuadraticComplexityTest",
     "50000"
 ]
 
@@ -218,10 +220,10 @@ paths = [
     "callToNonExistentFiller.json",
     "tackDepthLimitSECFiller.json",
     "ValueOverflowFiller", # weird 0x:biginteger 0x...
-	"result_mergeEnvConvertionFiller.json", # missing `currentDifficulty`
-	"result_cancunEnvConvertionFiller.json", # missing `currentDifficulty`
-	"calldatacopy_dejavu2Filler.json", # missing comma
-	"callDataCopyOffsetFiller.json" # missing comma
+    "result_mergeEnvConvertionFiller.json", # missing `currentDifficulty`
+    "result_cancunEnvConvertionFiller.json", # missing `currentDifficulty`
+    "calldatacopy_dejavu2Filler.json", # missing comma
+    "callDataCopyOffsetFiller.json" # missing comma
 ]
 
 [[skip_paths]]
@@ -232,7 +234,13 @@ paths = [
     "CreateAndGasInsideCreateFiller.json",
     "StoreGasOnCreateFiller.json",
     "static_CREATE_EmptyContractAndCallIt_0weiFiller.json",
-    "static_CREATE_EmptyContractWithStorageAndCallIt_0weiFiller.json"
+    "static_CREATE_EmptyContractWithStorageAndCallIt_0weiFiller.json",
+    "stQuadraticComplexityTest/Create1000Filler.json",
+    "stQuadraticComplexityTest/Call20KbytesContract50_1Filler.json",
+    "stQuadraticComplexityTest/Call20KbytesContract50_3Filler.json",
+    "stQuadraticComplexityTest/Call20KbytesContract50_2Filler.json",
+    "stQuadraticComplexityTest/QuadraticComplexitySolidity_CallDataCopyFiller.json",
+    "stExample/add11Filler.json"
 ]
 
 [[skip_paths]]

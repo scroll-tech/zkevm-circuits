@@ -1,5 +1,7 @@
 //! This module generates traces by connecting to an external tracer
 
+#[cfg(feature = "scroll")]
+use eth_types::l2_types::BlockTrace;
 use eth_types::{
     geth_types::{Account, BlockConstants, Transaction},
     Address, Error, GethExecTrace, Word,
@@ -25,6 +27,9 @@ pub struct TraceConfig {
     pub logger_config: LoggerConfig,
     /// chain config
     pub chain_config: Option<ChainConfig>,
+    /// beginning index of l1 queue
+    #[cfg(feature = "scroll")]
+    pub l1_queue_index: u64,
 }
 
 /// Configuration structure for `logger.Config`
@@ -88,6 +93,7 @@ impl ChainConfig {
 }
 
 /// Creates a trace for the specified config
+#[cfg(not(feature = "scroll"))]
 pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     // Get the trace
     let trace_string = geth_utils::trace(&serde_json::to_string(&config).unwrap()).map_err(
@@ -100,4 +106,31 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
 
     let trace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
     Ok(trace)
+}
+
+/// Creates a l2-trace for the specified config
+#[cfg(feature = "scroll")]
+pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
+    // Get the trace
+    let trace_string = geth_utils::trace(&serde_json::to_string(&config).unwrap()).map_err(
+        |error| match error {
+            geth_utils::Error::TracingError(error) => Error::TracingError(error),
+        },
+    )?;
+
+    log::trace!("trace: {}", trace_string);
+
+    let trace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
+    Ok(trace)
+}
+
+#[cfg(feature = "scroll")]
+pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
+    let block_trace = l2trace(config)?;
+
+    Ok(block_trace
+        .execution_results
+        .iter()
+        .map(From::from)
+        .collect::<Vec<_>>())
 }
