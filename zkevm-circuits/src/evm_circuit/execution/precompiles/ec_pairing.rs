@@ -790,7 +790,7 @@ mod test {
                             }
                             // G2::random
                             let g2 = G2Affine::random(&mut rng);
-                            for fq in [g2.x.c0, g2.x.c1, g2.y.c0, g2.y.c1].iter() {
+                            for fq in [g2.x.c1, g2.x.c0, g2.y.c1, g2.y.c0].iter() {
                                 setup_code.push(32, Word::from_little_endian(&fq.to_bytes()));
                                 setup_code.push(2, memory_addr);
                                 memory_addr += 0x20;
