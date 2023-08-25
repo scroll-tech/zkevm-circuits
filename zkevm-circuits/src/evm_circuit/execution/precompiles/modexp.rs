@@ -707,7 +707,6 @@ pub struct ModExpGadget<F> {
 
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
-    gas_cost: Cell<F>,
     gas_cost_gadget: ModExpGasCost<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
@@ -721,7 +720,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         // we 'copy' the acc_bytes cell inside call_op step, so it must be the first query cells
         let input_bytes_acc = cb.query_cell_phase2();
         let output_bytes_acc = cb.query_cell_phase2();
-        let gas_cost = cb.query_cell();
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -795,10 +793,10 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
         let gas_cost_gadget =
             ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
-        cb.require_equal(
-            "modexp: gas cost",
-            gas_cost.expr(),
+        let gas_cost = select::expr(
+            is_success.expr(),
             gas_cost_gadget.dynamic_gas.max(),
+            cb.curr.state.gas_left.expr(),
         );
 
         let restore_context_gadget = RestoreContextGadget::construct2(
@@ -826,7 +824,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output,
             input_bytes_acc,
             output_bytes_acc,
-            gas_cost,
             gas_cost_gadget,
             garbage_bytes_holder,
         }
@@ -891,15 +888,13 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
 
-            let gas_cost = self.gas_cost_gadget.assign(
+            let _gas_cost = self.gas_cost_gadget.assign(
                 region,
                 offset,
                 &data.input_lens[0],
                 &data.input_lens[2],
                 &data.inputs[1],
             )?;
-            self.gas_cost
-                .assign(region, offset, Value::known(F::from(gas_cost)))?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
             return Err(Error::Synthesis);
