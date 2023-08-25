@@ -8,10 +8,8 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_WORD},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::EVMConstraintBuilder,
-            math_gadget::ConstantDivisionGadget,
-            CachedRegion, Cell,
+            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
+            math_gadget::ConstantDivisionGadget, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
