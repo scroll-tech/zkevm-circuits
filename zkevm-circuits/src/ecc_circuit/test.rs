@@ -10,11 +10,16 @@ use eth_types::{Field, U256};
 use halo2_proofs::{
     arithmetic::Field as ArithmeticField,
     dev::MockProver,
-    halo2curves::bn256::{Fr, G1Affine, G2Affine},
+    halo2curves::{
+        bn256::{Fq, Fr, G1Affine, G2Affine},
+        group::ff::PrimeField,
+    },
 };
-use rand::{CryptoRng, Rng, RngCore};
+use itertools::Itertools;
+use num::Integer;
+use rand::{thread_rng, CryptoRng, Rng, RngCore};
 
-use crate::ecc_circuit::EccCircuit;
+use crate::ecc_circuit::{util::LOG_TOTAL_NUM_ROWS, EccCircuit};
 
 fn run<F: Field, const MUST_FAIL: bool>(
     k: u32,
@@ -329,6 +334,100 @@ fn test_ecc_circuit_valid_invalid() {
         vec![],
         vec![],
         EC_PAIRING_OPS2.clone(),
+    );
+}
+
+#[ignore = "generate a lot of random invalid inputs for bn254 add"]
+#[test]
+fn test_invalid_ec_add() {
+    let u256_max = U256::from_little_endian(&[0xff; 32]);
+
+    // 1. p is on g1 but p.x > p and p.y < p
+    //   and p.x is close to 2^256
+    //   and q is generator
+    let mut rng = thread_rng();
+    let get_g1_from_x_coordinate = |x: Fq| {
+        let b = Fq::from(3);
+        // y^2 = x^3 + b (mod Fq)
+        let y2 = x * x * x + b;
+        let y = Fq::sqrt(&y2);
+        y.map(|y| {
+            (
+                U256::from_little_endian(&x.to_repr()),
+                U256::from_little_endian(&y.to_repr()),
+            )
+        })
+    };
+    let ec_adds = (0..50)
+        .into_iter()
+        .map(|_| {
+            let px = u256_max - (rng.next_u64() % 1024);
+            let x = Fq::from_raw(px.0);
+            (px, get_g1_from_x_coordinate(x))
+        })
+        .filter(|(_, p)| p.is_some().into())
+        .map(|(px, p)| {
+            let p = (px, p.unwrap().1);
+            let q = (U256::from(1), U256::from(2));
+
+            EcAddOp { p, q, r: None }
+        })
+        .collect_vec();
+
+    run::<Fr, false>(
+        LOG_TOTAL_NUM_ROWS,
+        PrecompileEcParams {
+            ec_add: ec_adds.len(),
+            ec_mul: 0,
+            ec_pairing: 0,
+        },
+        ec_adds,
+        vec![],
+        vec![],
+    );
+
+    // 2. p is on g1 but p.x[i] is close to Fq::MODULUS.limbs[i] and p.y < p
+    //   and q is generator
+    let ec_adds = (0..50)
+        .into_iter()
+        .map(|_| {
+            let fq_limbs: [u64; 4] = [
+                0x3c208c16d87cfd47,
+                0x97816a916871ca8d,
+                0xb85045b68181585d,
+                0x30644e72e131a029,
+            ];
+            let mut px_limbs = [0u64; 4];
+            px_limbs.iter_mut().enumerate().for_each(|(j, limb)| {
+                if j.is_odd() {
+                    *limb = fq_limbs[j] + rng.next_u64() % 1024;
+                } else {
+                    *limb = fq_limbs[j] - rng.next_u64() % 1024;
+                }
+            });
+            let x = Fq::from_raw(px_limbs);
+            let px = U256(px_limbs);
+            (px, get_g1_from_x_coordinate(x))
+        })
+        .filter(|(_, p)| p.is_some().into())
+        .map(|(px, p)| {
+            let p = (px, p.unwrap().1);
+            let q = (U256::from(1), U256::from(2));
+
+            EcAddOp { p, q, r: None }
+        })
+        .collect_vec();
+
+    run::<Fr, false>(
+        LOG_TOTAL_NUM_ROWS,
+        PrecompileEcParams {
+            ec_add: ec_adds.len(),
+            ec_mul: 0,
+            ec_pairing: 0,
+        },
+        ec_adds,
+        vec![],
+        vec![],
     );
 }
 
