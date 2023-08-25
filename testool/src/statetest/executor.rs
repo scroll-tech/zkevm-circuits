@@ -498,11 +498,12 @@ pub fn run_test(
         }
     };
 
-    let (witness_block, builder) = if cfg!(feature = "scroll") {
-        trace_config_to_witness_block_l2(trace_config, st, suite, circuits_params)?
-    } else {
-        trace_config_to_witness_block_l1(trace_config, st, suite, circuits_params)?
-    };
+    #[cfg(feature = "scroll")]
+    let (witness_block, builder) =
+        trace_config_to_witness_block_l2(trace_config, st, suite, circuits_params)?;
+    #[cfg(not(feature = "scroll"))]
+    let (witness_block, builder) =
+        trace_config_to_witness_block_l1(trace_config, st, suite, circuits_params)?;
 
     if !circuits_config.super_circuit {
         CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
