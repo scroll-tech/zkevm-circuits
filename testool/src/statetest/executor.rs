@@ -1,16 +1,12 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
-use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
-    mock::BlockData,
-};
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams};
 use eth_types::{geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, U256, U64};
 use ethers_core::{
-    k256::ecdsa::SigningKey,
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
     utils::keccak256,
 };
-use ethers_signers::{LocalWallet, Signer};
+use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
@@ -242,7 +238,7 @@ fn trace_config_to_witness_block_l2(
     st: StateTest,
     suite: TestSuite,
     circuits_params: CircuitsParams,
-) -> Result<(Block<Fr>, CircuitInputBuilder), StateTestError> {
+) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
     let block_trace = external_tracer::l2trace(&trace_config);
 
     let block_trace = match (block_trace, st.exception) {
@@ -253,12 +249,7 @@ fn trace_config_to_witness_block_l2(
                 found: "no error".into(),
             })
         }
-        (Err(_), true) => {
-            return Err(StateTestError::Exception {
-                expected: true,
-                found: "no error".into(),
-            })
-        }
+        (Err(_), true) => return Ok(None),
         (Err(err), false) => {
             return Err(StateTestError::Exception {
                 expected: false,
@@ -295,15 +286,18 @@ fn trace_config_to_witness_block_l2(
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
     zkevm_circuits::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
-    Ok((block, builder))
+    Ok(Some((block, builder)))
 }
 
+#[cfg(not(feature = "scroll"))]
 fn trace_config_to_witness_block_l1(
     trace_config: TraceConfig,
     st: StateTest,
     suite: TestSuite,
     circuits_params: CircuitsParams,
-) -> Result<(Block<Fr>, CircuitInputBuilder), StateTestError> {
+) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
+    use ethers_signers::Signer;
+
     let geth_traces = external_tracer::trace(&trace_config);
 
     let geth_traces = match (geth_traces, st.exception) {
@@ -314,12 +308,7 @@ fn trace_config_to_witness_block_l1(
                 found: "no error".into(),
             })
         }
-        (Err(_), true) => {
-            return Err(StateTestError::Exception {
-                expected: true,
-                found: "no error".into(),
-            })
-        }
+        (Err(_), true) => return Ok(None),
         (Err(err), false) => {
             return Err(StateTestError::Exception {
                 expected: false,
@@ -365,7 +354,9 @@ fn trace_config_to_witness_block_l1(
         ..eth_types::Block::default()
     };
 
-    let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
+    let wallet: LocalWallet = ethers_core::k256::ecdsa::SigningKey::from_bytes(&st.secret_key)
+        .unwrap()
+        .into();
     let mut wallets = HashMap::new();
     wallets.insert(
         wallet.address(),
@@ -381,7 +372,8 @@ fn trace_config_to_witness_block_l1(
         eth_block: eth_block.clone(),
     };
 
-    let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
+    let block_data =
+        bus_mapping::mock::BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
     let mut builder = block_data.new_circuit_input_builder();
     builder
@@ -391,7 +383,7 @@ fn trace_config_to_witness_block_l1(
     let block: Block<Fr> =
         zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
             .unwrap();
-    Ok((block, builder))
+    Ok(Some((block, builder)))
 }
 
 ////// params for degree = 20 ////////////
@@ -499,11 +491,14 @@ pub fn run_test(
     };
 
     #[cfg(feature = "scroll")]
-    let (witness_block, builder) =
-        trace_config_to_witness_block_l2(trace_config, st, suite, circuits_params)?;
+    let result = trace_config_to_witness_block_l2(trace_config, st, suite, circuits_params)?;
     #[cfg(not(feature = "scroll"))]
-    let (witness_block, builder) =
-        trace_config_to_witness_block_l1(trace_config, st, suite, circuits_params)?;
+    let result = trace_config_to_witness_block_l1(trace_config, st, suite, circuits_params)?;
+
+    let (witness_block, builder) = match result {
+        Some((witness_block, builder)) => (witness_block, builder),
+        None => return Ok(()),
+    };
 
     if !circuits_config.super_circuit {
         CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
