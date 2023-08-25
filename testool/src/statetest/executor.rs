@@ -15,10 +15,12 @@ use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
+use zkevm_circuits::{
+    super_circuit::SuperCircuit, test_util::CircuitTestBuilder, util::SubCircuit, witness::Block,
+};
 
-const MAX_TXS: usize = 1;
-const MAX_CALLDATA: usize = 32;
+//const MAX_TXS: usize = 1;
+//const MAX_CALLDATA: usize = 32;
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -208,34 +210,10 @@ pub fn geth_trace(st: StateTest) -> Result<GethExecTrace, StateTestError> {
     Ok(geth_traces.remove(0))
 }
 
-pub fn run_test(
-    st: StateTest,
-    suite: TestSuite,
-    circuits_config: CircuitsConfig,
+fn check_geth_traces(
+    geth_traces: &[GethExecTrace],
+    suite: &TestSuite,
 ) -> Result<(), StateTestError> {
-    // get the geth traces
-
-    let (_, trace_config, post) = into_traceconfig(st.clone());
-
-    let geth_traces = external_tracer::trace(&trace_config);
-
-    let geth_traces = match (geth_traces, st.exception) {
-        (Ok(res), false) => res,
-        (Ok(_), true) => {
-            return Err(StateTestError::Exception {
-                expected: true,
-                found: "no error".into(),
-            })
-        }
-        (Err(_), true) => return Ok(()),
-        (Err(err), false) => {
-            return Err(StateTestError::Exception {
-                expected: false,
-                found: err.to_string(),
-            })
-        }
-    };
-
     #[cfg(feature = "skip-self-destruct")]
     if geth_traces.iter().any(|gt| {
         gt.struct_logs
@@ -254,6 +232,98 @@ pub fn run_test(
     if suite.max_gas > 0 && geth_traces[0].gas.0 > suite.max_gas {
         return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
     }
+    Ok(())
+}
+
+/// Use scroll l2 evm to get a l2 BlockTrace
+#[cfg(feature = "scroll")]
+fn trace_config_to_witness_block_l2(
+    trace_config: TraceConfig,
+    st: StateTest,
+    suite: TestSuite,
+    circuits_params: CircuitsParams,
+) -> Result<(Block<Fr>, CircuitInputBuilder), StateTestError> {
+    let block_trace = external_tracer::l2trace(&trace_config);
+
+    let block_trace = match (block_trace, st.exception) {
+        (Ok(res), false) => res,
+        (Ok(_), true) => {
+            return Err(StateTestError::Exception {
+                expected: true,
+                found: "no error".into(),
+            })
+        }
+        (Err(_), true) => {
+            return Err(StateTestError::Exception {
+                expected: true,
+                found: "no error".into(),
+            })
+        }
+        (Err(err), false) => {
+            return Err(StateTestError::Exception {
+                expected: false,
+                found: err.to_string(),
+            })
+        }
+    };
+
+    let geth_traces = block_trace
+        .execution_results
+        .iter()
+        .map(From::from)
+        .collect::<Vec<_>>();
+    check_geth_traces(&geth_traces, &suite)?;
+
+    // copied from super_circuit/test.rs.
+    // refactor?
+    std::env::set_var("COINBASE", "0x0000000000000000000000000000000000000000");
+    std::env::set_var("CHAIN_ID", mock::MOCK_CHAIN_ID.to_string());
+    let mut difficulty_be_bytes = [0u8; 32];
+    mock::MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
+    std::env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+    let mut builder =
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, &block_trace, false, false)
+            .expect("could not handle block tx");
+    builder
+        .finalize_building()
+        .expect("could not finalize building block");
+    let mut block =
+        zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
+    zkevm_circuits::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    Ok((block, builder))
+}
+
+fn trace_config_to_witness_block_l1(
+    trace_config: TraceConfig,
+    st: StateTest,
+    suite: TestSuite,
+    circuits_params: CircuitsParams,
+) -> Result<(Block<Fr>, CircuitInputBuilder), StateTestError> {
+    let geth_traces = external_tracer::trace(&trace_config);
+
+    let geth_traces = match (geth_traces, st.exception) {
+        (Ok(res), false) => res,
+        (Ok(_), true) => {
+            return Err(StateTestError::Exception {
+                expected: true,
+                found: "no error".into(),
+            })
+        }
+        (Err(_), true) => {
+            return Err(StateTestError::Exception {
+                expected: true,
+                found: "no error".into(),
+            })
+        }
+        (Err(err), false) => {
+            return Err(StateTestError::Exception {
+                expected: false,
+                found: err.to_string(),
+            })
+        }
+    };
+
+    check_geth_traces(&geth_traces, &suite)?;
 
     let transactions = trace_config
         .transactions
@@ -306,72 +376,142 @@ pub fn run_test(
         eth_block: eth_block.clone(),
     };
 
-    let mut builder;
+    let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
+
+    let mut builder = block_data.new_circuit_input_builder();
+    builder
+        .handle_block(&eth_block, &geth_traces)
+        .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+
+    let block: Block<Fr> =
+        zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
+            .unwrap();
+    Ok((block, builder))
+}
+
+////// params for degree = 20 ////////////
+pub const MAX_TXS: usize = 100;
+pub const MAX_INNER_BLOCKS: usize = 100;
+pub const MAX_EXP_STEPS: usize = 10_000;
+pub const MAX_CALLDATA: usize = 600_000;
+pub const MAX_BYTECODE: usize = 600_000;
+pub const MAX_MPT_ROWS: usize = 1_000_000;
+pub const MAX_KECCAK_ROWS: usize = 1_000_000;
+pub const MAX_POSEIDON_ROWS: usize = 1_000_000;
+pub const MAX_VERTICLE_ROWS: usize = 1_000_000;
+pub const MAX_RWS: usize = 1_000_000;
+pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
+pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
+pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
+
+fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
+    CircuitsParams {
+        max_evm_rows: MAX_RWS,
+        max_rws: MAX_RWS,
+        max_copy_rows: MAX_RWS,
+        max_txs: MAX_TXS,
+        max_calldata: MAX_CALLDATA,
+        max_bytecode: MAX_BYTECODE,
+        max_inner_blocks: MAX_INNER_BLOCKS,
+        max_keccak_rows: MAX_KECCAK_ROWS,
+        max_poseidon_rows: MAX_POSEIDON_ROWS,
+        max_vertical_circuit_rows: MAX_VERTICLE_ROWS,
+        max_exp_steps: MAX_EXP_STEPS,
+        max_mpt_rows: MAX_MPT_ROWS,
+        max_rlp_rows: MAX_CALLDATA,
+        max_ec_ops: PrecompileEcParams {
+            ec_add: MAX_PRECOMPILE_EC_ADD,
+            ec_mul: MAX_PRECOMPILE_EC_MUL,
+            ec_pairing: MAX_PRECOMPILE_EC_PAIRING,
+        },
+    }
+}
+
+fn get_params_for_super_circuit_test() -> CircuitsParams {
+    CircuitsParams {
+        max_txs: MAX_TXS,
+        max_calldata: MAX_CALLDATA,
+        max_rws: 256,
+        max_copy_rows: 256,
+        max_mpt_rows: 256,
+        max_exp_steps: 256,
+        max_bytecode: 512,
+        max_evm_rows: 0,
+        max_keccak_rows: 0,
+        max_poseidon_rows: 0,
+        max_vertical_circuit_rows: 0,
+        max_inner_blocks: 64,
+        max_rlp_rows: 512,
+        max_ec_ops: PrecompileEcParams {
+            ec_add: 50,
+            ec_mul: 50,
+            ec_pairing: 2,
+        },
+    }
+}
+
+fn get_params_for_sub_circuit_test() -> CircuitsParams {
+    CircuitsParams {
+        max_txs: 1,
+        max_rws: 0,      // dynamic
+        max_calldata: 0, // dynamic
+        max_bytecode: 5000,
+        max_mpt_rows: 5000,
+        max_copy_rows: 0, // dynamic
+        max_evm_rows: 0,  // dynamic
+        max_exp_steps: 5000,
+        max_keccak_rows: 0, // dynamic?
+        max_poseidon_rows: 0,
+        max_vertical_circuit_rows: 0,
+        max_inner_blocks: 64,
+        max_rlp_rows: 6000,
+        max_ec_ops: PrecompileEcParams {
+            ec_add: 50,
+            ec_mul: 50,
+            ec_pairing: 2,
+        },
+    }
+}
+
+pub fn run_test(
+    st: StateTest,
+    suite: TestSuite,
+    circuits_config: CircuitsConfig,
+) -> Result<(), StateTestError> {
+    // get the geth traces
+
+    let (_, trace_config, post) = into_traceconfig(st.clone());
+
+    let circuits_params = if !circuits_config.super_circuit {
+        get_params_for_sub_circuit_test()
+    } else {
+        // params for super circuit
+        if cfg!(feature = "scroll") {
+            get_params_for_super_circuit_test_l2()
+        } else {
+            get_params_for_super_circuit_test()
+        }
+    };
+
+    let (witness_block, builder) = if cfg!(feature = "scroll") {
+        trace_config_to_witness_block_l2(trace_config, st, suite, circuits_params)?
+    } else {
+        trace_config_to_witness_block_l1(trace_config, st, suite, circuits_params)?
+    };
 
     if !circuits_config.super_circuit {
-        let circuits_params = CircuitsParams {
-            max_txs: 1,
-            max_rws: 0,      // dynamic
-            max_calldata: 0, // dynamic
-            max_bytecode: 5000,
-            max_mpt_rows: 5000,
-            max_copy_rows: 0, // dynamic
-            max_evm_rows: 0,  // dynamic
-            max_exp_steps: 5000,
-            max_keccak_rows: 0, // dynamic?
-            max_poseidon_rows: 0,
-            max_vertical_circuit_rows: 0,
-            max_inner_blocks: 64,
-            max_rlp_rows: 6000,
-            max_ec_ops: PrecompileEcParams {
-                ec_add: 50,
-                ec_mul: 50,
-                ec_pairing: 2,
-            },
-        };
-        let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
-
-        builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&eth_block, &geth_traces)
-            .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
-
-        let block: Block<Fr> =
-            zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
-                .unwrap();
-
-        CircuitTestBuilder::<1, 1>::new_from_block(block)
+        CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
             .copy_checks(None)
             .run();
     } else {
-        // we should have signed tx in into_traceconfig
-        // geth_data.sign(&wallets);
-
-        let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
-            max_rws: 256,
-            max_copy_rows: 256,
-            max_mpt_rows: 256,
-            max_exp_steps: 256,
-            max_bytecode: 512,
-            max_evm_rows: 0,
-            max_keccak_rows: 0,
-            max_poseidon_rows: 0,
-            max_vertical_circuit_rows: 0,
-            max_inner_blocks: 64,
-            max_rlp_rows: 512,
-            max_ec_ops: PrecompileEcParams {
-                ec_add: 50,
-                ec_mul: 50,
-                ec_pairing: 2,
-            },
-        };
-        let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 64, 0x100>::build(geth_data, circuits_params)
-                .unwrap();
-        builder = _builder;
-
+        // TODO: do we need to automatically adjust this k?
+        let k = 20;
+        // TODO: remove this MOCK_RANDOMNESS?
+        let circuit =
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>::new_from_block(
+                &witness_block,
+            );
+        let instance = circuit.instance();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover.assert_satisfied_par();
     };
