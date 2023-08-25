@@ -627,15 +627,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 .field_chip()
                 .load_private(ctx, Value::known(0.into())),
         );
-        // dummy point: we take generator
-        let dummy = EcPoint::construct(
-            ecc_chip
-                .field_chip()
-                .load_private(ctx, Value::known(1.into())),
-            ecc_chip
-                .field_chip()
-                .load_private(ctx, Value::known(2.into())),
-        );
+        // for invalid case, take a random point.
+        let dummy_g1 = ecc_chip.load_random_point::<G1Affine>(ctx);
 
         let point_p = EcPoint::construct(px, py);
         let is_valid = ecc_chip.field_chip().range().gate().and_many(
@@ -646,7 +639,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 QuantumCell::Existing(p_is_on_curve_or_infinity),
             ],
         );
-        let point_p = ecc_chip.select(ctx, &point_p, &dummy, &is_valid);
+        let point_p = ecc_chip.select(ctx, &point_p, &dummy_g1, &is_valid);
 
         let scalar_s = self.handle_fr(ctx, fr_chip, op.s);
 

@@ -10,16 +10,11 @@ use eth_types::{Field, U256};
 use halo2_proofs::{
     arithmetic::Field as ArithmeticField,
     dev::MockProver,
-    halo2curves::{
-        bn256::{Fq, Fr, G1Affine, G2Affine},
-        group::ff::PrimeField,
-    },
+    halo2curves::bn256::{Fr, G1Affine, G2Affine},
 };
-use itertools::Itertools;
-use num::Integer;
-use rand::{thread_rng, CryptoRng, Rng, RngCore};
+use rand::{CryptoRng, Rng, RngCore};
 
-use crate::ecc_circuit::{util::LOG_TOTAL_NUM_ROWS, EccCircuit};
+use crate::ecc_circuit::EccCircuit;
 
 fn run<F: Field, const MUST_FAIL: bool>(
     k: u32,
@@ -340,6 +335,12 @@ fn test_ecc_circuit_valid_invalid() {
 #[ignore = "generate a lot of random invalid inputs for bn254 add"]
 #[test]
 fn test_invalid_ec_add() {
+    use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
+    use halo2_proofs::halo2curves::{bn256::Fq, group::ff::PrimeField};
+    use itertools::Itertools;
+    use num::Integer;
+    use rand::thread_rng;
+
     let u256_max = U256::from_little_endian(&[0xff; 32]);
 
     // 1. p is on g1 but p.x > p and p.y < p
