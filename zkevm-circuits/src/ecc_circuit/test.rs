@@ -148,15 +148,13 @@ fn gen<T: GenRand, R: RngCore + CryptoRng>(mut r: &mut R, max_len: usize, is_neg
         .collect()
 }
 
-#[test]
-fn test_ecc_circuit_valid_invalid() {
-    use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
+mod valid_invalid_cases {
+    use super::*;
     use eth_types::word;
-    use halo2_proofs::halo2curves::bn256::Fr;
     use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
     lazy_static::lazy_static! {
-        static ref EC_ADD_OPS: Vec<EcAddOp> = {
+        pub(crate) static ref EC_ADD_OPS: Vec<EcAddOp> = {
             vec![
                 // 1. valid: P == Q == G1::generator
                 {
@@ -199,7 +197,7 @@ fn test_ecc_circuit_valid_invalid() {
                 },
             ]
         };
-        static ref EC_MUL_OPS: Vec<EcMulOp> = {
+        pub(crate) static ref EC_MUL_OPS: Vec<EcMulOp> = {
             vec![
                 // 1. valid: P = G1::generator, s = 3
                 EcMulOp {
@@ -228,7 +226,7 @@ fn test_ecc_circuit_valid_invalid() {
                 },
             ]
         };
-        static ref EC_PAIRING_OPS1: Vec<EcPairingOp> = {
+        pub(crate) static ref EC_PAIRING_OPS1: Vec<EcPairingOp> = {
             vec![
                 // 1. valid: pairing_check == 1
                 {
@@ -282,7 +280,7 @@ fn test_ecc_circuit_valid_invalid() {
                 },
             ]
         };
-        static ref EC_PAIRING_OPS2: Vec<EcPairingOp> = {
+        pub(crate) static ref EC_PAIRING_OPS2: Vec<EcPairingOp> = {
             vec![
                 // 3. valid: pairing_check == 0
                 {
@@ -310,6 +308,13 @@ fn test_ecc_circuit_valid_invalid() {
             ]
         };
     }
+}
+
+#[test]
+fn test_ecc_circuit_valid_invalid() {
+    use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use valid_invalid_cases::{EC_ADD_OPS, EC_MUL_OPS, EC_PAIRING_OPS1, EC_PAIRING_OPS2};
 
     run::<Fr, false>(
         LOG_TOTAL_NUM_ROWS,
@@ -468,6 +473,7 @@ fn test_ecc_circuit_negative() {
 fn variadic_size_check() {
     use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
     use halo2_proofs::halo2curves::bn256::Fr;
+    use valid_invalid_cases::{EC_ADD_OPS, EC_MUL_OPS, EC_PAIRING_OPS1, EC_PAIRING_OPS2};
 
     let mut rng = rand::thread_rng();
 
@@ -479,7 +485,7 @@ fn variadic_size_check() {
         max_pairing_ops: default_params.ec_pairing,
         add_ops: gen(&mut rng, 25, false),
         mul_ops: gen(&mut rng, 20, false),
-        pairing_ops: gen(&mut rng, 2, false),
+        pairing_ops: EC_PAIRING_OPS1.clone(),
         _marker: PhantomData,
     };
     let prover1 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
@@ -488,9 +494,17 @@ fn variadic_size_check() {
         max_add_ops: default_params.ec_add,
         max_mul_ops: default_params.ec_mul,
         max_pairing_ops: default_params.ec_pairing,
-        add_ops: gen(&mut rng, 20, false),
-        mul_ops: gen(&mut rng, 15, false),
-        pairing_ops: gen(&mut rng, 1, false),
+        add_ops: {
+            let mut ops = gen(&mut rng, 30, false);
+            ops.extend_from_slice(&EC_ADD_OPS);
+            ops
+        },
+        mul_ops: {
+            let mut ops = gen(&mut rng, 30, false);
+            ops.extend_from_slice(&EC_MUL_OPS);
+            ops
+        },
+        pairing_ops: EC_PAIRING_OPS2.clone(),
         _marker: PhantomData,
     };
     let prover2 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
