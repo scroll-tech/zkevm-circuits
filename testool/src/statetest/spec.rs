@@ -3,10 +3,7 @@ use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use std::{collections::HashMap, str::FromStr};
 
-/// TODO: Explain this
-#[cfg(feature = "scroll")]
-pub const DEFAULT_BASE_FEE: u32 = 0;
-#[cfg(not(feature = "scroll"))]
+/// https://github.com/ethereum/tests/pull/857 "set default gasPrice to 10"
 pub const DEFAULT_BASE_FEE: u32 = 10;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
