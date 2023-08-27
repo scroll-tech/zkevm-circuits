@@ -12,8 +12,7 @@ use compiler::Compiler;
 use config::Config;
 use log::info;
 use statetest::{
-    geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
-    StateTest,
+    load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results, StateTest,
 };
 use std::{collections::HashSet, path::PathBuf, time::SystemTime};
 use strum::EnumString;

@@ -22,8 +22,8 @@ use zkevm_circuits::{
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
-    #[error("CannotGenerateCircuitInput({0})")]
-    CircuitInput(String),
+    //#[error("CannotGenerateCircuitInput({0})")]
+    //CircuitInput(String),
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
@@ -78,6 +78,7 @@ fn check_post(
         let (_, actual) = builder.sdb.get_account(address);
 
         if expected.balance.map(|v| v == actual.balance) == Some(false) {
+            log::error!("balance mismatch, expected {expected:?} actual {actual:?}");
             return Err(StateTestError::BalanceMismatch {
                 expected: expected.balance.unwrap(),
                 found: actual.balance,
@@ -85,11 +86,7 @@ fn check_post(
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
-            log::error!(
-                "nonce mismatch, expected {:?} actual {:?}",
-                expected,
-                actual
-            );
+            log::error!("nonce mismatch, expected {expected:?} actual {actual:?}");
             return Err(StateTestError::NonceMismatch {
                 expected: expected.nonce.unwrap(),
                 found: actual.nonce,
@@ -113,10 +110,7 @@ fn check_post(
             let actual_value = actual.storage.get(slot).cloned().unwrap_or_else(U256::zero);
             if expected_value != &actual_value {
                 log::error!(
-                    "StorageMismatch address {:?}, expected {:?}, actual {:?}",
-                    address,
-                    expected,
-                    actual
+                    "StorageMismatch address {address:?}, expected {expected:?} actual {actual:?}"
                 );
                 return Err(StateTestError::StorageMismatch {
                     slot: *slot,
@@ -202,6 +196,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     )
 }
 
+/*
 pub fn geth_trace(st: StateTest) -> Result<GethExecTrace, StateTestError> {
     let (_, trace_config, _) = into_traceconfig(st);
 
@@ -210,6 +205,7 @@ pub fn geth_trace(st: StateTest) -> Result<GethExecTrace, StateTestError> {
 
     Ok(geth_traces.remove(0))
 }
+*/
 
 fn check_geth_traces(
     geth_traces: &[GethExecTrace],
@@ -492,7 +488,7 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
-    for (_addr, acc) in &trace_config.accounts {
+    for acc in trace_config.accounts.values() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
             return Err(StateTestError::SkipTestBalanceOverflow);
         }
