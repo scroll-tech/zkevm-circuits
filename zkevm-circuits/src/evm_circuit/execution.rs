@@ -94,6 +94,7 @@ mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_precompile;
 mod error_oog_sha3;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
