@@ -18,7 +18,9 @@ use rand_chacha::ChaCha20Rng;
 use std::env::set_var;
 
 use crate::witness::block_apply_mpt_state;
-use eth_types::{address, bytecode, l2_types::BlockTrace, word, Bytecode, ToWord, Word};
+#[cfg(feature = "scroll")]
+use eth_types::l2_types::BlockTrace;
+use eth_types::{address, bytecode, word, Bytecode, ToWord, Word};
 
 #[test]
 fn super_circuit_degree() {

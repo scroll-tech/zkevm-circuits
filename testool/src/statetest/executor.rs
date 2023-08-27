@@ -59,6 +59,7 @@ impl StateTestError {
             StateTestError::SkipTestMaxSteps(_)
                 | StateTestError::SkipTestMaxGasLimit(_)
                 | StateTestError::SkipTestSelfDestruct
+                | StateTestError::SkipTestBalanceOverflow
         )
     }
 }
@@ -215,9 +216,10 @@ fn check_geth_traces(
 ) -> Result<(), StateTestError> {
     #[cfg(feature = "skip-self-destruct")]
     if geth_traces.iter().any(|gt| {
-        gt.struct_logs
-            .iter()
-            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT)
+        gt.struct_logs.iter().any(|sl| {
+            sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
+                || sl.op == eth_types::evm_types::OpcodeId::INVALID(0xff)
+        })
     }) {
         return Err(StateTestError::SkipTestSelfDestruct);
     }
@@ -508,7 +510,7 @@ pub fn run_test(
 
     #[cfg(feature = "scroll")]
     let result = trace_config_to_witness_block_l2(
-        trace_config,
+        trace_config.clone(),
         st,
         suite,
         circuits_params,
@@ -516,14 +518,14 @@ pub fn run_test(
     )?;
     #[cfg(not(feature = "scroll"))]
     let result = trace_config_to_witness_block_l1(
-        trace_config,
+        trace_config.clone(),
         st,
         suite,
         circuits_params,
         circuits_config.verbose,
     )?;
 
-    let (witness_block, builder) = match result {
+    let (witness_block, mut builder) = match result {
         Some((witness_block, builder)) => (witness_block, builder),
         None => return Ok(()),
     };
@@ -545,6 +547,20 @@ pub fn run_test(
         prover.assert_satisfied_par();
     };
 
+    //#[cfg(feature = "scroll")]
+    {
+        // fill these "untouched" storage slots
+        // It is better to fill these info after (instead of before) bus-mapping re-exec.
+        // To prevent these data being used unexpectedly.
+        for acc in trace_config.accounts.values() {
+            let (_exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&acc.address);
+            for (k, v) in &acc.storage {
+                if !acc_in_local_sdb.storage.contains_key(k) {
+                    acc_in_local_sdb.storage.insert(*k, *v);
+                }
+            }
+        }
+    }
     check_post(&builder, &post)?;
 
     Ok(())

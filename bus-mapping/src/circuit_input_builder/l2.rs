@@ -40,11 +40,18 @@ impl From<&ZktrieState> for StateDB {
         }
 
         for (storage_key, data) in mpt_state.storage() {
-            if !data.as_ref().is_zero() {
-                //TODO: add an warning on non-existed account?
-                let (_, acc) = sdb.get_account_mut(&storage_key.0);
-                acc.storage.insert(storage_key.1, *data.as_ref());
-            }
+            // Since the StateDB is a partical db, 0 means we know it is zero instead of "unknown".
+            //if !data.as_ref().is_zero() {
+            log::trace!(
+                "trace sdb: addr {:?} key {:?} value {:?}",
+                storage_key.0,
+                storage_key.1,
+                *data.as_ref()
+            );
+            //TODO: add an warning on non-existed account?
+            let (_, acc) = sdb.get_account_mut(&storage_key.0);
+            acc.storage.insert(storage_key.1, *data.as_ref());
+            //}
         }
         sdb
     }
