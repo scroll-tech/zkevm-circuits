@@ -1139,6 +1139,9 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, true)?;
+    if let Ok(caller) = state.caller_ctx_mut() {
+        caller.return_data.clear();
+    }
+    state.handle_return(&mut exec_step, geth_steps, !state.call()?.is_root)?;
     Ok(vec![exec_step])
 }

@@ -227,7 +227,9 @@ impl ModExpAuxData {
         let limit = Word::from(MODEXP_SIZE_LIMIT);
 
         let input_valid = base_len <= limit && exp_len <= limit && modulus_len <= limit;
-        log::error!("modexp input invalid {}", input_valid);
+        if !input_valid {
+            log::error!("modexp input invalid: base_len {base_len} exp_len {exp_len} modulus_len {modulus_len}");
+        }
         (input_valid, [base_len, exp_len, modulus_len])
     }
 

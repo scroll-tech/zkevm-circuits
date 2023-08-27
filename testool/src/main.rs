@@ -12,8 +12,7 @@ use compiler::Compiler;
 use config::Config;
 use log::info;
 use statetest::{
-    geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
-    StateTest,
+    load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results, StateTest,
 };
 use std::{collections::HashSet, path::PathBuf, time::SystemTime};
 use strum::EnumString;
@@ -77,10 +76,14 @@ struct Args {
 }
 
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
-    println!("{}", &test);
-    let trace = geth_trace(test.clone())?;
-    crate::utils::print_trace(trace)?;
-    println!(
+    log::info!("{}", &test);
+    let circuits_config = CircuitsConfig {
+        verbose: true,
+        super_circuit: circuits_config.super_circuit,
+    };
+    //let trace = geth_trace(test.clone())?;
+    //crate::utils::print_trace(trace)?;
+    log::info!(
         "result={:?}",
         run_test(test, TestSuite::default(), circuits_config)
     );

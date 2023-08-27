@@ -78,6 +78,10 @@ fn trace_code(
         .stack
         .as_ref()
         .expect("should have stack in call context");
+    if stack_pos >= stack.len() {
+        log::error!("stack underflow, step {step:?}");
+        return;
+    }
     let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
 
     let code_hash = code_hash.or_else(|| {
@@ -192,10 +196,8 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
                         let code = data.get_code_at(0);
                         if code.is_none() {
-                            return Err(Error::InvalidGethExecStep(
-                                "invalid trace: cannot get code of ext",
-                                Box::new(eth_types::GethExecStep::from(step)),
-                            ));
+                            log::warn!("unable to fetch code from step. {step:?}");
+                            continue;
                         }
                         trace_code(cdb, None, code.unwrap(), step, sdb, 0);
                     }
