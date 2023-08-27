@@ -1295,7 +1295,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // successful revert also makes call.is_success == false
         // but this "successful revert" should not be handled here
-        if !is_return_revert_succ && !call.is_success && !exec_step.is_precompiled() {
+        if !is_return_revert_succ
+            && !call.is_success
+            && !exec_step.is_precompiled()
+            && !exec_step.is_precompile_oog_err()
+        {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,

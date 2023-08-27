@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     circuit_input_builder::CallContext,
-    error::ExecError,
+    error::{ExecError, OogError},
     exec_trace::OperationRef,
     operation::RWCounter,
     precompile::{PrecompileAuxData, PrecompileCalls},
@@ -106,6 +106,11 @@ impl ExecStep {
     /// Returns `true` if this is an execution step of Precompile.
     pub fn is_precompiled(&self) -> bool {
         matches!(self.exec_state, ExecState::Precompile(_))
+    }
+
+    /// Returns `true` if `error` is oog in precompile calls
+    pub fn is_precompile_oog_err(&self) -> bool {
+        matches!(self.error, Some(ExecError::OutOfGas(OogError::Precompile)))
     }
 }
 
