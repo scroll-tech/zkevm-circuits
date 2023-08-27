@@ -47,6 +47,9 @@ pub enum StateTestError {
     SkipTestMaxSteps(usize),
     #[error("SkipTestSelfDestruct")]
     SkipTestSelfDestruct,
+    #[error("SkipTestDifficulty")]
+    // scroll evm always returns 0 for "difficulty" opcode
+    SkipTestDifficulty,
     #[error("SkipTestBalanceOverflow")]
     SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
@@ -57,6 +60,7 @@ impl StateTestError {
     pub fn is_skip(&self) -> bool {
         // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
         let _ = StateTestError::SkipTestSelfDestruct;
+        let _ = StateTestError::SkipTestDifficulty;
 
         matches!(
             self,
@@ -64,6 +68,7 @@ impl StateTestError {
                 | StateTestError::SkipTestMaxGasLimit(_)
                 | StateTestError::SkipTestSelfDestruct
                 | StateTestError::SkipTestBalanceOverflow
+                | StateTestError::SkipTestDifficulty
         )
     }
 }
@@ -226,6 +231,15 @@ fn check_geth_traces(
         })
     }) {
         return Err(StateTestError::SkipTestSelfDestruct);
+    }
+
+    #[cfg(feature = "scroll")]
+    if geth_traces.iter().any(|gt| {
+        gt.struct_logs
+            .iter()
+            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
+    }) {
+        return Err(StateTestError::SkipTestDifficulty);
     }
 
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
