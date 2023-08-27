@@ -23,7 +23,7 @@ impl ErrorOOGPrecompile {
             &mut exec_step,
             call.call_id,
             CallContextField::CalleeAddress,
-            call.address.to_word(),
+            call.code_address().unwrap().to_word(),
         );
         state.call_context_read(
             &mut exec_step,

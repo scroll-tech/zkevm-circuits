@@ -5,7 +5,7 @@ use halo2_proofs::{circuit::Value, plonk::Expression};
 
 use crate::evm_circuit::{
     param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
-    step::ExecutionState,
+    step::{ExecutionState, ExecutionState::ErrorOutOfGasPrecompile},
 };
 
 use super::{
@@ -93,7 +93,12 @@ impl<F: Field> PrecompileGadget<F> {
             address.value_equals(PrecompileCalls::Bn128Mul),
             address.value_equals(PrecompileCalls::Bn128Pairing),
             address.value_equals(PrecompileCalls::Blake2F),
-        ];
+        ]
+        .into_iter()
+        .map(|cond| {
+            cond.expr() * not::expr(cb.next.execution_state_selector([ErrorOutOfGasPrecompile]))
+        })
+        .collect::<Vec<_>>();
         let next_states = vec![
             ExecutionState::PrecompileEcrecover,
             ExecutionState::PrecompileSha256,

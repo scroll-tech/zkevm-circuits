@@ -14,7 +14,7 @@ use crate::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::precompile::PrecompileCalls;
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::{sum, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -70,6 +70,7 @@ impl<F: Field> NPairsGadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGPrecompileGadget<F> {
+    precompile_addr: Cell<F>,
     addr_bits: BinaryNumberGadget<F, 4>,
     call_data_length: Cell<F>,
     n_pairs: NPairsGadget<F>,
@@ -161,6 +162,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         );
 
         Self {
+            precompile_addr,
             required_gas,
             insufficient_gas,
             n_pairs,
@@ -180,7 +182,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         // addr_bits
-        let precompile_addr = call.callee_address;
+        let precompile_addr = call.code_address.unwrap();
+        self.precompile_addr.assign(
+            region,
+            offset,
+            Value::known(precompile_addr.to_scalar().unwrap()),
+        )?;
         self.addr_bits
             .assign(region, offset, precompile_addr.to_fixed_bytes()[19])?;
 
@@ -196,7 +203,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         self.n_pairs.assign(region, offset, call.call_data_length)?;
 
         // required_gas
-        let precompile_call: PrecompileCalls = call.callee_address.to_fixed_bytes()[19].into();
+        let precompile_call: PrecompileCalls = precompile_addr.to_fixed_bytes()[19].into();
         let required_gas = if precompile_call == PrecompileCalls::Bn128Pairing {
             precompile_call.base_gas_cost().as_u64()
                 + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.as_u64()
