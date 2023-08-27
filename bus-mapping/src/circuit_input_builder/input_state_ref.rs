@@ -1656,6 +1656,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
             ) {
                 let code_address = step.stack.nth_last(1)?.to_address();
+                // NOTE: we do not know the amount of gas that precompile got here
+                //   because the callGasTemp might probably be smaller than the gas
+                //   on top of the stack (step.stack.last())
+                // Therefore we postpone the oog handling to the implementor of callop.
                 if is_precompiled(&code_address) {
                     let precompile_call: PrecompileCalls = code_address[19].into();
                     match precompile_call {

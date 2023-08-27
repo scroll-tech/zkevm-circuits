@@ -4,7 +4,10 @@ use crate::{
         CallKind, CircuitInputStateRef, CodeSource, CopyBytes, CopyDataType, CopyEvent, ExecStep,
         NumberOrHash,
     },
-    evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
+    evm::opcodes::{
+        error_oog_precompile::ErrorOOGPrecompile,
+        precompiles::gen_associated_ops as precompile_associated_ops,
+    },
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
@@ -263,7 +266,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // get the result of the precompile call.
                 // For failed call, it will cost all gas provided.
-                let (result, precompile_call_gas_cost) = execute_precompiled(
+                let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
                         let caller_memory = &state.caller_ctx()?.memory;
@@ -273,6 +276,20 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     },
                     callee_gas_left_with_stipend,
                 );
+                if has_oog_err {
+                    log::debug!(
+                        "precompile call ({:?}) runs out of gas: callee_gas_left_with_stipend = {}",
+                        precompile_call,
+                        callee_gas_left_with_stipend,
+                    );
+
+                    let oog_step = ErrorOOGPrecompile::gen_associated_ops(
+                        state,
+                        &geth_steps[1],
+                        callee_call.clone(),
+                    )?;
+                    return Ok(vec![exec_step, oog_step]);
+                }
 
                 // mutate the callee memory by at least the precompile call's result that will be
                 // written from memory addr 0 to memory addr result.len()

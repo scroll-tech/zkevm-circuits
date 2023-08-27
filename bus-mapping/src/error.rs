@@ -96,6 +96,8 @@ pub enum OogError {
     SloadSstore,
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
     Call,
+    /// Out of Gas for Precompile
+    Precompile,
     /// Out of Gas for CREATE and CREATE2
     Create,
     /// Out of Gas for SELFDESTRUCT
