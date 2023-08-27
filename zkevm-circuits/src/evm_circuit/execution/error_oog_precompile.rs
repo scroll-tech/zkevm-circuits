@@ -1,27 +1,27 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS},
-        step::{ExecutionState, ExecutionState::PrecompileBn256Add},
+        param::N_BYTES_GAS,
+        step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
             math_gadget::{BinaryNumberGadget, LtGadget},
             CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
-    witness::{Block, Call, ExecStep, Tag::Value, Transaction},
+    witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::precompile::PrecompileCalls;
 use eth_types::{evm_types::GasCost, Field};
-use gadgets::util::{expr_from_bytes, sum, Expr};
+use gadgets::util::{sum, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
 
+#[derive(Clone, Debug)]
 struct NPairsGadget<F> {
     input_mod_192: Cell<F>,
     input_div_192: Cell<F>,
@@ -33,8 +33,8 @@ impl<F: Field> NPairsGadget<F> {
         // r == len(input) % 192
         let input_mod_192 = cb.query_byte();
         // r < 192
-        let input_mod_192_lt = LtGadget::construct(cb, input_mod_192.expr(), 192.expr());
-        cb.require_equal("len(input) % 192 < 192", input_mod_192_lt.expr(), 1.expr());
+        let input_mod_lt_192 = LtGadget::construct(cb, input_mod_192.expr(), 192.expr());
+        cb.require_equal("len(input) % 192 < 192", input_mod_lt_192.expr(), 1.expr());
         // q == len(input) // 192
         let input_div_192 = cb.query_cell();
         // q * 192 + r == call_data_length
@@ -98,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         let precompiles_required_gas = vec![
             (
                 addr_bits.value_equals(PrecompileCalls::Ecrecover),
-                GasCost::PRECOMPILE_ECRECOVER_BASE,
+                GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
             ),
             // addr_bits.value_equals(PrecompileCalls::Sha256),
             // addr_bits.value_equals(PrecompileCalls::Ripemd160),
@@ -118,7 +118,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             (
                 addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
                 GasCost::PRECOMPILE_BN256PAIRING.expr()
-                    + n_pairs.expr() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
+                    + n_pairs.input_div_192.expr()
+                        * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
             ),
         ];
 
@@ -146,11 +147,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         // gas_left < required_gas
         let insufficient_gas =
             LtGadget::construct(cb, cb.curr.state.gas_left.expr(), required_gas.expr());
-        cb.require_equal(
-            "gas_left < required_gas",
-            lt_required_gas_gadget.expr(),
-            1.expr(),
-        );
+        cb.require_equal("gas_left < required_gas", insufficient_gas.expr(), 1.expr());
 
         let restore_context = RestoreContextGadget::construct2(
             cb,
@@ -201,19 +198,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         // required_gas
         let precompile_call: PrecompileCalls = call.callee_address.to_fixed_bytes()[19].into();
         let required_gas = if precompile_call == PrecompileCalls::Bn128Pairing {
-            precompile_call.base_gas_cost() + n_pairs * PRECOMPILE_BN256PAIRING_PER_PAIR
+            precompile_call.base_gas_cost().as_u64()
+                + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.as_u64()
         } else {
-            precompile_call.base_gas_cost()
+            precompile_call.base_gas_cost().as_u64()
         };
         self.required_gas
-            .assign(region, offset, Value::known(F::from(required_gas.as_u64())))?;
+            .assign(region, offset, Value::known(F::from(required_gas)))?;
 
         // insufficient_gas
         self.insufficient_gas.assign(
             region,
             offset,
             F::from(step.gas_left),
-            F::from(required_gas.as_u64()),
+            F::from(required_gas),
         )?;
 
         // restore context
