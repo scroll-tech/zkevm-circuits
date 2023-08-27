@@ -224,7 +224,13 @@ impl WitnessGenerator {
     {
         let account_data_before = self.accounts.get(&address).copied();
 
-        let proofs = self.trie.prove(address.as_bytes()).unwrap();
+        let proofs = match self.trie.prove(address.as_bytes()) {
+            Ok(proofs) => proofs,
+            Err(e) => {
+                panic!("cannot prove, addr {address:?}, err{e:?}");
+            }
+        };
+
         let address_key = hash_zktrie_key(&extend_address_to_h256(&address));
 
         let account_path_before = decode_proof_for_mpt_path(address_key, proofs).unwrap();

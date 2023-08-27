@@ -192,22 +192,25 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             H256::zero()
         };
 
-        // use CodeHash rw not zero to check address already exists
-        state.account_read(
-            &mut exec_step,
-            address,
-            AccountField::CodeHash,
-            code_hash_previous.to_word(),
-        );
-
-        // read callee nonce for address collision checking
-        if !code_hash_previous.is_zero() {
+        // If precheck is not ok, we even do not need to read codehash of callee.
+        if is_precheck_ok {
+            // use CodeHash rw not zero to check address already exists
             state.account_read(
                 &mut exec_step,
                 address,
-                AccountField::Nonce,
-                callee_account.nonce,
+                AccountField::CodeHash,
+                code_hash_previous.to_word(),
             );
+
+            // read callee nonce for address collision checking
+            if !code_hash_previous.is_zero() {
+                state.account_read(
+                    &mut exec_step,
+                    address,
+                    AccountField::Nonce,
+                    callee_account.nonce,
+                );
+            }
         }
 
         if is_precheck_ok && !is_address_collision {
