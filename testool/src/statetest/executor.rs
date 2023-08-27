@@ -1,7 +1,9 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams};
-use eth_types::{geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, U256, U64};
+use eth_types::{
+    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, U256, U64,
+};
 use ethers_core::{
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
     utils::keccak256,
@@ -40,6 +42,8 @@ pub enum StateTestError {
     SkipTestMaxSteps(usize),
     #[error("SkipTestSelfDestruct")]
     SkipTestSelfDestruct,
+    #[error("SkipTestBalanceOverflow")]
+    SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
 }
@@ -61,6 +65,7 @@ impl StateTestError {
 #[derive(Default, Debug, Clone)]
 pub struct CircuitsConfig {
     pub super_circuit: bool,
+    pub verbose: bool,
 }
 
 fn check_post(
@@ -209,6 +214,7 @@ pub fn geth_trace(st: StateTest) -> Result<GethExecTrace, StateTestError> {
 fn check_geth_traces(
     geth_traces: &[GethExecTrace],
     suite: &TestSuite,
+    verbose: bool,
 ) -> Result<(), StateTestError> {
     #[cfg(feature = "skip-self-destruct")]
     if geth_traces.iter().any(|gt| {
@@ -228,6 +234,11 @@ fn check_geth_traces(
     if suite.max_gas > 0 && geth_traces[0].gas.0 > suite.max_gas {
         return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
     }
+    if verbose {
+        if let Err(e) = crate::utils::print_trace(geth_traces[0].clone()) {
+            log::error!("fail to pretty print trace {e:?}");
+        }
+    }
     Ok(())
 }
 
@@ -238,6 +249,7 @@ fn trace_config_to_witness_block_l2(
     st: StateTest,
     suite: TestSuite,
     circuits_params: CircuitsParams,
+    verbose: bool,
 ) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
     let block_trace = external_tracer::l2trace(&trace_config);
 
@@ -263,7 +275,7 @@ fn trace_config_to_witness_block_l2(
         .iter()
         .map(From::from)
         .collect::<Vec<_>>();
-    check_geth_traces(&geth_traces, &suite)?;
+    check_geth_traces(&geth_traces, &suite, verbose)?;
 
     // copied from super_circuit/test.rs.
     // refactor?
@@ -295,6 +307,7 @@ fn trace_config_to_witness_block_l1(
     st: StateTest,
     suite: TestSuite,
     circuits_params: CircuitsParams,
+    verbose: bool,
 ) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
     use ethers_signers::Signer;
 
@@ -317,7 +330,7 @@ fn trace_config_to_witness_block_l1(
         }
     };
 
-    check_geth_traces(&geth_traces, &suite)?;
+    check_geth_traces(&geth_traces, &suite, verbose)?;
 
     let transactions = trace_config
         .transactions
@@ -479,6 +492,12 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
+    for (_addr, acc) in &trace_config.accounts {
+        if acc.balance.to_be_bytes()[0] != 0u8 {
+            return Err(StateTestError::SkipTestBalanceOverflow);
+        }
+    }
+
     let circuits_params = if !circuits_config.super_circuit {
         get_params_for_sub_circuit_test()
     } else {
@@ -491,9 +510,21 @@ pub fn run_test(
     };
 
     #[cfg(feature = "scroll")]
-    let result = trace_config_to_witness_block_l2(trace_config, st, suite, circuits_params)?;
+    let result = trace_config_to_witness_block_l2(
+        trace_config,
+        st,
+        suite,
+        circuits_params,
+        circuits_config.verbose,
+    )?;
     #[cfg(not(feature = "scroll"))]
-    let result = trace_config_to_witness_block_l1(trace_config, st, suite, circuits_params)?;
+    let result = trace_config_to_witness_block_l1(
+        trace_config,
+        st,
+        suite,
+        circuits_params,
+        circuits_config.verbose,
+    )?;
 
     let (witness_block, builder) = match result {
         Some((witness_block, builder)) => (witness_block, builder),
