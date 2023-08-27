@@ -3,6 +3,12 @@ use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use std::{collections::HashMap, str::FromStr};
 
+/// TODO: Explain this
+#[cfg(feature = "scroll")]
+pub const DEFAULT_BASE_FEE: u32 = 0;
+#[cfg(not(feature = "scroll"))]
+pub const DEFAULT_BASE_FEE: u32 = 10;
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Env {
     pub current_base_fee: U256,
@@ -255,7 +261,7 @@ impl StateTest {
             path: String::default(),
             id: String::default(),
             env: Env {
-                current_base_fee: U256::from(1),
+                current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: Address::default(),
                 current_difficulty: U256::default(),
                 current_gas_limit: 16000000,
