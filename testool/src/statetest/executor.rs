@@ -22,8 +22,9 @@ use zkevm_circuits::{
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
-    //#[error("CannotGenerateCircuitInput({0})")]
-    //CircuitInput(String),
+    #[cfg(not(feature = "scroll"))]
+    #[error("CannotGenerateCircuitInput({0})")]
+    CircuitInput(String),
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
