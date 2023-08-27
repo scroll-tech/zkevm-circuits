@@ -276,20 +276,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     },
                     callee_gas_left_with_stipend,
                 );
-                if has_oog_err {
-                    log::debug!(
-                        "precompile call ({:?}) runs out of gas: callee_gas_left_with_stipend = {}",
-                        precompile_call,
-                        callee_gas_left_with_stipend,
-                    );
 
-                    let oog_step = ErrorOOGPrecompile::gen_associated_ops(
-                        state,
-                        &geth_steps[1],
-                        callee_call.clone(),
-                    )?;
-                    return Ok(vec![exec_step, oog_step]);
-                }
 
                 // mutate the callee memory by at least the precompile call's result that will be
                 // written from memory addr 0 to memory addr result.len()
@@ -362,6 +349,28 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                 ] {
                     state.call_context_write(&mut exec_step, caller_call.call_id, field, value);
+                }
+
+                if has_oog_err {
+                    log::debug!(
+                        "precompile call ({:?}) runs out of gas: callee_gas_left_with_stipend = {}",
+                        precompile_call,
+                        callee_gas_left_with_stipend,
+                    );
+
+                    let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
+                        state,
+                        &geth_steps[1],
+                        callee_call.clone(),
+                    )?;
+
+                    oog_step.gas_left = Gas(callee_gas_left_with_stipend);
+                    oog_step.gas_cost = GasCost(precompile_call_gas_cost);
+                    // Make the Precompile execution step to handle return logic and restore to caller
+                    // context (similar as STOP and RETURN).
+                    state.handle_return(&mut oog_step, geth_steps, true)?;
+
+                    return Ok(vec![exec_step, oog_step]);
                 }
 
                 // insert a copy event (input) for this step and generate word memory read & write
