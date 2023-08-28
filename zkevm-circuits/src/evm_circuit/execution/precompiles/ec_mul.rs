@@ -1,6 +1,6 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, or, Expr};
+use gadgets::util::{and, not, or, select, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -34,7 +34,6 @@ pub struct EcMulGadget<F> {
     scalar_s_raw_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
-    gas_cost: Cell<F>,
 
     p_x_is_zero: IsZeroGadget<F>,
     p_y_is_zero: IsZeroGadget<F>,
@@ -69,12 +68,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
-        );
-        let gas_cost = cb.query_cell();
-        cb.require_equal(
-            "ecMul: gas cost",
-            gas_cost.expr(),
-            GasCost::PRECOMPILE_BN256MUL.expr(),
         );
 
         let (scalar_s_raw, scalar_s, n) = (
@@ -117,11 +110,31 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             scalar_s_raw.expr(),
         );
 
+        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
+            [
+                CallContextFieldTag::IsSuccess,
+                CallContextFieldTag::CalleeAddress,
+                CallContextFieldTag::CallerId,
+                CallContextFieldTag::CallDataOffset,
+                CallContextFieldTag::CallDataLength,
+                CallContextFieldTag::ReturnDataOffset,
+                CallContextFieldTag::ReturnDataLength,
+            ]
+            .map(|tag| cb.call_context(None, tag));
+
+        // all gas sent to this call will be consumed if `is_success == false`.
+        let gas_cost = select::expr(
+            is_success.expr(),
+            GasCost::PRECOMPILE_BN256MUL.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+
         cb.condition(
             not::expr(or::expr([p_is_zero.expr(), s_is_zero.expr()])),
             |cb| {
                 cb.ecc_table_lookup(
                     u64::from(PrecompileCalls::Bn128Mul).expr(),
+                    is_success.expr(),
                     point_p_x_rlc.expr(),
                     point_p_y_rlc.expr(),
                     // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
@@ -141,18 +154,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 );
             },
         );
-
-        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
-            [
-                CallContextFieldTag::IsSuccess,
-                CallContextFieldTag::CalleeAddress,
-                CallContextFieldTag::CallerId,
-                CallContextFieldTag::CallDataOffset,
-                CallContextFieldTag::CallDataLength,
-                CallContextFieldTag::ReturnDataOffset,
-                CallContextFieldTag::ReturnDataLength,
-            ]
-            .map(|tag| cb.call_context(None, tag));
+        cb.condition(not::expr(is_success.expr()), |cb| {
+            cb.require_zero("R_x == 0", point_r_x_rlc.expr());
+            cb.require_zero("R_y == 0", point_r_y_rlc.expr());
+        });
 
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
@@ -165,8 +170,8 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             is_success.expr(),
             gas_cost.expr(),
             0.expr(),
-            0x00.expr(), // ReturnDataOffset
-            0x40.expr(), // ReturnDataLength
+            0x00.expr(),                                               // ReturnDataOffset
+            select::expr(is_success.expr(), 0x40.expr(), 0x00.expr()), // ReturnDataLength
             0.expr(),
             0.expr(),
         );
@@ -177,7 +182,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             scalar_s_raw_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
-            gas_cost,
 
             p_x_is_zero,
             p_y_is_zero,
@@ -241,11 +245,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             let (k, _) = aux_data.s_raw.div_mod(n);
             self.modword
                 .assign(region, offset, aux_data.s_raw, n, aux_data.s, k)?;
-            self.gas_cost.assign(
-                region,
-                offset,
-                Value::known(F::from(GasCost::PRECOMPILE_BN256MUL.0)),
-            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecMul", step.aux_data);
             return Err(Error::Synthesis);
@@ -521,6 +520,39 @@ mod test {
                 }
             ]
         };
+
+        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "ecMul (valid: scalar larger than base field order)",
+                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                    // s = 2^256 - 1
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x02)
+                        PUSH1(0x00)
+                        MSTORE
+
+                        // p_y
+                        PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                        PUSH1(0x20)
+                        MSTORE
+
+                        // s
+                        PUSH32(word!("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+                        PUSH1(0x40)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x60.into(),
+                    ret_offset: 0x60.into(),
+                    ret_size: 0x40.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    gas: (PrecompileCalls::Bn128Mul.base_gas_cost().as_u64() - 1).to_word(),
+                    ..Default::default()
+                }
+            ]
+        };
     }
 
     #[test]
@@ -533,6 +565,29 @@ mod test {
         ];
 
         TEST_VECTOR
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
+    }
+
+    #[test]
+    fn precompile_ec_mul_oog_test() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
+
+        OOG_TEST_VECTOR
             .iter()
             .cartesian_product(&call_kinds)
             .par_bridge()

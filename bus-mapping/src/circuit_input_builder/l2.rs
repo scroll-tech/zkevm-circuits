@@ -41,17 +41,14 @@ impl From<&ZktrieState> for StateDB {
 
         for (storage_key, data) in mpt_state.storage() {
             // Since the StateDB is a partical db, 0 means we know it is zero instead of "unknown".
-            //if !data.as_ref().is_zero() {
             log::trace!(
                 "trace sdb: addr {:?} key {:?} value {:?}",
                 storage_key.0,
                 storage_key.1,
                 *data.as_ref()
             );
-            //TODO: add an warning on non-existed account?
             let (_, acc) = sdb.get_account_mut(&storage_key.0);
             acc.storage.insert(storage_key.1, *data.as_ref());
-            //}
         }
         sdb
     }
@@ -81,10 +78,13 @@ fn trace_code(
     stack_pos: usize,
 ) {
     // first, try to read from sdb
-    let stack = step
-        .stack
-        .as_ref()
-        .expect("should have stack in call context");
+    let stack = match step.stack.as_ref() {
+        Some(stack) => stack,
+        None => {
+            log::error!("stack underflow, step {step:?}");
+            return;
+        }
+    };
     if stack_pos >= stack.len() {
         log::error!("stack underflow, step {step:?}");
         return;

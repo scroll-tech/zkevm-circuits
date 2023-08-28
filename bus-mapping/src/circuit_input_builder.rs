@@ -540,7 +540,7 @@ impl<'a> CircuitInputBuilder {
             let tx_gas = tx.gas;
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!(
-                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} args: {}",
+                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} refund: {} args: {}",
                 eth_tx.transaction_index.unwrap_or_default(),
                 geth_step.depth,
                 index,
@@ -552,6 +552,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.block_ctx.rwc.0,
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
+                geth_step.refund.0,
                 if geth_step.op.is_push_with_data() {
                     format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {

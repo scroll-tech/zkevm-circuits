@@ -101,6 +101,7 @@ impl ZktrieState {
                 on_account(addr, &acc_data)?;
                 self.accounts.insert(*addr, acc_data);
             } else {
+                on_account(addr, &Default::default())?;
                 self.accounts.insert(*addr, Default::default());
             }
         }

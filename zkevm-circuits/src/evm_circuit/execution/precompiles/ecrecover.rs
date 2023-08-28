@@ -29,7 +29,6 @@ pub struct EcrecoverGadget<F> {
     sig_r_keccak_rlc: Cell<F>,
     sig_s_keccak_rlc: Cell<F>,
     recovered_addr_keccak_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
-    gas_cost: Cell<F>,
 
     msg_hash: [Cell<F>; N_BYTES_WORD],
     sig_r: [Cell<F>; N_BYTES_WORD],
@@ -65,12 +64,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_keccak_rlc(),
-        );
-        let gas_cost = cb.query_cell();
-        cb.require_equal(
-            "ecrecover: gas cost",
-            gas_cost.expr(),
-            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
         );
 
         let msg_hash = array_init(|_| cb.query_byte());
@@ -123,6 +116,12 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             ]
             .map(|tag| cb.call_context(None, tag));
 
+        let gas_cost = select::expr(
+            is_success.expr(),
+            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
             callee_address.expr(),
@@ -147,7 +146,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_r_keccak_rlc,
             sig_s_keccak_rlc,
             recovered_addr_keccak_rlc,
-            gas_cost,
 
             msg_hash,
             sig_r,
@@ -227,11 +225,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     recovered_addr
                 }),
             )?;
-            self.gas_cost.assign(
-                region,
-                offset,
-                Value::known(F::from(GasCost::PRECOMPILE_ECRECOVER_BASE.0)),
-            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecrecover", step.aux_data);
             return Err(Error::Synthesis);
@@ -269,7 +262,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
-
         self.restore_context
             .assign(region, offset, block, call, step, 7)
     }
