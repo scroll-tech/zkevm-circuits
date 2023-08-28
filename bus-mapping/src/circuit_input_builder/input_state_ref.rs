@@ -1673,18 +1673,12 @@ impl<'a> CircuitInputStateRef<'a> {
                             );
                             return Ok(Some(ExecError::PrecompileFailed));
                         }
-                        PrecompileCalls::Modexp => {
-                            // Log the precompile address and gas left. Since this failure is mainly
-                            // caused by out of gas.
-                            log::trace!(
-                                "Precompile failed: code_address = {}, step.gas = {}",
-                                code_address,
-                                step.gas.0,
-                            );
-                            return Ok(None);
-                        }
                         pre_call => {
-                            log::trace!("precompile call failed for {:?}", pre_call);
+                            log::trace!(
+                                "Precompile call failed: addr={:?}, step.gas={:?}",
+                                pre_call,
+                                step.gas.0
+                            );
                             return Ok(None);
                         }
                     }
