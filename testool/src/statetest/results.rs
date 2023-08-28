@@ -180,11 +180,12 @@ impl Report {
                         None
                     } else {
                         // ignore
-                        let _big_test = result.details.starts_with("SkipTestMaxGasLimit")
+                        let big_test = result.details.starts_with("SkipTestMaxGasLimit")
                             || result.details.starts_with("SkipTestMaxSteps");
-                        if result.details.starts_with("SkipTestSelfDestruct") {
+                        if result.details.starts_with("SkipTestSelfDestruct") || big_test {
                             None
                         } else {
+                            // eg: SkipTestBalanceOverflow
                             Some((id.clone(), result.clone()))
                         }
                     }
