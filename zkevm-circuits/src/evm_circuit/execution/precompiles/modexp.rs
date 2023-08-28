@@ -1286,6 +1286,43 @@ mod test {
                     gas: 100000.into(),
                     ..Default::default()
                 },
+                PrecompileCallArgs {
+                    name: "modexp length too large invalid",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x21)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x21)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x21)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed"))
+                        PUSH1(0x60)
+                        MSTORE
+                        PUSH32(word!("0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2"))
+                        PUSH1(0x80)
+                        MSTORE
+                        PUSH32(word!("0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa"))
+                        PUSH1(0xa0)
+                        MSTORE
+                        PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0xc0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0xc3.into(),
+                    ret_offset: 0xe0.into(),
+                    ret_size: 0x21.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    gas: 1000.into(),
+                    ..Default::default()
+                },
             ]
         };
     }
