@@ -58,17 +58,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
                 addr_bits.value_equals(PrecompileCalls::Ecrecover),
                 GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
             ),
+            // These are handled in PrecompileFailedGadget
             // addr_bits.value_equals(PrecompileCalls::Sha256),
             // addr_bits.value_equals(PrecompileCalls::Ripemd160),
             // addr_bits.value_equals(PrecompileCalls::Blake2F),
-
-            // TODO: handle modexp
             (
                 addr_bits.value_equals(PrecompileCalls::Identity),
                 GasCost::PRECOMPILE_IDENTITY_BASE.expr()
                     + n_words.quotient() * GasCost::PRECOMPILE_IDENTITY_PER_WORD.expr(),
             ),
-            // (addr_bits.value_equals(PrecompileCalls::Modexp),),
+            // modexp is handled in ModExpGadget
             (
                 addr_bits.value_equals(PrecompileCalls::Bn128Add),
                 GasCost::PRECOMPILE_BN256ADD.as_u64().expr(),
@@ -85,7 +84,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         ];
 
         cb.require_equal(
-            "precompile_addr must be in precompile calls' set",
+            "precompile_addr must belong to precompile calls' set",
             sum::expr(
                 precompiles_required_gas
                     .iter()

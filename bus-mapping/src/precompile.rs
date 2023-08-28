@@ -42,24 +42,7 @@ pub(crate) fn execute_precompiled(
         }
         Err(err) => match err {
             PrecompileError::OutOfGas => (vec![], gas, true),
-            PrecompileError::Blake2WrongLength => {
-                todo!()
-            }
-            PrecompileError::Blake2WrongFinalIndicatorFlag => {
-                todo!()
-            }
-            PrecompileError::ModexpExpOverflow => {
-                todo!()
-            }
-            PrecompileError::ModexpBaseOverflow => {
-                todo!()
-            }
-            PrecompileError::ModexpModOverflow => {
-                todo!()
-            }
-            PrecompileError::Bn128FieldPointNotAMember
-            | PrecompileError::Bn128AffineGFailedToCreate
-            | PrecompileError::Bn128PairLength => (vec![], gas, false),
+            _ => (vec![], gas, false),
         },
     }
 }

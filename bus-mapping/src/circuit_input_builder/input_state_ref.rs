@@ -1679,7 +1679,6 @@ impl<'a> CircuitInputStateRef<'a> {
                             );
                             return Ok(Some(ExecError::PrecompileFailed));
                         }
-                        // FIXME: remove this branch once modexp invalid cases are handled.
                         PrecompileCalls::Modexp => {
                             // Log the precompile address and gas left. Since this failure is mainly
                             // caused by out of gas.
@@ -1688,7 +1687,7 @@ impl<'a> CircuitInputStateRef<'a> {
                                 code_address,
                                 step.gas.0,
                             );
-                            return Ok(Some(ExecError::PrecompileFailed));
+                            return Ok(None);
                         }
                         pre_call => {
                             log::trace!("precompile call failed for {:?}", pre_call);
