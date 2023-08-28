@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     circuit_input_builder::CallContext,
-    error::ExecError,
+    error::{ExecError, OogError},
     exec_trace::OperationRef,
     operation::RWCounter,
     precompile::{PrecompileAuxData, PrecompileCalls},
@@ -15,16 +15,13 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    GethExecStep, Word, H256,
+    GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
-    halo2curves::{
-        bn256::{Fq, Fr, G1Affine, G2Affine},
-        group::cofactor::CofactorCurveAffine,
-    },
+    halo2curves::bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
     plonk::Expression,
 };
 
@@ -109,6 +106,11 @@ impl ExecStep {
     /// Returns `true` if this is an execution step of Precompile.
     pub fn is_precompiled(&self) -> bool {
         matches!(self.exec_state, ExecState::Precompile(_))
+    }
+
+    /// Returns `true` if `error` is oog in precompile calls
+    pub fn is_precompile_oog_err(&self) -> bool {
+        matches!(self.error, Some(ExecError::OutOfGas(OogError::Precompile)))
     }
 }
 
@@ -925,12 +927,12 @@ impl Default for PrecompileEvent {
 /// EcAdd operation: P + Q = R
 #[derive(Clone, Debug)]
 pub struct EcAddOp {
-    /// First EC point.
-    pub p: G1Affine,
-    /// Second EC point.
-    pub q: G1Affine,
+    /// EVM input for first operand to EcAdd.
+    pub p: (U256, U256),
+    /// EVM input for second operand to EcAdd.
+    pub q: (U256, U256),
     /// Addition of the first and second EC points.
-    pub r: G1Affine,
+    pub r: Option<G1Affine>,
 }
 
 impl Default for EcAddOp {
@@ -938,24 +940,22 @@ impl Default for EcAddOp {
         let p = G1Affine::generator();
         let q = G1Affine::generator();
         let r = p.add(q).into();
-        Self { p, q, r }
+        Self {
+            p: (
+                U256::from_little_endian(&p.x.to_bytes()),
+                U256::from_little_endian(&p.y.to_bytes()),
+            ),
+            q: (
+                U256::from_little_endian(&q.x.to_bytes()),
+                U256::from_little_endian(&q.y.to_bytes()),
+            ),
+            r: Some(r),
+        }
     }
 }
 
 impl EcAddOp {
-    /// Creates a new EcAdd op given the inputs and output.
-    pub fn new(p: G1Affine, q: G1Affine, r: G1Affine) -> Self {
-        assert_eq!(p.add(q), r.into());
-        Self { p, q, r }
-    }
-
     /// Creates a new EcAdd op given input and output bytes from a precompile call.
-    ///
-    /// Note: At the moment we are handling invalid/erroneous cases for precompiled contract calls
-    /// via a dummy gadget ErrorPrecompileFailure. So we expect the input bytes to be valid, i.e.
-    /// points P and Q are valid points on the curve. In the near future, we should ideally handle
-    /// invalid inputs within the respective precompile call's gadget. And then this function will
-    /// be fallible, since we would handle invalid inputs as well.
     pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
         let fq_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<Fq> {
             buf.copy_from_slice(bytes);
@@ -973,14 +973,28 @@ impl EcAddOp {
         assert_eq!(output.len(), 64);
 
         let mut buf = [0u8; 32];
-        let point_p = g1_from_slice(&mut buf, &input[0x00..0x40]).unwrap();
-        let point_q = g1_from_slice(&mut buf, &input[0x40..0x80]).unwrap();
-        let point_r_got = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
-        assert_eq!(G1Affine::from(point_p.add(&point_q)), point_r_got);
+        let opt_point_p: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x00..0x40]).into();
+        let opt_point_q: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x40..0x80]).into();
+        let point_r_evm = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
+        let point_r_cal = opt_point_p.zip(opt_point_q).map(|(point_p, point_q)| {
+            let point_r: G1Affine = point_p.add(&point_q).into();
+            debug_assert_eq!(
+                point_r_evm, point_r,
+                "point_r_evm={point_r_evm:?}, point_r_cal={point_r:?}",
+            );
+            point_r
+        });
+
         Self {
-            p: point_p,
-            q: point_q,
-            r: point_r_got,
+            p: (
+                U256::from_big_endian(&input[0x00..0x20]),
+                U256::from_big_endian(&input[0x20..0x40]),
+            ),
+            q: (
+                U256::from_big_endian(&input[0x40..0x60]),
+                U256::from_big_endian(&input[0x60..0x80]),
+            ),
+            r: point_r_cal,
         }
     }
 
@@ -988,17 +1002,35 @@ impl EcAddOp {
     pub fn skip_by_ecc_circuit(&self) -> bool {
         false
     }
+
+    /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
+    pub fn is_valid(&self) -> bool {
+        let fq_from_u256 = |buf: &mut [u8; 32], u256: U256| -> CtOption<Fq> {
+            u256.to_little_endian(buf);
+            Fq::from_bytes(buf)
+        };
+        let g1_from_u256s = |buf: &mut [u8; 32], p: (U256, U256)| -> CtOption<G1Affine> {
+            fq_from_u256(buf, p.0)
+                .and_then(|x| fq_from_u256(buf, p.1).and_then(|y| G1Affine::from_xy(x, y)))
+        };
+
+        let mut buf = [0u8; 32];
+        let opt_point_p: Option<G1Affine> = g1_from_u256s(&mut buf, self.p).into();
+        let opt_point_q: Option<G1Affine> = g1_from_u256s(&mut buf, self.q).into();
+
+        opt_point_p.is_some() && opt_point_q.is_some()
+    }
 }
 
 /// EcMul operation: s.P = R
 #[derive(Clone, Debug)]
 pub struct EcMulOp {
-    /// EC point.
-    pub p: G1Affine,
+    /// The EVM inputs to the G1 point.
+    pub p: (U256, U256),
     /// Scalar.
     pub s: Fr,
-    /// Result for s.P = R.
-    pub r: G1Affine,
+    /// Result for s.P = R, that is `None` in the case of an erroneous input.
+    pub r: Option<G1Affine>,
 }
 
 impl Default for EcMulOp {
@@ -1006,22 +1038,27 @@ impl Default for EcMulOp {
         let p = G1Affine::generator();
         let s = Fr::one();
         let r = p.mul(s).into();
-        Self { p, s, r }
+        Self {
+            p: (U256::from(1), U256::from(2)),
+            s,
+            r: Some(r),
+        }
     }
 }
 
 impl EcMulOp {
-    /// Creates a new EcMul op given the inputs and output.
-    pub fn new(p: G1Affine, s: Fr, r: G1Affine) -> Self {
-        assert_eq!(p.mul(s), r.into());
-        Self { p, s, r }
-    }
-
     /// Creates a new EcMul op given input and output bytes from a precompile call.    
     pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
-        let copy_bytes = |buf: &mut [u8; 32], bytes: &[u8]| {
+        let fq_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<Fq> {
             buf.copy_from_slice(bytes);
             buf.reverse();
+            Fq::from_bytes(buf)
+        };
+
+        let g1_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<G1Affine> {
+            fq_from_slice(buf, &bytes[0x00..0x20]).and_then(|x| {
+                fq_from_slice(buf, &bytes[0x20..0x40]).and_then(|y| G1Affine::from_xy(x, y))
+            })
         };
 
         assert_eq!(input.len(), 96);
@@ -1029,38 +1066,48 @@ impl EcMulOp {
 
         let mut buf = [0u8; 32];
 
-        let p: G1Affine = {
-            copy_bytes(&mut buf, &input[0x00..0x20]);
-            Fq::from_bytes(&buf).and_then(|x| {
-                copy_bytes(&mut buf, &input[0x20..0x40]);
-                Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
-            })
-        }
-        .unwrap();
-
+        let opt_point_p: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x00..0x40]).into();
         let s = Fr::from_raw(Word::from_big_endian(&input[0x40..0x60]).0);
-
-        let r_specified: G1Affine = {
-            copy_bytes(&mut buf, &output[0x00..0x20]);
-            Fq::from_bytes(&buf).and_then(|x| {
-                copy_bytes(&mut buf, &output[0x20..0x40]);
-                Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
-            })
-        }
-        .unwrap();
-
-        assert_eq!(G1Affine::from(p.mul(s)), r_specified);
+        let point_r_evm = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
+        let point_r_cal = opt_point_p.map(|point_p| {
+            let point_r: G1Affine = point_p.mul(s).into();
+            debug_assert_eq!(
+                point_r_evm, point_r,
+                "point_r_evm={point_r_evm:?}, point_r_cal={point_r:?}",
+            );
+            point_r
+        });
 
         Self {
-            p,
+            p: (
+                U256::from_big_endian(&input[0x00..0x20]),
+                U256::from_big_endian(&input[0x20..0x40]),
+            ),
             s,
-            r: r_specified,
+            r: point_r_cal,
         }
     }
 
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
-        self.p.is_identity().into() || self.s.is_zero().into()
+        (self.p.0.is_zero() && self.p.1.is_zero()) || self.s.is_zero().into()
+    }
+
+    /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
+    pub fn is_valid(&self) -> bool {
+        let fq_from_u256 = |buf: &mut [u8; 32], u256: U256| -> CtOption<Fq> {
+            u256.to_little_endian(buf);
+            Fq::from_bytes(buf)
+        };
+        let g1_from_u256s = |buf: &mut [u8; 32], p: (U256, U256)| -> CtOption<G1Affine> {
+            fq_from_u256(buf, p.0)
+                .and_then(|x| fq_from_u256(buf, p.1).and_then(|y| G1Affine::from_xy(x, y)))
+        };
+
+        let mut buf = [0u8; 32];
+        let opt_point_p: Option<G1Affine> = g1_from_u256s(&mut buf, self.p).into();
+
+        opt_point_p.is_some()
     }
 }
 
@@ -1074,18 +1121,32 @@ pub const N_BYTES_PER_PAIR: usize = 192;
 /// Pair of (G1, G2).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingPair {
-    /// G1 point.
-    pub g1_point: G1Affine,
-    /// G2 point.
-    pub g2_point: G2Affine,
+    /// EVM inputs for the G1 point.
+    pub g1_point: (U256, U256),
+    /// EVM inputs for the G2 point.
+    pub g2_point: (U256, U256, U256, U256),
 }
 
 impl EcPairingPair {
+    /// Creates a new pair given the G1 and G2 curve points.
+    pub fn new(g1_point: G1Affine, g2_point: G2Affine) -> Self {
+        let g1_x = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g1_y = U256::from_little_endian(&g1_point.y.to_bytes());
+        let g2_x0 = U256::from_little_endian(&g2_point.x.c1.to_bytes());
+        let g2_x1 = U256::from_little_endian(&g2_point.x.c0.to_bytes());
+        let g2_y0 = U256::from_little_endian(&g2_point.y.c1.to_bytes());
+        let g2_y1 = U256::from_little_endian(&g2_point.y.c0.to_bytes());
+        Self {
+            g1_point: (g1_x, g1_y),
+            g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+        }
+    }
+
     /// Returns the big-endian representation of the G1 point in the pair.
     pub fn g1_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.g1_point.x.to_bytes().iter().rev())
-            .chain(self.g1_point.y.to_bytes().iter().rev())
+            .chain(self.g1_point.0.to_le_bytes().iter().rev())
+            .chain(self.g1_point.1.to_le_bytes().iter().rev())
             .cloned()
             .collect()
     }
@@ -1093,10 +1154,10 @@ impl EcPairingPair {
     /// Returns the big-endian representation of the G2 point in the pair.
     pub fn g2_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.g2_point.x.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g2_point.0.to_le_bytes().iter().rev())
+            .chain(self.g2_point.1.to_le_bytes().iter().rev())
+            .chain(self.g2_point.2.to_le_bytes().iter().rev())
+            .chain(self.g2_point.3.to_le_bytes().iter().rev())
             .cloned()
             .collect()
     }
@@ -1104,19 +1165,14 @@ impl EcPairingPair {
     /// Returns the uncompressed big-endian byte representation of the (G1, G2) pair.
     pub fn to_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
-            .chain(self.g1_point.x.to_bytes().iter().rev())
-            .chain(self.g1_point.y.to_bytes().iter().rev())
-            .chain(self.g2_point.x.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.x.c0.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c1.to_bytes().iter().rev())
-            .chain(self.g2_point.y.c0.to_bytes().iter().rev())
+            .chain(self.g1_point.0.to_le_bytes().iter().rev())
+            .chain(self.g1_point.1.to_le_bytes().iter().rev())
+            .chain(self.g2_point.0.to_le_bytes().iter().rev())
+            .chain(self.g2_point.1.to_le_bytes().iter().rev())
+            .chain(self.g2_point.2.to_le_bytes().iter().rev())
+            .chain(self.g2_point.3.to_le_bytes().iter().rev())
             .cloned()
             .collect()
-    }
-
-    /// Create a new pair.
-    pub fn new(g1_point: G1Affine, g2_point: G2Affine) -> Self {
-        Self { g1_point, g2_point }
     }
 
     /// Padding pair for ECC circuit. The pairing check is done with a constant number
@@ -1127,8 +1183,33 @@ impl EcPairingPair {
     /// `(G1, G2::Infinity)` is also transformed into `(G1::Infinity, G2::Generator)`.
     pub fn ecc_padding() -> Self {
         Self {
-            g1_point: G1Affine::identity(),
-            g2_point: G2Affine::generator(),
+            g1_point: (U256::zero(), U256::zero()),
+            g2_point: (
+                U256([
+                    0x97e485b7aef312c2,
+                    0xf1aa493335a9e712,
+                    0x7260bfb731fb5d25,
+                    0x198e9393920d483a,
+                ]),
+                U256([
+                    0x46debd5cd992f6ed,
+                    0x674322d4f75edadd,
+                    0x426a00665e5c4479,
+                    0x1800deef121f1e76,
+                ]),
+                U256([
+                    0x55acdadcd122975b,
+                    0xbc4b313370b38ef3,
+                    0xec9e99ad690c3395,
+                    0x090689d0585ff075,
+                ]),
+                U256([
+                    0x4ce6cc0166fa7daa,
+                    0xe3d1e7690c43d37b,
+                    0x4aab71808dcb408f,
+                    0x12c85ea5db8c6deb,
+                ]),
+            ),
         }
     }
 
@@ -1137,9 +1218,38 @@ impl EcPairingPair {
     /// with `(G1::Infinity, G2::Infinity)` for simplicity.
     pub fn evm_padding() -> Self {
         Self {
-            g1_point: G1Affine::identity(),
-            g2_point: G2Affine::identity(),
+            g1_point: (U256::zero(), U256::zero()),
+            g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
         }
+    }
+
+    fn is_valid(&self) -> bool {
+        let fq_from_u256 = |buf: &mut [u8; 32], u256: U256| -> CtOption<Fq> {
+            u256.to_little_endian(buf);
+            Fq::from_bytes(buf)
+        };
+        let fq2_from_u256s = |buf: &mut [u8; 32], u256s: (U256, U256)| -> CtOption<Fq2> {
+            fq_from_u256(buf, u256s.0).and_then(|c1| {
+                fq_from_u256(buf, u256s.1)
+                    .and_then(|c0| CtOption::new(Fq2::new(c0, c1), 1u8.into()))
+            })
+        };
+        let g1_from_u256s = |buf: &mut [u8; 32], p: (U256, U256)| -> CtOption<G1Affine> {
+            fq_from_u256(buf, p.0)
+                .and_then(|x| fq_from_u256(buf, p.1).and_then(|y| G1Affine::from_xy(x, y)))
+        };
+        let g2_from_u256s = |buf: &mut [u8; 32],
+                             p: (U256, U256, U256, U256)|
+         -> CtOption<G2Affine> {
+            fq2_from_u256s(buf, (p.0, p.1))
+                .and_then(|x| fq2_from_u256s(buf, (p.2, p.3)).and_then(|y| G2Affine::from_xy(x, y)))
+        };
+
+        let mut buf = [0u8; 32];
+        let opt_point_g1: Option<G1Affine> = g1_from_u256s(&mut buf, self.g1_point).into();
+        let opt_point_g2: Option<G2Affine> = g2_from_u256s(&mut buf, self.g2_point).into();
+
+        opt_point_g1.is_some() && opt_point_g2.is_some()
     }
 }
 
@@ -1156,12 +1266,30 @@ impl Default for EcPairingOp {
     fn default() -> Self {
         let g1_point = G1Affine::generator();
         let g2_point = G2Affine::generator();
+        let g1_x = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g1_y = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g2_x0 = U256::from_little_endian(&g2_point.x.c1.to_bytes());
+        let g2_x1 = U256::from_little_endian(&g2_point.x.c0.to_bytes());
+        let g2_y0 = U256::from_little_endian(&g2_point.y.c1.to_bytes());
+        let g2_y1 = U256::from_little_endian(&g2_point.y.c0.to_bytes());
         Self {
             pairs: [
-                EcPairingPair { g1_point, g2_point },
-                EcPairingPair { g1_point, g2_point },
-                EcPairingPair { g1_point, g2_point },
-                EcPairingPair { g1_point, g2_point },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
+                EcPairingPair {
+                    g1_point: (g1_x, g1_y),
+                    g2_point: (g2_x0, g2_x1, g2_y0, g2_y1),
+                },
             ],
             output: Word::zero(),
         }
@@ -1180,6 +1308,11 @@ impl EcPairingOp {
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
     pub fn skip_by_ecc_circuit(&self) -> bool {
         false
+    }
+
+    /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
+    pub fn is_valid(&self) -> bool {
+        self.pairs.iter().all(|pair| pair.is_valid())
     }
 }
 

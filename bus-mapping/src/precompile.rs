@@ -1,7 +1,7 @@
 //! precompile helpers
 
 use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
-use revm_precompile::{Precompile, Precompiles};
+use revm_precompile::{Precompile, PrecompileError, Precompiles};
 use strum::EnumIter;
 
 use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
@@ -13,7 +13,11 @@ pub fn is_precompiled(address: &Address) -> bool {
         .is_some()
 }
 
-pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> (Vec<u8>, u64) {
+pub(crate) fn execute_precompiled(
+    address: &Address,
+    input: &[u8],
+    gas: u64,
+) -> (Vec<u8>, u64, bool) {
     let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
@@ -28,15 +32,18 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
                     if input_valid {
                         // detect some edge cases like modulus = 0
                         assert_eq!(modulus_len.as_usize(), return_value.len());
-                        (return_value, gas_cost)
+                        (return_value, gas_cost, false) // no oog error
                     } else {
-                        (vec![], gas)
+                        (vec![], gas, false)
                     }
                 }
-                _ => (return_value, gas_cost),
+                _ => (return_value, gas_cost, false),
             }
         }
-        Err(_) => (vec![], gas),
+        Err(err) => match err {
+            PrecompileError::OutOfGas => (vec![], gas, true),
+            _ => (vec![], gas, false),
+        },
     }
 }
 
@@ -343,6 +350,15 @@ impl EcMulAuxData {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingAuxData(pub EcPairingOp);
 
+/// Erroneous bytes passed to the EcPairing precompile call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EcPairingError {
+    /// the calldatalength passed to EcPairing precompile call is expected to be:
+    /// 1. len(input) <= 768
+    /// 2. len(input) % 192 == 0
+    InvalidInputLen(Vec<u8>),
+}
+
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
@@ -355,7 +371,7 @@ pub enum PrecompileAuxData {
     /// EcMul.
     EcMul(EcMulAuxData),
     /// EcPairing.
-    EcPairing(Box<EcPairingAuxData>),
+    EcPairing(Box<Result<EcPairingAuxData, EcPairingError>>),
 }
 
 impl Default for PrecompileAuxData {

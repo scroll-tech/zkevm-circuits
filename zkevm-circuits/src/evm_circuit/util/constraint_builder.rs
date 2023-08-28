@@ -331,7 +331,7 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     }
 }
 
-pub(crate) type BoxedClosure<'a, F, R> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) -> R + 'a>;
+pub(crate) type BoxedClosure<'a, F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) + 'a>;
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
@@ -587,6 +587,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
             128 => ("Range128", FixedTableTag::Range128),
+            192 => ("Range192", FixedTableTag::Range192),
             256 => ("Range256", FixedTableTag::Range256),
             512 => ("Range512", FixedTableTag::Range512),
             1024 => ("Range1024", FixedTableTag::Range1024),
@@ -1401,6 +1402,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn ecc_table_lookup(
         &mut self,
         op_type: Expression<F>,
+        is_valid: Expression<F>,
         arg1_rlc: Expression<F>,
         arg2_rlc: Expression<F>,
         arg3_rlc: Expression<F>,
@@ -1413,6 +1415,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             "ecc table",
             Lookup::EccTable {
                 op_type,
+                is_valid,
                 arg1_rlc,
                 arg2_rlc,
                 arg3_rlc,
@@ -1528,12 +1531,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// used for constraining the internal states for precompile calls. Each precompile call
     /// expects a different cell layout, but since the next state can be at the most one precompile
     /// state, we can re-use cells assigned across all those conditions.
-    pub(crate) fn constrain_mutually_exclusive_next_step<R: Expr<F>>(
+    pub(crate) fn constrain_mutually_exclusive_next_step(
         &mut self,
         conditions: Vec<Expression<F>>,
         next_states: Vec<ExecutionState>,
-        constraints: Vec<BoxedClosure<F, R>>,
-    ) -> Expression<F> {
+        constraints: Vec<BoxedClosure<F>>,
+    ) {
         assert_eq!(conditions.len(), constraints.len());
         assert_eq!(conditions.len(), next_states.len());
         self.require_boolean(
@@ -1544,16 +1547,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         // record the heights of all columns (for the next step) as we begin cell assignment.
         let start_heights = self.next.cell_manager.get_heights();
 
-        let mut conditional_outputs: Vec<R> = Vec::with_capacity(constraints.len());
         let mut max_end_heights: Vec<usize> = vec![0usize; start_heights.len()];
         for ((&next_state, condition), constraint) in next_states
             .iter()
-            .zip(conditions.clone().into_iter())
+            .zip(conditions.into_iter())
             .zip(constraints.into_iter())
         {
             // constraint the next step.
-            let r = self.constrain_next_step(next_state, Some(condition), constraint);
-            conditional_outputs.push(r);
+            self.constrain_next_step(next_state, Some(condition), constraint);
 
             // get the column heights at the end of querying cells in the above constraints.
             let end_heights = self.next.cell_manager.get_heights();
@@ -1570,14 +1571,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
         // reset height of next step to the maximum heights of each column.
         self.next.cell_manager.reset_heights_to(&max_end_heights);
-
-        sum::expr(
-            conditions
-                .into_iter()
-                .zip(conditional_outputs.iter())
-                .map(|(cond, r)| cond * r.expr())
-                .collect::<Vec<Expression<F>>>(),
-        )
     }
 
     /// This function needs to be used with extra precaution. You need to make

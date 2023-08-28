@@ -131,6 +131,7 @@ impl<F: Field> RestoreContextGadget<F> {
             reversible_write_counter_increase,
         )
     }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct2(
         cb: &mut EVMConstraintBuilder<F>,

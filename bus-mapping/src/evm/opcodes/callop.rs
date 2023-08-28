@@ -4,7 +4,10 @@ use crate::{
         CallKind, CircuitInputStateRef, CodeSource, CopyBytes, CopyDataType, CopyEvent, ExecStep,
         NumberOrHash,
     },
-    evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
+    evm::opcodes::{
+        error_oog_precompile::ErrorOOGPrecompile,
+        precompiles::gen_associated_ops as precompile_associated_ops,
+    },
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
@@ -263,7 +266,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // get the result of the precompile call.
                 // For failed call, it will cost all gas provided.
-                let (result, precompile_call_gas_cost) = execute_precompiled(
+                let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
                         let caller_memory = &state.caller_ctx()?.memory;
@@ -454,30 +457,52 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 } else {
                     None
                 };
+                // modexp's oog error is handled in ModExpGadget
+                if has_oog_err && precompile_call != PrecompileCalls::Modexp {
+                    log::debug!(
+                        "precompile call ({:?}) runs out of gas: callee_gas_left_with_stipend = {}",
+                        precompile_call,
+                        callee_gas_left_with_stipend,
+                    );
 
-                let mut precompile_step = precompile_associated_ops(
-                    state,
-                    geth_steps[1].clone(),
-                    callee_call.clone(),
-                    precompile_call,
-                    (input_bytes, output_bytes, returned_bytes),
-                )?;
+                    let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
+                        state,
+                        &geth_steps[1],
+                        callee_call.clone(),
+                    )?;
 
-                // Set gas left and gas cost for precompile step.
-                precompile_step.gas_left = Gas(callee_gas_left_with_stipend);
-                precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
-                // Make the Precompile execution step to handle return logic and restore to caller
-                // context (similar as STOP and RETURN).
-                state.handle_return(&mut precompile_step, geth_steps, true)?;
+                    oog_step.gas_left = Gas(callee_gas_left_with_stipend);
+                    oog_step.gas_cost = GasCost(precompile_call_gas_cost);
+                    // Make the Precompile execution step to handle return logic and restore to
+                    // caller context (similar as STOP and RETURN).
+                    state.handle_return(&mut oog_step, geth_steps, true)?;
 
-                debug_assert_eq!(
-                    geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost + stipend,
-                    geth_steps[1].gas.0,
-                    "precompile_call_gas_cost wrong {:?}",
-                    precompile_step.exec_state
-                );
+                    Ok(vec![exec_step, oog_step])
+                } else {
+                    let mut precompile_step = precompile_associated_ops(
+                        state,
+                        geth_steps[1].clone(),
+                        callee_call.clone(),
+                        precompile_call,
+                        (input_bytes, output_bytes, returned_bytes),
+                    )?;
 
-                Ok(vec![exec_step, precompile_step])
+                    // Set gas left and gas cost for precompile step.
+                    precompile_step.gas_left = Gas(callee_gas_left_with_stipend);
+                    precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
+                    // Make the Precompile execution step to handle return logic and restore to
+                    // caller context (similar as STOP and RETURN).
+                    state.handle_return(&mut precompile_step, geth_steps, true)?;
+
+                    debug_assert_eq!(
+                        geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost + stipend,
+                        geth_steps[1].gas.0,
+                        "precompile_call_gas_cost wrong {:?}",
+                        precompile_step.exec_state
+                    );
+
+                    Ok(vec![exec_step, precompile_step])
+                }
             }
             // 2. Call to account with empty code.
             (false, _, true) => {

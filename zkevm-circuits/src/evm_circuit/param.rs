@@ -101,6 +101,8 @@ pub(crate) const MAX_N_BYTES_INTEGER: usize = 31;
 // Number of bytes an EVM word has.
 pub(crate) const N_BYTES_WORD: usize = 32;
 
+pub(crate) const N_BYTES_EC_PAIR: usize = 192;
+
 // Number of bytes an u64 has.
 pub(crate) const N_BYTES_U64: usize = 8;
 

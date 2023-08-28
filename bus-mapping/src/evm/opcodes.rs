@@ -73,6 +73,7 @@ mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_precompile;
 mod error_oog_sload_sstore;
 mod error_precompile_failed;
 mod error_return_data_outofbound;

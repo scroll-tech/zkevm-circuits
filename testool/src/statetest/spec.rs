@@ -71,6 +71,7 @@ impl std::fmt::Display for StateTest {
                 format!("{k} :")
             };
             let max_len = max_len - k.len();
+            let v = v.chars().collect::<Vec<_>>();
             for i in 0..=v.len() / max_len {
                 if i == 0 && !k.is_empty() {
                     text.push_str(&k);
@@ -78,7 +79,11 @@ impl std::fmt::Display for StateTest {
                     let padding: String = " ".repeat(k.len());
                     text.push_str(&padding);
                 }
-                text.push_str(&v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]);
+                text.push_str(
+                    &v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]
+                        .iter()
+                        .collect::<String>(),
+                );
                 text.push('\n');
             }
             text
