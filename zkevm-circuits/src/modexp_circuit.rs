@@ -63,7 +63,6 @@ impl ModExpCircuitConfig {
             self.modexp_table.modulus,
             &event.modulus,
         )?;
-
         let ret = modexp_chip.mod_exp(
             region,
             range_check_chip,
@@ -128,7 +127,7 @@ impl ModExpCircuitConfig {
     }
 }
 
-const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 24576;
+const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 31235;
 
 /// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
@@ -191,6 +190,8 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
                         &mut range_chip,
                     )?;
                 }
+
+                assert_eq!(calc_offset, MODEXPCONFIG_EACH_CHIP_ROWS);
                 Ok(())
             },
         )?;
@@ -221,7 +222,7 @@ mod test {
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
             let modexp_table = ModExpTable::construct(meta);
             let challenge = MockChallenges::construct(meta);
-            (
+            ( 
                 <ModExpCircuitConfig as SubCircuitConfig<Fr>>::new(meta, modexp_table),
                 challenge,
             )

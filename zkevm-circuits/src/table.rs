@@ -35,7 +35,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::{iter::repeat, ops::Div};
+use std::iter::repeat;
 
 #[cfg(test)]
 use halo2_proofs::plonk::FirstPhase;
