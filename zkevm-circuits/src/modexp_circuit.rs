@@ -222,7 +222,7 @@ mod test {
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
             let modexp_table = ModExpTable::construct(meta);
             let challenge = MockChallenges::construct(meta);
-            ( 
+            (
                 <ModExpCircuitConfig as SubCircuitConfig<Fr>>::new(meta, modexp_table),
                 challenge,
             )
