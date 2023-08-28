@@ -1356,20 +1356,18 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 0
             };
-            geth_step.gas.0
-                - memory_expansion_gas_cost
-                - code_deposit_cost
-                - if geth_step.op == OpcodeId::SELFDESTRUCT {
-                    GasCost::SELFDESTRUCT.as_u64()
-                } else {
-                    0
-                }
+            let constant_step_gas = match geth_step.op {
+                OpcodeId::SELFDESTRUCT => geth_step.gas_cost.0,
+                _ => 0, // RETURN/STOP/REVERT have no "constant_step_gas"
+            };
+
+            geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost - constant_step_gas
         };
 
         let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).unwrap_or_else(
             || {
-                panic!("caller_gas_left underflow geth_step_next.gas {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", 
-                    geth_step_next.gas.0,
+                panic!("caller_gas_left underflow geth_step_next {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", 
+                    geth_step_next,
                     gas_refund,
                     exec_step,
                     geth_step);
