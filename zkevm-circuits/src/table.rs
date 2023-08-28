@@ -35,7 +35,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::iter::repeat;
+use std::{iter::repeat, ops::Div};
 
 #[cfg(test)]
 use halo2_proofs::plonk::FirstPhase;
@@ -2635,10 +2635,13 @@ impl ModExpTable {
     /// helper for obtain the modulus of a U256 in Fr
     pub fn native_u256<F: Field>(word: &Word) -> F {
         let minus1 = -F::one();
-        let (div, _) = word.div_mod(Word::from_little_endian(minus1.to_repr().as_ref()));
-        let div = div.checked_add(Word::from(1u64)).unwrap();
+        //let div: U256 = word - q * Word::from_little_endian(minus1.to_repr().as_ref());
+        let (_, remainder) = word.div_mod(Word::from_little_endian(minus1.to_repr().as_ref()));
+
+        //let div: U256 = div.checked_add(Word::from(1u64)).unwrap();
+        let rem: U256 = remainder.checked_add(Word::from(1u64)).unwrap();
         let mut bytes = [0u8; 64];
-        div.to_little_endian(&mut bytes[..32]);
+        rem.to_little_endian(&mut bytes[..32]);
         F::from_bytes_wide(&bytes)
     }
 
