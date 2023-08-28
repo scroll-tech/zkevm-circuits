@@ -1366,11 +1366,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let caller_gas_left = geth_step_next.gas.0.checked_sub(gas_refund).unwrap_or_else(
             || {
-                panic!("caller_gas_left underflow geth_step_next {:?}, gas_refund {:?}, exec_step {:?}, geth_step {:?}", 
-                    geth_step_next,
-                    gas_refund,
-                    exec_step,
-                    geth_step);
+                panic!("caller_gas_left underflow geth_step_next {geth_step_next:?}, gas_refund {gas_refund:?}, exec_step {exec_step:?}, geth_step {geth_step:?}"); 
             }
         );
         for (field, value) in [
