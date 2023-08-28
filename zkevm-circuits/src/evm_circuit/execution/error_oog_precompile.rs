@@ -243,6 +243,40 @@ mod test {
                         - 1).to_word(),
                     ..Default::default()
                 },
+                PrecompileCallArgs {
+                    name: "modexp length in u256",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x20)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x20)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x20)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000008"))
+                        PUSH1(0x60)
+                        MSTORE
+                        PUSH32(word!("0x1000000000000000000000000000000000000000000000000000000000000009"))
+                        PUSH1(0x80)
+                        MSTORE
+                        PUSH32(word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"))
+                        PUSH1(0xA0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0xc0.into(),
+                    ret_offset: 0xe0.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    gas: 20.to_word(),
+                    ..Default::default()
+                },
             ]
         };
     }

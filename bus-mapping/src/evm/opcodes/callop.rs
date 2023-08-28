@@ -457,7 +457,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 } else {
                     None
                 };
-                if has_oog_err {
+                // modexp's oog error is handled in ModExpGadget
+                if has_oog_err && precompile_call != PrecompileCalls::Modexp {
                     log::debug!(
                         "precompile call ({:?}) runs out of gas: callee_gas_left_with_stipend = {}",
                         precompile_call,

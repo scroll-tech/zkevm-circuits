@@ -707,6 +707,7 @@ pub struct ModExpGadget<F> {
 
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
+    is_gas_insufficient: LtGadget<F, N_BYTES_U64>,
     gas_cost_gadget: ModExpGasCost<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
@@ -747,11 +748,16 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             None,
         );
 
-        let call_success = util::and::expr([
-            input.is_valid(),
-            //TODO: replace this constants when gas gadget is ready
-            1.expr(),
-        ]);
+        let gas_cost_gadget =
+            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
+        let is_gas_insufficient = LtGadget::construct(
+            cb,
+            cb.curr.state.gas_left.expr(),
+            gas_cost_gadget.dynamic_gas.max(),
+        );
+
+        let call_success =
+            util::and::expr([input.is_valid(), not::expr(is_gas_insufficient.expr())]);
 
         cb.require_equal(
             "call success if valid input and enough gas",
@@ -791,13 +797,13 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output.bytes_rlc(),
         );
 
-        let gas_cost_gadget =
-            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
         let gas_cost = select::expr(
             is_success.expr(),
             gas_cost_gadget.dynamic_gas.max(),
             cb.curr.state.gas_left.expr(),
         );
+
+        let rd_length = select::expr(is_success.expr(), input.modulus_len(), 0.expr());
 
         let restore_context_gadget = RestoreContextGadget::construct2(
             cb,
@@ -805,7 +811,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             gas_cost.expr(),
             0.expr(),
             0.expr(),
-            input.modulus_len(),
+            rd_length,
             0.expr(),
             0.expr(),
         );
@@ -824,6 +830,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output,
             input_bytes_acc,
             output_bytes_acc,
+            is_gas_insufficient,
             gas_cost_gadget,
             garbage_bytes_holder,
         }
@@ -888,12 +895,18 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
 
-            let _gas_cost = self.gas_cost_gadget.assign(
+            let required_gas_cost = self.gas_cost_gadget.assign(
                 region,
                 offset,
                 &data.input_lens[0],
                 &data.input_lens[2],
                 &data.inputs[1],
+            )?;
+            self.is_gas_insufficient.assign(
+                region,
+                offset,
+                F::from(step.gas_left),
+                F::from(required_gas_cost),
             )?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
