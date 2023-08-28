@@ -587,6 +587,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
             128 => ("Range128", FixedTableTag::Range128),
+            192 => ("Range192", FixedTableTag::Range192),
             256 => ("Range256", FixedTableTag::Range256),
             512 => ("Range512", FixedTableTag::Range512),
             1024 => ("Range1024", FixedTableTag::Range1024),

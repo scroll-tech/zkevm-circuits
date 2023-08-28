@@ -520,6 +520,39 @@ mod test {
                 }
             ]
         };
+
+        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "ecMul (valid: scalar larger than base field order)",
+                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                    // s = 2^256 - 1
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x02)
+                        PUSH1(0x00)
+                        MSTORE
+
+                        // p_y
+                        PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                        PUSH1(0x20)
+                        MSTORE
+
+                        // s
+                        PUSH32(word!("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+                        PUSH1(0x40)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x60.into(),
+                    ret_offset: 0x60.into(),
+                    ret_size: 0x40.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    gas: (PrecompileCalls::Bn128Mul.base_gas_cost().as_u64() - 1).to_word(),
+                    ..Default::default()
+                }
+            ]
+        };
     }
 
     #[test]
@@ -532,6 +565,29 @@ mod test {
         ];
 
         TEST_VECTOR
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
+    }
+
+    #[test]
+    fn precompile_ec_mul_oog_test() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
+
+        OOG_TEST_VECTOR
             .iter()
             .cartesian_product(&call_kinds)
             .par_bridge()

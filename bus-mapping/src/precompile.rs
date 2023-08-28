@@ -1,7 +1,7 @@
 //! precompile helpers
 
 use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
-use revm_precompile::{Precompile, Precompiles};
+use revm_precompile::{Precompile, PrecompileError, Precompiles};
 use strum::EnumIter;
 
 use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
@@ -13,7 +13,11 @@ pub fn is_precompiled(address: &Address) -> bool {
         .is_some()
 }
 
-pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> (Vec<u8>, u64) {
+pub(crate) fn execute_precompiled(
+    address: &Address,
+    input: &[u8],
+    gas: u64,
+) -> (Vec<u8>, u64, bool) {
     let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
@@ -28,15 +32,18 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
                     if input_valid {
                         // detect some edge cases like modulus = 0
                         assert_eq!(modulus_len.as_usize(), return_value.len());
-                        (return_value, gas_cost)
+                        (return_value, gas_cost, false) // no oog error
                     } else {
-                        (vec![], gas)
+                        (vec![], gas, false)
                     }
                 }
-                _ => (return_value, gas_cost),
+                _ => (return_value, gas_cost, false),
             }
         }
-        Err(_) => (vec![], gas),
+        Err(err) => match err {
+            PrecompileError::OutOfGas => (vec![], gas, true),
+            _ => (vec![], gas, false),
+        },
     }
 }
 
