@@ -156,6 +156,20 @@ pub struct EccCircuit<F: Field, const XI_0: i64> {
 }
 
 impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
+    /// Return the minimum number of rows required to prove an input of a
+    /// particular size.
+    pub fn min_num_rows() -> usize {
+        // EccCircuit can't determine usable rows independently.
+        // Instead, the blinding area is determined by other advise columns with most counts of
+        // rotation queries. This value is typically determined by either the Keccak or EVM
+        // circuit.
+
+        let max_blinding_factor = Self::unusable_rows() - 1;
+
+        // same formula as halo2-lib's FlexGate
+        (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3)
+    }
+
     /// Assign witness from the ecXX ops to the circuit.
     pub(crate) fn assign(
         &self,
@@ -953,15 +967,11 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
     }
 
     fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
-        // EccCircuit can't determine usable rows independently.
-        // Instead, the blinding area is determined by other advise columns with most counts of
-        // rotation queries. This value is typically determined by either the Keccak or EVM
-        // circuit.
-
-        let max_blinding_factor = Self::unusable_rows() - 1;
-
-        // same formula as halo2-lib's FlexGate
-        let row_num = (1 << LOG_TOTAL_NUM_ROWS) - (max_blinding_factor + 3);
+        let row_num = if block.circuits_params.max_vertical_circuit_rows == 0 {
+            Self::min_num_rows()
+        } else {
+            block.circuits_params.max_vertical_circuit_rows
+        };
 
         let ec_adds = block.get_ec_add_ops().len();
         let ec_muls = block.get_ec_mul_ops().len();

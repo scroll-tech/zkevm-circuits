@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
 keccak256 = { path = "../keccak256" }
+mpt-zktrie = {path = "../zktrie"}
 mock = { path = "../mock", optional = true }
 
 ethers-core = "0.17.0"

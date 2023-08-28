@@ -406,7 +406,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             cb.curr.state.call_id.expr(),
                             CopyDataType::Memory.expr(),
                             callee_call_id.expr(),
-                            5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
+                            CopyDataType::RlcAcc.expr(),
                             call_gadget.cd_address.offset(),
                             call_gadget.cd_address.offset() + precompile_input_len.expr(),
                             0.expr(),
@@ -429,7 +429,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         let precompile_output_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
                             callee_call_id.expr(),
-                            5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
+                            CopyDataType::RlcAcc.expr(),
                             callee_call_id.expr(),
                             CopyDataType::Memory.expr(),
                             0.expr(),

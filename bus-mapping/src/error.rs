@@ -15,6 +15,10 @@ use crate::geth_errors::{
 pub enum Error {
     /// Serde de/serialization error.
     SerdeError(serde_json::error::Error),
+    /// Parsing error
+    IoError(std::io::Error),
+    /// hex parsing error
+    HexError(hex::FromHexError),
     /// JSON-RPC related error.
     JSONRpcError(ProviderError),
     /// OpcodeId is not a call type.

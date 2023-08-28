@@ -77,13 +77,20 @@ const NODE_TYPE_LEAF: u8 = 4;
 const NODE_TYPE_EMPTY: u8 = 5;
 const SECURE_HASH_DOMAIN: u64 = 512;
 
+/// AccountData
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub(crate) struct AccountData {
+pub struct AccountData {
+    /// nonce
     pub nonce: u64,
+    /// balance
     pub balance: U256,
+    /// keccak code hash
     pub keccak_code_hash: H256,
+    /// poseidon code hash
     pub poseidon_code_hash: H256,
+    /// code size
     pub code_size: u64,
+    /// storage root
     pub storage_root: H256,
 }
 
@@ -140,8 +147,9 @@ impl CanRead for AccountData {
     }
 }
 
+/// Storage data
 #[derive(Debug, Default, Clone)]
-pub(crate) struct StorageData(Word);
+pub struct StorageData(Word);
 
 impl AsRef<Word> for StorageData {
     fn as_ref(&self) -> &Word {

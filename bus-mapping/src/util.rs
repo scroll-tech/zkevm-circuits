@@ -18,18 +18,20 @@ pub static CHECK_MEM_STRICT: Lazy<bool> = Lazy::new(|| read_env_var("CHECK_MEM_S
 pub const POSEIDON_HASH_BYTES_IN_FIELD: usize = 31;
 
 /// Default code hash
-pub(crate) fn hash_code(code: &[u8]) -> Hash {
+pub fn hash_code(code: &[u8]) -> Hash {
     #[cfg(feature = "scroll")]
     return hash_code_poseidon(code);
     #[cfg(not(feature = "scroll"))]
     return hash_code_keccak(code);
 }
 
-pub(crate) fn hash_code_keccak(code: &[u8]) -> Hash {
+/// Keccak code hash
+pub fn hash_code_keccak(code: &[u8]) -> Hash {
     eth_types::H256(ethers_core::utils::keccak256(code))
 }
 
-pub(crate) fn hash_code_poseidon(code: &[u8]) -> Hash {
+/// Poseidon code hash
+pub fn hash_code_poseidon(code: &[u8]) -> Hash {
     use poseidon_circuit::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
 
     let bytes_in_field = POSEIDON_HASH_BYTES_IN_FIELD;

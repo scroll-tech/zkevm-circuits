@@ -3,6 +3,9 @@ use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use std::{collections::HashMap, str::FromStr};
 
+/// https://github.com/ethereum/tests/pull/857 "set default gasPrice to 10"
+pub const DEFAULT_BASE_FEE: u32 = 10;
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Env {
     pub current_base_fee: U256,
@@ -68,6 +71,7 @@ impl std::fmt::Display for StateTest {
                 format!("{k} :")
             };
             let max_len = max_len - k.len();
+            let v = v.chars().collect::<Vec<_>>();
             for i in 0..=v.len() / max_len {
                 if i == 0 && !k.is_empty() {
                     text.push_str(&k);
@@ -75,7 +79,11 @@ impl std::fmt::Display for StateTest {
                     let padding: String = " ".repeat(k.len());
                     text.push_str(&padding);
                 }
-                text.push_str(&v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]);
+                text.push_str(
+                    &v[i * max_len..std::cmp::min((i + 1) * max_len, v.len())]
+                        .iter()
+                        .collect::<String>(),
+                );
                 text.push('\n');
             }
             text
@@ -255,7 +263,7 @@ impl StateTest {
             path: String::default(),
             id: String::default(),
             env: Env {
-                current_base_fee: U256::from(1),
+                current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: Address::default(),
                 current_difficulty: U256::default(),
                 current_gas_limit: 16000000,

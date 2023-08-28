@@ -8,7 +8,6 @@ use crate::{
 use ethers_core::types::{
     Eip1559TransactionRequest, Eip2930TransactionRequest, NameOrAddress, TransactionRequest, H256,
 };
-use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
 use num_bigint::BigUint;
@@ -384,7 +383,7 @@ pub struct GethData {
     /// Accounts
     pub accounts: Vec<Account>,
 }
-
+/*
 impl GethData {
     /// Signs transactions with selected wallets
     pub fn sign(&mut self, wallets: &HashMap<Address, LocalWallet>) {
@@ -403,3 +402,4 @@ impl GethData {
         }
     }
 }
+*/

@@ -13,6 +13,7 @@ import (
 	"github.com/scroll-tech/go-ethereum/core/types"
 	"github.com/scroll-tech/go-ethereum/core/vm"
 	"github.com/scroll-tech/go-ethereum/params"
+	"github.com/scroll-tech/go-ethereum/trie"
 )
 
 type Block struct {
@@ -52,7 +53,8 @@ type Transaction struct {
 }
 
 type TraceConfig struct {
-	ChainID uint64 `json:"chain_id"`
+	ChainID           uint64 `json:"chain_id"`
+	StartL1QueueIndex uint64 `json:"l1_queue_index"`
 	// HistoryHashes contains most recent 256 block hashes in history,
 	// where the lastest one is at HistoryHashes[len(HistoryHashes)-1].
 	HistoryHashes []*hexutil.Big             `json:"history_hashes"`
@@ -120,7 +122,7 @@ func transferTxs(txs []Transaction) types.Transactions {
 	return types.Transactions(t_txs)
 }
 
-func L2Trace(config TraceConfig) (*types.BlockTrace, error) {
+func Trace(config TraceConfig) (*types.BlockTrace, error) {
 
 	chainConfig := params.ChainConfig{
 		ChainID:             new(big.Int).SetUint64(config.ChainID),
@@ -198,8 +200,12 @@ func L2Trace(config TraceConfig) (*types.BlockTrace, error) {
 	}
 	block := types.NewBlockWithHeader(header).WithBody(txs, nil)
 
+	trieCfg := &trie.Config{Zktrie: true}
 	// Setup state db with accounts from argument
-	stateDB, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	stateDB, _ := state.New(
+		common.Hash{},
+		state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), trieCfg),
+		nil)
 	for address, account := range config.Accounts {
 		stateDB.SetNonce(address, uint64(account.Nonce))
 		stateDB.SetCode(address, account.Code)
@@ -210,30 +216,35 @@ func L2Trace(config TraceConfig) (*types.BlockTrace, error) {
 			stateDB.SetState(address, key, value)
 		}
 	}
-	stateDB.Finalise(true)
 
-	traceEnv := core.CreateTraceEnvDirect(
-		&chainConfig,
-		&vm.LogConfig{
-			EnableMemory:     true,
-			EnableReturnData: true,
-		},
-		blockCtx,
-		blockCtx.Coinbase,
-		stateDB,
-		parent,
-		block,
-		true,
-	)
-
-	return traceEnv.GetBlockTrace(block)
-}
-
-func Trace(config TraceConfig) ([]*types.ExecutionResult, error) {
-	l2trace, err := L2Trace(config)
+	rootBefore, err := stateDB.Commit(true)
 	if err != nil {
 		return nil, err
 	}
 
-	return l2trace.ExecutionResults, nil
+	traceEnv := core.CreateTraceEnvHelper(
+		&chainConfig,
+		config.LoggerConfig,
+		blockCtx,
+		config.StartL1QueueIndex,
+		blockCtx.Coinbase,
+		stateDB,
+		rootBefore,
+		block,
+		true,
+	)
+
+	trace, err := traceEnv.GetBlockTrace(block)
+	if err != nil {
+		return nil, err
+	}
+
+	rootAfter, err := stateDB.Commit(true)
+	if err != nil {
+		return nil, err
+	}
+
+	trace.StorageTrace.RootAfter = rootAfter
+	trace.Header.Root = rootAfter
+	return trace, nil
 }

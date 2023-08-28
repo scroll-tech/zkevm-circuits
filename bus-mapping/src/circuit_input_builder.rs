@@ -6,6 +6,8 @@ mod block;
 mod call;
 mod execution;
 mod input_state_ref;
+#[cfg(feature = "scroll")]
+mod l2;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
@@ -46,6 +48,8 @@ use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
+#[cfg(feature = "scroll")]
+use mpt_zktrie::state::ZktrieState;
 use std::{
     collections::{BTreeMap, HashMap},
     iter,
@@ -112,8 +116,15 @@ pub struct CircuitsParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// Maximum number of rows that the Poseidon Circuit can have
+    pub max_poseidon_rows: usize,
     /// Max number of ECC-related ops supported in the ECC circuit.
     pub max_ec_ops: PrecompileEcParams,
+    /// This number indicate what 100% usage means, for example if we can support up to 2
+    /// ecPairing inside circuit, and max_vertical_circuit_rows is set to 1_000_000,
+    /// then if there is 1 ecPairing in the input, we will return 500_000 as the "row usage"
+    /// for the ec circuit.
+    pub max_vertical_circuit_rows: usize,
 }
 
 impl Default for CircuitsParams {
@@ -132,6 +143,8 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_poseidon_rows: 0,
+            max_vertical_circuit_rows: 0,
             max_rlp_rows: 1000,
             max_ec_ops: PrecompileEcParams::default(),
         }
@@ -166,6 +179,9 @@ pub struct CircuitInputBuilder {
     pub block: Block,
     /// Block Context
     pub block_ctx: BlockContext,
+    #[cfg(feature = "scroll")]
+    /// Initial Zktrie Status for a incremental updating
+    pub mpt_init_state: ZktrieState,
 }
 
 impl<'a> CircuitInputBuilder {
@@ -177,6 +193,8 @@ impl<'a> CircuitInputBuilder {
             code_db,
             block: block.clone(),
             block_ctx: BlockContext::new(),
+            #[cfg(feature = "scroll")]
+            mpt_init_state: Default::default(),
         }
     }
     /// Create a new CircuitInputBuilder from the given `eth_block` and

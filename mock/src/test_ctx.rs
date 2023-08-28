@@ -1,11 +1,17 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
 use crate::{eth, MockAccount, MockBlock, MockTransaction};
+#[cfg(feature = "scroll")]
+use eth_types::l2_types::BlockTrace;
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
-    BigEndianHash, Block, Bytecode, Error, GethExecTrace, Transaction, Word, H256,
+    BigEndianHash, Block, Bytecode, Error, Transaction, Word, H256,
 };
-use external_tracer::{trace, TraceConfig};
+#[cfg(feature = "scroll")]
+use external_tracer::l2trace;
+#[cfg(not(feature = "scroll"))]
+use external_tracer::trace;
+use external_tracer::TraceConfig;
 use helpers::*;
 use itertools::Itertools;
 
@@ -89,6 +95,9 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
+
+    #[cfg(feature = "scroll")]
+    block_trace: BlockTrace,
 }
 
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
@@ -173,7 +182,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .try_into()
             .expect("Mismatched acc len");
 
-        let geth_traces = gen_geth_traces(
+        let trace_config = gen_trace_config(
             chain_id,
             block.clone(),
             accounts.to_vec(),
@@ -181,12 +190,27 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             logger_config,
         )?;
 
+        #[cfg(feature = "scroll")]
+        let block_trace = l2trace(&trace_config)?;
+
+        #[cfg(feature = "scroll")]
+        let geth_traces = block_trace
+            .execution_results
+            .iter()
+            .map(From::from)
+            .collect::<Vec<_>>();
+
+        #[cfg(not(feature = "scroll"))]
+        let geth_traces = trace(&trace_config)?;
+
         Ok(Self {
             chain_id,
             accounts,
             history_hashes: history_hashes.unwrap_or_default(),
             eth_block: block,
             geth_traces,
+            #[cfg(feature = "scroll")]
+            block_trace,
         })
     }
 
@@ -216,6 +240,12 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         )
     }
 
+    /// obtain the full l2 block trace
+    #[cfg(feature = "scroll")]
+    pub fn l2_trace(&self) -> &BlockTrace {
+        &self.block_trace
+    }
+
     /// Returns a simple TestContext setup with a single tx executing the
     /// bytecode passed as parameters. The balances of the 2 accounts and
     /// addresses are the ones used in [`TestContext::
@@ -231,16 +261,16 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     }
 }
 
-/// Generates execution traces for the transactions included in the provided
+/// Generates config to generating execution traces for the transactions included in the provided
 /// Block
-pub fn gen_geth_traces(
+pub fn gen_trace_config(
     chain_id: u64,
     block: Block<Transaction>,
     accounts: Vec<Account>,
     history_hashes: Option<Vec<Word>>,
     logger_config: LoggerConfig,
-) -> Result<Vec<GethExecTrace>, Error> {
-    let trace_config = TraceConfig {
+) -> Result<TraceConfig, Error> {
+    Ok(TraceConfig {
         chain_id,
         history_hashes: history_hashes.unwrap_or_default(),
         block_constants: BlockConstants::try_from(&block)?,
@@ -258,9 +288,9 @@ pub fn gen_geth_traces(
         chain_config: Some(external_tracer::ChainConfig::shanghai()),
         #[cfg(not(feature = "shanghai"))]
         chain_config: None,
-    };
-    let traces = trace(&trace_config)?;
-    Ok(traces)
+        #[cfg(feature = "scroll")]
+        l1_queue_index: 0,
+    })
 }
 
 /// Collection of helper functions which contribute to specific rutines on the

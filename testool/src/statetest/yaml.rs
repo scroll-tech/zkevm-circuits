@@ -1,6 +1,6 @@
 use super::{
     parse,
-    spec::{AccountMatch, Env, StateTest},
+    spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
 use crate::{utils::MainnetFork, Compiler};
 use anyhow::{bail, Context, Result};
@@ -205,7 +205,7 @@ impl<'a> YamlStateTestBuilder<'a> {
     fn parse_env(yaml: &Yaml) -> Result<Env> {
         Ok(Env {
             current_base_fee: Self::parse_u256(&yaml["currentBaseFee"])
-                .unwrap_or_else(|_| U256::from(10)),
+                .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
             current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
             current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
@@ -602,7 +602,7 @@ arith:
             path: "".into(),
             id: "arith_d0_g0_v0".into(),
             env: Env {
-                current_base_fee: U256::from(10),
+                current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
                 current_difficulty: U256::from(0x20000u64),
                 current_number: 1,

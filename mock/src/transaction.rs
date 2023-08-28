@@ -334,13 +334,18 @@ impl MockTransaction {
     pub fn build(&mut self) -> Self {
         let tx = TransactionRequest::new()
             .from(self.from.address())
-            .to(self.to.clone().unwrap_or_default().address())
             .nonce(self.nonce)
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
             .gas_price(self.gas_price)
             .chain_id(self.chain_id);
+
+        let tx = if let Some(to_addr) = self.to.clone() {
+            tx.to(to_addr.address())
+        } else {
+            tx
+        };
 
         match (self.v, self.r, self.s) {
             (None, None, None) => {

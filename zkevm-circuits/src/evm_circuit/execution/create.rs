@@ -285,20 +285,22 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
         });
 
-        // check for address collision case by code hash previous
-        cb.account_read(
-            new_address.clone(),
-            AccountFieldTag::CodeHash,
-            code_hash_previous.expr(),
-        );
         // callee address's nonce
         let code_hash_is_zero = IsZeroGadget::construct(cb, code_hash_previous.expr());
-        cb.condition(not::expr(code_hash_is_zero.expr()), |cb| {
+        // check for address collision case by code hash previous
+        cb.condition(is_precheck_ok.expr(), |cb| {
             cb.account_read(
                 new_address.clone(),
-                AccountFieldTag::Nonce,
-                callee_nonce.expr(),
+                AccountFieldTag::CodeHash,
+                code_hash_previous.expr(),
             );
+            cb.condition(not::expr(code_hash_is_zero.expr()), |cb| {
+                cb.account_read(
+                    new_address.clone(),
+                    AccountFieldTag::Nonce,
+                    callee_nonce.expr(),
+                );
+            });
         });
 
         let code_hash_is_empty =
@@ -651,7 +653,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let is_precheck_ok =
             call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX;
         if is_precheck_ok {
-            rws.next();
+            rws.next(); // caller nonce += 1
         }
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
             [(); 2].map(|_| rws.next().call_context_value());
@@ -667,14 +669,18 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         )?;
 
         // retrieve code_hash for creating address
-        let code_hash_previous = rws.next().account_codehash_pair();
-        let callee_nonce = if !code_hash_previous.0.is_zero() {
+        let code_hash_previous = if is_precheck_ok {
+            rws.next().account_codehash_pair().0
+        } else {
+            0.into()
+        };
+        let callee_nonce = if !code_hash_previous.is_zero() {
             rws.next().account_nonce_pair().1.low_u64()
         } else {
             0
         };
 
-        let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
+        let code_hash_previous_rlc = region.code_hash(code_hash_previous);
         self.code_hash_previous
             .assign(region, offset, code_hash_previous_rlc)?;
         self.code_hash_is_zero
@@ -692,8 +698,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign(region, offset, F::from(callee_nonce))?;
 
         let callee_nonce_is_zero = callee_nonce == 0;
-        let codehash_non_empty = !code_hash_previous.0.is_zero()
-            && code_hash_previous.0 != CodeDB::empty_code_hash().to_word();
+        let codehash_non_empty = !code_hash_previous.is_zero()
+            && code_hash_previous != CodeDB::empty_code_hash().to_word();
         let is_address_collision = !callee_nonce_is_zero || codehash_non_empty;
         if is_precheck_ok && !is_address_collision {
             /*

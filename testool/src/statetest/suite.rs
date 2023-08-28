@@ -41,10 +41,16 @@ pub fn load_statetests_suite(
                 let tcs = (|| -> Result<Vec<StateTest>> {
                     let src = std::fs::read_to_string(&file)?;
                     log::debug!(target: "testool", "Reading file {:?}", file);
-                    let mut tcs = match ext {
-                        "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src)?,
-                        "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src)?,
+                    let tcs = match ext {
+                        "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src),
+                        "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src),
                         _ => unreachable!(),
+                    };
+                    let mut tcs = match tcs {
+                        Ok(tcs) => tcs,
+                        Err(e) => {
+                            panic!("fail to load {path:?}, err {e:?}");
+                        }
                     };
 
                     tcs.retain(|v| !skip_tests.contains(&&v.id));

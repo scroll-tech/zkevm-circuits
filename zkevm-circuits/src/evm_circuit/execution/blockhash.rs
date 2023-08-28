@@ -60,14 +60,17 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             from_bytes::expr(&chain_id.cells),
         );
 
-        let diff_lt = LtGadget::construct(
-            cb,
-            current_block_number.expr(),
-            (NUM_PREV_BLOCK_ALLOWED + 1).expr() + block_number.valid_value(),
-        );
+        let diff_lt = cb.condition(block_number.not_overflow(), |cb| {
+            LtGadget::construct(
+                cb,
+                current_block_number.expr(),
+                // even though NUM_PREV_BLOCK_ALLOWED +  1 + block_number.valid_value() may exceed
+                // u64::MAX theoretically, but very very rare in practical。 omit this case.
+                (NUM_PREV_BLOCK_ALLOWED + 1).expr() + block_number.valid_value(),
+            )
+        });
 
         let is_valid = and::expr([block_number.lt_cap(), diff_lt.expr()]);
-
         let block_hash = cb.query_cell_phase2();
         cb.condition(is_valid.expr(), |cb| {
             // For non-scroll, lookup for the block hash.
@@ -150,7 +153,6 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let current_block_number = block.context.ctxs[&tx.block_number].number;
         let block_number = block.rws[step.rw_indices[0]].stack_value();
         let block_hash = block.rws[step.rw_indices[1]].stack_value();
-
         if is_valid_block_number(block_number, current_block_number) {
             #[cfg(feature = "scroll")]
             assert_eq!(
@@ -161,6 +163,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             assert_eq!(block_hash, 0.into());
         }
 
+        let block_number_valid = block_number.low_u64();
         let current_block_number = current_block_number
             .to_scalar()
             .expect("unexpected U256 -> Scalar conversion failure");
@@ -178,13 +181,14 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             .low_u64()
             .to_scalar()
             .expect("unexpected U256 -> Scalar conversion failure");
-        self.diff_lt.assign(
-            region,
-            offset,
-            current_block_number,
-            block_number + F::from(NUM_PREV_BLOCK_ALLOWED + 1),
-        )?;
-
+        if block_number < F::from(u64::MAX) {
+            self.diff_lt.assign(
+                region,
+                offset,
+                current_block_number,
+                F::from(block_number_valid) + F::from(NUM_PREV_BLOCK_ALLOWED + 1),
+            )?;
+        }
         Ok(())
     }
 }

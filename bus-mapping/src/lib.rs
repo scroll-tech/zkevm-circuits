@@ -47,7 +47,7 @@
 //! with all of the Memory, Stack and Storage ops performed
 //! by the provided trace.
 //!
-//! ```rust
+//! ```rust, no_run
 //! use bus_mapping::{Error, mock::BlockData};
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use eth_types::{

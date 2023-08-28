@@ -32,7 +32,7 @@ use eth_types::{
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
-use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
+use ethers_core::utils::{get_contract_address, get_create2_address};
 use log::trace;
 use std::{cmp::max, iter::repeat};
 
@@ -349,7 +349,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// account in the StateDB, then if the rw operation is a write, apply
     /// it to the corresponding account in the StateDB.
     fn check_update_sdb_account(&mut self, rw: RW, op: &AccountOp) {
-        let account = self.sdb.get_account_mut(&op.address).1;
+        let mut account = self.sdb.get_account_mut(&op.address).1.clone();
         // -- sanity check begin --
         // Verify that a READ doesn't change the field value
         if matches!(rw, RW::READ) && op.value_prev != op.value {
@@ -401,15 +401,12 @@ impl<'a> CircuitInputStateRef<'a> {
                 rw, account, self.block_ctx.rwc.0, op
             );
         }
-        // Verify that no read is done to a field other than CodeHash to a non-existing
+        // Verify that no rw is done to a field other than CodeHash to a non-existing
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT
         // AccountNonExisting proofs lookups).
-        if (!matches!(
-            op.field,
-            AccountField::CodeHash | AccountField::KeccakCodeHash
-        ) && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
-            && account.is_empty()
+        if (account.is_empty() && !self.sdb.is_touched(&op.address))
+            && !matches!(op.field, AccountField::CodeHash)
         {
             panic!(
                 "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
@@ -426,12 +423,20 @@ impl<'a> CircuitInputStateRef<'a> {
                     account.balance = op.value;
                 }
                 AccountField::KeccakCodeHash => {
-                    account.keccak_code_hash = H256::from(op.value.to_be_bytes())
+                    let value = H256::from(op.value.to_be_bytes());
+                    account.keccak_code_hash = value;
                 }
-                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
-                AccountField::CodeSize => account.code_size = op.value,
+                AccountField::CodeHash => {
+                    self.sdb.set_touched(&op.address);
+                    let value = H256::from(op.value.to_be_bytes());
+                    account.code_hash = value;
+                }
+                AccountField::CodeSize => {
+                    account.code_size = op.value;
+                }
             }
         }
+        self.sdb.set_account(&op.address, account);
     }
 
     /// Push a read type [`AccountOp`] into the
@@ -1131,19 +1136,34 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Handle a restore and a return step caused by any opcode that causes a return to the
     /// previous call context.
-    /// `caller_ctx.return_data` should be updated **before** this method.
+    /// `caller_ctx.return_data` should be updated **before** this method (except error cases).
     pub fn handle_return(
         &mut self,
         exec_step: &mut ExecStep,
         geth_steps: &[GethExecStep],
         need_restore: bool,
     ) -> Result<(), Error> {
+        let step = &geth_steps[0];
+
+        // For these 6 opcodes, the return data should be handled in opcodes respectively.
+        // For other opcodes/states, return data must be empty.
+        if !matches!(
+            step.op,
+            OpcodeId::RETURN
+                | OpcodeId::REVERT
+                | OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL
+        ) || exec_step.error.is_some()
+        {
+            if let Ok(caller) = self.caller_ctx_mut() {
+                caller.return_data.clear();
+            }
+        }
         if need_restore {
             self.handle_restore_context(exec_step, geth_steps)?;
         }
-
-        let step = &geth_steps[0];
-
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
         let callee_memory = call_ctx.memory.clone();
@@ -1158,15 +1178,23 @@ impl<'a> CircuitInputStateRef<'a> {
                 offset.low_u64(),
                 length.low_u64(),
             ));
-            let keccak_code_hash = H256(keccak256(&code));
+
+            #[cfg(feature = "scroll")]
+            let keccak_code_hash = H256(ethers_core::utils::keccak256(&code));
             let code_hash = self.code_db.insert(code);
+
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {
                 return Err(Error::AccountNotFound(call.address));
             }
-            callee_account.code_hash = code_hash;
-            callee_account.keccak_code_hash = keccak_code_hash;
-            callee_account.code_size = length;
+
+            // already updated in return_revert.rs with check_update_sdb_account
+            debug_assert_eq!(callee_account.code_hash, code_hash);
+            #[cfg(feature = "scroll")]
+            {
+                debug_assert_eq!(callee_account.code_size, length);
+                debug_assert_eq!(callee_account.keccak_code_hash, keccak_code_hash);
+            }
         }
 
         // Handle reversion if this call doesn't end successfully

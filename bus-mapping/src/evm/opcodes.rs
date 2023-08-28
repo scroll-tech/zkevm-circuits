@@ -631,26 +631,15 @@ pub fn gen_begin_tx_ops(
     log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
-    // Get code_hash of callee
-    // FIXME: call with value to precompile will cause the codehash of precompile
-    // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
-    // consistent codehash for precompile contract.
+    // Get code_hash of callee account
     let callee_account = &state.sdb.get_account(&call.address).1.clone();
     let is_precompile = is_precompiled(&call.address);
-    let callee_exists = !callee_account.is_empty() || is_precompile;
+    let callee_exists = !callee_account.is_empty();
     if !callee_exists && call.value.is_zero() {
+        // The account is empty (codehash and nonce be 0) while storage is non empty.
+        // It is an impossible case for any real world scenario.
+        // The "clear" helps with testool.
         state.sdb.get_account_mut(&call.address).1.storage.clear();
-    }
-    if state.tx.is_create()
-        && ((!callee_account.code_hash.is_zero()
-            && !callee_account.code_hash.eq(&CodeDB::empty_code_hash()))
-            || !callee_account.nonce.is_zero())
-    {
-        unimplemented!(
-            "deployment collision at {:?}, account {:?}",
-            call.address,
-            callee_account
-        );
     }
     let account_code_hash = if callee_exists {
         callee_account.code_hash.to_word()
@@ -665,12 +654,20 @@ pub fn gen_begin_tx_ops(
     let account_code_hash_is_empty_or_zero =
         account_code_hash.is_zero() || account_code_hash == CodeDB::empty_code_hash().to_word();
 
-    if !is_precompile {
-        state.account_read(
-            &mut exec_step,
+    state.account_read(
+        &mut exec_step,
+        call.address,
+        AccountField::CodeHash,
+        account_code_hash,
+    );
+
+    if state.tx.is_create()
+        && ((!account_code_hash_is_empty_or_zero) || !callee_account.nonce.is_zero())
+    {
+        unimplemented!(
+            "deployment collision at {:?}, account {:?}",
             call.address,
-            AccountField::CodeHash,
-            account_code_hash,
+            callee_account
         );
     }
 
@@ -1128,14 +1125,13 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
     if receiver != sender {
-        state.push_op_reversible(
+        state.transfer_to(
             &mut exec_step,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
-                value: receiver_account.balance + value,
-                value_prev: receiver_account.balance,
-            },
+            receiver,
+            !receiver_account.is_empty(),
+            false,
+            value,
+            true,
         )?;
     }
 
@@ -1143,6 +1139,9 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, true)?;
+    if let Ok(caller) = state.caller_ctx_mut() {
+        caller.return_data.clear();
+    }
+    state.handle_return(&mut exec_step, geth_steps, !state.call()?.is_root)?;
     Ok(vec![exec_step])
 }

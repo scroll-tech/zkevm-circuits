@@ -31,6 +31,8 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_bytecode: 30000,
     max_mpt_rows: 30000,
     max_keccak_rows: 0,
+    max_poseidon_rows: 0,
+    max_vertical_circuit_rows: 0,
     max_exp_steps: 1000,
     max_evm_rows: 0,
     max_rlp_rows: 33000,

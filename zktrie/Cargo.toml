@@ -11,7 +11,6 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", tag = "v0.5.1" }
 zktrie = { git = "https://github.com/scroll-tech/zktrie.git", branch = "v0.6" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0723"}
-bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 lazy_static = "1.4"
 num-bigint = { version = "0.4" }
