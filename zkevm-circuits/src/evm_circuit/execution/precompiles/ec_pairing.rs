@@ -1124,6 +1124,7 @@ mod test {
                     ret_offset: 0x180.into(),
                     ret_size: 0x20.into(),
                     address: PrecompileCalls::Bn128Pairing.address().to_word(),
+                    value: 1.into(),
                     gas: (PrecompileCalls::Bn128Pairing.base_gas_cost().as_u64()
                         + 2* GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.as_u64() - 1).to_word(),
                     ..Default::default()

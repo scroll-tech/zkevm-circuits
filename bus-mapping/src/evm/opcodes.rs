@@ -841,7 +841,7 @@ pub fn gen_begin_tx_ops(
     // TODO:
     // Move it to code of generating precompiled operations when implemented.
     if is_precompile && !state.call().unwrap().is_success {
-        state.handle_reversion();
+        state.handle_reversion(is_precompile);
     }
 
     Ok(())

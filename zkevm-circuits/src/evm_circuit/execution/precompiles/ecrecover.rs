@@ -470,13 +470,24 @@ mod test {
 
     #[test]
     fn precompile_ecrecover_oog_test() {
-        OOG_TEST_VECTOR.iter().for_each(|test_vector| {
-            let bytecode = test_vector.with_call_op(OpcodeId::CALL);
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
 
-            CircuitTestBuilder::new_from_test_ctx(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-            )
-            .run();
-        })
+        OOG_TEST_VECTOR
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
     }
 }

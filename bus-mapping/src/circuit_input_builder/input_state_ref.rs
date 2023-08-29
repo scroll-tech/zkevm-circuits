@@ -1103,7 +1103,7 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Handle a reversion group
-    pub fn handle_reversion(&mut self) {
+    pub fn handle_reversion(&mut self, from_precompile_call: bool) {
         let reversion_group = self
             .tx_ctx
             .reversion_groups
@@ -1120,7 +1120,12 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                self.tx.steps_mut()[step_index]
+                let idx = if from_precompile_call {
+                    step_index - 1
+                } else {
+                    step_index
+                };
+                self.tx.steps_mut()[idx]
                     .bus_mapping_instance
                     .push(rev_op_ref);
             }
@@ -1199,7 +1204,9 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
-            self.handle_reversion();
+            let was_precompile_failure =
+                exec_step.is_precompiled() || exec_step.is_precompile_oog_err();
+            self.handle_reversion(was_precompile_failure);
         }
 
         let return_data_length = self
