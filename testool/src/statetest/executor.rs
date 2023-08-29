@@ -14,15 +14,23 @@ use ethers_core::{
 };
 use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
+use once_cell::sync::Lazy;
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
-    super_circuit::SuperCircuit, test_util::CircuitTestBuilder, util::SubCircuit, witness::Block,
+    modexp_circuit::ModExpCircuit, super_circuit::SuperCircuit, test_util::CircuitTestBuilder,
+    util::SubCircuit, witness::Block,
 };
 
-//const MAX_TXS: usize = 1;
-//const MAX_CALLDATA: usize = 32;
+/// Read env var with default value
+pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
+    std::env::var(var_name)
+        .map(|s| s.parse::<T>().unwrap_or_else(|_| default.clone()))
+        .unwrap_or(default)
+}
+/// Which circuit to test. Default is evm + state.
+pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_string()));
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -500,6 +508,18 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
     }
 }
 
+fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<Fr> {
+    let num_row = C::min_num_rows_block(block).1;
+    let k = zkevm_circuits::util::log2_ceil(num_row + 256);
+    log::debug!(
+        "{} circuit needs k = {k}, num_row {num_row} + 256",
+        *CIRCUIT,
+    );
+    //debug_assert!(k <= 22);
+    let circuit = C::new_from_block(block);
+    MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
+}
+
 pub fn run_test(
     st: StateTest,
     suite: TestSuite,
@@ -552,9 +572,17 @@ pub fn run_test(
     //builder.sdb.list_accounts();
 
     if !circuits_config.super_circuit {
-        CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
-            .copy_checks(None)
-            .run();
+        if (*CIRCUIT).is_empty() {
+            CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
+                .copy_checks(None)
+                .run();
+        } else {
+            let prover = match (*CIRCUIT).as_str() {
+                "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
+                _ => unimplemented!(),
+            };
+            prover.assert_satisfied_par();
+        }
     } else {
         // TODO: do we need to automatically adjust this k?
         let k = 20;
