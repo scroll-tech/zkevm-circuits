@@ -9,6 +9,7 @@ use crate::{
                 Transition,
             },
             from_bytes,
+            math_gadget::IsZeroGadget,
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
@@ -36,6 +37,7 @@ pub(crate) struct ExtcodecopyGadget<F> {
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
     code_hash: Cell<F>,
+    not_exists: IsZeroGadget<F>,
     code_size: Cell<F>,
     copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -82,11 +84,14 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.expr(),
         );
-        // TODO: If external_address doesn't exist, we will get code_hash = 0.  With
-        // this value, the bytecode_length lookup will not work, and the copy
-        // from code_hash = 0 will not work. We should use EMPTY_HASH when
-        // code_hash = 0.
-        cb.bytecode_length(code_hash.expr(), code_size.expr());
+        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
+        let exists = not::expr(not_exists.expr());
+        cb.condition(exists.expr(), |cb| {
+            cb.bytecode_length(code_hash.expr(), code_size.expr());
+        });
+        cb.condition(not_exists.expr(), |cb| {
+            cb.require_zero("code_size is zero when non_exists", code_size.expr());
+        });
 
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_length);
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
@@ -151,6 +156,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             is_warm,
             reversion_info,
             code_hash,
+            not_exists,
             code_size,
             copy_rwc_inc,
             memory_expansion,
@@ -193,6 +199,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let code_hash = block.rws[step.rw_indices[8]].account_value_pair().0;
         self.code_hash
             .assign(region, offset, region.code_hash(code_hash))?;
+        self.not_exists
+            .assign_value(region, offset, region.code_hash(code_hash))?;
 
         let code_size = if code_hash.is_zero() {
             0

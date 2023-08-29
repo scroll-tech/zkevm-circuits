@@ -208,7 +208,9 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                         .zip(evm_input_g2_rlc.clone().zip(is_g2_identity.clone()))
                         .map(|((g1_rlc, is_g1_identity), (g2_rlc, is_g2_identity))| {
                             select::expr(
-                                or::expr([is_g1_identity.expr(), is_g2_identity.expr()]),
+                                // swap only if both G1 and G2 are 0s from EVM input. Refer
+                                // `EcPairingPair::swap`
+                                and::expr([is_g1_identity.expr(), is_g2_identity.expr()]),
                                 // rlc([G1::identity, G2::generator])
                                 padding_g1_g2_rlc.expr(),
                                 // rlc([g1, g2])
@@ -989,7 +991,77 @@ mod test {
                     ret_size: 0x20.into(),
                     address: PrecompileCalls::Bn128Pairing.address().to_word(),
                     ..Default::default()
-                }
+                },
+                PrecompileCallArgs {
+                    name: "ecPairing (invalid): G1: (0, 0), G2: not on curve",
+                    setup_code: bytecode! {
+                        // G1_x
+                        PUSH32(0x00)
+                        PUSH1(0x00)
+                        MSTORE
+                        // G1_y
+                        PUSH32(0x00)
+                        PUSH1(0x20)
+                        MSTORE
+                        // G2_x1
+                        PUSH32(0x01)
+                        PUSH1(0x40)
+                        MSTORE
+                        // G2_x2
+                        PUSH32(0x02)
+                        PUSH1(0x60)
+                        MSTORE
+                        // G2_y1
+                        PUSH32(0x03)
+                        PUSH1(0x80)
+                        MSTORE
+                        // G2_y2
+                        PUSH32(0x04)
+                        PUSH1(0xA0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0xC0.into(),
+                    ret_offset: 0xC0.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Bn128Pairing.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecPairing (invalid): G1: not on curve, G2: (0, 0, 0, 0)",
+                    setup_code: bytecode! {
+                        // G1_x
+                        PUSH32(0x04)
+                        PUSH1(0x00)
+                        MSTORE
+                        // G1_y
+                        PUSH32(0x04)
+                        PUSH1(0x20)
+                        MSTORE
+                        // G2_x1
+                        PUSH32(0x00)
+                        PUSH1(0x40)
+                        MSTORE
+                        // G2_x2
+                        PUSH32(0x00)
+                        PUSH1(0x60)
+                        MSTORE
+                        // G2_y1
+                        PUSH32(0x00)
+                        PUSH1(0x80)
+                        MSTORE
+                        // G2_y2
+                        PUSH32(0x00)
+                        PUSH1(0xA0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0xC0.into(),
+                    ret_offset: 0xC0.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Bn128Pairing.address().to_word(),
+                    ..Default::default()
+                },
             ]
         };
 

@@ -66,13 +66,7 @@ pub(crate) fn opt_data(
                     ),
                 };
                 // if EVM inputs were 0s.
-                let ecc_circuit_pair = if (evm_circuit_pair.g1_point.0.is_zero()
-                    && evm_circuit_pair.g1_point.1.is_zero())
-                    || (evm_circuit_pair.g2_point.0.is_zero()
-                        && evm_circuit_pair.g2_point.1.is_zero()
-                        && evm_circuit_pair.g2_point.2.is_zero()
-                        && evm_circuit_pair.g2_point.3.is_zero())
-                {
+                let ecc_circuit_pair = if evm_circuit_pair.swap() {
                     EcPairingPair::ecc_padding()
                 } else {
                     evm_circuit_pair

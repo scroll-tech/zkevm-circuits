@@ -1223,6 +1223,21 @@ impl EcPairingPair {
         }
     }
 
+    /// Whether or not we swap the EVM pair with ECC pair. We do this iff:
+    /// - G1 is (0, 0)
+    /// - G2 is (0, 0, 0, 0)
+    ///
+    /// because for the above case, we have:
+    /// - (G1::identity, G2::identity) as inputs from the EVM.
+    /// - (G1::identity, G2::generator) as inputs to ECC Circuit.
+    pub fn swap(&self) -> bool {
+        (self.g1_point.0.is_zero() && self.g1_point.1.is_zero())
+            && (self.g2_point.0.is_zero()
+                && self.g2_point.1.is_zero()
+                && self.g2_point.2.is_zero()
+                && self.g2_point.3.is_zero())
+    }
+
     fn is_valid(&self) -> bool {
         let fq_from_u256 = |buf: &mut [u8; 32], u256: U256| -> CtOption<Fq> {
             u256.to_little_endian(buf);
@@ -1267,7 +1282,7 @@ impl Default for EcPairingOp {
         let g1_point = G1Affine::generator();
         let g2_point = G2Affine::generator();
         let g1_x = U256::from_little_endian(&g1_point.x.to_bytes());
-        let g1_y = U256::from_little_endian(&g1_point.x.to_bytes());
+        let g1_y = U256::from_little_endian(&g1_point.y.to_bytes());
         let g2_x0 = U256::from_little_endian(&g2_point.x.c1.to_bytes());
         let g2_x1 = U256::from_little_endian(&g2_point.x.c0.to_bytes());
         let g2_y0 = U256::from_little_endian(&g2_point.y.c1.to_bytes());
