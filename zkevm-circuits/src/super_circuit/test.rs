@@ -432,6 +432,96 @@ fn block_ec_ops() -> BlockTrace {
     .clone()
 }
 
+#[cfg(feature = "scroll")]
+fn block_precompile_oog() -> BlockTrace {
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+    let chain_id = *MOCK_CHAIN_ID;
+
+    let bytecode_ec_add = PrecompileCallArgs {
+        name: "ecAdd (valid inputs)",
+        setup_code: bytecode! {},
+        address: PrecompileCalls::Bn128Add.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::STATICCALL);
+    let bytecode_ec_mul = PrecompileCallArgs {
+        name: "ecMul (valid input)",
+        setup_code: bytecode! {},
+        address: PrecompileCalls::Bn128Mul.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::CALL);
+    let bytecode_ec_pairing = PrecompileCallArgs {
+        name: "ecPairing (pairing true): 2 pairs",
+        setup_code: bytecode! {},
+        address: PrecompileCalls::Bn128Pairing.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::DELEGATECALL);
+    let bytecode_modexp_256 = PrecompileCallArgs {
+        name: "modexp length in u256",
+        setup_code: bytecode! {},
+        address: PrecompileCalls::Modexp.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::STATICCALL);
+
+    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+
+    let addr_a = wallet_a.address();
+    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+    let addr_c = address!("0x000000000000000000000000000000000000CCCC");
+    let addr_d = address!("0x000000000000000000000000000000000000DDDD");
+    let addr_e = address!("0x000000000000000000000000000000000000EEEE");
+
+    // 5 accounts and 4 txs.
+    TestContext::<5, 4>::new(
+        Some(vec![Word::zero()]),
+        |accs| {
+            accs[0].address(addr_a).balance(Word::from(1u64 << 24));
+            accs[1]
+                .address(addr_b)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_ec_add);
+            accs[2]
+                .address(addr_c)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_ec_mul);
+            accs[3]
+                .address(addr_d)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_ec_pairing);
+            accs[4]
+                .address(addr_e)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_modexp_256);
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(wallet_a.clone())
+                .to(accs[1].address)
+                .gas(Word::from(100u64));
+            txs[1]
+                .from(wallet_a.clone())
+                .to(accs[2].address)
+                .gas(Word::from(100u64));
+            txs[2]
+                .from(wallet_a.clone())
+                .to(accs[3].address)
+                .gas(Word::from(100u64));
+            txs[3]
+                .from(wallet_a.clone())
+                .to(accs[4].address)
+                .gas(Word::from(100u64));
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .l2_trace()
+    .clone()
+}
+
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 
 // High memory usage test.  Run in serial with:
