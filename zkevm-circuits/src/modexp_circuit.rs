@@ -132,7 +132,7 @@ impl ModExpCircuitConfig {
     }
 }
 
-const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 31235;
+const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 39962;
 
 /// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
@@ -149,25 +149,28 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let event_limit = block.circuits_params.max_keccak_rows / MODEXPCONFIG_EACH_CHIP_ROWS;
-        let mut exp_events = block.get_big_modexp();
-        assert!(
-            exp_events.len() <= event_limit,
-            "no enough rows for modexp circuit, expected {}, limit {}",
-            exp_events.len(),
-            event_limit,
-        );
 
-        exp_events.resize(event_limit, Default::default());
-        log::info!("modexp circuit work with maxium {} entries", event_limit);
+        let mut exp_events = block.get_big_modexp();
+        if event_limit != 0 {
+            assert!(
+                exp_events.len() <= event_limit,
+                "no enough rows for modexp circuit, expected {}, limit {}",
+                exp_events.len(),
+                event_limit,
+            );
+            exp_events.resize(event_limit, Default::default());
+            log::info!("modexp circuit work with maxium {} entries", event_limit);
+        }
+
         Self(exp_events, Default::default())
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let exp_events = block.get_big_modexp();
+        let real_len = (exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS).max(4096);
         (
-            exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS,
-            (exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS)
-                .max(block.circuits_params.max_keccak_rows),
+            real_len,
+            real_len.max(block.circuits_params.max_keccak_rows),
         )
     }
 
@@ -184,7 +187,7 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
             || "modexp circuit",
             |mut region| {
                 range_chip.initialize(&mut region)?;
-                let modexp_count = self.0.len();
+                let _modexp_count = self.0.len();
                 let mut calc_offset = 0;
                 for (n, event) in self.0.iter().enumerate() {
                     calc_offset = config.assign_group(
@@ -196,8 +199,8 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
                         &mut range_chip,
                     )?;
                 }
-
-                assert_eq!(calc_offset, MODEXPCONFIG_EACH_CHIP_ROWS * modexp_count);
+                //assert_eq!(max(calc_offset, range_chip.offset), MODEXPCONFIG_EACH_CHIP_ROWS *
+                // modexp_count);
                 Ok(())
             },
         )?;

@@ -511,8 +511,10 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
 fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<Fr> {
     let num_row = C::min_num_rows_block(block).1;
     let k = zkevm_circuits::util::log2_ceil(num_row + 256);
-    let k = k.max(22);
-    log::debug!("{} circuit needs k = {}", *CIRCUIT, k);
+    log::debug!(
+        "{} circuit needs k = {k}, num_row {num_row} + 256",
+        *CIRCUIT,
+    );
     //debug_assert!(k <= 22);
     let circuit = C::new_from_block(block);
     MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
