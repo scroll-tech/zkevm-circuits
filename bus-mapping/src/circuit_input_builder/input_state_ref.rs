@@ -2108,8 +2108,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut prev_bytes_write =
             self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
         prev_bytes.append(&mut prev_bytes_write);
-        let call_id = self.call()?.call_id;
-        trace!("write chunk: {call_id} {dst_chunk_index} {write_chunk:?}");
+        //trace!("write chunk: {} {dst_chunk_index} {write_chunk:?}", self.call()?.call_id);
 
         Ok(())
     }

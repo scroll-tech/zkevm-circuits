@@ -7,7 +7,7 @@ use eth_types::{
     Address, Error, GethExecTrace, Word,
 };
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Configuration structure for `geth_utlis::trace`
 #[derive(Debug, Default, Clone, Serialize)]
@@ -20,7 +20,7 @@ pub struct TraceConfig {
     /// block constants
     pub block_constants: BlockConstants,
     /// accounts
-    pub accounts: HashMap<Address, Account>,
+    pub accounts: BTreeMap<Address, Account>,
     /// transaction
     pub transactions: Vec<Transaction>,
     /// logger config

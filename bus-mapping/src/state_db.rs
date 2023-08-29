@@ -7,7 +7,7 @@ use crate::{
 };
 use eth_types::{Address, Hash, Word, H256, U256};
 use lazy_static::lazy_static;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
@@ -159,6 +159,16 @@ impl StateDB {
         }
     }
 
+    /// List all account addresses in current state db
+    pub fn list_accounts(&self) {
+        let addrs: BTreeSet<_> = self.state.keys().collect();
+        log::debug!("sdb list_accounts begin");
+        for addr in addrs {
+            log::debug!("{addr:?}");
+        }
+        log::debug!("sdb list_accounts end");
+    }
+
     /// If the returned value is false, then this address is real non existed address.
     /// Any non codehash WriteRw cannot be applied.
     pub fn is_touched(&self, addr: &Address) -> bool {
@@ -179,6 +189,7 @@ impl StateDB {
         let found = if self.state.contains_key(addr) {
             true
         } else {
+            log::trace!("insert empty account for addr {:?}", addr);
             self.state.insert(*addr, Account::zero());
             false
         };

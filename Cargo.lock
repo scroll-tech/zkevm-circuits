@@ -2918,6 +2918,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "misc-precompiled-circuit"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?tag=v0.1.0#f647341f9951f5c2399035728d4f6765564e2e02"
+dependencies = [
+ "halo2-gate-generator",
+ "halo2_proofs",
+ "lazy_static",
+ "num-bigint",
+ "rand",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
 name = "mock"
 version = "0.1.0"
 dependencies = [
@@ -3997,23 +4014,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "rmd160-circuits"
-version = "0.1.0"
-source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#31c41ca4365dcf2b6ed4f2cdcd3dc8d2e8f080df"
-dependencies = [
- "halo2-gate-generator",
- "halo2_proofs",
- "lazy_static",
- "num-bigint",
- "rand",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "subtle",
 ]
 
 [[package]]
@@ -5504,6 +5504,7 @@ dependencies = [
  "libsecp256k1",
  "log",
  "maingate",
+ "misc-precompiled-circuit",
  "mock",
  "mpt-zktrie",
  "num",
@@ -5516,7 +5517,6 @@ dependencies = [
  "rand_chacha",
  "rand_xorshift",
  "rayon",
- "rmd160-circuits",
  "serde",
  "serde_json",
  "sha3 0.10.8",

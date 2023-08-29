@@ -68,7 +68,6 @@ impl ModExpCircuitConfig {
             self.modexp_table.modulus,
             &event.modulus,
         )?;
-
         let ret = modexp_chip.mod_exp(
             region,
             range_check_chip,
@@ -133,7 +132,7 @@ impl ModExpCircuitConfig {
     }
 }
 
-const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 24576;
+const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 31235;
 
 /// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
@@ -185,6 +184,7 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
             || "modexp circuit",
             |mut region| {
                 range_chip.initialize(&mut region)?;
+                let modexp_count = self.0.len();
                 let mut calc_offset = 0;
                 for (n, event) in self.0.iter().enumerate() {
                     calc_offset = config.assign_group(
@@ -196,6 +196,8 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
                         &mut range_chip,
                     )?;
                 }
+
+                assert_eq!(calc_offset, MODEXPCONFIG_EACH_CHIP_ROWS * modexp_count);
                 Ok(())
             },
         )?;
