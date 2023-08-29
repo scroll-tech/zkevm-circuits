@@ -548,6 +548,9 @@ pub fn run_test(
         None => return Ok(()),
     };
 
+    log::debug!("witness_block created");
+    //builder.sdb.list_accounts();
+
     if !circuits_config.super_circuit {
         CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
             .copy_checks(None)
@@ -564,12 +567,12 @@ pub fn run_test(
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover.assert_satisfied_par();
     };
-
     //#[cfg(feature = "scroll")]
     {
         // fill these "untouched" storage slots
         // It is better to fill these info after (instead of before) bus-mapping re-exec.
         // To prevent these data being used unexpectedly.
+        // TODO: another method will be to skip empty account inside check_post?
         for account in trace_config.accounts.values() {
             builder.code_db.insert(account.code.to_vec());
             let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);

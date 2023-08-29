@@ -142,7 +142,7 @@ impl ZktrieState {
                 on_storage(&storage_key, &store_proof.data)?;
                 self.account_storages.insert(storage_key, store_proof.data);
             } else {
-                log::trace!("insert storage key {:?} for zero", storage_key,);
+                log::trace!("insert storage key {:?} for zero", storage_key);
                 self.account_storages
                     .insert(storage_key, Default::default());
             }
