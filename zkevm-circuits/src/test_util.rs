@@ -7,10 +7,7 @@ use crate::{
     util::{log2_ceil, SubCircuit},
     witness::{Block, Rw},
 };
-use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-    mock::BlockData,
-};
+use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::GethData;
 
 use halo2_proofs::{
@@ -19,6 +16,9 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
 };
 use mock::TestContext;
+
+#[cfg(feature = "scroll")]
+use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 
 #[cfg(test)]
 #[ctor::ctor]
