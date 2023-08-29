@@ -501,19 +501,19 @@ fn block_precompile_oog() -> BlockTrace {
             txs[0]
                 .from(wallet_a.clone())
                 .to(accs[1].address)
-                .gas(Word::from(100u64));
+                .gas(Word::from(21_000u64));
             txs[1]
                 .from(wallet_a.clone())
                 .to(accs[2].address)
-                .gas(Word::from(100u64));
+                .gas(Word::from(21_000u64));
             txs[2]
                 .from(wallet_a.clone())
                 .to(accs[3].address)
-                .gas(Word::from(100u64));
+                .gas(Word::from(21_000u64));
             txs[3]
                 .from(wallet_a.clone())
                 .to(accs[4].address)
-                .gas(Word::from(100u64));
+                .gas(Word::from(21_000u64));
         },
         |block, _tx| block.number(0xcafeu64),
     )
