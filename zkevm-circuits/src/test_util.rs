@@ -7,7 +7,10 @@ use crate::{
     util::{log2_ceil, SubCircuit},
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
+};
 use eth_types::geth_types::GethData;
 
 use halo2_proofs::{
@@ -83,7 +86,6 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     state_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
     copy_checks: Option<Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
-    geth_data_modifiers: Vec<Box<dyn Fn(&mut GethData)>>,
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
@@ -112,7 +114,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 ), Ok(()));
             })),
             block_modifiers: vec![],
-            geth_data_modifiers: vec![],
         }
     }
 
@@ -195,17 +196,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self.block_modifiers.push(modifier);
         self
     }
-
-    #[allow(clippy::type_complexity)]
-    /// Allows to provide modifier functions for the [`GethData`] that will be
-    /// generated within this builder.
-    ///
-    /// That allow some test (like precompile) require a modified geth exec
-    /// results
-    pub fn geth_data_modifier(mut self, modifier: Box<dyn Fn(&mut GethData)>) -> Self {
-        self.geth_data_modifiers.push(modifier);
-        self
-    }
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
@@ -223,18 +213,39 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
-            let mut block: GethData = self.test_ctx.unwrap().into();
-            for modifier_fn in self.geth_data_modifiers {
-                modifier_fn.as_ref()(&mut block);
-            }
-            let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
-                .new_circuit_input_builder();
-            builder
-                .handle_block(&block.eth_block, &block.geth_traces)
-                .unwrap();
-            // Build a witness block from trace result.
-            let mut block =
-                crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
+            // use scroll l2 trace
+            let full_witness_block = false;
+            let mut block = if full_witness_block {
+                #[cfg(feature = "scroll")]
+                {
+                    let mut builder = CircuitInputBuilder::new_from_l2_trace(
+                        params,
+                        self.test_ctx.unwrap().l2_trace(),
+                        false,
+                        false,
+                    )
+                    .expect("could not handle block tx");
+                    builder
+                        .finalize_building()
+                        .expect("could not finalize building block");
+                    let mut block =
+                        crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
+                    crate::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+                    block
+                }
+
+                #[cfg(not(feature = "scroll"))]
+                panic!("full witness block only viable for scroll mode");
+            } else {
+                let block: GethData = self.test_ctx.unwrap().into();
+                let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+                    .new_circuit_input_builder();
+                builder
+                    .handle_block(&block.eth_block, &block.geth_traces)
+                    .unwrap();
+                // Build a witness block from trace result.
+                crate::witness::block_convert(&builder.block, &builder.code_db).unwrap()
+            };
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);
