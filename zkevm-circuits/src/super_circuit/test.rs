@@ -422,7 +422,7 @@ fn serial_test_super_circuit_precompile_oog() {
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
-fn serial_test_super_circuit_precompile_oog() {
+fn serial_test_super_circuit_precompile_invalid_ec_add() {
     let block = precompile_block_trace::block_precompile_invalid_ec_add();
     run_precomiple_super_circuit_tests(block);
 }
