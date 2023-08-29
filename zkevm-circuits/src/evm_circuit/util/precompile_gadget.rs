@@ -364,7 +364,7 @@ impl<F: Field> PaddingGadget<F> {
                         0
                     };
                     assert!(required_input_len <= 192);
-                    assert!(n_padded_zeroes < 192 as u64);
+                    assert!(n_padded_zeroes < 192);
                     let power_of_rand = keccak_rand.map(|r| r.pow(&[n_padded_zeroes, 0, 0, 0]));
                     (
                         required_input_len as u64,
