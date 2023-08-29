@@ -149,6 +149,8 @@ impl MptUpdates {
                 root_pair2.1
             );
             wit_gen.dump();
+        } else {
+            log::debug!("roots consistent ({:#x},{:#x})", root_pair.0, root_pair.1);
         }
 
         // generate withdraw proof
