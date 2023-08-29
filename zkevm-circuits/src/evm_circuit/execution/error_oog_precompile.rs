@@ -23,7 +23,7 @@ pub(crate) struct ErrorOOGPrecompileGadget<F> {
     precompile_addr: Cell<F>,
     addr_bits: BinaryNumberGadget<F, 4>,
     call_data_length: Cell<F>,
-    n_pairs: ConstantDivisionGadget<F, 1>, // 1 is enough as call_data_length < 192*256
+    n_pairs: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     n_words: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     required_gas: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
@@ -44,13 +44,23 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
 
         // read call data length
         let call_data_length = cb.call_context(None, CallContextFieldTag::CallDataLength);
-        let n_pairs =
-            ConstantDivisionGadget::construct(cb, call_data_length.expr(), N_BYTES_EC_PAIR as u64);
-        let n_words = ConstantDivisionGadget::construct(
-            cb,
-            call_data_length.expr() + (N_BYTES_WORD - 1).expr(),
-            N_BYTES_WORD as u64,
+        let n_pairs = cb.condition(
+            addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
+            |cb| {
+                ConstantDivisionGadget::construct(
+                    cb,
+                    call_data_length.expr(),
+                    N_BYTES_EC_PAIR as u64,
+                )
+            },
         );
+        let n_words = cb.condition(addr_bits.value_equals(PrecompileCalls::Identity), |cb| {
+            ConstantDivisionGadget::construct(
+                cb,
+                call_data_length.expr() + (N_BYTES_WORD - 1).expr(),
+                N_BYTES_WORD as u64,
+            )
+        });
 
         // calculate required gas for precompile
         let precompiles_required_gas = vec![
