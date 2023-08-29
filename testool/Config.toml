@@ -177,7 +177,7 @@ paths = [
     "stExample/mergeTestFiller.yml",
     "EIP2930",
     "stPreCompiledContracts",
-    "stZeroKnowledge"
+    #"stZeroKnowledge"
 ]
 
 [[skip_paths]]

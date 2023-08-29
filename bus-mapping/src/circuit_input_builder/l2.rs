@@ -228,6 +228,11 @@ fn dump_code_db(cdb: &CodeDB) {
 
 impl CircuitInputBuilder {
     fn apply_l2_trace(&mut self, block_trace: &BlockTrace, is_last: bool) -> Result<(), Error> {
+        log::trace!(
+            "apply_l2_trace start, block num {:?}, is_last {is_last}",
+            block_trace.header.number
+        );
+        //self.sdb.list_accounts();
         if is_last {
             dump_code_db(&self.code_db);
         }
@@ -259,7 +264,8 @@ impl CircuitInputBuilder {
         // note the actions when `handle_rwc_reversion` argument (the 4th one)
         // is true is executing outside this closure
         self.handle_block_inner(&eth_block, &geth_trace, false, is_last)?;
-        log::debug!("handle_block_inner done for block {:?}", block_num);
+        log::debug!("apply_l2_trace done for block {:?}", block_num);
+        //self.sdb.list_accounts();
         Ok(())
     }
 
@@ -334,12 +340,14 @@ impl CircuitInputBuilder {
             hex::encode(mpt_init_state.root())
         );
 
-        let mut sdb = StateDB::from(&mpt_init_state);
+        let sdb = StateDB::from(&mpt_init_state);
 
+        /*
         let (zero_coinbase_exist, _) = sdb.get_account(&Default::default());
         if !zero_coinbase_exist {
             sdb.set_account(&Default::default(), state_db::Account::zero());
         }
+        */
 
         let mut code_db = CodeDB::new();
         code_db.insert(Vec::new());

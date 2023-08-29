@@ -22,8 +22,12 @@ pub(crate) fn execute_precompiled(
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
     };
-
-    match precompile_fn(input, gas) {
+    log::trace!(
+        "calling precompile with gas {gas}, len {}, data {}",
+        input.len(),
+        hex::encode(input)
+    );
+    let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
             match PrecompileCalls::from(address.0[19]) {
                 // FIXME: override the behavior of invalid input
@@ -32,19 +36,21 @@ pub(crate) fn execute_precompiled(
                     if input_valid {
                         // detect some edge cases like modulus = 0
                         assert_eq!(modulus_len.as_usize(), return_value.len());
-                        (return_value, gas_cost, false) // no oog error
+                        (return_value, gas_cost, false, true) // no oog error
                     } else {
-                        (vec![], gas, false)
+                        (vec![], gas, false, false)
                     }
                 }
-                _ => (return_value, gas_cost, false),
+                _ => (return_value, gas_cost, false, true),
             }
         }
         Err(err) => match err {
-            PrecompileError::OutOfGas => (vec![], gas, true),
-            _ => (vec![], gas, false),
+            PrecompileError::OutOfGas => (vec![], gas, true, false),
+            _ => (vec![], gas, false, false),
         },
-    }
+    };
+    log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}, return_data {}", return_data.len(), hex::encode(&return_data));
+    (return_data, gas_cost, is_oog)
 }
 
 /// Addresses of the precompiled contracts.

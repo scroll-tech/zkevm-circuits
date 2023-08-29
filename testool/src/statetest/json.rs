@@ -9,7 +9,12 @@ use anyhow::{bail, Context, Result};
 use eth_types::{evm_types::OpcodeId, geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
-use std::{collections::HashMap, convert::TryInto, ops::RangeBounds, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+    ops::RangeBounds,
+    str::FromStr,
+};
 use yaml_rust::Yaml;
 
 fn default_block_base_fee() -> String {
@@ -225,8 +230,8 @@ impl<'a> JsonStateTestBuilder<'a> {
     fn parse_accounts_pre(
         &mut self,
         accounts_pre: &HashMap<String, AccountPre>,
-    ) -> Result<HashMap<Address, Account>> {
-        let mut accounts = HashMap::new();
+    ) -> Result<BTreeMap<Address, Account>> {
+        let mut accounts = BTreeMap::new();
         for (address, acc) in accounts_pre {
             let address = parse::parse_address(address)?;
             let mut storage = HashMap::new();
@@ -411,7 +416,7 @@ mod test {
             nonce: U256::from(0u64),
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
-            pre: HashMap::from([(
+            pre: BTreeMap::from([(
                 acc095e,
                 Account {
                     address: acc095e,

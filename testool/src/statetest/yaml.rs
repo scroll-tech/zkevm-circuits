@@ -6,7 +6,11 @@ use crate::{utils::MainnetFork, Compiler};
 use anyhow::{bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
-use std::{collections::HashMap, convert::TryInto, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+    str::FromStr,
+};
 use yaml_rust::Yaml;
 
 type Label = String;
@@ -71,7 +75,7 @@ impl<'a> YamlStateTestBuilder<'a> {
             let env = Self::parse_env(&yaml_test["env"])?;
 
             // parse pre (account states before executing the transaction)
-            let pre: HashMap<Address, Account> = self
+            let pre: BTreeMap<Address, Account> = self
                 .parse_accounts(&yaml_test["pre"])?
                 .into_iter()
                 .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
@@ -622,7 +626,7 @@ arith:
             nonce: U256::zero(),
             value: U256::one(),
             data: Bytes::from(&[0]),
-            pre: HashMap::from([
+            pre: BTreeMap::from([
                 (
                     ccccc,
                     Account {
