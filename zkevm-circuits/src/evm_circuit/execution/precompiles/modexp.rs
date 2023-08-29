@@ -881,10 +881,18 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .keccak_input()
                 .map(|randomness| rlc::value(data.input_memory.iter().rev(), randomness));
 
+            // if the input to modexp has more than 192 bytes, then we only keep the first 192 bytes
+            // and discard the remaining bytes
+            let input_len_limit = INPUT_LIMIT as u64;
+            let n_padded_zeros = if call.call_data_length > input_len_limit {
+                0
+            } else {
+                input_len_limit - call.call_data_length
+            };
             let n_padded_zeroes_pow = region
                 .challenges()
                 .keccak_input()
-                .map(|r| r.pow(&[INPUT_LIMIT as u64 - call.call_data_length, 0, 0, 0]));
+                .map(|r| r.pow(&[n_padded_zeros, 0, 0, 0]));
 
             let output_rlc = region
                 .challenges()
