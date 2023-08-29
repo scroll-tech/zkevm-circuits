@@ -208,7 +208,9 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                         .zip(evm_input_g2_rlc.clone().zip(is_g2_identity.clone()))
                         .map(|((g1_rlc, is_g1_identity), (g2_rlc, is_g2_identity))| {
                             select::expr(
-                                or::expr([is_g1_identity.expr(), is_g2_identity.expr()]),
+                                // swap only if both G1 and G2 are 0s from EVM input. Refer
+                                // `EcPairingPair::swap`
+                                and::expr([is_g1_identity.expr(), is_g2_identity.expr()]),
                                 // rlc([G1::identity, G2::generator])
                                 padding_g1_g2_rlc.expr(),
                                 // rlc([g1, g2])
