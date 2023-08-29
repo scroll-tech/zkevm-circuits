@@ -52,6 +52,7 @@
 
 #[cfg(any(feature = "test", test))]
 pub(crate) mod test;
+pub(crate) mod precompile_block_trace;
 
 #[cfg(feature = "poseidon-codehash")]
 use crate::bytecode_circuit::circuit::to_poseidon_hash::{
