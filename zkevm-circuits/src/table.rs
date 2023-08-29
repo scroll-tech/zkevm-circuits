@@ -1108,23 +1108,6 @@ impl BytecodeTable {
             || "bytecode table",
             |mut region| {
                 let mut offset = 0;
-
-                region.assign_fixed(
-                    || "bytecode table all-zero row",
-                    self.q_enable,
-                    offset,
-                    || Value::known(F::one()),
-                )?;
-                for column in <BytecodeTable as LookupTable<F>>::advice_columns(self) {
-                    region.assign_advice(
-                        || "bytecode table all-zero row",
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-                offset += 1;
-
                 let bytecode_table_columns =
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone() {
