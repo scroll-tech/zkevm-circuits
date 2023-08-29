@@ -250,8 +250,8 @@ paths = [
     "HighGasPriceFiller.yml", # Wrong network EIP158
     "doubleSelfdestructTestFiller.yml", # character is not in the range 0-9
     "stPreCompiledContracts/blake2BFiller.yml", # same with above, gasLimit
-    "stPreCompiledContracts2/ecrecoverShortBuffFiller.yml",
-    "stPreCompiledContracts2/CallEcrecover_OverflowFiller.yml",
+    "stPreCompiledContracts2/ecrecoverShortBuffFiller.yml", # same with above, gasLimit
+    "stPreCompiledContracts2/CallEcrecover_OverflowFiller.yml", # same with above, gasLimit
     "eoaEmptyFiller.yml", # cannot parse to address Integer(49374)
     "touchAndGoFiller.yml" # Wrong network EIP150
 ]
