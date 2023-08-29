@@ -675,11 +675,8 @@ fn serial_test_super_circuit_2tx_2max_tx() {
     );
 }
 
-#[ignore]
 #[cfg(feature = "scroll")]
-#[test]
-fn serial_test_super_circuit_ec_ops_txs() {
-    let block = block_ec_ops();
+fn run_precomiple_super_circuit_tests(block_trace: BlockTrace) {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 320;
     const MAX_INNER_BLOCKS: usize = 1;
@@ -703,7 +700,23 @@ fn serial_test_super_circuit_ec_ops_txs() {
         ..Default::default()
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
-        block,
+        block_trace,
         circuits_params,
     );
+}
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_ec_ops_txs() {
+    let block = block_ec_ops();
+    run_precomiple_super_circuit_tests(block);
+}
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_precompile_oog() {
+    let block = block_precompile_oog();
+    run_precomiple_super_circuit_tests(block);
 }
