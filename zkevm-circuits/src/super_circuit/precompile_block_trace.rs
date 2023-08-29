@@ -396,11 +396,11 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
         // Q = (1, 2)
         setup_code: bytecode! {
             // p_x = p + 1
-            PUSH1(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"))
+            PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"))
             PUSH1(0x00)
             MSTORE
             // p_y = p + 2
-            PUSH1(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"))
+            PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"))
             PUSH1(0x20)
             MSTORE
             // q_x = 1
@@ -435,11 +435,11 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
             PUSH1(0x20)
             MSTORE
             // q_x = p + 1
-            PUSH1(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"))
+            PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"))
             PUSH1(0x40)
             MSTORE
             // q_y = p + 2
-            PUSH1(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"))
+            PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"))
             PUSH1(0x60)
             MSTORE
         },
