@@ -200,7 +200,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.code_hash
             .assign(region, offset, region.code_hash(code_hash))?;
         self.not_exists
-            .assign_value(region, offset, region.word_rlc(code_hash))?;
+            .assign_value(region, offset, region.code_hash(code_hash))?;
 
         let code_size = if code_hash.is_zero() {
             0
