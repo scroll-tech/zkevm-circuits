@@ -833,16 +833,10 @@ pub fn gen_begin_tx_ops(
     }
 
     log::trace!("begin_tx_step: {:?}", exec_step);
-    state.tx.steps_mut().push(exec_step);
-
-    // TRICKY:
-    // Process the reversion only for Precompile in begin TX. Since no associated
-    // opcodes could process reversion afterwards.
-    // TODO:
-    // Move it to code of generating precompiled operations when implemented.
     if is_precompile && !state.call().unwrap().is_success {
-        state.handle_reversion(is_precompile);
+        state.handle_reversion(&mut exec_step);
     }
+    state.tx.steps_mut().push(exec_step);
 
     Ok(())
 }

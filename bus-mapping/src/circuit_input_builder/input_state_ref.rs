@@ -1118,7 +1118,17 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Handle a reversion group
-    pub fn handle_reversion(&mut self, from_precompile_call: bool) {
+    pub fn handle_reversion(&mut self, exec_step: &mut ExecStep) {
+        // we already know that the call has reverted. Only the precompile failure case must be
+        // handled differently as the ExecSteps associated with those calls haven't yet been pushed
+        // to the tx's steps.
+        let is_begin_tx_precompile_call = matches!(exec_step.exec_state, ExecState::BeginTx)
+            && (exec_step.call_index < self.tx.calls.len())
+            && is_precompiled(&self.tx.calls[exec_step.call_index].address);
+        let is_from_precompile_failure = exec_step.is_precompiled()
+            || exec_step.is_precompile_oog_err()
+            || is_begin_tx_precompile_call;
+
         let reversion_group = self
             .tx_ctx
             .reversion_groups
@@ -1135,16 +1145,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                let idx = if from_precompile_call {
-                    // prev step is callop or begin_tx.
-                    // the failed transfer should be reverted there.
-                    step_index - 1
+                if is_from_precompile_failure {
+                    exec_step.bus_mapping_instance.push(rev_op_ref);
                 } else {
-                    step_index
-                };
-                self.tx.steps_mut()[idx]
-                    .bus_mapping_instance
-                    .push(rev_op_ref);
+                    self.tx.steps_mut()[step_index]
+                        .bus_mapping_instance
+                        .push(rev_op_ref);
+                }
             }
         }
 
@@ -1221,12 +1228,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
-            // ecadd/ecmul/ecpairing/ecrecover/identity
-            let is_precompile_oog_err = exec_step.is_precompile_oog_err();
-            // modexp
-            let is_precompiled = exec_step.is_precompiled();
-            let was_precompile_failure = is_precompile_oog_err || is_precompiled;
-            self.handle_reversion(was_precompile_failure);
+            self.handle_reversion(exec_step);
         }
 
         let return_data_length = self
