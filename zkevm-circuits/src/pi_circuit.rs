@@ -146,6 +146,18 @@ impl PublicData {
         let num_all_txs_in_blocks = self.get_num_all_txs();
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
+                // sanity check on coinbase & difficulty
+                assert_eq!(
+                    *COINBASE, block.coinbase,
+                    "[block {}] COINBASE const: {}, block.coinbase: {}",
+                    block_num, *COINBASE, block.coinbase
+                );
+                assert_eq!(
+                    *DIFFICULTY, block.difficulty,
+                    "[block {}] DIFFICULTY const: {}, block.difficulty: {}",
+                    block_num, *DIFFICULTY, block.difficulty
+                );
+
                 let num_all_txs = num_all_txs_in_blocks
                     .get(block_num)
                     .cloned()
