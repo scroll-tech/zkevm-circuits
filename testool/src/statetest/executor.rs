@@ -567,16 +567,16 @@ pub fn run_test(
     #[cfg(feature = "scroll")]
     let result = trace_config_to_witness_block_l2(
         trace_config.clone(),
-        st,
-        suite,
+        st.clone(),
+        suite.clone(),
         circuits_params,
         circuits_config.verbose,
     )?;
     #[cfg(not(feature = "scroll"))]
     let result = trace_config_to_witness_block_l1(
         trace_config.clone(),
-        st,
-        suite,
+        st.clone(),
+        suite.clone(),
         circuits_params,
         circuits_config.verbose,
     )?;

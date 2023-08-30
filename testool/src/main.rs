@@ -88,6 +88,7 @@ struct Args {
 }
 
 fn read_test_ids(file_path: &str) -> Result<Vec<String>> {
+    log::info!("read_test_ids from {}", file_path);
     let mut test_ids = vec![];
     let file = File::open(file_path)?;
     for line in BufReader::new(file).lines() {
@@ -108,7 +109,9 @@ fn read_test_ids(file_path: &str) -> Result<Vec<String>> {
 
     let end = total.min(start + len);
 
-    Ok(test_ids[start..end].to_vec())
+    let result = test_ids[start..end].to_vec();
+    log::info!("read_test_ids total size {}", result.len());
+    Ok(result)
 }
 
 fn write_test_ids(test_ids: &[String]) -> Result<()> {
