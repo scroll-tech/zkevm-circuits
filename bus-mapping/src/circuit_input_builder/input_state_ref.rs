@@ -1121,6 +1121,8 @@ impl<'a> CircuitInputStateRef<'a> {
                     op,
                 );
                 let idx = if from_precompile_call {
+                    // prev step is callop or begin_tx.
+                    // the failed transfer should be reverted there.
                     step_index - 1
                 } else {
                     step_index
@@ -1204,8 +1206,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
-            let was_precompile_failure =
-                exec_step.is_precompiled() || exec_step.is_precompile_oog_err();
+            // ecadd/ecmul/ecpairing/ecrecover/identity
+            let is_precompile_oog_err = exec_step.is_precompile_oog_err();
+            // modexp
+            let is_precompiled = exec_step.is_precompiled();
+            let was_precompile_failure = is_precompile_oog_err || is_precompiled;
             self.handle_reversion(was_precompile_failure);
         }
 
