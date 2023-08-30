@@ -1,19 +1,14 @@
 #![allow(unused_imports)]
 pub use super::*;
 use bus_mapping::{
-//     circuit_input_builder::CircuitInputBuilder,
     evm::{OpcodeId, PrecompileCallArgs},
     precompile::PrecompileCalls,
 };
 use ethers_signers::{LocalWallet, Signer};
-// #[cfg(not(feature = "scroll"))]
-// use mock::MOCK_DIFFICULTY;
-// #[cfg(feature = "scroll")]
 use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
 use mock::{eth, TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-// use std::env::set_var;
 
 // use crate::witness::block_apply_mpt_state;
 #[cfg(feature = "scroll")]
