@@ -24,6 +24,8 @@ use super::{
     BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
 };
 
+use itertools::Itertools;
+
 #[derive(Clone, Debug)]
 /// Bytecode circuit (for hash block) configuration
 /// basically the BytecodeCircuit include two parts:
@@ -290,7 +292,6 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         #[cfg(feature = "scroll")]
         {
             use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
-            use itertools::Itertools;
             let code_hash = bytecode_table.code_hash;
             let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
                 debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
@@ -417,6 +418,30 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
     ) -> Result<(), Error> {
+        #[cfg(feature = "parallel_syn")]
+        {
+            // if feature "parallel_syn" is enabled,
+            // `parallel` assignment is turned on by default
+            // we can turn it off by set the environment variable
+            // `CIRCUIT_ASSIGNMENT_TYPE=serial`
+            let assignment_type = std::env::var("CIRCUIT_ASSIGNMENT_TYPE")
+                .ok()
+                .unwrap_or_default();
+            let is_parallel_assignment = match assignment_type.as_str() {
+                "serial" => false,
+                "parallel" => true,
+                &_ => true,
+            };
+            log::debug!("CIRCUIT_ASSIGNMENT_TYPE: {}", assignment_type);
+            log::debug!("is_parallel_assignment: {}", is_parallel_assignment);
+
+            if is_parallel_assignment {
+                return self.assign_internal_parallel(
+                    layouter, size, witness, overwrite, challenges, fail_fast,
+                );
+            }
+        }
+
         let base_conf = &self.base_conf;
         let push_data_left_is_zero_chip =
             IsZeroChip::construct(base_conf.push_data_left_is_zero.clone());
@@ -436,9 +461,23 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
 
         let empty_hash = Value::known(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap());
 
+        let mut is_first_time = true;
         layouter.assign_region(
             || "assign bytecode with poseidon hash extension",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    base_conf.set_padding_row(
+                        &mut region,
+                        &push_data_left_is_zero_chip,
+                        &index_length_diff_is_zero_chip,
+                        empty_hash,
+                        last_row_offset,
+                        last_row_offset,
+                    )?;
+                    return Ok(());
+                }
+
                 let mut offset = 0;
                 let mut row_input = F::zero();
                 for bytecode in witness.iter() {
@@ -450,6 +489,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
                         empty_hash,
+                        0,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
@@ -487,6 +527,140 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
 
                 base_conf.assign_overwrite(&mut region, overwrite, challenges)?;
 
+                Ok(())
+            },
+        )
+    }
+
+    #[cfg(feature = "parallel_syn")]
+    pub(crate) fn assign_internal_parallel(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        size: usize,
+        witness: &[UnrolledBytecode<F>],
+        overwrite: &UnrolledBytecode<F>,
+        challenges: &Challenges<Value<F>>,
+        fail_fast: bool,
+    ) -> Result<(), Error> {
+        let base_conf = &self.base_conf;
+        let push_data_left_is_zero_chip =
+            IsZeroChip::construct(base_conf.push_data_left_is_zero.clone());
+        let index_length_diff_is_zero_chip =
+            IsZeroChip::construct(base_conf.index_length_diff_is_zero.clone());
+
+        // Subtract the unusable rows from the size
+        assert!(size > base_conf.minimum_rows);
+        let last_row_offset = size - base_conf.minimum_rows + 1;
+        let empty_hash = Value::known(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap());
+
+        let mut is_first_time_vec = vec![true; witness.len()];
+
+        let offsets_of_each_witness = witness
+            .iter()
+            .map(|bytecode| bytecode.rows.len())
+            .collect::<Vec<_>>();
+
+        //start from 0
+        let offsets_prefix_sum = [0]
+            .iter()
+            .chain(offsets_of_each_witness.iter())
+            .scan(0, |sum, &x| {
+                *sum += x;
+                Some(*sum)
+            })
+            .collect::<Vec<_>>();
+
+        layouter.assign_regions(
+            || "assign bytecode with poseidon hash extension(part1: regions)",
+            witness
+                .iter()
+                .zip(is_first_time_vec.iter_mut())
+                .enumerate()
+                .map(|(idx, (bytecode, is_first_time))| {
+                    let push_data_left_is_zero_chip = push_data_left_is_zero_chip.clone();
+                    let index_length_diff_is_zero_chip = index_length_diff_is_zero_chip.clone();
+                    let offsets_prefix_sum = offsets_prefix_sum.clone();
+                    move |region: Region<'_, F>| {
+                        let mut offset = 0;
+                        let mut region = region;
+
+                        if *is_first_time {
+                            *is_first_time = false;
+                            let mut dummy_offset = bytecode.rows.len() - 1;
+                            // last witness
+                            if idx == witness.len() - 1 {
+                                dummy_offset = last_row_offset - offsets_prefix_sum[idx];
+                            }
+                            base_conf.set_padding_row(
+                                &mut region,
+                                &push_data_left_is_zero_chip,
+                                &index_length_diff_is_zero_chip,
+                                empty_hash,
+                                dummy_offset,
+                                dummy_offset,
+                            )?;
+                            return Ok(());
+                        }
+
+                        base_conf.assign_bytecode(
+                            &mut region,
+                            bytecode,
+                            challenges,
+                            &push_data_left_is_zero_chip,
+                            &index_length_diff_is_zero_chip,
+                            empty_hash,
+                            offsets_prefix_sum[idx],
+                            &mut offset,
+                            last_row_offset,
+                            fail_fast,
+                        )?;
+
+                        let last_offset = last_row_offset - offsets_prefix_sum[idx];
+                        // last witness
+                        if idx == witness.len() - 1 {
+                            // Padding
+                            for idx in offset..=last_offset {
+                                base_conf.set_padding_row(
+                                    &mut region,
+                                    &push_data_left_is_zero_chip,
+                                    &index_length_diff_is_zero_chip,
+                                    empty_hash,
+                                    idx,
+                                    last_offset,
+                                )?;
+                                self.set_header_row(&mut region, 0, idx)?;
+                            }
+
+                            base_conf.assign_overwrite(&mut region, overwrite, challenges)?;
+                        }
+
+                        Ok(())
+                    }
+                })
+                .collect_vec(),
+        )?;
+
+        layouter.assign_region(
+            || "assign bytecode with poseidon hash extension(part2)",
+            |mut region| {
+                let mut row_input = F::zero();
+                for (witness_idx, bytecode) in witness.iter().enumerate() {
+                    for (idx, row) in bytecode.rows.iter().enumerate() {
+                        // if the base_conf's assignment not fail fast,
+                        // we also avoid the failure of "NotEnoughRowsAvailable"
+                        // in prover creation (so bytecode_incomplete test could pass)
+                        let offset = offsets_prefix_sum[witness_idx] + idx;
+                        if offset <= last_row_offset {
+                            row_input = self.assign_extended_row(
+                                &mut region,
+                                offset,
+                                row,
+                                row_input,
+                                bytecode.bytes.len(),
+                            )?;
+                        }
+                    }
+                }
                 Ok(())
             },
         )
