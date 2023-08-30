@@ -57,7 +57,6 @@ impl Opcode for Exponentiation {
         let exponentiation_calc = exp_by_squaring(base, exponent, &mut steps);
         debug_assert_eq!(exponentiation, exponentiation_calc);
         state.push_exponentiation(ExpEvent {
-            identifier: state.block_ctx.rwc.0,
             base,
             exponent,
             exponentiation,

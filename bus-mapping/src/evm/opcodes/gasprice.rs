@@ -28,7 +28,7 @@ impl Opcode for GasPrice {
             state.call()?.call_id,
             CallContextField::TxId,
             tx_id.into(),
-        );
+        )?;
 
         // Stack write of the gasprice value
         state.stack_write(

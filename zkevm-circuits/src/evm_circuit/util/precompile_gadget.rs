@@ -319,10 +319,10 @@ impl<F: Field> PaddingGadget<F> {
         cb.condition(not::expr(is_cd_len_zero.expr()), |cb| {
             // No. of right padded zeroes is the difference between the required input length and
             // the length of the provided input bytes. We only support right-padding by
-            // up to 127 bytes, as that's the maximum we ever require considering all
-            // cases (ecrecover, ecAdd, ecMul).
+            // up to 191 bytes, as that's the maximum we ever require considering all
+            // cases (modexp, ecrecover, ecAdd, ecMul).
             let n_padded_zeroes = input_len.expr() - cd_len.expr();
-            cb.range_lookup(n_padded_zeroes.expr(), 128);
+            cb.range_lookup(n_padded_zeroes.expr(), 192);
 
             // Power of randomness we are interested in, i.e. r ^ n_padded_zeroes.
             cb.pow_of_rand_lookup(n_padded_zeroes.expr(), power_of_rand.expr());
@@ -363,7 +363,8 @@ impl<F: Field> PaddingGadget<F> {
                     } else {
                         0
                     };
-                    assert!(n_padded_zeroes < 128);
+                    assert!(required_input_len <= 192);
+                    assert!(n_padded_zeroes < 192);
                     let power_of_rand = keccak_rand.map(|r| r.pow(&[n_padded_zeroes, 0, 0, 0]));
                     (
                         required_input_len as u64,

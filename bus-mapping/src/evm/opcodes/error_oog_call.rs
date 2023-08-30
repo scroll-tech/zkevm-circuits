@@ -44,7 +44,7 @@ impl Opcode for OOGCall {
                 (current_call.is_static as u64).into(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, current_call.call_id, field, value);
+            state.call_context_read(&mut exec_step, current_call.call_id, field, value)?;
         }
 
         for i in 0..stack_input_num {
@@ -76,7 +76,7 @@ impl Opcode for OOGCall {
             call_address,
             AccountField::CodeHash,
             callee_code_hash_word,
-        );
+        )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&call_address);
         state.push_op(
@@ -88,7 +88,7 @@ impl Opcode for OOGCall {
                 is_warm,
                 is_warm_prev: is_warm,
             },
-        );
+        )?;
 
         state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])

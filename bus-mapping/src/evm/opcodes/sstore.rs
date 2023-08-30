@@ -29,34 +29,34 @@ impl Opcode for Sstore {
             state.call()?.call_id,
             CallContextField::TxId,
             Word::from(state.tx_ctx.id()),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::IsStatic,
             Word::from(state.call()?.is_static as u8),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::RwCounterEndOfReversion,
             Word::from(state.call()?.rw_counter_end_of_reversion),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::IsPersistent,
             Word::from(state.call()?.is_persistent as u8),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CalleeAddress,
             state.call()?.address.to_word(),
-        );
+        )?;
 
         let key = geth_step.stack.nth_last(0)?;
         let key_stack_position = geth_step.stack.nth_last_filled(0);
@@ -97,7 +97,7 @@ impl Opcode for Sstore {
                 is_warm,
                 is_warm_prev: is_warm,
             },
-        );
+        )?;
         state.push_op_reversible(
             &mut exec_step,
             TxAccessListAccountStorageOp {

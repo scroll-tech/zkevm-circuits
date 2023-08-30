@@ -58,7 +58,7 @@ impl Opcode for PrecompileFailed {
             (CallContextField::LastCalleeReturnDataOffset, 0.into()),
             (CallContextField::LastCalleeReturnDataLength, 0.into()),
         ] {
-            state.call_context_write(&mut exec_step, call.caller_id, field, value);
+            state.call_context_write(&mut exec_step, call.caller_id, field, value)?;
         }
 
         Ok(vec![exec_step])

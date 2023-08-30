@@ -33,21 +33,21 @@ impl Opcode for OOGSloadSstore {
             call_id,
             CallContextField::TxId,
             tx_id.into(),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::IsStatic,
             (state.call()?.is_static as u8).into(),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::CalleeAddress,
             callee_address.to_word(),
-        );
+        )?;
 
         let key = geth_step.stack.last()?;
         state.stack_read(&mut exec_step, geth_step.stack.last_filled(), key)?;
@@ -65,7 +65,7 @@ impl Opcode for OOGSloadSstore {
                 is_warm,
                 is_warm_prev: is_warm,
             },
-        );
+        )?;
 
         // Special operations are only used for SSTORE.
         if geth_step.op == OpcodeId::SSTORE {
@@ -86,7 +86,7 @@ impl Opcode for OOGSloadSstore {
                     tx_id,
                     *original_value,
                 ),
-            );
+            )?;
         }
 
         state.handle_return(&mut exec_step, geth_steps, true)?;

@@ -14,11 +14,19 @@ use log::info;
 use statetest::{
     load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results, StateTest,
 };
-use std::{collections::HashSet, path::PathBuf, time::SystemTime};
+use std::{
+    collections::HashSet,
+    env,
+    fs::File,
+    io::{BufRead, BufReader, Write},
+    path::PathBuf,
+    time::SystemTime,
+};
 use strum::EnumString;
 
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";
+const TEST_IDS_FILE: &str = "./test_ids.txt";
 
 #[macro_use]
 extern crate prettytable;
@@ -70,9 +78,47 @@ struct Args {
     #[clap(long)]
     circuits: Option<Circuits>,
 
+    /// Specify a file including test IDs to run these tests
+    #[clap(long)]
+    test_ids: Option<String>,
+
     /// Verbose
     #[clap(short, long)]
     v: bool,
+}
+
+fn read_test_ids(file_path: &str) -> Result<Vec<String>> {
+    log::info!("read_test_ids from {}", file_path);
+    let mut test_ids = vec![];
+    let file = File::open(file_path)?;
+    for line in BufReader::new(file).lines() {
+        test_ids.push(line?.trim().to_string());
+    }
+
+    let total = test_ids.len();
+    let start = env::var("TESTOOL_IDS_START")
+        .ok()
+        .and_then(|val| val.parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(total);
+    let len = env::var("TESTOOL_IDS_LEN")
+        .ok()
+        .and_then(|val| val.parse::<usize>().ok())
+        .unwrap_or(total);
+    log::info!("ENV TESTOOL_IDS_START = {start}, TESTOOL_IDS_LEN = {len}");
+
+    let end = total.min(start + len);
+
+    let result = test_ids[start..end].to_vec();
+    log::info!("read_test_ids total size {}", result.len());
+    Ok(result)
+}
+
+fn write_test_ids(test_ids: &[String]) -> Result<()> {
+    let mut fd = File::create(TEST_IDS_FILE)?;
+    fd.write_all(test_ids.join("\n").as_bytes())?;
+
+    Ok(())
 }
 
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
@@ -115,12 +161,13 @@ fn go() -> Result<()> {
     log::info!("Parsing and compliling tests...");
     let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
     let suite = config.suite(&args.suite)?.clone();
-    let state_tests = load_statetests_suite(&suite.path, config, compiler)?;
+    let mut state_tests = load_statetests_suite(&suite.path, config, compiler)?;
     log::info!("{} tests collected in {}", state_tests.len(), suite.path);
 
     if args.ls {
         let mut list: Vec<_> = state_tests.into_iter().map(|t| t.id).collect();
         list.sort();
+        write_test_ids(list.as_slice())?;
         for test in list {
             info!("{}", test);
         }
@@ -143,6 +190,11 @@ fn go() -> Result<()> {
         run_single_test(state_tests_filtered.remove(0).clone(), circuits_config)?;
         return Ok(());
     };
+
+    if let Some(test_ids_path) = args.test_ids {
+        let test_ids = read_test_ids(&test_ids_path)?;
+        state_tests.retain(|test| test_ids.contains(&test.id));
+    }
 
     if args.report {
         let git_hash = utils::current_git_commit()?;

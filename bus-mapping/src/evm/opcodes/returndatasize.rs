@@ -24,7 +24,7 @@ impl Opcode for Returndatasize {
             state.call()?.call_id,
             CallContextField::LastCalleeReturnDataLength,
             value,
-        );
+        )?;
 
         // TODO: fix error in deposit_ether.json...
         let real_return_data_len = value.as_usize();

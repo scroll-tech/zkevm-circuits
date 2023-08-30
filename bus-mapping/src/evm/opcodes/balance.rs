@@ -29,19 +29,19 @@ impl Opcode for Balance {
             state.call()?.call_id,
             CallContextField::TxId,
             U256::from(state.tx_ctx.id()),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::RwCounterEndOfReversion,
             U256::from(state.call()?.rw_counter_end_of_reversion as u64),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::IsPersistent,
             U256::from(state.call()?.is_persistent as u64),
-        );
+        )?;
 
         // Update transaction access list for account address.
         let is_warm = state.sdb.check_account_in_access_list(&address);
@@ -70,9 +70,9 @@ impl Opcode for Balance {
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-        );
+        )?;
         if exists {
-            state.account_read(&mut exec_step, address, AccountField::Balance, balance);
+            state.account_read(&mut exec_step, address, AccountField::Balance, balance)?;
         }
 
         // Write the BALANCE result to stack.

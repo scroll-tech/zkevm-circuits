@@ -45,7 +45,7 @@ impl Opcode for ReturnRevert {
             call.call_id,
             CallContextField::IsSuccess,
             call.is_success.to_word(),
-        );
+        )?;
 
         // Get low Uint64 of offset.
         let offset = offset.low_u64() as usize;
@@ -74,7 +74,7 @@ impl Opcode for ReturnRevert {
                 ),
                 (CallContextField::IsPersistent, call.is_persistent.to_word()),
             ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value);
+                state.call_context_read(&mut exec_step, call.call_id, field, value)?;
             }
 
             // the 'nonce' field has already been set to 1 inside 'create' or 'begin_tx',
@@ -91,7 +91,7 @@ impl Opcode for ReturnRevert {
                 call.address,
                 AccountField::CodeHash,
                 prev_code_hash,
-            );
+            )?;
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
@@ -114,7 +114,7 @@ impl Opcode for ReturnRevert {
                     call.address,
                     AccountField::KeccakCodeHash,
                     prev_keccak_code_hash,
-                );
+                )?;
                 state.push_op_reversible(
                     &mut exec_step,
                     AccountOp {
@@ -144,7 +144,7 @@ impl Opcode for ReturnRevert {
                 call.call_id,
                 CallContextField::IsPersistent,
                 call.is_persistent.to_word(),
-            );
+            )?;
         }
 
         // Case C in the specs.
@@ -176,7 +176,7 @@ impl Opcode for ReturnRevert {
                     (CallContextField::ReturnDataOffset, call.return_data_offset),
                     (CallContextField::ReturnDataLength, call.return_data_length),
                 ] {
-                    state.call_context_read(&mut exec_step, call.call_id, field, value.into());
+                    state.call_context_read(&mut exec_step, call.call_id, field, value.into())?;
                 }
 
                 let return_data_length = usize::try_from(call.return_data_length).unwrap();

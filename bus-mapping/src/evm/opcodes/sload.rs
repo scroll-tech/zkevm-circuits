@@ -28,28 +28,28 @@ impl Opcode for Sload {
             call_id,
             CallContextField::TxId,
             Word::from(state.tx_ctx.id()),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::RwCounterEndOfReversion,
             Word::from(state.call()?.rw_counter_end_of_reversion),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::IsPersistent,
             Word::from(state.call()?.is_persistent as u8),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::CalleeAddress,
             contract_addr.to_word(),
-        );
+        )?;
 
         // First stack read
         let key = geth_step.stack.last()?;
@@ -86,7 +86,7 @@ impl Opcode for Sload {
                 state.tx_ctx.id(),
                 committed_value,
             ),
-        );
+        )?;
 
         // First stack write
         state.stack_write(&mut exec_step, stack_position, value)?;
@@ -100,7 +100,7 @@ impl Opcode for Sload {
                 is_warm,
                 is_warm_prev: is_warm,
             },
-        );
+        )?;
         state.push_op_reversible(
             &mut exec_step,
             TxAccessListAccountStorageOp {
