@@ -116,7 +116,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
 pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
     let mut l2_config = config.clone();
     if let Some(chain_config) = l2_config.chain_config.as_mut() {
-        (*chain_config).archimedes_block = Some(0);
+        chain_config.archimedes_block = Some(0);
     } else {
         l2_config.chain_config = Some(ChainConfig {
             archimedes_block: Some(0),
