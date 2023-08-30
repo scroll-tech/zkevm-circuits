@@ -1118,16 +1118,24 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Handle a reversion group
-    pub fn handle_reversion(&mut self, exec_step: &mut ExecStep) {
+    pub fn handle_reversion(&mut self, current_exec_steps: &mut [&mut ExecStep]) {
         // we already know that the call has reverted. Only the precompile failure case must be
         // handled differently as the ExecSteps associated with those calls haven't yet been pushed
         // to the tx's steps.
-        let is_begin_tx_precompile_call = matches!(exec_step.exec_state, ExecState::BeginTx)
-            && (exec_step.call_index < self.tx.calls.len())
-            && is_precompiled(&self.tx.calls[exec_step.call_index].address);
-        let is_from_precompile_failure = exec_step.is_precompiled()
-            || exec_step.is_precompile_oog_err()
-            || is_begin_tx_precompile_call;
+
+        // Whether the `exec_step` represents a `BeginTx` (start of a tx) where the callee address
+        // is one of the precompiled contracts.
+        let is_begin_tx_precompile_call =
+            matches!(current_exec_steps[0].exec_state, ExecState::BeginTx)
+                && (current_exec_steps[0].call_index < self.tx.calls.len())
+                && is_precompiled(&self.tx.calls[current_exec_steps[0].call_index].address);
+
+        // Whether the `exec_step` represents a `Precompile` state, done via a `CALLOP` step
+        // preceding it.
+        let is_other_precompile_call_failure = current_exec_steps[0].exec_state.is_call()
+            && current_exec_steps.len() > 1
+            && (current_exec_steps[1].is_precompiled()
+                || current_exec_steps[1].is_precompile_oog_err());
 
         let reversion_group = self
             .tx_ctx
@@ -1145,8 +1153,8 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                if is_from_precompile_failure {
-                    exec_step.bus_mapping_instance.push(rev_op_ref);
+                if is_begin_tx_precompile_call || is_other_precompile_call_failure {
+                    current_exec_steps[0].bus_mapping_instance.push(rev_op_ref);
                 } else {
                     self.tx.steps_mut()[step_index]
                         .bus_mapping_instance
@@ -1168,7 +1176,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// `caller_ctx.return_data` should be updated **before** this method (except error cases).
     pub fn handle_return(
         &mut self,
-        exec_step: &mut ExecStep,
+        current_exec_steps: &mut [&mut ExecStep],
         geth_steps: &[GethExecStep],
         need_restore: bool,
     ) -> Result<(), Error> {
@@ -1184,14 +1192,21 @@ impl<'a> CircuitInputStateRef<'a> {
                 | OpcodeId::CALLCODE
                 | OpcodeId::DELEGATECALL
                 | OpcodeId::STATICCALL
-        ) || exec_step.error.is_some()
+        ) || current_exec_steps[0].error.is_some()
         {
             if let Ok(caller) = self.caller_ctx_mut() {
                 caller.return_data.clear();
             }
         }
         if need_restore {
-            self.handle_restore_context(exec_step, geth_steps)?;
+            if (current_exec_steps.len() > 1)
+                && (current_exec_steps[1].is_precompiled()
+                    || current_exec_steps[1].is_precompile_oog_err())
+            {
+                self.handle_restore_context(current_exec_steps[1], geth_steps)?;
+            } else {
+                self.handle_restore_context(current_exec_steps[0], geth_steps)?;
+            }
         }
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
@@ -1228,7 +1243,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
-            self.handle_reversion(exec_step);
+            self.handle_reversion(current_exec_steps);
         }
 
         let return_data_length = self

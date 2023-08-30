@@ -475,7 +475,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     oog_step.gas_cost = GasCost(precompile_call_gas_cost);
                     // Make the Precompile execution step to handle return logic and restore to
                     // caller context (similar as STOP and RETURN).
-                    state.handle_return(&mut oog_step, geth_steps, true)?;
+                    state.handle_return(&mut [&mut exec_step, &mut oog_step], geth_steps, true)?;
 
                     Ok(vec![exec_step, oog_step])
                 } else {
@@ -492,7 +492,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
                     // Make the Precompile execution step to handle return logic and restore to
                     // caller context (similar as STOP and RETURN).
-                    state.handle_return(&mut precompile_step, geth_steps, true)?;
+                    state.handle_return(
+                        &mut [&mut exec_step, &mut precompile_step],
+                        geth_steps,
+                        true,
+                    )?;
 
                     debug_assert_eq!(
                         geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost + stipend,
@@ -514,7 +518,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
                 state.caller_ctx_mut()?.return_data.clear();
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
 
                 Ok(vec![exec_step])
             }
@@ -609,7 +613,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
                 state.caller_ctx_mut()?.return_data.clear();
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
                 Ok(vec![exec_step])
             } //
         }

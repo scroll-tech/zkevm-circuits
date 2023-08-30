@@ -63,7 +63,7 @@ impl Opcode for ErrorWriteProtection {
         )?;
 
         // `IsSuccess` call context operation is added in handle_return
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

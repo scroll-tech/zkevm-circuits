@@ -462,7 +462,7 @@ pub fn gen_associated_ops(
                 need_restore = false;
             }
 
-            state.handle_return(&mut exec_step, geth_steps, need_restore)?;
+            state.handle_return(&mut [&mut exec_step], geth_steps, need_restore)?;
             return Ok(vec![exec_step]);
         }
     }
@@ -834,7 +834,7 @@ pub fn gen_begin_tx_ops(
 
     log::trace!("begin_tx_step: {:?}", exec_step);
     if is_precompile && !state.call().unwrap().is_success {
-        state.handle_reversion(&mut exec_step);
+        state.handle_reversion(&mut [&mut exec_step]);
     }
     state.tx.steps_mut().push(exec_step);
 
@@ -1141,6 +1141,6 @@ fn dummy_gen_selfdestruct_ops(
     if let Ok(caller) = state.caller_ctx_mut() {
         caller.return_data.clear();
     }
-    state.handle_return(&mut exec_step, geth_steps, !state.call()?.is_root)?;
+    state.handle_return(&mut [&mut exec_step], geth_steps, !state.call()?.is_root)?;
     Ok(vec![exec_step])
 }

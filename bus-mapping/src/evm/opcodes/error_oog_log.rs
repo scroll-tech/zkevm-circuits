@@ -44,7 +44,7 @@ impl Opcode for ErrorOOGLog {
             Word::from(state.call()?.is_static as u8),
         )?;
 
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }
