@@ -443,3 +443,19 @@ fn serial_test_super_circuit_precompile_invalid_ec_add() {
         circuit_params,
     );
 }
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_precompile_invalid_ec_mul() {
+    const MAX_TXS: usize = 2;
+    const MAX_CALLDATA: usize = 0xc0;
+    
+    let block = precompile_block_trace::block_precompile_invalid_ec_mul();
+    let circuit_params = precomiple_super_circuit_params(block, MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+        block,
+        circuit_params,
+    );
+}

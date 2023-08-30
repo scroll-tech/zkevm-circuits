@@ -324,7 +324,7 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     let chain_id = *MOCK_CHAIN_ID;
 
     let bytecode_ec_add_noc_p = PrecompileCallArgs {
-        name: "ecAdd (p not on curve)",
+        name: "ecAdd (invalid: p not on curve)",
         // P = (1, 1)
         // Q = (1, 2)
         setup_code: bytecode! {
@@ -355,7 +355,7 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     .with_call_op(OpcodeId::STATICCALL);
 
     let bytecode_ec_add_noc_q = PrecompileCallArgs {
-        name: "ecAdd (q not on curve)",
+        name: "ecAdd (invalid: q not on curve)",
         // P = (1, 2)
         // Q = (1, 1)
         setup_code: bytecode! {
@@ -386,7 +386,7 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     .with_call_op(OpcodeId::CALL);
 
     let bytecode_ec_add_oor_p = PrecompileCallArgs {
-        name: "ecAdd (p out of range ec point coordinates)",
+        name: "ecAdd (invalid: p out of range ec point coordinates)",
         // P = (p + 1, p + 2)
         // Q = (1, 2)
         setup_code: bytecode! {
@@ -417,7 +417,7 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     .with_call_op(OpcodeId::DELEGATECALL);
 
     let bytecode_ec_add_oor_q = PrecompileCallArgs {
-        name: "ecAdd (q out of range ec point coordinates)",
+        name: "ecAdd (invalid: q out of range ec point coordinates)",
         // P = (1, 2)
         // Q = (p + 1, p + 2)
         setup_code: bytecode! {
@@ -502,3 +502,99 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     .clone()
 }
 
+#[cfg(feature = "scroll")]
+pub(crate) fn block_precompile_invalid_ec_mul() -> BlockTrace {
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+    let chain_id = *MOCK_CHAIN_ID;
+
+    let bytecode_ec_mul_oor_p = PrecompileCallArgs {
+        name: "ecMul (invalid: p out of range ec point coordinates)",
+        // P = (p + 1, p + 2)
+        // s = 7
+        setup_code: bytecode! {
+            // p_x
+            PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"))
+            PUSH1(0x00)
+            MSTORE
+            // p_y
+            PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"))
+            PUSH1(0x20)
+            MSTORE
+            // s
+            PUSH1(0x07)
+            PUSH1(0x40)
+            MSTORE
+        },
+        call_data_offset: 0x00.into(),
+        call_data_length: 0x60.into(),
+        ret_offset: 0x60.into(),
+        ret_size: 0x40.into(),
+        address: PrecompileCalls::Bn128Mul.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::CALL);
+
+    let bytecode_ec_mul_noc_p = PrecompileCallArgs {
+        name: "ecMul (valid input)",
+        // P = (1, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+        // s = 7
+        setup_code: bytecode! {
+            // p_x
+            PUSH1(0x01)
+            PUSH1(0x00)
+            MSTORE
+            // p_y
+            PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+            PUSH1(0x20)
+            MSTORE
+            // s
+            PUSH1(0x07)
+            PUSH1(0x40)
+            MSTORE
+        },
+        call_data_offset: 0x00.into(),
+        call_data_length: 0x60.into(),
+        ret_offset: 0x60.into(),
+        ret_size: 0x40.into(),
+        address: PrecompileCalls::Bn128Mul.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::CALL);
+
+    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+
+    let addr_a = wallet_a.address();
+    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+    let addr_c = address!("0x000000000000000000000000000000000000CCCC");
+
+    // 3 accounts and 2 txs.
+    TestContext::<3, 2>::new(
+        Some(vec![Word::zero()]),
+        |accs| {
+            accs[0].address(addr_a).balance(Word::from(1u64 << 24));
+            accs[1]
+                .address(addr_b)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_ec_mul_oor_p);
+            accs[2]
+                .address(addr_c)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_ec_mul_noc_p);
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(wallet_a.clone())
+                .to(accs[1].address)
+                .gas(Word::from(1_000_000u64));
+            txs[1]
+                .from(wallet_a.clone())
+                .to(accs[2].address)
+                .gas(Word::from(1_000_000u64));
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .l2_trace()
+    .clone()
+}
