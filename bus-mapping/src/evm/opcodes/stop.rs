@@ -30,7 +30,7 @@ impl Opcode for Stop {
             call.call_id,
             CallContextField::IsSuccess,
             1.into(),
-        );
+        )?;
         if let Ok(caller) = state.caller_ctx_mut() {
             caller.return_data.clear();
         }

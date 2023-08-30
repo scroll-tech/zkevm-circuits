@@ -66,7 +66,7 @@ impl Opcode for ErrorReturnDataOutOfBound {
             call_id,
             CallContextField::LastCalleeReturnDataLength,
             return_data.len().into(),
-        );
+        )?;
 
         // `IsSuccess` call context operation is added in handle_return
         state.handle_return(&mut exec_step, geth_steps, true)?;

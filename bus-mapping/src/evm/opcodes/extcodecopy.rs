@@ -62,7 +62,7 @@ fn gen_extcodecopy_step(
             U256::from(state.call()?.is_persistent as u64),
         ),
     ] {
-        state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+        state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
     }
 
     let is_warm = state.sdb.check_account_in_access_list(&external_address);
@@ -89,7 +89,7 @@ fn gen_extcodecopy_step(
         external_address,
         AccountField::CodeHash,
         code_hash.to_word(),
-    );
+    )?;
     Ok(exec_step)
 }
 

@@ -38,7 +38,7 @@ impl Opcode for Extcodehash {
                 U256::from(state.call()?.is_persistent as u64),
             ),
         ] {
-            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
         }
 
         // Update transaction access list for external_address
@@ -75,7 +75,7 @@ impl Opcode for Extcodehash {
                 AccountField::CodeHash
             },
             code_hash.to_word(),
-        );
+        )?;
         debug_assert_eq!(steps[1].stack.last()?, code_hash.to_word());
         // Stack write of the result of EXTCODEHASH.
         state.stack_write(&mut exec_step, stack_address, steps[1].stack.last()?)?;

@@ -74,7 +74,7 @@ fn gen_returndatacopy_step(
             return_data_len.into(),
         ),
     ] {
-        state.call_context_read(&mut exec_step, call_id, field, value);
+        state.call_context_read(&mut exec_step, call_id, field, value)?;
     }
     Ok(exec_step)
 }
