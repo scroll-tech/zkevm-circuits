@@ -47,7 +47,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call()?.call_id,
             CallContextField::IsStatic,
             Word::from(state.call()?.is_static as u8),
-        );
+        )?;
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
@@ -96,8 +96,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller.call_id,
             CallContextField::TxId,
             tx_id.to_word(),
-        );
-        state.reversion_info_read(&mut exec_step, &caller);
+        )?;
+        state.reversion_info_read(&mut exec_step, &caller)?;
         state.tx_access_list_write(&mut exec_step, address)?;
 
         let depth = caller.depth;
@@ -106,14 +106,14 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller.call_id,
             CallContextField::Depth,
             depth.to_word(),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             caller.call_id,
             CallContextField::CalleeAddress,
             caller.address.to_word(),
-        );
+        )?;
 
         let caller_balance = state.sdb.get_balance(&callee.caller_address);
         state.account_read(
@@ -121,7 +121,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             callee.caller_address,
             AccountField::Balance,
             caller_balance,
-        );
+        )?;
 
         let caller_nonce = state.sdb.get_nonce(&caller.address);
         state.account_read(
@@ -129,7 +129,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             callee.caller_address,
             AccountField::Nonce,
             caller_nonce.into(),
-        );
+        )?;
 
         // Check if an error of ErrDepth, ErrInsufficientBalance or
         // ErrNonceUintOverflow occurred.
@@ -162,7 +162,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 callee.is_persistent.to_word(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, callee.call_id, field, value);
+            state.call_context_write(&mut exec_step, callee.call_id, field, value)?;
         }
 
         // if address created before, nonce is not zero
@@ -200,7 +200,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 address,
                 AccountField::CodeHash,
                 code_hash_previous.to_word(),
-            );
+            )?;
 
             // read callee nonce for address collision checking
             if !code_hash_previous.is_zero() {
@@ -209,7 +209,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     address,
                     AccountField::Nonce,
                     callee_account.nonce,
-                );
+                )?;
             }
         }
 
@@ -253,7 +253,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 (exec_step.reversible_write_counter + 2).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, caller.call_id, field, value);
+            state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
         }
 
         // precheck failed
@@ -263,7 +263,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
-                state.call_context_write(&mut exec_step, caller.call_id, field, value);
+                state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
             state.handle_return(&mut exec_step, geth_steps, false)?;
             return Ok(vec![exec_step]);
@@ -293,7 +293,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             (CallContextField::CodeHash, code_hash.to_word()),
             (CallContextField::Value, callee.value),
         ] {
-            state.call_context_write(&mut exec_step, callee.call_id, field, value);
+            state.call_context_write(&mut exec_step, callee.call_id, field, value)?;
         }
 
         let keccak_input = if IS_CREATE2 {
@@ -333,7 +333,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
-                state.call_context_write(&mut exec_step, caller.call_id, field, value);
+                state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
             state.caller_ctx_mut()?.return_data.clear();
             state.handle_return(&mut exec_step, geth_steps, false)?;

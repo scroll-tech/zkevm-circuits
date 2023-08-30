@@ -287,7 +287,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         // ]))
         // });
 
-        #[cfg(feature = "scroll-trace")]
+        #[cfg(feature = "scroll")]
         {
             use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
             use itertools::Itertools;

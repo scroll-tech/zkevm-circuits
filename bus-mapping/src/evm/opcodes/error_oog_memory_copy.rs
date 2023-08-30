@@ -40,7 +40,7 @@ impl Opcode for OOGMemoryCopy {
                 state.call()?.call_id,
                 CallContextField::TxId,
                 state.tx_ctx.id().into(),
-            );
+            )?;
 
             let external_address = geth_step.stack.last()?.to_address();
             let is_warm = state.sdb.check_account_in_access_list(&external_address);
@@ -53,7 +53,7 @@ impl Opcode for OOGMemoryCopy {
                     is_warm,
                     is_warm_prev: is_warm,
                 },
-            );
+            )?;
         }
 
         // Each of CALLDATACOPY, CODECOPY and RETURNDATACOPY has 3 stack read values.

@@ -2212,7 +2212,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.5.1#2163a9c436ed85363c954ecf7e6e1044a1b991dc"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.6.1#c5cd0dab4a242d7077bf9cad051119dafaa4d6e9"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -3879,7 +3879,7 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 version = "2.0.0"
-source = "git+https://github.com/scroll-tech/revm?tag=2.0.0-fix#c4b174589f1d48cc003c46fb21b9a68c5a276c29"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-fix#aebf2e591e622e6bcce2c5d4bf3336935a68cf11"
 dependencies = [
  "k256",
  "num",
@@ -3895,7 +3895,7 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 version = "1.0.0"
-source = "git+https://github.com/scroll-tech/revm?tag=2.0.0-fix#c4b174589f1d48cc003c46fb21b9a68c5a276c29"
+source = "git+https://github.com/scroll-tech/revm?branch=scroll-fix#aebf2e591e622e6bcce2c5d4bf3336935a68cf11"
 dependencies = [
  "auto_impl",
  "bytes",
@@ -4733,6 +4733,7 @@ dependencies = [
  "halo2_proofs",
  "handlebars",
  "hex",
+ "itertools",
  "keccak256",
  "log",
  "mock",

@@ -26,7 +26,7 @@ impl Opcode for Address {
             state.call()?.call_id,
             CallContextField::CalleeAddress,
             address,
-        );
+        )?;
 
         // Write the address to stack.
         state.stack_write(

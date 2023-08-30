@@ -35,7 +35,7 @@ impl Opcode for Extcodesize {
                 state.call()?.is_persistent.to_word(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
         }
 
         // Update transaction access list for account address.
@@ -66,14 +66,14 @@ impl Opcode for Extcodesize {
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-        );
+        )?;
         // If "scroll" feature is enabled, CodeSize is read of AccountTrie,
         // so the full code don't need to be put into bytecode circuit.
         // TODO: check the bytecode circuit assignment codes, to make sure this optimization
         // is correctly applied.
         #[cfg(feature = "scroll")]
         if exists {
-            state.account_read(&mut exec_step, address, AccountField::CodeSize, code_size);
+            state.account_read(&mut exec_step, address, AccountField::CodeSize, code_size)?;
         }
 
         // Write the EXTCODESIZE result to stack.

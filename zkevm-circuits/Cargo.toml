@@ -66,15 +66,7 @@ paste = "1.0"
 default = ["test", "test-circuits", "shanghai", "debug-annotations"]
 test = ["ethers-signers", "mock", "bus-mapping/test"]
 
-# Currently, when the "scroll" feature is enabled, unittests use a CGO scroll-evm to generate execution traces.
-# However, the local scroll-evm tracer is not finished yet, so it cannot generate a full block trace like
-# <https://github.com/scroll-tech/test-traces/>. Therefore, to make the super circuit-related CI pass, we have to disable
-# some constraints related to the poseidon codehash / mpt lookup by disabling the feature "scroll-trace".
-# On the other hand, the scroll-zkevm repo enables both "scroll" and "scroll-trace",
-# so these poseidon code hash constraints and mpt lookup are enabled there.
-# TODO: When the local scroll-evm tracer is finished, we can then enable the "scroll-trace" feature.
-scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock?/scroll", "zktrie", "poseidon-codehash", "scroll-trace"]
-scroll-trace = []
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock?/scroll", "zktrie", "poseidon-codehash"]
 
 # Enable shanghai feature of mock only if mock is enabled (by test).
 shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock?/shanghai"]

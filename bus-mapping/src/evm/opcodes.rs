@@ -493,7 +493,7 @@ pub fn gen_begin_tx_ops(
             caller_address,
             AccountField::CodeHash,
             caller_acc.code_hash_read().to_word(),
-        );
+        )?;
 
         if caller_acc.is_empty() {
             log::info!("create account for {:?} inside l1msg tx", caller_address);
@@ -521,7 +521,7 @@ pub fn gen_begin_tx_ops(
         }
     } else {
         // else, add 3 RW read operations for transaction L1 fee.
-        gen_tx_l1_fee_ops(state, &mut exec_step);
+        gen_tx_l1_fee_ops(state, &mut exec_step)?;
     }
 
     log::trace!("write tx l1fee {}", state.tx.l1_fee());
@@ -530,7 +530,7 @@ pub fn gen_begin_tx_ops(
         call.call_id,
         CallContextField::L1Fee,
         Word::from(state.tx.l1_fee()),
-    );
+    )?;
 
     // the rw delta before is:
     // + for non-l1 msg tx: 3 (rw for fee oracle contrace)
@@ -554,7 +554,7 @@ pub fn gen_begin_tx_ops(
         ),
         (CallContextField::IsSuccess, call.is_success.to_word()),
     ] {
-        state.call_context_write(&mut exec_step, call.call_id, field, value);
+        state.call_context_write(&mut exec_step, call.call_id, field, value)?;
     }
 
     // Increase caller's nonce
@@ -660,7 +660,7 @@ pub fn gen_begin_tx_ops(
         call.address,
         AccountField::CodeHash,
         account_code_hash,
-    );
+    )?;
 
     if state.tx.is_create()
         && ((!account_code_hash_is_empty_or_zero) || !callee_account.nonce.is_zero())
@@ -772,7 +772,7 @@ pub fn gen_begin_tx_ops(
                 (CallContextField::IsCreate, 1.into()),
                 (CallContextField::CodeHash, call.code_hash.to_word()),
             ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
         }
         // 2. Call to precompiled.
@@ -805,7 +805,7 @@ pub fn gen_begin_tx_ops(
                     (CallContextField::IsCreate, call.is_create().to_word()),
                     (CallContextField::CodeHash, call_code_hash),
                 ] {
-                    state.call_context_write(&mut exec_step, call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, call.call_id, field, value)?;
                 }
             }
         }
@@ -856,19 +856,19 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         call.call_id,
         CallContextField::TxId,
         state.tx_ctx.id().into(),
-    );
+    )?;
     state.call_context_read(
         &mut exec_step,
         call.call_id,
         CallContextField::IsPersistent,
         Word::from(call.is_persistent as u8),
-    );
+    )?;
     state.call_context_read(
         &mut exec_step,
         call.call_id,
         CallContextField::L1Fee,
         Word::from(state.tx.l1_fee()),
-    );
+    )?;
 
     let refund = state.sdb.refund();
     state.push_op(
@@ -879,7 +879,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             value: refund,
             value_prev: refund,
         },
-    );
+    )?;
 
     let effective_refund =
         refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
@@ -938,7 +938,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         } else {
             coinbase_account.code_hash.to_word()
         },
-    );
+    )?;
 
     if !state.tx.tx_type.is_l1_msg() {
         state.transfer_to(
@@ -991,14 +991,17 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             state.block_ctx.rwc.0 + 1,
             CallContextField::TxId,
             (state.tx_ctx.id() + 1).into(),
-        );
+        )?;
     }
 
     Ok(exec_step)
 }
 
 // Add 3 RW read operations for transaction L1 fee.
-fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep) {
+fn gen_tx_l1_fee_ops(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+) -> Result<(), Error> {
     let tx_id = state.tx_ctx.id();
 
     let base_fee = Word::from(state.tx.l1_fee.base_fee);
@@ -1020,7 +1023,7 @@ fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep)
             tx_id,
             base_fee_committed,
         ),
-    );
+    )?;
     state.push_op(
         exec_step,
         RW::READ,
@@ -1032,7 +1035,7 @@ fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep)
             tx_id,
             fee_overhead_committed,
         ),
-    );
+    )?;
     state.push_op(
         exec_step,
         RW::READ,
@@ -1044,7 +1047,8 @@ fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep)
             tx_id,
             fee_scalar_committed,
         ),
-    );
+    )?;
+    Ok(())
 }
 
 #[derive(Debug, Copy, Clone)]
