@@ -138,6 +138,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		PetersburgBlock:     big.NewInt(0),
 		IstanbulBlock:       big.NewInt(0),
 		MuirGlacierBlock:    big.NewInt(0),
+		ArchimedesBlock:     big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
 		ShanghaiBlock:       big.NewInt(0),
