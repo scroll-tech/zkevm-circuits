@@ -120,12 +120,11 @@ mod test {
         test_internal_ok(0x20, 0x00, &[push0]);
     }
 
-    // for scroll feature, treat selfdestruct_opcode as invalidcode. this test construct oog
-    // for self_destruct, expected to meet invalidocde.
+    // for scroll feature, treat selfdestruct_opcode as invalidcode. even this test construct oog
+    // case for self_destruct, expected to meet invalid opcode error.
     #[cfg(feature = "scroll")]
     #[test]
     fn test_root_self_destruct() {
-        //let address = account.as_ref().map(|a| a.address).unwrap_or(*TEST_ADDRESS);
         let selfdestruct_opcode = 0xff_u8;
         let mut code = Bytecode::default();
         code.push(20, address!("0x000000000000000000000000000000000000cafe"));
