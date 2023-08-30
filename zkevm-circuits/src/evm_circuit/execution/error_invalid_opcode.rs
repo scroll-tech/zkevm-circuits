@@ -110,6 +110,15 @@ mod test {
         test_internal_ok(0x20, 0x00, &[selfdestruct_opcode]);
     }
 
+    // for scroll feature, treat BASEFEE as invalidcode. disabled in scroll l2geth
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn invalid_opcode_basefee_for_scroll() {
+        let basefee_opcode = 0x48_u8;
+        test_root_ok(&[basefee_opcode]);
+        test_internal_ok(0x20, 0x00, &[basefee_opcode]);
+    }
+
     #[cfg(not(feature = "shanghai"))]
     #[test]
     fn invalid_opcode_push0_for_not_shanghai() {
