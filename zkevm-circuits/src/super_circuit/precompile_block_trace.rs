@@ -501,3 +501,4 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     .l2_trace()
     .clone()
 }
+

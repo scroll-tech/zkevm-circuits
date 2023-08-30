@@ -374,15 +374,12 @@ fn serial_test_super_circuit_2tx_2max_tx() {
 }
 
 #[cfg(feature = "scroll")]
-fn run_precomiple_super_circuit_tests(block_trace: BlockTrace) {
-    const MAX_TXS: usize = 4;
-    const MAX_CALLDATA: usize = 320;
-    const MAX_INNER_BLOCKS: usize = 1;
+fn precomiple_super_circuit_params(block_trace: BlockTrace, max_txs: usize, max_calldata: usize) -> CircuitParams {
     const MAX_RWS: usize = 1024;
     const MAX_COPY_ROWS: usize = 16384; // precompile require many copies
-    let circuits_params = CircuitsParams {
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
+    CircuitsParams {
+        max_txs: max_txs,
+        max_calldata: max_calldata,
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
         max_bytecode: 4096,
@@ -392,37 +389,57 @@ fn run_precomiple_super_circuit_tests(block_trace: BlockTrace) {
         // modexp ref this to decide its ability, we
         // need at least one (~25000 rows)
         max_keccak_rows: 40000,
-        max_inner_blocks: MAX_INNER_BLOCKS,
+        max_inner_blocks: 1,
         max_exp_steps: 256,
         max_rlp_rows: 800,
         ..Default::default()
-    };
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
-        block_trace,
-        circuits_params,
-    );
+    }
 }
 
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_ec_ops_txs() {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 0x320;
+    
     let block = precompile_block_trace::block_ec_ops();
-    run_precomiple_super_circuit_tests(block);
+    let circuit_params = precomiple_super_circuit_params(block, MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+        block,
+        circuit_params,
+    );
 }
 
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_precompile_oog() {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 0x320;
+    
     let block = precompile_block_trace::block_precompile_oog();
-    run_precomiple_super_circuit_tests(block);
+    let circuit_params = precomiple_super_circuit_params(block, MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+        block,
+        circuit_params,
+    );
 }
 
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_precompile_invalid_ec_add() {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 0x200;
+    
     let block = precompile_block_trace::block_precompile_invalid_ec_add();
-    run_precomiple_super_circuit_tests(block);
+    let circuit_params = precomiple_super_circuit_params(block, MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+        block,
+        circuit_params,
+    );
 }
