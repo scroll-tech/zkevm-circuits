@@ -15,6 +15,7 @@ use ethers_core::{
 use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
@@ -434,6 +435,26 @@ pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
 pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
 pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
 
+// TODO: refactor & usage
+fn get_sub_circuit_limit_l2() -> Vec<usize> {
+    vec![
+        MAX_RWS,           // evm
+        MAX_RWS,           // state
+        MAX_BYTECODE,      // bytecode
+        MAX_RWS,           // copy
+        MAX_KECCAK_ROWS,   // keccak
+        MAX_RWS,           // tx
+        MAX_CALLDATA,      // rlp
+        8 * MAX_EXP_STEPS, // exp
+        MAX_KECCAK_ROWS,   // modexp
+        MAX_RWS,           // pi
+        MAX_POSEIDON_ROWS, // poseidon
+        MAX_VERTICLE_ROWS, // sig
+        MAX_VERTICLE_ROWS, // ecc
+        MAX_MPT_ROWS,      // mpt
+    ]
+}
+
 fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
     CircuitsParams {
         max_evm_rows: MAX_RWS,
@@ -515,6 +536,8 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<F
     MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
 }
 
+type ScrollSuperCircuit = SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>;
+
 pub fn run_test(
     st: StateTest,
     suite: TestSuite,
@@ -544,16 +567,16 @@ pub fn run_test(
     #[cfg(feature = "scroll")]
     let result = trace_config_to_witness_block_l2(
         trace_config.clone(),
-        st,
-        suite,
+        st.clone(),
+        suite.clone(),
         circuits_params,
         circuits_config.verbose,
     )?;
     #[cfg(not(feature = "scroll"))]
     let result = trace_config_to_witness_block_l1(
         trace_config.clone(),
-        st,
-        suite,
+        st.clone(),
+        suite.clone(),
         circuits_params,
         circuits_config.verbose,
     )?;
@@ -571,6 +594,27 @@ pub fn run_test(
             CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
                 .copy_checks(None)
                 .run();
+        } else if (*CIRCUIT) == "ccc" {
+            let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
+            let mut overflow = false;
+            for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
+                if num.row_num_real >= *limit {
+                    log::warn!(
+                        "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
+                        suite.id,
+                        st.id,
+                        num.name,
+                        num.row_num_real,
+                        limit
+                    );
+                    overflow = true;
+                }
+            }
+            if overflow {
+                log::warn!("ccc overflow: suite.id {}, st.id {}", suite.id, st.id);
+            } else {
+                log::info!("ccc ok: suite.id {}, st.id {}", suite.id, st.id);
+            }
         } else {
             let prover = match (*CIRCUIT).as_str() {
                 "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
@@ -583,10 +627,7 @@ pub fn run_test(
         // TODO: do we need to automatically adjust this k?
         let k = 20;
         // TODO: remove this MOCK_RANDOMNESS?
-        let circuit =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>::new_from_block(
-                &witness_block,
-            );
+        let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
         let instance = circuit.instance();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover.assert_satisfied_par();
