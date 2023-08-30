@@ -183,10 +183,10 @@ paths = [
 [[skip_paths]]
 desc = "too big"
 paths = [
-    "stTimeConsuming", # full of useless sstore tests
+#    "stTimeConsuming", # full of useless sstore tests
 #    "stExample",
 #    "stQuadraticComplexityTest",
-    "50000"
+#    "50000"
 ]
 
 [[skip_paths]]
