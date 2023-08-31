@@ -155,7 +155,7 @@ async fn test_circuit_all_block() {
         let builder = builder.unwrap().0;
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
-            return;
+            continue;
         }
 
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();

@@ -42,7 +42,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
-use once_cell::sync::Lazy;
 
 use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
@@ -61,15 +60,18 @@ use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
-pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| {
+fn get_coinbase_constant() -> Address {
     let default_coinbase = if cfg!(feature = "scroll") {
         Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
     } else {
         Address::zero()
     };
     read_env_var("COINBASE", default_coinbase)
-});
-pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
+}
+
+fn get_difficulty_constant() -> Word {
+    read_env_var("DIFFICULTY", Word::zero())
+}
 
 /// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
@@ -153,15 +155,17 @@ impl PublicData {
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
                 // sanity check on coinbase & difficulty
+                let coinbase = get_coinbase_constant();
                 assert_eq!(
-                    *COINBASE, block.coinbase,
+                    coinbase, block.coinbase,
                     "[block {}] COINBASE const: {}, block.coinbase: {}",
-                    block_num, *COINBASE, block.coinbase
+                    block_num, coinbase, block.coinbase
                 );
+                let difficulty = get_difficulty_constant();
                 assert_eq!(
-                    *DIFFICULTY, block.difficulty,
+                    difficulty, block.difficulty,
                     "[block {}] DIFFICULTY const: {}, block.difficulty: {}",
-                    block_num, *DIFFICULTY, block.difficulty
+                    block_num, difficulty, block.difficulty
                 );
 
                 let num_all_txs = num_all_txs_in_blocks
@@ -227,8 +231,8 @@ impl BlockContext {
     fn padding(chain_id: u64) -> Self {
         Self {
             chain_id,
-            coinbase: *COINBASE,
-            difficulty: *DIFFICULTY,
+            coinbase: get_coinbase_constant(),
+            difficulty: get_difficulty_constant(),
             gas_limit: 0,
             number: Default::default(),
             timestamp: Default::default(),
@@ -1040,7 +1044,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let cells = self.assign_field_in_pi_ext(
             region,
             &mut offset,
-            &(*COINBASE).to_fixed_bytes(),
+            &get_coinbase_constant().to_fixed_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
@@ -1054,7 +1058,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let cells = self.assign_field_in_pi_ext(
             region,
             &mut offset,
-            &(*DIFFICULTY).to_be_bytes(),
+            &get_difficulty_constant().to_be_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
