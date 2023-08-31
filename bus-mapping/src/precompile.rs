@@ -4,7 +4,7 @@ use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
 use strum::EnumIter;
 
-use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
+use crate::circuit_input_builder::{EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP};
 
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
@@ -30,9 +30,19 @@ pub(crate) fn execute_precompiled(
     let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
             if cfg!(feature = "scroll") {
+                // Revm behavior is different from scroll evm,
+                // so we need to override the behavior of invalid input
                 match PrecompileCalls::from(address.0[19]) {
-                    // Revm behavior is different from scroll evm,
-                    // so we need to override the behavior of invalid input
+                    PrecompileCalls::Blake2F
+                    | PrecompileCalls::Sha256
+                    | PrecompileCalls::Ripemd160 => (vec![], gas, false, false),
+                    PrecompileCalls::Bn128Pairing => {
+                        if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
+                            (vec![], gas, false, false)
+                        } else {
+                            (return_value, gas_cost, false, true)
+                        }
+                    }
                     PrecompileCalls::Modexp => {
                         let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
                         if input_valid {

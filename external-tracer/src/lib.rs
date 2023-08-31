@@ -70,7 +70,10 @@ impl LoggerConfig {
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ChainConfig {
+    /// Archimedes switch time (nil = no fork, 0 = already on)
+    pub archimedes_block: Option<u64>,
     /// Shanghai switch time (nil = no fork, 0 = already on shanghai)
+    /// Scroll EVM use the name `ShanghaiBlock` instead
     pub shanghai_time: Option<u64>,
     /// TerminalTotalDifficulty is the amount of total difficulty reached by
     /// the network that triggers the consensus upgrade.
@@ -85,6 +88,7 @@ impl ChainConfig {
     /// Create a chain config for Shanghai fork.
     pub fn shanghai() -> Self {
         Self {
+            archimedes_block: None,
             shanghai_time: Some(0),
             terminal_total_difficulty: Some(0),
             terminal_total_difficulty_passed: true,
@@ -111,8 +115,19 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
 /// Creates a l2-trace for the specified config
 #[cfg(feature = "scroll")]
 pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
+    let mut l2_config = config.clone();
+    if let Some(chain_config) = l2_config.chain_config.as_mut() {
+        chain_config.archimedes_block = Some(0);
+    } else {
+        l2_config.chain_config = Some(ChainConfig {
+            archimedes_block: Some(0),
+            shanghai_time: None,
+            terminal_total_difficulty: None,
+            terminal_total_difficulty_passed: false,
+        });
+    }
     // Get the trace
-    let trace_string = geth_utils::trace(&serde_json::to_string(&config).unwrap()).map_err(
+    let trace_string = geth_utils::trace(&serde_json::to_string(&l2_config).unwrap()).map_err(
         |error| match error {
             geth_utils::Error::TracingError(error) => Error::TracingError(error),
         },
@@ -122,7 +137,7 @@ pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
 
     let mut trace: BlockTrace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
     // l2 geth returns nil base_fee even if it is not 0..
-    trace.header.base_fee_per_gas = Some(config.block_constants.base_fee);
+    trace.header.base_fee_per_gas = Some(l2_config.block_constants.base_fee);
     Ok(trace)
 }
 

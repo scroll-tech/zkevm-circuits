@@ -4,9 +4,11 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::CodeDB,
 };
+
+#[cfg(feature = "scroll")]
+use eth_types::ToBigEndian;
 use eth_types::{
-    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
-    U64,
+    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToWord, H256, U256, U64,
 };
 use ethers_core::{
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -20,8 +22,9 @@ use once_cell::sync::Lazy;
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
-    bytecode_circuit::circuit::BytecodeCircuit, modexp_circuit::ModExpCircuit,
-    super_circuit::SuperCircuit, test_util::CircuitTestBuilder, util::SubCircuit, witness::Block,
+    bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
+    modexp_circuit::ModExpCircuit, super_circuit::SuperCircuit, test_util::CircuitTestBuilder,
+    util::SubCircuit, witness::Block,
 };
 
 /// Read env var with default value
@@ -70,6 +73,7 @@ impl StateTestError {
         // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
         let _ = StateTestError::SkipTestSelfDestruct;
         let _ = StateTestError::SkipTestDifficulty;
+        let _ = StateTestError::SkipTestBalanceOverflow;
 
         matches!(
             self,
@@ -547,6 +551,7 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
+    #[cfg(feature = "scroll")]
     for acc in trace_config.accounts.values() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
             return Err(StateTestError::SkipTestBalanceOverflow);
@@ -619,6 +624,7 @@ pub fn run_test(
             let prover = match (*CIRCUIT).as_str() {
                 "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
                 "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
+                "ecc" => test_with::<EccCircuit<Fr, 9>>(&witness_block),
                 _ => unimplemented!(),
             };
             prover.assert_satisfied_par();
