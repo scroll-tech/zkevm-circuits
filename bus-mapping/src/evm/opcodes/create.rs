@@ -265,7 +265,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
-            state.handle_return(&mut exec_step, geth_steps, false)?;
+            state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
             return Ok(vec![exec_step]);
         }
 
@@ -336,7 +336,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
             state.caller_ctx_mut()?.return_data.clear();
-            state.handle_return(&mut exec_step, geth_steps, false)?;
+            state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
         }
 
         Ok(vec![exec_step])

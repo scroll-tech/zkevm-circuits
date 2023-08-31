@@ -44,7 +44,7 @@ impl Opcode for ErrorCreationCode {
         state.memory_read_word(&mut exec_step, slot.into())?;
 
         // refer to return_revert Case C
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }
