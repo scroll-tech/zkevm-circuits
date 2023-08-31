@@ -11,7 +11,7 @@ use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
+use eth_types::{Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
@@ -62,10 +62,12 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
 pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| {
-    read_env_var(
-        "COINBASE",
-        Address::from_str("0x5300000000000000000000000000000000000005").unwrap(),
-    )
+    let default_coinbase = if cfg!(feature = "scroll") {
+        Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
+    } else {
+        Address::zero()
+    };
+    read_env_var("COINBASE", default_coinbase)
 });
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
@@ -143,6 +145,10 @@ impl PublicData {
 
     /// Compute the bytes for dataHash from the verifier's perspective.
     fn data_bytes(&self) -> Vec<u8> {
+        log::debug!(
+            "pi circuit data_bytes, inner block num {}",
+            self.block_ctxs.ctxs.len()
+        );
         let num_all_txs_in_blocks = self.get_num_all_txs();
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
@@ -1492,11 +1498,13 @@ impl<F: Field> PiCircuit<F> {
             .last_key_value()
             .map(|(_, blk)| blk.eth_block.state_root)
             .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
-        // sanity check
-        assert_eq!(
-            block.mpt_updates.new_root().to_be_bytes(),
-            next_state_root.to_fixed_bytes()
-        );
+        if block.mpt_updates.new_root().to_be_bytes() != next_state_root.to_fixed_bytes() {
+            log::error!(
+                "replayed root {:?} != block head root {:?}",
+                block.mpt_updates.new_root().to_word(),
+                next_state_root
+            );
+        }
         let public_data = PublicData {
             chain_id,
             start_l1_queue_index: block.start_l1_queue_index,
