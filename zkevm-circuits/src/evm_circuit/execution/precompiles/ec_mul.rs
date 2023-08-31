@@ -23,15 +23,14 @@ use crate::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 
-// Modulus for scalar field Fr
-const FR_N: [u8; 32] = [
-    0x01, 0x00, 0x00, 0xF0, 0x93, 0xF5, 0xE1, 0x43, 0x91, 0x70, 0xB9, 0x79, 0x48, 0xE8, 0x33, 0x28,
-    0x5D, 0x58, 0x81, 0x81, 0xB6, 0x45, 0x50, 0xB8, 0x29, 0xA0, 0x31, 0xE1, 0x72, 0x4E, 0x64, 0x30,
-];
-
 lazy_static::lazy_static! {
+    static ref FR_MODULUS: U256 = {
+        U256::from_dec_str("21888242871839275222246405745257275088548364400416034343698204186575808495617")
+            .expect("Fr::MODULUS")
+    };
     static ref FQ_MODULUS: U256 = {
-        U256::from_dec_str("21888242871839275222246405745257275088696311157297823662689037894645226208583").expect("Fq::MODULUS")
+        U256::from_dec_str("21888242871839275222246405745257275088696311157297823662689037894645226208583")
+            .expect("Fq::MODULUS")
     };
 }
 
@@ -53,10 +52,10 @@ pub struct EcMulGadget<F> {
     p_y_plus_r_y: AddWordsGadget<F, 2, false>,
 
     // Two Words (s_raw, scalar_s) that satisfies
-    // k * FR_N + scalar_s = s_raw
+    // k * Fr::MODULUS + scalar_s = s_raw
     // Used for proving correct modulo by Fr
     scalar_s_raw: Word<F>, // raw
-    scalar_s: Word<F>,     // mod by FR_N
+    scalar_s: Word<F>,     // mod by Fr::MODULUS
     n: Word<F>,            // modulus
     modword: ModGadget<F, false>,
 
@@ -120,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         });
         let s_is_fr_mod_minus_1 = cb.annotation("ecMul(s == Fr::MODULUS - 1)", |cb| {
             IsEqualGadget::construct(cb, scalar_s_native.expr(), {
-                let fr_mod_minus_1 = U256::from_little_endian(&FR_N)
+                let fr_mod_minus_1 = FR_MODULUS
                     .sub(&U256::one())
                     .to_scalar()
                     .expect("Fr::MODULUS - 1 fits in scalar field");
@@ -308,7 +307,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 col.assign(region, offset, region.keccak_rlc(&word_value.to_le_bytes()))?;
             }
 
-            let n = U256::from_little_endian(&FR_N);
+            let n = FR_MODULUS.clone();
             for (col, word_value) in [(&self.scalar_s_raw, aux_data.s_raw), (&self.n, n)] {
                 col.assign(region, offset, Some(word_value.to_le_bytes()))?;
             }
