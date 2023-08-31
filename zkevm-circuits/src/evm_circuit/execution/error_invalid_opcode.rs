@@ -71,9 +71,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{address, bytecode::Bytecode, Word};
+    use eth_types::{bytecode::Bytecode, Word};
     use lazy_static::lazy_static;
     use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
+
+    #[cfg(feature = "scroll")]
+    use eth_types::address;
 
     lazy_static! {
         static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [

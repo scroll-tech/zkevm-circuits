@@ -1,5 +1,5 @@
 use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
-use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToScalar, U256};
 use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -639,6 +639,15 @@ impl<F: Field> ModExpGasCost<F> {
         m_size: &U256,
         exponent: &[u8; MODEXP_SIZE_LIMIT],
     ) -> Result<u64, Error> {
+        let mut base_len = [0u8; 32];
+        base_len[(32 - SIZE_REPRESENT_BYTES)..]
+            .copy_from_slice(&b_size.to_be_bytes()[(32 - SIZE_REPRESENT_BYTES)..]);
+        let mut mod_len = [0u8; 32];
+        mod_len[(32 - SIZE_REPRESENT_BYTES)..]
+            .copy_from_slice(&m_size.to_be_bytes()[(32 - SIZE_REPRESENT_BYTES)..]);
+        let b_size = U256::from_big_endian(&base_len);
+        let m_size = U256::from_big_endian(&mod_len);
+
         self.max_length.assign(
             region,
             offset,
