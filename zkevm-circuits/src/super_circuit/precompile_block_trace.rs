@@ -864,3 +864,115 @@ pub(crate) fn block_precompile_invalid_ec_pairing() -> BlockTrace {
     .l2_trace()
     .clone()
 }
+
+#[cfg(feature = "scroll")]
+pub(crate) fn block_precompile_invalid_modexp() -> BlockTrace {
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+    let chain_id = *MOCK_CHAIN_ID;
+
+    let bytecode_modexp_oor_1 = PrecompileCallArgs {
+        name: "modexp length too large invalid",
+        setup_code: bytecode! {
+            // Base size
+            PUSH1(0x1)
+            PUSH1(0x00)
+            MSTORE
+            // Esize
+            PUSH1(0x1)
+            PUSH1(0x20)
+            MSTORE
+            // Msize
+            PUSH1(0x21)
+            PUSH1(0x40)
+            MSTORE
+            // B, E and M
+            PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000"))
+            PUSH1(0x60)
+            MSTORE
+        },
+        call_data_offset: 0x0.into(),
+        call_data_length: 0x63.into(),
+        ret_offset: 0x9f.into(),
+        ret_size: 0x01.into(),
+        address: PrecompileCalls::Modexp.address().to_word(),
+        gas: 100000.into(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::STATICCALL);
+
+    let bytecode_modexp_oor_2 = PrecompileCallArgs {
+        name: "modexp length too large invalid",
+        setup_code: bytecode! {
+            // Base size
+            PUSH1(0x21)
+            PUSH1(0x00)
+            MSTORE
+            // Esize
+            PUSH1(0x21)
+            PUSH1(0x20)
+            MSTORE
+            // Msize
+            PUSH1(0x21)
+            PUSH1(0x40)
+            MSTORE
+            // B, E and M
+            PUSH32(word!("0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed"))
+            PUSH1(0x60)
+            MSTORE
+            PUSH32(word!("0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2"))
+            PUSH1(0x80)
+            MSTORE
+            PUSH32(word!("0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa"))
+            PUSH1(0xa0)
+            MSTORE
+            PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000"))
+            PUSH1(0xc0)
+            MSTORE
+        },
+        call_data_offset: 0x0.into(),
+        call_data_length: 0xc3.into(),
+        ret_offset: 0xe0.into(),
+        ret_size: 0x21.into(),
+        address: PrecompileCalls::Modexp.address().to_word(),
+        gas: 1000.into(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::CALL);
+
+    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+
+    let addr_a = wallet_a.address();
+    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+    let addr_c = address!("0x000000000000000000000000000000000000CCCC");
+
+    // 3 accounts and 2 txs.
+    TestContext::<3, 2>::new(
+        Some(vec![Word::zero()]),
+        |accs| {
+            accs[0].address(addr_a).balance(Word::from(1u64 << 24));
+            accs[1]
+                .address(addr_b)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_modexp_oor_1);
+            accs[2]
+                .address(addr_c)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_modexp_oor_2);
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(wallet_a.clone())
+                .to(accs[1].address)
+                .gas(Word::from(1_000_000u64));
+            txs[1]
+                .from(wallet_a.clone())
+                .to(accs[2].address)
+                .gas(Word::from(1_000_000u64));
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .l2_trace()
+    .clone()
+}

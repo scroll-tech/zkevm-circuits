@@ -476,4 +476,20 @@ fn serial_test_super_circuit_precompile_invalid_ec_pairing() {
     );
 }
 
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_precompile_invalid_modexp() {
+    const MAX_TXS: usize = 2;
+    const MAX_CALLDATA: usize = 0xc6;
+    
+    let block = precompile_block_trace::block_precompile_invalid_modexp();
+    let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
+        block,
+        circuits_params,
+    );
+}
+
 
