@@ -1,10 +1,7 @@
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine},
-        pairing::Engine,
-    },
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -14,6 +11,7 @@ use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
+use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
     loader::halo2::{
@@ -22,11 +20,6 @@ use snark_verifier::{
     },
     pcs::kzg::{Bdfg21, Kzg},
 };
-use snark_verifier::{
-    loader::native::NativeLoader,
-    pcs::kzg::{KzgAccumulator, KzgSuccinctVerifyingKey},
-    util::arithmetic::fe_to_limbs,
-};
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier_sdk::{aggregate, flatten_accumulator};
 use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
@@ -34,8 +27,8 @@ use zkevm_circuits::util::Challenges;
 
 use crate::{
     batch::BatchHash,
-    constants::{ACC_LEN, BITS, DIGEST_LEN, LIMBS, MAX_AGG_SNARKS},
-    core::{assign_batch_hashes, extract_accumulators_and_proof},
+    constants::{ACC_LEN, DIGEST_LEN, MAX_AGG_SNARKS},
+    core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
     ConfigParams,
 };
@@ -94,33 +87,11 @@ impl AggregationCircuit {
 
         // extract the accumulators and proofs
         let svk = params.get_g()[0].into();
+
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
-        let (accumulator, as_proof) = extract_accumulators_and_proof(
-            params,
-            snarks_with_padding,
-            rng,
-            &params.g2(),
-            &params.s_g2(),
-        )?;
-        let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
-
-        // sanity check on the accumulator
-        {
-            let left = Bn256::pairing(&lhs, &params.g2());
-            let right = Bn256::pairing(&rhs, &params.s_g2());
-            log::trace!("aggregation circuit acc check: left {:?}", left);
-            log::trace!("aggregation circuit acc check: right {:?}", right);
-            if left != right {
-                return Err(snark_verifier::Error::AssertionFailure(format!(
-                    "accumulator check failed {left:?} {right:?}",
-                )));
-            }
-        }
-
-        let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
-            .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
-            .concat();
+        let (as_proof, acc_instances) =
+            extract_proof_and_instances_with_pairing_check(params, snarks_with_padding, rng)?;
 
         // extract batch's public input hash
         let public_input_hash = &batch_hash.instances_exclude_acc()[0];

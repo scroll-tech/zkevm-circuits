@@ -20,6 +20,7 @@ mod util;
 #[cfg(test)]
 mod tests;
 
+pub use self::core::extract_proof_and_instances_with_pairing_check;
 pub use aggregation::*;
 pub use batch::BatchHash;
 pub use chunk::ChunkHash;
