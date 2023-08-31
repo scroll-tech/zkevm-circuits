@@ -73,7 +73,8 @@ pub struct ChainConfig {
     /// Archimedes switch time (nil = no fork, 0 = already on)
     pub archimedes_block: Option<u64>,
     /// Shanghai switch time (nil = no fork, 0 = already on shanghai)
-    pub shanghai_block: Option<u64>,
+    /// Scroll EVM use the name `ShanghaiBlock` instead
+    pub shanghai_time: Option<u64>,
     /// TerminalTotalDifficulty is the amount of total difficulty reached by
     /// the network that triggers the consensus upgrade.
     pub terminal_total_difficulty: Option<u64>,
@@ -88,7 +89,7 @@ impl ChainConfig {
     pub fn shanghai() -> Self {
         Self {
             archimedes_block: None,
-            shanghai_block: Some(0),
+            shanghai_time: Some(0),
             terminal_total_difficulty: Some(0),
             terminal_total_difficulty_passed: true,
         }
@@ -120,7 +121,7 @@ pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
     } else {
         l2_config.chain_config = Some(ChainConfig {
             archimedes_block: Some(0),
-            shanghai_block: None,
+            shanghai_time: None,
             terminal_total_difficulty: None,
             terminal_total_difficulty_passed: false,
         });
