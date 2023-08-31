@@ -751,6 +751,9 @@ pub mod tests {
                 address: Word::from(0x2),
                 stack_value: vec![(
                     Word::from(0x20),
+                    #[cfg(feature = "scroll")]
+                    Word::zero(),
+                    #[cfg(not(feature = "scroll"))]
                     word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
                 )],
                 ..Default::default()
@@ -769,6 +772,9 @@ pub mod tests {
                 address: Word::from(0x3),
                 stack_value: vec![(
                     Word::from(0x20),
+                    #[cfg(feature = "scroll")]
+                    Word::zero(),
+                    #[cfg(not(feature = "scroll"))]
                     word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
                 )],
                 ..Default::default()
@@ -958,10 +964,16 @@ pub mod tests {
                 stack_value: vec![
                     (
                         Word::from(0x20),
+                        #[cfg(feature = "scroll")]
+                        word!("3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e13"),
+                        #[cfg(not(feature = "scroll"))]
                         word!("d282e6ad7f520e511f6c3e2b8c68059b9442be0454267ce079217e1319cde05b"),
                     ),
                     (
                         Word::from(0x0),
+                        #[cfg(feature = "scroll")]
+                        word!("0000000048c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f"),
+                        #[cfg(not(feature = "scroll"))]
                         word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
                     ),
                 ],
