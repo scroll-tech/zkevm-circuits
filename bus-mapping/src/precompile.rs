@@ -207,10 +207,15 @@ pub struct ModExpAuxData {
 }
 
 impl ModExpAuxData {
+    /// If mem is smaller than U256, left pad zero
+    /// Or else, keep the least 32bytes.
     fn parse_memory_to_value(mem: &[u8]) -> [u8; MODEXP_SIZE_LIMIT] {
         let mut value_bytes = [0u8; MODEXP_SIZE_LIMIT];
         if !mem.is_empty() {
-            value_bytes.as_mut_slice()[(MODEXP_SIZE_LIMIT - mem.len())..].copy_from_slice(mem);
+            let copy_len = mem.len().min(MODEXP_SIZE_LIMIT);
+            let src_offset = mem.len() - copy_len;
+            let dst_offset = MODEXP_SIZE_LIMIT - copy_len;
+            value_bytes.as_mut_slice()[dst_offset..].copy_from_slice(&mem[src_offset..]);
         }
         value_bytes
     }
@@ -247,14 +252,22 @@ impl ModExpAuxData {
             0
         };
 
-        mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
-        let mut cur_input_begin = &mem_input[96..];
+        let (base, exp, modulus) = if base_mem_len == 0 && modulus_mem_len == 0 {
+            // special case
+            ([0u8; 32], [0u8; 32], [0u8; 32])
+        } else {
+            // In non scroll mode, this can be dangerous.
+            // If base and mod are all 0, exp can be very huge.
+            mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
+            let mut cur_input_begin = &mem_input[96..];
 
-        let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
-        cur_input_begin = &cur_input_begin[base_mem_len..];
-        let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
-        cur_input_begin = &cur_input_begin[exp_mem_len..];
-        let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
+            let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
+            cur_input_begin = &cur_input_begin[base_mem_len..];
+            let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
+            cur_input_begin = &cur_input_begin[exp_mem_len..];
+            let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
+            (base, exp, modulus)
+        };
         let output_len = output.len();
         let output = Self::parse_memory_to_value(&output);
 
