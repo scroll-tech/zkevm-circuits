@@ -2,7 +2,7 @@ use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::{
-        bn256::{Bn256, Fr, G1Affine, G2Affine},
+        bn256::{Bn256, Fq, Fr, G1Affine, G2Affine},
         pairing::Engine,
     },
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
@@ -15,6 +15,7 @@ use snark_verifier::{
         kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
     },
+    util::arithmetic::fe_to_limbs,
     verifier::PlonkVerifier,
     Error,
 };
@@ -37,7 +38,7 @@ use crate::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
-    AggregationConfig, RlcConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX,
+    AggregationConfig, RlcConfig, BITS, CHUNK_DATA_HASH_INDEX, LIMBS, POST_STATE_ROOT_INDEX,
     PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
@@ -103,6 +104,46 @@ pub(crate) fn extract_accumulators_and_proof(
             rng,
         )?;
     Ok((accumulator, transcript_write.finalize()))
+}
+
+/// Subroutine for the witness generations.
+/// Extract proof from previous snarks and check pairing for accumulation.
+pub fn extract_proof_and_instances_with_pairing_check(
+    params: &ParamsKZG<Bn256>,
+    snarks: &[Snark],
+    rng: impl Rng + Send,
+) -> Result<(Vec<u8>, Vec<Fr>), snark_verifier::Error> {
+    // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
+    let (accumulator, as_proof) =
+        extract_accumulators_and_proof(params, snarks, rng, &params.g2(), &params.s_g2())?;
+
+    // the instance for the outer circuit is
+    // - new accumulator, consists of 12 elements
+    // - inner circuit's instance, flattened (old accumulator is stripped out if exists)
+    //
+    // it is important that new accumulator is the first 12 elements
+    // as specified in CircuitExt::accumulator_indices()
+    let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
+
+    // sanity check on the accumulator
+    {
+        let left = Bn256::pairing(&lhs, &params.g2());
+        let right = Bn256::pairing(&rhs, &params.s_g2());
+        log::trace!("circuit acc check: left {:?}", left);
+        log::trace!("circuit acc check: right {:?}", right);
+
+        if left != right {
+            return Err(snark_verifier::Error::AssertionFailure(format!(
+                "accumulator check failed {left:?} {right:?}",
+            )));
+        }
+    }
+
+    let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+        .map(fe_to_limbs::<Fq, Fr, { LIMBS }, { BITS }>)
+        .concat();
+
+    Ok((as_proof, acc_instances))
 }
 
 #[derive(Default)]

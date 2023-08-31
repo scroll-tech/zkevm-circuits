@@ -29,19 +29,24 @@ pub(crate) fn execute_precompiled(
     );
     let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
-            match PrecompileCalls::from(address.0[19]) {
-                // FIXME: override the behavior of invalid input
-                PrecompileCalls::Modexp => {
-                    let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
-                    if input_valid {
-                        // detect some edge cases like modulus = 0
-                        assert_eq!(modulus_len.as_usize(), return_value.len());
-                        (return_value, gas_cost, false, true) // no oog error
-                    } else {
-                        (vec![], gas, false, false)
+            if cfg!(feature = "scroll") {
+                match PrecompileCalls::from(address.0[19]) {
+                    // Revm behavior is different from scroll evm,
+                    // so we need to override the behavior of invalid input
+                    PrecompileCalls::Modexp => {
+                        let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
+                        if input_valid {
+                            // detect some edge cases like modulus = 0
+                            assert_eq!(modulus_len.as_usize(), return_value.len());
+                            (return_value, gas_cost, false, true) // no oog error
+                        } else {
+                            (vec![], gas, false, false)
+                        }
                     }
+                    _ => (return_value, gas_cost, false, true),
                 }
-                _ => (return_value, gas_cost, false, true),
+            } else {
+                (return_value, gas_cost, false, true)
             }
         }
         Err(err) => match err {
@@ -222,10 +227,15 @@ pub struct ModExpAuxData {
 }
 
 impl ModExpAuxData {
+    /// If mem is smaller than U256, left pad zero
+    /// Or else, keep the least 32bytes.
     fn parse_memory_to_value(mem: &[u8]) -> [u8; MODEXP_SIZE_LIMIT] {
         let mut value_bytes = [0u8; MODEXP_SIZE_LIMIT];
         if !mem.is_empty() {
-            value_bytes.as_mut_slice()[(MODEXP_SIZE_LIMIT - mem.len())..].copy_from_slice(mem);
+            let copy_len = mem.len().min(MODEXP_SIZE_LIMIT);
+            let src_offset = mem.len() - copy_len;
+            let dst_offset = MODEXP_SIZE_LIMIT - copy_len;
+            value_bytes.as_mut_slice()[dst_offset..].copy_from_slice(&mem[src_offset..]);
         }
         value_bytes
     }
@@ -242,7 +252,7 @@ impl ModExpAuxData {
         let input_valid = base_len <= limit && exp_len <= limit && modulus_len <= limit;
         log::debug!("modexp base_len {base_len} exp_len {exp_len} modulus_len {modulus_len}");
         if !input_valid {
-            log::error!("modexp input input_valid {input_valid}");
+            log::warn!("modexp input input_valid {input_valid}");
         }
         (input_valid, [base_len, exp_len, modulus_len])
     }
@@ -262,14 +272,22 @@ impl ModExpAuxData {
             0
         };
 
-        mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
-        let mut cur_input_begin = &mem_input[96..];
+        let (base, exp, modulus) = if base_mem_len == 0 && modulus_mem_len == 0 {
+            // special case
+            ([0u8; 32], [0u8; 32], [0u8; 32])
+        } else {
+            // In non scroll mode, this can be dangerous.
+            // If base and mod are all 0, exp can be very huge.
+            mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
+            let mut cur_input_begin = &mem_input[96..];
 
-        let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
-        cur_input_begin = &cur_input_begin[base_mem_len..];
-        let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
-        cur_input_begin = &cur_input_begin[exp_mem_len..];
-        let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
+            let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
+            cur_input_begin = &cur_input_begin[base_mem_len..];
+            let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
+            cur_input_begin = &cur_input_begin[exp_mem_len..];
+            let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
+            (base, exp, modulus)
+        };
         let output_len = output.len();
         let output = Self::parse_memory_to_value(&output);
 
