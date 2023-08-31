@@ -131,6 +131,7 @@ fn run_size_check<
     assert_eq!(prover1.permutation(), prover2.permutation());
 }
 
+#[cfg(feature = "scroll")]
 #[test]
 fn variadic_size_check() {
     const MAX_TXS: usize = 8;
