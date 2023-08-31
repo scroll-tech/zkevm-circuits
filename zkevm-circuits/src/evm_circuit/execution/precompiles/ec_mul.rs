@@ -24,10 +24,12 @@ use crate::{
 };
 
 lazy_static::lazy_static! {
+    // r = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
     static ref FR_MODULUS: U256 = {
         U256::from_dec_str("21888242871839275222246405745257275088548364400416034343698204186575808495617")
             .expect("Fr::MODULUS")
     };
+    // q = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47
     static ref FQ_MODULUS: U256 = {
         U256::from_dec_str("21888242871839275222246405745257275088696311157297823662689037894645226208583")
             .expect("Fq::MODULUS")
@@ -56,7 +58,7 @@ pub struct EcMulGadget<F> {
     // Used for proving correct modulo by Fr
     scalar_s_raw: Word<F>, // raw
     scalar_s: Word<F>,     // mod by Fr::MODULUS
-    n: Word<F>,            // modulus
+    fr_modulus: Word<F>,   // Fr::MODULUS
     modword: ModGadget<F, false>,
 
     is_success: Cell<F>,
@@ -82,7 +84,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_cell_phase2(),
         );
 
-        let (scalar_s_raw, scalar_s, n) = (
+        let (scalar_s_raw, scalar_s, fr_modulus) = (
             cb.query_keccak_rlc(),
             cb.query_keccak_rlc(),
             cb.query_keccak_rlc(),
@@ -104,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             256.expr(),
         );
         // k * n + scalar_s = s_raw
-        let modword = ModGadget::construct(cb, [&scalar_s_raw, &n, &scalar_s]);
+        let modword = ModGadget::construct(cb, [&scalar_s_raw, &fr_modulus, &scalar_s]);
 
         // Conditions for dealing with infinity/empty points and zero/empty scalar
         let p_x_is_zero = cb.annotation("ecMul(P_x)", |cb| {
@@ -266,7 +268,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
 
             scalar_s_raw,
             scalar_s,
-            n,
+            fr_modulus,
             modword,
 
             is_success,
@@ -307,8 +309,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 col.assign(region, offset, region.keccak_rlc(&word_value.to_le_bytes()))?;
             }
 
-            let n = FR_MODULUS.clone();
-            for (col, word_value) in [(&self.scalar_s_raw, aux_data.s_raw), (&self.n, n)] {
+            for (col, word_value) in [
+                (&self.scalar_s_raw, aux_data.s_raw),
+                (&self.fr_modulus, *FR_MODULUS),
+            ] {
                 col.assign(region, offset, Some(word_value.to_le_bytes()))?;
             }
             self.scalar_s
@@ -325,7 +329,8 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                     .s
                     .to_scalar()
                     .expect("ecMul(s) fits in scalar field"),
-                n.sub(&U256::one())
+                FR_MODULUS
+                    .sub(&U256::one())
                     .to_scalar()
                     .expect("Fr::MODULUS - 1 fits in scalar field"),
             )?;
@@ -342,9 +347,9 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             self.fq_modulus
                 .assign(region, offset, Some(FQ_MODULUS.to_le_bytes()))?;
 
-            let (k, _) = aux_data.s_raw.div_mod(n);
+            let (k, _) = aux_data.s_raw.div_mod(*FR_MODULUS);
             self.modword
-                .assign(region, offset, aux_data.s_raw, n, aux_data.s, k)?;
+                .assign(region, offset, aux_data.s_raw, *FR_MODULUS, aux_data.s, k)?;
         } else {
             log::error!("unexpected aux_data {:?} for ecMul", step.aux_data);
             return Err(Error::Synthesis);
