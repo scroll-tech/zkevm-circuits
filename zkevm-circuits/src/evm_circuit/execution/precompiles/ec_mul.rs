@@ -155,35 +155,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             sum::expr(fq_modulus_hi.to_le_bytes()),
         );
 
-        cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
-            cb.require_equal(
-                "if P == 0 || s == 0, then R_x == 0",
-                point_r_x_rlc.expr(),
-                0.expr(),
-            );
-            cb.require_equal(
-                "if P == 0 || s == 0, then R_y == 0",
-                point_r_y_rlc.expr(),
-                0.expr(),
-            );
-        });
-
-        // If s == Fr::MODULUS - 1 then P == -R:
-        // - P_x == R_x
-        // - P_y + R_y == Fq::MODULUS
-        let p_y_plus_r_y = cb.condition(s_is_fr_mod_minus_1.expr(), |cb| {
-            cb.require_equal(
-                "ecMul(s == Fr::MODULUS - 1): P_x == R_x",
-                point_p_x_rlc.expr(),
-                point_r_x_rlc.expr(),
-            );
-            AddWordsGadget::construct(
-                cb,
-                [point_p_y_raw.clone(), point_r_y_raw.clone()],
-                fq_modulus.clone(),
-            )
-        });
-
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
@@ -231,6 +202,35 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.require_zero("R_x == 0", point_r_x_rlc.expr());
             cb.require_zero("R_y == 0", point_r_y_rlc.expr());
         });
+
+        cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
+            cb.require_zero(
+                "if P == (0, 0) || s == 0, then R_x == 0",
+                point_r_x_rlc.expr(),
+            );
+            cb.require_zero(
+                "if P == (0, 0) || s == 0, then R_y == 0",
+                point_r_y_rlc.expr(),
+            );
+        });
+        // If s == Fr::MODULUS - 1 then P == -R:
+        // - P_x == R_x
+        // - P_y + R_y == Fq::MODULUS
+        let p_y_plus_r_y = cb.condition(
+            and::expr([is_success.expr(), s_is_fr_mod_minus_1.expr()]),
+            |cb| {
+                cb.require_equal(
+                    "ecMul(s == Fr::MODULUS - 1): P_x == R_x",
+                    point_p_x_rlc.expr(),
+                    point_r_x_rlc.expr(),
+                );
+                AddWordsGadget::construct(
+                    cb,
+                    [point_p_y_raw.clone(), point_r_y_raw.clone()],
+                    fq_modulus.clone(),
+                )
+            },
+        );
 
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
@@ -623,6 +623,32 @@ mod test {
                         MSTORE
                         // p_y
                         PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                        PUSH1(0x20)
+                        MSTORE
+                        // s
+                        PUSH32(word!("0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"))
+                        PUSH1(0x40)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x60.into(),
+                    ret_offset: 0x60.into(),
+                    ret_size: 0x40.into(),
+                    value: 1.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecMul (invalid input): s == Fr::MODULUS - 1, but P not on curve",
+                    // P = (3, 4), i.e. not on curve
+                    // s = Fr::MODULUS - 1
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x03)
+                        PUSH1(0x00)
+                        MSTORE
+                        // p_y
+                        PUSH1(0x04)
                         PUSH1(0x20)
                         MSTORE
                         // s
