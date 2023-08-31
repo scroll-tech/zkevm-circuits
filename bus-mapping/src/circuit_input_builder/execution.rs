@@ -188,6 +188,16 @@ impl ExecState {
             false
         }
     }
+
+    /// Returns `true` if the `ExecState` is one of the opcodes CALL, CALLCODE, STATICCALL or
+    /// DELEGATECALL.
+    pub fn is_call(&self) -> bool {
+        if let ExecState::Op(op) = self {
+            op.is_call_with_value() || op.is_call_without_value()
+        } else {
+            false
+        }
+    }
 }
 
 /// Defines the various source/destination types for a copy event.

@@ -203,7 +203,7 @@ impl Opcode for ReturnRevert {
             }
         }
 
-        state.handle_return(&mut exec_step, steps, false)?;
+        state.handle_return(&mut [&mut exec_step], steps, false)?;
         Ok(vec![exec_step])
     }
 }
