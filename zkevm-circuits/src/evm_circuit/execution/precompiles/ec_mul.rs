@@ -1,6 +1,8 @@
+use std::ops::{Add, Sub};
+
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, or, select, Expr};
+use gadgets::util::{and, not, or, select, split_u256, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -13,7 +15,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{IsZeroGadget, ModGadget},
+            math_gadget::{AddWordsGadget, IsEqualGadget, IsZeroGadget, ModGadget},
             rlc, CachedRegion, Cell, Word,
         },
     },
@@ -27,6 +29,12 @@ const FR_N: [u8; 32] = [
     0x5D, 0x58, 0x81, 0x81, 0xB6, 0x45, 0x50, 0xB8, 0x29, 0xA0, 0x31, 0xE1, 0x72, 0x4E, 0x64, 0x30,
 ];
 
+lazy_static::lazy_static! {
+    static ref FQ_MODULUS: U256 = {
+        U256::from_dec_str("21888242871839275222246405745257275088696311157297823662689037894645226208583").expect("Fq::MODULUS")
+    };
+}
+
 #[derive(Clone, Debug)]
 pub struct EcMulGadget<F> {
     point_p_x_rlc: Cell<F>,
@@ -38,6 +46,11 @@ pub struct EcMulGadget<F> {
     p_x_is_zero: IsZeroGadget<F>,
     p_y_is_zero: IsZeroGadget<F>,
     s_is_zero: IsZeroGadget<F>,
+    s_is_fr_mod_minus_1: IsEqualGadget<F>,
+    point_p_y_raw: Word<F>,
+    point_r_y_raw: Word<F>,
+    fq_modulus: Word<F>,
+    p_y_plus_r_y: AddWordsGadget<F, 2, false>,
 
     // Two Words (s_raw, scalar_s) that satisfies
     // k * FR_N + scalar_s = s_raw
@@ -75,6 +88,22 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_keccak_rlc(),
             cb.query_keccak_rlc(),
         );
+        cb.require_equal(
+            "Scalar s (raw 32-bytes) equality",
+            scalar_s_raw_rlc.expr(),
+            scalar_s_raw.expr(),
+        );
+
+        // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
+        // of that value. Instead we use the native value.
+        let scalar_s_native = rlc::expr(
+            &scalar_s
+                .cells
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<Expression<F>>>(),
+            256.expr(),
+        );
         // k * n + scalar_s = s_raw
         let modword = ModGadget::construct(cb, [&scalar_s_raw, &n, &scalar_s]);
 
@@ -86,9 +115,45 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             IsZeroGadget::construct(cb, point_p_y_rlc.expr())
         });
         let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
-        let s_is_zero = cb.annotation("ecMul(P_y)", |cb| {
+        let s_is_zero = cb.annotation("ecMul(s == 0)", |cb| {
             IsZeroGadget::construct(cb, scalar_s.expr())
         });
+        let s_is_fr_mod_minus_1 = cb.annotation("ecMul(s == Fr::MODULUS - 1)", |cb| {
+            IsEqualGadget::construct(cb, scalar_s_native.expr(), {
+                let fr_mod_minus_1 = U256::from_little_endian(&FR_N)
+                    .sub(&U256::one())
+                    .to_scalar()
+                    .expect("Fr::MODULUS - 1 fits in scalar field");
+                Expression::Constant(fr_mod_minus_1)
+            })
+        });
+        let (point_p_y_raw, point_r_y_raw, fq_modulus) = (
+            cb.query_keccak_rlc(),
+            cb.query_keccak_rlc(),
+            cb.query_keccak_rlc(),
+        );
+        cb.require_equal(
+            "ecMul(P_y): equality",
+            point_p_y_raw.expr(),
+            point_p_y_rlc.expr(),
+        );
+        cb.require_equal(
+            "ecMul(R_y): equality",
+            point_r_y_raw.expr(),
+            point_r_y_rlc.expr(),
+        );
+
+        let (fq_modulus_lo, fq_modulus_hi) = split_u256(&FQ_MODULUS);
+        cb.require_equal(
+            "fq_modulus(lo) equality",
+            sum::expr(&fq_modulus.cells[0x00..0x10]),
+            sum::expr(fq_modulus_lo.to_le_bytes()),
+        );
+        cb.require_equal(
+            "fq_modulus(hi) equality",
+            sum::expr(&fq_modulus.cells[0x10..0x20]),
+            sum::expr(fq_modulus_hi.to_le_bytes()),
+        );
 
         cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
             cb.require_equal(
@@ -103,12 +168,21 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             );
         });
 
-        // Make sure the correct modulo test is done on actual lookup inputs
-        cb.require_equal(
-            "Scalar s (raw 32-bytes) equality",
-            scalar_s_raw_rlc.expr(),
-            scalar_s_raw.expr(),
-        );
+        // If s == Fr::MODULUS - 1 then P == -R:
+        // - P_x == R_x
+        // - P_y + R_y == Fq::MODULUS
+        let p_y_plus_r_y = cb.condition(s_is_fr_mod_minus_1.expr(), |cb| {
+            cb.require_equal(
+                "ecMul(s == Fr::MODULUS - 1): P_x == R_x",
+                point_p_x_rlc.expr(),
+                point_r_x_rlc.expr(),
+            );
+            AddWordsGadget::construct(
+                cb,
+                [point_p_y_raw.clone(), point_r_y_raw.clone()],
+                fq_modulus.clone(),
+            )
+        });
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -130,23 +204,22 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         );
 
         cb.condition(
-            not::expr(or::expr([p_is_zero.expr(), s_is_zero.expr()])),
+            // skip ECC table lookup if:
+            // - P == (0, 0)
+            // - s == Fr::zero()
+            // - s == Fr::MODULUS - 1
+            not::expr(or::expr([
+                p_is_zero.expr(),
+                s_is_zero.expr(),
+                s_is_fr_mod_minus_1.expr(),
+            ])),
             |cb| {
                 cb.ecc_table_lookup(
                     u64::from(PrecompileCalls::Bn128Mul).expr(),
                     is_success.expr(),
                     point_p_x_rlc.expr(),
                     point_p_y_rlc.expr(),
-                    // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
-                    // of that value. Instead we use the native value.
-                    rlc::expr(
-                        &scalar_s
-                            .cells
-                            .iter()
-                            .map(Expr::expr)
-                            .collect::<Vec<Expression<F>>>(),
-                        256.expr(),
-                    ),
+                    scalar_s_native.expr(),
                     0.expr(),
                     0.expr(),
                     point_r_x_rlc.expr(),
@@ -186,6 +259,11 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             p_x_is_zero,
             p_y_is_zero,
             s_is_zero,
+            s_is_fr_mod_minus_1,
+            point_p_y_raw,
+            point_r_y_raw,
+            fq_modulus,
+            p_y_plus_r_y,
 
             scalar_s_raw,
             scalar_s,
@@ -241,6 +319,29 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 offset,
                 region.keccak_rlc(&aux_data.s.to_le_bytes()),
             )?;
+            self.s_is_fr_mod_minus_1.assign(
+                region,
+                offset,
+                aux_data
+                    .s
+                    .to_scalar()
+                    .expect("ecMul(s) fits in scalar field"),
+                n.sub(&U256::one())
+                    .to_scalar()
+                    .expect("Fr::MODULUS - 1 fits in scalar field"),
+            )?;
+            self.point_p_y_raw
+                .assign(region, offset, Some(aux_data.p_y.to_le_bytes()))?;
+            self.point_r_y_raw
+                .assign(region, offset, Some(aux_data.r_y.to_le_bytes()))?;
+            self.p_y_plus_r_y.assign(
+                region,
+                offset,
+                [aux_data.p_y, aux_data.r_y],
+                aux_data.p_y.add(&aux_data.r_y),
+            )?;
+            self.fq_modulus
+                .assign(region, offset, Some(FQ_MODULUS.to_le_bytes()))?;
 
             let (k, _) = aux_data.s_raw.div_mod(n);
             self.modword
@@ -331,7 +432,6 @@ mod test {
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
                 },
-
                 PrecompileCallArgs {
                     name: "ecMul (invalid input: point not on curve)",
                     // P = (2, 3)
@@ -359,7 +459,6 @@ mod test {
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
                 },
-
                 PrecompileCallArgs {
                     name: "ecMul (valid input < 96 bytes)",
                     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
@@ -382,7 +481,6 @@ mod test {
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
                 },
-
                 PrecompileCallArgs {
                     name: "ecMul (should succeed on empty inputs)",
                     setup_code: bytecode! {},
@@ -393,7 +491,6 @@ mod test {
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
                 },
-
                 PrecompileCallArgs {
                     name: "ecMul (valid inputs > 96 bytes)",
                     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
@@ -430,7 +527,6 @@ mod test {
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
                 },
-
                 PrecompileCallArgs {
                     name: "ecMul (invalid input: must mod p to be valid)",
                     // P = (p + 1, p + 2)
@@ -458,7 +554,6 @@ mod test {
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
                 },
-
                 PrecompileCallArgs {
                     name: "ecMul (valid: scalar larger than scalar field order n but less than base field p)",
                     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
@@ -490,7 +585,6 @@ mod test {
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
                 },
-
                 PrecompileCallArgs {
                     name: "ecMul (valid: scalar larger than base field order)",
                     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
@@ -517,7 +611,33 @@ mod test {
                     ret_size: 0x40.into(),
                     address: PrecompileCalls::Bn128Mul.address().to_word(),
                     ..Default::default()
-                }
+                },
+                PrecompileCallArgs {
+                    name: "ecMul (valid input): s == Fr::MODULUS - 1, i.e. P == -R",
+                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                    // s = Fr::MODULUS - 1
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x02)
+                        PUSH1(0x00)
+                        MSTORE
+                        // p_y
+                        PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                        PUSH1(0x20)
+                        MSTORE
+                        // s
+                        PUSH32(word!("0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"))
+                        PUSH1(0x40)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x60.into(),
+                    ret_offset: 0x60.into(),
+                    ret_size: 0x40.into(),
+                    value: 1.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    ..Default::default()
+                },
             ]
         };
 
