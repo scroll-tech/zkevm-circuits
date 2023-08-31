@@ -1123,20 +1123,6 @@ impl<'a> CircuitInputStateRef<'a> {
         // handled differently as the ExecSteps associated with those calls haven't yet been pushed
         // to the tx's steps.
 
-        // Whether the `exec_step` represents a `BeginTx` (start of a tx) where the callee address
-        // is one of the precompiled contracts.
-        let is_begin_tx_precompile_call =
-            matches!(current_exec_steps[0].exec_state, ExecState::BeginTx)
-                && (current_exec_steps[0].call_index < self.tx.calls.len())
-                && is_precompiled(&self.tx.calls[current_exec_steps[0].call_index].address);
-
-        // Whether the `exec_step` represents a `Precompile` state, done via a `CALLOP` step
-        // preceding it.
-        let is_other_precompile_call_failure = current_exec_steps[0].exec_state.is_call()
-            && current_exec_steps.len() > 1
-            && (current_exec_steps[1].is_precompiled()
-                || current_exec_steps[1].is_precompile_oog_err());
-
         let reversion_group = self
             .tx_ctx
             .reversion_groups
@@ -1153,13 +1139,14 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                if is_begin_tx_precompile_call || is_other_precompile_call_failure {
-                    current_exec_steps[0].bus_mapping_instance.push(rev_op_ref);
+                let step: &mut ExecStep = if step_index >= self.tx.steps_mut().len() {
+                    // the `current_exec_steps` will be appended after self.tx.steps
+                    // So here we do an index-mapping.
+                    current_exec_steps[step_index - self.tx.steps_mut().len()]
                 } else {
-                    self.tx.steps_mut()[step_index]
-                        .bus_mapping_instance
-                        .push(rev_op_ref);
-                }
+                    &mut self.tx.steps_mut()[step_index]
+                };
+                step.bus_mapping_instance.push(rev_op_ref);
             }
         }
 
@@ -1199,14 +1186,17 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
         if need_restore {
-            if (current_exec_steps.len() > 1)
-                && (current_exec_steps[1].is_precompiled()
-                    || current_exec_steps[1].is_precompile_oog_err())
-            {
-                self.handle_restore_context(current_exec_steps[1], geth_steps)?;
-            } else {
-                self.handle_restore_context(current_exec_steps[0], geth_steps)?;
+            // only precompile needs more than 1 current_exec_steps
+            if current_exec_steps.len() > 1 {
+                debug_assert!(
+                    current_exec_steps[1].is_precompiled()
+                        || current_exec_steps[1].is_precompile_oog_err()
+                );
             }
+            self.handle_restore_context(
+                current_exec_steps[current_exec_steps.len() - 1],
+                geth_steps,
+            )?;
         }
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
