@@ -4,7 +4,7 @@ use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
 use strum::EnumIter;
 
-use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
+use crate::circuit_input_builder::{EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP};
 
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
@@ -37,7 +37,7 @@ pub(crate) fn execute_precompiled(
                     | PrecompileCalls::Sha256
                     | PrecompileCalls::Ripemd160 => (vec![], gas, false, false),
                     PrecompileCalls::Bn128Pairing => {
-                        if input.len() > 4 * 192 {
+                        if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
                             (vec![], gas, false, false)
                         } else {
                             (return_value, gas_cost, false, true)

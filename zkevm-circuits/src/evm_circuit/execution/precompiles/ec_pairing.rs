@@ -564,6 +564,18 @@ mod test {
                     address: PrecompileCalls::Bn128Pairing.address().to_word(),
                     ..Default::default()
                 },
+                #[cfg(feature = "scroll")]
+                PrecompileCallArgs {
+                    name: "ecPairing (invalid): all zero bytes, len(input) == 5 * 192",
+                    setup_code: bytecode! {},
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x3C0.into(),
+                    ret_offset: 0x3C0.into(),
+                    ret_size: 0x20.into(),
+                    value: 1.into(),
+                    address: PrecompileCalls::Bn128Pairing.address().to_word(),
+                    ..Default::default()
+                },
                 PrecompileCallArgs {
                     name: "ecPairing (pairing true): 2 pairs",
                     setup_code: bytecode! {
@@ -785,6 +797,7 @@ mod test {
                     address: PrecompileCalls::Bn128Pairing.address().to_word(),
                     ..Default::default()
                 },
+                #[cfg(feature = "scroll")]
                 PrecompileCallArgs {
                     name: "ecPairing (invalid): len(input) > 768",
                     setup_code: bytecode! {},
