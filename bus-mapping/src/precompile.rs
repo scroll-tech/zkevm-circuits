@@ -28,22 +28,7 @@ pub(crate) fn execute_precompiled(
         hex::encode(input)
     );
     let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
-        Ok((gas_cost, return_value)) => {
-            match PrecompileCalls::from(address.0[19]) {
-                // FIXME: override the behavior of invalid input
-                PrecompileCalls::Modexp => {
-                    let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
-                    if input_valid {
-                        // detect some edge cases like modulus = 0
-                        assert_eq!(modulus_len.as_usize(), return_value.len());
-                        (return_value, gas_cost, false, true) // no oog error
-                    } else {
-                        (vec![], gas, false, false)
-                    }
-                }
-                _ => (return_value, gas_cost, false, true),
-            }
-        }
+        Ok((gas_cost, return_value)) => (return_value, gas_cost, false, true),
         Err(err) => match err {
             PrecompileError::OutOfGas => (vec![], gas, true, false),
             _ => (vec![], gas, false, false),
