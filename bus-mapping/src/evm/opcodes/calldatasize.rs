@@ -24,7 +24,7 @@ impl Opcode for Calldatasize {
             state.call()?.call_id,
             CallContextField::CallDataLength,
             value,
-        );
+        )?;
 
         state.stack_write(
             &mut exec_step,

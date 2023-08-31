@@ -235,7 +235,7 @@ For the EVM Circuit, there are internal and external lookup tables. We summarize
 |BlockTable|tag, index, value|
 |CopyTable|is_first, src_id, src_tag, dst_id, dst_tag, src_addr, src_addr_end, dst_addr, length, rlc_acc, rw_counter, rw_inc|
 |KeccakTable|is_enabled (=1), input_rlc, input_len, output_rlc|
-|ExpTable|is_step (=1), identifier, is_last, base_limbs[0], base_limbs[1], base_limbs[2], base_limbs[3], exp_lo_hi[0], exp_lo_hi[1], exponentiation_lo_hi[0],  exponentiation_lo_hi[1]|
+|ExpTable|q_enable (=1), is_step (=1), base_limbs[0], base_limbs[1], base_limbs[2], base_limbs[3], exponent_lo_hi[0], exponent_lo_hi[1], exponentiation_lo_hi[0],  exponentiation_lo_hi[1]|
 |SigTable|msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr, is_valid|
 
 

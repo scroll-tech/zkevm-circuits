@@ -1,6 +1,6 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use gadgets::util::Expr;
+use gadgets::util::{not, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -26,7 +26,6 @@ pub struct EcAddGadget<F> {
     point_q_y_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
-    gas_cost: Cell<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -59,12 +58,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
         );
-        let gas_cost = cb.query_cell();
-        cb.require_equal(
-            "ecAdd: gas cost",
-            gas_cost.expr(),
-            GasCost::PRECOMPILE_BN256ADD.expr(),
-        );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -78,23 +71,33 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             ]
             .map(|tag| cb.call_context(None, tag));
 
+        // all gas sent to this call will be consumed if `is_success == false`.
+        let gas_cost = select::expr(
+            is_success.expr(),
+            GasCost::PRECOMPILE_BN256ADD.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
             callee_address.expr(),
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        cb.condition(is_success.expr(), |cb| {
-            cb.ecc_table_lookup(
-                u64::from(PrecompileCalls::Bn128Add).expr(),
-                point_p_x_rlc.expr(),
-                point_p_y_rlc.expr(),
-                point_q_x_rlc.expr(),
-                point_q_y_rlc.expr(),
-                0.expr(), // input_rlc
-                point_r_x_rlc.expr(),
-                point_r_y_rlc.expr(),
-            );
+        cb.ecc_table_lookup(
+            u64::from(PrecompileCalls::Bn128Add).expr(),
+            is_success.expr(),
+            point_p_x_rlc.expr(),
+            point_p_y_rlc.expr(),
+            point_q_x_rlc.expr(),
+            point_q_y_rlc.expr(),
+            0.expr(), // input_rlc
+            point_r_x_rlc.expr(),
+            point_r_y_rlc.expr(),
+        );
+        cb.condition(not::expr(is_success.expr()), |cb| {
+            cb.require_zero("R_x == 0", point_r_x_rlc.expr());
+            cb.require_zero("R_y == 0", point_r_y_rlc.expr());
         });
 
         let restore_context = RestoreContextGadget::construct2(
@@ -102,8 +105,8 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             is_success.expr(),
             gas_cost.expr(),
             0.expr(),
-            0x00.expr(), // ReturnDataOffset
-            0x40.expr(), // ReturnDataLength
+            0x00.expr(),                                               // ReturnDataOffset
+            select::expr(is_success.expr(), 0x40.expr(), 0x00.expr()), // ReturnDataLength
             0.expr(),
             0.expr(),
         );
@@ -115,7 +118,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_q_y_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
-            gas_cost,
 
             is_success,
             callee_address,
@@ -156,11 +158,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             // FIXME: when we handle invalid inputs (and hence failures in the precompile calls),
             // this will be assigned either fixed gas cost (in case of success) or the
             // entire gas passed to the precompile call (in case of failure).
-            self.gas_cost.assign(
-                region,
-                offset,
-                Value::known(F::from(GasCost::PRECOMPILE_BN256ADD.0)),
-            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecAdd", step.aux_data);
             return Err(Error::Synthesis);
@@ -275,6 +272,7 @@ mod test {
                     call_data_length: 0x80.into(),
                     ret_offset: 0x80.into(),
                     ret_size: 0x40.into(),
+                    gas: 1000.into(),
                     address: PrecompileCalls::Bn128Add.address().to_word(),
                     ..Default::default()
                 },
@@ -488,6 +486,42 @@ mod test {
                     address: PrecompileCalls::Bn128Add.address().to_word(),
                     ..Default::default()
                 },
+
+            ]
+        };
+
+        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "ecAdd OOG (valid inputs: P == -Q), return size == 0",
+                    // P = (1, 2)
+                    // Q = -P
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x01)
+                        PUSH1(0x00)
+                        MSTORE
+                        // p_y
+                        PUSH1(0x02)
+                        PUSH1(0x20)
+                        MSTORE
+                        // q_x = 1
+                        PUSH1(0x01)
+                        PUSH1(0x40)
+                        MSTORE
+                        // q_y = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45
+                        PUSH32(word!("0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x00.into(),
+                    address: PrecompileCalls::Bn128Add.address().to_word(),
+                    gas: 149.into(),
+                    ..Default::default()
+                },
             ]
         };
     }
@@ -502,6 +536,29 @@ mod test {
         ];
 
         TEST_VECTOR
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
+    }
+
+    #[test]
+    fn precompile_ec_add_oog_test() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
+
+        OOG_TEST_VECTOR
             .iter()
             .cartesian_product(&call_kinds)
             .par_bridge()

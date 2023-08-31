@@ -606,7 +606,7 @@ fn serial_test_super_circuit_ec_ops_txs() {
         max_evm_rows: 0,
         // modexp ref this to decide its ability, we
         // need at least one (~25000 rows)
-        max_keccak_rows: 30000,
+        max_keccak_rows: 40000,
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
         max_rlp_rows: 800,

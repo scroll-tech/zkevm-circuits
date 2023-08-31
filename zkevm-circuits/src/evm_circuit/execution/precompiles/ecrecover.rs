@@ -29,7 +29,6 @@ pub struct EcrecoverGadget<F> {
     sig_r_keccak_rlc: Cell<F>,
     sig_s_keccak_rlc: Cell<F>,
     recovered_addr_keccak_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
-    gas_cost: Cell<F>,
 
     msg_hash: [Cell<F>; N_BYTES_WORD],
     sig_r: [Cell<F>; N_BYTES_WORD],
@@ -65,12 +64,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_keccak_rlc(),
-        );
-        let gas_cost = cb.query_cell();
-        cb.require_equal(
-            "ecrecover: gas cost",
-            gas_cost.expr(),
-            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
         );
 
         let msg_hash = array_init(|_| cb.query_byte());
@@ -123,6 +116,12 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             ]
             .map(|tag| cb.call_context(None, tag));
 
+        let gas_cost = select::expr(
+            is_success.expr(),
+            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
             callee_address.expr(),
@@ -147,7 +146,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_r_keccak_rlc,
             sig_s_keccak_rlc,
             recovered_addr_keccak_rlc,
-            gas_cost,
 
             msg_hash,
             sig_r,
@@ -227,11 +225,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     recovered_addr
                 }),
             )?;
-            self.gas_cost.assign(
-                region,
-                offset,
-                Value::known(F::from(GasCost::PRECOMPILE_ECRECOVER_BASE.0)),
-            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecrecover", step.aux_data);
             return Err(Error::Synthesis);
@@ -269,7 +262,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
-
         self.restore_context
             .assign(region, offset, block, call, step, 7)
     }
@@ -414,6 +406,43 @@ mod test {
                 },
             ]
         };
+
+        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "ecrecover (oog)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(28)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    // copy 128 bytes from memory addr 0. Address is recovered and the signature is
+                    // valid.
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    // return 32 bytes and write from memory addr 128
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    gas: 0.into(),
+                    value: 2.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+            ]
+        };
     }
 
     #[test]
@@ -426,6 +455,29 @@ mod test {
         ];
 
         TEST_VECTOR
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
+    }
+
+    #[test]
+    fn precompile_ecrecover_oog_test() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
+
+        OOG_TEST_VECTOR
             .iter()
             .cartesian_product(&call_kinds)
             .par_bridge()

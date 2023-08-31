@@ -119,6 +119,8 @@ github.com/scroll-tech/go-ethereum v1.10.14-0.20230827135613-d4f288562708 h1:4O2
 github.com/scroll-tech/go-ethereum v1.10.14-0.20230827135613-d4f288562708/go.mod h1:DiN3p2inoXOxGffxSswDKqWjQ7bU+Mp0c9v0XQXKmaA=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20230827145523-9be082146425 h1:xyKoHzmC7yekIvRouztNS6NP7EW7UPh+tjA6jLMP7Q8=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20230827145523-9be082146425/go.mod h1:DiN3p2inoXOxGffxSswDKqWjQ7bU+Mp0c9v0XQXKmaA=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20230831061745-fb38e6f91ef9 h1:hx07yqoiJNSCyfiIVrhMUry7c60z6UOXgsSFlILrgAg=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20230831061745-fb38e6f91ef9/go.mod h1:DiN3p2inoXOxGffxSswDKqWjQ7bU+Mp0c9v0XQXKmaA=
 github.com/scroll-tech/zktrie v0.6.0 h1:xLrMAO31Yo2BiPg1jtYKzcjpEFnXy8acbB7iIsyshPs=
 github.com/scroll-tech/zktrie v0.6.0/go.mod h1:XvNo7vAk8yxNyTjBDj5WIiFzYW4bx/gJ78+NK6Zn6Uk=
 github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible h1:Bn1aCHHRnjv4Bl16T8rcaFjYSrGrIZvpiGO6P3Q4GpU=

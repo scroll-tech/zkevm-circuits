@@ -26,7 +26,7 @@ impl Opcode for Origin {
             state.call()?.call_id,
             CallContextField::TxId,
             tx_id.into(),
-        );
+        )?;
 
         // Stack write of the origin address value
         state.stack_write(

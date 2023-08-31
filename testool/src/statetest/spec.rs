@@ -1,7 +1,10 @@
 use anyhow::{anyhow, bail, Context};
 use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 
 /// https://github.com/ethereum/tests/pull/857 "set default gasPrice to 10"
 pub const DEFAULT_BASE_FEE: u32 = 10;
@@ -54,7 +57,7 @@ pub struct StateTest {
     pub nonce: U256,
     pub value: U256,
     pub data: Bytes,
-    pub pre: HashMap<Address, Account>,
+    pub pre: BTreeMap<Address, Account>,
     pub result: StateTestResult,
     pub exception: bool,
 }
@@ -207,7 +210,7 @@ impl StateTest {
         let secret_key = Bytes::from(&[1u8; 32]);
         let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
 
-        let mut pre = HashMap::<Address, Account>::new();
+        let mut pre = BTreeMap::<Address, Account>::new();
 
         // setup tx.origin (from) account
         pre.insert(

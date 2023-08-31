@@ -1,5 +1,5 @@
 use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
-use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToScalar, U256};
 use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -639,6 +639,15 @@ impl<F: Field> ModExpGasCost<F> {
         m_size: &U256,
         exponent: &[u8; MODEXP_SIZE_LIMIT],
     ) -> Result<u64, Error> {
+        let mut base_len = [0u8; 32];
+        base_len[(32 - SIZE_REPRESENT_BYTES)..]
+            .copy_from_slice(&b_size.to_be_bytes()[(32 - SIZE_REPRESENT_BYTES)..]);
+        let mut mod_len = [0u8; 32];
+        mod_len[(32 - SIZE_REPRESENT_BYTES)..]
+            .copy_from_slice(&m_size.to_be_bytes()[(32 - SIZE_REPRESENT_BYTES)..]);
+        let b_size = U256::from_big_endian(&base_len);
+        let m_size = U256::from_big_endian(&mod_len);
+
         self.max_length.assign(
             region,
             offset,
@@ -707,7 +716,7 @@ pub struct ModExpGadget<F> {
 
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
-    gas_cost: Cell<F>,
+    is_gas_insufficient: LtGadget<F, N_BYTES_U64>,
     gas_cost_gadget: ModExpGasCost<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
@@ -721,7 +730,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         // we 'copy' the acc_bytes cell inside call_op step, so it must be the first query cells
         let input_bytes_acc = cb.query_cell_phase2();
         let output_bytes_acc = cb.query_cell_phase2();
-        let gas_cost = cb.query_cell();
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -749,11 +757,16 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             None,
         );
 
-        let call_success = util::and::expr([
-            input.is_valid(),
-            //TODO: replace this constants when gas gadget is ready
-            1.expr(),
-        ]);
+        let gas_cost_gadget =
+            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
+        let is_gas_insufficient = LtGadget::construct(
+            cb,
+            cb.curr.state.gas_left.expr(),
+            gas_cost_gadget.dynamic_gas.max(),
+        );
+
+        let call_success =
+            util::and::expr([input.is_valid(), not::expr(is_gas_insufficient.expr())]);
 
         cb.require_equal(
             "call success if valid input and enough gas",
@@ -793,13 +806,13 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output.bytes_rlc(),
         );
 
-        let gas_cost_gadget =
-            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
-        cb.require_equal(
-            "modexp: gas cost",
-            gas_cost.expr(),
+        let gas_cost = select::expr(
+            is_success.expr(),
             gas_cost_gadget.dynamic_gas.max(),
+            cb.curr.state.gas_left.expr(),
         );
+
+        let rd_length = select::expr(is_success.expr(), input.modulus_len(), 0.expr());
 
         let restore_context_gadget = RestoreContextGadget::construct2(
             cb,
@@ -807,7 +820,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             gas_cost.expr(),
             0.expr(),
             0.expr(),
-            input.modulus_len(),
+            rd_length,
             0.expr(),
             0.expr(),
         );
@@ -826,7 +839,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output,
             input_bytes_acc,
             output_bytes_acc,
-            gas_cost,
+            is_gas_insufficient,
             gas_cost_gadget,
             garbage_bytes_holder,
         }
@@ -877,10 +890,18 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .keccak_input()
                 .map(|randomness| rlc::value(data.input_memory.iter().rev(), randomness));
 
+            // if the input to modexp has more than 192 bytes, then we only keep the first 192 bytes
+            // and discard the remaining bytes
+            let input_len_limit = INPUT_LIMIT as u64;
+            let n_padded_zeros = if call.call_data_length > input_len_limit {
+                0
+            } else {
+                input_len_limit - call.call_data_length
+            };
             let n_padded_zeroes_pow = region
                 .challenges()
                 .keccak_input()
-                .map(|r| r.pow(&[INPUT_LIMIT as u64 - call.call_data_length, 0, 0, 0]));
+                .map(|r| r.pow(&[n_padded_zeros, 0, 0, 0]));
 
             let output_rlc = region
                 .challenges()
@@ -891,15 +912,19 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
 
-            let gas_cost = self.gas_cost_gadget.assign(
+            let required_gas_cost = self.gas_cost_gadget.assign(
                 region,
                 offset,
                 &data.input_lens[0],
                 &data.input_lens[2],
                 &data.inputs[1],
             )?;
-            self.gas_cost
-                .assign(region, offset, Value::known(F::from(gas_cost)))?;
+            self.is_gas_insufficient.assign(
+                region,
+                offset,
+                F::from(step.gas_left),
+                F::from(required_gas_cost),
+            )?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
             return Err(Error::Synthesis);
@@ -1276,6 +1301,43 @@ mod test {
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
                     gas: 100000.into(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp length too large invalid",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x21)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x21)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x21)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed"))
+                        PUSH1(0x60)
+                        MSTORE
+                        PUSH32(word!("0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2"))
+                        PUSH1(0x80)
+                        MSTORE
+                        PUSH32(word!("0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa"))
+                        PUSH1(0xa0)
+                        MSTORE
+                        PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0xc0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0xc3.into(),
+                    ret_offset: 0xe0.into(),
+                    ret_size: 0x21.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    gas: 1000.into(),
                     ..Default::default()
                 },
             ]

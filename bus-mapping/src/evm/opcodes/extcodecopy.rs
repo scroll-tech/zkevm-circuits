@@ -11,9 +11,6 @@ use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
 
-// TODO: Update to treat code_hash == 0 as account not_exists once the circuit
-// is implemented https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/720
-
 impl Opcode for Extcodecopy {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
@@ -65,7 +62,7 @@ fn gen_extcodecopy_step(
             U256::from(state.call()?.is_persistent as u64),
         ),
     ] {
-        state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+        state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
     }
 
     let is_warm = state.sdb.check_account_in_access_list(&external_address);
@@ -92,7 +89,7 @@ fn gen_extcodecopy_step(
         external_address,
         AccountField::CodeHash,
         code_hash.to_word(),
-    );
+    )?;
     Ok(exec_step)
 }
 
