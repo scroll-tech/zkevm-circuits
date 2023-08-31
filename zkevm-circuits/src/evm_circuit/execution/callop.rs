@@ -1837,6 +1837,30 @@ mod test_precompiles {
             stack_value: vec![(Word::from(0x80), Word::from(8))],
             ..Default::default()
         },
+        // B = E = M = 0
+        modexp_allzeros: PrecompileCallArgs {
+            name: "modexp_zeros",
+            setup_code: bytecode! {
+                PUSH1(1) // Bsize
+                PUSH1(0)
+                MSTORE
+                PUSH1(1) // Esize
+                PUSH1(0x20)
+                MSTORE
+                PUSH1(1) // Msize
+                PUSH1(0x40)
+                MSTORE
+                PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000000")) // B, E and M
+                PUSH1(0x60)
+                MSTORE
+            },
+            ret_size: Word::from(0x01),
+            ret_offset: Word::from(0x9F),
+            call_data_length: Word::from(0x63),
+            address: Word::from(0x5),
+            stack_value: vec![(Word::from(0x80), Word::from(0))],
+            ..Default::default()
+        },
         ec_add: PrecompileCallArgs {
             name: "ecAdd",
             setup_code: bytecode! {
