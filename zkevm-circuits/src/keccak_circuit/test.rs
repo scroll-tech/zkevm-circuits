@@ -18,7 +18,7 @@ use super::util::{target_part_sizes, target_part_sizes_rot, WordParts};
 #[ignore]
 #[test]
 fn serial_keccak_circuit_unusable_rows() {
-    for keccak_rows in NUM_BYTES_PER_WORD + 1..=32 {
+    for keccak_rows in NUM_BYTES_PER_WORD + 1..=50 {
         std::env::set_var("KECCAK_ROWS", format!("{keccak_rows}"));
         assert_eq!(
             KeccakCircuit::<Fr>::unusable_rows(),
@@ -45,7 +45,7 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
 
 #[test]
 fn packed_multi_keccak_simple() {
-    let k = 19;
+    let k = get_degree() as u32;
     let inputs = vec![
         vec![],
         (0u8..1).collect::<Vec<_>>(),
@@ -58,7 +58,7 @@ fn packed_multi_keccak_simple() {
 
 #[test]
 fn variadic_size_check() {
-    let k = 19;
+    let k = get_degree() as u32;
     let num_rows = 2usize.pow(k);
     // Empty
     let inputs = vec![];

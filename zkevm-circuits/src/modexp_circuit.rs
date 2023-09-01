@@ -1,6 +1,11 @@
 //! The Modexp circuit is responsible for modexp operations on big integer from precompiled contract
 //! calls ModExp, current the size of supported integer is up to 32 bytes (U256)
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod test;
+
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error},
@@ -63,7 +68,6 @@ impl ModExpCircuitConfig {
             self.modexp_table.modulus,
             &event.modulus,
         )?;
-
         let ret = modexp_chip.mod_exp(
             region,
             range_check_chip,
@@ -128,7 +132,7 @@ impl ModExpCircuitConfig {
     }
 }
 
-const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 24576;
+const MODEXPCONFIG_EACH_CHIP_ROWS: usize = 39962;
 
 /// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
@@ -145,25 +149,28 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let event_limit = block.circuits_params.max_keccak_rows / MODEXPCONFIG_EACH_CHIP_ROWS;
-        let mut exp_events = block.get_big_modexp();
-        assert!(
-            exp_events.len() <= event_limit,
-            "no enough rows for modexp circuit, expected {}, limit {}",
-            exp_events.len(),
-            event_limit,
-        );
 
-        exp_events.resize(event_limit, Default::default());
-        log::info!("modexp circuit work with maxium {} entries", event_limit);
+        let mut exp_events = block.get_big_modexp();
+        if event_limit != 0 {
+            assert!(
+                exp_events.len() <= event_limit,
+                "no enough rows for modexp circuit, expected {}, limit {}",
+                exp_events.len(),
+                event_limit,
+            );
+            exp_events.resize(event_limit, Default::default());
+            log::info!("modexp circuit work with maxium {} entries", event_limit);
+        }
+
         Self(exp_events, Default::default())
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let exp_events = block.get_big_modexp();
+        let real_len = (exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS).max(4096);
         (
-            exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS,
-            (exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS)
-                .max(block.circuits_params.max_keccak_rows),
+            real_len,
+            real_len.max(block.circuits_params.max_keccak_rows),
         )
     }
 
@@ -180,6 +187,7 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
             || "modexp circuit",
             |mut region| {
                 range_chip.initialize(&mut region)?;
+                let _modexp_count = self.0.len();
                 let mut calc_offset = 0;
                 for (n, event) in self.0.iter().enumerate() {
                     calc_offset = config.assign_group(
@@ -191,99 +199,12 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
                         &mut range_chip,
                     )?;
                 }
+                //assert_eq!(max(calc_offset, range_chip.offset), MODEXPCONFIG_EACH_CHIP_ROWS *
+                // modexp_count);
                 Ok(())
             },
         )?;
 
         config.modexp_table.fill_blank(layouter)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::util::MockChallenges;
-    use halo2_proofs::{
-        circuit::SimpleFloorPlanner,
-        dev::MockProver,
-        halo2curves::bn256::Fr,
-        plonk::{Circuit, ConstraintSystem},
-    };
-
-    impl Circuit<Fr> for ModExpCircuit<Fr> {
-        type Config = (ModExpCircuitConfig, MockChallenges);
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let modexp_table = ModExpTable::construct(meta);
-            let challenge = MockChallenges::construct(meta);
-            (
-                <ModExpCircuitConfig as SubCircuitConfig<Fr>>::new(meta, modexp_table),
-                challenge,
-            )
-        }
-
-        fn synthesize(
-            &self,
-            (config, challenge): Self::Config,
-            mut layouter: impl Layouter<Fr>,
-        ) -> Result<(), Error> {
-            let challenges = challenge.values(&layouter);
-            <Self as SubCircuit<Fr>>::synthesize_sub(self, &config, &challenges, &mut layouter)
-        }
-    }
-
-    #[test]
-    fn test_modexp_circuit_00() {
-        let base = Word::from(1u128);
-        let exp = Word::from(2u128);
-        let modulus = Word::from(7u128);
-        let (_, result) = base.pow(exp).div_mod(modulus);
-        let event1 = BigModExp {
-            base,
-            exponent: exp,
-            modulus,
-            result,
-        };
-        let test_circuit = ModExpCircuit(vec![event1], Default::default());
-        let prover = MockProver::run(16, &test_circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[test]
-    fn test_modexp_circuit_01() {
-        let base = Word::from(1u128);
-        let exp = Word::from(2u128);
-        let modulus = Word::from(7u128);
-        let (_, result) = base.pow(exp).div_mod(modulus);
-        let event1 = BigModExp {
-            base,
-            exponent: exp,
-            modulus,
-            result,
-        };
-        let test_circuit = ModExpCircuit(vec![event1], Default::default());
-        let prover = MockProver::run(16, &test_circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
-    }
-    #[test]
-    fn test_modexp_circuit_02() {
-        let base = Word::from(2u128);
-        let exp = Word::from(2u128);
-        let modulus = Word::from(7u128);
-        let (_, result) = base.pow(exp).div_mod(modulus);
-        let event1 = BigModExp {
-            base,
-            exponent: exp,
-            modulus,
-            result,
-        };
-        let test_circuit = ModExpCircuit(vec![event1], Default::default());
-        let prover = MockProver::run(16, &test_circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
     }
 }

@@ -90,7 +90,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
         let challenges = challenges.values(&layouter);
 
         // assign tx table
-        config.tx_table.load(
+        let tx_value_cells = config.tx_table.load(
             &mut layouter,
             &self.0.public_data.transactions,
             self.0.max_txs,
@@ -108,6 +108,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
             .keccak_table
             .dev_load(&mut layouter, vec![&data_bytes, &pi_bytes], &challenges)?;
 
+        self.0.import_tx_values(tx_value_cells);
         self.0.synthesize_sub(&config, &challenges, &mut layouter)?;
 
         Ok(())

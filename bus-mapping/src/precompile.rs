@@ -1,10 +1,10 @@
 //! precompile helpers
 
 use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
-use revm_precompile::{Precompile, Precompiles};
+use revm_precompile::{Precompile, PrecompileError, Precompiles};
 use strum::EnumIter;
 
-use crate::circuit_input_builder::{EcMulOp, EcPairingOp};
+use crate::circuit_input_builder::{EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP};
 
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
@@ -13,31 +13,62 @@ pub fn is_precompiled(address: &Address) -> bool {
         .is_some()
 }
 
-pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> (Vec<u8>, u64) {
+pub(crate) fn execute_precompiled(
+    address: &Address,
+    input: &[u8],
+    gas: u64,
+) -> (Vec<u8>, u64, bool) {
     let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
     };
-
-    match precompile_fn(input, gas) {
+    log::trace!(
+        "calling precompile with gas {gas}, len {}, data {}",
+        input.len(),
+        hex::encode(input)
+    );
+    let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
-            match PrecompileCalls::from(address.0[19]) {
-                // FIXME: override the behavior of invalid input
-                PrecompileCalls::Modexp => {
-                    let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
-                    if input_valid {
-                        // detect some edge cases like modulus = 0
-                        assert_eq!(modulus_len.as_usize(), return_value.len());
-                        (return_value, gas_cost)
-                    } else {
-                        (vec![], gas)
+            if cfg!(feature = "scroll") {
+                // Revm behavior is different from scroll evm,
+                // so we need to override the behavior of invalid input
+                match PrecompileCalls::from(address.0[19]) {
+                    PrecompileCalls::Blake2F
+                    | PrecompileCalls::Sha256
+                    | PrecompileCalls::Ripemd160 => (vec![], gas, false, false),
+                    PrecompileCalls::Bn128Pairing => {
+                        if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
+                            (vec![], gas, false, false)
+                        } else {
+                            (return_value, gas_cost, false, true)
+                        }
                     }
+                    PrecompileCalls::Modexp => {
+                        let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
+                        if input_valid {
+                            // detect some edge cases like modulus = 0
+                            assert_eq!(modulus_len.as_usize(), return_value.len());
+                            (return_value, gas_cost, false, true) // no oog error
+                        } else {
+                            (vec![], gas, false, false)
+                        }
+                    }
+                    _ => (return_value, gas_cost, false, true),
                 }
-                _ => (return_value, gas_cost),
+            } else {
+                (return_value, gas_cost, false, true)
             }
         }
-        Err(_) => (vec![], gas),
-    }
+        Err(err) => match err {
+            PrecompileError::OutOfGas => (vec![], gas, true, false),
+            _ => {
+                log::warn!("unknown precompile err {err:?}");
+                (vec![], gas, false, false)
+            }
+        },
+    };
+    log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}, return_data {}", return_data.len(), hex::encode(&return_data));
+    (return_data, gas_cost, is_oog)
 }
 
 /// Addresses of the precompiled contracts.
@@ -209,10 +240,15 @@ pub struct ModExpAuxData {
 }
 
 impl ModExpAuxData {
+    /// If mem is smaller than U256, left pad zero
+    /// Or else, keep the least 32bytes.
     fn parse_memory_to_value(mem: &[u8]) -> [u8; MODEXP_SIZE_LIMIT] {
         let mut value_bytes = [0u8; MODEXP_SIZE_LIMIT];
         if !mem.is_empty() {
-            value_bytes.as_mut_slice()[(MODEXP_SIZE_LIMIT - mem.len())..].copy_from_slice(mem);
+            let copy_len = mem.len().min(MODEXP_SIZE_LIMIT);
+            let src_offset = mem.len() - copy_len;
+            let dst_offset = MODEXP_SIZE_LIMIT - copy_len;
+            value_bytes.as_mut_slice()[dst_offset..].copy_from_slice(&mem[src_offset..]);
         }
         value_bytes
     }
@@ -227,7 +263,10 @@ impl ModExpAuxData {
         let limit = Word::from(MODEXP_SIZE_LIMIT);
 
         let input_valid = base_len <= limit && exp_len <= limit && modulus_len <= limit;
-
+        log::debug!("modexp base_len {base_len} exp_len {exp_len} modulus_len {modulus_len}");
+        if !input_valid {
+            log::warn!("modexp input input_valid {input_valid}");
+        }
         (input_valid, [base_len, exp_len, modulus_len])
     }
 
@@ -246,14 +285,22 @@ impl ModExpAuxData {
             0
         };
 
-        mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
-        let mut cur_input_begin = &mem_input[96..];
+        let (base, exp, modulus) = if base_mem_len == 0 && modulus_mem_len == 0 {
+            // special case
+            ([0u8; 32], [0u8; 32], [0u8; 32])
+        } else {
+            // In non scroll mode, this can be dangerous.
+            // If base and mod are all 0, exp can be very huge.
+            mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
+            let mut cur_input_begin = &mem_input[96..];
 
-        let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
-        cur_input_begin = &cur_input_begin[base_mem_len..];
-        let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
-        cur_input_begin = &cur_input_begin[exp_mem_len..];
-        let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
+            let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
+            cur_input_begin = &cur_input_begin[base_mem_len..];
+            let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
+            cur_input_begin = &cur_input_begin[exp_mem_len..];
+            let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
+            (base, exp, modulus)
+        };
         let output_len = output.len();
         let output = Self::parse_memory_to_value(&output);
 
@@ -341,6 +388,15 @@ impl EcMulAuxData {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EcPairingAuxData(pub EcPairingOp);
 
+/// Erroneous bytes passed to the EcPairing precompile call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EcPairingError {
+    /// the calldatalength passed to EcPairing precompile call is expected to be:
+    /// 1. len(input) <= 768
+    /// 2. len(input) % 192 == 0
+    InvalidInputLen(Vec<u8>),
+}
+
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
@@ -353,7 +409,7 @@ pub enum PrecompileAuxData {
     /// EcMul.
     EcMul(EcMulAuxData),
     /// EcPairing.
-    EcPairing(Box<EcPairingAuxData>),
+    EcPairing(Box<Result<EcPairingAuxData, EcPairingError>>),
 }
 
 impl Default for PrecompileAuxData {

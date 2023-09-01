@@ -326,6 +326,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
         config.load_byte_table(layouter)?;
+        config.pow_of_rand_table.assign(layouter, challenges)?;
         let export = config.execution.assign_block(layouter, block, challenges)?;
         self.exports.borrow_mut().replace(export);
         Ok(())
@@ -516,9 +517,6 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &block.get_ec_pairing_ops(),
             &challenges,
         )?;
-        config
-            .pow_of_rand_table
-            .dev_load(&mut layouter, &challenges)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
@@ -729,7 +727,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        let k = block.get_test_degree();
+        let k = block.get_evm_test_circuit_degree();
 
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
@@ -751,7 +749,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        let k = block.get_test_degree();
+        let k = block.get_evm_test_circuit_degree();
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 

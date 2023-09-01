@@ -6,6 +6,8 @@ mod block;
 mod call;
 mod execution;
 mod input_state_ref;
+#[cfg(feature = "scroll")]
+mod l2;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
@@ -43,6 +45,8 @@ use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
+#[cfg(feature = "scroll")]
+use mpt_zktrie::state::ZktrieState;
 use std::{
     collections::{BTreeMap, HashMap},
     iter,
@@ -60,6 +64,16 @@ pub struct PrecompileEcParams {
     pub ec_mul: usize,
     /// Maximum number of EcPairing ops supported in one block.
     pub ec_pairing: usize,
+}
+
+impl Default for PrecompileEcParams {
+    fn default() -> Self {
+        Self {
+            ec_add: 50,
+            ec_mul: 50,
+            ec_pairing: 2,
+        }
+    }
 }
 
 /// Circuit Setup Parameters
@@ -99,8 +113,15 @@ pub struct CircuitsParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// Maximum number of rows that the Poseidon Circuit can have
+    pub max_poseidon_rows: usize,
     /// Max number of ECC-related ops supported in the ECC circuit.
     pub max_ec_ops: PrecompileEcParams,
+    /// This number indicate what 100% usage means, for example if we can support up to 2
+    /// ecPairing inside circuit, and max_vertical_circuit_rows is set to 1_000_000,
+    /// then if there is 1 ecPairing in the input, we will return 500_000 as the "row usage"
+    /// for the ec circuit.
+    pub max_vertical_circuit_rows: usize,
 }
 
 impl Default for CircuitsParams {
@@ -119,12 +140,10 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_poseidon_rows: 0,
+            max_vertical_circuit_rows: 0,
             max_rlp_rows: 1000,
-            max_ec_ops: PrecompileEcParams {
-                ec_add: 50,
-                ec_mul: 50,
-                ec_pairing: 2,
-            },
+            max_ec_ops: PrecompileEcParams::default(),
         }
     }
 }
@@ -157,6 +176,9 @@ pub struct CircuitInputBuilder {
     pub block: Block,
     /// Block Context
     pub block_ctx: BlockContext,
+    #[cfg(feature = "scroll")]
+    /// Initial Zktrie Status for a incremental updating
+    pub mpt_init_state: ZktrieState,
 }
 
 impl<'a> CircuitInputBuilder {
@@ -168,6 +190,8 @@ impl<'a> CircuitInputBuilder {
             code_db,
             block: block.clone(),
             block_ctx: BlockContext::new(),
+            #[cfg(feature = "scroll")]
+            mpt_init_state: Default::default(),
         }
     }
     /// Create a new CircuitInputBuilder from the given `eth_block` and
@@ -410,7 +434,7 @@ impl<'a> CircuitInputBuilder {
                 call_id,
                 CallContextField::TxId,
                 Word::from(dummy_tx_id as u64),
-            );
+            )?;
         }
 
         // increase the total rwc by 1
@@ -425,7 +449,7 @@ impl<'a> CircuitInputBuilder {
                 dummy_tx_id,
                 withdraw_root_before,
             ),
-        );
+        )?;
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
@@ -513,7 +537,7 @@ impl<'a> CircuitInputBuilder {
             let tx_gas = tx.gas;
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!(
-                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} args: {}",
+                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} refund: {} args: {}",
                 eth_tx.transaction_index.unwrap_or_default(),
                 geth_step.depth,
                 index,
@@ -525,13 +549,14 @@ impl<'a> CircuitInputBuilder {
                 state_ref.block_ctx.rwc.0,
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
+                geth_step.refund.0,
                 if geth_step.op.is_push_with_data() {
                     format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
                         geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
                         geth_step.stack.nth_last(4),
@@ -541,7 +566,7 @@ impl<'a> CircuitInputBuilder {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
                         geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
                         geth_step.stack.nth_last(4),
@@ -560,32 +585,18 @@ impl<'a> CircuitInputBuilder {
                             "".to_string()
                         }
                     )
-                } else if matches!(geth_step.op, OpcodeId::MLOAD) {
-                    format!(
-                        "{:?}",
-                        geth_step.stack.nth_last(0),
-                    )
-                } else if matches!(geth_step.op, OpcodeId::MSTORE | OpcodeId::MSTORE8) {
-                    format!(
-                        "{:?} {:?}",
-                        geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1),
-                    )
                 } else if matches!(geth_step.op, OpcodeId::SSTORE) {
                     format!(
                         "{:?} {:?} {:?}",
-                        state_ref.call().unwrap().address,
+                        state_ref.call().map(|c| c.address),
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )
-                } else if matches!(geth_step.op, OpcodeId::RETURN) {
-		    format!(
-                        "{:?} {:?}",
-                        geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1),
-                    )
-		} else {
-                    "".to_string()
+                } else {
+                    let stack_input_num = 1024 - geth_step.op.valid_stack_ptr_range().1 as usize;
+                    (0..stack_input_num).into_iter().map(|i|
+                        format!("{:?}",  geth_step.stack.nth_last(i))
+                    ).collect_vec().join(" ")
                 }
             );
             debug_assert_eq!(
@@ -630,9 +641,18 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         "keccak total len after txs: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
+    // Ecrecover
+    keccak_inputs.extend_from_slice(&keccak_inputs_sign_verify(
+        &block.precompile_events.get_ecrecover_events(),
+    ));
+    log::debug!(
+        "keccak total len after ecrecover: {}",
+        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
+    );
     // PI circuit
     keccak_inputs.extend(keccak_inputs_pi_circuit(
         block.chain_id,
+        block.start_l1_queue_index,
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
@@ -699,17 +719,41 @@ pub fn get_dummy_tx_hash() -> H256 {
 
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
+    start_l1_queue_index: u64,
     prev_state_root: Word,
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
 ) -> Vec<Vec<u8>> {
+    let mut total_l1_popped = start_l1_queue_index;
+    log::debug!(
+        "start_l1_queue_index in keccak_inputs: {}",
+        start_l1_queue_index
+    );
     let data_bytes = iter::empty()
-        .chain(block_headers.iter().flat_map(|(block_num, block)| {
-            let num_txs = transactions
+        .chain(block_headers.iter().flat_map(|(&block_num, block)| {
+            let num_l2_txs = transactions
                 .iter()
-                .filter(|tx| tx.block_num == *block_num)
-                .count() as u16;
+                .filter(|tx| !tx.tx_type.is_l1_msg() && tx.block_num == block_num)
+                .count() as u64;
+            let num_l1_msgs = transactions
+                .iter()
+                .filter(|tx| tx.tx_type.is_l1_msg() && tx.block_num == block_num)
+                // tx.nonce alias for queue_index for l1 msg tx
+                .map(|tx| tx.nonce)
+                .max()
+                .map_or(0, |max_queue_index| max_queue_index - total_l1_popped + 1);
+            total_l1_popped += num_l1_msgs;
+
+            let num_txs = (num_l2_txs + num_l1_msgs) as u16;
+            log::debug!(
+                "[block {}] total_l1_popped: {}, num_l1_msgs: {}, num_l2_txs: {}, num_txs: {}",
+                block_num,
+                total_l1_popped,
+                num_l1_msgs,
+                num_l2_txs,
+                num_txs,
+            );
 
             iter::empty()
                 // Block Values
@@ -723,6 +767,10 @@ fn keccak_inputs_pi_circuit(
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
         .collect::<Vec<u8>>();
     let data_hash = H256(keccak256(&data_bytes));
+    log::debug!(
+        "chunk data hash: {}",
+        hex::encode(data_hash.to_fixed_bytes())
+    );
     let after_state_root = block_headers
         .last_key_value()
         .map(|(_, blk)| blk.eth_block.state_root)

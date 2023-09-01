@@ -15,7 +15,7 @@ use crate::evm_circuit::{
             CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
             MemoryExpansionGadget,
         },
-        rlc, CachedRegion, Cell, Word,
+        rlc, CachedRegion, Cell, StepRws, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -61,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::RlcAcc.expr(),
                 memory_address.offset(),
-                memory_address.address(),
+                memory_address.end_offset(),
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
                 rlc_acc.expr(),
@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         });
         cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
@@ -114,11 +114,11 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let mut rws = StepRws::new(block, step);
+
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_offset, size, sha3_output] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+        let [memory_offset, size, sha3_output] = [(); 3].map(|_| rws.next().stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, size)?;
@@ -138,14 +138,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             ),
         )?;
 
-        let values: Vec<u8> = get_copy_bytes(
-            block,
-            step,
-            3,
-            3 + (copy_rwc_inc as usize),
-            shift,
-            size.as_u64(),
-        );
+        let values: Vec<u8> = get_copy_bytes(&mut rws, copy_rwc_inc as usize, shift, size.as_u64());
 
         let rlc_acc = region
             .challenges()

@@ -18,6 +18,7 @@ handlebars = "4.3"
 hex = "0.4.3"
 keccak256 = { path = "../keccak256" }
 log = "0.4"
+itertools = "0.10"
 mock = { path = "../mock" }
 once_cell = "1.10"
 prettytable-rs = "0.10"
@@ -39,6 +40,7 @@ ctor = "0.1.22"
 
 [features]
 default = ["ignore-test-docker", "skip-self-destruct", "shanghai"]
+onephase = ["zkevm-circuits/onephase"]
 ignore-test-docker = []
 skip-self-destruct = []
 shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai"]

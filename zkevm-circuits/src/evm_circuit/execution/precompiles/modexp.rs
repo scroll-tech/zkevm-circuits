@@ -1,5 +1,5 @@
 use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
-use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToScalar, U256};
 use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -176,11 +176,7 @@ impl<F: Field> SizeRepresent<F> {
             .iter()
             .map(Cell::expr)
             .collect::<Vec<_>>();
-        let is_rest_field_zero = IsZeroGadget::construct(
-            cb,
-            "if length field exceed 1 byte",
-            expr_from_bytes(&len_blank_bytes),
-        );
+        let is_rest_field_zero = IsZeroGadget::construct(cb, expr_from_bytes(&len_blank_bytes));
         let len_effect_bytes = len_bytes[(32 - SIZE_REPRESENT_BYTES)..]
             .iter()
             .map(Cell::expr)
@@ -446,7 +442,9 @@ impl<F: Field> ModExpOutputs<F> {
         modulus_len: Expression<F>,
     ) -> Self {
         let output_len = inner_success * modulus_len;
-        let is_result_zero = IsZeroGadget::construct(cb, "if output len is nil", output_len);
+        let is_result_zero = cb.annotation("if output len is nil", |cb| {
+            IsZeroGadget::construct(cb, output_len)
+        });
 
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
@@ -566,13 +564,16 @@ impl<F: Field> ModExpGasCost<F> {
     fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         b_size: &SizeRepresent<F>,
-        exp: &[Cell<F>; N_BYTES_WORD],
+        exp: &[Cell<F>; MODEXP_SIZE_LIMIT],
         m_size: &SizeRepresent<F>,
     ) -> Self {
         let max_length = MinMaxGadget::construct(cb, b_size.value(), m_size.value());
         let words = ConstantDivisionGadget::construct(cb, max_length.max() + 7.expr(), 8);
         let multiplication_complexity = words.quotient() * words.quotient();
-        let exp_is_zero = IsZeroGadget::construct(cb, "modexp: exponent", expr_from_bytes(exp));
+        let exp_is_zero = IsZeroGadget::construct(
+            cb,
+            rlc::expr(&exp.clone().map(|c| c.expr()), cb.challenges().evm_word()),
+        );
 
         let (exp_byte_size, exp_msb, exp_msb_bit_length) =
             cb.condition(not::expr(exp_is_zero.expr()), |cb| {
@@ -638,6 +639,15 @@ impl<F: Field> ModExpGasCost<F> {
         m_size: &U256,
         exponent: &[u8; MODEXP_SIZE_LIMIT],
     ) -> Result<u64, Error> {
+        let mut base_len = [0u8; 32];
+        base_len[(32 - SIZE_REPRESENT_BYTES)..]
+            .copy_from_slice(&b_size.to_be_bytes()[(32 - SIZE_REPRESENT_BYTES)..]);
+        let mut mod_len = [0u8; 32];
+        mod_len[(32 - SIZE_REPRESENT_BYTES)..]
+            .copy_from_slice(&m_size.to_be_bytes()[(32 - SIZE_REPRESENT_BYTES)..]);
+        let b_size = U256::from_big_endian(&base_len);
+        let m_size = U256::from_big_endian(&mod_len);
+
         self.max_length.assign(
             region,
             offset,
@@ -647,12 +657,13 @@ impl<F: Field> ModExpGasCost<F> {
         self.words
             .assign(region, offset, b_size.max(m_size).as_u128() + 7u128)?;
         let exp_word = U256::from_big_endian(exponent);
-        self.exp_is_zero.assign(
+        self.exp_is_zero.assign_value(
             region,
             offset,
-            exp_word
-                .to_scalar()
-                .expect("exponent is within scalar field"),
+            region
+                .challenges()
+                .evm_word()
+                .map(|r| rlc::value(exponent, r)),
         )?;
         self.exp_byte_size
             .assign(region, offset, ByteOrWord::Word(exp_word))?;
@@ -705,7 +716,7 @@ pub struct ModExpGadget<F> {
 
     input_bytes_acc: Cell<F>,
     output_bytes_acc: Cell<F>,
-    gas_cost: Cell<F>,
+    is_gas_insufficient: LtGadget<F, N_BYTES_U64>,
     gas_cost_gadget: ModExpGasCost<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
 }
@@ -719,7 +730,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         // we 'copy' the acc_bytes cell inside call_op step, so it must be the first query cells
         let input_bytes_acc = cb.query_cell_phase2();
         let output_bytes_acc = cb.query_cell_phase2();
-        let gas_cost = cb.query_cell();
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -747,11 +757,16 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             None,
         );
 
-        let call_success = util::and::expr([
-            input.is_valid(),
-            //TODO: replace this constants when gas gadget is ready
-            1.expr(),
-        ]);
+        let gas_cost_gadget =
+            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
+        let is_gas_insufficient = LtGadget::construct(
+            cb,
+            cb.curr.state.gas_left.expr(),
+            gas_cost_gadget.dynamic_gas.max(),
+        );
+
+        let call_success =
+            util::and::expr([input.is_valid(), not::expr(is_gas_insufficient.expr())]);
 
         cb.require_equal(
             "call success if valid input and enough gas",
@@ -791,20 +806,21 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output.bytes_rlc(),
         );
 
-        let gas_cost_gadget =
-            ModExpGasCost::construct(cb, &input.base_len, &input.exp, &input.modulus_len);
-        cb.require_equal(
-            "modexp: gas cost",
-            gas_cost.expr(),
+        let gas_cost = select::expr(
+            is_success.expr(),
             gas_cost_gadget.dynamic_gas.max(),
+            cb.curr.state.gas_left.expr(),
         );
 
-        let restore_context_gadget = RestoreContextGadget::construct(
+        let rd_length = select::expr(is_success.expr(), input.modulus_len(), 0.expr());
+
+        let restore_context_gadget = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
+            gas_cost.expr(),
             0.expr(),
             0.expr(),
-            input.modulus_len(),
+            rd_length,
             0.expr(),
             0.expr(),
         );
@@ -823,7 +839,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             output,
             input_bytes_acc,
             output_bytes_acc,
-            gas_cost,
+            is_gas_insufficient,
             gas_cost_gadget,
             garbage_bytes_holder,
         }
@@ -874,10 +890,18 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .keccak_input()
                 .map(|randomness| rlc::value(data.input_memory.iter().rev(), randomness));
 
+            // if the input to modexp has more than 192 bytes, then we only keep the first 192 bytes
+            // and discard the remaining bytes
+            let input_len_limit = INPUT_LIMIT as u64;
+            let n_padded_zeros = if call.call_data_length > input_len_limit {
+                0
+            } else {
+                input_len_limit - call.call_data_length
+            };
             let n_padded_zeroes_pow = region
                 .challenges()
                 .keccak_input()
-                .map(|r| r.pow(&[INPUT_LIMIT as u64 - call.call_data_length, 0, 0, 0]));
+                .map(|r| r.pow(&[n_padded_zeros, 0, 0, 0]));
 
             let output_rlc = region
                 .challenges()
@@ -888,15 +912,19 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
             self.output_bytes_acc.assign(region, offset, output_rlc)?;
 
-            let gas_cost = self.gas_cost_gadget.assign(
+            let required_gas_cost = self.gas_cost_gadget.assign(
                 region,
                 offset,
                 &data.input_lens[0],
                 &data.input_lens[2],
                 &data.inputs[1],
             )?;
-            self.gas_cost
-                .assign(region, offset, Value::known(F::from(gas_cost)))?;
+            self.is_gas_insufficient.assign(
+                region,
+                offset,
+                F::from(step.gas_left),
+                F::from(required_gas_cost),
+            )?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
             return Err(Error::Synthesis);
@@ -1070,7 +1098,7 @@ mod test {
                     ..Default::default()
                 },
                 PrecompileCallArgs {
-                    name: "modexp success with padding 0",
+                    name: "modexp success with padding 0, input len > minimal 96 bytes",
                     setup_code: bytecode! {
                         // Base size
                         PUSH1(0x1)
@@ -1091,6 +1119,33 @@ mod test {
                     },
                     call_data_offset: 0x0.into(),
                     call_data_length: 0x65.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp success with padding 0, input len < minimal 96 bytes",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x3)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x2)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800000901000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x40.into(), // < minimal 96 bytes
                     ret_offset: 0x9f.into(),
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
@@ -1166,6 +1221,114 @@ mod test {
                     },
                     call_data_offset: 0x0.into(),
                     call_data_length: 0x63.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp all zero bit len",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x0)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x0)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x0)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800090000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x63.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x21.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp zero base and exponent",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x1)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x1)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0000090000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x64.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp zero exponent and modulus",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x1)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x1)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800009000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x64.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp zero base and modulus",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x1)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x1)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0008009000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x64.into(),
                     ret_offset: 0x9f.into(),
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
@@ -1248,7 +1411,7 @@ mod test {
         static ref TEST_INVALID_VECTOR: Vec<PrecompileCallArgs> = {
             vec![
                 PrecompileCallArgs {
-                    name: "modexp length too large invalid",
+                    name: "modexp Msize length too large invalid",
                     setup_code: bytecode! {
                         // Base size
                         PUSH1(0x1)
@@ -1273,6 +1436,43 @@ mod test {
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
                     gas: 100000.into(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp Base&Esize&Msize length too large invalid",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x21)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x21)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x21)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed"))
+                        PUSH1(0x60)
+                        MSTORE
+                        PUSH32(word!("0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2"))
+                        PUSH1(0x80)
+                        MSTORE
+                        PUSH32(word!("0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa"))
+                        PUSH1(0xa0)
+                        MSTORE
+                        PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0xc0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0xc3.into(),
+                    ret_offset: 0xe0.into(),
+                    ret_size: 0x21.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    gas: 1000.into(),
                     ..Default::default()
                 },
             ]
@@ -1328,40 +1528,20 @@ mod test {
         }
     }
 
-    // notice, "invalid" test would not work until bus-mapping put calling fail case being handle
-    // in normal CallOp, i.e. return None in
+    // notice, "invalid" test would not actuall work until bus-mapping put calling fail case being
+    // handle in normal CallOp, i.e. return None in
     // bus_mapping::circuit_input_builder::input_state_ref::CircuitInputStateRef::get_step_err
     // for unsuccess (call.is_success is false) call
-    #[ignore]
+    // current it is handled by the dummy "precompile error" gadget
+    #[cfg(feature = "scroll")]
     #[test]
     fn precompile_modexp_test_invalid() {
-        use eth_types::evm_types::Gas;
-
         for test_vector in TEST_INVALID_VECTOR.iter() {
             let bytecode = test_vector.with_call_op(OpcodeId::STATICCALL);
 
             CircuitTestBuilder::new_from_test_ctx(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
             )
-            .geth_data_modifier(Box::new(|block| {
-                let steps = &mut block.geth_traces[0].struct_logs;
-                let step_len = steps.len();
-                let call_step = &mut steps[step_len - 3];
-                assert_eq!(call_step.op, OpcodeId::STATICCALL);
-                call_step.refund.0 = 0;
-                let next_gas = Gas(call_step.gas.0 - call_step.gas_cost.0);
-
-                let pop_step = &mut steps[step_len - 2];
-                assert_eq!(pop_step.op, OpcodeId::POP);
-                pop_step.gas = next_gas;
-                pop_step.stack.0[0] = 0.into();
-                let next_gas = Gas(pop_step.gas.0 - pop_step.gas_cost.0);
-                let final_step = &mut steps[step_len - 1];
-                assert_eq!(final_step.op, OpcodeId::STOP);
-                final_step.gas = next_gas;
-
-                // println!("trace {:?}", block.geth_traces);
-            }))
             .run();
         }
     }

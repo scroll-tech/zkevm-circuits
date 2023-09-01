@@ -8,7 +8,6 @@ use crate::{
 use ethers_core::types::{
     Eip1559TransactionRequest, Eip2930TransactionRequest, NameOrAddress, TransactionRequest, H256,
 };
-use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
 use num_bigint::BigUint;
@@ -52,6 +51,11 @@ impl TxType {
         matches!(*self, TxType::L1Msg)
     }
 
+    /// If this type is Eip155 or not
+    pub fn is_eip155_tx(&self) -> bool {
+        matches!(*self, TxType::Eip155)
+    }
+
     /// Get the type of transaction
     pub fn get_tx_type(tx: &crate::Transaction) -> Self {
         match tx.transaction_type {
@@ -59,8 +63,15 @@ impl TxType {
             Some(x) if x == U64::from(2) => Self::Eip2930,
             Some(x) if x == U64::from(0x7e) => Self::L1Msg,
             _ => {
-                if tx.v.is_zero() && tx.r.is_zero() && tx.s.is_zero() {
-                    Self::L1Msg
+                if cfg!(feature = "scroll") {
+                    if tx.v.is_zero() && tx.r.is_zero() && tx.s.is_zero() {
+                        Self::L1Msg
+                    } else {
+                        match tx.v.as_u64() {
+                            0 | 1 | 27 | 28 => Self::PreEip155,
+                            _ => Self::Eip155,
+                        }
+                    }
                 } else {
                     match tx.v.as_u64() {
                         0 | 1 | 27 | 28 => Self::PreEip155,
@@ -372,7 +383,7 @@ pub struct GethData {
     /// Accounts
     pub accounts: Vec<Account>,
 }
-
+/*
 impl GethData {
     /// Signs transactions with selected wallets
     pub fn sign(&mut self, wallets: &HashMap<Address, LocalWallet>) {
@@ -391,3 +402,4 @@ impl GethData {
         }
     }
 }
+*/

@@ -83,18 +83,10 @@ impl AggregationConfig {
             params.degree as usize,
         );
 
-        // The current code base is hardcoded for KeccakCircuit configured
-        // with 300 rows and 87 columns per hash call.
         let columns = keccak_circuit_config.cell_manager.columns();
 
-        assert_eq!(
-            columns.len(),
-            87,
-            "cell manager configuration does not match the hard coded setup"
-        );
-
         // enabling equality for preimage column
-        meta.enable_equality(columns[6].advice);
+        meta.enable_equality(columns[keccak_circuit_config.preimage_column_index].advice);
         // enable equality for the digest column
         meta.enable_equality(columns.last().unwrap().advice);
         // enable equality for the data RLC column

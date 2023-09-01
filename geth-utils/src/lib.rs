@@ -9,6 +9,35 @@ use std::{
 extern "C" {
     fn CreateTrace(str: *const c_char) -> *const c_char;
     fn FreeString(str: *const c_char);
+    #[cfg(feature = "scroll")]
+    fn CreateL2Trace(str: *const c_char) -> *const c_char;
+}
+
+/// Creates the l2 trace
+#[cfg(feature = "scroll")]
+pub fn l2trace(config: &str) -> Result<String, Error> {
+    // Create a string we can pass into Go
+    let c_config = CString::new(config).expect("invalid config");
+
+    // Generate the trace externally
+    let result = unsafe { CreateL2Trace(c_config.as_ptr()) };
+
+    // Convert the returned string to something we can use in Rust again.
+    // Also make sure the returned data is copied to rust managed memory.
+    let c_result = unsafe { CStr::from_ptr(result) };
+    let result = c_result
+        .to_str()
+        .expect("Error translating EVM trace from library")
+        .to_string();
+
+    // We can now free the returned string (memory managed by Go)
+    unsafe { FreeString(c_result.as_ptr()) };
+
+    // Return the trace
+    match result.is_empty() || result.starts_with("Failed") {
+        true => Err(Error::TracingError(result)),
+        false => Ok(result),
+    }
 }
 
 /// Creates the trace
@@ -122,6 +151,8 @@ mod test {
                 ]
             }"#,
             // Insufficient balance to buy gas
+            // for l2geth test it is considered as l1msg tx and valid
+            #[cfg(not(feature = "scroll"))]
             r#"{
                 "block_constants": {
                     "gas_limit": "0x52080"
@@ -150,7 +181,7 @@ mod test {
                 ]
             }"#,
         ] {
-            assert!(trace(config).is_err())
+            assert!(trace(config).is_err(), "consider correct {config}")
         }
     }
 }

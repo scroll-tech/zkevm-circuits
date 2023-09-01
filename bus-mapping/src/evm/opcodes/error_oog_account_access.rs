@@ -37,7 +37,7 @@ impl Opcode for ErrorOOGAccountAccess {
             state.call()?.call_id,
             CallContextField::TxId,
             U256::from(state.tx_ctx.id()),
-        );
+        )?;
 
         // transaction access list for account address.
         let is_warm = state.sdb.check_account_in_access_list(&address);
@@ -51,10 +51,10 @@ impl Opcode for ErrorOOGAccountAccess {
                 is_warm,
                 is_warm_prev: is_warm,
             },
-        );
+        )?;
 
         // common error handling
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

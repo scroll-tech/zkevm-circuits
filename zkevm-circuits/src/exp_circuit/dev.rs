@@ -1,8 +1,8 @@
 pub use super::ExpCircuit;
 
 use crate::{
-    exp_circuit::ExpCircuitConfig,
-    table::ExpTable,
+    exp_circuit::{ExpCircuitArgs, ExpCircuitConfig},
+    table::{ExpTable, U16Table},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use eth_types::Field;
@@ -22,7 +22,17 @@ impl<F: Field> Circuit<F> for ExpCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let exp_table = ExpTable::construct(meta);
         let challenges = Challenges::construct(meta);
-        (ExpCircuitConfig::new(meta, exp_table), challenges)
+        let u16_table = U16Table::construct(meta);
+        (
+            ExpCircuitConfig::new(
+                meta,
+                ExpCircuitArgs {
+                    exp_table,
+                    u16_table,
+                },
+            ),
+            challenges,
+        )
     }
 
     fn synthesize(
@@ -31,6 +41,7 @@ impl<F: Field> Circuit<F> for ExpCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
+        config.u16_table.load(&mut layouter)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

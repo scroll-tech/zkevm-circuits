@@ -65,6 +65,8 @@ pub struct Block<F> {
     pub mpt_updates: MptUpdates,
     /// Chain ID
     pub chain_id: u64,
+    /// StartL1QueueIndex
+    pub start_l1_queue_index: u64,
     /// IO to/from precompile calls.
     pub precompile_events: PrecompileEvents,
 }
@@ -141,7 +143,7 @@ impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
-    pub fn get_test_degree(&self) -> u32 {
+    pub fn get_evm_test_circuit_degree(&self) -> u32 {
         let num_rows_required_for_execution_steps: usize =
             EvmCircuit::<F>::get_num_rows_required(self);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
@@ -160,8 +162,9 @@ impl<F: Field> Block<F> {
             .map(|c| c.copy_bytes.bytes.len() * 2)
             .sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
-        let num_rows_required_for_tx_table: usize =
-            TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;
+        // tx_table load only does tx padding, no calldata padding
+        let num_rows_required_for_tx_table: usize = self.circuits_params.max_txs * TX_LEN
+            + self.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>();
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()
@@ -226,6 +229,7 @@ impl BlockContext {
         &self,
         num_txs: usize,
         cum_num_txs: usize,
+        num_all_txs: u64,
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
@@ -277,6 +281,11 @@ impl BlockContext {
                     Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
                     Value::known(current_block_number),
                     Value::known(F::from(cum_num_txs as u64)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::NumAllTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(num_all_txs)),
                 ],
             ],
             self.block_hash_assignments(randomness),
@@ -458,8 +467,24 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
+        start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
     })
+}
+
+/// Convert a block struct in bus-mapping to a witness block used in circuits
+pub fn block_convert_with_l1_queue_index<F: Field>(
+    block: &circuit_input_builder::Block,
+    code_db: &bus_mapping::state_db::CodeDB,
+    start_l1_queue_index: u64,
+) -> Result<Block<F>, Error> {
+    let mut block = block.clone();
+    // keccak_inputs_pi_circuit needs correct start_l1_queue_index
+    // but at this time it can be start_l1_queue_index of last block inside the chunk
+    // TODO kunxian: any better solution
+    block.start_l1_queue_index = start_l1_queue_index;
+    let witness_block = block_convert(&block, code_db)?;
+    Ok(witness_block)
 }
 
 /// Attach witness block with mpt states

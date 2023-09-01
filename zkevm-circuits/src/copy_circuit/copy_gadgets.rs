@@ -1,5 +1,5 @@
 use super::{CURRENT, NEXT_ROW, NEXT_STEP};
-use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::Field;
 use gadgets::{
     binary_number::BinaryNumberConfig,
@@ -14,8 +14,7 @@ use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, Constr
 pub fn constrain_tag<F: Field>(
     meta: &mut ConstraintSystem<F>,
     q_enable: Column<Fixed>,
-    tag: &BinaryNumberConfig<CopyDataType, 4>,
-    is_precompiled: Column<Advice>,
+    tag: &BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
     is_tx_calldata: Column<Advice>,
     is_bytecode: Column<Advice>,
     is_memory: Column<Advice>,
@@ -23,34 +22,12 @@ pub fn constrain_tag<F: Field>(
 ) {
     meta.create_gate("decode tag", |meta| {
         let enabled = meta.query_fixed(q_enable, CURRENT);
-        let is_precompile = meta.query_advice(is_precompiled, CURRENT);
         let is_tx_calldata = meta.query_advice(is_tx_calldata, CURRENT);
         let is_bytecode = meta.query_advice(is_bytecode, CURRENT);
         let is_memory = meta.query_advice(is_memory, CURRENT);
         let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
-        let precompiles = sum::expr([
-            tag.value_equals(
-                CopyDataType::Precompile(PrecompileCalls::Ecrecover),
-                CURRENT,
-            )(meta),
-            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Sha256), CURRENT)(meta),
-            tag.value_equals(
-                CopyDataType::Precompile(PrecompileCalls::Ripemd160),
-                CURRENT,
-            )(meta),
-            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Identity), CURRENT)(meta),
-            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Modexp), CURRENT)(meta),
-            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Add), CURRENT)(meta),
-            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Mul), CURRENT)(meta),
-            tag.value_equals(
-                CopyDataType::Precompile(PrecompileCalls::Bn128Pairing),
-                CURRENT,
-            )(meta),
-            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Blake2F), CURRENT)(meta),
-        ]);
         vec![
             // Match boolean indicators to their respective tag values.
-            enabled.expr() * (is_precompile - precompiles),
             enabled.expr()
                 * (is_tx_calldata - tag.value_equals(CopyDataType::TxCalldata, CURRENT)(meta)),
             enabled.expr()
@@ -85,7 +62,7 @@ pub fn constrain_must_terminate<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
     q_enable: Column<Fixed>,
-    tag: &BinaryNumberConfig<CopyDataType, 4>,
+    tag: &BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 ) {
     // If an event has started (tag != Padding on reader and writer rows), require q_enable=1 at the
     // next step. This prevents querying rows where constraints are disabled.
@@ -109,7 +86,7 @@ pub fn constrain_forward_parameters<F: Field>(
     meta: &mut VirtualCells<'_, F>,
     is_continue: Expression<F>,
     id: Column<Advice>,
-    tag: BinaryNumberConfig<CopyDataType, 4>,
+    tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
     src_addr_end: Column<Advice>,
 ) {
     cb.condition(is_continue.expr(), |cb| {
@@ -347,11 +324,8 @@ pub fn constrain_event_rlc_acc<F: Field>(
     value_acc: Column<Advice>,
     rlc_acc: Column<Advice>,
     // The flags to determine whether rlc_acc is requested from the event.
-    is_precompiled: Column<Advice>,
-    is_memory: Column<Advice>,
-    is_tx_calldata: Column<Advice>,
     is_bytecode: Column<Advice>,
-    tag: BinaryNumberConfig<CopyDataType, 4>,
+    tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 ) {
     // Forward rlc_acc from the event to all rows.
     let not_last = not::expr(meta.query_advice(is_last, CURRENT));
@@ -364,23 +338,14 @@ pub fn constrain_event_rlc_acc<F: Field>(
     });
 
     // Check the rlc_acc given in the event if any of:
-    // - Precompile => *
-    // - * => Precompile
-    // - Memory => Bytecode
-    // - TxCalldata => Bytecode
+    // - RlcAcc => *
     // - * => RlcAcc
+    // - * => Bytecode
+    // See also `CopyEvent::has_rlc()`
     let rlc_acc_cond = sum::expr([
-        meta.query_advice(is_precompiled, CURRENT),
-        meta.query_advice(is_precompiled, NEXT_ROW),
-        and::expr([
-            meta.query_advice(is_memory, CURRENT),
-            meta.query_advice(is_bytecode, NEXT_ROW),
-        ]),
-        and::expr([
-            meta.query_advice(is_tx_calldata, CURRENT),
-            meta.query_advice(is_bytecode, NEXT_ROW),
-        ]),
+        tag.value_equals(CopyDataType::RlcAcc, CURRENT)(meta),
         tag.value_equals(CopyDataType::RlcAcc, NEXT_ROW)(meta),
+        meta.query_advice(is_bytecode, NEXT_ROW),
     ]);
 
     cb.condition(rlc_acc_cond * meta.query_advice(is_last, NEXT_ROW), |cb| {

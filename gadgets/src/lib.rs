@@ -20,6 +20,7 @@ pub mod is_zero;
 pub mod less_than;
 pub mod monotone;
 pub mod mul_add;
+pub mod range;
 pub mod util;
 
 use eth_types::Field;

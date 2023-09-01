@@ -26,7 +26,7 @@ impl Opcode for Callvalue {
             state.call()?.call_id,
             CallContextField::Value,
             value,
-        );
+        )?;
 
         // Stack write of the call_value
         state.stack_write(

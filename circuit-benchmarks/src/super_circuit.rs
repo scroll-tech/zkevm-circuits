@@ -24,7 +24,7 @@ mod tests {
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaChaRng;
-    use std::{collections::HashMap, env::var};
+    use std::env::var;
     use zkevm_circuits::super_circuit::SuperCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -53,10 +53,7 @@ mod tests {
         let addr_a = wallet_a.address();
         let addr_b = address!("0x000000000000000000000000000000000000BBBB");
 
-        let mut wallets = HashMap::new();
-        wallets.insert(wallet_a.address(), wallet_a);
-
-        let mut block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -67,7 +64,7 @@ mod tests {
             },
             |mut txs, accs| {
                 txs[0]
-                    .from(accs[1].address)
+                    .from(wallet_a)
                     .to(accs[0].address)
                     .gas(Word::from(1_000_000u64));
             },
@@ -75,8 +72,6 @@ mod tests {
         )
         .unwrap()
         .into();
-
-        block.sign(&wallets);
 
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;

@@ -9,11 +9,11 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsZeroGadget, MinMaxGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, MinMaxGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, CachedRegion, Cell,
+            not, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,13 +21,18 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToScalar, U256,
+};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
     opcode: Cell<F>,
+    // check if it is REVERT opcode
+    is_revert: IsEqualGadget<F>,
 
     range: MemoryAddressGadget<F>,
     deployed_bytecode_rlc: Cell<F>,
@@ -63,6 +68,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let opcode = cb.query_cell();
 
         cb.opcode_lookup(opcode.expr(), 1.expr());
+        let is_revert = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::REVERT.expr());
+
+        // constrain op codes
+        cb.require_in_set(
+            "RETURN_REVERT state is for RETURN or REVERT",
+            opcode.expr(),
+            vec![OpcodeId::RETURN.expr(), OpcodeId::REVERT.expr()],
+        );
 
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
@@ -72,12 +85,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
         cb.require_boolean("is_success is boolean", is_success.expr());
-        // cb.require_equal(
-        // "if is_success, opcode is RETURN. if not, opcode is REVERT",
-        // opcode.expr(),
-        // is_success.expr() * OpcodeId::RETURN.expr()
-        // + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
-        // );
 
         // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
         // the call is, or is not, a create, root, or successful. See the specs at
@@ -88,9 +95,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // These are globally defined because they are used across multiple cases.
         let copy_rw_increase = cb.query_cell();
-        let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, "", copy_rw_increase.expr());
+        let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [range.end_offset()]);
 
         // Case A in the specs.
         // not work for memory word rw counter increase now.
@@ -133,7 +140,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 code_hash.expr(),
                 CopyDataType::Bytecode.expr(),
                 range.offset(),
-                range.address(),
+                range.end_offset(),
                 0.expr(),
                 range.length(),
                 deployed_bytecode_rlc.expr(),
@@ -280,7 +287,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     cb.next.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
                     range.offset(),
-                    range.address(),
+                    range.end_offset(),
                     return_data_offset.expr(),
                     copy_length.min(),
                     0.expr(),
@@ -289,6 +296,22 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             },
         );
 
+        // handle revert case
+        cb.condition(is_revert.expr(), |cb| {
+            // "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            // constrain RwCounterEndOfReversion
+            let rw_counter_end_of_step =
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+            cb.require_equal(
+                "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+                reversion_info.rw_counter_end_of_reversion(),
+                rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+            );
+            //  when REVERT happens, current call must be failed.
+            cb.condition(is_revert.expr(), |cb| {
+                cb.require_zero("is_success is false when is_revert", is_success.expr());
+            });
+        });
         // Without this, copy_rw_increase would be unconstrained for non-create root
         // calls.
         cb.condition(not::expr(is_create) * is_root, |cb| {
@@ -300,6 +323,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         Self {
             opcode,
+            is_revert,
             range,
             deployed_bytecode_rlc,
             is_success,
@@ -330,13 +354,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.opcode.assign(
-            region,
-            offset,
-            Value::known(F::from(step.opcode.unwrap().as_u64())),
-        )?;
+        let opcode = F::from(step.opcode.unwrap().as_u64());
+        self.opcode.assign(region, offset, Value::known(opcode))?;
 
-        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
+        self.is_revert
+            .assign(region, offset, opcode, F::from(OpcodeId::REVERT.as_u64()))?;
+
+        let mut rws = StepRws::new(block, step);
+
+        let [memory_offset, length] = [(); 2].map(|_| rws.next().stack_value());
+        rws.next(); // skip
+
         let range = self.range.assign(region, offset, memory_offset, length)?;
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
@@ -371,14 +399,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         if call.is_create && call.is_success {
             // read memory word and get real copy bytes
-            let deployed_bytecode: Vec<u8> = get_copy_bytes(
-                block,
-                step,
-                3,
-                3 + copy_rwc_inc as usize,
-                shift,
-                valid_length,
-            );
+            let deployed_bytecode: Vec<u8> =
+                get_copy_bytes(&mut rws, copy_rwc_inc as usize, shift, valid_length);
 
             self.deployed_bytecode_rlc.assign(
                 region,
@@ -411,17 +433,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
 
             if !deployed_bytecode.is_empty() {
-                let prev_code_hash = block.rws[step.rw_indices[3 + copy_rwc_inc as usize + 4]]
-                    .account_codehash_pair()
-                    .0;
+                rws.offset_add(5);
+                let prev_code_hash = rws.next().account_codehash_pair().1;
                 self.prev_code_hash
                     .assign(region, offset, region.code_hash(prev_code_hash))?;
                 #[cfg(feature = "scroll")]
                 {
-                    let prev_keccak_code_hash = block.rws
-                        [step.rw_indices[3 + copy_rwc_inc as usize + 6]]
-                        .account_keccak_codehash_pair()
-                        .0;
+                    rws.next();
+                    let prev_keccak_code_hash = rws.next().account_keccak_codehash_pair().1;
                     self.prev_keccak_code_hash.assign(
                         region,
                         offset,
@@ -633,6 +652,7 @@ mod test {
                 PUSH1(0)                        // value
 
                 CREATE
+                RETURNDATASIZE
             };
 
             let caller = Account {
@@ -718,81 +738,83 @@ mod test {
     #[test]
     // test CREATE/CREATE2 returndatasize both 0 for successful case
     fn test_return_nonroot_create_returndatasize() {
-        let initializer = callee_bytecode(true, 0, 10).code();
+        for is_return in [false, true] {
+            let initializer = callee_bytecode(is_return, 0, 10).code();
 
-        let mut bytecode = bytecode! {
-             // CREATE + RETURNDATASIZE + RETURNDATACOPY logic
-            PUSH32(Word::from_big_endian(&initializer))
-            PUSH1(0)
-            MSTORE
+            let mut bytecode = bytecode! {
+                 // CREATE + RETURNDATASIZE + RETURNDATACOPY logic
+                PUSH32(Word::from_big_endian(&initializer))
+                PUSH1(0)
+                MSTORE
 
-            PUSH1(initializer.len())        // size
-            PUSH1(32 - initializer.len())   // offset
-            PUSH1(0)                        // value
-            CREATE
-            RETURNDATASIZE
-            PUSH1(0) // offset
-            PUSH1(0) // dest offset
-            RETURNDATACOPY // test return data copy
-        };
+                PUSH1(initializer.len())        // size
+                PUSH1(32 - initializer.len())   // offset
+                PUSH1(0)                        // value
+                CREATE
+                RETURNDATASIZE
+                PUSH1(0) // offset
+                PUSH1(0) // dest offset
+                RETURNDATACOPY // test return data copy
+            };
 
-        // CREATE2 logic
-        let code_creator: Vec<u8> = initializer
-            .to_vec()
-            .iter()
-            .cloned()
-            .chain(0u8..((32 - initializer.len() % 32) as u8))
-            .collect();
-        for (index, word) in code_creator.chunks(32).enumerate() {
-            bytecode.op_mstore(index * 32, Word::from_big_endian(word));
+            // CREATE2 logic
+            let code_creator: Vec<u8> = initializer
+                .to_vec()
+                .iter()
+                .cloned()
+                .chain(0u8..((32 - initializer.len() % 32) as u8))
+                .collect();
+            for (index, word) in code_creator.chunks(32).enumerate() {
+                bytecode.op_mstore(index * 32, Word::from_big_endian(word));
+            }
+            bytecode.append(&bytecode! {
+                PUSH3(0x123456) // salt
+                PUSH1(initializer.len()) // length
+                PUSH1(0) // offset
+                PUSH1(0) // value
+                CREATE2
+                RETURNDATASIZE
+                PUSH1(0) // offset
+                PUSH1(0) // dest offset
+                RETURNDATACOPY
+            });
+
+            let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
+                .unwrap()
+                .into();
+            if is_return {
+                // collect return opcode, retrieve next step, assure both contract create
+                // successfully
+                let created_contract_addr = block.geth_traces[0]
+                    .struct_logs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.op == OpcodeId::RETURN)
+                    .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
+                    .flat_map(|s| s.stack.nth_last(0)) // contract addr on stack top
+                    .collect_vec();
+                assert!(created_contract_addr.len() == 2); // both contract addr exist
+                created_contract_addr
+                    .iter()
+                    .for_each(|addr| assert!(addr > &U256::zero()));
+
+                // collect return opcode, retrieve next step, assure both returndata size is 0
+                let return_data_size = block.geth_traces[0]
+                    .struct_logs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.op == OpcodeId::RETURNDATASIZE)
+                    .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
+                    .flat_map(|s| s.stack.nth_last(0)) // returndata size on stack top
+                    .collect_vec();
+                assert!(return_data_size.len() == 2);
+                return_data_size
+                    .iter()
+                    .for_each(|size| assert_eq!(size, &Word::zero()));
+            }
+            let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
+            CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
         }
-        bytecode.append(&bytecode! {
-            PUSH3(0x123456) // salt
-            PUSH1(initializer.len()) // length
-            PUSH1(0) // offset
-            PUSH1(0) // value
-            CREATE2
-            RETURNDATASIZE
-            PUSH1(0) // offset
-            PUSH1(0) // dest offset
-            RETURNDATACOPY
-        });
-
-        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
-            .unwrap()
-            .into();
-
-        // collect return opcode, retrieve next step, assure both contract create
-        // successfully
-        let created_contract_addr = block.geth_traces[0]
-            .struct_logs
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.op == OpcodeId::RETURN)
-            .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
-            .flat_map(|s| s.stack.nth_last(0)) // contract addr on stack top
-            .collect_vec();
-        assert!(created_contract_addr.len() == 2); // both contract addr exist
-        created_contract_addr
-            .iter()
-            .for_each(|addr| assert!(addr > &U256::zero()));
-
-        // collect return opcode, retrieve next step, assure both returndata size is 0
-        let return_data_size = block.geth_traces[0]
-            .struct_logs
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.op == OpcodeId::RETURNDATASIZE)
-            .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
-            .flat_map(|s| s.stack.nth_last(0)) // returndata size on stack top
-            .collect_vec();
-        assert!(return_data_size.len() == 2);
-        return_data_size
-            .iter()
-            .for_each(|size| assert_eq!(size, &Word::zero()));
-
-        let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
-        CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
     }
 
     #[test]

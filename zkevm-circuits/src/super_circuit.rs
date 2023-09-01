@@ -64,31 +64,27 @@ use crate::{
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
     ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
-    exp_circuit::{ExpCircuit, ExpCircuitConfig},
+    exp_circuit::{ExpCircuit, ExpCircuitArgs, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     modexp_circuit::{ModExpCircuit, ModExpCircuitConfig},
+    pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
+    rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
-    util::{log2_ceil, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block},
-};
-
-#[cfg(feature = "zktrie")]
-use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
-
-use crate::util::Challenges;
-
-use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
         TxTable, U16Table, U8Table,
     },
+    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    util::{circuit_stats, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block, Transaction},
 };
 
-use crate::util::circuit_stats;
+#[cfg(feature = "zktrie")]
+use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
+
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
@@ -101,12 +97,6 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use snark_verifier_sdk::CircuitExt;
-
-use crate::{
-    pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
-    rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
-    witness::Transaction,
-};
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
@@ -323,7 +313,13 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         );
         log_circuit_info(meta, "state circuit");
 
-        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
+        let exp_circuit = ExpCircuitConfig::new(
+            meta,
+            ExpCircuitArgs {
+                exp_table,
+                u16_table,
+            },
+        );
         log_circuit_info(meta, "exp circuit");
 
         let evm_circuit = EvmCircuitConfig::new(
@@ -643,6 +639,8 @@ impl<
             .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
         self.sig_circuit
             .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
+        self.ecc_circuit
+            .synthesize_sub(&config.ecc_circuit, challenges, layouter)?;
         self.modexp_circuit
             .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
         self.state_circuit
@@ -653,6 +651,9 @@ impl<
             .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+
+        self.pi_circuit
+            .import_tx_values(self.tx_circuit.value_cells.borrow().clone().unwrap());
 
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
@@ -711,17 +712,6 @@ impl<
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
-
-        let block = self.evm_circuit.block.as_ref().unwrap();
-
-        config.tx_table.load(
-            &mut layouter,
-            &block.txs,
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
-            block.chain_id,
-            &challenges,
-        )?;
 
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;
@@ -804,7 +794,7 @@ impl<
         log::debug!("super circuit needs k = {}", k);
 
         let circuit =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA,MAX_INNER_BLOCKS,  MOCK_RANDOMNESS>::new_from_block(&block);
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA,MAX_INNER_BLOCKS, MOCK_RANDOMNESS>::new_from_block(&block);
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))

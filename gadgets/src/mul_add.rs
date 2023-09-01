@@ -3,25 +3,30 @@
 //!
 //! The circuit layout is as follows:
 #[rustfmt::skip]
-// | q_step | col0      | col1      | col2      | col3      | col4      |
-// |--------|-----------|-----------|-----------|-----------|-----------|
-// | 1      | a_limb0   | a_limb1   | a_limb2   | a_limb3   | -         |
-// | 0      | b_limb0   | b_limb1   | b_limb2   | b_limb3   | -         |
-// | 0      | c_lo      | c_hi      | d_lo      | d_hi      | -         |
-// | 0      | carry_lo0 | carry_lo1 | carry_lo2 | carry_lo3 | carry_lo4 |
-// | 0      | carry_lo5 | carry_lo6 | carry_lo7 | carry_lo8 | -         |
-// | 0      | carry_hi0 | carry_hi1 | carry_hi2 | carry_hi3 | carry_hi4 |
-// | 0      | carry_hi5 | carry_hi6 | carry_hi7 | carry_hi8 | -         |
-// |--------|-----------|-----------|-----------|-----------|-----------|
+// | q_step | col0      | col1      | col2      | col3      |
+// |--------|-----------|-----------|-----------|-----------|
+// | 1      | a_limb0   | a_limb1   | a_limb2   | a_limb3   |
+// | 0      | b_limb0   | b_limb1   | b_limb2   | b_limb3   |
+// | 0      | c_lo      | c_hi      | d_lo      | d_hi      |
+// | 0      | carry_lo0 | carry_lo1 | carry_lo2 | carry_lo3 |
+// | 0      | carry_lo4 | -         | -         | -         |
+// | 0      | carry_hi0 | carry_hi1 | carry_hi2 | carry_hi3 |
+// | 0      | carry_hi4 | -         | -         | -         |
+// | 0      | -         | -         | -         | -         |
+// |--------|-----------|-----------|-----------|-----------|
+// last row is padding to fit in 8 rows range_check_64 chip
 
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word, ToU16LittleEndian};
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
     poly::Rotation,
 };
 
-use crate::util::{expr_from_bytes, pow_of_two, split_u256, split_u256_limb64, Expr};
+use crate::{
+    range::{UIntRangeCheckChip, UIntRangeCheckInstruction},
+    util::{expr_from_u16, pow_of_two, split_u256, split_u256_limb64, Expr},
+};
 
 /// Config for the MulAddChip.
 #[derive(Clone, Debug)]
@@ -38,11 +43,14 @@ pub struct MulAddConfig<F> {
     /// Fourth of the columns which we use over multiple rows to represent the
     /// schema described above.
     pub col3: Column<Advice>,
-    /// Fifth of the columns which we use over multiple rows to represent the
-    /// schema described above.
-    pub col4: Column<Advice>,
     /// Sum of the parts higher than 256-bit in the product.
     pub overflow: Expression<F>,
+    /// Lookup table for LtChips and carry_lo/hi.
+    pub u16_table: TableColumn,
+    /// Range check of a, b which needs to be in [0, 2^64)
+    pub range_check_64: UIntRangeCheckChip<F, { UIntRangeCheckChip::SIZE_U64 }, 8>,
+    /// Range check of c, d which needs to be in [0, 2^128)
+    pub range_check_128: UIntRangeCheckChip<F, { UIntRangeCheckChip::SIZE_U128 }, 4>,
 }
 
 impl<F: Field> MulAddConfig<F> {
@@ -91,8 +99,8 @@ impl<F: Field> MulAddConfig<F> {
     /// 128-bit lo-hi parts of `d` from the next step.
     pub fn d_lo_hi_next(&self, meta: &mut VirtualCells<'_, F>) -> (Expression<F>, Expression<F>) {
         (
-            meta.query_advice(self.col2, Rotation(9)),
-            meta.query_advice(self.col3, Rotation(9)),
+            meta.query_advice(self.col2, Rotation(2 + 8)),
+            meta.query_advice(self.col3, Rotation(2 + 8)),
         )
     }
 }
@@ -109,17 +117,55 @@ impl<F: Field> MulAddChip<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
+        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
+        u16_table: TableColumn,
     ) -> MulAddConfig<F> {
         let col0 = meta.advice_column();
         let col1 = meta.advice_column();
         let col2 = meta.advice_column();
         let col3 = meta.advice_column();
-        let col4 = meta.advice_column();
         let mut overflow = 0.expr();
 
+        let carry_lo_cols = [col0, col1, col2, col3]
+            .map(|col| (col, 3))
+            .into_iter()
+            .chain([(col0, 4)])
+            .collect::<Vec<_>>();
+
+        let carry_hi_cols = [col0, col1, col2, col3]
+            .map(|col| (col, 5))
+            .into_iter()
+            .chain([(col0, 6)])
+            .collect::<Vec<_>>();
+
+        let query_carry_lo_expr = |meta: &mut VirtualCells<F>| {
+            carry_lo_cols
+                .iter()
+                .map(|(col, rot)| meta.query_advice(*col, Rotation(*rot)))
+                .collect::<Vec<Expression<F>>>()
+        };
+
+        let query_carry_hi_expr = |meta: &mut VirtualCells<F>| {
+            carry_hi_cols
+                .iter()
+                .map(|(col, rot)| meta.query_advice(*col, Rotation(*rot)))
+                .collect::<Vec<Expression<F>>>()
+        };
+
+        {
+            let mut carry_cols = carry_lo_cols.clone();
+            carry_cols.append(&mut carry_hi_cols.clone());
+
+            for (col, rot) in carry_cols.into_iter() {
+                meta.lookup("mul carry range check lo/hi lookup u16", |meta| {
+                    let q_enable = q_enable.clone()(meta);
+                    vec![(q_enable * meta.query_advice(col, Rotation(rot)), u16_table)]
+                });
+            }
+        }
+
         meta.create_gate("mul add gate", |meta| {
-            let q_enable = q_enable(meta);
+            let q_enable = q_enable.clone()(meta);
 
             let a_limbs =
                 [col0, col1, col2, col3].map(|column| meta.query_advice(column, Rotation::cur()));
@@ -131,19 +177,11 @@ impl<F: Field> MulAddChip<F> {
             let d_lo = meta.query_advice(col2, Rotation(2));
             let d_hi = meta.query_advice(col3, Rotation(2));
 
-            let carry_los = [col0, col1, col2, col3, col4]
-                .map(|col| meta.query_advice(col, Rotation(3)))
-                .into_iter()
-                .chain([col0, col1, col2, col3].map(|col| meta.query_advice(col, Rotation(4))))
-                .collect::<Vec<Expression<F>>>();
-            let carry_his = [col0, col1, col2, col3, col4]
-                .map(|col| meta.query_advice(col, Rotation(5)))
-                .into_iter()
-                .chain([col0, col1, col2, col3].map(|col| meta.query_advice(col, Rotation(6))))
-                .collect::<Vec<Expression<F>>>();
+            let carry_los = query_carry_lo_expr(meta);
+            let carry_his = query_carry_hi_expr(meta);
 
-            let carry_lo_expr = expr_from_bytes(&carry_los);
-            let carry_hi_expr = expr_from_bytes(&carry_his);
+            let carry_lo_expr = expr_from_u16(&carry_los);
+            let carry_hi_expr = expr_from_u16(&carry_his);
 
             let t0 = a_limbs[0].clone() * b_limbs[0].clone();
             let t1 =
@@ -163,8 +201,12 @@ impl<F: Field> MulAddChip<F> {
                 + a_limbs[3].clone() * b_limbs[2].clone()
                 + a_limbs[3].clone() * b_limbs[3].clone();
 
+            // t0 + t1 * 2^64 + c_lo, fits in 193 bits, decomposed in d_lo (128 bits) and carry_lo
+            // (72 bits).
             let check_a = t0.expr() + t1.expr() * pow_of_two::<F>(64) + c_lo
                 - (d_lo + carry_lo_expr.clone() * pow_of_two::<F>(128));
+            // t2 + t3 * 2^64 + c_hi + carry_lo, fits in 194 bits, decomposed in d_hi (128 bits) and
+            // carry_hi (72 bits)
             let check_b = t2.expr() + t3.expr() * pow_of_two::<F>(64) + c_hi + carry_lo_expr
                 - (d_hi + carry_hi_expr * pow_of_two::<F>(128));
 
@@ -173,13 +215,39 @@ impl<F: Field> MulAddChip<F> {
                 .map(move |poly| q_enable.clone() * poly)
         });
 
+        // range check for a, b on first two rows
+        let range_check_64_config = UIntRangeCheckChip::configure(
+            meta,
+            q_enable.clone(),
+            |meta| {
+                [col0, col1, col2, col3]
+                    .map(|col| meta.query_advice(col, Rotation(0)))
+                    .into_iter()
+                    .chain([col0, col1, col2, col3].map(|col| meta.query_advice(col, Rotation(1))))
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
+            },
+            u16_table,
+        );
+
+        // range check for c, d on third row
+        let range_check_128_config = UIntRangeCheckChip::configure(
+            meta,
+            q_enable.clone(),
+            |meta| [col0, col1, col2, col3].map(|col| meta.query_advice(col, Rotation(2))),
+            u16_table,
+        );
+
         MulAddConfig {
             col0,
             col1,
             col2,
             col3,
-            col4,
             overflow,
+            u16_table,
+            range_check_64: UIntRangeCheckChip::construct(range_check_64_config),
+            range_check_128: UIntRangeCheckChip::construct(range_check_128_config),
         }
     }
 
@@ -230,20 +298,14 @@ impl<F: Field> MulAddChip<F> {
         .zip(a_limbs)
         .enumerate()
         {
+            let a = F::from(value.as_u64());
             region.assign_advice(
                 || format!("a limb ({i})"),
                 column,
                 offset,
-                || Value::known(F::from(value.as_u64())),
+                || Value::known(a),
             )?;
         }
-        region.assign_advice(
-            || format!("unused col: {offset}"),
-            self.config.col4,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
         // b limbs.
         for (i, (column, value)) in [
             self.config.col0,
@@ -255,18 +317,24 @@ impl<F: Field> MulAddChip<F> {
         .zip(b_limbs)
         .enumerate()
         {
+            let b = F::from(value.as_u64());
             region.assign_advice(
                 || format!("b limb ({i})"),
                 column,
                 offset + 1,
-                || Value::known(F::from(value.as_u64())),
+                || Value::known(b),
             )?;
         }
-        region.assign_advice(
-            || format!("unused col {}", offset + 1),
-            self.config.col4,
-            offset + 1,
-            || Value::known(F::zero()),
+        self.config.range_check_64.assign(
+            region,
+            offset,
+            a_limbs
+                .into_iter()
+                .chain(b_limbs)
+                .map(|x| F::from(x.as_u64()))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
         )?;
 
         // c_lo, c_hi, d_lo, d_hi.
@@ -294,11 +362,15 @@ impl<F: Field> MulAddChip<F> {
             offset + 2,
             || Value::known(F::from_u128(d_hi.as_u128())),
         )?;
-        region.assign_advice(
-            || format!("unused col: {}", offset + 2),
-            self.config.col4,
-            offset + 2,
-            || Value::known(F::zero()),
+        self.config.range_check_128.assign(
+            region,
+            offset,
+            [c_lo, c_hi, d_lo, d_hi]
+                .iter()
+                .map(|x| F::from_u128(x.as_u128()))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
         )?;
 
         // carry_lo.
@@ -307,29 +379,15 @@ impl<F: Field> MulAddChip<F> {
             (self.config.col1, offset + 3),
             (self.config.col2, offset + 3),
             (self.config.col3, offset + 3),
-            (self.config.col4, offset + 3),
             (self.config.col0, offset + 4),
-            (self.config.col1, offset + 4),
-            (self.config.col2, offset + 4),
-            (self.config.col3, offset + 4),
         ]
         .into_iter()
-        .zip(carry_lo.to_le_bytes().iter())
+        .zip(carry_lo.to_le_u16_array().iter())
         .enumerate()
         {
-            region.assign_advice(
-                || format!("carry lo ({i})"),
-                col,
-                rot,
-                || Value::known(F::from(*val as u64)),
-            )?;
+            let v = F::from(*val as u64);
+            region.assign_advice(|| format!("carry lo ({i})"), col, rot, || Value::known(v))?;
         }
-        region.assign_advice(
-            || format!("unused col: {}", offset + 4),
-            self.config.col4,
-            offset + 4,
-            || Value::known(F::zero()),
-        )?;
 
         // carry_hi.
         for (i, ((col, rot), val)) in [
@@ -337,29 +395,30 @@ impl<F: Field> MulAddChip<F> {
             (self.config.col1, offset + 5),
             (self.config.col2, offset + 5),
             (self.config.col3, offset + 5),
-            (self.config.col4, offset + 5),
             (self.config.col0, offset + 6),
-            (self.config.col1, offset + 6),
-            (self.config.col2, offset + 6),
-            (self.config.col3, offset + 6),
         ]
         .into_iter()
-        .zip(carry_hi.to_le_bytes().iter())
+        .zip(carry_hi.to_le_u16_array().iter())
         .enumerate()
         {
+            let v = F::from(*val as u64);
+            region.assign_advice(|| format!("carry hi ({i})"), col, rot, || Value::known(v))?;
+        }
+
+        // unused padding row
+        for col in [
+            self.config.col0,
+            self.config.col1,
+            self.config.col2,
+            self.config.col3,
+        ] {
             region.assign_advice(
-                || format!("carry hi ({i})"),
+                || "unused padding row",
                 col,
-                rot,
-                || Value::known(F::from(*val as u64)),
+                offset + 7,
+                || Value::known(F::zero()),
             )?;
         }
-        region.assign_advice(
-            || format!("unused col: {}", offset + 6),
-            self.config.col4,
-            offset + 6,
-            || Value::known(F::zero()),
-        )?;
 
         Ok(())
     }
@@ -371,7 +430,6 @@ impl<F: Field> MulAddChip<F> {
             (self.config.col1, "GADGET_MUL_ADD_col1"),
             (self.config.col2, "GADGET_MUL_ADD_col2"),
             (self.config.col3, "GADGET_MUL_ADD_col3"),
-            (self.config.col4, "GADGET_MUL_ADD_col4"),
         ]
         .iter()
         .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
@@ -384,7 +442,7 @@ mod test {
 
     use eth_types::{Field, Word};
     use halo2_proofs::{
-        circuit::SimpleFloorPlanner,
+        circuit::{SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr as Fp,
         plonk::{Circuit, Selector},
@@ -395,7 +453,7 @@ mod test {
 
     macro_rules! try_test_circuit {
         ($values:expr) => {{
-            let k = 10;
+            let k = 17;
             let circuit = TestCircuit::<Fp> {
                 values: $values,
                 _marker: PhantomData,
@@ -407,7 +465,7 @@ mod test {
 
     macro_rules! try_test_circuit_error {
         ($values:expr) => {{
-            let k = 10;
+            let k = 17;
             let circuit = TestCircuit::<Fp> {
                 values: $values,
                 _marker: PhantomData,
@@ -446,7 +504,9 @@ mod test {
 
             fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.complex_selector();
-                let mul_config = MulAddChip::configure(meta, |meta| meta.query_selector(q_enable));
+                let u16_table = meta.lookup_table_column();
+                let mul_config =
+                    MulAddChip::configure(meta, |meta| meta.query_selector(q_enable), u16_table);
                 Self::Config {
                     q_enable,
                     mul_config,
@@ -459,6 +519,22 @@ mod test {
                 mut layouter: impl halo2_proofs::circuit::Layouter<F>,
             ) -> Result<(), halo2_proofs::plonk::Error> {
                 let chip = MulAddChip::construct(config.mul_config);
+
+                layouter.assign_table(
+                    || "u16 table",
+                    |mut table| {
+                        for i in 0..=65535 {
+                            table.assign_cell(
+                                || format!("u16 table row {i}"),
+                                chip.config.u16_table,
+                                i,
+                                || Value::known(F::from(i as u64)),
+                            )?;
+                        }
+                        Ok(())
+                    },
+                )?;
+
                 layouter.assign_region(
                     || "witness",
                     |mut region| {
@@ -466,7 +542,7 @@ mod test {
                         for (a, b, d) in self.values.iter() {
                             config.q_enable.enable(&mut region, offset)?;
                             chip.assign(&mut region, offset, [*a, *b, Word::zero(), *d])?;
-                            offset += 7
+                            offset += 8
                         }
                         Ok(())
                     },

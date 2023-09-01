@@ -1,12 +1,16 @@
 use super::{
     parse,
-    spec::{AccountMatch, Env, StateTest},
+    spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
 use crate::{utils::MainnetFork, Compiler};
 use anyhow::{bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
-use std::{collections::HashMap, convert::TryInto, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+    str::FromStr,
+};
 use yaml_rust::Yaml;
 
 type Label = String;
@@ -38,11 +42,11 @@ impl Refs {
 }
 
 pub struct YamlStateTestBuilder<'a> {
-    compiler: &'a mut Compiler,
+    compiler: &'a Compiler,
 }
 
 impl<'a> YamlStateTestBuilder<'a> {
-    pub fn new(compiler: &'a mut Compiler) -> Self {
+    pub fn new(compiler: &'a Compiler) -> Self {
         Self { compiler }
     }
 
@@ -71,7 +75,7 @@ impl<'a> YamlStateTestBuilder<'a> {
             let env = Self::parse_env(&yaml_test["env"])?;
 
             // parse pre (account states before executing the transaction)
-            let pre: HashMap<Address, Account> = self
+            let pre: BTreeMap<Address, Account> = self
                 .parse_accounts(&yaml_test["pre"])?
                 .into_iter()
                 .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
@@ -205,7 +209,7 @@ impl<'a> YamlStateTestBuilder<'a> {
     fn parse_env(yaml: &Yaml) -> Result<Env> {
         Ok(Env {
             current_base_fee: Self::parse_u256(&yaml["currentBaseFee"])
-                .unwrap_or_else(|_| U256::from(10)),
+                .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
             current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
             current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
@@ -569,7 +573,7 @@ arith:
 
     #[test]
     fn combinations() -> Result<()> {
-        let tcs = YamlStateTestBuilder::new(&mut Compiler::default())
+        let tcs = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?
             .into_iter()
             .map(|v| (v.id.clone(), v))
@@ -591,7 +595,7 @@ arith:
 
     #[test]
     fn parse() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let current = tc.remove(0);
 
@@ -602,7 +606,7 @@ arith:
             path: "".into(),
             id: "arith_d0_g0_v0".into(),
             env: Env {
-                current_base_fee: U256::from(10),
+                current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
                 current_difficulty: U256::from(0x20000u64),
                 current_number: 1,
@@ -622,7 +626,7 @@ arith:
             nonce: U256::zero(),
             value: U256::one(),
             data: Bytes::from(&[0]),
-            pre: HashMap::from([
+            pre: BTreeMap::from([
                 (
                     ccccc,
                     Account {
@@ -665,7 +669,7 @@ arith:
 
     #[test]
     fn result_pass() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
         run_test(t1, TestSuite::default(), CircuitsConfig::default())?;
@@ -673,7 +677,7 @@ arith:
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_storage: "2".into(),
@@ -698,7 +702,7 @@ arith:
     }
     #[test]
     fn bad_balance() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_balance: "1000000000002".into(),
@@ -723,7 +727,7 @@ arith:
 
     #[test]
     fn bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_code: ":raw 0x600200".into(),
@@ -748,7 +752,7 @@ arith:
 
     #[test]
     fn bad_nonce() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_nonce: "2".into(),
@@ -774,7 +778,7 @@ arith:
 
     #[test]
     fn sstore() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0x607760005500".into(),
@@ -791,7 +795,7 @@ arith:
 
     #[test]
     fn marked_as_exception_and_fails() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 gas_limit: "2300".into(),
@@ -806,7 +810,7 @@ arith:
     }
     #[test]
     fn marked_as_exception_but_does_not_fail() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_exception: true,
@@ -823,7 +827,7 @@ arith:
     #[cfg(feature = "warn-unimplemented")]
     #[test]
     fn fail_bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0xF4".into(),

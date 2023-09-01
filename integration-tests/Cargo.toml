@@ -13,7 +13,7 @@ serde_json = "1.0.66"
 serde = { version = "1.0.130", features = ["derive"] }
 bus-mapping = { path = "../bus-mapping" , features = ["test"] }
 eth-types = { path = "../eth-types" }
-zkevm-circuits = { path = "../zkevm-circuits", default-features = false, features = ["test", "onephase","shanghai"] }
+zkevm-circuits = { path = "../zkevm-circuits", default-features = false, features = ["test", "test-circuits","shanghai","debug-annotations"] }
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"

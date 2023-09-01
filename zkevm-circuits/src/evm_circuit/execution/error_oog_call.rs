@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::MemoryExpandedAddressGadget,
-            or, CachedRegion, Cell,
+            or, CachedRegion, Cell, StepRws,
         },
     },
     table::CallContextFieldTag,
@@ -45,13 +45,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let is_call = IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode =
-            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::CALLCODE.expr());
+        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
+        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
         let is_delegatecall =
-            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::DELEGATECALL.expr());
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
         let is_staticcall =
-            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::STATICCALL.expr());
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
@@ -129,36 +128,29 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let is_call_or_callcode =
-            usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
-        let [tx_id, is_static] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].call_context_value());
-        let stack_index = 2;
-        let [gas, callee_address] = [
-            step.rw_indices[stack_index],
-            step.rw_indices[stack_index + 1],
-        ]
-        .map(|idx| block.rws[idx].stack_value());
-        let value = if is_call_or_callcode == 1 {
-            block.rws[step.rw_indices[stack_index + 2]].stack_value()
+        let is_call = opcode == OpcodeId::CALL;
+        let is_callcode = opcode == OpcodeId::CALLCODE;
+
+        let mut rws = StepRws::new(block, step);
+
+        let tx_id = rws.next().call_context_value();
+        let is_static = rws.next().call_context_value();
+        let gas = rws.next().stack_value();
+        let callee_address = rws.next().stack_value();
+        let value = if is_call || is_callcode {
+            rws.next().stack_value()
         } else {
             U256::zero()
         };
-        let [cd_offset, cd_length, rd_offset, rd_length] = [
-            step.rw_indices[stack_index + is_call_or_callcode + 2],
-            step.rw_indices[stack_index + is_call_or_callcode + 3],
-            step.rw_indices[stack_index + is_call_or_callcode + 4],
-            step.rw_indices[stack_index + is_call_or_callcode + 5],
-        ]
-        .map(|idx| block.rws[idx].stack_value());
+        let cd_offset = rws.next().stack_value();
+        let cd_length = rws.next().stack_value();
+        let rd_offset = rws.next().stack_value();
+        let rd_length = rws.next().stack_value();
 
-        let callee_code_hash = block.rws[step.rw_indices[9 + is_call_or_callcode]]
-            .account_value_pair()
-            .0;
+        rws.offset_add(1);
+        let callee_code_hash = rws.next().account_value_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
-
-        let (is_warm, is_warm_prev) =
-            block.rws[step.rw_indices[10 + is_call_or_callcode]].tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
 
         let memory_expansion_gas_cost = self.call.assign(
             region,
@@ -212,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,
             is_warm_prev,
-            true,
+            is_call,
             has_value,
             !callee_exists,
         )?;
@@ -232,7 +224,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             block,
             call,
             step,
-            13 + is_call_or_callcode,
+            13 + if is_call || is_callcode { 1 } else { 0 },
         )?;
         Ok(())
     }

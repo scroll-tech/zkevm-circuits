@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            CachedRegion, Cell, Word,
+            sum, CachedRegion, Cell, Word,
         },
     },
     table::CallContextFieldTag,
@@ -40,13 +40,26 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let is_call = IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode =
-            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::CALLCODE.expr());
+        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
+        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
         let is_delegatecall =
-            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::DELEGATECALL.expr());
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
         let is_staticcall =
-            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::STATICCALL.expr());
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+
+        // constrain op code
+        // NOTE: this precompile gadget is for dummy use at the moment, the real error handling for
+        // precompile will be done in each precompile gadget in the future. won't add step
+        // state transition constraint here as well.
+        cb.require_true(
+            "opcode is one of [call, callcode, staticcall, delegatecall]",
+            sum::expr(vec![
+                is_call.expr(),
+                is_callcode.expr(),
+                is_delegatecall.expr(),
+                is_staticcall.expr(),
+            ]),
+        );
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -158,64 +171,5 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             .assign(region, offset, rd_offset, rd_length)?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use bus_mapping::{
-        evm::{OpcodeId, PrecompileCallArgs},
-        precompile::PrecompileCalls,
-    };
-    use eth_types::{bytecode, word, ToWord};
-    use itertools::Itertools;
-    use mock::TestContext;
-
-    use crate::test_util::CircuitTestBuilder;
-
-    lazy_static::lazy_static! {
-        static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
-            vec![
-                // OOG error for Precompile identity
-                PrecompileCallArgs {
-                    name: "insufficient gas (precompile call should fail)",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH16(word!("0x0123456789abcdef0f1e2d3c4b5a6978"))
-                        PUSH1(0x00)
-                        MSTORE
-                    },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x10.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x10.into(),
-                    address: PrecompileCalls::Identity.address().to_word(),
-                    // set gas to be insufficient
-                    gas: 1.into(),
-                    ..Default::default()
-                },
-
-                // TODO: add more failed (including OOG) cases for Precompile.
-            ]
-        };
-    }
-
-    #[test]
-    fn test_precompile_failed() {
-        let call_kinds = vec![
-            OpcodeId::CALL,
-            OpcodeId::STATICCALL,
-            OpcodeId::DELEGATECALL,
-            OpcodeId::CALLCODE,
-        ];
-
-        for (test_vector, &call_kind) in TEST_VECTOR.iter().cartesian_product(&call_kinds) {
-            let bytecode = test_vector.with_call_op(call_kind);
-
-            CircuitTestBuilder::new_from_test_ctx(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-            )
-            .run();
-        }
     }
 }

@@ -31,6 +31,8 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_bytecode: 30000,
     max_mpt_rows: 30000,
     max_keccak_rows: 0,
+    max_poseidon_rows: 0,
+    max_vertical_circuit_rows: 0,
     max_exp_steps: 1000,
     max_evm_rows: 0,
     max_rlp_rows: 33000,
@@ -153,7 +155,8 @@ async fn test_circuit_all_block() {
         let builder = builder.unwrap().0;
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
-            return;
+            // skip empty block
+            continue;
         }
 
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();

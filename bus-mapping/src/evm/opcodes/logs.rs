@@ -61,25 +61,25 @@ fn gen_log_step(
         call_id,
         CallContextField::TxId,
         state.tx_ctx.id().into(),
-    );
+    )?;
     state.call_context_read(
         &mut exec_step,
         call_id,
         CallContextField::IsStatic,
         Word::from(state.call()?.is_static as u8),
-    );
+    )?;
     state.call_context_read(
         &mut exec_step,
         call_id,
         CallContextField::CalleeAddress,
         state.call()?.address.to_word(),
-    );
+    )?;
     state.call_context_read(
         &mut exec_step,
         call_id,
         CallContextField::IsPersistent,
         Word::from(state.call()?.is_persistent as u8),
-    );
+    )?;
 
     if state.call()?.is_persistent {
         state.tx_log_write(
