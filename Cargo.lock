@@ -468,7 +468,7 @@ dependencies = [
  "mock",
  "mpt-zktrie",
  "once_cell",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0901)",
+ "poseidon-circuit",
  "pretty_assertions",
  "rand",
  "revm-precompile",
@@ -1436,7 +1436,7 @@ dependencies = [
  "libsecp256k1",
  "num",
  "num-bigint",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0901)",
+ "poseidon-circuit",
  "regex",
  "serde",
  "serde_json",
@@ -2212,7 +2212,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.6.1#c5cd0dab4a242d7077bf9cad051119dafaa4d6e9"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.6.2#cafcdeb2c7fd6602d0ddac183c1fb5396a135f9e"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -2222,7 +2222,7 @@ dependencies = [
  "log",
  "num-bigint",
  "num-traits",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0723)",
+ "poseidon-circuit",
  "rand",
  "serde",
  "serde_json",
@@ -2960,7 +2960,7 @@ dependencies = [
  "lazy_static",
  "log",
  "num-bigint",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0901)",
+ "poseidon-circuit",
  "serde",
  "serde_json",
  "zktrie",
@@ -3520,20 +3520,6 @@ dependencies = [
  "group",
  "halo2curves",
  "subtle",
-]
-
-[[package]]
-name = "poseidon-circuit"
-version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0723#1652d54bf7ca9d8f286b53fe077d9efefdcf6d5f"
-dependencies = [
- "bitvec 1.0.1",
- "halo2_proofs",
- "lazy_static",
- "log",
- "rand",
- "rand_xorshift",
- "thiserror",
 ]
 
 [[package]]
@@ -5522,7 +5508,7 @@ dependencies = [
  "num-bigint",
  "once_cell",
  "paste",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0901)",
+ "poseidon-circuit",
  "pretty_assertions",
  "rand",
  "rand_chacha",
