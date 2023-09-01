@@ -1200,6 +1200,33 @@ mod test {
                     ..Default::default()
                 },
                 PrecompileCallArgs {
+                    name: "modexp all zero bit len",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x0)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x0)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x0)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800090000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x63.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x21.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
                     name: "modexp zero base and exponent",
                     setup_code: bytecode! {
                         // Base size
