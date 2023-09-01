@@ -1176,11 +1176,11 @@ mod test {
                     name: "modexp zero modulus",
                     setup_code: bytecode! {
                         // Base size
-                        PUSH1(0x0)
+                        PUSH1(0x1)
                         PUSH1(0x00)
                         MSTORE
                         // Esize
-                        PUSH1(0x0)
+                        PUSH1(0x2)
                         PUSH1(0x20)
                         MSTORE
                         // Msize
