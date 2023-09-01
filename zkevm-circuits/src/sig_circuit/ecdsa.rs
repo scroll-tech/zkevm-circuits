@@ -1,6 +1,8 @@
 //! This module implements the ECDSA circuit. Modified from
 //! <https://github.com/scroll-tech/halo2-lib/blob/530e744232860641f9533c9b9f8c1fee57f54cab/halo2-ecc/src/ecc/ecdsa.rs#L16>
 
+use std::ops::Add;
+
 use halo2_base::{
     gates::{GateInstructions, RangeInstructions},
     utils::{modulus, CurveAffineExt},
@@ -9,9 +11,11 @@ use halo2_base::{
 };
 use halo2_ecc::{
     bigint::{big_less_than, CRTInteger},
-    ecc::{ec_add_unequal, fixed_base, scalar_multiply, EcPoint},
+    ecc::{ec_add_unequal, ec_sub_unequal, fixed_base, scalar_multiply, EcPoint},
     fields::{fp::FpConfig, FieldChip, PrimeField},
 };
+use halo2_proofs::circuit::Value;
+use rand::thread_rng;
 
 // CF is the coordinate field of GA
 // SF is the scalar field of GA
@@ -47,21 +51,29 @@ where
     let r_valid = scalar_chip.is_soft_nonzero(ctx, r);
     let s_valid = scalar_chip.is_soft_nonzero(ctx, s);
 
+    println!("compute msg hash");
     // compute u1 = m s^{-1} mod n and u2 = r s^{-1} mod n
     let u1 = scalar_chip.divide(ctx, msghash, s);
     let u2 = scalar_chip.divide(ctx, r, s);
 
-    //let r_crt = scalar_chip.to_crt(ctx, r)?;
+    println!("compute randomness");
+    let mut rng = thread_rng();
+    let u3_fr = SF::random(&mut rng);
+    let u1_fr = scalar_chip.get_assigned_value(&u1);
+    let u1u3 = u1_fr + Value::known(u3_fr);
+    let u3 = scalar_chip.load_private(ctx, FpConfig::<F, SF>::fe_to_witness(&Value::known(u3_fr)));
+    let u1_plus_u3 = scalar_chip.load_private(ctx, FpConfig::<F, SF>::fe_to_witness(&u1u3));
 
-    // compute u1 * G and u2 * pubkey
-    let u1_mul = fixed_base::scalar_multiply::<F, _, _>(
+    // compute (u1+u3) * G
+    let u1u3_mul = fixed_base::scalar_multiply::<F, _, _>(
         base_chip,
         ctx,
         &GA::generator(),
-        &u1.truncation.limbs,
+        &u1_plus_u3.truncation.limbs,
         base_chip.limb_bits,
         fixed_window_bits,
     );
+    // compute u2 * pubkey
     let u2_mul = scalar_multiply::<F, _>(
         base_chip,
         ctx,
@@ -70,21 +82,40 @@ where
         base_chip.limb_bits,
         var_window_bits,
     );
+    // compute u3*G
+    let u3_mul = fixed_base::scalar_multiply::<F, _, _>(
+        base_chip,
+        ctx,
+        &GA::generator(),
+        &u3.truncation.limbs,
+        base_chip.limb_bits,
+        var_window_bits,
+    );
 
-    // check u1 * G and u2 * pubkey are not negatives and not equal
+    // compute u2 * pubkey + u3 * G
+    base_chip.enforce_less_than_p(ctx, u2_mul.x());
+    base_chip.enforce_less_than_p(ctx, u3_mul.x());
+    let u2_pk_u3_g = ec_add_unequal(base_chip, ctx, &u2_mul, &u3_mul, false);
+
+    // check
+    // - (u1 + u3) * G
+    // - u2 * pubkey + u3 * G
+    // are not negatives and not equal
+    //
     //     TODO: Technically they could be equal for a valid signature, but this happens with
     // vanishing probability           for an ECDSA signature constructed in a standard way
     // coordinates of u1_mul and u2_mul are in proper bigint form, and lie in but are not
     // constrained to [0, n) we therefore need hard inequality here
-    let u1_u2_x_eq = base_chip.is_equal(ctx, &u1_mul.x, &u2_mul.x);
+    let u1_u2_x_eq = base_chip.is_equal(ctx, &u1u3_mul.x, &u2_pk_u3_g.x);
     let u1_u2_not_neg = base_chip.range.gate().not(ctx, Existing(u1_u2_x_eq));
 
     // compute (x1, y1) = u1 * G + u2 * pubkey and check (r mod n) == x1 as integers
+    // which is basically u1u3_mul + u2_mul - u3_mul
     // WARNING: For optimization reasons, does not reduce x1 mod n, which is
     //          invalid unless p is very close to n in size.
-    base_chip.enforce_less_than_p(ctx, u1_mul.x());
-    base_chip.enforce_less_than_p(ctx, u2_mul.x());
-    let sum = ec_add_unequal(base_chip, ctx, &u1_mul, &u2_mul, false);
+    base_chip.enforce_less_than_p(ctx, u1u3_mul.x());
+    let sum = ec_add_unequal(base_chip, ctx, &u1u3_mul, &u2_mul, false);
+    let sum = ec_sub_unequal(base_chip, ctx, &sum, &u3_mul, false);
     let equal_check = base_chip.is_equal(ctx, &sum.x, r);
 
     // TODO: maybe the big_less_than is optional?
