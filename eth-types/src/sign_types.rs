@@ -1,8 +1,9 @@
 //! secp256k1 signature types and helper functions.
 
 use crate::{
+    address,
     geth_types::{Transaction, TxType},
-    ToBigEndian, Word, H256,
+    word, ToBigEndian, Word, H256,
 };
 use ethers_core::{
     k256::ecdsa::SigningKey,
@@ -83,9 +84,16 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
         .data(Bytes::default());
     let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
 
-    // FIXME: need to check if this is deterministic which means sig is fixed.
     let sig = wallet.sign_hash(sighash);
     assert_eq!(sig.v, 28);
+    assert_eq!(
+        sig.r,
+        word!("4faabf49beea23083894651a6f34baaf3dc29b396fb5baf8b8454773f328df61")
+    );
+    assert_eq!(
+        sig.s,
+        word!("0x75ae2dd5e4e688c9dbc6db7e75bafcb04ea141ca20332be9809a444d541272c1")
+    );
 
     (tx, sig)
 }
@@ -117,7 +125,10 @@ lazy_static! {
             ..Default::default()
         };
 
-        tx.sign_data().unwrap()
+        let sign_data = tx.sign_data().unwrap();
+        assert_eq!(sign_data.get_addr(), address!("0x7e5f4552091a69125d5dfcb7b8c2659029395bdf"));
+
+        sign_data
     };
 }
 
