@@ -24,7 +24,7 @@ use thiserror::Error;
 use zkevm_circuits::{
     bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
     modexp_circuit::ModExpCircuit, super_circuit::SuperCircuit, test_util::CircuitTestBuilder,
-    util::SubCircuit, witness::Block,
+    util::SubCircuit, witness::Block, sig_circuit::SigCircuit,
 };
 
 /// Read env var with default value
@@ -625,6 +625,7 @@ pub fn run_test(
                 "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
                 "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
                 "ecc" => test_with::<EccCircuit<Fr, 9>>(&witness_block),
+                "sig" => test_with::<SigCircuit<Fr>>(&witness_block),
                 _ => unimplemented!(),
             };
             prover.assert_satisfied_par();
