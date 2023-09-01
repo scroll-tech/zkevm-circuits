@@ -338,6 +338,7 @@ impl<F: Field> SigCircuit<F> {
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s, v) = signature;
+        log::trace!("v         : {:?}", v);
         log::trace!("sig_r     : {:?}", sig_r);
         log::trace!("sig_s     : {:?}", sig_s);
         log::trace!("msg_hash  : {:?}", msg_hash);
