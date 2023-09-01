@@ -697,11 +697,35 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             .pairs
             .iter()
             .map(|pair| {
+                // process x and y co-ordinates of G1.
                 let (g1x, g1x_cells, g1x_valid, g1x_is_zero) =
                     self.precheck_fq(ctx, ecc_chip, pair.g1_point.0, powers_of_256);
                 let (g1y, g1y_cells, g1y_valid, g1y_is_zero) =
                     self.precheck_fq(ctx, ecc_chip, pair.g1_point.1, powers_of_256);
                 let g1_point = EcPoint::<F, CRTInteger<F>>::construct(g1x, g1y);
+                let g1_is_on_curve_or_infinity = self.is_on_curveg1_or_infinity(
+                    ctx,
+                    ecc_chip,
+                    &g1_point.x,
+                    g1x_is_zero,
+                    &g1_point.y,
+                    g1y_is_zero,
+                );
+                let is_g1_valid = ecc_chip.field_chip().range().gate().and_many(
+                    ctx,
+                    vec![
+                        QuantumCell::Existing(g1x_valid),
+                        QuantumCell::Existing(g1y_valid),
+                        QuantumCell::Existing(g1_is_on_curve_or_infinity),
+                    ],
+                );
+                let is_g1_identity = ecc_chip.field_chip().range().gate().and(
+                    ctx,
+                    QuantumCell::Existing(g1x_is_zero),
+                    QuantumCell::Existing(g1y_is_zero),
+                );
+
+                // process x and y co-ordinates of G2.
                 let (g2x0, g2x0_cells, g2x0_valid, g2x0_is_zero) =
                     self.precheck_fq(ctx, ecc_chip, pair.g2_point.1, powers_of_256);
                 let (g2x1, g2x1_cells, g2x1_valid, g2x1_is_zero) =
@@ -724,14 +748,6 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     QuantumCell::Existing(g2y0_is_zero),
                     QuantumCell::Existing(g2y1_is_zero),
                 );
-                let g1_is_on_curve_or_infinity = self.is_on_curveg1_or_infinity(
-                    ctx,
-                    ecc_chip,
-                    &g1_point.x,
-                    g1x_is_zero,
-                    &g1_point.y,
-                    g1y_is_zero,
-                );
                 let g2_is_on_curve_or_infinity = self.is_on_curveg2_or_infinity(
                     ctx,
                     &fp2_chip,
@@ -739,19 +755,6 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     g2x_is_zero,
                     &g2_point.y,
                     g2y_is_zero,
-                );
-                let is_g1_valid = ecc_chip.field_chip().range().gate().and_many(
-                    ctx,
-                    vec![
-                        QuantumCell::Existing(g1x_valid),
-                        QuantumCell::Existing(g1y_valid),
-                        QuantumCell::Existing(g1_is_on_curve_or_infinity),
-                    ],
-                );
-                let is_g1_identity = ecc_chip.field_chip().range().gate().and(
-                    ctx,
-                    QuantumCell::Existing(g1x_is_zero),
-                    QuantumCell::Existing(g1y_is_zero),
                 );
                 let is_g2_valid = ecc_chip.field_chip().range().gate().and_many(
                     ctx,
@@ -772,11 +775,18 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                         QuantumCell::Existing(g2y1_is_zero),
                     ],
                 );
+
+                // Whether the pair (G1, G2) is valid, i.e.
+                // - G1 is a point on curve or infinity.
+                // - G2 is a point on curve or infinity.
                 let is_pair_valid = ecc_chip.field_chip().range().gate().and(
                     ctx,
                     QuantumCell::Existing(is_g1_valid),
                     QuantumCell::Existing(is_g2_valid),
                 );
+                // Whether the pair (G1, G2) is a zero pair, i.e.
+                // - G1 == G1::infinity && G2 is valid.
+                // - G2 == G2::infinity && G1 is valid.
                 let is_zero_pair = {
                     let is_zero_pair = ecc_chip.field_chip().range().gate().or(
                         ctx,
@@ -789,11 +799,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                         QuantumCell::Existing(is_pair_valid),
                     )
                 };
+
                 (
-                    is_g1_valid,
-                    is_g1_identity,
-                    is_g2_valid,
-                    is_g2_identity,
                     is_zero_pair,
                     is_pair_valid,
                     G1Decomposed {
@@ -815,10 +822,11 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcPairing g1s and g2s Assigned:");
         log_context_cursor!(ctx);
 
-        // RLC over the entire input bytes.
+        // EVM input for EcPairing in Big-Endian representation, padded by 0 bytes so that the
+        // total number of bytes are N_PAIRING_PER_OP * N_BYTES_PER_PAIR.
         let input_cells = decomposed_pairs
             .iter()
-            .flat_map(|(_, _, _, _, _, _, g1, g2)| {
+            .flat_map(|(_, _, g1, g2)| {
                 std::iter::empty()
                     .chain(g1.x_cells.iter().rev())
                     .chain(g1.y_cells.iter().rev())
@@ -839,7 +847,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             ctx,
             decomposed_pairs
                 .iter()
-                .map(|&(_, _, _, _, is_zero_pair, _, _, _)| QuantumCell::Existing(is_zero_pair))
+                .map(|(is_zero_pair, _, _, _)| QuantumCell::Existing(*is_zero_pair))
                 .collect_vec(),
         );
 
@@ -854,6 +862,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             let generator_g2 = G2Affine::generator();
             (Value::known(generator_g2.x), Value::known(generator_g2.y))
         });
+        // A pairing op satisfying the pairing check.
         let dummy_pair_check_ok = EcPairingOp::dummy_pairing_check_ok();
         let dummy_pair_check_ok_g1s = [
             ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[0].to_g1_affine_tuple()),
@@ -872,101 +881,52 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let pairs = decomposed_pairs
             .iter()
             .enumerate()
-            .map(
-                |(
-                    idx,
-                    (
-                        is_g1_valid,
-                        is_g1_identity,
-                        is_g2_valid,
-                        is_g2_identity,
-                        _is_zero_pair,
-                        is_pair_valid,
-                        g1,
-                        g2,
-                    ),
-                )| {
-                    // we should swap (G1, G2) with (G1::identity, G2::generator) if:
-                    // - G1 == (0, 0) && G2 is valid
-                    // - G2 == (0, 0, 0, 0) && G1 is valid
-                    let should_swap_a = ecc_chip.field_chip().range().gate().and(
-                        ctx,
-                        QuantumCell::Existing(*is_g1_identity),
-                        QuantumCell::Existing(*is_g2_valid),
-                    );
-                    let should_swap_b = ecc_chip.field_chip().range().gate().and(
-                        ctx,
-                        QuantumCell::Existing(*is_g2_identity),
-                        QuantumCell::Existing(*is_g1_valid),
-                    );
-                    let should_swap_valid = ecc_chip.field_chip().range().gate().or(
-                        ctx,
-                        QuantumCell::Existing(should_swap_a),
-                        QuantumCell::Existing(should_swap_b),
-                    );
-                    // we should swap (G1, G2) with (G1::random, G2::random) if:
-                    // - G1 is invalid
-                    // - G2 is invalid
-                    let should_swap_invalid = ecc_chip
-                        .field_chip()
-                        .range()
-                        .gate()
-                        .not(ctx, QuantumCell::Existing(*is_pair_valid));
-                    (
-                        {
-                            let swapped_g1 =
-                                ecc_chip.select(ctx, &dummy_g1, &g1.ec_point, &should_swap_invalid);
-                            let swapped_g1 =
-                                ecc_chip.select(ctx, &identity_g1, &swapped_g1, &should_swap_valid);
-                            ecc_chip.select(
-                                ctx,
-                                &dummy_pair_check_ok_g1s[idx],
-                                &swapped_g1,
-                                &all_pairs_zero,
-                            )
-                        },
-                        {
-                            let swapped_x = fp2_chip.select(
-                                ctx,
-                                &dummy_g2.x,
-                                &g2.ec_point.x,
-                                &should_swap_invalid,
-                            );
-                            let swapped_x = fp2_chip.select(
-                                ctx,
-                                &generator_g2.x,
-                                &swapped_x,
-                                &should_swap_valid,
-                            );
-                            let swapped_x = fp2_chip.select(
-                                ctx,
-                                &dummy_pair_check_ok_g2s[idx].x,
-                                &swapped_x,
-                                &all_pairs_zero,
-                            );
-                            let swapped_y = fp2_chip.select(
-                                ctx,
-                                &dummy_g2.y,
-                                &g2.ec_point.y,
-                                &should_swap_invalid,
-                            );
-                            let swapped_y = fp2_chip.select(
-                                ctx,
-                                &generator_g2.y,
-                                &swapped_y,
-                                &should_swap_valid,
-                            );
-                            let swapped_y = fp2_chip.select(
-                                ctx,
-                                &dummy_pair_check_ok_g2s[idx].y,
-                                &swapped_y,
-                                &all_pairs_zero,
-                            );
-                            EcPoint::construct(swapped_x, swapped_y)
-                        },
-                    )
-                },
-            )
+            .map(|(idx, (is_zero_pair, is_pair_valid, g1, g2))| {
+                // we should swap (G1, G2) with (G1::identity, G2::generator) if:
+                // - G1 == (0, 0) && G2 is valid
+                // - G2 == (0, 0, 0, 0) && G1 is valid
+                //
+                // we should swap (G1, G2) with (G1::random, G2::random) if:
+                // - G1 is invalid
+                // - G2 is invalid
+                (
+                    {
+                        let swapped_g1 =
+                            ecc_chip.select(ctx, &g1.ec_point, &dummy_g1, is_pair_valid);
+                        let swapped_g1 =
+                            ecc_chip.select(ctx, &identity_g1, &swapped_g1, is_zero_pair);
+                        ecc_chip.select(
+                            ctx,
+                            &dummy_pair_check_ok_g1s[idx],
+                            &swapped_g1,
+                            &all_pairs_zero,
+                        )
+                    },
+                    {
+                        let swapped_x =
+                            fp2_chip.select(ctx, &g2.ec_point.x, &dummy_g2.x, is_pair_valid);
+                        let swapped_x =
+                            fp2_chip.select(ctx, &generator_g2.x, &swapped_x, is_zero_pair);
+                        let swapped_x = fp2_chip.select(
+                            ctx,
+                            &dummy_pair_check_ok_g2s[idx].x,
+                            &swapped_x,
+                            &all_pairs_zero,
+                        );
+                        let swapped_y =
+                            fp2_chip.select(ctx, &g2.ec_point.y, &dummy_g2.y, is_pair_valid);
+                        let swapped_y =
+                            fp2_chip.select(ctx, &generator_g2.y, &swapped_y, is_zero_pair);
+                        let swapped_y = fp2_chip.select(
+                            ctx,
+                            &dummy_pair_check_ok_g2s[idx].y,
+                            &swapped_y,
+                            &all_pairs_zero,
+                        );
+                        EcPoint::construct(swapped_x, swapped_y)
+                    },
+                )
+            })
             .collect_vec();
         let pairs = pairs.iter().map(|(g1, g2)| (g1, g2)).collect_vec();
 
@@ -975,7 +935,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             ctx,
             decomposed_pairs
                 .iter()
-                .map(|&(_, _, _, _, _, is_pair_valid, _, _)| QuantumCell::Existing(is_pair_valid))
+                .map(|&(_, is_pair_valid, _, _)| QuantumCell::Existing(is_pair_valid))
                 .collect_vec(),
         );
 
