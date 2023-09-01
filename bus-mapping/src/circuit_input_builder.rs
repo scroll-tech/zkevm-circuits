@@ -689,16 +689,13 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
 /// signature datas.
 pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
-    for sig in sigs {
+    let dummy_sign_data = SignData::default();
+    for sig in sigs.iter().chain(iter::once(&dummy_sign_data)) {
         let pk_le = pk_bytes_le(&sig.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         inputs.push(pk_be.to_vec());
         inputs.push(sig.msg.to_vec());
     }
-    // Padding signature
-    let pk_le = pk_bytes_le(&SignData::default().pk);
-    let pk_be = pk_bytes_swap_endianness(&pk_le);
-    inputs.push(pk_be.to_vec());
     inputs
 }
 
