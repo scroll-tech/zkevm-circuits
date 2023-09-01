@@ -189,12 +189,22 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                         ),
                     ),
                 );
+                cb.condition(n_pairs_cmp.value_equals(0usize), |cb| {
+                    cb.require_zero(
+                        "ecPairing: n_pairs == 0 => evm input == 0",
+                        evm_input_rlc.expr(),
+                    );
+                });
 
                 // Covers the following cases:
-                // 1. successful pairing check (where input_rlc == 0, i.e. no input).
-                // 2. successful pairing check (where input_rlc != 0, i.e. input bytes exist).
-                // 3. valid len(input): unsuccessful pairing check (invalid point or not on
-                // curve).
+                // 1. pairing == 1 (where input_rlc == 0, i.e. len(input) == 0).
+                // 2. pairing == 1 (where input_rlc != 0, i.e. len(input) != 0).
+                // 3. pairing == 0 (both valid and invalid inputs)
+                //     - G1 point not on curve
+                //     - G2 point not on curve
+                //     - G1 co-ord is not in canonical form
+                //     - G2 co-ord is not in canonical form
+                //     - G1, G2 both valid
                 cb.ecc_table_lookup(
                     u64::from(PrecompileCalls::Bn128Pairing).expr(),
                     is_success.expr(),
@@ -971,7 +981,6 @@ mod test {
                 },
             ]
         };
-
         static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
             vec![
                 PrecompileCallArgs {

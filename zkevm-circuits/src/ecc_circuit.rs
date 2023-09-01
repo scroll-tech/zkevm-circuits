@@ -995,6 +995,21 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             QuantumCell::Existing(is_valid),
             QuantumCell::Existing(success),
         );
+        // if all inputs were zeroes, i.e. either:
+        // - G1 == (0, 0) and G2 == random valid point on G2
+        // - G2 == (0, 0, 0, 0) and G1 == random valid point on G1
+        //
+        // then success == true, i.e. success - all_pairs_zero == boolean
+        let success_minus_all_pairs_zero = ecc_chip
+            .field_chip()
+            .range()
+            .gate()
+            .load_witness(ctx, success.value - all_pairs_zero.value);
+        ecc_chip
+            .field_chip()
+            .range()
+            .gate()
+            .assert_bit(ctx, success_minus_all_pairs_zero);
 
         let op_output = ecc_chip.field_chip().range().gate().load_witness(
             ctx,
