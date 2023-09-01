@@ -2,7 +2,7 @@
 
 use std::{
     marker::PhantomData,
-    ops::{Add, Mul},
+    ops::{Add, Mul, Neg},
 };
 
 use crate::{
@@ -1299,6 +1299,24 @@ impl EcPairingOp {
     /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
     pub fn is_valid(&self) -> bool {
         self.pairs.iter().all(|pair| pair.is_valid())
+    }
+
+    /// Dummy pairing op that satisfies the pairing check.
+    pub fn dummy_pairing_check_ok() -> Self {
+        let g1 = G1Affine::from(G1Affine::generator() * Fr::from(2));
+        let g1_neg = g1.neg();
+        let g2 = G2Affine::from(G2Affine::generator() * Fr::from(3));
+        let other_g1 = G1Affine::from(G1Affine::generator() * Fr::from(6));
+        let other_g2 = G2Affine::generator();
+        Self {
+            pairs: [
+                EcPairingPair::new(g1_neg, g2),
+                EcPairingPair::new(other_g1, other_g2),
+                EcPairingPair::padding_pair(),
+                EcPairingPair::padding_pair(),
+            ],
+            output: 1.into(),
+        }
     }
 }
 
