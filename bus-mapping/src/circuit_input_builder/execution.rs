@@ -21,7 +21,11 @@ use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
-    halo2curves::bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
+    circuit::Value,
+    halo2curves::{
+        bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
+        group::prime::PrimeCurveAffine,
+    },
     plonk::Expression,
 };
 
@@ -1175,6 +1179,28 @@ impl EcPairingPair {
             .collect()
     }
 
+    /// ...
+    pub fn to_g1_affine_tuple(&self) -> (Value<Fq>, Value<Fq>) {
+        (
+            Value::known(Fq::from_bytes(&self.g1_point.0.to_le_bytes()).unwrap()),
+            Value::known(Fq::from_bytes(&self.g1_point.1.to_le_bytes()).unwrap()),
+        )
+    }
+
+    /// ...
+    pub fn to_g2_affine_tuple(&self) -> (Value<Fq2>, Value<Fq2>) {
+        (
+            Value::known(Fq2 {
+                c0: Fq::from_bytes(&self.g2_point.1.to_le_bytes()).unwrap(),
+                c1: Fq::from_bytes(&self.g2_point.0.to_le_bytes()).unwrap(),
+            }),
+            Value::known(Fq2 {
+                c0: Fq::from_bytes(&self.g2_point.3.to_le_bytes()).unwrap(),
+                c1: Fq::from_bytes(&self.g2_point.2.to_le_bytes()).unwrap(),
+            }),
+        )
+    }
+
     /// Returns the big-endian representation of the G2 point in the pair.
     pub fn g2_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
@@ -1312,8 +1338,8 @@ impl EcPairingOp {
             pairs: [
                 EcPairingPair::new(g1_neg, g2),
                 EcPairingPair::new(other_g1, other_g2),
-                EcPairingPair::padding_pair(),
-                EcPairingPair::padding_pair(),
+                EcPairingPair::new(G1Affine::identity(), G2Affine::generator()),
+                EcPairingPair::new(G1Affine::identity(), G2Affine::generator()),
             ],
             output: 1.into(),
         }

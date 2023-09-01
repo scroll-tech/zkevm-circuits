@@ -47,11 +47,7 @@ pub struct EcPairingGadget<F> {
     /// EVM, we need 3 binary bits for a max value of [1, 0, 0].
     n_pairs: Cell<F>,
     n_pairs_cmp: BinaryNumberGadget<F, 3>,
-    /// keccak_rand ^ 64.
     rand_pow_64: Cell<F>,
-
-    evm_input_g1_rlc: [Cell<F>; N_PAIRING_PER_OP],
-    evm_input_g2_rlc: [Cell<F>; N_PAIRING_PER_OP],
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -158,7 +154,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         //////////////////////////////// INVALID END //////////////////////////////////
 
         ///////////////////////////////// VALID BEGIN /////////////////////////////////
-        let (rand_pow_64, evm_input_g1_rlc, evm_input_g2_rlc) = cb.condition(
+        let rand_pow_64 = cb.condition(
             // (len(input) == 0) || ((len(input) <= 768) && (len(input) % 192 == 0))
             or::expr([
                 input_is_zero.expr(),
@@ -166,83 +162,33 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             ]),
             |cb| {
                 let rand_pow_64 = cb.query_cell_phase2();
-                let (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576) = {
+                let (rand_pow_192, rand_pow_384, rand_pow_576) = {
                     let rand_pow_128 = rand_pow_64.expr() * rand_pow_64.expr();
                     let rand_pow_192 = rand_pow_128.expr() * rand_pow_64.expr();
                     let rand_pow_384 = rand_pow_192.expr() * rand_pow_192.expr();
                     let rand_pow_576 = rand_pow_384.expr() * rand_pow_192.expr();
-                    (rand_pow_128, rand_pow_192, rand_pow_384, rand_pow_576)
+                    (rand_pow_192, rand_pow_384, rand_pow_576)
                 };
                 cb.pow_of_rand_lookup(64.expr(), rand_pow_64.expr());
-                let evm_input_g1_rlc = array_init::array_init(|_| cb.query_cell_phase2());
-                let evm_input_g2_rlc = array_init::array_init(|_| cb.query_cell_phase2());
 
-                let ecc_circuit_input_rlcs = evm_input_g1_rlc
-                    .clone()
-                    .zip(evm_input_g2_rlc.clone())
-                    .map(|(g1_rlc, g2_rlc)| {
-                        // rlc([g1, g2])
-                        g1_rlc.expr() * rand_pow_128.expr() + g2_rlc.expr()
-                    });
-                let ecc_circuit_input_rlc = ecc_circuit_input_rlcs[0].expr() * rand_pow_576.expr()
-                    + ecc_circuit_input_rlcs[1].expr() * rand_pow_384.expr()
-                    + ecc_circuit_input_rlcs[2].expr() * rand_pow_192.expr()
-                    + ecc_circuit_input_rlcs[3].expr();
-
-                // Equality checks for EVM input bytes to ecPairing call.
-                cb.condition(n_pairs_cmp.value_equals(0usize), |cb| {
-                    cb.require_zero("ecPairing: evm_input_rlc == 0", evm_input_rlc.expr());
-                });
-                cb.condition(n_pairs_cmp.value_equals(1usize), |cb| {
-                    cb.require_equal(
-                        "ecPairing: evm_input_rlc for 1 pair",
-                        evm_input_rlc.expr(),
-                        evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
-                            + evm_input_g2_rlc[0].expr(),
-                    );
-                });
-                cb.condition(n_pairs_cmp.value_equals(2usize), |cb| {
-                    cb.require_equal(
-                        "ecPairing: evm_input_rlc for 2 pairs",
-                        evm_input_rlc.expr(),
-                        (evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
-                            + evm_input_g2_rlc[0].expr())
-                            * rand_pow_192.expr()
-                            + evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
-                            + evm_input_g2_rlc[1].expr(),
-                    );
-                });
-                cb.condition(n_pairs_cmp.value_equals(3usize), |cb| {
-                    cb.require_equal(
-                        "ecPairing: evm_input_rlc for 3 pairs",
-                        evm_input_rlc.expr(),
-                        (evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
-                            + evm_input_g2_rlc[0].expr())
-                            * rand_pow_384.expr()
-                            + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
-                                + evm_input_g2_rlc[1].expr())
-                                * rand_pow_192.expr()
-                            + evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
-                            + evm_input_g2_rlc[2].expr(),
-                    );
-                });
-                cb.condition(n_pairs_cmp.value_equals(4usize), |cb| {
-                    cb.require_equal(
-                        "ecPairing: evm_input_rlc for 4 pairs",
-                        evm_input_rlc.expr(),
-                        (evm_input_g1_rlc[0].expr() * rand_pow_128.expr()
-                            + evm_input_g2_rlc[0].expr())
-                            * rand_pow_576.expr()
-                            + (evm_input_g1_rlc[1].expr() * rand_pow_128.expr()
-                                + evm_input_g2_rlc[1].expr())
-                                * rand_pow_384.expr()
-                            + (evm_input_g1_rlc[2].expr() * rand_pow_128.expr()
-                                + evm_input_g2_rlc[2].expr())
-                                * rand_pow_192.expr()
-                            + evm_input_g1_rlc[3].expr() * rand_pow_128.expr()
-                            + evm_input_g2_rlc[3].expr(),
-                    );
-                });
+                // RLC(inputs) that was processed in the ECC Circuit.
+                let ecc_circuit_input_rlc = select::expr(
+                    n_pairs_cmp.value_equals(0usize),
+                    0.expr(),
+                    select::expr(
+                        n_pairs_cmp.value_equals(1usize),
+                        evm_input_rlc.expr() * rand_pow_576.expr(), /* 576 bytes padded */
+                        select::expr(
+                            n_pairs_cmp.value_equals(2usize),
+                            evm_input_rlc.expr() * rand_pow_384.expr(), /* 384 bytes padded */
+                            select::expr(
+                                n_pairs_cmp.value_equals(3usize),
+                                evm_input_rlc.expr() * rand_pow_192.expr(), /* 192 bytes padded */
+                                evm_input_rlc.expr(),                       /* 0 bytes padded */
+                            ),
+                        ),
+                    ),
+                );
 
                 // Covers the following cases:
                 // 1. successful pairing check (where input_rlc == 0, i.e. no input).
@@ -281,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                     vec![0.expr(), 192.expr(), 384.expr(), 576.expr(), 768.expr()],
                 );
 
-                (rand_pow_64, evm_input_g1_rlc, evm_input_g2_rlc)
+                rand_pow_64
             },
         );
         ///////////////////////////////// VALID END ///////////////////////////////////
@@ -311,9 +257,6 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             n_pairs,
             n_pairs_cmp,
             rand_pow_64,
-
-            evm_input_g1_rlc,
-            evm_input_g2_rlc,
 
             is_success,
             callee_address,
@@ -403,21 +346,11 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                     self.n_pairs
                         .assign(region, offset, Value::known(F::from(n_pairs as u64)))?;
                     self.n_pairs_cmp.assign(region, offset, n_pairs)?;
-                    // keccak_rand ^ 64.
                     self.rand_pow_64.assign(
                         region,
                         offset,
                         keccak_rand.map(|r| r.pow(&[64, 0, 0, 0])),
                     )?;
-                    // G1, G2 points from EVM.
-                    for i in 0..N_PAIRING_PER_OP {
-                        let g1_bytes = aux_data.0.pairs[i].g1_bytes_be();
-                        let g2_bytes = aux_data.0.pairs[i].g2_bytes_be();
-                        let g1_rlc = keccak_rand.map(|r| rlc::value(g1_bytes.iter().rev(), r));
-                        let g2_rlc = keccak_rand.map(|r| rlc::value(g2_bytes.iter().rev(), r));
-                        self.evm_input_g1_rlc[i].assign(region, offset, g1_rlc)?;
-                        self.evm_input_g2_rlc[i].assign(region, offset, g2_rlc)?;
-                    }
                 }
                 Err(EcPairingError::InvalidInputLen(input_bytes)) => {
                     debug_assert_eq!(

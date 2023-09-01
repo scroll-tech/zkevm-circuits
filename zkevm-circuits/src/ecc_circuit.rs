@@ -856,16 +856,16 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         });
         let dummy_pair_check_ok = EcPairingOp::dummy_pairing_check_ok();
         let dummy_pair_check_ok_g1s = [
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[0].g1_point),
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[1].g1_point),
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[2].g1_point),
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[3].g1_point),
+            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[0].to_g1_affine_tuple()),
+            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[1].to_g1_affine_tuple()),
+            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[2].to_g1_affine_tuple()),
+            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[3].to_g1_affine_tuple()),
         ];
         let dummy_pair_check_ok_g2s = [
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[0].g2_point),
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[1].g2_point),
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[2].g2_point),
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[3].g2_point),
+            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[0].to_g2_affine_tuple()),
+            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[1].to_g2_affine_tuple()),
+            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[2].to_g2_affine_tuple()),
+            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[3].to_g2_affine_tuple()),
         ];
 
         // process pairs so that we pass only valid input to the multi_miller_loop.
@@ -912,8 +912,6 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                         .range()
                         .gate()
                         .not(ctx, QuantumCell::Existing(*is_pair_valid));
-                    log::trace!("should swap valid?   {:?}", should_swap_valid.value);
-                    log::trace!("should swap invalid? {:?}", should_swap_invalid.value);
                     (
                         {
                             let swapped_g1 =
