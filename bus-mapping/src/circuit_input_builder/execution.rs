@@ -1199,67 +1199,14 @@ impl EcPairingPair {
             .collect()
     }
 
-    /// Padding pair for ECC circuit. The pairing check is done with a constant number
-    /// `N_PAIRING_PER_OP` of (G1, G2) pairs. The ECC circuit under the hood uses halo2-lib to
-    /// compute the multi-miller loop, which allows `(G1::Infinity, G2::Generator)` pair to skip
-    /// the loop for that pair. So in case the EVM inputs are less than `N_PAIRING_PER_OP` we pad
-    /// the ECC Circuit inputs by this pair. Any EVM input of `(G1::Infinity, G2)` or
-    /// `(G1, G2::Infinity)` is also transformed into `(G1::Infinity, G2::Generator)`.
-    pub fn ecc_padding() -> Self {
-        Self {
-            g1_point: (U256::zero(), U256::zero()),
-            g2_point: (
-                U256([
-                    0x97e485b7aef312c2,
-                    0xf1aa493335a9e712,
-                    0x7260bfb731fb5d25,
-                    0x198e9393920d483a,
-                ]),
-                U256([
-                    0x46debd5cd992f6ed,
-                    0x674322d4f75edadd,
-                    0x426a00665e5c4479,
-                    0x1800deef121f1e76,
-                ]),
-                U256([
-                    0x55acdadcd122975b,
-                    0xbc4b313370b38ef3,
-                    0xec9e99ad690c3395,
-                    0x090689d0585ff075,
-                ]),
-                U256([
-                    0x4ce6cc0166fa7daa,
-                    0xe3d1e7690c43d37b,
-                    0x4aab71808dcb408f,
-                    0x12c85ea5db8c6deb,
-                ]),
-            ),
-        }
-    }
-
-    /// Padding pair for EVM circuit. The pairing check is done with a constant number
+    /// Padding pair for EcPairing operation. The pairing check is done with a constant number
     /// `N_PAIRING_PER_OP` of (G1, G2) pairs. In case EVM inputs are less in number, we pad them
     /// with `(G1::Infinity, G2::Infinity)` for simplicity.
-    pub fn evm_padding() -> Self {
+    pub fn padding_pair() -> Self {
         Self {
             g1_point: (U256::zero(), U256::zero()),
             g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
         }
-    }
-
-    /// Whether or not we swap the EVM pair with ECC pair. We do this iff:
-    /// - G1 is (0, 0)
-    /// - G2 is (0, 0, 0, 0)
-    ///
-    /// because for the above case, we have:
-    /// - (G1::identity, G2::identity) as inputs from the EVM.
-    /// - (G1::identity, G2::generator) as inputs to ECC Circuit.
-    pub fn swap(&self) -> bool {
-        (self.g1_point.0.is_zero() && self.g1_point.1.is_zero())
-            && (self.g2_point.0.is_zero()
-                && self.g2_point.1.is_zero()
-                && self.g2_point.2.is_zero()
-                && self.g2_point.3.is_zero())
     }
 
     fn is_valid(&self) -> bool {

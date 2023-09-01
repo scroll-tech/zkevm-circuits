@@ -689,6 +689,8 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
     ) -> EcPairingDecomposed<F> {
         log::trace!("[ECC] ==> EcPairing Assignment START:");
         log_context_cursor!(ctx);
+        log::trace!("ecpairing op=");
+        log::trace!("{:#?}", op);
 
         let fp2_chip = Fp2Chip::<F, FpConfig<F, Fq>, Fq2>::construct(pairing_chip.fp_chip.clone());
         let ecc2_chip = EccChip::construct(fp2_chip.clone());
@@ -740,12 +742,22 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     &g2_point.y,
                     g2y_is_zero,
                 );
-                let is_pair_valid = ecc_chip.field_chip().range().gate().and_many(
+                let is_g1_valid = ecc_chip.field_chip().range().gate().and_many(
                     ctx,
                     vec![
                         QuantumCell::Existing(g1x_valid),
                         QuantumCell::Existing(g1y_valid),
                         QuantumCell::Existing(g1_is_on_curve_or_infinity),
+                    ],
+                );
+                let is_g1_identity = ecc_chip.field_chip().range().gate().and(
+                    ctx,
+                    QuantumCell::Existing(g1x_is_zero),
+                    QuantumCell::Existing(g1y_is_zero),
+                );
+                let is_g2_valid = ecc_chip.field_chip().range().gate().and_many(
+                    ctx,
+                    vec![
                         QuantumCell::Existing(g2x0_valid),
                         QuantumCell::Existing(g2x1_valid),
                         QuantumCell::Existing(g2y0_valid),
@@ -753,7 +765,25 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                         QuantumCell::Existing(g2_is_on_curve_or_infinity),
                     ],
                 );
+                let is_g2_identity = ecc_chip.field_chip().range().gate().and_many(
+                    ctx,
+                    vec![
+                        QuantumCell::Existing(g2x0_is_zero),
+                        QuantumCell::Existing(g2x1_is_zero),
+                        QuantumCell::Existing(g2y0_is_zero),
+                        QuantumCell::Existing(g2y1_is_zero),
+                    ],
+                );
+                let is_pair_valid = ecc_chip.field_chip().range().gate().and(
+                    ctx,
+                    QuantumCell::Existing(is_g1_valid),
+                    QuantumCell::Existing(is_g2_valid),
+                );
                 (
+                    is_g1_valid,
+                    is_g1_identity,
+                    is_g2_valid,
+                    is_g2_identity,
                     is_pair_valid,
                     G1Decomposed {
                         ec_point: g1_point,
@@ -771,21 +801,13 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
             })
             .collect_vec();
 
-        let is_valid = ecc_chip.field_chip().range().gate().and_many(
-            ctx,
-            decomposed_pairs
-                .iter()
-                .map(|&(is_pair_valid, _, _)| QuantumCell::Existing(is_pair_valid))
-                .collect_vec(),
-        );
-
         log::trace!("[ECC] EcPairing g1s and g2s Assigned:");
         log_context_cursor!(ctx);
 
         // RLC over the entire input bytes.
         let input_cells = decomposed_pairs
             .iter()
-            .flat_map(|(_, g1, g2)| {
+            .flat_map(|(_, _, _, _, _, g1, g2)| {
                 std::iter::empty()
                     .chain(g1.x_cells.iter().rev())
                     .chain(g1.y_cells.iter().rev())
@@ -801,21 +823,109 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         log::trace!("[ECC] EcPairing Inputs RLC Assigned:");
         log_context_cursor!(ctx);
 
-        // dummy G1 point.
+        // dummy G1, G2 points and G1::identity, G2::generator.
         let dummy_g1 = ecc_chip.load_random_point::<G1Affine>(ctx);
         let dummy_g2 = ecc2_chip.load_random_point::<G2Affine>(ctx);
+        let identity_g1 = ecc_chip.load_private(ctx, {
+            let identity_g1 = G1Affine::identity();
+            (Value::known(identity_g1.x), Value::known(identity_g1.y))
+        });
+        let generator_g2 = ecc2_chip.load_private(ctx, {
+            let generator_g2 = G2Affine::generator();
+            (Value::known(generator_g2.x), Value::known(generator_g2.y))
+        });
+
+        // process pairs so that we pass only valid input to the multi_miller_loop.
         let pairs = decomposed_pairs
             .iter()
-            .map(|(_, g1, g2)| {
-                (ecc_chip.select(ctx, &g1.ec_point, &dummy_g1, &is_valid), {
-                    let selx = fp2_chip.select(ctx, &g2.ec_point.x, &dummy_g2.x, &is_valid);
-                    let sely = fp2_chip.select(ctx, &g2.ec_point.y, &dummy_g2.y, &is_valid);
-                    EcPoint::construct(selx, sely)
-                })
-            })
+            .map(
+                |(
+                    is_g1_valid,
+                    is_g1_identity,
+                    is_g2_valid,
+                    is_g2_identity,
+                    is_pair_valid,
+                    g1,
+                    g2,
+                )| {
+                    // we should swap (G1, G2) with (G1::identity, G2::generator) if:
+                    // - G1 == (0, 0) && G2 is valid
+                    // - G2 == (0, 0, 0, 0) && G1 is valid
+                    let should_swap_a = ecc_chip.field_chip().range().gate().and(
+                        ctx,
+                        QuantumCell::Existing(*is_g1_identity),
+                        QuantumCell::Existing(*is_g2_valid),
+                    );
+                    let should_swap_b = ecc_chip.field_chip().range().gate().and(
+                        ctx,
+                        QuantumCell::Existing(*is_g2_identity),
+                        QuantumCell::Existing(*is_g1_valid),
+                    );
+                    let should_swap_valid = ecc_chip.field_chip().range().gate().or(
+                        ctx,
+                        QuantumCell::Existing(should_swap_a),
+                        QuantumCell::Existing(should_swap_b),
+                    );
+                    // we should swap (G1, G2) with (G1::random, G2::random) if:
+                    // - G1 is invalid
+                    // - G2 is invalid
+                    let should_swap_invalid = ecc_chip
+                        .field_chip()
+                        .range()
+                        .gate()
+                        .not(ctx, QuantumCell::Existing(*is_pair_valid));
+                    log::trace!("should swap valid?   {:?}", should_swap_valid.value);
+                    log::trace!("should swap invalid? {:?}", should_swap_invalid.value);
+                    (
+                        {
+                            let swapped_g1 =
+                                ecc_chip.select(ctx, &dummy_g1, &g1.ec_point, &should_swap_invalid);
+                            ecc_chip.select(ctx, &identity_g1, &swapped_g1, &should_swap_valid)
+                        },
+                        {
+                            let swapped_x = fp2_chip.select(
+                                ctx,
+                                &dummy_g2.x,
+                                &g2.ec_point.x,
+                                &should_swap_invalid,
+                            );
+                            let swapped_y = fp2_chip.select(
+                                ctx,
+                                &dummy_g2.y,
+                                &g2.ec_point.y,
+                                &should_swap_invalid,
+                            );
+                            EcPoint::construct(
+                                fp2_chip.select(
+                                    ctx,
+                                    &generator_g2.x,
+                                    &swapped_x,
+                                    &should_swap_valid,
+                                ),
+                                fp2_chip.select(
+                                    ctx,
+                                    &generator_g2.y,
+                                    &swapped_y,
+                                    &should_swap_valid,
+                                ),
+                            )
+                        },
+                    )
+                },
+            )
             .collect_vec();
         let pairs = pairs.iter().map(|(g1, g2)| (g1, g2)).collect_vec();
 
+        // if the entire input to ecPairing is valid.
+        let is_valid = ecc_chip.field_chip().range().gate().and_many(
+            ctx,
+            decomposed_pairs
+                .iter()
+                .map(|&(_, _, _, _, is_pair_valid, _, _)| QuantumCell::Existing(is_pair_valid))
+                .collect_vec(),
+        );
+
+        // multi-miller loop and final exponentiation to do pairing check.
         let success = {
             let gt = {
                 let gt = pairing_chip.multi_miller_loop(ctx, pairs);

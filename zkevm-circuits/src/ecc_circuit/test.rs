@@ -243,8 +243,8 @@ mod valid_invalid_cases {
                     let pairs = [
                         EcPairingPair::new(point_p_negated, point_q),
                         EcPairingPair::new(point_s, point_t),
-                        EcPairingPair::ecc_padding(),
-                        EcPairingPair::ecc_padding(),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
                     ];
                     EcPairingOp {
                         pairs,
@@ -273,8 +273,8 @@ mod valid_invalid_cases {
                                 U256::from_little_endian(&point_t.y.c0.to_bytes()),
                             ),
                         },
-                        EcPairingPair::ecc_padding(),
-                        EcPairingPair::ecc_padding(),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
                     ];
                     EcPairingOp {
                         pairs,
@@ -298,16 +298,54 @@ mod valid_invalid_cases {
                     let pairs = [
                         EcPairingPair::new(point_p_negated, point_q),
                         EcPairingPair::new(point_s, point_t),
-                        EcPairingPair::ecc_padding(),
-                        EcPairingPair::ecc_padding(),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
                     ];
                     EcPairingOp {
                         pairs,
                         output: U256::zero(),
                     }
                 },
-                // 4. TODO: invalid: not on curve G1.
-                // 5. TODO: invalid: not on curve G2.
+                // 4. invalid: not on curve G1.
+                EcPairingOp {
+                    pairs: [
+                        EcPairingPair {
+                            g1_point: (U256::from(3), U256::from(4)),
+                            g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
+                        },
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                    ],
+                    output: 0.into(),
+                },
+            ]
+        };
+        pub(crate) static ref EC_PAIRING_OPS3: Vec<EcPairingOp> = {
+            vec![
+                // 5. invalid: not on curve G2.
+                EcPairingOp {
+                    pairs: [
+                        EcPairingPair {
+                            g1_point: (U256::zero(), U256::zero()),
+                            g2_point: (U256::from(3), U256::from(4), U256::from(5), U256::from(6)),
+                        },
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                    ],
+                    output: 0.into(),
+                },
+                // 6. valid: all zero.
+                EcPairingOp {
+                    pairs: [
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                    ],
+                    output: 1.into(),
+                },
             ]
         };
     }
@@ -317,7 +355,9 @@ mod valid_invalid_cases {
 fn test_ecc_circuit_valid_invalid() {
     use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
     use halo2_proofs::halo2curves::bn256::Fr;
-    use valid_invalid_cases::{EC_ADD_OPS, EC_MUL_OPS, EC_PAIRING_OPS1, EC_PAIRING_OPS2};
+    use valid_invalid_cases::{
+        EC_ADD_OPS, EC_MUL_OPS, EC_PAIRING_OPS1, EC_PAIRING_OPS2, EC_PAIRING_OPS3,
+    };
 
     run::<Fr, false>(
         LOG_TOTAL_NUM_ROWS,
@@ -337,6 +377,18 @@ fn test_ecc_circuit_valid_invalid() {
         vec![],
         vec![],
         EC_PAIRING_OPS2.clone(),
+    );
+
+    run::<Fr, false>(
+        LOG_TOTAL_NUM_ROWS,
+        PrecompileEcParams {
+            ec_add: 0,
+            ec_mul: 0,
+            ec_pairing: 2,
+        },
+        vec![],
+        vec![],
+        EC_PAIRING_OPS3.clone(),
     );
 }
 
