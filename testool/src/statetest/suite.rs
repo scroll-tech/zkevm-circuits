@@ -49,7 +49,7 @@ pub fn load_statetests_suite(
                     let mut tcs = match tcs {
                         Ok(tcs) => tcs,
                         Err(e) => {
-                            panic!("fail to load {:?}, err {:?}", path, e);
+                            panic!("fail to load {path:?}, err {e:?}");
                         }
                     };
 

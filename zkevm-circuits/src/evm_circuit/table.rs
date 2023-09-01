@@ -20,6 +20,7 @@ pub enum FixedTableTag {
     Range32,
     Range64,
     Range128,
+    Range192,
     Range256,
     Range512,
     Range1024,
@@ -59,6 +60,9 @@ impl FixedTableTag {
             }
             Self::Range128 => {
                 Box::new((0..128).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
+            Self::Range192 => {
+                Box::new((0..192).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range256 => {
                 Box::new((0..256).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
@@ -298,8 +302,6 @@ pub(crate) enum Lookup<F> {
     },
     /// Lookup to exponentiation table.
     ExpTable {
-        identifier: Expression<F>,
-        is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
@@ -319,6 +321,7 @@ pub(crate) enum Lookup<F> {
     },
     EccTable {
         op_type: Expression<F>,
+        is_valid: Expression<F>,
         arg1_rlc: Expression<F>,
         arg2_rlc: Expression<F>,
         arg3_rlc: Expression<F>,
@@ -457,16 +460,12 @@ impl<F: Field> Lookup<F> {
                 output_rlc.clone(),
             ],
             Self::ExpTable {
-                identifier,
-                is_last,
                 base_limbs,
                 exponent_lo_hi,
                 exponentiation_lo_hi,
             } => vec![
                 1.expr(), // q_enable
                 1.expr(), // is_step
-                identifier.clone(),
-                is_last.clone(),
                 base_limbs[0].clone(),
                 base_limbs[1].clone(),
                 base_limbs[2].clone(),
@@ -512,6 +511,7 @@ impl<F: Field> Lookup<F> {
             ],
             Self::EccTable {
                 op_type,
+                is_valid,
                 arg1_rlc,
                 arg2_rlc,
                 arg3_rlc,
@@ -521,6 +521,7 @@ impl<F: Field> Lookup<F> {
                 output2_rlc,
             } => vec![
                 op_type.expr(),
+                is_valid.expr(),
                 arg1_rlc.expr(),
                 arg2_rlc.expr(),
                 arg3_rlc.expr(),

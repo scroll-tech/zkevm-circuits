@@ -11,7 +11,7 @@ use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
+use eth_types::{Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
@@ -42,7 +42,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
-use once_cell::sync::Lazy;
 
 use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
@@ -61,13 +60,18 @@ use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
-pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| {
-    read_env_var(
-        "COINBASE",
-        Address::from_str("0x5300000000000000000000000000000000000005").unwrap(),
-    )
-});
-pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
+fn get_coinbase_constant() -> Address {
+    let default_coinbase = if cfg!(feature = "scroll") {
+        Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
+    } else {
+        Address::zero()
+    };
+    read_env_var("COINBASE", default_coinbase)
+}
+
+fn get_difficulty_constant() -> Word {
+    read_env_var("DIFFICULTY", Word::zero())
+}
 
 /// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
@@ -82,6 +86,8 @@ pub struct PublicData {
     pub block_ctxs: BlockContexts,
     /// Previous State Root
     pub prev_state_root: Hash,
+    /// Next State Root
+    pub next_state_root: Hash,
     /// Withdraw Trie Root
     pub withdraw_trie_root: Hash,
 }
@@ -93,6 +99,7 @@ impl Default for PublicData {
             start_l1_queue_index: 0,
             transactions: vec![],
             prev_state_root: H256::zero(),
+            next_state_root: H256::zero(),
             withdraw_trie_root: H256::zero(),
             block_ctxs: Default::default(),
         }
@@ -140,9 +147,27 @@ impl PublicData {
 
     /// Compute the bytes for dataHash from the verifier's perspective.
     fn data_bytes(&self) -> Vec<u8> {
+        log::debug!(
+            "pi circuit data_bytes, inner block num {}",
+            self.block_ctxs.ctxs.len()
+        );
         let num_all_txs_in_blocks = self.get_num_all_txs();
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
+                // sanity check on coinbase & difficulty
+                let coinbase = get_coinbase_constant();
+                assert_eq!(
+                    coinbase, block.coinbase,
+                    "[block {}] COINBASE const: {}, block.coinbase: {}",
+                    block_num, coinbase, block.coinbase
+                );
+                let difficulty = get_difficulty_constant();
+                assert_eq!(
+                    difficulty, block.difficulty,
+                    "[block {}] DIFFICULTY const: {}, block.difficulty: {}",
+                    block_num, difficulty, block.difficulty
+                );
+
                 let num_all_txs = num_all_txs_in_blocks
                     .get(block_num)
                     .cloned()
@@ -177,20 +202,12 @@ impl PublicData {
     }
 
     fn pi_bytes(&self, data_hash: H256) -> Vec<u8> {
-        let withdraw_trie_root = self.withdraw_trie_root;
-        let after_state_root = self
-            .block_ctxs
-            .ctxs
-            .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root)
-            .unwrap_or(self.prev_state_root);
-
         iter::empty()
             .chain(self.chain_id.to_be_bytes())
             // state roots
             .chain(self.prev_state_root.to_fixed_bytes())
-            .chain(after_state_root.to_fixed_bytes())
-            .chain(withdraw_trie_root.to_fixed_bytes())
+            .chain(self.next_state_root.to_fixed_bytes())
+            .chain(self.withdraw_trie_root.to_fixed_bytes())
             // data hash
             .chain(data_hash.to_fixed_bytes())
             .collect::<Vec<u8>>()
@@ -214,8 +231,8 @@ impl BlockContext {
     fn padding(chain_id: u64) -> Self {
         Self {
             chain_id,
-            coinbase: *COINBASE,
-            difficulty: *DIFFICULTY,
+            coinbase: get_coinbase_constant(),
+            difficulty: get_difficulty_constant(),
             gas_limit: 0,
             number: Default::default(),
             timestamp: Default::default(),
@@ -889,16 +906,9 @@ impl<F: Field> PiCircuitConfig<F> {
         //  1. prev_state_root
         //  2. after_state_root
         //  3. withdraw_trie_root
-
-        // state_root after applying this batch
-        let after_state_root = block_values
-            .ctxs
-            .last_key_value()
-            .map(|(_, blk)| blk.eth_block.state_root)
-            .unwrap_or(public_data.prev_state_root);
         let roots = vec![
             public_data.prev_state_root.to_fixed_bytes(),
-            after_state_root.to_fixed_bytes(),
+            public_data.next_state_root.to_fixed_bytes(),
             public_data.withdraw_trie_root.to_fixed_bytes(),
         ];
         let root_cells = roots
@@ -1034,7 +1044,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let cells = self.assign_field_in_pi_ext(
             region,
             &mut offset,
-            &(*COINBASE).to_fixed_bytes(),
+            &get_coinbase_constant().to_fixed_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
@@ -1048,7 +1058,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let cells = self.assign_field_in_pi_ext(
             region,
             &mut offset,
-            &(*DIFFICULTY).to_be_bytes(),
+            &get_difficulty_constant().to_be_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
@@ -1486,14 +1496,29 @@ impl<F: Field> PiCircuit<F> {
         block: &Block<F>,
     ) -> Self {
         let chain_id = block.chain_id;
+        let next_state_root = block
+            .context
+            .ctxs
+            .last_key_value()
+            .map(|(_, blk)| blk.eth_block.state_root)
+            .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
+        if block.mpt_updates.new_root().to_be_bytes() != next_state_root.to_fixed_bytes() {
+            log::error!(
+                "replayed root {:?} != block head root {:?}",
+                block.mpt_updates.new_root().to_word(),
+                next_state_root
+            );
+        }
         let public_data = PublicData {
             chain_id,
             start_l1_queue_index: block.start_l1_queue_index,
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
             prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),
+            next_state_root,
             withdraw_trie_root: H256(block.withdraw_root.to_be_bytes()),
         };
+
         Self {
             public_data,
             max_txs,
@@ -1538,17 +1563,14 @@ impl<F: Field> PiCircuit<F> {
                         (&state_roots.start_state_root, &state_roots.end_state_root)
                     );
 
-                    #[cfg(feature = "scroll-trace")]
-                    {
-                        region.constrain_equal(
-                            local_conn.start_state_root.cell(),
-                            state_roots.start_state_root.0,
-                        )?;
-                        region.constrain_equal(
-                            local_conn.end_state_root.cell(),
-                            state_roots.end_state_root.0,
-                        )?;
-                    }
+                    region.constrain_equal(
+                        local_conn.start_state_root.cell(),
+                        state_roots.start_state_root.0,
+                    )?;
+                    region.constrain_equal(
+                        local_conn.end_state_root.cell(),
+                        state_roots.end_state_root.0,
+                    )?;
                 } else {
                     log::warn!("state roots are not set, skip connection with state circuit");
                 }
@@ -1587,6 +1609,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let tx_usage = block.txs.len() as f32 / block.circuits_params.max_txs as f32;
         let max_inner_blocks = block.circuits_params.max_inner_blocks;
         let max_txs = block.circuits_params.max_txs;
 
@@ -1603,8 +1626,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             + N_BYTES_ACCOUNT_ADDRESS
             + N_BYTES_WORD;
 
-        // the number of rows is independent of block
-        (num_rows, num_rows)
+        (
+            (tx_usage * block.circuits_params.max_vertical_circuit_rows as f32).ceil() as usize,
+            num_rows,
+        )
     }
 
     /// Compute the public inputs for this circuit.

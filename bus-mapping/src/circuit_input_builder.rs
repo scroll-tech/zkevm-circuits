@@ -6,6 +6,8 @@ mod block;
 mod call;
 mod execution;
 mod input_state_ref;
+#[cfg(feature = "scroll")]
+mod l2;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
@@ -46,6 +48,8 @@ use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
+#[cfg(feature = "scroll")]
+use mpt_zktrie::state::ZktrieState;
 use std::{
     collections::{BTreeMap, HashMap},
     iter,
@@ -175,6 +179,9 @@ pub struct CircuitInputBuilder {
     pub block: Block,
     /// Block Context
     pub block_ctx: BlockContext,
+    #[cfg(feature = "scroll")]
+    /// Initial Zktrie Status for a incremental updating
+    pub mpt_init_state: ZktrieState,
 }
 
 impl<'a> CircuitInputBuilder {
@@ -186,6 +193,8 @@ impl<'a> CircuitInputBuilder {
             code_db,
             block: block.clone(),
             block_ctx: BlockContext::new(),
+            #[cfg(feature = "scroll")]
+            mpt_init_state: Default::default(),
         }
     }
     /// Create a new CircuitInputBuilder from the given `eth_block` and
@@ -428,7 +437,7 @@ impl<'a> CircuitInputBuilder {
                 call_id,
                 CallContextField::TxId,
                 Word::from(dummy_tx_id as u64),
-            );
+            )?;
         }
 
         // increase the total rwc by 1
@@ -443,7 +452,7 @@ impl<'a> CircuitInputBuilder {
                 dummy_tx_id,
                 withdraw_root_before,
             ),
-        );
+        )?;
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
@@ -531,7 +540,7 @@ impl<'a> CircuitInputBuilder {
             let tx_gas = tx.gas;
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!(
-                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} args: {}",
+                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} refund: {} args: {}",
                 eth_tx.transaction_index.unwrap_or_default(),
                 geth_step.depth,
                 index,
@@ -543,6 +552,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.block_ctx.rwc.0,
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
+                geth_step.refund.0,
                 if geth_step.op.is_push_with_data() {
                     format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {

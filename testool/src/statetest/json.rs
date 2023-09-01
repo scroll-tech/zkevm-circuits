@@ -2,18 +2,23 @@
 
 use super::{
     parse,
-    spec::{AccountMatch, Env, StateTest},
+    spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
 use crate::{abi, compiler::Compiler, utils::MainnetFork};
 use anyhow::{bail, Context, Result};
 use eth_types::{evm_types::OpcodeId, geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
-use std::{collections::HashMap, convert::TryInto, ops::RangeBounds, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+    ops::RangeBounds,
+    str::FromStr,
+};
 use yaml_rust::Yaml;
 
 fn default_block_base_fee() -> String {
-    "10".to_string()
+    DEFAULT_BASE_FEE.to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -211,7 +216,7 @@ impl<'a> JsonStateTestBuilder<'a> {
     fn parse_env(env: &TestEnv) -> Result<Env> {
         Ok(Env {
             current_base_fee: parse::parse_u256(&env.current_base_fee)
-                .unwrap_or_else(|_| U256::from(10)),
+                .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
             current_coinbase: parse::parse_address(&env.current_coinbase)?,
             current_difficulty: parse::parse_u256(&env.current_difficulty)?,
             current_gas_limit: parse::parse_u64(&env.current_gas_limit)?,
@@ -225,8 +230,8 @@ impl<'a> JsonStateTestBuilder<'a> {
     fn parse_accounts_pre(
         &mut self,
         accounts_pre: &HashMap<String, AccountPre>,
-    ) -> Result<HashMap<Address, Account>> {
-        let mut accounts = HashMap::new();
+    ) -> Result<BTreeMap<Address, Account>> {
+        let mut accounts = BTreeMap::new();
         for (address, acc) in accounts_pre {
             let address = parse::parse_address(address)?;
             let mut storage = HashMap::new();
@@ -389,7 +394,7 @@ mod test {
             path: "test_path".to_string(),
             id: "add11_d0_g0_v0".to_string(),
             env: Env {
-                current_base_fee: U256::from(10),
+                current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: Address::from_str("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba")?,
                 current_difficulty: U256::from(131072u64),
                 current_gas_limit: 0xFF112233445566,
@@ -411,7 +416,7 @@ mod test {
             nonce: U256::from(0u64),
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
-            pre: HashMap::from([(
+            pre: BTreeMap::from([(
                 acc095e,
                 Account {
                     address: acc095e,

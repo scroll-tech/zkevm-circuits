@@ -14,7 +14,7 @@ pub(super) const COLUMN_NUM_LIMIT: usize = 150; // Max number of columns allowed
 
 /// Decomposed state of a G1 curve point.
 pub(super) struct G1Decomposed<F: Field> {
-    /// The assigned EcPoint.
+    /// EcPoint on G1.
     pub ec_point: EcPoint<F, CRTInteger<F>>,
     /// Cells for the x-coordinate of the G1 curve point in LE format.
     pub x_cells: Vec<QuantumCell<F>>,
@@ -53,6 +53,7 @@ pub(super) struct G2Decomposed<F: Field> {
 
 /// State of EcAdd operation post first phase.
 pub(super) struct EcAddDecomposed<F: Field> {
+    pub is_valid: AssignedValue<F>,
     pub point_p: G1Decomposed<F>,
     pub point_q: G1Decomposed<F>,
     pub point_r: G1Decomposed<F>,
@@ -60,6 +61,7 @@ pub(super) struct EcAddDecomposed<F: Field> {
 
 /// State of EcAdd operation post second phase.
 pub(super) struct EcAddAssigned<F: Field> {
+    pub is_valid: AssignedValue<F>,
     pub point_p: G1Assigned<F>,
     pub point_q: G1Assigned<F>,
     pub point_r: G1Assigned<F>,
@@ -67,6 +69,7 @@ pub(super) struct EcAddAssigned<F: Field> {
 
 /// State of EcMul operation post first phase.
 pub(super) struct EcMulDecomposed<F: Field> {
+    pub is_valid: AssignedValue<F>,
     pub point_p: G1Decomposed<F>,
     pub scalar_s: ScalarAssigned<F>,
     pub point_r: G1Decomposed<F>,
@@ -74,6 +77,7 @@ pub(super) struct EcMulDecomposed<F: Field> {
 
 /// State of EcMul operation post second phase.
 pub(super) struct EcMulAssigned<F: Field> {
+    pub is_valid: AssignedValue<F>,
     pub point_p: G1Assigned<F>,
     pub scalar_s: ScalarAssigned<F>,
     pub point_r: G1Assigned<F>,
@@ -81,12 +85,14 @@ pub(super) struct EcMulAssigned<F: Field> {
 
 /// State of EcPairing operation post first phase.
 pub(super) struct EcPairingDecomposed<F: Field> {
+    pub is_valid: AssignedValue<F>,
     pub input_cells: Vec<QuantumCell<F>>,
     pub success: AssignedValue<F>,
 }
 
 /// State of EcPairing operation post second phase.
 pub(super) struct EcPairingAssigned<F: Field> {
+    pub is_valid: AssignedValue<F>,
     /// RLC of (G1, G2) pairs.
     pub input_rlc: AssignedValue<F>,
     pub success: AssignedValue<F>,

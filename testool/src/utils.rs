@@ -68,7 +68,7 @@ impl MainnetFork {
                     if crate::utils::TEST_FORK >= crate::utils::MainnetFork::from_str(network)? {
                         in_network = true;
                     }
-                } else if let Some(network) = network.strip_prefix("<") {
+                } else if let Some(network) = network.strip_prefix('<') {
                     if crate::utils::TEST_FORK < crate::utils::MainnetFork::from_str(network)? {
                         in_network = true;
                     }

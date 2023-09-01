@@ -1352,6 +1352,28 @@ mod test {
     }
 
     #[test]
+    fn begin_tx_precompile_oog() {
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(address!("0x0000000000000000000000000000000000000004"))
+                    .input(Bytes::from(vec![0x01, 0x02, 0x03]))
+                    .gas((21048 + 17).into()) // 17 < 15 + 3
+                    ;
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    #[test]
     fn begin_tx_precompile_with_value() {
         let ctx = TestContext::<1, 1>::new(
             None,

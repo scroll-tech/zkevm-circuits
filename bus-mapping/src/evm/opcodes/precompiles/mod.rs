@@ -32,7 +32,7 @@ pub fn gen_associated_ops(
     let mut exec_step = state.new_step(&geth_step)?;
     exec_step.exec_state = ExecState::Precompile(precompile);
 
-    common_call_ctx_reads(state, &mut exec_step, &call);
+    common_call_ctx_reads(state, &mut exec_step, &call)?;
 
     let (opt_event, aux_data) = match precompile {
         PrecompileCalls::Ecrecover => opt_data_ecrecover(input_bytes, output_bytes),
@@ -46,7 +46,7 @@ pub fn gen_associated_ops(
             (None, None)
         }
     };
-
+    log::trace!("precompile event {opt_event:?}, aux data {aux_data:?}");
     if let Some(event) = opt_event {
         state.push_precompile_event(event);
     }
@@ -55,7 +55,11 @@ pub fn gen_associated_ops(
     Ok(exec_step)
 }
 
-fn common_call_ctx_reads(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep, call: &Call) {
+fn common_call_ctx_reads(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    call: &Call,
+) -> Result<(), Error> {
     for (field, value) in [
         (
             CallContextField::IsSuccess,
@@ -83,6 +87,7 @@ fn common_call_ctx_reads(state: &mut CircuitInputStateRef, exec_step: &mut ExecS
             call.return_data_length.into(),
         ),
     ] {
-        state.call_context_read(exec_step, call.call_id, field, value);
+        state.call_context_read(exec_step, call.call_id, field, value)?;
     }
+    Ok(())
 }

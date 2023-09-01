@@ -6,6 +6,20 @@ max_steps = 1000
 ignore_tests = []
 
 [[suite]]
+id="precompile"
+path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
+id="precompile2"
+path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts2/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
 id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 0
@@ -176,17 +190,17 @@ paths = [
     "stExample/eip1559Filler.yml",
     "stExample/mergeTestFiller.yml",
     "EIP2930",
-    "stPreCompiledContracts",
-    "stZeroKnowledge"
+    #"stPreCompiledContracts",
+    #"stZeroKnowledge"
 ]
 
 [[skip_paths]]
 desc = "too big"
 paths = [
-    "stTimeConsuming", # full of useless sstore tests
+#    "stTimeConsuming", # full of useless sstore tests
 #    "stExample",
 #    "stQuadraticComplexityTest",
-    "50000"
+#    "50000"
 ]
 
 [[skip_paths]]
@@ -249,6 +263,9 @@ paths = [
     "CreateAddressWarmAfterFailFiller.yml", # Odd number
     "HighGasPriceFiller.yml", # Wrong network EIP158
     "doubleSelfdestructTestFiller.yml", # character is not in the range 0-9
+    "stPreCompiledContracts/blake2BFiller.yml", # same with above, gasLimit
+    "stPreCompiledContracts2/ecrecoverShortBuffFiller.yml", # same with above, gasLimit
+    "stPreCompiledContracts2/CallEcrecover_OverflowFiller.yml", # same with above, gasLimit
     "eoaEmptyFiller.yml", # cannot parse to address Integer(49374)
     "touchAndGoFiller.yml" # Wrong network EIP150
 ]

@@ -33,6 +33,8 @@ use std::{marker::PhantomData, ops::Add};
 pub struct ExpCircuitConfig<F> {
     /// Whether the row is enabled.
     pub q_enable: Column<Fixed>,
+    /// Mark the last step of the last event within usable rows.
+    pub is_final_step: Column<Fixed>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// u16 lookup table,
@@ -63,6 +65,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = exp_table.q_enable;
+        let is_final_step = meta.fixed_column();
         let mul_gadget = MulAddChip::configure(
             meta,
             |meta| {
@@ -121,11 +124,11 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 d_hi_next,
             );
 
-            // Identifier does not change over the steps of an exponentiation trace.
-            cb.require_equal(
-                "identifier does not change",
-                meta.query_advice(exp_table.identifier, Rotation::cur()),
-                meta.query_advice(exp_table.identifier, Rotation(OFFSET_INCREMENT as i32)),
+            // The circuit must end with a last step. Since there is a fixed 1 in is_final_step,
+            // eventually is_last=1. We check `!last => !final`, equivalent to `final => last`.
+            cb.require_zero(
+                "non-last step is not at the circuit end",
+                meta.query_fixed(is_final_step, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -307,6 +310,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
 
         Self {
             q_enable,
+            is_final_step,
             exp_table,
             u16_table,
             mul_gadget,
@@ -324,7 +328,7 @@ impl<F: Field> ExpCircuitConfig<F> {
         max_exp_steps: usize,
     ) -> Result<(), Error> {
         let max_exp_rows = max_exp_steps * OFFSET_INCREMENT;
-        debug_assert!(
+        assert!(
             Self::min_num_rows(exp_events) <= max_exp_rows,
             "insufficient rows to populate the exponentiation trace"
         );
@@ -338,6 +342,7 @@ impl<F: Field> ExpCircuitConfig<F> {
                 mul_chip.annotate_columns_in_region(&mut region, "EXP_mul");
                 parity_check_chip.annotate_columns_in_region(&mut region, "EXP_parity_check");
                 self.exp_table.annotate_columns_in_region(&mut region);
+                region.name_column(|| "is_final_step", self.is_final_step);
 
                 let mut offset = 0;
                 for exp_event in exp_events.iter() {
@@ -360,6 +365,17 @@ impl<F: Field> ExpCircuitConfig<F> {
                         &pad_exp_event,
                         &mut mul_chip,
                         &mut parity_check_chip,
+                    )?;
+                }
+
+                // Fill is_final_step with a one to mark the last step of the last event.
+                for o in 0..offset {
+                    let is_final_step = o == offset - OFFSET_INCREMENT;
+                    region.assign_fixed(
+                        || format!("exp_circuit: {:?}: {}", self.is_final_step, o),
+                        self.is_final_step,
+                        o,
+                        || Value::known(F::from(is_final_step)),
                     )?;
                 }
 
