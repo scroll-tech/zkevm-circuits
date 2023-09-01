@@ -61,7 +61,10 @@ pub(crate) fn execute_precompiled(
         }
         Err(err) => match err {
             PrecompileError::OutOfGas => (vec![], gas, true, false),
-            _ => (vec![], gas, false, false),
+            _ => {
+                log::warn!("unknown precompile err {err:?}");
+                (vec![], gas, false, false)
+            }
         },
     };
     log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}, return_data {}", return_data.len(), hex::encode(&return_data));
