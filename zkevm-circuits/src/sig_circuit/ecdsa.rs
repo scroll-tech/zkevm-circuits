@@ -1,8 +1,6 @@
 //! This module implements the ECDSA circuit. Modified from
 //! <https://github.com/scroll-tech/halo2-lib/blob/530e744232860641f9533c9b9f8c1fee57f54cab/halo2-ecc/src/ecc/ecdsa.rs#L16>
 
-use std::ops::Add;
-
 use halo2_base::{
     gates::{GateInstructions, RangeInstructions},
     utils::{modulus, CurveAffineExt},
@@ -51,19 +49,16 @@ where
     let r_valid = scalar_chip.is_soft_nonzero(ctx, r);
     let s_valid = scalar_chip.is_soft_nonzero(ctx, s);
 
-    println!("compute msg hash");
     // compute u1 = m s^{-1} mod n and u2 = r s^{-1} mod n
     let u1 = scalar_chip.divide(ctx, msghash, s);
     let u2 = scalar_chip.divide(ctx, r, s);
 
-    println!("compute randomness");
     let mut rng = thread_rng();
     let u3_fr = SF::random(&mut rng);
-    let u1_fr = scalar_chip.get_assigned_value(&u1);
-    let u1u3 = u1_fr + Value::known(u3_fr);
     let u3 = scalar_chip.load_private(ctx, FpConfig::<F, SF>::fe_to_witness(&Value::known(u3_fr)));
-    let u1_plus_u3 = scalar_chip.load_private(ctx, FpConfig::<F, SF>::fe_to_witness(&u1u3));
-
+    let u1_plus_u3 = scalar_chip.add_no_carry(ctx, &u1, &u3);
+    let u1_plus_u3 = scalar_chip.carry_mod(ctx, &u1_plus_u3);
+    
     // compute (u1+u3) * G
     let u1u3_mul = fixed_base::scalar_multiply::<F, _, _>(
         base_chip,
