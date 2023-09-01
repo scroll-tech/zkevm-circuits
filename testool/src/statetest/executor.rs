@@ -23,8 +23,8 @@ use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
     bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
-    modexp_circuit::ModExpCircuit, super_circuit::SuperCircuit, test_util::CircuitTestBuilder,
-    util::SubCircuit, witness::Block, sig_circuit::SigCircuit,
+    modexp_circuit::ModExpCircuit, sig_circuit::SigCircuit, super_circuit::SuperCircuit,
+    test_util::CircuitTestBuilder, util::SubCircuit, witness::Block,
 };
 
 /// Read env var with default value
@@ -557,7 +557,7 @@ pub fn run_test(
             return Err(StateTestError::SkipTestBalanceOverflow);
         }
     }
-
+    log::debug!("trace_config generated");
     let circuits_params = if !circuits_config.super_circuit {
         get_params_for_sub_circuit_test()
     } else {
