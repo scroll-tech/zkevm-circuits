@@ -1609,6 +1609,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let tx_usage = block.txs.len() as f32 / block.circuits_params.max_txs as f32;
         let max_inner_blocks = block.circuits_params.max_inner_blocks;
         let max_txs = block.circuits_params.max_txs;
 
@@ -1625,8 +1626,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             + N_BYTES_ACCOUNT_ADDRESS
             + N_BYTES_WORD;
 
-        // the number of rows is independent of block
-        (num_rows, num_rows)
+        (
+            (tx_usage * block.circuits_params.max_vertical_circuit_rows as f32).ceil() as usize,
+            num_rows,
+        )
     }
 
     /// Compute the public inputs for this circuit.

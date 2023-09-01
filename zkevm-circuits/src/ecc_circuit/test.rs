@@ -77,7 +77,10 @@ impl GenRand for EcAddOp {
 impl GenRand for EcMulOp {
     fn gen_rand<R: RngCore + CryptoRng>(mut r: &mut R, is_neg: bool) -> Self {
         let p = G1Affine::random(&mut r);
-        let s = <Fr as halo2_proofs::arithmetic::Field>::random(&mut r);
+        let s = match r.gen::<bool>() {
+            true => <Fr as halo2_proofs::arithmetic::Field>::random(&mut r),
+            false => Fr::one(),
+        };
         let r = if is_neg {
             G1Affine::random(&mut r)
         } else {

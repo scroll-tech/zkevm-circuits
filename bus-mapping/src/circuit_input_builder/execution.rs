@@ -1040,6 +1040,16 @@ pub struct EcMulOp {
     pub r: Option<G1Affine>,
 }
 
+/// Constant representing the modulus
+/// r     = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
+/// r - 1 = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000
+pub const BN256_FR_MODULUS_MINUS_1: Fr = Fr::from_raw([
+    0x43e1f593f0000000,
+    0x2833e84879b97091,
+    0xb85045b68181585d,
+    0x30644e72e131a029,
+]);
+
 impl Default for EcMulOp {
     fn default() -> Self {
         let p = G1Affine::generator();
@@ -1096,8 +1106,15 @@ impl EcMulOp {
     }
 
     /// A check on the op to tell the ECC Circuit whether or not to skip the op.
+    ///
+    /// We skip an EcMul op from being processed by ECC circuit if:
+    /// - P == (0, 0)
+    /// - s == 0
+    /// - s == Fr::MODULUS - 1, i.e. P == -R
     pub fn skip_by_ecc_circuit(&self) -> bool {
-        (self.p.0.is_zero() && self.p.1.is_zero()) || self.s.is_zero().into()
+        (self.p.0.is_zero() && self.p.1.is_zero())
+            || self.s.is_zero().into()
+            || self.s.eq(&BN256_FR_MODULUS_MINUS_1)
     }
 
     /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
