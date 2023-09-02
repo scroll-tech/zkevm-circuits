@@ -67,6 +67,13 @@ type TraceConfig struct {
 
 func newUint64(val uint64) *uint64 { return &val }
 
+func toBigInt(value *hexutil.Big) *big.Int {
+	if value != nil {
+		return value.ToInt()
+	}
+	return big.NewInt(0)
+}
+
 func transferTxs(txs []Transaction) types.Transactions {
 
 	t_txs := make([]*types.Transaction, 0, len(txs))

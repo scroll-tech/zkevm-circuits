@@ -1,4 +1,4 @@
-package gethutil
+package main
 
 import (
 	"fmt"
