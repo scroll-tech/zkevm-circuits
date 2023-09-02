@@ -254,5 +254,6 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 
 	trace.StorageTrace.RootAfter = rootAfter
 	trace.Header.Root = rootAfter
+	trace.Header.BaseFee = toBigInt(config.Block.BaseFee)
 	return trace, nil
 }
