@@ -42,6 +42,7 @@ impl RwMap {
         }
     }
     /// Check value in the same way like StateCircuit
+    /// TODO: speedup this
     pub fn check_value(&self) {
         let mock_rand = Fr::from(0x1000u64);
         let err_msg_first = "first access reads don't change value";
@@ -79,22 +80,25 @@ impl RwMap {
                     if value != init_value {
                         // EIP2930
                         if row.tag() != RwTableTag::TxAccessListAccountStorage {
-                            errs.push((idx, err_msg_first, *row, *prev_row));
+                            errs.push((idx, err_msg_first, *row, None));
                         }
                     }
                 } else {
                     // value == prev_value
                     let prev_value = prev_row.value_assignment::<Fr>(mock_rand);
-
                     if value != prev_value {
-                        errs.push((idx, err_msg_non_first, *row, *prev_row));
+                        errs.push((idx, err_msg_non_first, *row, Some(*prev_row)));
                     }
                 }
             }
         }
-        log::info!("rw value check err num: {}", errs.len());
-        for e in errs {
-            log::warn!("err is {:?}", e);
+        if !errs.is_empty() {
+            log::error!("rw value check err num: {}", errs.len());
+            for e in errs {
+                log::error!("err is {:?}", e);
+            }
+        } else {
+            log::debug!("rw value check err num: {}", errs.len());
         }
     }
     /// Calculates the number of Rw::Start rows needed.

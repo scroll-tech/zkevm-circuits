@@ -32,7 +32,7 @@ env_logger = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.78"
 
-hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0723"}
+hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
 misc-precompiled-circuit = { package = "misc-precompiled-circuit", git = "https://github.com/scroll-tech/misc-precompiled-circuit.git", tag = "v0.1.0" }
 
 halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", tag = "v0.1.1", default-features=false, features=["halo2-pse","display"] }
@@ -63,7 +63,7 @@ cli-table = "0.4"
 paste = "1.0"
 
 [features]
-default = ["test", "test-circuits", "shanghai", "debug-annotations"]
+default = ["test", "test-circuits", "shanghai", "debug-annotations", "parallel_syn"]
 test = ["ethers-signers", "mock", "bus-mapping/test"]
 
 scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock?/scroll", "zktrie", "poseidon-codehash"]
@@ -75,5 +75,6 @@ warn-unimplemented = ["eth-types/warn-unimplemented"]
 onephase = [] # debug only
 zktrie = []
 poseidon-codehash = []
+parallel_syn = ["hash-circuit/parallel_syn", "halo2_proofs/parallel_syn"]
 
 debug-annotations = []

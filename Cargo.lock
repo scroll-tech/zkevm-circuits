@@ -2212,7 +2212,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.6.1#c5cd0dab4a242d7077bf9cad051119dafaa4d6e9"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.6.2#cafcdeb2c7fd6602d0ddac183c1fb5396a135f9e"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -3525,7 +3525,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0723#1652d54bf7ca9d8f286b53fe077d9efefdcf6d5f"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0901#69524f42bdc55c581088c2fe64c2ab9a2921146b"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",

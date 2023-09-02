@@ -46,7 +46,7 @@ pub fn gen_associated_ops(
             (None, None)
         }
     };
-
+    log::trace!("precompile event {opt_event:?}, aux data {aux_data:?}");
     if let Some(event) = opt_event {
         state.push_precompile_event(event);
     }

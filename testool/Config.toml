@@ -6,6 +6,20 @@ max_steps = 1000
 ignore_tests = []
 
 [[suite]]
+id="precompile"
+path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
+id="precompile2"
+path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts2/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
 id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 0

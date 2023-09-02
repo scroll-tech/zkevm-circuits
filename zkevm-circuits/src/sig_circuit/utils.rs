@@ -13,13 +13,16 @@ use halo2_proofs::{
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
 pub(super) const MAX_NUM_SIG: usize = 128;
-// Each ecdsa signature requires 456786 cells
-// We set CELLS_PER_SIG = 457000 to allows for a few buffer
-pub(super) const CELLS_PER_SIG: usize = 457000;
+// Each ecdsa signature requires 460456 cells
+pub(super) const CELLS_PER_SIG: usize = 460456;
+// Each ecdsa signature requires 62994 lookup cells
+pub(super) const LOOKUP_CELLS_PER_SIG: usize = 62994;
 // Total number of rows allocated for ecdsa chip
 pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed
-pub(super) const COLUMN_NUM_LIMIT: usize = 150;
+pub(super) const COLUMN_NUM_LIMIT: usize = 58;
+// Max number of lookup columns allowed
+pub(super) const LOOKUP_COLUMN_NUM_LIMIT: usize = 9;
 
 pub(super) fn calc_required_advices(num_verif: usize) -> usize {
     let mut num_adv = 1;
@@ -37,6 +40,24 @@ pub(super) fn calc_required_advices(num_verif: usize) -> usize {
         num_adv += 1;
     }
     panic!("the required advice columns exceeds {COLUMN_NUM_LIMIT} for {num_verif} signatures");
+}
+
+pub(super) fn calc_required_lookup_advices(num_verif: usize) -> usize {
+    let mut num_adv = 1;
+    let total_cells = num_verif * LOOKUP_CELLS_PER_SIG;
+    let row_num = 1 << LOG_TOTAL_NUM_ROWS;
+    while num_adv < LOOKUP_COLUMN_NUM_LIMIT {
+        if num_adv * row_num > total_cells {
+            log::debug!(
+                "ecdsa chip uses {} lookup advice columns for {} signatures",
+                num_adv,
+                num_verif
+            );
+            return num_adv;
+        }
+        num_adv += 1;
+    }
+    panic!("the required lookup advice columns exceeds {LOOKUP_COLUMN_NUM_LIMIT} for {num_verif} signatures");
 }
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field

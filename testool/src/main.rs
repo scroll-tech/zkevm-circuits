@@ -122,7 +122,7 @@ fn write_test_ids(test_ids: &[String]) -> Result<()> {
 }
 
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
-    log::info!("{}", &test);
+    log::info!("run single test {}", &test);
     let circuits_config = CircuitsConfig {
         verbose: true,
         super_circuit: circuits_config.super_circuit,

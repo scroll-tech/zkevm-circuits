@@ -122,6 +122,14 @@ mod test {
         test_internal_ok(0x20, 0x00, &[basefee_opcode]);
     }
 
+    // make sure 0xFE as invalidcode.
+    #[test]
+    fn invalid_opcode_fe() {
+        let fe_opcode = 0xfe_u8;
+        test_root_ok(&[fe_opcode]);
+        test_internal_ok(0x20, 0x30, &[fe_opcode]);
+    }
+
     #[cfg(not(feature = "shanghai"))]
     #[test]
     fn invalid_opcode_push0_for_not_shanghai() {

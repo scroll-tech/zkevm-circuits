@@ -147,8 +147,9 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		mergo.Merge(&chainConfig, config.ChainConfig, mergo.WithOverride)
 	}
 
-	// Debug for Shanghai
-	// fmt.Printf("geth-utils: ShanghaiTime = %d\n", *chainConfig.ShanghaiTime)
+	// Debug for Shanghai (Shanghai block is named as Shanghai time in go-ethereum v1.11.5 :))
+	// fmt.Printf("geth-utils: ShanghaiBlock = %d\n", chainConfig.ShanghaiBlock)
+	// fmt.Printf("geth-utils: ArchimedesBlock = %d\n", chainConfig.ArchimedesBlock)
 
 	txs := transferTxs(config.Transactions)
 

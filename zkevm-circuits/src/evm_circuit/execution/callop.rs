@@ -1778,6 +1778,9 @@ mod test_precompiles {
             address: Word::from(0x2),
             stack_value: vec![(
                 Word::from(0x20),
+                #[cfg(feature = "scroll")]
+                Word::zero(),
+                #[cfg(not(feature = "scroll"))]
                 word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
             )],
             ..Default::default()
@@ -1796,6 +1799,9 @@ mod test_precompiles {
             address: Word::from(0x3),
             stack_value: vec![(
                 Word::from(0x20),
+                #[cfg(feature = "scroll")]
+                Word::zero(),
+                #[cfg(not(feature = "scroll"))]
                 word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
             )],
             ..Default::default()
@@ -1835,6 +1841,30 @@ mod test_precompiles {
             call_data_length: Word::from(0x63),
             address: Word::from(0x5),
             stack_value: vec![(Word::from(0x80), Word::from(8))],
+            ..Default::default()
+        },
+        // B = E = M = 0
+        modexp_allzeros: PrecompileCallArgs {
+            name: "modexp_zeros",
+            setup_code: bytecode! {
+                PUSH1(1) // Bsize
+                PUSH1(0)
+                MSTORE
+                PUSH1(1) // Esize
+                PUSH1(0x20)
+                MSTORE
+                PUSH1(1) // Msize
+                PUSH1(0x40)
+                MSTORE
+                PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000000")) // B, E and M
+                PUSH1(0x60)
+                MSTORE
+            },
+            ret_size: Word::from(0x01),
+            ret_offset: Word::from(0x9F),
+            call_data_length: Word::from(0x63),
+            address: Word::from(0x5),
+            stack_value: vec![(Word::from(0x80), Word::from(0))],
             ..Default::default()
         },
         ec_add: PrecompileCallArgs {
@@ -1985,10 +2015,16 @@ mod test_precompiles {
             stack_value: vec![
                 (
                     Word::from(0x20),
+                    #[cfg(feature = "scroll")]
+                    word!("3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e13"),
+                    #[cfg(not(feature = "scroll"))]
                     word!("d282e6ad7f520e511f6c3e2b8c68059b9442be0454267ce079217e1319cde05b"),
                 ),
                 (
                     Word::from(0x0),
+                    #[cfg(feature = "scroll")]
+                    word!("0000000048c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f"),
+                    #[cfg(not(feature = "scroll"))]
                     word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
                 ),
             ],
