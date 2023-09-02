@@ -631,7 +631,7 @@ pub(crate) fn block_precompile_invalid_ec_mul() -> BlockTrace {
 }
 
 #[cfg(feature = "scroll")]
-pub(crate) fn block_precompile_invalid_ec_pairing() -> BlockTrace {
+pub(crate) fn block_precompile_invalid_ec_pairing_batch1() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     let chain_id = *MOCK_CHAIN_ID;
@@ -759,6 +759,49 @@ pub(crate) fn block_precompile_invalid_ec_pairing() -> BlockTrace {
     }
     .with_call_op(OpcodeId::STATICCALL);
 
+    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+
+    let addr_a = wallet_a.address();
+    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+    let addr_c = address!("0x000000000000000000000000000000000000CCCC");
+
+    // 3 accounts and 2 txs.
+    TestContext::<3, 2>::new(
+        Some(vec![Word::zero()]),
+        |accs| {
+            accs[0].address(addr_a).balance(Word::from(1u64 << 24));
+            accs[1]
+                .address(addr_b)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_ec_pairing_oor);
+            accs[2]
+                .address(addr_c)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_ec_pairing_noc_g1);
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(wallet_a.clone())
+                .to(accs[1].address)
+                .gas(Word::from(1_000_000u64));
+            txs[1]
+                .from(wallet_a.clone())
+                .to(accs[2].address)
+                .gas(Word::from(1_000_000u64));
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .l2_trace()
+    .clone()
+}
+
+#[cfg(feature = "scroll")]
+pub(crate) fn block_precompile_invalid_ec_pairing_batch2() -> BlockTrace {
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+    let chain_id = *MOCK_CHAIN_ID;
+
     let bytecode_ec_pairing_noc_g2 = PrecompileCallArgs {
         name: "ecPairing (invalid): G2 point not on curve",
         setup_code: bytecode! {
@@ -824,24 +867,14 @@ pub(crate) fn block_precompile_invalid_ec_pairing() -> BlockTrace {
 
     let addr_a = wallet_a.address();
     let addr_b = address!("0x000000000000000000000000000000000000BBBB");
-    let addr_c = address!("0x000000000000000000000000000000000000CCCC");
-    let addr_d = address!("0x000000000000000000000000000000000000DDDD");
 
-    // 4 accounts and 3 txs.
-    TestContext::<4, 3>::new(
+    // 2 accounts and 1 tx.
+    TestContext::<2, 1>::new(
         Some(vec![Word::zero()]),
         |accs| {
             accs[0].address(addr_a).balance(Word::from(1u64 << 24));
             accs[1]
                 .address(addr_b)
-                .balance(Word::from(1u64 << 20))
-                .code(bytecode_ec_pairing_oor);
-            accs[2]
-                .address(addr_c)
-                .balance(Word::from(1u64 << 20))
-                .code(bytecode_ec_pairing_noc_g1);
-            accs[3]
-                .address(addr_d)
                 .balance(Word::from(1u64 << 20))
                 .code(bytecode_ec_pairing_noc_g2);
         },
@@ -849,14 +882,6 @@ pub(crate) fn block_precompile_invalid_ec_pairing() -> BlockTrace {
             txs[0]
                 .from(wallet_a.clone())
                 .to(accs[1].address)
-                .gas(Word::from(1_000_000u64));
-            txs[1]
-                .from(wallet_a.clone())
-                .to(accs[2].address)
-                .gas(Word::from(1_000_000u64));
-            txs[2]
-                .from(wallet_a.clone())
-                .to(accs[3].address)
                 .gas(Word::from(1_000_000u64));
         },
         |block, _tx| block.number(0xcafeu64),

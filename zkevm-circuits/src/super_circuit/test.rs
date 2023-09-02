@@ -451,11 +451,24 @@ fn serial_test_super_circuit_precompile_invalid_ec_mul() {
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
-fn serial_test_super_circuit_precompile_invalid_ec_pairing() {
-    const MAX_TXS: usize = 3;
-    const MAX_CALLDATA: usize = 0x480;
+fn serial_test_super_circuit_precompile_invalid_ec_pairing_batch1() {
+    const MAX_TXS: usize = 2;
+    const MAX_CALLDATA: usize = 0x300;
 
-    let block = precompile_block_trace::block_precompile_invalid_ec_pairing();
+    let block = precompile_block_trace::block_precompile_invalid_ec_pairing_batch1();
+    let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
+}
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_precompile_invalid_ec_pairing_batch2() {
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 0x180;
+
+    let block = precompile_block_trace::block_precompile_invalid_ec_pairing_batch2();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
