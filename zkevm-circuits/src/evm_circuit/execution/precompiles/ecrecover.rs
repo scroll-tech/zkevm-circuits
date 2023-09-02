@@ -2,19 +2,21 @@ use array_init::array_init;
 use bus_mapping::precompile::PrecompileAuxData;
 
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use gadgets::util::{select, Expr};
+use gadgets::util::{and, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use itertools::Itertools;
 
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_WORD},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_ADDRESS, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes, rlc, CachedRegion, Cell, RandomLinearCombination,
+            from_bytes,
+            math_gadget::LtGadget,
+            rlc, CachedRegion, Cell, RandomLinearCombination,
         },
     },
     table::CallContextFieldTag,
@@ -33,6 +35,8 @@ pub struct EcrecoverGadget<F> {
     msg_hash: [Cell<F>; N_BYTES_WORD],
     sig_r: [Cell<F>; N_BYTES_WORD],
     sig_s: [Cell<F>; N_BYTES_WORD],
+
+    call_data_length_gt_0x60: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -86,6 +90,37 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.keccak_rlc(sig_s.clone().map(|x| x.expr())),
         );
 
+        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
+            [
+                CallContextFieldTag::IsSuccess,
+                CallContextFieldTag::CalleeAddress,
+                CallContextFieldTag::CallerId,
+                CallContextFieldTag::CallDataOffset,
+                CallContextFieldTag::CallDataLength,
+                CallContextFieldTag::ReturnDataOffset,
+                CallContextFieldTag::ReturnDataLength,
+            ]
+            .map(|tag| cb.call_context(None, tag));
+        let call_data_length_gt_0x60 =
+            LtGadget::construct(cb, 0x60.expr(), call_data_length.expr());
+
+        let gas_cost = select::expr(
+            is_success.expr(),
+            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+
+        // address will not be recovered if ecrecover call fails.
+        cb.require_boolean(
+            "ecrecover: address can be recovered only if is_success == true",
+            is_success.expr() - recovered.expr(),
+        );
+        // address will be recovered if call_data_length > 0x60.
+        cb.require_equal(
+            "ecrecover: if call_data_length > 0x60 then recovered == true",
+            and::expr([is_success.expr(), call_data_length_gt_0x60.expr()]),
+            recovered.expr(),
+        );
         cb.condition(recovered.expr(), |cb| {
             // if address was recovered, the sig_v (recovery ID) was correct.
             cb.require_zero(
@@ -103,24 +138,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 from_bytes::expr(&recovered_addr_keccak_rlc.cells),
             );
         });
-
-        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
-            [
-                CallContextFieldTag::IsSuccess,
-                CallContextFieldTag::CalleeAddress,
-                CallContextFieldTag::CallerId,
-                CallContextFieldTag::CallDataOffset,
-                CallContextFieldTag::CallDataLength,
-                CallContextFieldTag::ReturnDataOffset,
-                CallContextFieldTag::ReturnDataLength,
-            ]
-            .map(|tag| cb.call_context(None, tag));
-
-        let gas_cost = select::expr(
-            is_success.expr(),
-            GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
-            cb.curr.state.gas_left.expr(),
-        );
 
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
@@ -150,6 +167,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             msg_hash,
             sig_r,
             sig_s,
+            call_data_length_gt_0x60,
 
             is_success,
             callee_address,
@@ -251,6 +269,12 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             region,
             offset,
             Value::known(F::from(call.call_data_length)),
+        )?;
+        self.call_data_length_gt_0x60.assign(
+            region,
+            offset,
+            F::from(0x60),
+            F::from(call.call_data_length),
         )?;
         self.return_data_offset.assign(
             region,
