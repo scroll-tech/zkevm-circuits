@@ -330,6 +330,33 @@ impl<'a> CircuitInputBuilder {
                 self.block_ctx.rwc,
                 self.block_ctx.cumulative_gas_used
             );
+            for account_post_state in &geth_trace.account_after {
+                let account_post_state: eth_types::l2_types::AccountProofWrapper =
+                    account_post_state.clone();
+                if let Some(address) = account_post_state.address {
+                    let local_acc = self.sdb.get_account(&address).1;
+                    log::trace!("local acc {local_acc:?}, trace acc {account_post_state:?}");
+                    if local_acc.balance != account_post_state.balance.unwrap() {
+                        log::error!("incorrect balance")
+                    }
+                    if local_acc.nonce != account_post_state.nonce.unwrap().into() {
+                        log::error!("incorrect nonce")
+                    }
+                    if local_acc.code_hash != account_post_state.poseidon_code_hash.unwrap() {
+                        log::error!("incorrect poseidon_code_hash")
+                    }
+                    if local_acc.keccak_code_hash != account_post_state.keccak_code_hash.unwrap() {
+                        log::error!("incorrect keccak_code_hash")
+                    }
+                    if let Some(storage) = account_post_state.storage {
+                        let k = storage.key.unwrap();
+                        let local_v = self.sdb.get_storage(&address, &k).1;
+                        if *local_v != storage.value.unwrap() {
+                            log::error!("incorrect storage for k = {k}");
+                        }
+                    }
+                }
+            }
         }
         if handle_rwc_reversion {
             self.set_value_ops_call_context_rwc_eor();

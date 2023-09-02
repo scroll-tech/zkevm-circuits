@@ -475,6 +475,10 @@ pub struct GethExecTrace {
     /// Vector of geth execution steps of the trace.
     #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
+    #[serde(rename = "accountAfter", default)]
+    /// List of accounts' (coinbase etc) status AFTER execution
+    /// Only viable for scroll mode
+    pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
 }
 
 #[macro_export]
@@ -599,6 +603,7 @@ mod tests {
                 gas: Gas(26809),
                 failed: false,
                 return_value: "".to_owned(),
+                account_after: Vec::new(),
                 struct_logs: vec![
                     GethExecStep {
                         pc: ProgramCounter(0),

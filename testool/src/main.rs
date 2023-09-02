@@ -15,7 +15,7 @@ use statetest::{
     load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results, StateTest,
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env,
     fs::File,
     io::{BufRead, BufReader, Write},
@@ -191,9 +191,25 @@ fn go() -> Result<()> {
         return Ok(());
     };
 
+    // It is better to sue deterministic testing order.
+    // If there is a list, follow list.
+    // If not, order by test id.
     if let Some(test_ids_path) = args.test_ids {
         let test_ids = read_test_ids(&test_ids_path)?;
-        state_tests.retain(|test| test_ids.contains(&test.id));
+        let id_to_test: HashMap<_, _> = state_tests
+            .iter()
+            .map(|t| (t.id.clone(), t.clone()))
+            .collect();
+        state_tests.clear();
+        state_tests.extend(
+            test_ids
+                .into_iter()
+                .filter_map(|test_id| id_to_test.get(&test_id).cloned()),
+        );
+    } else {
+        // sorting with reversed id string to prevent similar tests go together, so that
+        // computing heavy tests will not trigger OOM.
+        state_tests.sort_by_key(|t| t.id.chars().rev().collect::<String>());
     }
 
     if args.report {

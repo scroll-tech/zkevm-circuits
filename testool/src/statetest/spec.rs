@@ -6,7 +6,7 @@ use std::{
     str::FromStr,
 };
 
-/// https://github.com/ethereum/tests/pull/857 "set default gasPrice to 10"
+/// <https://github.com/ethereum/tests/pull/857> "set default gasPrice to 10"
 pub const DEFAULT_BASE_FEE: u32 = 10;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
