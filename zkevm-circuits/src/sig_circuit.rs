@@ -104,6 +104,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // computations
         let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
 
+        let num_lookup_advice = [calc_required_lookup_advices(MAX_NUM_SIG)];
+
         #[cfg(feature = "onephase")]
         log::info!("configuring ECDSA chip with single phase");
         #[cfg(not(feature = "onephase"))]
@@ -126,7 +128,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             meta,
             FpStrategy::Simple,
             &num_advice,
-            &[8],
+            &num_lookup_advice,
             1,
             LOG_TOTAL_NUM_ROWS - 1,
             88,
