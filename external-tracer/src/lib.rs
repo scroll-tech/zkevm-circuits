@@ -135,10 +135,7 @@ pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
 
     log::trace!("trace: {}", trace_string);
 
-    let mut trace: BlockTrace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
-    // l2 geth returns nil base_fee even if it is not 0..
-    trace.header.base_fee_per_gas = Some(l2_config.block_constants.base_fee);
-    Ok(trace)
+    serde_json::from_str(&trace_string).map_err(Error::SerdeError)
 }
 
 #[cfg(feature = "scroll")]
