@@ -22,13 +22,13 @@ test-heavy: ## Run heavy tests serially to avoid OOM
 
 test: test-light test-heavy ## Run tests for all the workspace members
 
-test_doc: ## Test the docs
+test-doc: ## Test the docs
 	@cargo test --release --all --all-features --doc
 
-test_benches: ## Compiles the benchmarks
+test-benches: ## Compiles the benchmarks
 	@cargo test --verbose --release --all-features -p circuit-benchmarks --no-run
 
-test-all: fmt doc clippy test_doc test_benches test ## Run all the CI checks locally (in your actual toolchain)
+test-all: fmt doc clippy test-doc test-benches test ## Run all the CI checks locally (in your actual toolchain)
 
 super_bench: ## Run Super Circuit benchmarks
 	@cargo test --profile bench bench_super_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
