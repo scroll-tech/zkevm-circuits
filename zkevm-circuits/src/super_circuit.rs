@@ -629,48 +629,64 @@ impl<
         challenges: &crate::util::Challenges<Value<Fr>>,
         layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        self.keccak_circuit
-            .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
-        self.poseidon_circuit
-            .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;
-        self.bytecode_circuit
-            .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
-        self.sig_circuit
-            .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
-        self.ecc_circuit
-            .synthesize_sub(&config.ecc_circuit, challenges, layouter)?;
-        self.modexp_circuit
-            .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
-        self.state_circuit
-            .synthesize_sub(&config.state_circuit, challenges, layouter)?;
-        self.copy_circuit
-            .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
-        self.exp_circuit
-            .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
+        log::debug!("assigning evm_circuit");
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+        log::debug!("assigning keccak_circuit");
+        self.keccak_circuit
+            .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
+        log::debug!("assigning poseidon_circuit");
+        self.poseidon_circuit
+            .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;
+        log::debug!("assigning bytecode_circuit");
+        self.bytecode_circuit
+            .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
+        log::debug!("assigning tx_circuit");
+        self.tx_circuit
+            .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
+        log::debug!("assigning sig_circuit");
+        self.sig_circuit
+            .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
+        log::debug!("assigning ecc_circuit");
+        self.ecc_circuit
+            .synthesize_sub(&config.ecc_circuit, challenges, layouter)?;
+        log::debug!("assigning modexp_circuit");
+        self.modexp_circuit
+            .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
+        log::debug!("assigning state_circuit");
+        self.state_circuit
+            .synthesize_sub(&config.state_circuit, challenges, layouter)?;
+        log::debug!("assigning copy_circuit");
+        self.copy_circuit
+            .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
+        log::debug!("assigning exp_circuit");
+        self.exp_circuit
+            .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
 
+        log::debug!("assigning pi_circuit");
         self.pi_circuit
             .import_tx_values(self.tx_circuit.value_cells.borrow().clone().unwrap());
-
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
-
         self.pi_circuit.connect_export(
             layouter,
             self.state_circuit.exports.borrow().as_ref(),
             self.evm_circuit.exports.borrow().as_ref(),
         )?;
 
+        log::debug!("assigning rlp_circuit");
         self.rlp_circuit
             .synthesize_sub(&config.rlp_circuit, challenges, layouter)?;
+
         // load both poseidon table and zktrie table
         #[cfg(feature = "zktrie")]
-        self.mpt_circuit
-            .synthesize_sub(&config.mpt_circuit, challenges, layouter)?;
+        {
+            log::debug!("assigning mpt_circuit");
+            self.mpt_circuit
+                .synthesize_sub(&config.mpt_circuit, challenges, layouter)?;
+        }
 
+        log::debug!("super circuit synthesize_sub done");
         Ok(())
     }
 }
