@@ -53,12 +53,14 @@ where
     let u1 = scalar_chip.divide(ctx, msghash, s);
     let u2 = scalar_chip.divide(ctx, r, s);
 
+    // FIXME:
+    // this rng is not secure. We need to derive the RNG from Challenge
     let mut rng = thread_rng();
     let u3_fr = SF::random(&mut rng);
     let u3 = scalar_chip.load_private(ctx, FpConfig::<F, SF>::fe_to_witness(&Value::known(u3_fr)));
     let u1_plus_u3 = scalar_chip.add_no_carry(ctx, &u1, &u3);
     let u1_plus_u3 = scalar_chip.carry_mod(ctx, &u1_plus_u3);
-    
+
     // compute (u1+u3) * G
     let u1u3_mul = fixed_base::scalar_multiply::<F, _, _>(
         base_chip,
