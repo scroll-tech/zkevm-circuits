@@ -55,7 +55,6 @@ use crate::{
     },
     util::rlc_be_bytes,
 };
-use halo2_proofs::circuit::{Cell, RegionIndex};
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
@@ -894,11 +893,7 @@ impl<F: Field> PiCircuitConfig<F> {
         for tx_id in 0..self.max_txs {
             region.constrain_equal(
                 chain_id_cell.cell(),
-                Cell {
-                    region_index: RegionIndex(1), // FIXME: this is not safe
-                    row_offset: tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX,
-                    column: self.tx_table.value.into(),
-                },
+                tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1].cell(),
             )?;
         }
 
