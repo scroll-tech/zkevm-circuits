@@ -1,4 +1,4 @@
-package gethutil
+package main
 
 import (
 	"fmt"
@@ -128,6 +128,13 @@ type TraceConfig struct {
 
 func newUint64(val uint64) *uint64 { return &val }
 
+func toBigInt(value *hexutil.Big) *big.Int {
+	if value != nil {
+		return value.ToInt()
+	}
+	return big.NewInt(0)
+}
+
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
 		ChainID:             new(big.Int).SetUint64(config.ChainID),
@@ -170,16 +177,16 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			txAccessList[i].StorageKeys = accessList.StorageKeys
 		}
 		messages[i] = core.Message{
-			From: tx.From,
-			To: tx.To,
-			Nonce: uint64(tx.Nonce),
-			Value: toBigInt(tx.Value),
-			GasLimit: uint64(tx.GasLimit),
-			GasPrice: toBigInt(tx.GasPrice),
-			GasFeeCap: toBigInt(tx.GasFeeCap),
-			GasTipCap: toBigInt(tx.GasTipCap),
-			Data: tx.CallData,
-			AccessList: txAccessList,
+			From:              tx.From,
+			To:                tx.To,
+			Nonce:             uint64(tx.Nonce),
+			Value:             toBigInt(tx.Value),
+			GasLimit:          uint64(tx.GasLimit),
+			GasPrice:          toBigInt(tx.GasPrice),
+			GasFeeCap:         toBigInt(tx.GasFeeCap),
+			GasTipCap:         toBigInt(tx.GasTipCap),
+			Data:              tx.CallData,
+			AccessList:        txAccessList,
 			SkipAccountChecks: false,
 		}
 
