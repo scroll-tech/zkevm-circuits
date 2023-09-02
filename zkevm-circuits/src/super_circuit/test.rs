@@ -378,8 +378,8 @@ fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> Circ
     const MAX_RWS: usize = 1024;
     const MAX_COPY_ROWS: usize = 16384; // precompile require many copies
     CircuitsParams {
-        max_txs: max_txs,
-        max_calldata: max_calldata,
+        max_txs,
+        max_calldata,
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
         max_bytecode: 4096,
