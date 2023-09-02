@@ -22,7 +22,7 @@ pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed
 pub(super) const COLUMN_NUM_LIMIT: usize = 58;
 // Max number of lookup columns allowed
-pub(super) const LOOKUP_COLUMN_NUM_LIMIT: usize = 8;
+pub(super) const LOOKUP_COLUMN_NUM_LIMIT: usize = 9;
 
 pub(super) fn calc_required_advices(num_verif: usize) -> usize {
     let mut num_adv = 1;
