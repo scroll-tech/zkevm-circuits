@@ -10,12 +10,9 @@ fn main() {
     // Build
     let mut build = gobuild::Build::new();
     let target_files = if cfg!(feature = "scroll") {
-        vec![
-            "./l2geth/trace.go",
-            "./l2geth/lib.go",
-        ]
+        vec!["./l2geth/trace.go", "./l2geth/lib.go"]
     } else {
-        vec!["./l1geth/trace.go","./l1geth/lib.go", ]
+        vec!["./l1geth/trace.go", "./l1geth/lib.go"]
     };
 
     if let Err(e) = build.files(target_files).try_compile(lib_name) {
