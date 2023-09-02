@@ -30,11 +30,7 @@ use eth_types::{
     evm_types::OpcodeId,
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256, U256,
-};
-use ethers_core::{
-    k256::ecdsa::SigningKey,
-    types::{Bytes, Signature, TransactionRequest},
+    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -44,6 +40,7 @@ pub use execution::{
 };
 use hex::decode_to_slice;
 
+use eth_types::sign_types::get_dummy_tx;
 use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
@@ -692,43 +689,14 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
 /// signature datas.
 pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
-    for sig in sigs {
+    let dummy_sign_data = SignData::default();
+    for sig in sigs.iter().chain(iter::once(&dummy_sign_data)) {
         let pk_le = pk_bytes_le(&sig.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         inputs.push(pk_be.to_vec());
         inputs.push(sig.msg.to_vec());
     }
-    // Padding signature
-    let pk_le = pk_bytes_le(&SignData::default().pk);
-    let pk_be = pk_bytes_swap_endianness(&pk_le);
-    inputs.push(pk_be.to_vec());
     inputs
-}
-
-/// Generate a dummy pre-eip155 tx in which
-/// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="")
-/// using the dummy private key = 1
-pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
-    let mut sk_be_scalar = [0u8; 32];
-    sk_be_scalar[31] = 1_u8;
-
-    let sk = SigningKey::from_bytes(&sk_be_scalar).expect("sign key = 1");
-    let wallet = ethers_signers::Wallet::from(sk);
-
-    let tx = TransactionRequest::new()
-        .nonce(0)
-        .gas(0)
-        .gas_price(U256::zero())
-        .to(Address::zero())
-        .value(U256::zero())
-        .data(Bytes::default());
-    let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
-
-    // FIXME: need to check if this is deterministic which means sig is fixed.
-    let sig = wallet.sign_hash(sighash);
-    assert_eq!(sig.v, 28);
-
-    (tx, sig)
 }
 
 /// Get the tx hash of the dummy tx (nonce=0, gas=0, gas_price=0, to=0, value=0,
@@ -856,16 +824,6 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);
-
-    // Since the SignData::default() already includes pk = [1]G which is also the
-    // one that we use in get_dummy_tx, so we only need to include the tx sign
-    // hash of the dummy tx.
-    let dummy_sign_input = {
-        let (dummy_tx, _) = get_dummy_tx();
-        // dummy tx is of type pre-eip155
-        dummy_tx.rlp_unsigned().to_vec()
-    };
-    inputs.push(dummy_sign_input);
 
     Ok(inputs)
 }
