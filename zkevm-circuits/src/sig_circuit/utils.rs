@@ -13,16 +13,16 @@ use halo2_proofs::{
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
 pub(super) const MAX_NUM_SIG: usize = 128;
-// Each ecdsa signature requires 565732 cells
-pub(super) const CELLS_PER_SIG: usize = 565732;
-// Each ecdsa signature requires 72888 lookup cells
-pub(super) const LOOKUP_CELLS_PER_SIG: usize = 72888;
+// Each ecdsa signature requires 460456 cells
+pub(super) const CELLS_PER_SIG: usize = 460456;
+// Each ecdsa signature requires 62994 lookup cells
+pub(super) const LOOKUP_CELLS_PER_SIG: usize = 62994;
 // Total number of rows allocated for ecdsa chip
 pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed
-pub(super) const COLUMN_NUM_LIMIT: usize = 71;
+pub(super) const COLUMN_NUM_LIMIT: usize = 58;
 // Max number of lookup columns allowed
-pub(super) const LOOKUP_COLUMN_NUM_LIMIT: usize = 10;
+pub(super) const LOOKUP_COLUMN_NUM_LIMIT: usize = 8;
 
 pub(super) fn calc_required_advices(num_verif: usize) -> usize {
     let mut num_adv = 1;

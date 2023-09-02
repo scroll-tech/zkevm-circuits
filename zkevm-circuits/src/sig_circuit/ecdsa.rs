@@ -9,11 +9,9 @@ use halo2_base::{
 };
 use halo2_ecc::{
     bigint::{big_less_than, CRTInteger},
-    ecc::{ec_add_unequal, ec_sub_unequal, fixed_base, scalar_multiply, EcPoint},
-    fields::{fp::FpConfig, FieldChip, PrimeField},
+    ecc::{ec_add_unequal, ec_sub_unequal, fixed_base, scalar_multiply, EcPoint, EccChip},
+    fields::{fp::FpConfig, FieldChip, PrimeField, Selectable},
 };
-use halo2_proofs::circuit::Value;
-use rand::thread_rng;
 
 // CF is the coordinate field of GA
 // SF is the scalar field of GA
@@ -52,12 +50,16 @@ where
     // compute u1 = m s^{-1} mod n and u2 = r s^{-1} mod n
     let u1 = scalar_chip.divide(ctx, msghash, s);
     let u2 = scalar_chip.divide(ctx, r, s);
+    let u1_is_one = scalar_field_element_is_one(&scalar_chip, ctx, &u1);
 
-    // FIXME:
-    // this rng is not secure. We need to derive the RNG from Challenge
-    let mut rng = thread_rng();
-    let u3_fr = SF::random(&mut rng);
-    let u3 = scalar_chip.load_private(ctx, FpConfig::<F, SF>::fe_to_witness(&Value::known(u3_fr)));
+    let neg_one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(-SF::one()));
+    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::one()));
+
+    // u3 = 1 if u1 == 1
+    // u3 = -1 if u1 != 1
+    // this ensures u1 + u3 != 0
+    let u3 = scalar_chip.select(ctx, &neg_one, &one, &u1_is_one);
+
     let u1_plus_u3 = scalar_chip.add_no_carry(ctx, &u1, &u3);
     let u1_plus_u3 = scalar_chip.carry_mod(ctx, &u1_plus_u3);
 
@@ -79,15 +81,15 @@ where
         base_chip.limb_bits,
         var_window_bits,
     );
-    // compute u3*G
-    let u3_mul = fixed_base::scalar_multiply::<F, _, _>(
-        base_chip,
-        ctx,
-        &GA::generator(),
-        &u3.truncation.limbs,
-        base_chip.limb_bits,
-        var_window_bits,
-    );
+    // compute u3*G this is directly assigned for G so no scalar_multiply is required
+    let u3_mul = {
+        let generator = GA::generator();
+        let neg_generator = -generator;
+        let ecc_chip = EccChip::<F, FpConfig<F, CF>>::construct(base_chip.clone());
+        let generator = ecc_chip.assign_constant_point(ctx, generator);
+        let neg_generator = ecc_chip.assign_constant_point(ctx, neg_generator);
+        ecc_chip.select(ctx, &neg_generator, &generator, &u1_is_one)
+    };
 
     // compute u2 * pubkey + u3 * G
     base_chip.enforce_less_than_p(ctx, u2_mul.x());
@@ -155,4 +157,15 @@ where
         .gate()
         .and(ctx, Existing(res4), Existing(equal_check));
     (res5, sum.y)
+}
+
+fn scalar_field_element_is_one<F: PrimeField, SF: PrimeField>(
+    scalar_chip: &FpConfig<F, SF>,
+    ctx: &mut Context<F>,
+    a: &CRTInteger<F>,
+) -> AssignedValue<F> {
+    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::one()));
+    let diff = scalar_chip.sub_no_carry(ctx, a, &one);
+    let diff = scalar_chip.carry_mod(ctx, &diff);
+    scalar_chip.is_zero(ctx, &diff)
 }
