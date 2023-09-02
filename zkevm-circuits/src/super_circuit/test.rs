@@ -402,14 +402,11 @@ fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> Circ
 fn serial_test_super_circuit_ec_ops_txs() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 0x320;
-    
+
     let block = precompile_block_trace::block_ec_ops();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
-        block,
-        circuits_params,
-    );
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
 #[ignore]
@@ -418,14 +415,11 @@ fn serial_test_super_circuit_ec_ops_txs() {
 fn serial_test_super_circuit_precompile_oog() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 0x320;
-    
+
     let block = precompile_block_trace::block_precompile_oog();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
-        block,
-        circuits_params,
-    );
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
 #[ignore]
@@ -434,14 +428,11 @@ fn serial_test_super_circuit_precompile_oog() {
 fn serial_test_super_circuit_precompile_invalid_ec_add() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 0x100;
-    
+
     let block = precompile_block_trace::block_precompile_invalid_ec_add();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
-        block,
-        circuits_params,
-    );
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
 #[ignore]
@@ -450,14 +441,11 @@ fn serial_test_super_circuit_precompile_invalid_ec_add() {
 fn serial_test_super_circuit_precompile_invalid_ec_mul() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 0xc0;
-    
+
     let block = precompile_block_trace::block_precompile_invalid_ec_mul();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
-        block,
-        circuits_params,
-    );
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
 #[ignore]
@@ -466,14 +454,11 @@ fn serial_test_super_circuit_precompile_invalid_ec_mul() {
 fn serial_test_super_circuit_precompile_invalid_ec_pairing() {
     const MAX_TXS: usize = 3;
     const MAX_CALLDATA: usize = 0x480;
-    
+
     let block = precompile_block_trace::block_precompile_invalid_ec_pairing();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
-        block,
-        circuits_params,
-    );
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
 #[ignore]
@@ -482,14 +467,9 @@ fn serial_test_super_circuit_precompile_invalid_ec_pairing() {
 fn serial_test_super_circuit_precompile_invalid_modexp() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 0xc6;
-    
+
     let block = precompile_block_trace::block_precompile_invalid_modexp();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(
-        block,
-        circuits_params,
-    );
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
-
-

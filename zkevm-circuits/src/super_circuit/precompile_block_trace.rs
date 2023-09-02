@@ -5,15 +5,14 @@ use bus_mapping::{
     precompile::PrecompileCalls,
 };
 use ethers_signers::{LocalWallet, Signer};
-use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
-use mock::{eth, TestContext, MOCK_CHAIN_ID};
+use mock::{eth, TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 // use crate::witness::block_apply_mpt_state;
 #[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
-use eth_types::{evm_types::GasCost, address, bytecode, word, Bytecode, ToWord, Word};
+use eth_types::{address, bytecode, evm_types::GasCost, word, Bytecode, ToWord, Word};
 
 #[cfg(feature = "scroll")]
 pub(crate) fn block_ec_ops() -> BlockTrace {
@@ -354,7 +353,9 @@ pub(crate) fn block_precompile_oog() -> BlockTrace {
         address: PrecompileCalls::Bn128Pairing.address().to_word(),
         value: 1.into(),
         gas: (PrecompileCalls::Bn128Pairing.base_gas_cost().as_u64()
-            + 2* GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.as_u64() - 1).to_word(),
+            + 2 * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.as_u64()
+            - 1)
+        .to_word(),
         ..Default::default()
     }
     .with_call_op(OpcodeId::DELEGATECALL);
