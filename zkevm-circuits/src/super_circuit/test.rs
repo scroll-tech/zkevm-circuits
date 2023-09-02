@@ -391,7 +391,7 @@ fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> Circ
         max_keccak_rows: 40000,
         max_inner_blocks: 1,
         max_exp_steps: 256,
-        max_rlp_rows: 800,
+        max_rlp_rows: 3200,
         ..Default::default()
     }
 }
