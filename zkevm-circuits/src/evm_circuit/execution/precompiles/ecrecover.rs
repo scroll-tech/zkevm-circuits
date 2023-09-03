@@ -308,6 +308,35 @@ mod test {
         static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
             vec![
                 PrecompileCallArgs {
+                    name: "ecrecover (invalid sig, r is 0, addr not recovered)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(28)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x0"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    // copy 128 bytes from memory addr 0.
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    // return 32 bytes and write from memory addr 128
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
                     name: "ecrecover (invalid sig, addr not recovered)",
                     setup_code: bytecode! {
                         // msg hash from 0x00
