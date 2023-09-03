@@ -1,6 +1,6 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{eth, MockAccount, MockBlock, MockTransaction};
+use crate::{eth, MockAccount, MockBlock, MockTransaction, MOCK_WALLETS};
 #[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
 use eth_types::{
@@ -249,13 +249,15 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     /// Returns a simple TestContext setup with a single tx executing the
     /// bytecode passed as parameters. The balances of the 2 accounts and
     /// addresses are the ones used in [`TestContext::
-    /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
+    /// account_0_code_wallet_0_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
     pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
         TestContext::new(
             None,
-            account_0_code_account_1_no_code(bytecode),
-            tx_from_1_to_0,
+            account_0_code_wallet_0_no_code(bytecode),
+            |mut txs, accs| {
+                txs[0].from(MOCK_WALLETS[0].clone()).to(accs[0].address);
+            },
             |block, _txs| block.number(0xcafeu64),
         )
     }
