@@ -431,7 +431,7 @@ pub(crate) fn block_precompile_invalid_ec_ops() -> BlockTrace {
     let mut contract_code = Bytecode::default();
 
     contract_code.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecAdd (invalid input: point not on curve)",
             // P = (2, 3)
             // Q = (1, 2)
@@ -465,7 +465,7 @@ pub(crate) fn block_precompile_invalid_ec_ops() -> BlockTrace {
     );
 
     contract_code.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecAdd (invalid input: must mod p to be valid)",
             // P = (p + 1, p + 2)
             // Q = (1, 2)
@@ -498,7 +498,7 @@ pub(crate) fn block_precompile_invalid_ec_ops() -> BlockTrace {
     );
 
     contract_code.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecMul (invalid input: point not on curve)",
             // P = (2, 3)
             // s = 7
@@ -529,7 +529,7 @@ pub(crate) fn block_precompile_invalid_ec_ops() -> BlockTrace {
     );
 
     contract_code.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecMul (invalid input: must mod p to be valid)",
             // P = (p + 1, p + 2)
             // s = 7
@@ -560,7 +560,7 @@ pub(crate) fn block_precompile_invalid_ec_ops() -> BlockTrace {
     );
 
     contract_code.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecPairing (invalid): G1 point not on curve",
             setup_code: bytecode! {
                 // G1_x1
@@ -623,7 +623,7 @@ pub(crate) fn block_precompile_invalid_ec_ops() -> BlockTrace {
     );
 
     contract_code.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecPairing (invalid): G2 point not on curve",
             setup_code: bytecode! {
                 // G1_x1
