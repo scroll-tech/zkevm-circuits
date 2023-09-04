@@ -226,7 +226,6 @@ pub(crate) fn block_ec_ops() -> BlockTrace {
     .clone()
 }
 
-
 #[cfg(feature = "scroll")]
 pub(crate) fn block_invalid_precompile() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
@@ -266,7 +265,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             gas: 149.into(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::STATICCALL)
+        .with_call_op(OpcodeId::STATICCALL),
     );
     contract_code_oog.append(
         PrecompileCallArgs {
@@ -278,12 +277,12 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
                 PUSH1(0x02)
                 PUSH1(0x00)
                 MSTORE
-    
+
                 // p_y
                 PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
                 PUSH1(0x20)
                 MSTORE
-    
+
                 // s
                 PUSH32(word!("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
                 PUSH1(0x40)
@@ -297,7 +296,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             gas: (PrecompileCalls::Bn128Mul.base_gas_cost().as_u64() - 1).to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::CALL)
+        .with_call_op(OpcodeId::CALL),
     );
     contract_code_oog.append(
         PrecompileCallArgs {
@@ -364,17 +363,17 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             .to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::DELEGATECALL)
+        .with_call_op(OpcodeId::DELEGATECALL),
     );
     contract_code_oog.append(
         PrecompileCallArgs {
             name: "modexp length in u256",
             setup_code: bytecode! {},
             address: PrecompileCalls::Modexp.address().to_word(),
-            gas: (PrecompileCalls::Modexp.base_gas_cost().as_u64() - 1).to_word()
+            gas: (PrecompileCalls::Modexp.base_gas_cost().as_u64() - 1).to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::STATICCALL)
+        .with_call_op(OpcodeId::STATICCALL),
     );
 
     // Tx 2: 2 invalid EcAdd cases + 2 invalid EcMul cases + 2 invalid EcPairing cases
@@ -411,7 +410,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             address: PrecompileCalls::Bn128Add.address().to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::STATICCALL)
+        .with_call_op(OpcodeId::STATICCALL),
     );
     contract_code_ec_ops.append(
         &PrecompileCallArgs {
@@ -443,7 +442,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             address: PrecompileCalls::Bn128Add.address().to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::DELEGATECALL)
+        .with_call_op(OpcodeId::DELEGATECALL),
     );
     contract_code_ec_ops.append(
         &PrecompileCallArgs {
@@ -455,12 +454,12 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
                 PUSH1(0x02)
                 PUSH1(0x00)
                 MSTORE
-    
+
                 // p_y
                 PUSH1(0x03)
                 PUSH1(0x20)
                 MSTORE
-    
+
                 // s
                 PUSH1(0x07)
                 PUSH1(0x40)
@@ -473,7 +472,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             address: PrecompileCalls::Bn128Mul.address().to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::CALL)
+        .with_call_op(OpcodeId::CALL),
     );
     contract_code_ec_ops.append(
         &PrecompileCallArgs {
@@ -485,12 +484,12 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
                 PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"))
                 PUSH1(0x00)
                 MSTORE
-    
+
                 // p_y
                 PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"))
                 PUSH1(0x20)
                 MSTORE
-    
+
                 // s = 7
                 PUSH1(0x07)
                 PUSH1(0x40)
@@ -503,7 +502,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             address: PrecompileCalls::Bn128Mul.address().to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::STATICCALL)
+        .with_call_op(OpcodeId::STATICCALL),
     );
     contract_code_ec_ops.append(
         &PrecompileCallArgs {
@@ -565,7 +564,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             address: PrecompileCalls::Bn128Pairing.address().to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::STATICCALL)
+        .with_call_op(OpcodeId::STATICCALL),
     );
     contract_code_ec_ops.append(
         &PrecompileCallArgs {
@@ -627,12 +626,12 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             address: PrecompileCalls::Bn128Pairing.address().to_word(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::DELEGATECALL)
+        .with_call_op(OpcodeId::DELEGATECALL),
     );
 
     // Tx 3: 2 invalid ModExp cases
     let mut contract_code_modexp = Bytecode::default();
-    
+
     contract_code_modexp.append(
         PrecompileCallArgs {
             name: "modexp length too large invalid",
@@ -662,7 +661,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             gas: 100000.into(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::STATICCALL)
+        .with_call_op(OpcodeId::STATICCALL),
     );
     contract_code_modexp.append(
         PrecompileCallArgs {
@@ -702,7 +701,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
             gas: 1000.into(),
             ..Default::default()
         }
-        .with_call_op(OpcodeId::CALL)
+        .with_call_op(OpcodeId::CALL),
     );
 
     // Generate trace
