@@ -384,7 +384,7 @@ fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> Circ
         max_copy_rows: MAX_COPY_ROWS,
         max_bytecode: 4096,
         max_mpt_rows: 2048,
-        max_poseidon_rows: 2048,
+        max_poseidon_rows: 8192,
         max_evm_rows: 0,
         // modexp ref this to decide its ability, we
         // need at least one (~25000 rows)
