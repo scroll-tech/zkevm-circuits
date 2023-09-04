@@ -222,11 +222,10 @@
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
-//#![deny(unsafe_code)] Allowed now until we find a
-// better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::result_large_err)] // it's large, but what can we do?
+#![allow(clippy::collapsible_else_if)]
 
 extern crate alloc;
 extern crate core;
