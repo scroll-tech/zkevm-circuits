@@ -428,6 +428,7 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     let chain_id = *MOCK_CHAIN_ID;
+    let mut contract_code = Bytecode::default();
 
     let bytecode_ec_add_noc = PrecompileCallArgs {
         name: "ecAdd (invalid input: point not on curve)",
@@ -492,35 +493,30 @@ pub(crate) fn block_precompile_invalid_ec_add() -> BlockTrace {
     }
     .with_call_op(OpcodeId::DELEGATECALL);
 
+    for code in [bytecode_ec_add_noc, bytecode_ec_add_oor].iter() {
+        contract_code.append(code);
+    }
+
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
 
     let addr_a = wallet_a.address();
     let addr_b = address!("0x000000000000000000000000000000000000BBBB");
-    let addr_c = address!("0x000000000000000000000000000000000000CCCC");
 
-    // 3 accounts and 2 txs.
-    TestContext::<3, 2>::new(
+    // 2 accounts and 1 txs.
+    TestContext::<2, 1>::new(
         Some(vec![Word::zero()]),
         |accs| {
             accs[0].address(addr_a).balance(Word::from(1u64 << 24));
             accs[1]
                 .address(addr_b)
                 .balance(Word::from(1u64 << 20))
-                .code(bytecode_ec_add_noc);
-            accs[2]
-                .address(addr_c)
-                .balance(Word::from(1u64 << 20))
-                .code(bytecode_ec_add_oor);
+                .code(contract_code);
         },
         |mut txs, accs| {
             txs[0]
                 .from(wallet_a.clone())
                 .to(accs[1].address)
-                .gas(Word::from(21_000u64));
-            txs[1]
-                .from(wallet_a.clone())
-                .to(accs[2].address)
-                .gas(Word::from(21_000u64));
+                .gas(Word::from(2_000_000u64));
         },
         |block, _tx| block.number(0xcafeu64),
     )
