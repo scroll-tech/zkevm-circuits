@@ -3,12 +3,13 @@
 
 use eth_types::{Field, H256};
 use ethers_core::utils::keccak256;
+use serde::{Deserialize, Serialize};
 
 use crate::constants::MAX_AGG_SNARKS;
 
 use super::chunk::ChunkHash;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
 /// A batch is a set of MAX_AGG_SNARKS num of continuous chunks
 /// - the first k chunks are from real traces
 /// - the last (#MAX_AGG_SNARKS-k) chunks are from empty traces

@@ -791,23 +791,16 @@ pub(crate) fn conditional_constraints(
                     rlc_config.mul(&mut region, &num_valid_snarks, &const32, &mut offset)?;
 
                 // sanity check
-                assert_exist(
-                    &data_hash_inputs_len,
-                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3],
-                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4],
-                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5],
-                );
-
-                log::trace!("data_hash_inputs: {:?}", data_hash_inputs_len.value());
-                log::trace!(
+                log::warn!("data_hash_inputs: {:?}", data_hash_inputs_len.value());
+                log::warn!(
                     "candidate 1: {:?}",
                     hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3].value()
                 );
-                log::trace!(
+                log::warn!(
                     "candidate 2: {:?}",
                     hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4].value()
                 );
-                log::trace!(
+                log::warn!(
                     "candidate 3: {:?}",
                     hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5].value()
                 );

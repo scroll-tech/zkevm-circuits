@@ -1,4 +1,9 @@
-use std::{fs, path::Path, process};
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::Path,
+    process,
+};
 
 use ark_std::{end_timer, start_timer, test_rng};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, poly::commitment::Params};
@@ -22,6 +27,66 @@ fn test_aggregation_circuit() {
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
+}
+
+#[test]
+fn test_precompiled_aggregation_circuit() {
+    env_logger::init();
+
+    let k = 20;
+
+    // This set up requires one round of keccak for chunk's data hash
+    let circuit = build_circuit_from_file();
+    let instance = circuit.instances();
+    let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+    mock_prover.assert_satisfied_par();
+}
+
+#[ignore = "it takes too much time"]
+#[test]
+fn test_precompiled_aggregation_circuit_full() {
+    env_logger::init();
+    let process_id = process::id();
+
+    let dir = format!("data/{process_id}",);
+    let path = Path::new(dir.as_str());
+    fs::create_dir(path).unwrap();
+
+    // This set up requires one round of keccak for chunk's data hash
+    let circuit = build_circuit_from_file();
+    let instance = circuit.instances();
+    let mock_prover = MockProver::<Fr>::run(25, &circuit, instance).unwrap();
+    mock_prover.assert_satisfied_par();
+
+    log::trace!("finished mock proving");
+
+    let mut rng = test_rng();
+    let param = gen_srs(20);
+
+    let pk = gen_pk(&param, &circuit, None);
+    log::trace!("finished pk generation for circuit");
+
+    let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
+    log::trace!("finished snark generation for circuit");
+
+    assert!(verify_snark_shplonk::<AggregationCircuit>(
+        &param,
+        snark,
+        pk.get_vk()
+    ));
+    log::trace!("finished verification for circuit");
+
+    // This set up requires two rounds of keccak for chunk's data hash
+    let circuit = build_new_aggregation_circuit(5);
+    let snark = gen_snark_shplonk(&param, &pk, circuit, &mut rng, None::<String>);
+    log::trace!("finished snark generation for circuit");
+
+    assert!(verify_snark_shplonk::<AggregationCircuit>(
+        &param,
+        snark,
+        pk.get_vk()
+    ));
+    log::trace!("finished verification for circuit");
 }
 
 /// - Test aggregation proof generation and verification.
@@ -74,12 +139,7 @@ fn test_aggregation_circuit_full() {
 }
 
 fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
-    // inner circuit: Mock circuit
-    let k0 = 8;
-
     let mut rng = test_rng();
-    let params = gen_srs(k0);
-
     let mut chunks_without_padding = (0..num_real_chunks)
         .map(|_| ChunkHash::mock_random_chunk_hash_for_testing(&mut rng))
         .collect_vec();
@@ -94,6 +154,35 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
     ]
     .concat();
 
+    let mut file = File::create("chunks.json").unwrap();
+    file.write_all(
+        serde_json::to_string(chunks_with_padding.as_slice())
+            .unwrap()
+            .as_bytes(),
+    )
+    .unwrap();
+
+    build_circuit(num_real_chunks, &chunks_with_padding)
+}
+
+fn build_circuit_from_file() -> AggregationCircuit {
+    let file = File::open("chunks.json").unwrap();
+    let chunks_with_padding: Vec<ChunkHash> = serde_json::from_reader(file).unwrap();
+    println!("read chunks from disk: {chunks_with_padding:?}",);
+    let mut num_real_chunks = 0;
+    for chunk in chunks_with_padding.iter() {
+        if !chunk.is_padding {
+            num_real_chunks += 1;
+        }
+    }
+    build_circuit(num_real_chunks, &chunks_with_padding)
+}
+
+fn build_circuit(num_real_chunks: usize, chunks_with_padding: &[ChunkHash]) -> AggregationCircuit {
+    // inner circuit: Mock circuit
+    let k0 = 8;
+    let rng = test_rng();
+    let params = gen_srs(k0);
     // ==========================
     // real chunks
     // ==========================
@@ -118,7 +207,7 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
     // ==========================
     // batch
     // ==========================
-    let batch_hash = BatchHash::construct(&chunks_with_padding);
+    let batch_hash = BatchHash::construct(chunks_with_padding);
 
     AggregationCircuit::new(
         &params,
