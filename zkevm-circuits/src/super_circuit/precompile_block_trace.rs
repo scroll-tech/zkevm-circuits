@@ -235,7 +235,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
     // Tx1: 4 Out of Gas cases for EcAdd, EcMul, EcPairing and ModExp
     let mut contract_code_oog = Bytecode::default();
     contract_code_oog.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecAdd OOG (valid inputs: P == -Q), return size == 0",
             // P = (1, 2)
             // Q = -P
@@ -268,7 +268,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
         .with_call_op(OpcodeId::STATICCALL),
     );
     contract_code_oog.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecMul (valid: scalar larger than base field order)",
             // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
             // s = 2^256 - 1
@@ -299,7 +299,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
         .with_call_op(OpcodeId::CALL),
     );
     contract_code_oog.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "ecPairing (pairing true): 2 pairs",
             setup_code: bytecode! {
                 // G1_x1
@@ -366,7 +366,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
         .with_call_op(OpcodeId::DELEGATECALL),
     );
     contract_code_oog.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "modexp length in u256",
             setup_code: bytecode! {},
             address: PrecompileCalls::Modexp.address().to_word(),
@@ -633,7 +633,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
     let mut contract_code_modexp = Bytecode::default();
 
     contract_code_modexp.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "modexp length too large invalid",
             setup_code: bytecode! {
                 // Base size
@@ -664,7 +664,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
         .with_call_op(OpcodeId::STATICCALL),
     );
     contract_code_modexp.append(
-        PrecompileCallArgs {
+        &PrecompileCallArgs {
             name: "modexp length too large invalid",
             setup_code: bytecode! {
                 // Base size
