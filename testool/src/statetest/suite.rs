@@ -8,7 +8,6 @@ use crate::{
     },
 };
 use anyhow::{Context, Result};
-#[cfg(not(feature = "no-par"))]
 use rayon::prelude::*;
 use std::{
     panic::AssertUnwindSafe,
@@ -30,12 +29,8 @@ pub fn load_statetests_suite(
             !skip_paths
                 .iter()
                 .any(|e| f.as_path().to_string_lossy().contains(*e))
-        });
-
-    #[cfg(not(feature = "no-par"))]
-    let tcs = tcs.par_bridge();
-
-    let tcs = tcs
+        })
+        .par_bridge()
         .filter_map(|file| {
             file.extension().and_then(|ext| {
                 let ext = &*ext.to_string_lossy();

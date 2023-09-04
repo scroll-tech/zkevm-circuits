@@ -602,10 +602,7 @@ pub fn run_test(
 
     let (witness_block, mut builder) = match result {
         Some((witness_block, builder)) => (witness_block, builder),
-        None => {
-            log::info!("{}: return for no-witness-block", test_id);
-            return Ok(());
-        }
+        None => return Ok(()),
     };
 
     log::debug!("witness_block created");
@@ -651,7 +648,7 @@ pub fn run_test(
         #[cfg(feature = "chunk-prove")]
         chunk_prove(&test_id, witness_block);
         #[cfg(not(feature = "chunk-prove"))]
-        mock_prove(witness_block);
+        mock_prove(&test_id, witness_block);
     }
 
     //#[cfg(feature = "scroll")]
@@ -684,29 +681,30 @@ pub fn run_test(
             }
         }
     }
-
     check_post(&builder, &post)?;
 
     log::info!("{test_id}: run-test END");
-
     Ok(())
 }
 
 #[cfg(not(feature = "chunk-prove"))]
-fn mock_prove(witness_block: Block<Fr>) {
-            // TODO: do we need to automatically adjust this k?
-        let k = 20;
-        // TODO: remove this MOCK_RANDOMNESS?
-        let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
-        let instance = circuit.instance();
-        let prover = MockProver::run(k, &circuit, instance).unwrap();
-        prover.assert_satisfied_par();
+fn mock_prove(test_id: &str, witness_block: Block<Fr>) {
+    log::info!("{test_id}: mock-prove BEGIN");
+    // TODO: do we need to automatically adjust this k?
+    let k = 20;
+    // TODO: remove this MOCK_RANDOMNESS?
+    let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
+    let instance = circuit.instance();
+    let prover = MockProver::run(k, &circuit, instance).unwrap();
+    prover.assert_satisfied_par();
+    log::info!("{test_id}: mock-prove END");
 }
 
 #[cfg(feature = "chunk-prove")]
 fn chunk_prove(test_id: &str, witness_block: Block<Fr>) {
     use prover::{config::LayerId, test_util::gen_and_verify_normal_and_evm_proofs};
 
+    log::info!("{test_id}: chunk-prove BEGIN");
     let prover = unsafe { &mut CHUNK_PROVER };
 
     // Load or generate compression wide snark (layer-1).
@@ -714,8 +712,7 @@ fn chunk_prove(test_id: &str, witness_block: Block<Fr>) {
         .inner
         .load_or_gen_last_chunk_snark("layer1", &witness_block, None)
         .unwrap();
-    log::info!("{test_id}: Generated layer1 snark");
 
     gen_and_verify_normal_and_evm_proofs(&mut prover.inner, LayerId::Layer2, layer1_snark, None);
-    log::info!("{test_id}: Generated and verified chunk-proof");
+    log::info!("{test_id}: chunk-prove END");
 }
