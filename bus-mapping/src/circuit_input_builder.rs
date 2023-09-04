@@ -342,11 +342,25 @@ impl<'a> CircuitInputBuilder {
                     if local_acc.nonce != account_post_state.nonce.unwrap().into() {
                         log::error!("incorrect nonce")
                     }
-                    if local_acc.code_hash != account_post_state.poseidon_code_hash.unwrap() {
-                        log::error!("incorrect poseidon_code_hash")
+                    let p_hash = account_post_state.poseidon_code_hash.unwrap();
+                    if p_hash.is_zero() {
+                        if !local_acc.is_empty() {
+                            log::error!("incorrect poseidon_code_hash")
+                        }
+                    } else {
+                        if local_acc.code_hash != p_hash {
+                            log::error!("incorrect poseidon_code_hash")
+                        }
                     }
-                    if local_acc.keccak_code_hash != account_post_state.keccak_code_hash.unwrap() {
-                        log::error!("incorrect keccak_code_hash")
+                    let k_hash = account_post_state.keccak_code_hash.unwrap();
+                    if k_hash.is_zero() {
+                        if !local_acc.is_empty() {
+                            log::error!("incorrect keccak_code_hash")
+                        }
+                    } else {
+                        if local_acc.keccak_code_hash != k_hash {
+                            log::error!("incorrect keccak_code_hash")
+                        }
                     }
                     if let Some(storage) = account_post_state.storage {
                         let k = storage.key.unwrap();
