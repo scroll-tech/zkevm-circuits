@@ -673,7 +673,11 @@ pub fn gen_begin_tx_ops(
     }
 
     // Transfer with fee
-    let fee = state.tx.gas_price * state.tx.gas + state.tx_ctx.l1_fee;
+    let fee = if state.tx.tx_type.is_l1_msg() {
+        0.into()
+    } else {
+        state.tx.gas_price * state.tx.gas + state.tx_ctx.l1_fee
+    };
     state.transfer_with_fee(
         &mut exec_step,
         call.caller_address,
@@ -882,9 +886,15 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         return Err(Error::AccountNotFound(call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
-    let caller_balance =
-        caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+    let effective_refund_balance = state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+    let caller_balance = caller_balance_prev + effective_refund_balance;
+
     if !state.tx.tx_type.is_l1_msg() {
+        log::trace!(
+            "call balance refund {:?}, now {:?}",
+            effective_refund_balance,
+            caller_balance
+        );
         state.account_write(
             &mut exec_step,
             call.caller_address,
@@ -892,6 +902,8 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             caller_balance,
             caller_balance_prev,
         )?;
+    } else {
+        log::trace!("l1 tx, no refund");
     }
 
     let block_info = state
