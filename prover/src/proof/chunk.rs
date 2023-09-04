@@ -1,9 +1,7 @@
 use super::{dump_as_json, dump_data, dump_vk, from_json_file, Proof};
-use crate::{
-    types::{base64, eth::StorageTrace},
-    ChunkHash,
-};
+use crate::{types::base64, ChunkHash};
 use anyhow::Result;
+use eth_types::l2_types::StorageTrace;
 use halo2_proofs::{halo2curves::bn256::G1Affine, plonk::ProvingKey};
 use serde_derive::{Deserialize, Serialize};
 use snark_verifier::Protocol;

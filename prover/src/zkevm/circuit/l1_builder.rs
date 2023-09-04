@@ -1,7 +1,6 @@
-use crate::types::eth::StorageTrace;
 use anyhow::Result;
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use eth_types::l2_types::BlockTrace;
+use eth_types::l2_types::{BlockTrace, StorageTrace};
 use halo2_proofs::halo2curves::bn256::Fr;
 use zkevm_circuits::{evm_circuit::witness::Block, witness::WithdrawProof};
 

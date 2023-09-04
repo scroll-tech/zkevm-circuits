@@ -3,10 +3,10 @@ use crate::{
     common,
     config::LayerId,
     test_util::PARAMS_DIR,
-    types::eth::StorageTrace,
     zkevm, BatchProof, ChunkProof, EvmProof,
 };
 use aggregator::CompressionCircuit;
+use eth_types::l2_types::StorageTrace;
 use snark_verifier_sdk::Snark;
 use std::env;
 

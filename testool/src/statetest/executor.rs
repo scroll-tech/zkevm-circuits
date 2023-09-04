@@ -39,7 +39,6 @@ pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_st
 #[cfg(feature = "chunk-prove")]
 static mut CHUNK_PROVER: once_cell::sync::Lazy<prover::zkevm::Prover> =
     once_cell::sync::Lazy::new(|| {
-        std::env::set_var("SCROLL_PROVER_ASSETS_DIR", "../prover/configs");
         let chunk_prover = prover::zkevm::Prover::from_params_dir(prover::test_util::PARAMS_DIR);
         log::info!("Constructed chunk-prover");
 
@@ -223,7 +222,8 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             chain_config: Some(external_tracer::ChainConfig::shanghai()),
             #[cfg(not(feature = "shanghai"))]
             chain_config: None,
-            ..Default::default()
+            #[cfg(feature = "scroll")]
+            l1_queue_index: 0,
         },
         st.result,
     )
@@ -491,7 +491,6 @@ fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
     }
 }
 
-#[cfg(not(feature = "scroll"))]
 fn get_params_for_super_circuit_test() -> CircuitsParams {
     CircuitsParams {
         max_txs: MAX_TXS,
@@ -575,12 +574,11 @@ pub fn run_test(
         get_params_for_sub_circuit_test()
     } else {
         // params for super circuit
-        #[cfg(feature = "scroll")]
-        let circuits_params = get_params_for_super_circuit_test_l2();
-        #[cfg(not(feature = "scroll"))]
-        let circuits_params = get_params_for_super_circuit_test();
-
-        circuits_params
+        if cfg!(feature = "scroll") {
+            get_params_for_super_circuit_test_l2()
+        } else {
+            get_params_for_super_circuit_test()
+        }
     };
 
     #[cfg(feature = "scroll")]

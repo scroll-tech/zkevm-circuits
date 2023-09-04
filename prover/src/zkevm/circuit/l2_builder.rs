@@ -3,13 +3,16 @@ use super::{
     MAX_MPT_ROWS, MAX_POSEIDON_ROWS, MAX_PRECOMPILE_EC_ADD, MAX_PRECOMPILE_EC_MUL,
     MAX_PRECOMPILE_EC_PAIRING, MAX_RWS, MAX_TXS, MAX_VERTICLE_ROWS,
 };
-use crate::{config::INNER_DEGREE, types::eth::StorageTrace, utils::read_env_var};
+use crate::{config::INNER_DEGREE, utils::read_env_var};
 use anyhow::{bail, Result};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::{CodeDB, StateDB},
 };
-use eth_types::{l2_types::BlockTrace, ToBigEndian, ToWord, H256};
+use eth_types::{
+    l2_types::{BlockTrace, StorageTrace},
+    ToBigEndian, ToWord, H256,
+};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use mpt_zktrie::state::ZktrieState;

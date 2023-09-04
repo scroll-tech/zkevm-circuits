@@ -1,5 +1,3 @@
-pub mod eth;
-
 pub mod base64 {
     use base64::{decode, encode};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

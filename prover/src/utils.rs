@@ -1,7 +1,4 @@
-use crate::{
-    types::eth::BlockTraceJsonRpcResult,
-    zkevm::circuit::{block_traces_to_witness_block, check_batch_capacity},
-};
+use crate::zkevm::circuit::{block_traces_to_witness_block, check_batch_capacity};
 use anyhow::{bail, Result};
 use chrono::Utc;
 use eth_types::l2_types::BlockTrace;
@@ -23,7 +20,7 @@ use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::{
     fs::{self, metadata, File},
-    io::{BufReader, Read},
+    io::BufReader,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Once,
@@ -83,27 +80,6 @@ pub fn load_params(
 
     log::info!("load params successfully!");
     Ok(p)
-}
-
-/// get a block-result from file
-pub fn get_block_trace_from_file<P: AsRef<Path>>(path: P) -> BlockTrace {
-    let mut buffer = Vec::new();
-    let mut f = File::open(&path).unwrap();
-    f.read_to_end(&mut buffer).unwrap();
-
-    serde_json::from_slice::<BlockTrace>(&buffer).unwrap_or_else(|e1| {
-        serde_json::from_slice::<BlockTraceJsonRpcResult>(&buffer)
-            .map_err(|e2| {
-                panic!(
-                    "unable to load BlockTrace from {:?}, {:?}, {:?}",
-                    path.as_ref(),
-                    e1,
-                    e2
-                )
-            })
-            .unwrap()
-            .result
-    })
 }
 
 pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
