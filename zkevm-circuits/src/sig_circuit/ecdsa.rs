@@ -136,13 +136,13 @@ where
     //          invalid unless p is very close to n in size.
     //
     // WARNING: this may be trigger errors if
-    //  u1u3_mul == u2_mul 
+    //  u1u3_mul == u2_mul
     // if r is sampled truly from random then this will not happen
     // to completely ensure the correctness we may need to sample u3 from random, but it is quite
     // costly.
     let sum = ec_add_unequal(base_chip, ctx, &u1u3_mul, &u2_mul, false);
     // safe: we have already checked u1G + u2 pk != 0
-    // so u1G + u3G + u2pk != u3G 
+    // so u1G + u3G + u2pk != u3G
     let sum = ec_sub_unequal(base_chip, ctx, &sum, &u3_mul, false);
     let equal_check = base_chip.is_equal(ctx, &sum.x, r);
 
