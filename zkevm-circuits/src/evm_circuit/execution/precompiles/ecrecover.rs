@@ -9,13 +9,13 @@ use itertools::Itertools;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_ADDRESS, N_BYTES_WORD},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget},
             rlc, CachedRegion, Cell, RandomLinearCombination,
         },
     },
@@ -37,7 +37,6 @@ pub struct EcrecoverGadget<F> {
     sig_s: [Cell<F>; N_BYTES_WORD],
     sig_v: [Cell<F>; N_BYTES_WORD],
 
-    call_data_length_gt_0x60: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
     r_is_zero: IsZeroGadget<F>,
     s_is_zero: IsZeroGadget<F>,
     v_is_zero: IsZeroGadget<F>,
@@ -112,8 +111,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 CallContextFieldTag::ReturnDataLength,
             ]
             .map(|tag| cb.call_context(None, tag));
-        let call_data_length_gt_0x60 =
-            LtGadget::construct(cb, 0x60.expr(), call_data_length.expr());
+
         let r_is_zero = IsZeroGadget::construct(cb, sig_r_keccak_rlc.expr());
         let s_is_zero = IsZeroGadget::construct(cb, sig_s_keccak_rlc.expr());
         let v_is_zero = IsZeroGadget::construct(cb, sig_v_keccak_rlc.expr() - 27.expr());
@@ -128,9 +126,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         cb.condition(recovered.expr(), |cb| {
             // call is successful.
             cb.require_true("is_success == true", is_success.expr());
-
-            // call_data_length > 0x60.
-            cb.require_true("call_data_length > 0x60", call_data_length_gt_0x60.expr());
 
             // sig r != 0
             cb.require_zero("sig_r != 0", r_is_zero.expr());
@@ -162,7 +157,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 "address was not recovered because of one of the following reasons",
                 not::expr(and::expr([
                     is_success.expr(),
-                    call_data_length_gt_0x60.expr(),
                     not::expr(r_is_zero.expr()),
                     not::expr(s_is_zero.expr()),
                     v_is_zero.expr(),
@@ -200,7 +194,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_r,
             sig_s,
             sig_v,
-            call_data_length_gt_0x60,
             r_is_zero,
             s_is_zero,
             v_is_zero,
@@ -323,12 +316,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             offset,
             Value::known(F::from(call.call_data_length)),
         )?;
-        self.call_data_length_gt_0x60.assign(
-            region,
-            offset,
-            F::from(0x60),
-            F::from(call.call_data_length),
-        )?;
         self.return_data_offset.assign(
             region,
             offset,
@@ -448,34 +435,6 @@ mod test {
                     ..Default::default()
                 },
                 PrecompileCallArgs {
-                    name: "ecrecover (invalid sig, calldata not enough, addr not recovered)",
-                    setup_code: bytecode! {
-                        // msg hash from 0x00
-                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
-                        PUSH1(0x00)
-                        MSTORE
-                        // signature v from 0x20
-                        PUSH1(28)
-                        PUSH1(0x20)
-                        MSTORE
-                        // signature r from 0x40
-                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
-                        PUSH1(0x40)
-                        MSTORE
-                        // signature s from 0x60
-                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
-                        PUSH1(0x60)
-                        MSTORE
-                    },
-                    // copy 128 bytes from memory addr 0.
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Ecrecover.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
                     name: "ecrecover (invalid sig, addr not recovered)",
                     setup_code: bytecode! {
                         // msg hash from 0x00
@@ -531,7 +490,7 @@ mod test {
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x65.into(),
                     // return 32 bytes and write from memory addr 128
-                    ret_offset: 0x80.into(),
+                    ret_offset: 0x65.into(),
                     ret_size: 0x20.into(),
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
@@ -641,11 +600,9 @@ mod test {
     fn precompile_ecrecover_test() {
         let call_kinds = vec![
             OpcodeId::CALL,
-            /*
             OpcodeId::STATICCALL,
             OpcodeId::DELEGATECALL,
             OpcodeId::CALLCODE,
-            */
         ];
 
         TEST_VECTOR
