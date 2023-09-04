@@ -39,7 +39,10 @@ pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_st
 #[cfg(feature = "chunk-prove")]
 static mut CHUNK_PROVER: once_cell::sync::Lazy<prover::zkevm::Prover> =
     once_cell::sync::Lazy::new(|| {
-        let chunk_prover = prover::zkevm::Prover::from_params_dir(prover::test_util::PARAMS_DIR);
+        let chunk_prover = prover::zkevm::Prover::from_dirs(
+            prover::test_util::PARAMS_DIR,
+            prover::test_util::ASSETS_DIR,
+        );
         log::info!("Constructed chunk-prover");
 
         chunk_prover

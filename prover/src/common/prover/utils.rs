@@ -1,4 +1,5 @@
 use super::Prover;
+use crate::io::serialize_vk;
 use anyhow::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -67,5 +68,9 @@ impl Prover {
         self.pk_map.insert(id.to_string(), pk);
 
         Ok((&self.params_map[&degree], &self.pk_map[id]))
+    }
+
+    pub fn raw_vk(&self, id: &str) -> Option<Vec<u8>> {
+        self.pk_map.get(id).map(|pk| serialize_vk(pk.get_vk()))
     }
 }

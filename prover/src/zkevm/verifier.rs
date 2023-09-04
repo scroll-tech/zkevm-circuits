@@ -1,8 +1,8 @@
 use crate::{
     common,
     config::{LAYER2_CONFIG_PATH, LAYER2_DEGREE},
-    io::read_all,
-    utils::read_env_var,
+    consts::CHUNK_VK_FILENAME,
+    io::force_to_read,
     ChunkProof,
 };
 use aggregator::CompressionCircuit;
@@ -11,11 +11,7 @@ use halo2_proofs::{
     plonk::VerifyingKey,
     poly::kzg::commitment::ParamsKZG,
 };
-use once_cell::sync::Lazy;
-use std::{env, path::Path};
-
-static CHUNK_VK_FILENAME: Lazy<String> =
-    Lazy::new(|| read_env_var("CHUNK_VK_FILENAME", "chunk_vk.vkey".to_string()));
+use std::env;
 
 #[derive(Debug)]
 pub struct Verifier {
@@ -35,12 +31,7 @@ impl Verifier {
     }
 
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        let vk_path = format!("{assets_dir}/{}", *CHUNK_VK_FILENAME);
-        if !Path::new(&vk_path).exists() {
-            panic!("File {vk_path} must exist");
-        }
-
-        let raw_vk = read_all(&vk_path);
+        let raw_vk = force_to_read(assets_dir, &CHUNK_VK_FILENAME);
 
         env::set_var("COMPRESSION_CONFIG", &*LAYER2_CONFIG_PATH);
         common::Verifier::from_params_dir(params_dir, *LAYER2_DEGREE, &raw_vk).into()

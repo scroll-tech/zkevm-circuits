@@ -1,6 +1,10 @@
 use super::Prover;
-use crate::config::{LAYER1_DEGREE, LAYER2_DEGREE};
-use anyhow::Result;
+use crate::{
+    config::{LAYER1_DEGREE, LAYER2_DEGREE},
+    utils::gen_rng,
+};
+use aggregator::extract_proof_and_instances_with_pairing_check;
+use anyhow::{anyhow, Result};
 use halo2_proofs::halo2curves::bn256::Fr;
 use snark_verifier_sdk::Snark;
 use zkevm_circuits::evm_circuit::witness::Block;
@@ -39,6 +43,14 @@ impl Prover {
         // Load or generate inner snark.
         let inner_snark = self.load_or_gen_inner_snark(name, "inner", witness_block, output_dir)?;
         log::info!("Got inner snark: {name}");
+
+        // Check pairing for super circuit.
+        extract_proof_and_instances_with_pairing_check(
+            self.params(*LAYER1_DEGREE),
+            &[inner_snark.clone()],
+            gen_rng(),
+        )
+        .map_err(|err| anyhow!("Failed to check pairing for super circuit: {err:?}"))?;
 
         // Load or generate compression wide snark (layer-1).
         let layer1_snark = self.load_or_gen_comp_snark(

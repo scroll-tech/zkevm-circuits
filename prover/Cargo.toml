@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+
 aggregator = { path = "../aggregator" }
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
@@ -11,7 +13,6 @@ mock = { path = "../mock" }
 mpt-zktrie = { path = "../zktrie" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
 
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.4" }
 snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.4", default-features=false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
 

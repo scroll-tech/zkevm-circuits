@@ -1,7 +1,7 @@
 use super::{
     TargetCircuit, MAX_BYTECODE, MAX_CALLDATA, MAX_EXP_STEPS, MAX_INNER_BLOCKS, MAX_KECCAK_ROWS,
     MAX_MPT_ROWS, MAX_POSEIDON_ROWS, MAX_PRECOMPILE_EC_ADD, MAX_PRECOMPILE_EC_MUL,
-    MAX_PRECOMPILE_EC_PAIRING, MAX_RWS, MAX_TXS, MAX_VERTICLE_ROWS,
+    MAX_PRECOMPILE_EC_PAIRING, MAX_RLP_ROWS, MAX_RWS, MAX_TXS, MAX_VERTICLE_ROWS,
 };
 use crate::{config::INNER_DEGREE, utils::read_env_var};
 use anyhow::{bail, Result};
@@ -42,7 +42,7 @@ pub fn get_super_circuit_params() -> CircuitsParams {
         max_vertical_circuit_rows: MAX_VERTICLE_ROWS,
         max_exp_steps: MAX_EXP_STEPS,
         max_mpt_rows: MAX_MPT_ROWS,
-        max_rlp_rows: MAX_CALLDATA,
+        max_rlp_rows: MAX_RLP_ROWS,
         max_ec_ops: PrecompileEcParams {
             ec_add: MAX_PRECOMPILE_EC_ADD,
             ec_mul: MAX_PRECOMPILE_EC_MUL,
@@ -286,7 +286,11 @@ pub fn block_traces_to_witness_block_with_updated_state(
 
     for (idx, block_trace) in block_traces.iter().enumerate() {
         let is_last = idx == block_traces.len() - 1;
-        builder.add_more_l2_trace(block_trace, !is_last, light_mode)?;
+        log::debug!(
+            "add_more_l2_trace idx {idx}, block num {:?}",
+            block_trace.header.number
+        );
+        builder.add_more_l2_trace(block_trace, !is_last, false)?;
         if per_block_metric {
             metric(builder, idx + initial_blk_index)?;
         }

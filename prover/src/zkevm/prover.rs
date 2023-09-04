@@ -1,7 +1,13 @@
 use crate::{
-    common, config::ZKEVM_DEGREES, io::serialize_vk, utils::chunk_trace_to_witness_block,
-    zkevm::circuit::normalize_withdraw_proof, ChunkHash, ChunkProof,
+    common,
+    config::{LayerId, ZKEVM_DEGREES},
+    consts::CHUNK_VK_FILENAME,
+    io::try_to_read,
+    utils::chunk_trace_to_witness_block,
+    zkevm::circuit::normalize_withdraw_proof,
+    ChunkProof,
 };
+use aggregator::ChunkHash;
 use anyhow::Result;
 use eth_types::l2_types::BlockTrace;
 
@@ -9,22 +15,29 @@ use eth_types::l2_types::BlockTrace;
 pub struct Prover {
     // Make it public for testing with inner functions (unnecessary for FFI).
     pub inner: common::Prover,
-}
-
-impl From<common::Prover> for Prover {
-    fn from(inner: common::Prover) -> Self {
-        Self { inner }
-    }
+    raw_vk: Option<Vec<u8>>,
 }
 
 impl Prover {
-    pub fn from_params_dir(params_dir: &str) -> Self {
-        common::Prover::from_params_dir(params_dir, &ZKEVM_DEGREES).into()
+    pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
+        let inner = common::Prover::from_params_dir(params_dir, &ZKEVM_DEGREES);
+
+        let raw_vk = try_to_read(assets_dir, &CHUNK_VK_FILENAME);
+        if raw_vk.is_none() {
+            log::warn!(
+                "zkevm-prover: {} doesn't exist in {}",
+                *CHUNK_VK_FILENAME,
+                assets_dir
+            );
+        }
+
+        Self { inner, raw_vk }
     }
 
     pub fn get_vk(&self) -> Option<Vec<u8>> {
-        // TODO: replace `layer2` string with an enum value.
-        self.inner.pk("layer2").map(|pk| serialize_vk(pk.get_vk()))
+        self.inner
+            .raw_vk(LayerId::Layer2.id())
+            .or_else(|| self.raw_vk.clone())
     }
 
     pub fn gen_chunk_proof(
@@ -55,6 +68,8 @@ impl Prover {
             .inner
             .load_or_gen_final_chunk_snark(&name, &witness_block, output_dir)?;
 
+        self.check_and_clear_raw_vk();
+
         match output_dir.and_then(|output_dir| ChunkProof::from_json_file(output_dir, &name).ok()) {
             Some(proof) => Ok(proof),
             None => {
@@ -66,7 +81,7 @@ impl Prover {
                 let result = ChunkProof::new(
                     snark,
                     storage_trace,
-                    self.inner.pk("layer2"),
+                    self.inner.pk(LayerId::Layer2.id()),
                     Some(chunk_hash),
                 );
 
@@ -75,6 +90,22 @@ impl Prover {
                 }
 
                 result
+            }
+        }
+    }
+
+    fn check_and_clear_raw_vk(&mut self) {
+        if self.raw_vk.is_some() {
+            // Check VK is same with the init one, and take (clear) init VK.
+            let gen_vk = self.inner.raw_vk(LayerId::Layer2.id()).unwrap_or_default();
+            let init_vk = self.raw_vk.take().unwrap_or_default();
+
+            if gen_vk != init_vk {
+                log::error!(
+                    "zkevm-prover: generated VK is different with init one - gen_vk = {}, init_vk = {}",
+                    base64::encode(gen_vk),
+                    base64::encode(init_vk),
+                );
             }
         }
     }

@@ -76,6 +76,13 @@ impl LayerId {
     }
 }
 
+pub fn asset_file_path(filename: &str) -> String {
+    Path::new(&*ASSETS_DIR)
+        .join(filename)
+        .to_string_lossy()
+        .into_owned()
+}
+
 pub fn layer_config_path(id: &str) -> &str {
     match id {
         "layer1" => &LAYER1_CONFIG_PATH,
@@ -84,13 +91,6 @@ pub fn layer_config_path(id: &str) -> &str {
         "layer4" => &LAYER4_CONFIG_PATH,
         _ => panic!("Wrong id-{id} to get layer config path"),
     }
-}
-
-fn asset_file_path(filename: &str) -> String {
-    Path::new(&*ASSETS_DIR)
-        .join(filename)
-        .to_string_lossy()
-        .into_owned()
 }
 
 fn layer_degree(config_file: &str) -> u32 {

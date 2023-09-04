@@ -1,8 +1,8 @@
 use crate::{
     common,
     config::{LAYER4_CONFIG_PATH, LAYER4_DEGREE},
-    io::read_all,
-    utils::read_env_var,
+    consts::{AGG_VK_FILENAME, DEPLOYMENT_CODE_FILENAME},
+    io::force_to_read,
     BatchProof,
 };
 use aggregator::CompressionCircuit;
@@ -11,14 +11,8 @@ use halo2_proofs::{
     plonk::VerifyingKey,
     poly::kzg::commitment::ParamsKZG,
 };
-use once_cell::sync::Lazy;
 use snark_verifier_sdk::verify_evm_calldata;
-use std::{env, path::Path};
-
-static AGG_VK_FILENAME: Lazy<String> =
-    Lazy::new(|| read_env_var("AGG_VK_FILENAME", "agg_vk.vkey".to_string()));
-static DEPLOYMENT_CODE_FILENAME: Lazy<String> =
-    Lazy::new(|| read_env_var("DEPLOYMENT_CODE_FILENAME", "evm_verifier.bin".to_string()));
+use std::env;
 
 #[derive(Debug)]
 pub struct Verifier {
@@ -42,14 +36,8 @@ impl Verifier {
     }
 
     pub fn from_dirs(params_dir: &str, assets_dir: &str) -> Self {
-        let vk_path = format!("{assets_dir}/{}", *AGG_VK_FILENAME);
-        let deployment_code_path = format!("{assets_dir}/{}", *DEPLOYMENT_CODE_FILENAME);
-        if !(Path::new(&vk_path).exists() && Path::new(&deployment_code_path).exists()) {
-            panic!("File {vk_path} and {deployment_code_path} must exist");
-        }
-
-        let raw_vk = read_all(&vk_path);
-        let deployment_code = read_all(&deployment_code_path);
+        let raw_vk = force_to_read(assets_dir, &AGG_VK_FILENAME);
+        let deployment_code = force_to_read(assets_dir, &DEPLOYMENT_CODE_FILENAME);
 
         env::set_var("COMPRESSION_CONFIG", &*LAYER4_CONFIG_PATH);
         let inner = common::Verifier::from_params_dir(params_dir, *LAYER4_DEGREE, &raw_vk);

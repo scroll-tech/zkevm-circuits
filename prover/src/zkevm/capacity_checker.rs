@@ -53,7 +53,7 @@ impl RowUsage {
             MAX_BYTECODE,      // bytecode
             MAX_RWS,           // copy
             MAX_KECCAK_ROWS,   // keccak
-            MAX_CALLDATA,      // tx
+            MAX_VERTICLE_ROWS, // tx
             MAX_CALLDATA,      // rlp
             7 * MAX_EXP_STEPS, // exp
             MAX_KECCAK_ROWS,   // modexp
@@ -166,14 +166,14 @@ impl CircuitCapacityChecker {
             builder_block.prev_state_root = H256(*mpt_state.root()).to_word();
             let mut builder =
                 CircuitInputBuilder::new_with_trie_state(sdb, code_db, mpt_state, &builder_block);
-            builder.add_more_l2_trace(&txs[0], txs.len() > 1, self.light_mode)?;
+            builder.add_more_l2_trace(&txs[0], txs.len() > 1, true)?;
             builder
         } else {
             CircuitInputBuilder::new_from_l2_trace(
                 get_super_circuit_params(),
                 &txs[0],
                 txs.len() > 1,
-                self.light_mode,
+                true,
             )?
         };
         let traces = &txs[1..];
