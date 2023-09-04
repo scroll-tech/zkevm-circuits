@@ -375,7 +375,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
 
 #[cfg(feature = "scroll")]
 fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> CircuitsParams {
-    const MAX_RWS: usize = 1024;
+    const MAX_RWS: usize = 4096;
     const MAX_COPY_ROWS: usize = 16384; // precompile require many copies
     CircuitsParams {
         max_txs,
