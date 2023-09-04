@@ -24,13 +24,13 @@ impl ErrorOOGPrecompile {
             call.call_id,
             CallContextField::CalleeAddress,
             call.code_address().unwrap().to_word(),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             call.call_id,
             CallContextField::CallDataLength,
             call.call_data_length.into(),
-        );
+        )?;
 
         Ok(exec_step)
     }

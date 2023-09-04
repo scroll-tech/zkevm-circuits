@@ -1,4 +1,5 @@
 use eth_types::U256;
+use itertools::Itertools;
 
 use crate::{
     circuit_input_builder::{
@@ -33,7 +34,7 @@ pub(crate) fn opt_data(
         );
     }
 
-    let (op, aux_data) = if let Some(input) = input_bytes {
+    let op = if let Some(input) = input_bytes {
         if (input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR)
             || (input.len() % N_BYTES_PER_PAIR != 0)
         {
@@ -49,11 +50,11 @@ pub(crate) fn opt_data(
                 && input.len() <= N_PAIRING_PER_OP * N_BYTES_PER_PAIR
         );
         // process input bytes.
-        let (mut ecc_pairs, mut evm_pairs): (Vec<EcPairingPair>, Vec<EcPairingPair>) = input
+        let mut pairs = input
             .chunks_exact(N_BYTES_PER_PAIR)
             .map(|chunk| {
                 // process <= 192 bytes chunk at a time.
-                let evm_circuit_pair = EcPairingPair {
+                EcPairingPair {
                     g1_point: (
                         U256::from_big_endian(&chunk[0x00..0x20]),
                         U256::from_big_endian(&chunk[0x20..0x40]),
@@ -64,47 +65,27 @@ pub(crate) fn opt_data(
                         U256::from_big_endian(&chunk[0x80..0xA0]),
                         U256::from_big_endian(&chunk[0xA0..0xC0]),
                     ),
-                };
-                // if EVM inputs were 0s.
-                let ecc_circuit_pair = if evm_circuit_pair.swap() {
-                    EcPairingPair::ecc_padding()
-                } else {
-                    evm_circuit_pair
-                };
-                (ecc_circuit_pair, evm_circuit_pair)
+                }
             })
-            .unzip();
+            .collect_vec();
         // pad the pairs to make them of fixed size: N_PAIRING_PER_OP.
-        ecc_pairs.resize(N_PAIRING_PER_OP, EcPairingPair::ecc_padding());
-        evm_pairs.resize(N_PAIRING_PER_OP, EcPairingPair::evm_padding());
-        (
-            EcPairingOp {
-                pairs: <[_; N_PAIRING_PER_OP]>::try_from(ecc_pairs).unwrap(),
-                output: pairing_check,
-            },
-            EcPairingAuxData(EcPairingOp {
-                pairs: <[_; N_PAIRING_PER_OP]>::try_from(evm_pairs).unwrap(),
-                output: pairing_check,
-            }),
-        )
+        pairs.resize(N_PAIRING_PER_OP, EcPairingPair::padding_pair());
+        EcPairingOp {
+            pairs: <[_; N_PAIRING_PER_OP]>::try_from(pairs).unwrap(),
+            output: pairing_check,
+        }
     } else {
-        // if no input bytes.
-        let ecc_pairs = [EcPairingPair::ecc_padding(); N_PAIRING_PER_OP];
-        let evm_pairs = [EcPairingPair::evm_padding(); N_PAIRING_PER_OP];
-        (
-            EcPairingOp {
-                pairs: ecc_pairs,
-                output: pairing_check,
-            },
-            EcPairingAuxData(EcPairingOp {
-                pairs: evm_pairs,
-                output: pairing_check,
-            }),
-        )
+        let pairs = [EcPairingPair::padding_pair(); N_PAIRING_PER_OP];
+        EcPairingOp {
+            pairs,
+            output: pairing_check,
+        }
     };
 
     (
-        Some(PrecompileEvent::EcPairing(Box::new(op))),
-        Some(PrecompileAuxData::EcPairing(Box::new(Ok(aux_data)))),
+        Some(PrecompileEvent::EcPairing(Box::new(op.clone()))),
+        Some(PrecompileAuxData::EcPairing(Box::new(Ok(
+            EcPairingAuxData(op),
+        )))),
     )
 }

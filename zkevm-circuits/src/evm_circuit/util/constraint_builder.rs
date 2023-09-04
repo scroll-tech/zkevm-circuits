@@ -368,20 +368,18 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// Returns (list of constraints, list of first step constraints, stored
     /// expressions, height used).
     #[allow(clippy::type_complexity)]
-    pub(crate) fn build(self) -> (Constraints<F>, Vec<StoredExpression<F>>, usize) {
+    pub(crate) fn build(
+        self,
+    ) -> (
+        Expression<F>,
+        Constraints<F>,
+        Vec<StoredExpression<F>>,
+        usize,
+    ) {
         let exec_state_sel = self.curr.execution_state_selector([self.execution_state]);
-        let mul_exec_state_sel = |c: Vec<(&'static str, Expression<F>)>| {
-            c.into_iter()
-                .map(|(name, constraint)| (name, exec_state_sel.clone() * constraint))
-                .collect()
-        };
         (
-            Constraints {
-                step: mul_exec_state_sel(self.constraints.step),
-                step_first: mul_exec_state_sel(self.constraints.step_first),
-                step_last: mul_exec_state_sel(self.constraints.step_last),
-                not_step_last: mul_exec_state_sel(self.constraints.not_step_last),
-            },
+            exec_state_sel,
+            self.constraints,
             self.stored_expressions,
             self.curr.cell_manager.get_height(),
         )
@@ -1357,8 +1355,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn exp_table_lookup(
         &mut self,
-        identifier: Expression<F>,
-        is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
@@ -1366,8 +1362,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.add_lookup(
             "exponentiation lookup",
             Lookup::ExpTable {
-                identifier,
-                is_last,
                 base_limbs,
                 exponent_lo_hi,
                 exponentiation_lo_hi,

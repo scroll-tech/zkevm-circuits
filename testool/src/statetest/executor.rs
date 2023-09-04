@@ -4,9 +4,11 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::CodeDB,
 };
+
+#[cfg(feature = "scroll")]
+use eth_types::ToBigEndian;
 use eth_types::{
-    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
-    U64,
+    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToWord, H256, U256, U64,
 };
 use ethers_core::{
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -15,11 +17,13 @@ use ethers_core::{
 use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
-    bytecode_circuit::circuit::BytecodeCircuit, modexp_circuit::ModExpCircuit,
+    bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
+    modexp_circuit::ModExpCircuit, sig_circuit::SigCircuit, super_circuit::SuperCircuit,
     test_util::CircuitTestBuilder, util::SubCircuit, witness::Block,
 };
 
@@ -79,6 +83,7 @@ impl StateTestError {
         // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
         let _ = StateTestError::SkipTestSelfDestruct;
         let _ = StateTestError::SkipTestDifficulty;
+        let _ = StateTestError::SkipTestBalanceOverflow;
 
         matches!(
             self,
@@ -311,17 +316,12 @@ fn trace_config_to_witness_block_l2(
         .collect::<Vec<_>>();
     check_geth_traces(&geth_traces, &suite, verbose)?;
 
-    // copied from super_circuit/test.rs.
-    // refactor?
-    //std::env::set_var("COINBASE", "0x0000000000000000000000000000000000000000");
     std::env::set_var(
         "COINBASE",
         format!("0x{}", hex::encode(block_trace.coinbase.address.unwrap())),
     );
-    //std::env::set_var("CHAIN_ID", mock::MOCK_CHAIN_ID.to_string());
     std::env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
-    let mut difficulty_be_bytes = [0u8; 32];
-    mock::MOCK_DIFFICULTY_L2GETH.to_big_endian(&mut difficulty_be_bytes);
+    let difficulty_be_bytes = [0u8; 32];
     std::env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
     let mut builder =
         CircuitInputBuilder::new_from_l2_trace(circuits_params, &block_trace, false, false)
@@ -448,6 +448,26 @@ pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
 pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
 pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
 
+// TODO: refactor & usage
+fn get_sub_circuit_limit_l2() -> Vec<usize> {
+    vec![
+        MAX_RWS,           // evm
+        MAX_RWS,           // state
+        MAX_BYTECODE,      // bytecode
+        MAX_RWS,           // copy
+        MAX_KECCAK_ROWS,   // keccak
+        MAX_RWS,           // tx
+        MAX_CALLDATA,      // rlp
+        8 * MAX_EXP_STEPS, // exp
+        MAX_KECCAK_ROWS,   // modexp
+        MAX_RWS,           // pi
+        MAX_POSEIDON_ROWS, // poseidon
+        MAX_VERTICLE_ROWS, // sig
+        MAX_VERTICLE_ROWS, // ecc
+        MAX_MPT_ROWS,      // mpt
+    ]
+}
+
 fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
     CircuitsParams {
         max_evm_rows: MAX_RWS,
@@ -530,6 +550,8 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<F
     MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
 }
 
+type ScrollSuperCircuit = SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>;
+
 pub fn run_test(
     st: StateTest,
     suite: TestSuite,
@@ -542,12 +564,13 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
+    #[cfg(feature = "scroll")]
     for acc in trace_config.accounts.values() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
             return Err(StateTestError::SkipTestBalanceOverflow);
         }
     }
-
+    log::debug!("trace_config generated");
     let circuits_params = if !circuits_config.super_circuit {
         get_params_for_sub_circuit_test()
     } else {
@@ -563,16 +586,16 @@ pub fn run_test(
     #[cfg(feature = "scroll")]
     let result = trace_config_to_witness_block_l2(
         trace_config.clone(),
-        st,
-        suite,
+        st.clone(),
+        suite.clone(),
         circuits_params,
         circuits_config.verbose,
     )?;
     #[cfg(not(feature = "scroll"))]
     let result = trace_config_to_witness_block_l1(
         trace_config.clone(),
-        st,
-        suite,
+        st.clone(),
+        suite.clone(),
         circuits_params,
         circuits_config.verbose,
     )?;
@@ -588,22 +611,47 @@ pub fn run_test(
     log::debug!("witness_block created");
     //builder.sdb.list_accounts();
 
-    if circuits_config.super_circuit {
+    if !circuits_config.super_circuit {
+        if (*CIRCUIT).is_empty() {
+            CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
+                .copy_checks(None)
+                .run();
+        } else if (*CIRCUIT) == "ccc" {
+            let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
+            let mut overflow = false;
+            for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
+                if num.row_num_real >= *limit {
+                    log::warn!(
+                        "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
+                        suite.id,
+                        st.id,
+                        num.name,
+                        num.row_num_real,
+                        limit
+                    );
+                    overflow = true;
+                }
+            }
+            if overflow {
+                log::warn!("ccc overflow: suite.id {}, st.id {}", suite.id, st.id);
+            } else {
+                log::info!("ccc ok: suite.id {}, st.id {}", suite.id, st.id);
+            }
+        } else {
+            let prover = match (*CIRCUIT).as_str() {
+                "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
+                "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
+                "ecc" => test_with::<EccCircuit<Fr, 9>>(&witness_block),
+                "sig" => test_with::<SigCircuit<Fr>>(&witness_block),
+                _ => unimplemented!(),
+            };
+            prover.assert_satisfied_par();
+        }
+    } else {
         #[cfg(feature = "chunk-prove")]
         chunk_prove(&test_id, witness_block);
         #[cfg(not(feature = "chunk-prove"))]
         mock_prove(witness_block);
-    } else if (*CIRCUIT).is_empty() {
-        CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
-            .copy_checks(None)
-            .run();
-    } else {
-        let prover = match (*CIRCUIT).as_str() {
-            "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
-            "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
-            _ => unimplemented!(),
-        };
-        prover.assert_satisfied_par();
     }
 
     //#[cfg(feature = "scroll")]
@@ -646,19 +694,13 @@ pub fn run_test(
 
 #[cfg(not(feature = "chunk-prove"))]
 fn mock_prove(witness_block: Block<Fr>) {
-    // TODO: do we need to automatically adjust this k?
-    let k = 20;
-    // TODO: remove this MOCK_RANDOMNESS?
-    let circuit = zkevm_circuits::super_circuit::SuperCircuit::<
-        Fr,
-        MAX_TXS,
-        MAX_CALLDATA,
-        MAX_INNER_BLOCKS,
-        0x100,
-    >::new_from_block(&witness_block);
-    let instance = circuit.instance();
-    let prover = halo2_proofs::dev::MockProver::run(k, &circuit, instance).unwrap();
-    prover.assert_satisfied_par();
+            // TODO: do we need to automatically adjust this k?
+        let k = 20;
+        // TODO: remove this MOCK_RANDOMNESS?
+        let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
+        let instance = circuit.instance();
+        let prover = MockProver::run(k, &circuit, instance).unwrap();
+        prover.assert_satisfied_par();
 }
 
 #[cfg(feature = "chunk-prove")]

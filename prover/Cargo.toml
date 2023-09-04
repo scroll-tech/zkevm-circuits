@@ -12,8 +12,8 @@ mpt-zktrie = { path = "../zktrie" }
 zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
 
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
-snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.3" }
-snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.3" }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.4" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.4", default-features=false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
 
 anyhow = "1.0"
 base64 = "0.13.0"
@@ -46,4 +46,4 @@ procfs = "0.13.0"
 [features]
 default = ["shanghai"]
 shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai"]
-scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock/scroll", "zkevm-circuits/scroll", "zkevm-circuits/scroll-trace"]
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock/scroll", "zkevm-circuits/scroll"]

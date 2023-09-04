@@ -51,32 +51,32 @@ fn gen_calldatacopy_step(
             state.call()?.call_id,
             CallContextField::TxId,
             state.tx_ctx.id().into(),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CallDataLength,
             state.call()?.call_data_length.into(),
-        );
+        )?;
     } else {
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CallerId,
             state.call()?.caller_id.into(),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CallDataLength,
             state.call()?.call_data_length.into(),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CallDataOffset,
             state.call()?.call_data_offset.into(),
-        );
+        )?;
     };
 
     Ok(exec_step)

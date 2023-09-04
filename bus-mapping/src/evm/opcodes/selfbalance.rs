@@ -25,7 +25,7 @@ impl Opcode for Selfbalance {
             state.call()?.call_id,
             CallContextField::CalleeAddress,
             callee_address.to_word(),
-        );
+        )?;
 
         // Account read for the balance of the callee_address
         state.account_read(
@@ -33,7 +33,7 @@ impl Opcode for Selfbalance {
             callee_address,
             AccountField::Balance,
             self_balance,
-        );
+        )?;
 
         // Stack write of self_balance
         state.stack_write(

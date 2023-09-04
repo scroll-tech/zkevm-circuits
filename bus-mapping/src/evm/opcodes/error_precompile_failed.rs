@@ -36,7 +36,7 @@ impl Opcode for PrecompileFailed {
         let call = state.parse_call(geth_step)?;
         state.push_call(call.clone());
         state.caller_ctx_mut()?.return_data.clear();
-        state.handle_return(&mut exec_step, geth_steps, false)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
 
         for i in 0..stack_input_num {
             state.stack_read(
@@ -58,7 +58,7 @@ impl Opcode for PrecompileFailed {
             (CallContextField::LastCalleeReturnDataOffset, 0.into()),
             (CallContextField::LastCalleeReturnDataLength, 0.into()),
         ] {
-            state.call_context_write(&mut exec_step, call.caller_id, field, value);
+            state.call_context_write(&mut exec_step, call.caller_id, field, value)?;
         }
 
         Ok(vec![exec_step])

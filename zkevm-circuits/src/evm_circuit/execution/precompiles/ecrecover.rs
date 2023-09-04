@@ -406,6 +406,43 @@ mod test {
                 },
             ]
         };
+
+        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "ecrecover (oog)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(28)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    // copy 128 bytes from memory addr 0. Address is recovered and the signature is
+                    // valid.
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    // return 32 bytes and write from memory addr 128
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    gas: 0.into(),
+                    value: 2.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+            ]
+        };
     }
 
     #[test]
@@ -418,6 +455,29 @@ mod test {
         ];
 
         TEST_VECTOR
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
+    }
+
+    #[test]
+    fn precompile_ecrecover_oog_test() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
+
+        OOG_TEST_VECTOR
             .iter()
             .cartesian_product(&call_kinds)
             .par_bridge()

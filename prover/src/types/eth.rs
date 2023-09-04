@@ -108,23 +108,6 @@ pub struct ExecutionResult {
     pub exec_steps: Vec<ExecStep>,
 }
 
-impl From<&ExecutionResult> for GethExecTrace {
-    fn from(e: &ExecutionResult) -> Self {
-        let mut struct_logs = Vec::new();
-        for exec_step in &e.exec_steps {
-            let step = exec_step.into();
-            struct_logs.push(step)
-        }
-        GethExecTrace {
-            l1_fee: e.l1_fee.as_u64(),
-            gas: Gas(e.gas),
-            failed: e.failed,
-            return_value: e.return_value.clone(),
-            struct_logs,
-        }
-    }
-}
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ExecStep {
     pub pc: u64,

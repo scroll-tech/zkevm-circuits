@@ -67,6 +67,13 @@ type TraceConfig struct {
 
 func newUint64(val uint64) *uint64 { return &val }
 
+func toBigInt(value *hexutil.Big) *big.Int {
+	if value != nil {
+		return value.ToInt()
+	}
+	return big.NewInt(0)
+}
+
 func transferTxs(txs []Transaction) types.Transactions {
 
 	t_txs := make([]*types.Transaction, 0, len(txs))
@@ -147,8 +154,9 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		mergo.Merge(&chainConfig, config.ChainConfig, mergo.WithOverride)
 	}
 
-	// Debug for Shanghai
-	// fmt.Printf("geth-utils: ShanghaiTime = %d\n", *chainConfig.ShanghaiTime)
+	// Debug for Shanghai (Shanghai block is named as Shanghai time in go-ethereum v1.11.5 :))
+	// fmt.Printf("geth-utils: ShanghaiBlock = %d\n", chainConfig.ShanghaiBlock)
+	// fmt.Printf("geth-utils: ArchimedesBlock = %d\n", chainConfig.ArchimedesBlock)
 
 	txs := transferTxs(config.Transactions)
 
@@ -246,5 +254,6 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 
 	trace.StorageTrace.RootAfter = rootAfter
 	trace.Header.Root = rootAfter
+	trace.Header.BaseFee = toBigInt(config.Block.BaseFee)
 	return trace, nil
 }
