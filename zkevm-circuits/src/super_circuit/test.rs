@@ -425,11 +425,11 @@ fn serial_test_super_circuit_precompile_oog() {
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
-fn serial_test_super_circuit_precompile_invalid_ec_add() {
+fn serial_test_super_circuit_precompile_invalid_ec_ops() {
     const MAX_TXS: usize = 1;
-    const MAX_CALLDATA: usize = 0x100;
+    const MAX_CALLDATA: usize = 0x4c0;
 
-    let block = precompile_block_trace::block_precompile_invalid_ec_add();
+    let block = precompile_block_trace::block_precompile_invalid_ec_ops();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
@@ -438,37 +438,11 @@ fn serial_test_super_circuit_precompile_invalid_ec_add() {
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
-fn serial_test_super_circuit_precompile_invalid_ec_mul() {
-    const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 0xc0;
-
-    let block = precompile_block_trace::block_precompile_invalid_ec_mul();
-    let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
-
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
-}
-
-#[ignore]
-#[cfg(feature = "scroll")]
-#[test]
-fn serial_test_super_circuit_precompile_invalid_ec_pairing_batch1() {
-    const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 0x300;
-
-    let block = precompile_block_trace::block_precompile_invalid_ec_pairing_batch1();
-    let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
-
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
-}
-
-#[ignore]
-#[cfg(feature = "scroll")]
-#[test]
-fn serial_test_super_circuit_precompile_invalid_ec_pairing_batch2() {
+fn serial_test_super_circuit_precompile_invalid_ec_pairing_field_overflow() {
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 0x180;
 
-    let block = precompile_block_trace::block_precompile_invalid_ec_pairing_batch2();
+    let block = precompile_block_trace::block_precompile_invalid_ec_pairing_field_overflow();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
