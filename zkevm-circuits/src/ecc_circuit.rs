@@ -99,9 +99,9 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
         let num_limbs = 3;
         let limb_bits = 88;
         #[cfg(feature = "onephase")]
-        let num_advice = [33];
+        let num_advice = [35];
         #[cfg(not(feature = "onephase"))]
-        let num_advice = [33, 1];
+        let num_advice = [35, 1];
 
         let fp_config = FpConfig::configure(
             meta,
