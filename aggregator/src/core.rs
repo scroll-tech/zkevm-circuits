@@ -523,12 +523,14 @@ pub(crate) fn conditional_constraints(
                 // ====================================================
                 let chunk_is_valid_cells = chunks_are_valid
                     .iter()
-                    .map(|chunk_is_valid| {
-                        rlc_config.load_private(
+                    .map(|chunk_is_valid| -> Result<_, halo2_proofs::plonk::Error> {
+                        let cell = rlc_config.load_private(
                             &mut region,
                             &Fr::from(*chunk_is_valid as u64),
                             &mut offset,
-                        )
+                        )?;
+                        rlc_config.enforce_binary(&mut region, &cell, &mut offset)?;
+                        Ok(cell)
                     })
                     .collect::<Result<Vec<_>, halo2_proofs::plonk::Error>>()?;
                 let num_valid_snarks =
