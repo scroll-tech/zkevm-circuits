@@ -1362,14 +1362,17 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         let ec_adds = block.get_ec_add_ops().len();
         let ec_muls = block.get_ec_mul_ops().len();
         let ec_pairings = block.get_ec_pairing_ops().len();
+        let max_ec_ops = &block.circuits_params.max_ec_ops;
+        log::debug!("ecc circuit row usage: ecadd {ec_adds}/{}, ecmul {ec_muls}/{}, ecpairing {ec_pairings}/{}",
+        max_ec_ops.ec_add, max_ec_ops.ec_mul, max_ec_ops.ec_pairing);
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
         // This functionality allows l2geth to decide if additional ops can be added.
         let min_row_num = [
-            (row_num / block.circuits_params.max_ec_ops.ec_add) * ec_adds,
-            (row_num / block.circuits_params.max_ec_ops.ec_mul) * ec_muls,
-            (row_num / block.circuits_params.max_ec_ops.ec_pairing) * ec_pairings,
+            (row_num / max_ec_ops.ec_add) * ec_adds,
+            (row_num / max_ec_ops.ec_mul) * ec_muls,
+            (row_num / max_ec_ops.ec_pairing) * ec_pairings,
         ]
         .into_iter()
         .max()

@@ -48,7 +48,7 @@ jobs:
         os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: set HOME env
         run: |
           echo "HOME=/home/CI" >> $GITHUB_ENV
@@ -97,7 +97,7 @@ jobs:
         os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: set HOME env
         run: |
           echo "HOME=/home/CI" >> $GITHUB_ENV
@@ -152,7 +152,7 @@ jobs:
           - wasm32-wasi
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           override: false
@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           override: false
@@ -231,7 +231,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           override: false
@@ -273,7 +273,7 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           override: false
