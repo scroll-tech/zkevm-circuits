@@ -424,7 +424,7 @@ impl<F: Field> SigCircuit<F> {
         ecc_chip
             .field_chip
             .range
-            .range_check(ctx, &assigned_y_tmp, 88);
+            .range_check(ctx, &assigned_y_tmp, 87);
 
         Ok(AssignedECDSA {
             pk: pk_assigned,

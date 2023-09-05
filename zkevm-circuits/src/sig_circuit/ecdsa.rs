@@ -100,35 +100,8 @@ where
     // - (u1 + u3) * G
     // - u2 * pubkey + u3 * G
     // are not equal
-    //
-    //     TODO: Technically they could be equal for a valid signature, but this happens with
-    // vanishing probability           for an ECDSA signature constructed in a standard way
-    // coordinates of u1_mul and u2_mul are in proper bigint form, and lie in but are not
-    // constrained to [0, n) we therefore need hard inequality here
     let u1_u2_x_eq = ecc_chip.is_equal(ctx, &u1u3_mul, &u2_pk_u3_g);
     let u1_u2_not_eq = base_chip.range.gate().not(ctx, Existing(u1_u2_x_eq));
-
-    // check u1*G and u2*pubkey are not negate of each other
-    // that means the sum of
-    // - (u1 + u3) * G
-    // - u2 * pubkey + u3 * G
-    // should not equal to 2u3 * G
-    let u1_u2_not_neg = {
-        // again we get 2u3*G from constant to avoid scalar_multiply
-        let two_generator = GA::generator();
-        let neg_two_generator = -two_generator;
-        let two_generator = ecc_chip.assign_constant_point(ctx, two_generator);
-        let neg_two_generator = ecc_chip.assign_constant_point(ctx, neg_two_generator);
-        let two_u3_g = ecc_chip.select(ctx, &neg_two_generator, &two_generator, &u1_is_one);
-
-        base_chip.enforce_less_than_p(ctx, u1u3_mul.x());
-        base_chip.enforce_less_than_p(ctx, u2_pk_u3_g.x());
-        // safe: we have already checked (u1 + u3) * G != u2 * pubkey + u3 * G
-        let sum = ec_add_unequal(base_chip, ctx, &u1u3_mul, &u2_pk_u3_g, false);
-
-        let is_equal = ecc_chip.is_equal(ctx, &sum, &two_u3_g);
-        base_chip.range.gate().not(ctx, Existing(is_equal))
-    };
 
     // compute (x1, y1) = u1 * G + u2 * pubkey and check (r mod n) == x1 as integers
     // which is basically u1u3_mul + u2_mul - u3_mul
@@ -184,12 +157,8 @@ where
     let res5 = base_chip
         .range
         .gate()
-        .and(ctx, Existing(res4), Existing(u1_u2_not_neg));
-    let res6 = base_chip
-        .range
-        .gate()
-        .and(ctx, Existing(res5), Existing(equal_check));
-    (res6, sum.y)
+        .and(ctx, Existing(res4), Existing(equal_check));
+    (res5, sum.y)
 }
 
 fn scalar_field_element_is_one<F: PrimeField, SF: PrimeField>(
