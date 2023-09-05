@@ -348,6 +348,30 @@ mod valid_invalid_cases {
                 },
             ]
         };
+        pub(crate) static ref EC_PAIRING_OPS4: Vec<EcPairingOp> = {
+            vec![
+                // 7. valid: [(G1::gen, G2::gen), (-G1::gen, G2::gen)]
+                EcPairingOp {
+                    pairs: [
+                        EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
+                        EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
+                        EcPairingPair::padding_pair(),
+                        EcPairingPair::padding_pair(),
+                    ],
+                    output: 1.into(),
+                },
+                // 8. valid: [(G1::gen, G2::gen), (-G1::gen, G2::gen); 2]
+                EcPairingOp {
+                    pairs: [
+                        EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
+                        EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
+                        EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
+                        EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
+                    ],
+                    output: 1.into(),
+                },
+            ]
+        };
     }
 }
 
@@ -356,7 +380,7 @@ fn test_ecc_circuit_valid_invalid() {
     use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
     use halo2_proofs::halo2curves::bn256::Fr;
     use valid_invalid_cases::{
-        EC_ADD_OPS, EC_MUL_OPS, EC_PAIRING_OPS1, EC_PAIRING_OPS2, EC_PAIRING_OPS3,
+        EC_ADD_OPS, EC_MUL_OPS, EC_PAIRING_OPS1, EC_PAIRING_OPS2, EC_PAIRING_OPS3, EC_PAIRING_OPS4,
     };
 
     run::<Fr, false>(
@@ -389,6 +413,18 @@ fn test_ecc_circuit_valid_invalid() {
         vec![],
         vec![],
         EC_PAIRING_OPS3.clone(),
+    );
+
+    run::<Fr, false>(
+        LOG_TOTAL_NUM_ROWS,
+        PrecompileEcParams {
+            ec_add: 0,
+            ec_mul: 0,
+            ec_pairing: 2,
+        },
+        vec![],
+        vec![],
+        EC_PAIRING_OPS4.clone(),
     );
 }
 
