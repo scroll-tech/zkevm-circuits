@@ -449,7 +449,7 @@ impl RlcConfig {
                 &input.value(),
             )
             .as_str(),
-        );
+        )?;
 
         region.constrain_equal(acc.cell(), input.cell())?;
 

@@ -410,7 +410,7 @@ fn copy_constraints(
                             &chunk_pi_hash_preimages[0][i + PREV_STATE_ROOT_INDEX].value(),
                         )
                         .as_str(),
-                    );
+                    )?;
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + PREV_STATE_ROOT_INDEX].cell(),
                         chunk_pi_hash_preimages[0][i + PREV_STATE_ROOT_INDEX].cell(),
@@ -427,7 +427,7 @@ fn copy_constraints(
                                 .value(),
                         )
                         .as_str(),
-                    );
+                    )?;
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + POST_STATE_ROOT_INDEX].cell(),
                         chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + POST_STATE_ROOT_INDEX]
@@ -444,7 +444,7 @@ fn copy_constraints(
                                 .value(),
                         )
                         .as_str(),
-                    );
+                    )?;
                     region.constrain_equal(
                         batch_pi_hash_preimage[i + WITHDRAW_ROOT_INDEX].cell(),
                         chunk_pi_hash_preimages[MAX_AGG_SNARKS - 1][i + WITHDRAW_ROOT_INDEX].cell(),
@@ -468,7 +468,7 @@ fn copy_constraints(
                                 &rhs.value(),
                             )
                             .as_str(),
-                        );
+                        )?;
                         region.constrain_equal(lhs.cell(), rhs.cell())?;
                     }
                 }
@@ -667,11 +667,13 @@ pub(crate) fn conditional_constraints(
                         // sanity check
                         assert_exist(
                             &batch_pi_hash_preimage[i * 8 + j + CHUNK_DATA_HASH_INDEX],
-                            &potential_batch_data_hash_digest[(3 - i) * 8 + j],
-                            &potential_batch_data_hash_digest[(3 - i) * 8 + j + 32],
-                            &potential_batch_data_hash_digest[(3 - i) * 8 + j + 64],
-                            &potential_batch_data_hash_digest[(3 - i) * 8 + j + 96],
-                        );
+                            &[
+                                potential_batch_data_hash_digest[(3 - i) * 8 + j].clone(),
+                                potential_batch_data_hash_digest[(3 - i) * 8 + j + 32].clone(),
+                                potential_batch_data_hash_digest[(3 - i) * 8 + j + 64].clone(),
+                                potential_batch_data_hash_digest[(3 - i) * 8 + j + 96].clone(),
+                            ],
+                        )?;
                         // assert
                         // batch_pi_hash_preimage[i * 8 + j + CHUNK_DATA_HASH_INDEX]
                         // = flag1 * potential_batch_data_hash_digest[(3 - i) * 8 + j]
@@ -739,7 +741,7 @@ pub(crate) fn conditional_constraints(
                                 &chunk_is_valid_cells[i].value()
                             )
                             .as_str(),
-                        );
+                        )?;
                         rlc_config.conditional_enforce_equal(
                             &mut region,
                             &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
@@ -765,7 +767,7 @@ pub(crate) fn conditional_constraints(
                                 &chunk_is_valid_cells[i + 1].value(),
                             )
                             .as_str(),
-                        );
+                        )?;
                         rlc_config.conditional_enforce_equal(
                             &mut region,
                             &chunk_pi_hash_preimages[i + 1][PREV_STATE_ROOT_INDEX + j],
@@ -834,11 +836,13 @@ pub(crate) fn conditional_constraints(
                 // sanity check
                 assert_exist(
                     &data_hash_inputs_len,
-                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3],
-                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4],
-                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5],
-                    &hash_input_len_cells[MAX_AGG_SNARKS * 2 + 6],
-                );
+                    &[
+                        hash_input_len_cells[MAX_AGG_SNARKS * 2 + 3].clone(),
+                        hash_input_len_cells[MAX_AGG_SNARKS * 2 + 4].clone(),
+                        hash_input_len_cells[MAX_AGG_SNARKS * 2 + 5].clone(),
+                        hash_input_len_cells[MAX_AGG_SNARKS * 2 + 6].clone(),
+                    ],
+                )?;
 
                 log::trace!("data_hash_inputs: {:?}", data_hash_inputs_len.value());
                 log::trace!(
@@ -896,7 +900,7 @@ pub(crate) fn conditional_constraints(
                         &data_hash_inputs_len_rec.value(),
                     )
                     .as_str(),
-                );
+                )?;
                 region.constrain_equal(
                     data_hash_inputs_len.cell(),
                     data_hash_inputs_len_rec.cell(),
@@ -923,11 +927,13 @@ pub(crate) fn conditional_constraints(
 
                 assert_exist(
                     &rlc_cell,
-                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 3],
-                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 4],
-                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 5],
-                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 6],
-                );
+                    &[
+                        data_rlc_cells[MAX_AGG_SNARKS * 2 + 3].clone(),
+                        data_rlc_cells[MAX_AGG_SNARKS * 2 + 4].clone(),
+                        data_rlc_cells[MAX_AGG_SNARKS * 2 + 5].clone(),
+                        data_rlc_cells[MAX_AGG_SNARKS * 2 + 6].clone(),
+                    ],
+                )?;
                 log::trace!("rlc from chip {:?}", rlc_cell.value());
                 log::trace!(
                     "rlc from table {:?}",
