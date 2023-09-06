@@ -71,7 +71,8 @@ pub struct MptUpdates {
     /// TODO: is here the best place for this?
     /// Withdraw proof after this block
     pub withdraw_proof: WithdrawProof,
-    pub(crate) smt_traces: Vec<SMTTrace>,
+    /// The detailed mpt witness
+    pub smt_traces: Vec<SMTTrace>,
     pub(crate) proof_types: Vec<MPTProofType>,
 }
 
@@ -149,6 +150,8 @@ impl MptUpdates {
                 root_pair2.1
             );
             wit_gen.dump();
+        } else {
+            log::debug!("roots consistent ({:#x},{:#x})", root_pair.0, root_pair.1);
         }
 
         // generate withdraw proof

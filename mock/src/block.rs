@@ -1,6 +1,10 @@
 //! Mock Block definition and builder related methods.
 
-use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
+#[cfg(not(feature = "scroll"))]
+use crate::MOCK_DIFFICULTY;
+#[cfg(feature = "scroll")]
+use crate::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
+use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_GASLIMIT};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
 use ethers_core::types::{Bloom, OtherFields};
 

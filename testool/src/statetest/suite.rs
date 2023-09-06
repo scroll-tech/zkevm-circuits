@@ -41,10 +41,16 @@ pub fn load_statetests_suite(
                 let tcs = (|| -> Result<Vec<StateTest>> {
                     let src = std::fs::read_to_string(&file)?;
                     log::debug!(target: "testool", "Reading file {:?}", file);
-                    let mut tcs = match ext {
-                        "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src)?,
-                        "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src)?,
+                    let tcs = match ext {
+                        "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src),
+                        "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src),
                         _ => unreachable!(),
+                    };
+                    let mut tcs = match tcs {
+                        Ok(tcs) => tcs,
+                        Err(e) => {
+                            panic!("fail to load {path:?}, err {e:?}");
+                        }
                     };
 
                     tcs.retain(|v| !skip_tests.contains(&&v.id));
@@ -84,7 +90,7 @@ pub fn run_statetests_suite(
 
     // for each test
     let test_count = tcs.len();
-    tcs.into_par_iter().for_each(|ref tc| {
+    let run_state_test = |tc: &StateTest| {
         let (test_id, path) = (tc.id.clone(), tc.path.clone());
         if !suite.allowed(&test_id) {
             results
@@ -105,7 +111,7 @@ pub fn run_statetests_suite(
         log::debug!(
             target : "testool",
             "🐕 running test (done {}/{}) {}#{}...",
-            1 + results.read().unwrap().tests.len(),
+            results.read().unwrap().tests.len(),
             test_count,
             test_id,
             path,
@@ -176,7 +182,12 @@ pub fn run_statetests_suite(
                 path,
             })
             .unwrap();
-    });
+    };
 
+    if circuits_config.super_circuit {
+        tcs.into_iter().for_each(|ref tc| run_state_test(tc));
+    } else {
+        tcs.into_par_iter().for_each(|ref tc| run_state_test(tc));
+    }
     Ok(())
 }

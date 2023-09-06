@@ -51,6 +51,7 @@ impl CircuitInputBuilderTx {
                 failed: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![geth_step.clone()],
+                account_after: vec![],
             },
             false,
         )

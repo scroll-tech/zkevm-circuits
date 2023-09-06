@@ -6,6 +6,20 @@ max_steps = 1000
 ignore_tests = []
 
 [[suite]]
+id="precompile"
+path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
+id="precompile2"
+path="tests/src/GeneralStateTestsFiller/stPreCompiledContracts2/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
+[[suite]]
 id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 0
@@ -173,23 +187,25 @@ tests = []
 desc = "unimplemented"
 paths = [
     "EIP1559",
+    "stExample/eip1559Filler.yml",
+    "stExample/mergeTestFiller.yml",
     "EIP2930",
-    "stPreCompiledContracts",
-    "stZeroKnowledge"
+    #"stPreCompiledContracts",
+    #"stZeroKnowledge"
 ]
 
 [[skip_paths]]
 desc = "too big"
 paths = [
-    "stTimeConsuming",
-    "stExample",
-    "stQuadraticComplexityTest",
-    "50000"
+#    "stTimeConsuming", # full of useless sstore tests
+#    "stExample",
+#    "stQuadraticComplexityTest",
+#    "50000"
 ]
 
 [[skip_paths]]
 desc = "defines asm"
-paths = [ 
+paths = [
     "stackLimitGas_1023Filler.json",
     "stackLimitGas_1024Filler.json",
     "stackLimitGas_1025Filler.json",
@@ -218,7 +234,10 @@ paths = [
     "callToNonExistentFiller.json",
     "tackDepthLimitSECFiller.json",
     "ValueOverflowFiller", # weird 0x:biginteger 0x...
-    "result_mergeEnvConvertionFiller.json" # missing `currentDifficulty`
+    "result_mergeEnvConvertionFiller.json", # missing `currentDifficulty`
+    "result_cancunEnvConvertionFiller.json", # missing `currentDifficulty`
+    "calldatacopy_dejavu2Filler.json", # missing comma
+    "callDataCopyOffsetFiller.json" # missing comma
 ]
 
 [[skip_paths]]
@@ -229,7 +248,13 @@ paths = [
     "CreateAndGasInsideCreateFiller.json",
     "StoreGasOnCreateFiller.json",
     "static_CREATE_EmptyContractAndCallIt_0weiFiller.json",
-    "static_CREATE_EmptyContractWithStorageAndCallIt_0weiFiller.json"
+    "static_CREATE_EmptyContractWithStorageAndCallIt_0weiFiller.json",
+    "stQuadraticComplexityTest/Create1000Filler.json",
+    "stQuadraticComplexityTest/Call20KbytesContract50_1Filler.json",
+    "stQuadraticComplexityTest/Call20KbytesContract50_3Filler.json",
+    "stQuadraticComplexityTest/Call20KbytesContract50_2Filler.json",
+    "stQuadraticComplexityTest/QuadraticComplexitySolidity_CallDataCopyFiller.json",
+    "stExample/add11Filler.json"
 ]
 
 [[skip_paths]]
@@ -238,6 +263,9 @@ paths = [
     "CreateAddressWarmAfterFailFiller.yml", # Odd number
     "HighGasPriceFiller.yml", # Wrong network EIP158
     "doubleSelfdestructTestFiller.yml", # character is not in the range 0-9
+    "stPreCompiledContracts/blake2BFiller.yml", # same with above, gasLimit
+    "stPreCompiledContracts2/ecrecoverShortBuffFiller.yml", # same with above, gasLimit
+    "stPreCompiledContracts2/CallEcrecover_OverflowFiller.yml", # same with above, gasLimit
     "eoaEmptyFiller.yml", # cannot parse to address Integer(49374)
     "touchAndGoFiller.yml" # Wrong network EIP150
 ]
@@ -248,7 +276,7 @@ paths = [
     "RevertRemoteSubCallStorageOOGFiller.yml",
     "loopMulFiller.yml",
     "loopExpFiller.yml",
-    "performanceTesterFiller.yml", 
+    "performanceTesterFiller.yml",
     "SelfDestructFiller.yml",
     "RevertRemoteSubCallStorageOOGFiller.yml",
     "solidityExampleFiller.yml"

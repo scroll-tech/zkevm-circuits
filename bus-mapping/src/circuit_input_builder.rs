@@ -6,6 +6,8 @@ mod block;
 mod call;
 mod execution;
 mod input_state_ref;
+#[cfg(feature = "scroll")]
+mod l2;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
@@ -28,11 +30,7 @@ use eth_types::{
     evm_types::OpcodeId,
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256, U256,
-};
-use ethers_core::{
-    k256::ecdsa::SigningKey,
-    types::{Bytes, Signature, TransactionRequest},
+    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -42,10 +40,13 @@ pub use execution::{
 };
 use hex::decode_to_slice;
 
+use eth_types::sign_types::get_dummy_tx;
 use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
+#[cfg(feature = "scroll")]
+use mpt_zktrie::state::ZktrieState;
 use std::{
     collections::{BTreeMap, HashMap},
     iter,
@@ -112,8 +113,15 @@ pub struct CircuitsParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// Maximum number of rows that the Poseidon Circuit can have
+    pub max_poseidon_rows: usize,
     /// Max number of ECC-related ops supported in the ECC circuit.
     pub max_ec_ops: PrecompileEcParams,
+    /// This number indicate what 100% usage means, for example if we can support up to 2
+    /// ecPairing inside circuit, and max_vertical_circuit_rows is set to 1_000_000,
+    /// then if there is 1 ecPairing in the input, we will return 500_000 as the "row usage"
+    /// for the ec circuit.
+    pub max_vertical_circuit_rows: usize,
 }
 
 impl Default for CircuitsParams {
@@ -132,6 +140,8 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_poseidon_rows: 0,
+            max_vertical_circuit_rows: 0,
             max_rlp_rows: 1000,
             max_ec_ops: PrecompileEcParams::default(),
         }
@@ -166,6 +176,9 @@ pub struct CircuitInputBuilder {
     pub block: Block,
     /// Block Context
     pub block_ctx: BlockContext,
+    #[cfg(feature = "scroll")]
+    /// Initial Zktrie Status for a incremental updating
+    pub mpt_init_state: ZktrieState,
 }
 
 impl<'a> CircuitInputBuilder {
@@ -177,6 +190,8 @@ impl<'a> CircuitInputBuilder {
             code_db,
             block: block.clone(),
             block_ctx: BlockContext::new(),
+            #[cfg(feature = "scroll")]
+            mpt_init_state: Default::default(),
         }
     }
     /// Create a new CircuitInputBuilder from the given `eth_block` and
@@ -315,6 +330,47 @@ impl<'a> CircuitInputBuilder {
                 self.block_ctx.rwc,
                 self.block_ctx.cumulative_gas_used
             );
+            for account_post_state in &geth_trace.account_after {
+                let account_post_state: eth_types::l2_types::AccountProofWrapper =
+                    account_post_state.clone();
+                if let Some(address) = account_post_state.address {
+                    let local_acc = self.sdb.get_account(&address).1;
+                    log::trace!("local acc {local_acc:?}, trace acc {account_post_state:?}");
+                    if local_acc.balance != account_post_state.balance.unwrap() {
+                        log::error!("incorrect balance")
+                    }
+                    if local_acc.nonce != account_post_state.nonce.unwrap().into() {
+                        log::error!("incorrect nonce")
+                    }
+                    let p_hash = account_post_state.poseidon_code_hash.unwrap();
+                    if p_hash.is_zero() {
+                        if !local_acc.is_empty() {
+                            log::error!("incorrect poseidon_code_hash")
+                        }
+                    } else {
+                        if local_acc.code_hash != p_hash {
+                            log::error!("incorrect poseidon_code_hash")
+                        }
+                    }
+                    let k_hash = account_post_state.keccak_code_hash.unwrap();
+                    if k_hash.is_zero() {
+                        if !local_acc.is_empty() {
+                            log::error!("incorrect keccak_code_hash")
+                        }
+                    } else {
+                        if local_acc.keccak_code_hash != k_hash {
+                            log::error!("incorrect keccak_code_hash")
+                        }
+                    }
+                    if let Some(storage) = account_post_state.storage {
+                        let k = storage.key.unwrap();
+                        let local_v = self.sdb.get_storage(&address, &k).1;
+                        if *local_v != storage.value.unwrap() {
+                            log::error!("incorrect storage for k = {k}");
+                        }
+                    }
+                }
+            }
         }
         if handle_rwc_reversion {
             self.set_value_ops_call_context_rwc_eor();
@@ -419,7 +475,7 @@ impl<'a> CircuitInputBuilder {
                 call_id,
                 CallContextField::TxId,
                 Word::from(dummy_tx_id as u64),
-            );
+            )?;
         }
 
         // increase the total rwc by 1
@@ -434,7 +490,7 @@ impl<'a> CircuitInputBuilder {
                 dummy_tx_id,
                 withdraw_root_before,
             ),
-        );
+        )?;
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
@@ -522,7 +578,7 @@ impl<'a> CircuitInputBuilder {
             let tx_gas = tx.gas;
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!(
-                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} args: {}",
+                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} refund: {} args: {}",
                 eth_tx.transaction_index.unwrap_or_default(),
                 geth_step.depth,
                 index,
@@ -534,6 +590,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.block_ctx.rwc.0,
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
+                geth_step.refund.0,
                 if geth_step.op.is_push_with_data() {
                     format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {
@@ -673,43 +730,14 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
 /// signature datas.
 pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
-    for sig in sigs {
+    let dummy_sign_data = SignData::default();
+    for sig in sigs.iter().chain(iter::once(&dummy_sign_data)) {
         let pk_le = pk_bytes_le(&sig.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         inputs.push(pk_be.to_vec());
         inputs.push(sig.msg.to_vec());
     }
-    // Padding signature
-    let pk_le = pk_bytes_le(&SignData::default().pk);
-    let pk_be = pk_bytes_swap_endianness(&pk_le);
-    inputs.push(pk_be.to_vec());
     inputs
-}
-
-/// Generate a dummy pre-eip155 tx in which
-/// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="")
-/// using the dummy private key = 1
-pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
-    let mut sk_be_scalar = [0u8; 32];
-    sk_be_scalar[31] = 1_u8;
-
-    let sk = SigningKey::from_bytes(&sk_be_scalar).expect("sign key = 1");
-    let wallet = ethers_signers::Wallet::from(sk);
-
-    let tx = TransactionRequest::new()
-        .nonce(0)
-        .gas(0)
-        .gas_price(U256::zero())
-        .to(Address::zero())
-        .value(U256::zero())
-        .data(Bytes::default());
-    let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
-
-    // FIXME: need to check if this is deterministic which means sig is fixed.
-    let sig = wallet.sign_hash(sighash);
-    assert_eq!(sig.v, 28);
-
-    (tx, sig)
 }
 
 /// Get the tx hash of the dummy tx (nonce=0, gas=0, gas_price=0, to=0, value=0,
@@ -837,16 +865,6 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);
-
-    // Since the SignData::default() already includes pk = [1]G which is also the
-    // one that we use in get_dummy_tx, so we only need to include the tx sign
-    // hash of the dummy tx.
-    let dummy_sign_input = {
-        let (dummy_tx, _) = get_dummy_tx();
-        // dummy tx is of type pre-eip155
-        dummy_tx.rlp_unsigned().to_vec()
-    };
-    inputs.push(dummy_sign_input);
 
     Ok(inputs)
 }

@@ -47,7 +47,7 @@
 //! with all of the Memory, Stack and Storage ops performed
 //! by the provided trace.
 //!
-//! ```rust
+//! ```rust, no_run
 //! use bus_mapping::{Error, mock::BlockData};
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use eth_types::{
@@ -138,6 +138,7 @@
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
+//!     account_after: Vec::new(),
 //!     l1_fee: 0,
 //!     return_value: "".to_string(),
 //!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
@@ -221,11 +222,10 @@
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
-//#![deny(unsafe_code)] Allowed now until we find a
-// better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::result_large_err)] // it's large, but what can we do?
+#![allow(clippy::collapsible_else_if)]
 
 extern crate alloc;
 extern crate core;

@@ -4,7 +4,10 @@ use crate::{
         CallKind, CircuitInputStateRef, CodeSource, CopyBytes, CopyDataType, CopyEvent, ExecStep,
         NumberOrHash,
     },
-    evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
+    evm::opcodes::{
+        error_oog_precompile::ErrorOOGPrecompile,
+        precompiles::gen_associated_ops as precompile_associated_ops,
+    },
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
@@ -84,7 +87,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             ]);
         }
         for (field, value) in field_values {
-            state.call_context_read(&mut exec_step, caller_call.call_id, field, value);
+            state.call_context_read(&mut exec_step, caller_call.call_id, field, value)?;
         }
 
         for i in 0..N_ARGS {
@@ -117,7 +120,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             callee_address,
             AccountField::CodeHash,
             callee_code_hash_word,
-        );
+        )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
         state.push_op_reversible(
@@ -140,7 +143,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 (callee_call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, callee_call.call_id, field, value);
+            state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
         }
 
         let (found, sender_account) = state.sdb.get_account(&callee_call.caller_address);
@@ -163,7 +166,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             callee_call.caller_address,
             AccountField::Balance,
             caller_balance,
-        );
+        )?;
 
         let code_address = callee_call.code_address();
         let is_precompile = code_address
@@ -263,7 +266,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // get the result of the precompile call.
                 // For failed call, it will cost all gas provided.
-                let (result, precompile_call_gas_cost) = execute_precompiled(
+                let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
                         let caller_memory = &state.caller_ctx()?.memory;
@@ -315,7 +318,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         callee_call.return_data_length.into(),
                     ),
                 ] {
-                    state.call_context_write(&mut exec_step, callee_call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
                 }
 
                 // return while restoring some of caller's context.
@@ -344,7 +347,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         result.len().into(),
                     ),
                 ] {
-                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
 
                 // insert a copy event (input) for this step and generate word memory read & write
@@ -374,7 +377,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             src_addr: callee_call.call_data_offset,
                             src_addr_end: callee_call.call_data_offset + n_input_bytes as u64,
                             dst_id: NumberOrHash::Number(callee_call.call_id),
-                            dst_type: CopyDataType::Precompile(precompile_call),
+                            dst_type: CopyDataType::RlcAcc,
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
@@ -400,7 +403,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         &mut exec_step,
                         CopyEvent {
                             src_id: NumberOrHash::Number(callee_call.call_id),
-                            src_type: CopyDataType::Precompile(precompile_call),
+                            src_type: CopyDataType::RlcAcc,
                             src_addr: 0,
                             src_addr_end: result.len() as u64,
                             dst_id: NumberOrHash::Number(callee_call.call_id),
@@ -454,30 +457,56 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 } else {
                     None
                 };
+                // modexp's oog error is handled in ModExpGadget
+                if has_oog_err && precompile_call != PrecompileCalls::Modexp {
+                    log::debug!(
+                        "precompile call ({:?}) runs out of gas: callee_gas_left_with_stipend = {}",
+                        precompile_call,
+                        callee_gas_left_with_stipend,
+                    );
 
-                let mut precompile_step = precompile_associated_ops(
-                    state,
-                    geth_steps[1].clone(),
-                    callee_call.clone(),
-                    precompile_call,
-                    (input_bytes, output_bytes, returned_bytes),
-                )?;
+                    let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
+                        state,
+                        &geth_steps[1],
+                        callee_call.clone(),
+                    )?;
 
-                // Set gas left and gas cost for precompile step.
-                precompile_step.gas_left = Gas(callee_gas_left_with_stipend);
-                precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
-                // Make the Precompile execution step to handle return logic and restore to caller
-                // context (similar as STOP and RETURN).
-                state.handle_return(&mut precompile_step, geth_steps, true)?;
+                    oog_step.gas_left = Gas(callee_gas_left_with_stipend);
+                    oog_step.gas_cost = GasCost(precompile_call_gas_cost);
+                    // Make the Precompile execution step to handle return logic and restore to
+                    // caller context (similar as STOP and RETURN).
+                    state.handle_return(&mut [&mut exec_step, &mut oog_step], geth_steps, true)?;
 
-                debug_assert_eq!(
-                    geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost + stipend,
-                    geth_steps[1].gas.0,
-                    "precompile_call_gas_cost wrong {:?}",
-                    precompile_step.exec_state
-                );
+                    Ok(vec![exec_step, oog_step])
+                } else {
+                    let mut precompile_step = precompile_associated_ops(
+                        state,
+                        geth_steps[1].clone(),
+                        callee_call.clone(),
+                        precompile_call,
+                        (input_bytes, output_bytes, returned_bytes),
+                    )?;
 
-                Ok(vec![exec_step, precompile_step])
+                    // Set gas left and gas cost for precompile step.
+                    precompile_step.gas_left = Gas(callee_gas_left_with_stipend);
+                    precompile_step.gas_cost = GasCost(precompile_call_gas_cost);
+                    // Make the Precompile execution step to handle return logic and restore to
+                    // caller context (similar as STOP and RETURN).
+                    state.handle_return(
+                        &mut [&mut exec_step, &mut precompile_step],
+                        geth_steps,
+                        true,
+                    )?;
+
+                    debug_assert_eq!(
+                        geth_steps[0].gas.0 - gas_cost - precompile_call_gas_cost + stipend,
+                        geth_steps[1].gas.0,
+                        "precompile_call_gas_cost wrong {:?}",
+                        precompile_step.exec_state
+                    );
+
+                    Ok(vec![exec_step, precompile_step])
+                }
             }
             // 2. Call to account with empty code.
             (false, _, true) => {
@@ -486,10 +515,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
-                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
                 state.caller_ctx_mut()?.return_data.clear();
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
 
                 Ok(vec![exec_step])
             }
@@ -514,7 +543,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         (exec_step.reversible_write_counter + 1).into(),
                     ),
                 ] {
-                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
 
                 for (field, value) in [
@@ -569,7 +598,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     (CallContextField::IsCreate, 0.into()),
                     (CallContextField::CodeHash, callee_call.code_hash.to_word()),
                 ] {
-                    state.call_context_write(&mut exec_step, callee_call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
                 }
 
                 Ok(vec![exec_step])
@@ -581,10 +610,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
-                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
                 state.caller_ctx_mut()?.return_data.clear();
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
                 Ok(vec![exec_step])
             } //
         }
@@ -722,6 +751,9 @@ pub mod tests {
                 address: Word::from(0x2),
                 stack_value: vec![(
                     Word::from(0x20),
+                    #[cfg(feature = "scroll")]
+                    Word::zero(),
+                    #[cfg(not(feature = "scroll"))]
                     word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
                 )],
                 ..Default::default()
@@ -740,6 +772,9 @@ pub mod tests {
                 address: Word::from(0x3),
                 stack_value: vec![(
                     Word::from(0x20),
+                    #[cfg(feature = "scroll")]
+                    Word::zero(),
+                    #[cfg(not(feature = "scroll"))]
                     word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
                 )],
                 ..Default::default()
@@ -929,10 +964,16 @@ pub mod tests {
                 stack_value: vec![
                     (
                         Word::from(0x20),
+                        #[cfg(feature = "scroll")]
+                        word!("3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e13"),
+                        #[cfg(not(feature = "scroll"))]
                         word!("d282e6ad7f520e511f6c3e2b8c68059b9442be0454267ce079217e1319cde05b"),
                     ),
                     (
                         Word::from(0x0),
+                        #[cfg(feature = "scroll")]
+                        word!("0000000048c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f"),
+                        #[cfg(not(feature = "scroll"))]
                         word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
                     ),
                 ],

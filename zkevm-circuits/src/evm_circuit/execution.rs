@@ -94,6 +94,7 @@ mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_precompile;
 mod error_oog_sha3;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
@@ -195,6 +196,7 @@ use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 
+use crate::evm_circuit::execution::error_oog_precompile::ErrorOOGPrecompileGadget;
 use memory::MemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
@@ -328,6 +330,7 @@ pub(crate) struct ExecutionConfig<F> {
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
     // error gadgets
     error_oog_call: Box<ErrorOOGCallGadget<F>>,
+    error_oog_precompile: Box<ErrorOOGPrecompileGadget<F>>,
     error_oog_constant: Box<ErrorOOGConstantGadget<F>>,
     error_oog_exp: Box<ErrorOOGExpGadget<F>>,
     error_oog_memory_copy: Box<ErrorOOGMemoryCopyGadget<F>>,
@@ -611,6 +614,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_log: configure_gadget!(),
             error_oog_sload_sstore: configure_gadget!(),
             error_oog_call: configure_gadget!(),
+            error_oog_precompile: configure_gadget!(),
             error_oog_memory_copy: configure_gadget!(),
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
@@ -693,7 +697,7 @@ impl<F: Field> ExecutionConfig<F> {
                 G::EXECUTION_STATE,
             );
             cb.annotation(G::NAME, |cb| G::configure(cb));
-            let (_, _, height) = cb.build();
+            let (_, _, _, height) = cb.build();
             height
         };
 
@@ -759,7 +763,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
-        let (constraints, stored_expressions, _) = cb.build();
+        let (state_selector, constraints, stored_expressions, _) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
             "execution state already configured"
@@ -782,6 +786,7 @@ impl<F: Field> ExecutionConfig<F> {
         let sel_not_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> = &|meta| {
             meta.query_advice(q_step, Rotation::cur()) * not::expr(meta.query_selector(q_step_last))
         };
+        let state_selector = &state_selector;
 
         for (selector, constraints) in [
             (sel_step, constraints.step),
@@ -794,7 +799,13 @@ impl<F: Field> ExecutionConfig<F> {
                     let q_usable = meta.query_selector(q_usable);
                     let selector = selector(meta);
                     constraints.into_iter().map(move |(name, constraint)| {
-                        (name, q_usable.clone() * selector.clone() * constraint)
+                        (
+                            name,
+                            q_usable.clone()
+                                * selector.clone()
+                                * state_selector.clone()
+                                * constraint,
+                        )
                     })
                 });
             }
@@ -1456,6 +1467,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorOutOfGasCall => {
                 assign_exec_step!(self.error_oog_call)
+            }
+            ExecutionState::ErrorOutOfGasPrecompile => {
+                assign_exec_step!(self.error_oog_precompile)
             }
             ExecutionState::ErrorOutOfGasDynamicMemoryExpansion => {
                 assign_exec_step!(self.error_oog_dynamic_memory_gadget)

@@ -144,15 +144,15 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
-        let (constraints, stored_expressions, _) = cb.build();
+        let (state_selector, constraints, stored_expressions, _) = cb.build();
 
         if !constraints.step.is_empty() {
             let step_constraints = constraints.step;
             meta.create_gate("MathGadgetTestContainer", |meta| {
                 let q_usable = meta.query_selector(q_usable);
-                step_constraints
-                    .into_iter()
-                    .map(move |(name, constraint)| (name, q_usable.clone() * constraint))
+                step_constraints.into_iter().map(move |(name, constraint)| {
+                    (name, q_usable.clone() * state_selector.clone() * constraint)
+                })
             });
         }
 
@@ -240,6 +240,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                                         | FixedTableTag::Range32
                                         | FixedTableTag::Range64
                                         | FixedTableTag::Range128
+                                        | FixedTableTag::Range192
                                         | FixedTableTag::Range256
                                         | FixedTableTag::Range512
                                         | FixedTableTag::Range1024

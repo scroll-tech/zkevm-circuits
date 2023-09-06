@@ -9,8 +9,8 @@ use halo2_base::{
 };
 use halo2_ecc::{
     bigint::{big_less_than, CRTInteger},
-    ecc::{ec_add_unequal, fixed_base, scalar_multiply, EcPoint},
-    fields::{fp::FpConfig, FieldChip, PrimeField},
+    ecc::{ec_add_unequal, ec_sub_unequal, fixed_base, scalar_multiply, EcPoint, EccChip},
+    fields::{fp::FpConfig, FieldChip, PrimeField, Selectable},
 };
 
 // CF is the coordinate field of GA
@@ -35,6 +35,7 @@ pub(crate) fn ecdsa_verify_no_pubkey_check<F: PrimeField, CF: PrimeField, SF: Pr
 where
     GA: CurveAffineExt<Base = CF, ScalarExt = SF>,
 {
+    let ecc_chip = EccChip::<F, FpConfig<F, CF>>::construct(base_chip.clone());
     let scalar_chip = FpConfig::<F, SF>::construct(
         base_chip.range.clone(),
         base_chip.limb_bits,
@@ -50,18 +51,29 @@ where
     // compute u1 = m s^{-1} mod n and u2 = r s^{-1} mod n
     let u1 = scalar_chip.divide(ctx, msghash, s);
     let u2 = scalar_chip.divide(ctx, r, s);
+    let u1_is_one = scalar_field_element_is_one(&scalar_chip, ctx, &u1);
 
-    //let r_crt = scalar_chip.to_crt(ctx, r)?;
+    let neg_one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(-SF::one()));
+    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::one()));
 
-    // compute u1 * G and u2 * pubkey
-    let u1_mul = fixed_base::scalar_multiply::<F, _, _>(
+    // u3 = 1 if u1 == 1
+    // u3 = -1 if u1 != 1
+    // this ensures u1 + u3 != 0
+    let u3 = scalar_chip.select(ctx, &neg_one, &one, &u1_is_one);
+
+    let u1_plus_u3 = scalar_chip.add_no_carry(ctx, &u1, &u3);
+    let u1_plus_u3 = scalar_chip.carry_mod(ctx, &u1_plus_u3);
+
+    // compute (u1+u3) * G
+    let u1u3_mul = fixed_base::scalar_multiply::<F, _, _>(
         base_chip,
         ctx,
         &GA::generator(),
-        &u1.truncation.limbs,
+        &u1_plus_u3.truncation.limbs,
         base_chip.limb_bits,
         fixed_window_bits,
     );
+    // compute u2 * pubkey
     let u2_mul = scalar_multiply::<F, _>(
         base_chip,
         ctx,
@@ -70,21 +82,68 @@ where
         base_chip.limb_bits,
         var_window_bits,
     );
+    // compute u3*G this is directly assigned for G so no scalar_multiply is required
+    let u3_mul = {
+        let generator = GA::generator();
+        let neg_generator = -generator;
+        let generator = ecc_chip.assign_constant_point(ctx, generator);
+        let neg_generator = ecc_chip.assign_constant_point(ctx, neg_generator);
+        ecc_chip.select(ctx, &neg_generator, &generator, &u1_is_one)
+    };
 
-    // check u1 * G and u2 * pubkey are not negatives and not equal
+    // compute u2 * pubkey + u3 * G
+    base_chip.enforce_less_than_p(ctx, u2_mul.x());
+    base_chip.enforce_less_than_p(ctx, u3_mul.x());
+    let u2_pk_u3_g = ec_add_unequal(base_chip, ctx, &u2_mul, &u3_mul, false);
+
+    // check
+    // - (u1 + u3) * G
+    // - u2 * pubkey + u3 * G
+    // are not equal
+    //
     //     TODO: Technically they could be equal for a valid signature, but this happens with
     // vanishing probability           for an ECDSA signature constructed in a standard way
     // coordinates of u1_mul and u2_mul are in proper bigint form, and lie in but are not
     // constrained to [0, n) we therefore need hard inequality here
-    let u1_u2_x_eq = base_chip.is_equal(ctx, &u1_mul.x, &u2_mul.x);
-    let u1_u2_not_neg = base_chip.range.gate().not(ctx, Existing(u1_u2_x_eq));
+    let u1_u2_x_eq = ecc_chip.is_equal(ctx, &u1u3_mul, &u2_pk_u3_g);
+    let u1_u2_not_eq = base_chip.range.gate().not(ctx, Existing(u1_u2_x_eq));
+
+    // check u1*G and u2*pubkey are not negate of each other
+    // that means the sum of
+    // - (u1 + u3) * G
+    // - u2 * pubkey + u3 * G
+    // should not equal to 2u3 * G
+    let u1_u2_not_neg = {
+        // again we get 2u3*G from constant to avoid scalar_multiply
+        let two_generator = GA::generator();
+        let neg_two_generator = -two_generator;
+        let two_generator = ecc_chip.assign_constant_point(ctx, two_generator);
+        let neg_two_generator = ecc_chip.assign_constant_point(ctx, neg_two_generator);
+        let two_u3_g = ecc_chip.select(ctx, &neg_two_generator, &two_generator, &u1_is_one);
+
+        base_chip.enforce_less_than_p(ctx, u1u3_mul.x());
+        base_chip.enforce_less_than_p(ctx, u2_pk_u3_g.x());
+        // safe: we have already checked (u1 + u3) * G != u2 * pubkey + u3 * G
+        let sum = ec_add_unequal(base_chip, ctx, &u1u3_mul, &u2_pk_u3_g, false);
+
+        let is_equal = ecc_chip.is_equal(ctx, &sum, &two_u3_g);
+        base_chip.range.gate().not(ctx, Existing(is_equal))
+    };
 
     // compute (x1, y1) = u1 * G + u2 * pubkey and check (r mod n) == x1 as integers
+    // which is basically u1u3_mul + u2_mul - u3_mul
     // WARNING: For optimization reasons, does not reduce x1 mod n, which is
     //          invalid unless p is very close to n in size.
-    base_chip.enforce_less_than_p(ctx, u1_mul.x());
-    base_chip.enforce_less_than_p(ctx, u2_mul.x());
-    let sum = ec_add_unequal(base_chip, ctx, &u1_mul, &u2_mul, false);
+    //
+    // WARNING: this may be trigger errors if
+    //  u1u3_mul == u2_mul
+    // if r is sampled truly from random then this will not happen
+    // to completely ensure the correctness we may need to sample u3 from random, but it is quite
+    // costly.
+    let sum = ec_add_unequal(base_chip, ctx, &u1u3_mul, &u2_mul, false);
+    // safe: we have already checked u1G + u2 pk != 0
+    // so u1G + u3G + u2pk != u3G
+    let sum = ec_sub_unequal(base_chip, ctx, &sum, &u3_mul, false);
     let equal_check = base_chip.is_equal(ctx, &sum.x, r);
 
     // TODO: maybe the big_less_than is optional?
@@ -121,10 +180,25 @@ where
     let res4 = base_chip
         .range
         .gate()
-        .and(ctx, Existing(res3), Existing(u1_u2_not_neg));
+        .and(ctx, Existing(res3), Existing(u1_u2_not_eq));
     let res5 = base_chip
         .range
         .gate()
-        .and(ctx, Existing(res4), Existing(equal_check));
-    (res5, sum.y)
+        .and(ctx, Existing(res4), Existing(u1_u2_not_neg));
+    let res6 = base_chip
+        .range
+        .gate()
+        .and(ctx, Existing(res5), Existing(equal_check));
+    (res6, sum.y)
+}
+
+fn scalar_field_element_is_one<F: PrimeField, SF: PrimeField>(
+    scalar_chip: &FpConfig<F, SF>,
+    ctx: &mut Context<F>,
+    a: &CRTInteger<F>,
+) -> AssignedValue<F> {
+    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::one()));
+    let diff = scalar_chip.sub_no_carry(ctx, a, &one);
+    let diff = scalar_chip.carry_mod(ctx, &diff);
+    scalar_chip.is_zero(ctx, &diff)
 }

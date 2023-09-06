@@ -12,14 +12,21 @@ use compiler::Compiler;
 use config::Config;
 use log::info;
 use statetest::{
-    geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
-    StateTest,
+    load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results, StateTest,
 };
-use std::{collections::HashSet, path::PathBuf, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+    fs::File,
+    io::{BufRead, BufReader, Write},
+    path::PathBuf,
+    time::SystemTime,
+};
 use strum::EnumString;
 
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";
+const TEST_IDS_FILE: &str = "./test_ids.txt";
 
 #[macro_use]
 extern crate prettytable;
@@ -71,16 +78,58 @@ struct Args {
     #[clap(long)]
     circuits: Option<Circuits>,
 
+    /// Specify a file including test IDs to run these tests
+    #[clap(long)]
+    test_ids: Option<String>,
+
     /// Verbose
     #[clap(short, long)]
     v: bool,
 }
 
+fn read_test_ids(file_path: &str) -> Result<Vec<String>> {
+    log::info!("read_test_ids from {}", file_path);
+    let mut test_ids = vec![];
+    let file = File::open(file_path)?;
+    for line in BufReader::new(file).lines() {
+        test_ids.push(line?.trim().to_string());
+    }
+
+    let total = test_ids.len();
+    let start = env::var("TESTOOL_IDS_START")
+        .ok()
+        .and_then(|val| val.parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(total);
+    let len = env::var("TESTOOL_IDS_LEN")
+        .ok()
+        .and_then(|val| val.parse::<usize>().ok())
+        .unwrap_or(total);
+    log::info!("ENV TESTOOL_IDS_START = {start}, TESTOOL_IDS_LEN = {len}");
+
+    let end = total.min(start + len);
+
+    let result = test_ids[start..end].to_vec();
+    log::info!("read_test_ids total size {}", result.len());
+    Ok(result)
+}
+
+fn write_test_ids(test_ids: &[String]) -> Result<()> {
+    let mut fd = File::create(TEST_IDS_FILE)?;
+    fd.write_all(test_ids.join("\n").as_bytes())?;
+
+    Ok(())
+}
+
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
-    println!("{}", &test);
-    let trace = geth_trace(test.clone())?;
-    crate::utils::print_trace(trace)?;
-    println!(
+    log::info!("run single test {}", &test);
+    let circuits_config = CircuitsConfig {
+        verbose: true,
+        super_circuit: circuits_config.super_circuit,
+    };
+    //let trace = geth_trace(test.clone())?;
+    //crate::utils::print_trace(trace)?;
+    log::info!(
         "result={:?}",
         run_test(test, TestSuite::default(), circuits_config)
     );
@@ -112,12 +161,13 @@ fn go() -> Result<()> {
     log::info!("Parsing and compliling tests...");
     let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
     let suite = config.suite(&args.suite)?.clone();
-    let state_tests = load_statetests_suite(&suite.path, config, compiler)?;
+    let mut state_tests = load_statetests_suite(&suite.path, config, compiler)?;
     log::info!("{} tests collected in {}", state_tests.len(), suite.path);
 
     if args.ls {
         let mut list: Vec<_> = state_tests.into_iter().map(|t| t.id).collect();
         list.sort();
+        write_test_ids(list.as_slice())?;
         for test in list {
             info!("{}", test);
         }
@@ -140,6 +190,27 @@ fn go() -> Result<()> {
         run_single_test(state_tests_filtered.remove(0).clone(), circuits_config)?;
         return Ok(());
     };
+
+    // It is better to sue deterministic testing order.
+    // If there is a list, follow list.
+    // If not, order by test id.
+    if let Some(test_ids_path) = args.test_ids {
+        let test_ids = read_test_ids(&test_ids_path)?;
+        let id_to_test: HashMap<_, _> = state_tests
+            .iter()
+            .map(|t| (t.id.clone(), t.clone()))
+            .collect();
+        state_tests.clear();
+        state_tests.extend(
+            test_ids
+                .into_iter()
+                .filter_map(|test_id| id_to_test.get(&test_id).cloned()),
+        );
+    } else {
+        // sorting with reversed id string to prevent similar tests go together, so that
+        // computing heavy tests will not trigger OOM.
+        state_tests.sort_by_key(|t| t.id.chars().rev().collect::<String>());
+    }
 
     if args.report {
         let git_hash = utils::current_git_commit()?;
@@ -185,10 +256,9 @@ fn go() -> Result<()> {
         let mut previous_results = if let Some(cache_filename) = cache_file_name {
             let whitelist_levels = HashSet::<ResultLevel>::from_iter(args.levels);
 
-            let mut previous_results = Results::from_file(cache_filename).unwrap_or_else(|_| {
-                log::warn!("malformed cache file, won't use cache");
-                Results::default()
-            });
+            let mut previous_results = Results::from_file(cache_filename).unwrap();
+
+            info!("loaded {} test results", previous_results.tests.len());
             if !whitelist_levels.is_empty() {
                 // if whitelist is provided, test not in whitelist will be skip
                 previous_results

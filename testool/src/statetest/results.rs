@@ -175,7 +175,20 @@ impl Report {
                 if OUTPUT_ALL_RESULT_LEVELS.contains(&result.level) {
                     Some((id.clone(), result.clone()))
                 } else {
-                    None
+                    // ignore or success
+                    if result.level == ResultLevel::Success {
+                        None
+                    } else {
+                        // ignore
+                        let big_test = result.details.starts_with("SkipTestMaxGasLimit")
+                            || result.details.starts_with("SkipTestMaxSteps");
+                        if result.details.starts_with("SkipTestSelfDestruct") || big_test {
+                            None
+                        } else {
+                            // eg: SkipTestBalanceOverflow
+                            Some((id.clone(), result.clone()))
+                        }
+                    }
                 }
             })
             .collect();
@@ -209,6 +222,7 @@ pub struct Results {
 
 impl Results {
     pub fn from_file(path: PathBuf) -> Result<Self> {
+        log::info!("loading results from {}", path.display());
         let mut file = std::fs::File::open(&path)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
@@ -393,11 +407,11 @@ impl Results {
                 .create(true)
                 .append(true)
                 .open(path)?;
-            for (test_id, result) in &self.tests {
+            for result in self.tests.values() {
                 let entry = format!(
                     "{:?};{};{};{}\n",
                     result.level,
-                    test_id,
+                    result.test_id,
                     urlencoding::encode(&result.details),
                     result.path,
                 );

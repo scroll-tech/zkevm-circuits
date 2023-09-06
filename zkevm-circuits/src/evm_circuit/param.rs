@@ -69,7 +69,7 @@ pub const TX_TABLE_LOOKUPS: usize = 4;
 pub const RW_TABLE_LOOKUPS: usize = 8;
 
 /// Bytecode Table lookups done in EVMCircuit
-pub const BYTECODE_TABLE_LOOKUPS: usize = 4;
+pub const BYTECODE_TABLE_LOOKUPS: usize = 8;
 
 /// Block Table lookups done in EVMCircuit
 pub const BLOCK_TABLE_LOOKUPS: usize = 1;
@@ -100,6 +100,8 @@ pub(crate) const MAX_N_BYTES_INTEGER: usize = 31;
 
 // Number of bytes an EVM word has.
 pub(crate) const N_BYTES_WORD: usize = 32;
+
+pub(crate) const N_BYTES_EC_PAIR: usize = 192;
 
 // Number of bytes an u64 has.
 pub(crate) const N_BYTES_U64: usize = 8;

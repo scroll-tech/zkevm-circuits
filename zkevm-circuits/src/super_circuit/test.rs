@@ -1,19 +1,26 @@
+#![allow(unused_imports)]
 pub use super::*;
 use bus_mapping::{
-    circuit_input_builder::keccak_inputs,
+    circuit_input_builder::CircuitInputBuilder,
     evm::{OpcodeId, PrecompileCallArgs},
     precompile::PrecompileCalls,
 };
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
-use mock::{eth, TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
-use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
+#[cfg(not(feature = "scroll"))]
+use mock::MOCK_DIFFICULTY;
+#[cfg(feature = "scroll")]
+use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
+use mock::{eth, TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use std::{collections::HashMap, env::set_var};
+use std::env::set_var;
 
-use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
+use crate::witness::block_apply_mpt_state;
+#[cfg(feature = "scroll")]
+use eth_types::l2_types::BlockTrace;
+use eth_types::{address, bytecode, word, Bytecode, ToWord, Word};
 
 #[test]
 fn super_circuit_degree() {
@@ -24,13 +31,14 @@ fn super_circuit_degree() {
     assert!(cs.degree() <= 9);
 }
 
+#[cfg(feature = "scroll")]
 fn test_super_circuit<
     const MAX_TXS: usize,
     const MAX_CALLDATA: usize,
     const MAX_INNER_BLOCKS: usize,
     const MOCK_RANDOMNESS: u64,
 >(
-    geth_data: GethData,
+    l2_trace: BlockTrace,
     circuits_params: CircuitsParams,
 ) {
     set_var("COINBASE", "0x0000000000000000000000000000000000000000");
@@ -39,22 +47,17 @@ fn test_super_circuit<
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
-    let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
-    let mut builder = block_data.new_circuit_input_builder();
+    let mut builder =
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, &l2_trace, false, false)
+            .expect("could not handle block tx");
+
     builder
-        .handle_block(&block_data.eth_block, &block_data.geth_traces)
-        .expect("could not handle block tx");
+        .finalize_building()
+        .expect("could not finalize building block");
+
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
     block.randomness = Fr::from(MOCK_RANDOMNESS);
-
-    // Mock fill state roots
-    assert!(*HASH_SCHEME_DONE);
-    block.mpt_updates.mock_fill_state_roots();
-    block.prev_state_root = block.mpt_updates.old_root();
-
-    // Recompute keccak inputs for updated prev_state_root.
-    builder.block.prev_state_root = block.mpt_updates.old_root();
-    block.keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
+    block_apply_mpt_state(&mut block, &builder.mpt_init_state);
 
     let active_row_num =SuperCircuit::<
         Fr,
@@ -100,7 +103,8 @@ fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
     code
 }
 
-fn block_1tx_deploy() -> GethData {
+#[cfg(feature = "scroll")]
+fn block_1tx_deploy() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     let chain_id = *MOCK_CHAIN_ID;
@@ -108,68 +112,67 @@ fn block_1tx_deploy() -> GethData {
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let addr_a = wallet_a.address();
 
-    let mut wallets = HashMap::new();
-    wallets.insert(wallet_a.address(), wallet_a);
-
     let tx_input = callee_bytecode(true, 300, 20).code();
-    let mut block: GethData = TestContext::<2, 1>::new(
+    TestContext::<2, 1>::new(
         Some(vec![Word::zero()]),
         |accs| {
             accs[0].address(addr_a).balance(eth(10));
         },
-        |mut txs, accs| {
-            txs[0].from(accs[0].address).input(tx_input.into());
+        |mut txs, _accs| {
+            txs[0].from(wallet_a).input(tx_input.into());
         },
         |block, _tx| block.number(0xcafeu64),
     )
     .unwrap()
-    .into();
-    block.sign(&wallets);
-    block
+    .l2_trace()
+    .clone()
+}
+
+fn block_1tx_ctx() -> TestContext<2, 1> {
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+    let chain_id = *MOCK_CHAIN_ID;
+
+    let bytecode = bytecode! {
+        GAS
+        STOP
+    };
+
+    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+
+    let addr_a = wallet_a.address();
+    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+
+    TestContext::new(
+        Some(vec![Word::zero()]),
+        |accs| {
+            accs[0]
+                .address(addr_b)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode);
+            accs[1].address(addr_a).balance(Word::from(1u64 << 20));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(wallet_a)
+                .to(accs[0].address)
+                .gas(Word::from(1_000_000u64));
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+}
+
+#[cfg(feature = "scroll")]
+fn block_1tx_trace() -> BlockTrace {
+    block_1tx_ctx().l2_trace().clone()
 }
 
 pub(crate) fn block_1tx() -> GethData {
-    let mut rng = ChaCha20Rng::seed_from_u64(2);
-
-    let chain_id = *MOCK_CHAIN_ID;
-
-    let bytecode = bytecode! {
-        GAS
-        STOP
-    };
-
-    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-
-    let addr_a = wallet_a.address();
-    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
-
-    let mut wallets = HashMap::new();
-    wallets.insert(wallet_a.address(), wallet_a);
-
-    let mut block: GethData = TestContext::<2, 1>::new(
-        Some(vec![Word::zero()]),
-        |accs| {
-            accs[0]
-                .address(addr_b)
-                .balance(Word::from(1u64 << 20))
-                .code(bytecode);
-            accs[1].address(addr_a).balance(Word::from(1u64 << 20));
-        },
-        |mut txs, accs| {
-            txs[0]
-                .from(accs[1].address)
-                .to(accs[0].address)
-                .gas(Word::from(1_000_000u64));
-        },
-        |block, _tx| block.number(0xcafeu64),
-    )
-    .unwrap()
-    .into();
-    block.sign(&wallets);
-    block
+    block_1tx_ctx().into()
 }
 
-pub(crate) fn block_2tx() -> GethData {
+fn block_2tx_ctx() -> TestContext<2, 2> {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     let chain_id = *MOCK_CHAIN_ID;
@@ -184,10 +187,7 @@ pub(crate) fn block_2tx() -> GethData {
     let addr_a = wallet_a.address();
     let addr_b = address!("0x000000000000000000000000000000000000BBBB");
 
-    let mut wallets = HashMap::new();
-    wallets.insert(wallet_a.address(), wallet_a);
-
-    let mut block: GethData = TestContext::<2, 2>::new(
+    TestContext::new(
         Some(vec![Word::zero()]),
         |accs| {
             accs[0]
@@ -198,23 +198,30 @@ pub(crate) fn block_2tx() -> GethData {
         },
         |mut txs, accs| {
             txs[0]
-                .from(accs[1].address)
+                .from(wallet_a.clone())
                 .to(accs[0].address)
                 .gas(Word::from(1_000_000u64));
             txs[1]
-                .from(accs[1].address)
+                .from(wallet_a.clone())
                 .to(accs[0].address)
                 .gas(Word::from(1_000_000u64));
         },
         |block, _tx| block.number(0xcafeu64),
     )
     .unwrap()
-    .into();
-    block.sign(&wallets);
-    block
 }
 
-pub(crate) fn block_ec_ops() -> GethData {
+#[cfg(feature = "scroll")]
+fn block_2tx_trace() -> BlockTrace {
+    block_2tx_ctx().l2_trace().clone()
+}
+
+pub(crate) fn block_2tx() -> GethData {
+    block_2tx_ctx().into()
+}
+
+#[cfg(feature = "scroll")]
+fn block_ec_ops() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     let chain_id = *MOCK_CHAIN_ID;
@@ -335,6 +342,40 @@ pub(crate) fn block_ec_ops() -> GethData {
         ..Default::default()
     }
     .with_call_op(OpcodeId::DELEGATECALL);
+    let bytecode_modexp_256 = PrecompileCallArgs {
+        name: "modexp length in u256",
+        setup_code: bytecode! {
+            // Base size
+            PUSH1(0x20)
+            PUSH1(0x00)
+            MSTORE
+            // Esize
+            PUSH1(0x20)
+            PUSH1(0x20)
+            MSTORE
+            // Msize
+            PUSH1(0x20)
+            PUSH1(0x40)
+            MSTORE
+            // B, E and M
+            PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000008"))
+            PUSH1(0x60)
+            MSTORE
+            PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000009"))
+            PUSH1(0x80)
+            MSTORE
+            PUSH32(word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"))
+            PUSH1(0xA0)
+            MSTORE
+        },
+        call_data_offset: 0x0.into(),
+        call_data_length: 0xc0.into(),
+        ret_offset: 0xe0.into(),
+        ret_size: 0x01.into(),
+        address: PrecompileCalls::Modexp.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::STATICCALL);
 
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
 
@@ -342,15 +383,13 @@ pub(crate) fn block_ec_ops() -> GethData {
     let addr_b = address!("0x000000000000000000000000000000000000BBBB");
     let addr_c = address!("0x000000000000000000000000000000000000CCCC");
     let addr_d = address!("0x000000000000000000000000000000000000DDDD");
+    let addr_e = address!("0x000000000000000000000000000000000000EEEE");
 
-    let mut wallets = HashMap::new();
-    wallets.insert(wallet_a.address(), wallet_a);
-
-    // 4 accounts and 3 txs.
-    let mut block: GethData = TestContext::<4, 3>::new(
+    // 5 accounts and 4 txs.
+    TestContext::<5, 4>::new(
         Some(vec![Word::zero()]),
         |accs| {
-            accs[0].address(addr_a).balance(Word::from(1u64 << 20));
+            accs[0].address(addr_a).balance(Word::from(1u64 << 24));
             accs[1]
                 .address(addr_b)
                 .balance(Word::from(1u64 << 20))
@@ -363,27 +402,34 @@ pub(crate) fn block_ec_ops() -> GethData {
                 .address(addr_d)
                 .balance(Word::from(1u64 << 20))
                 .code(bytecode_ec_pairing);
+            accs[4]
+                .address(addr_e)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_modexp_256);
         },
         |mut txs, accs| {
             txs[0]
-                .from(accs[0].address)
+                .from(wallet_a.clone())
                 .to(accs[1].address)
                 .gas(Word::from(1_000_000u64));
             txs[1]
-                .from(accs[0].address)
+                .from(wallet_a.clone())
                 .to(accs[2].address)
                 .gas(Word::from(1_000_000u64));
             txs[2]
-                .from(accs[0].address)
+                .from(wallet_a.clone())
                 .to(accs[3].address)
+                .gas(Word::from(1_000_000u64));
+            txs[3]
+                .from(wallet_a.clone())
+                .to(accs[4].address)
                 .gas(Word::from(1_000_000u64));
         },
         |block, _tx| block.number(0xcafeu64),
     )
     .unwrap()
-    .into();
-    block.sign(&wallets);
-    block
+    .l2_trace()
+    .clone()
 }
 
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
@@ -394,7 +440,7 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_1tx_1max_tx() {
-    let block = block_1tx();
+    let block = block_1tx_trace();
     const MAX_TXS: usize = 1;
     const MAX_CALLDATA: usize = 256;
     const MAX_INNER_BLOCKS: usize = 1;
@@ -406,6 +452,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
         max_exp_steps: 256,
         max_bytecode: 512,
         max_mpt_rows: 512,
+        max_poseidon_rows: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
@@ -434,6 +481,7 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
         max_mpt_rows: 1024,
+        max_poseidon_rows: 1024,
         max_bytecode: 512,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
@@ -452,7 +500,7 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_1tx_2max_tx() {
-    let block = block_1tx();
+    let block = block_1tx_trace();
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 256;
     const MAX_INNER_BLOCKS: usize = 1;
@@ -464,6 +512,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
         max_exp_steps: 256,
         max_bytecode: 512,
         max_mpt_rows: 512,
+        max_poseidon_rows: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
@@ -480,7 +529,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_2tx_4max_tx() {
-    let block = block_2tx();
+    let block = block_2tx_trace();
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 320;
     const MAX_INNER_BLOCKS: usize = 1;
@@ -493,6 +542,7 @@ fn serial_test_super_circuit_2tx_4max_tx() {
         max_copy_rows: MAX_COPY_ROWS,
         max_bytecode: 512,
         max_mpt_rows: 512,
+        max_poseidon_rows: 512,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
@@ -510,7 +560,7 @@ fn serial_test_super_circuit_2tx_4max_tx() {
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_2tx_2max_tx() {
-    let block = block_2tx();
+    let block = block_2tx_trace();
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 256;
     const MAX_INNER_BLOCKS: usize = 1;
@@ -520,6 +570,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_rws: 256,
         max_copy_rows: 256,
         max_mpt_rows: 512,
+        max_poseidon_rows: 512,
         max_exp_steps: 256,
         max_bytecode: 512,
         max_evm_rows: 0,
@@ -534,15 +585,16 @@ fn serial_test_super_circuit_2tx_2max_tx() {
     );
 }
 
+#[ignore]
 #[cfg(feature = "scroll")]
 #[test]
-fn test_super_circuit_ec_ops_txs() {
+fn serial_test_super_circuit_ec_ops_txs() {
     let block = block_ec_ops();
-    const MAX_TXS: usize = 3;
+    const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 320;
     const MAX_INNER_BLOCKS: usize = 1;
     const MAX_RWS: usize = 1024;
-    const MAX_COPY_ROWS: usize = 2048;
+    const MAX_COPY_ROWS: usize = 16384; // precompile require many copies
     let circuits_params = CircuitsParams {
         max_txs: MAX_TXS,
         max_calldata: MAX_CALLDATA,
@@ -550,8 +602,11 @@ fn test_super_circuit_ec_ops_txs() {
         max_copy_rows: MAX_COPY_ROWS,
         max_bytecode: 4096,
         max_mpt_rows: 2048,
+        max_poseidon_rows: 2048,
         max_evm_rows: 0,
-        max_keccak_rows: 0,
+        // modexp ref this to decide its ability, we
+        // need at least one (~25000 rows)
+        max_keccak_rows: 40000,
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
         max_rlp_rows: 800,

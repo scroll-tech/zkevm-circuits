@@ -104,6 +104,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // computations
         let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
 
+        let num_lookup_advice = [calc_required_lookup_advices(MAX_NUM_SIG)];
+
         #[cfg(feature = "onephase")]
         log::info!("configuring ECDSA chip with single phase");
         #[cfg(not(feature = "onephase"))]
@@ -126,7 +128,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             meta,
             FpStrategy::Simple,
             &num_advice,
-            &[8],
+            &num_lookup_advice,
             1,
             LOG_TOTAL_NUM_ROWS - 1,
             88,
@@ -256,7 +258,11 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
-        let row_num = Self::min_num_rows();
+        let row_num = if block.circuits_params.max_vertical_circuit_rows == 0 {
+            Self::min_num_rows()
+        } else {
+            block.circuits_params.max_vertical_circuit_rows
+        };
 
         let ecdsa_verif_count = block
             .txs
@@ -334,6 +340,7 @@ impl<F: Field> SigCircuit<F> {
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s, v) = signature;
+        log::trace!("v         : {:?}", v);
         log::trace!("sig_r     : {:?}", sig_r);
         log::trace!("sig_s     : {:?}", sig_s);
         log::trace!("msg_hash  : {:?}", msg_hash);

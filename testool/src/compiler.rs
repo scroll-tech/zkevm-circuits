@@ -74,7 +74,7 @@ struct CompilerInput {
     sources: HashMap<String, Source>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 enum Language {
     Solidity,
@@ -85,14 +85,14 @@ enum Language {
 #[serde(rename_all = "camelCase")]
 struct CompilerSettings {
     optimizer: Optimizer,
+    evm_version: String,
     output_selection: HashMap<String, HashMap<String, Vec<String>>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct Optimizer {
     enabled: bool,
-    details: HashMap<String, bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -102,7 +102,7 @@ struct Source {
 }
 
 impl CompilerInput {
-    pub fn new_default(language: Language, src: &str) -> Self {
+    pub fn new_default(language: Language, src: &str, evm_version: Option<&str>) -> Self {
         let mut sources = HashMap::new();
         sources.insert(
             "stdin".to_string(),
@@ -112,34 +112,22 @@ impl CompilerInput {
         );
         CompilerInput {
             language,
-            settings: Default::default(),
+            settings: CompilerSettings::new_default(evm_version),
             sources,
         }
     }
 }
 
-impl Default for CompilerSettings {
-    fn default() -> Self {
+impl CompilerSettings {
+    fn new_default(evm_version: Option<&str>) -> Self {
         let mut output_selection = HashMap::new();
         let mut selection = HashMap::new();
         selection.insert("*".to_string(), vec!["evm.bytecode".to_string()]);
         output_selection.insert("*".to_string(), selection);
         CompilerSettings {
+            evm_version: evm_version.unwrap_or("berlin").to_string(),
             optimizer: Default::default(),
             output_selection,
-        }
-    }
-}
-
-impl Default for Optimizer {
-    fn default() -> Self {
-        let mut details = HashMap::new();
-        details.insert("peephole".to_string(), false);
-        details.insert("inliner".to_string(), false);
-        details.insert("jumpdestRemover".to_string(), false);
-        Optimizer {
-            enabled: false,
-            details,
         }
     }
 }
@@ -281,16 +269,16 @@ impl Compiler {
     }
 
     /// compiles YUL code
-    pub fn yul(&self, src: &str) -> Result<Bytes> {
-        self.solc(Language::Yul, src)
+    pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        self.solc(Language::Yul, src, evm_version)
     }
 
     /// compiles Solidity code
-    pub fn solidity(&self, src: &str) -> Result<Bytes> {
-        self.solc(Language::Solidity, src)
+    pub fn solidity(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        self.solc(Language::Solidity, src, evm_version)
     }
 
-    fn solc(&self, language: Language, src: &str) -> Result<Bytes> {
+    fn solc(&self, language: Language, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
         if let Some(bytecode) = self
             .cache
             .as_ref()
@@ -301,13 +289,17 @@ impl Compiler {
         if !self.compile {
             bail!("No way to compile {:?} for '{}'", language, src)
         }
-        let compiler_input = CompilerInput::new_default(language, src);
+        let compiler_input = CompilerInput::new_default(language, src, evm_version);
 
         let stdout = Self::exec(
             &["run", "-i", "--rm", "solc", "--standard-json", "-"],
             serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
-        let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)?;
+        let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)
+            .map_err(|e| {
+                println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{stdout}\n-----")
+            })
+            .unwrap();
         let bytecode = compilation_result
             .contracts
             .remove("stdin")

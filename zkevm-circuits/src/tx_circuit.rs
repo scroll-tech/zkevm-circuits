@@ -70,7 +70,7 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::util::Challenges;
+use crate::{util::Challenges, witness::rlp_fsm::get_rlp_len_tag_length};
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::Fixed;
@@ -1733,6 +1733,12 @@ impl<F: Field> TxCircuitConfig<F> {
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
         let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut tx_value_cells = vec![];
+        let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
+            // l1 msg does not have sign data
+            0
+        } else {
+            get_rlp_len_tag_length(&tx.rlp_unsigned)
+        };
 
         // fixed_rows of a tx
         let fixed_rows = vec![
@@ -1883,7 +1889,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 Some(RlpTableInputValue {
                     tag: Len,
                     is_none: false,
-                    be_bytes_len: tx.rlp_unsigned.len().tag_length(),
+                    be_bytes_len: rlp_sign_tag_length,
                     be_bytes_rlc: zero_rlc,
                 }),
                 Value::known(F::from(tx.rlp_unsigned.len() as u64)),
@@ -1904,7 +1910,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 Some(RlpTableInputValue {
                     tag: Len,
                     is_none: false,
-                    be_bytes_len: tx.rlp_signed.len().tag_length(),
+                    be_bytes_len: get_rlp_len_tag_length(&tx.rlp_signed),
                     be_bytes_rlc: zero_rlc,
                 }),
                 Value::known(F::from(tx.rlp_signed.len() as u64)),
@@ -2716,11 +2722,14 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        // Since each call data byte at least takes one row in RLP circuit.
+        // For L2 tx, each call data byte takes two row in RLP circuit.
+        assert!(block.circuits_params.max_calldata < block.circuits_params.max_rlp_rows);
+        let tx_usage = (block.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>()) as f32
+            / block.circuits_params.max_calldata as f32;
+
         (
-            Self::min_num_rows(
-                block.txs.len(),
-                block.txs.iter().map(|tx| tx.call_data.len()).sum(),
-            ),
+            (tx_usage * block.circuits_params.max_vertical_circuit_rows as f32).ceil() as usize,
             Self::min_num_rows(
                 block.circuits_params.max_txs,
                 block.circuits_params.max_calldata,
