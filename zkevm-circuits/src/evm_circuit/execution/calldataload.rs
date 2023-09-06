@@ -347,7 +347,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
                 if call.is_root {
                     // Fetch from tx call data.
-                    if src_addr + (i as u64) < call_data_length as u64 {
+                    if src_addr + (i as u64) < call_data_length {
                         *byte = tx.call_data[src_addr as usize + i];
                     }
                 } else {
