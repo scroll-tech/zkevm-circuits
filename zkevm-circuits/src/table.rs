@@ -678,6 +678,18 @@ impl RwTable {
         }
         Ok(())
     }
+
+    pub(crate) fn load_with_region_part<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        rws: &[Rw],
+        challenges: Value<F>,
+    ) -> Result<(), Error> {
+        for (offset, row) in rws.iter().enumerate() {
+            self.assign(region, offset, &row.table_assignment(challenges))?;
+        }
+        Ok(())
+    }
 }
 
 pub use mpt_zktrie::mpt_circuits::MPTProofType;
