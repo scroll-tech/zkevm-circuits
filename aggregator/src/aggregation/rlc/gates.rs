@@ -18,17 +18,18 @@ impl RlcConfig {
         region.assign_fixed(|| "const two", self.fixed, 2, || Value::known(Fr::from(2)))?;
         region.assign_fixed(|| "const five", self.fixed, 3, || Value::known(Fr::from(5)))?;
         region.assign_fixed(|| "const nine", self.fixed, 4, || Value::known(Fr::from(9)))?;
-        region.assign_fixed(|| "const 32", self.fixed, 5, || Value::known(Fr::from(32)))?;
+        region.assign_fixed(|| "const 13", self.fixed, 5, || Value::known(Fr::from(13)))?;
+        region.assign_fixed(|| "const 32", self.fixed, 6, || Value::known(Fr::from(32)))?;
         region.assign_fixed(
             || "const 136",
             self.fixed,
-            6,
+            7,
             || Value::known(Fr::from(136)),
         )?;
         region.assign_fixed(
             || "const 2^32",
             self.fixed,
-            7,
+            8,
             || Value::known(Fr::from(1 << 32)),
         )?;
         Ok(())
@@ -80,10 +81,19 @@ impl RlcConfig {
     }
 
     #[inline]
-    pub(crate) fn thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
+    pub(crate) fn thirteen_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
             row_offset: 5,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 6,
             column: self.fixed.into(),
         }
     }
@@ -91,7 +101,7 @@ impl RlcConfig {
     pub(crate) fn one_hundred_and_thirty_six_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
-            row_offset: 6,
+            row_offset: 7,
             column: self.fixed.into(),
         }
     }
@@ -100,7 +110,7 @@ impl RlcConfig {
     pub(crate) fn two_to_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
-            row_offset: 7,
+            row_offset: 8,
             column: self.fixed.into(),
         }
     }
@@ -439,7 +449,7 @@ impl RlcConfig {
                 &input.value(),
             )
             .as_str(),
-        );
+        )?;
 
         region.constrain_equal(acc.cell(), input.cell())?;
 

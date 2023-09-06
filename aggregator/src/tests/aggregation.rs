@@ -24,6 +24,23 @@ fn test_aggregation_circuit() {
     mock_prover.assert_satisfied_par();
 }
 
+#[ignore = "it takes too much time"]
+#[test]
+fn test_aggregation_circuit_all_possible_num_snarks() {
+    env_logger::init();
+
+    let k = 20;
+
+    for i in 1..=MAX_AGG_SNARKS {
+        println!("{i} real chunks and {} padded chunks", MAX_AGG_SNARKS - i);
+        // This set up requires one round of keccak for chunk's data hash
+        let circuit = build_new_aggregation_circuit(i);
+        let instance = circuit.instances();
+        let mock_prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+        mock_prover.assert_satisfied_par();
+    }
+}
+
 /// - Test aggregation proof generation and verification.
 /// - Test a same pk can be used for various number of chunk proofs.
 #[ignore = "it takes too much time"]
