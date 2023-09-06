@@ -90,7 +90,7 @@ pub fn run_statetests_suite(
 
     // for each test
     let test_count = tcs.len();
-    tcs.into_par_iter().for_each(|ref tc| {
+    let run_state_test = |tc: &StateTest| {
         let (test_id, path) = (tc.id.clone(), tc.path.clone());
         if !suite.allowed(&test_id) {
             results
@@ -111,7 +111,7 @@ pub fn run_statetests_suite(
         log::debug!(
             target : "testool",
             "🐕 running test (done {}/{}) {}#{}...",
-            1 + results.read().unwrap().tests.len(),
+            results.read().unwrap().tests.len(),
             test_count,
             test_id,
             path,
@@ -182,7 +182,12 @@ pub fn run_statetests_suite(
                 path,
             })
             .unwrap();
-    });
+    };
 
+    if circuits_config.super_circuit {
+        tcs.into_iter().for_each(|ref tc| run_state_test(tc));
+    } else {
+        tcs.into_par_iter().for_each(|ref tc| run_state_test(tc));
+    }
     Ok(())
 }

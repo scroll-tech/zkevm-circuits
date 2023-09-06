@@ -167,10 +167,12 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let exp_events = block.get_big_modexp();
-        let real_len = (exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS).max(4096);
+        let real_len = exp_events.len() * MODEXPCONFIG_EACH_CHIP_ROWS;
         (
             real_len,
-            real_len.max(block.circuits_params.max_keccak_rows),
+            real_len
+                .max(block.circuits_params.max_keccak_rows)
+                .max(4096),
         )
     }
 

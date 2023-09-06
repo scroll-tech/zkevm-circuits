@@ -10,25 +10,16 @@ fn main() {
     // Build
     let mut build = gobuild::Build::new();
     let target_files = if cfg!(feature = "scroll") {
-        vec![
-            "./l2geth/asm.go",
-            "./l2geth/trace.go",
-            "./l2geth/util.go",
-            "./l2geth/lib.go",
-        ]
+        vec!["./l2geth/trace.go", "./l2geth/lib.go"]
     } else {
-        vec!["./lib/lib.go"]
+        vec!["./l1geth/trace.go", "./l1geth/lib.go"]
     };
-
-    // Replace to a custom go-ethereum for scroll.
-    #[cfg(feature = "scroll")]
-    build.modfile("./l2geth/go.mod");
 
     if let Err(e) = build.files(target_files).try_compile(lib_name) {
         // The error type is private so have to check the error string
         if format!("{e}").starts_with("Failed to find tool.") {
             fail(
-                " Failed to find Go. Please install Go 1.16 or later \
+                " Failed to find Go. Please install Go 1.18 or later \
                 following the instructions at https://golang.org/doc/install.
                 On linux it is also likely available as a package."
                     .to_string(),
@@ -41,19 +32,17 @@ fn main() {
     // Files the lib depends on that should recompile the lib
     let dep_files = if cfg!(feature = "scroll") {
         vec![
-            "./l2geth/asm.go",
             "./l2geth/trace.go",
-            "./l2geth/util.go",
             "./l2geth/lib.go",
             "./l2geth/go.mod",
             "./l2geth/go.sum",
         ]
     } else {
         vec![
-            "./gethutil/asm.go",
-            "./gethutil/trace.go",
-            "./gethutil/util.go",
-            "./go.mod",
+            "./l1geth/trace.go",
+            "./l1geth/lib.go",
+            "./l1geth/go.mod",
+            "./l1geth/go.sum",
         ]
     };
 

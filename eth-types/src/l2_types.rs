@@ -196,6 +196,7 @@ impl From<&ExecutionResult> for GethExecTrace {
             failed: e.failed,
             return_value: e.return_value.clone(),
             struct_logs,
+            account_after: e.account_after.clone(),
         }
     }
 }
@@ -267,7 +268,7 @@ impl ExtraData {
 }
 
 /// account wrapper for account status
-#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
 #[doc(hidden)]
 pub struct AccountProofWrapper {
     pub address: Option<Address>,
@@ -281,7 +282,7 @@ pub struct AccountProofWrapper {
 }
 
 /// storage wrapper for storage status
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[doc(hidden)]
 pub struct StorageProofWrapper {
     pub key: Option<U256>,

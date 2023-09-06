@@ -104,6 +104,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         // computations
         let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
 
+        let num_lookup_advice = [calc_required_lookup_advices(MAX_NUM_SIG)];
+
         #[cfg(feature = "onephase")]
         log::info!("configuring ECDSA chip with single phase");
         #[cfg(not(feature = "onephase"))]
@@ -126,7 +128,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             meta,
             FpStrategy::Simple,
             &num_advice,
-            &[8],
+            &num_lookup_advice,
             1,
             LOG_TOTAL_NUM_ROWS - 1,
             88,
@@ -356,8 +358,8 @@ impl<F: Field> SigCircuit<F> {
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
         let msg_hash =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*msg_hash)));
-        log::trace!("integer_r : {:?}", integer_r);
-        log::trace!("integer_s : {:?}", integer_s);
+        //log::trace!("integer_r : {:?}", integer_r);
+        //log::trace!("integer_s : {:?}", integer_s);
 
         // returns the verification result of ecdsa signature
         //
@@ -422,7 +424,7 @@ impl<F: Field> SigCircuit<F> {
         ecc_chip
             .field_chip
             .range
-            .range_check(ctx, &assigned_y_tmp, 88);
+            .range_check(ctx, &assigned_y_tmp, 87);
 
         Ok(AssignedECDSA {
             pk: pk_assigned,

@@ -71,7 +71,8 @@ pub struct MptUpdates {
     /// TODO: is here the best place for this?
     /// Withdraw proof after this block
     pub withdraw_proof: WithdrawProof,
-    pub(crate) smt_traces: Vec<SMTTrace>,
+    /// The detailed mpt witness
+    pub smt_traces: Vec<SMTTrace>,
     pub(crate) proof_types: Vec<MPTProofType>,
 }
 

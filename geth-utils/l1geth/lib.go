@@ -7,21 +7,21 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
-	"main/gethutil"
 	"unsafe"
 )
 
 // TODO: Add proper error handling.  For example, return an int, where 0 means
 // ok, and !=0 means error.
+//
 //export CreateTrace
 func CreateTrace(configStr *C.char) *C.char {
-	var config gethutil.TraceConfig
+	var config TraceConfig
 	err := json.Unmarshal([]byte(C.GoString(configStr)), &config)
 	if err != nil {
 		return C.CString(fmt.Sprintf("Failed to unmarshal config, err: %v", err))
 	}
 
-	executionResults, err := gethutil.Trace(config)
+	executionResults, err := Trace(config)
 	if err != nil {
 		return C.CString(fmt.Sprintf("Failed to run Trace, err: %v", err))
 	}

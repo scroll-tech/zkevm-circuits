@@ -94,72 +94,87 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let mut path_hash_counter: std::collections::HashSet<[u8; 32]> = Default::default();
-        let mut account_counter: std::collections::HashSet<[u8; 32]> = Default::default();
-        let mut storage_counter: std::collections::HashSet<[u8; 32]> = Default::default();
-        let mut key_counter: std::collections::HashSet<[u8; 32]> = Default::default();
+        let mut path_hash_counter: std::collections::HashMap<[u8; 32], usize> = Default::default();
+        let mut account_counter: std::collections::HashMap<[u8; 32], usize> = Default::default();
+        let mut storage_counter: std::collections::HashMap<[u8; 32], usize> = Default::default();
+        let mut key_counter: std::collections::HashMap<[u8; 32], usize> = Default::default();
+        let insert = |map: &mut std::collections::HashMap<[u8; 32], usize>, k| {
+            *map.entry(k).or_insert(0) += 1;
+        };
         for smt_trace in &block.mpt_updates.smt_traces {
             // for a smt trace there are mutiple sources for hashes:
             // + account path, each layer (include the root) cost 1 hashes
-            path_hash_counter.insert(smt_trace.account_path[0].root.0);
+            insert(&mut path_hash_counter, smt_trace.account_path[0].root.0);
             for node in &smt_trace.account_path[0].path {
-                path_hash_counter.insert(node.value.0);
+                insert(&mut path_hash_counter, node.value.0);
             }
             for node in &smt_trace.account_path[1].path {
-                path_hash_counter.insert(node.value.0);
+                insert(&mut path_hash_counter, node.value.0);
             }
 
             // + the hashes required for leaf is dynamic and depended
             // on the type of mpt updates, here we suppose to count
             // all of the 4 hashes once
             if let Some(node) = smt_trace.account_path[0].leaf {
-                account_counter.insert(node.value.0);
+                insert(&mut account_counter, node.value.0);
             }
             if let Some(node) = smt_trace.account_path[1].leaf {
-                account_counter.insert(node.value.0);
+                insert(&mut account_counter, node.value.0);
             }
 
             // + and the address key
-            key_counter.insert(smt_trace.account_key.0);
+            insert(&mut key_counter, smt_trace.account_key.0);
 
             // + state path, like account path
             if let Some(path) = &smt_trace.state_path[0] {
                 for node in &path.path {
-                    path_hash_counter.insert(node.value.0);
+                    insert(&mut path_hash_counter, node.value.0);
                 }
             }
 
             if let Some(path) = &smt_trace.state_path[1] {
                 for node in &path.path {
-                    path_hash_counter.insert(node.value.0);
+                    insert(&mut path_hash_counter, node.value.0);
                 }
             }
 
             // + state leaf
             if let Some(node) = smt_trace.state_path[0].as_ref().and_then(|pt| pt.leaf) {
-                storage_counter.insert(node.value.0);
+                insert(&mut storage_counter, node.value.0);
             }
             if let Some(node) = smt_trace.state_path[1].as_ref().and_then(|pt| pt.leaf) {
-                storage_counter.insert(node.value.0);
+                insert(&mut storage_counter, node.value.0);
             }
 
             // + the storage key
             if let Some(hash) = smt_trace.state_key {
-                key_counter.insert(hash.0);
+                insert(&mut key_counter, hash.0);
             }
         }
-
-        let mut acc = path_hash_counter.len()
+        let sum_count = |h: &std::collections::HashMap<[u8; 32], usize>| h.values().sum::<usize>();
+        let prev_dedup_size = sum_count(&path_hash_counter)
+            + sum_count(&key_counter)
+            + sum_count(&account_counter) * 4
+            + sum_count(&storage_counter);
+        let after_dedup_size = path_hash_counter.len()
             + key_counter.len()
             + account_counter.len() * 4
             + storage_counter.len();
-
-        for bytecode in block.bytecodes.values() {
-            acc += bytecode.bytes.len() / HASH_BLOCK_STEP_SIZE + 1;
-        }
-
-        let acc = acc * F::hash_block_size();
-        (acc, block.circuits_params.max_poseidon_rows.max(acc))
+        log::debug!("poseidon circuit row num: dedup mpt from {prev_dedup_size} to {after_dedup_size}, mpt update len {}, smt trace len {}",
+        block.mpt_updates.len(), block.mpt_updates.smt_traces.len());
+        let mpt_row_num = after_dedup_size * F::hash_block_size();
+        let byte_row_num = block
+            .bytecodes
+            .values()
+            .map(|bytecode| bytecode.bytes.len() / HASH_BLOCK_STEP_SIZE + 1)
+            .sum::<usize>()
+            * F::hash_block_size();
+        let total_row_num = mpt_row_num + byte_row_num;
+        log::debug!("poseidon circuit row num: {mpt_row_num}(mpt) + {byte_row_num}(bytecode) = {total_row_num}");
+        (
+            total_row_num,
+            block.circuits_params.max_poseidon_rows.max(total_row_num),
+        )
     }
 
     /// Make the assignments to the MptCircuit, notice it fill mpt table

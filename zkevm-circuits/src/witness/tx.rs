@@ -15,11 +15,13 @@ use crate::{
         Tag::{EndList, EndVector},
     },
 };
-use bus_mapping::circuit_input_builder::{self, get_dummy_tx, get_dummy_tx_hash, TxL1Fee};
+use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     evm_types::gas_utils::tx_data_gas_cost,
     geth_types::{TxType, TxType::PreEip155},
-    sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
+    sign_types::{
+        biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk, SignData, SECP256K1_Q,
+    },
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
 use ethers_core::{types::TransactionRequest, utils::keccak256};

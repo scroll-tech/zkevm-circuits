@@ -2,7 +2,7 @@
 
 use std::{
     marker::PhantomData,
-    ops::{Add, Mul},
+    ops::{Add, Mul, Neg},
 };
 
 use crate::{
@@ -21,7 +21,10 @@ use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
-    halo2curves::bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
+    halo2curves::{
+        bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
+        group::prime::PrimeCurveAffine,
+    },
     plonk::Expression,
 };
 
@@ -1166,6 +1169,36 @@ impl EcPairingPair {
         }
     }
 
+    /// Get the G1Affine and G2Affine representations.
+    pub fn as_g1_g2(&self) -> Option<(G1Affine, G2Affine)> {
+        let fq_from_u256 = |buf: &mut [u8; 32], u256: U256| -> CtOption<Fq> {
+            u256.to_little_endian(buf);
+            Fq::from_bytes(buf)
+        };
+        let fq2_from_u256s = |buf: &mut [u8; 32], u256s: (U256, U256)| -> CtOption<Fq2> {
+            fq_from_u256(buf, u256s.0).and_then(|c1| {
+                fq_from_u256(buf, u256s.1)
+                    .and_then(|c0| CtOption::new(Fq2::new(c0, c1), 1u8.into()))
+            })
+        };
+        let g1_from_u256s = |buf: &mut [u8; 32], p: (U256, U256)| -> CtOption<G1Affine> {
+            fq_from_u256(buf, p.0)
+                .and_then(|x| fq_from_u256(buf, p.1).and_then(|y| G1Affine::from_xy(x, y)))
+        };
+        let g2_from_u256s = |buf: &mut [u8; 32],
+                             p: (U256, U256, U256, U256)|
+         -> CtOption<G2Affine> {
+            fq2_from_u256s(buf, (p.0, p.1))
+                .and_then(|x| fq2_from_u256s(buf, (p.2, p.3)).and_then(|y| G2Affine::from_xy(x, y)))
+        };
+
+        let mut buf = [0u8; 32];
+        let opt_point_g1: Option<G1Affine> = g1_from_u256s(&mut buf, self.g1_point).into();
+        let opt_point_g2: Option<G2Affine> = g2_from_u256s(&mut buf, self.g2_point).into();
+
+        opt_point_g1.zip(opt_point_g2)
+    }
+
     /// Returns the big-endian representation of the G1 point in the pair.
     pub fn g1_bytes_be(&self) -> Vec<u8> {
         std::iter::empty()
@@ -1199,96 +1232,18 @@ impl EcPairingPair {
             .collect()
     }
 
-    /// Padding pair for ECC circuit. The pairing check is done with a constant number
-    /// `N_PAIRING_PER_OP` of (G1, G2) pairs. The ECC circuit under the hood uses halo2-lib to
-    /// compute the multi-miller loop, which allows `(G1::Infinity, G2::Generator)` pair to skip
-    /// the loop for that pair. So in case the EVM inputs are less than `N_PAIRING_PER_OP` we pad
-    /// the ECC Circuit inputs by this pair. Any EVM input of `(G1::Infinity, G2)` or
-    /// `(G1, G2::Infinity)` is also transformed into `(G1::Infinity, G2::Generator)`.
-    pub fn ecc_padding() -> Self {
-        Self {
-            g1_point: (U256::zero(), U256::zero()),
-            g2_point: (
-                U256([
-                    0x97e485b7aef312c2,
-                    0xf1aa493335a9e712,
-                    0x7260bfb731fb5d25,
-                    0x198e9393920d483a,
-                ]),
-                U256([
-                    0x46debd5cd992f6ed,
-                    0x674322d4f75edadd,
-                    0x426a00665e5c4479,
-                    0x1800deef121f1e76,
-                ]),
-                U256([
-                    0x55acdadcd122975b,
-                    0xbc4b313370b38ef3,
-                    0xec9e99ad690c3395,
-                    0x090689d0585ff075,
-                ]),
-                U256([
-                    0x4ce6cc0166fa7daa,
-                    0xe3d1e7690c43d37b,
-                    0x4aab71808dcb408f,
-                    0x12c85ea5db8c6deb,
-                ]),
-            ),
-        }
-    }
-
-    /// Padding pair for EVM circuit. The pairing check is done with a constant number
+    /// Padding pair for EcPairing operation. The pairing check is done with a constant number
     /// `N_PAIRING_PER_OP` of (G1, G2) pairs. In case EVM inputs are less in number, we pad them
     /// with `(G1::Infinity, G2::Infinity)` for simplicity.
-    pub fn evm_padding() -> Self {
+    pub fn padding_pair() -> Self {
         Self {
             g1_point: (U256::zero(), U256::zero()),
             g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
         }
     }
 
-    /// Whether or not we swap the EVM pair with ECC pair. We do this iff:
-    /// - G1 is (0, 0)
-    /// - G2 is (0, 0, 0, 0)
-    ///
-    /// because for the above case, we have:
-    /// - (G1::identity, G2::identity) as inputs from the EVM.
-    /// - (G1::identity, G2::generator) as inputs to ECC Circuit.
-    pub fn swap(&self) -> bool {
-        (self.g1_point.0.is_zero() && self.g1_point.1.is_zero())
-            && (self.g2_point.0.is_zero()
-                && self.g2_point.1.is_zero()
-                && self.g2_point.2.is_zero()
-                && self.g2_point.3.is_zero())
-    }
-
     fn is_valid(&self) -> bool {
-        let fq_from_u256 = |buf: &mut [u8; 32], u256: U256| -> CtOption<Fq> {
-            u256.to_little_endian(buf);
-            Fq::from_bytes(buf)
-        };
-        let fq2_from_u256s = |buf: &mut [u8; 32], u256s: (U256, U256)| -> CtOption<Fq2> {
-            fq_from_u256(buf, u256s.0).and_then(|c1| {
-                fq_from_u256(buf, u256s.1)
-                    .and_then(|c0| CtOption::new(Fq2::new(c0, c1), 1u8.into()))
-            })
-        };
-        let g1_from_u256s = |buf: &mut [u8; 32], p: (U256, U256)| -> CtOption<G1Affine> {
-            fq_from_u256(buf, p.0)
-                .and_then(|x| fq_from_u256(buf, p.1).and_then(|y| G1Affine::from_xy(x, y)))
-        };
-        let g2_from_u256s = |buf: &mut [u8; 32],
-                             p: (U256, U256, U256, U256)|
-         -> CtOption<G2Affine> {
-            fq2_from_u256s(buf, (p.0, p.1))
-                .and_then(|x| fq2_from_u256s(buf, (p.2, p.3)).and_then(|y| G2Affine::from_xy(x, y)))
-        };
-
-        let mut buf = [0u8; 32];
-        let opt_point_g1: Option<G1Affine> = g1_from_u256s(&mut buf, self.g1_point).into();
-        let opt_point_g2: Option<G2Affine> = g2_from_u256s(&mut buf, self.g2_point).into();
-
-        opt_point_g1.is_some() && opt_point_g2.is_some()
+        self.as_g1_g2().is_some()
     }
 }
 
@@ -1352,6 +1307,24 @@ impl EcPairingOp {
     /// Whether the EVM inputs are valid or not, i.e. does the precompile succeed or fail.
     pub fn is_valid(&self) -> bool {
         self.pairs.iter().all(|pair| pair.is_valid())
+    }
+
+    /// Dummy pairing op that satisfies the pairing check.
+    pub fn dummy_pairing_check_ok() -> Self {
+        let g1 = G1Affine::from(G1Affine::generator() * Fr::from(2));
+        let g1_neg = g1.neg();
+        let g2 = G2Affine::from(G2Affine::generator() * Fr::from(3));
+        let other_g1 = G1Affine::from(G1Affine::generator() * Fr::from(6));
+        let other_g2 = G2Affine::generator();
+        Self {
+            pairs: [
+                EcPairingPair::new(g1_neg, g2),
+                EcPairingPair::new(other_g1, other_g2),
+                EcPairingPair::new(G1Affine::identity(), G2Affine::generator()),
+                EcPairingPair::new(G1Affine::identity(), G2Affine::generator()),
+            ],
+            output: 1.into(),
+        }
     }
 }
 

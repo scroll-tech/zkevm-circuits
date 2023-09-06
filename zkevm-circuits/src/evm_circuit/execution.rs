@@ -697,7 +697,7 @@ impl<F: Field> ExecutionConfig<F> {
                 G::EXECUTION_STATE,
             );
             cb.annotation(G::NAME, |cb| G::configure(cb));
-            let (_, _, height) = cb.build();
+            let (_, _, _, height) = cb.build();
             height
         };
 
@@ -763,7 +763,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
-        let (constraints, stored_expressions, _) = cb.build();
+        let (state_selector, constraints, stored_expressions, _) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
             "execution state already configured"
@@ -786,6 +786,7 @@ impl<F: Field> ExecutionConfig<F> {
         let sel_not_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> = &|meta| {
             meta.query_advice(q_step, Rotation::cur()) * not::expr(meta.query_selector(q_step_last))
         };
+        let state_selector = &state_selector;
 
         for (selector, constraints) in [
             (sel_step, constraints.step),
@@ -798,7 +799,13 @@ impl<F: Field> ExecutionConfig<F> {
                     let q_usable = meta.query_selector(q_usable);
                     let selector = selector(meta);
                     constraints.into_iter().map(move |(name, constraint)| {
-                        (name, q_usable.clone() * selector.clone() * constraint)
+                        (
+                            name,
+                            q_usable.clone()
+                                * selector.clone()
+                                * state_selector.clone()
+                                * constraint,
+                        )
                     })
                 });
             }

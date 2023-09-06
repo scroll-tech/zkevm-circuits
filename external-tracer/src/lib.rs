@@ -99,12 +99,12 @@ impl ChainConfig {
 /// Creates a trace for the specified config
 #[cfg(not(feature = "scroll"))]
 pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
+    let trace_config = &serde_json::to_string_pretty(&config).unwrap();
+    log::trace!("trace config: {}", trace_config);
     // Get the trace
-    let trace_string = geth_utils::trace(&serde_json::to_string(&config).unwrap()).map_err(
-        |error| match error {
-            geth_utils::Error::TracingError(error) => Error::TracingError(error),
-        },
-    )?;
+    let trace_string = geth_utils::trace(trace_config).map_err(|error| match error {
+        geth_utils::Error::TracingError(error) => Error::TracingError(error),
+    })?;
 
     log::trace!("trace: {}", trace_string);
 
@@ -126,19 +126,16 @@ pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
             terminal_total_difficulty_passed: false,
         });
     }
+    let trace_config = &serde_json::to_string_pretty(&l2_config).unwrap();
+    log::trace!("trace config: {}", trace_config);
     // Get the trace
-    let trace_string = geth_utils::trace(&serde_json::to_string(&l2_config).unwrap()).map_err(
-        |error| match error {
-            geth_utils::Error::TracingError(error) => Error::TracingError(error),
-        },
-    )?;
+    let trace_string = geth_utils::trace(trace_config).map_err(|error| match error {
+        geth_utils::Error::TracingError(error) => Error::TracingError(error),
+    })?;
 
     log::trace!("trace: {}", trace_string);
 
-    let mut trace: BlockTrace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
-    // l2 geth returns nil base_fee even if it is not 0..
-    trace.header.base_fee_per_gas = Some(l2_config.block_constants.base_fee);
-    Ok(trace)
+    serde_json::from_str(&trace_string).map_err(Error::SerdeError)
 }
 
 #[cfg(feature = "scroll")]
