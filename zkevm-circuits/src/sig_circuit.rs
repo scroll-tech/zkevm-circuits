@@ -358,8 +358,8 @@ impl<F: Field> SigCircuit<F> {
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
         let msg_hash =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*msg_hash)));
-        log::trace!("integer_r : {:?}", integer_r);
-        log::trace!("integer_s : {:?}", integer_s);
+        //log::trace!("integer_r : {:?}", integer_r);
+        //log::trace!("integer_s : {:?}", integer_s);
 
         // returns the verification result of ecdsa signature
         //

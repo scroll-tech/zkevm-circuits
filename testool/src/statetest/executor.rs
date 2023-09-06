@@ -518,7 +518,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
         max_exp_steps: 5000,
         max_keccak_rows: 0, // dynamic?
         max_poseidon_rows: 0,
-        max_vertical_circuit_rows: 0,
+        max_vertical_circuit_rows: MAX_VERTICLE_ROWS, // is it good?
         max_inner_blocks: 64,
         max_rlp_rows: 6000,
         max_ec_ops: PrecompileEcParams {
@@ -529,7 +529,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
     }
 }
 
-fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<Fr> {
+fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) {
     let num_row = C::min_num_rows_block(block).1;
     let k = zkevm_circuits::util::log2_ceil(num_row + 256);
     log::debug!(
@@ -538,7 +538,8 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<F
     );
     //debug_assert!(k <= 22);
     let circuit = C::new_from_block(block);
-    MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
+    let prover = MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap();
+    prover.assert_satisfied_par();
 }
 
 type ScrollSuperCircuit = SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>;
@@ -595,56 +596,71 @@ pub fn run_test(
     log::debug!("witness_block created");
     //builder.sdb.list_accounts();
 
+    let check_ccc = || {
+        let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
+        let mut overflow = false;
+        for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
+            if num.row_num_real > *limit {
+                log::warn!(
+                    "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
+                    suite.id,
+                    st.id,
+                    num.name,
+                    num.row_num_real,
+                    limit
+                );
+                overflow = true;
+            }
+        }
+        let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
+        if overflow {
+            log::warn!(
+                "ccc overflow: st.id {}, detail {} {}",
+                st.id,
+                max_row_usage.name,
+                max_row_usage.row_num_real
+            );
+            panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
+        } else {
+            log::info!(
+                "ccc ok: st.id {}, detail {} {}",
+                st.id,
+                max_row_usage.name,
+                max_row_usage.row_num_real
+            );
+        }
+    };
+
     if !circuits_config.super_circuit {
         if (*CIRCUIT).is_empty() {
             CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
                 .copy_checks(None)
                 .run();
+        } else if (*CIRCUIT) == "ccc" {
+            check_ccc();
         } else {
-            let prover = match (*CIRCUIT).as_str() {
+            match (*CIRCUIT).as_str() {
                 "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
                 "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
                 "ecc" => test_with::<EccCircuit<Fr, 9>>(&witness_block),
-                "sig" => test_with::<SigCircuit<Fr>>(&witness_block),
+                "sig" => {
+                    if !witness_block
+                        .precompile_events
+                        .get_ecrecover_events()
+                        .is_empty()
+                    {
+                        test_with::<SigCircuit<Fr>>(&witness_block);
+                    } else {
+                        log::warn!("no ec recover event {}, skip", st.id);
+                    }
+                }
                 _ => unimplemented!(),
             };
-            prover.assert_satisfied_par();
         }
     } else {
         log::debug!("test super circuit {}", *CIRCUIT);
         if (*CIRCUIT) == "ccc" {
-            let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
-            let mut overflow = false;
-            for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
-                if num.row_num_real > *limit {
-                    log::warn!(
-                        "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
-                        suite.id,
-                        st.id,
-                        num.name,
-                        num.row_num_real,
-                        limit
-                    );
-                    overflow = true;
-                }
-            }
-            let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
-            if overflow {
-                log::warn!(
-                    "ccc overflow: st.id {}, detail {} {}",
-                    st.id,
-                    max_row_usage.name,
-                    max_row_usage.row_num_real
-                );
-                panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
-            } else {
-                log::info!(
-                    "ccc ok: st.id {}, detail {} {}",
-                    st.id,
-                    max_row_usage.name,
-                    max_row_usage.row_num_real
-                );
-            }
+            check_ccc();
         } else {
             // TODO: do we need to automatically adjust this k?
             let k = 20;
