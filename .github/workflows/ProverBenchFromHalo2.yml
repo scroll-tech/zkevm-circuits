@@ -23,7 +23,7 @@ jobs:
     steps:
       - run: echo "halo2 PR ${{ env.HALO2PR }} submitted by ${{ env.GH_USER }}"
       - run: echo "Running prover benchmarking due to ${{ github.event.inputs.event-type }}."        
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           ref: 'halo2benchmarking'
       - run: .github/proverCiScripts/wakeUpProver.sh

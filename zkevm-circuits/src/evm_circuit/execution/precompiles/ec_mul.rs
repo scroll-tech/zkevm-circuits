@@ -218,7 +218,11 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         // - P_x == R_x
         // - P_y + R_y == Fq::MODULUS
         let p_y_plus_r_y = cb.condition(
-            and::expr([is_success.expr(), s_is_fr_mod_minus_1.expr()]),
+            and::expr([
+                is_success.expr(),
+                s_is_fr_mod_minus_1.expr(),
+                not::expr(p_is_zero.expr()),
+            ]),
             |cb| {
                 cb.require_equal(
                     "ecMul(s == Fr::MODULUS - 1): P_x == R_x",

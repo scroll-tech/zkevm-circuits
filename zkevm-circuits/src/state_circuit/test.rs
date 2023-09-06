@@ -51,7 +51,7 @@ fn test_state_circuit_ok(
     let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS);
     let instance = circuit.instance();
 
-    let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
+    let prover = MockProver::<Fr>::run(17, &circuit, instance).unwrap();
     let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
 }

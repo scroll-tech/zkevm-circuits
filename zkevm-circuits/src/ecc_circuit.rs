@@ -10,7 +10,7 @@ use bus_mapping::{
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_base::{
     gates::{GateInstructions, RangeInstructions},
-    utils::{decompose_bigint_option, modulus},
+    utils::{decompose_bigint_option, fe_to_biguint, modulus},
     AssignedValue, Context, QuantumCell, SKIP_FIRST_PASS,
 };
 use halo2_ecc::{
@@ -854,28 +854,49 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         // dummy G1, G2 points and G1::identity, G2::generator.
         let dummy_g1 = ecc_chip.load_random_point::<G1Affine>(ctx);
         let dummy_g2 = ecc2_chip.load_random_point::<G2Affine>(ctx);
-        let identity_g1 = ecc_chip.load_private(ctx, {
-            let identity_g1 = G1Affine::identity();
-            (Value::known(identity_g1.x), Value::known(identity_g1.y))
-        });
-        let generator_g2 = ecc2_chip.load_private(ctx, {
-            let generator_g2 = G2Affine::generator();
-            (Value::known(generator_g2.x), Value::known(generator_g2.y))
-        });
+        let identity_g1 = EcPoint::construct(
+            ecc_chip
+                .field_chip()
+                .load_constant(ctx, fe_to_biguint(&Fq::zero())),
+            ecc_chip
+                .field_chip()
+                .load_constant(ctx, fe_to_biguint(&Fq::zero())),
+        );
+        let generator_g2 = {
+            let g2_gen = G2Affine::generator();
+            EcPoint::<F, FieldExtPoint<CRTInteger<F>>>::construct(
+                ecc2_chip.field_chip().load_constant(ctx, g2_gen.x),
+                ecc2_chip.field_chip().load_constant(ctx, g2_gen.y),
+            )
+        };
         // A pairing op satisfying the pairing check.
-        let dummy_pair_check_ok = EcPairingOp::dummy_pairing_check_ok();
-        let dummy_pair_check_ok_g1s = [
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[0].to_g1_affine_tuple()),
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[1].to_g1_affine_tuple()),
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[2].to_g1_affine_tuple()),
-            ecc_chip.load_private(ctx, dummy_pair_check_ok.pairs[3].to_g1_affine_tuple()),
-        ];
-        let dummy_pair_check_ok_g2s = [
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[0].to_g2_affine_tuple()),
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[1].to_g2_affine_tuple()),
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[2].to_g2_affine_tuple()),
-            ecc2_chip.load_private(ctx, dummy_pair_check_ok.pairs[3].to_g2_affine_tuple()),
-        ];
+        type TupleG1sG2s<F> = (
+            Vec<EcPoint<F, CRTInteger<F>>>,
+            Vec<EcPoint<F, FieldExtPoint<CRTInteger<F>>>>,
+        );
+        let (dummy_pair_check_ok_g1s, dummy_pair_check_ok_g2s): TupleG1sG2s<F> =
+            EcPairingOp::dummy_pairing_check_ok()
+                .pairs
+                .iter()
+                .map(|pair| {
+                    let (g1_point, g2_point) =
+                        pair.as_g1_g2().expect("dummy pairing check OK pair");
+                    (
+                        EcPoint::<F, CRTInteger<F>>::construct(
+                            ecc_chip
+                                .field_chip()
+                                .load_constant(ctx, fe_to_biguint(&g1_point.x)),
+                            ecc_chip
+                                .field_chip()
+                                .load_constant(ctx, fe_to_biguint(&g1_point.y)),
+                        ),
+                        EcPoint::<F, FieldExtPoint<CRTInteger<F>>>::construct(
+                            ecc2_chip.field_chip().load_constant(ctx, g2_point.x),
+                            ecc2_chip.field_chip().load_constant(ctx, g2_point.y),
+                        ),
+                    )
+                })
+                .unzip();
 
         // process pairs so that we pass only valid input to the multi_miller_loop.
         let pairs = decomposed_pairs
@@ -1341,14 +1362,17 @@ impl<F: Field, const XI_0: i64> SubCircuit<F> for EccCircuit<F, XI_0> {
         let ec_adds = block.get_ec_add_ops().len();
         let ec_muls = block.get_ec_mul_ops().len();
         let ec_pairings = block.get_ec_pairing_ops().len();
+        let max_ec_ops = &block.circuits_params.max_ec_ops;
+        log::debug!("ecc circuit row usage: ecadd {ec_adds}/{}, ecmul {ec_muls}/{}, ecpairing {ec_pairings}/{}",
+        max_ec_ops.ec_add, max_ec_ops.ec_mul, max_ec_ops.ec_pairing);
 
         // Instead of showing actual minimum row usage,
         // halo2-lib based circuits use min_row_num to represent a percentage of total-used capacity
         // This functionality allows l2geth to decide if additional ops can be added.
         let min_row_num = [
-            (row_num / block.circuits_params.max_ec_ops.ec_add) * ec_adds,
-            (row_num / block.circuits_params.max_ec_ops.ec_mul) * ec_muls,
-            (row_num / block.circuits_params.max_ec_ops.ec_pairing) * ec_pairings,
+            (row_num / max_ec_ops.ec_add) * ec_adds,
+            (row_num / max_ec_ops.ec_mul) * ec_muls,
+            (row_num / max_ec_ops.ec_pairing) * ec_pairings,
         ]
         .into_iter()
         .max()

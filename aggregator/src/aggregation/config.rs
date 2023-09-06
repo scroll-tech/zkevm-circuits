@@ -84,6 +84,7 @@ impl AggregationConfig {
         );
 
         let columns = keccak_circuit_config.cell_manager.columns();
+        log::info!("keccak uses {} columns", columns.len(),);
 
         // enabling equality for preimage column
         meta.enable_equality(columns[keccak_circuit_config.preimage_column_index].advice);

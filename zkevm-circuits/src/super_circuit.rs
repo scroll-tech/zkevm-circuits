@@ -529,7 +529,14 @@ impl<
                 row_num_total,
             })
             .collect_vec();
-        log::debug!("row_usage_details {row_usage_details:?}");
+        {
+            let mut row_usage_details_sorted = row_usage_details.clone();
+            row_usage_details_sorted.sort_by_key(|r| r.row_num_real);
+            row_usage_details_sorted.reverse();
+            for detail in &row_usage_details_sorted {
+                log::debug!("row detail {} {}", detail.name, detail.row_num_real);
+            }
+        }
         row_usage_details
     }
 }
