@@ -63,7 +63,7 @@ cli-table = "0.4"
 paste = "1.0"
 
 [features]
-default = ["test", "test-circuits", "shanghai", "debug-annotations", "parallel_syn"]
+default = ["test", "test-circuits", "shanghai", "debug-annotations"]
 test = ["ethers-signers", "mock", "bus-mapping/test"]
 
 scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock?/scroll", "zktrie", "poseidon-codehash"]
