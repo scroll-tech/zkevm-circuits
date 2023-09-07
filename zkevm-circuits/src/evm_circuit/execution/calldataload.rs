@@ -458,6 +458,7 @@ mod test {
         let memory_value = Word::from_big_endian(&memory_bytes);
 
         let code = bytecode! {
+            PUSH10(0x05)
             CALLDATALOAD
             PUSH10(memory_value)
             PUSH32(10)
