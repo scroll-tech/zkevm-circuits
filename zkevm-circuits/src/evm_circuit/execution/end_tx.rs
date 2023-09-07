@@ -65,6 +65,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndTx;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        cb.require_true("end_tx", cb.curr.state.end_tx.expr());
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
         let tx_l1_fee = cb.call_context(None, CallContextFieldTag::L1Fee);

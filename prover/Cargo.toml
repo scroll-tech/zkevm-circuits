@@ -1,0 +1,43 @@
+[package]
+name = "prover"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+
+aggregator = { path = "../aggregator" }
+bus-mapping = { path = "../bus-mapping" }
+eth-types = { path = "../eth-types" }
+mpt-zktrie = { path = "../zktrie" }
+zkevm-circuits = { path = "../zkevm-circuits", default-features = false }
+
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.4" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.4", default-features=false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+
+anyhow = "1.0"
+base64 = "0.13.0"
+blake2 = "0.10.3"
+chrono = "0.4.19"
+dotenv = "0.15.0"
+ethers-core = "0.17.0"
+git-version = "0.3.5"
+hex = "0.4.3"
+itertools = "0.10.5"
+log = "0.4"
+log4rs = { version = "1.2.0", default_features = false, features = ["console_appender", "file_appender"] }
+num-bigint = "0.4.3"
+once_cell = "1.8.0"
+rand = "0.8"
+rand_xorshift = "0.3"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = { version = "1.0.66", features = ["unbounded_depth"] }
+serde_stacker = "0.1"
+sha2 ="0.10.2"
+
+[features]
+default = []
+parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn"]
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "zkevm-circuits/scroll"]
+shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "zkevm-circuits/shanghai"]
