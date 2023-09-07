@@ -90,10 +90,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{address, bytecode, Word};
+    use eth_types::{address, bytecode, Bytecode, Word};
 
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     fn test_ok(call_data_size: usize, is_root: bool) {
         let bytecode = bytecode! {
@@ -183,5 +183,46 @@ mod test {
         {
             test_ok(call_data_size, is_root);
         }
+    }
+
+    fn initialization_bytecode() -> Bytecode {
+        let memory_bytes = [0x60; 10];
+        let memory_value = Word::from_big_endian(&memory_bytes);
+
+        let code = bytecode! {
+            CALLDATASIZE
+            PUSH10(memory_value)
+            PUSH32(0)
+            MSTORE
+            PUSH2( 5 ) // length to copy
+            PUSH2(u64::try_from(memory_bytes.len()).unwrap()) // offset
+            RETURN
+        };
+
+        code
+    }
+
+    // add tx deploy case.
+    #[test]
+    fn test_tx_deploy_calldatasize() {
+        let code = initialization_bytecode();
+
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .gas(58000u64.into())
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

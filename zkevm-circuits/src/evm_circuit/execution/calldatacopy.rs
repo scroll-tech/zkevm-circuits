@@ -246,11 +246,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{bytecode, word, Word};
+    use eth_types::{bytecode, word, Bytecode, Word};
     use mock::{
-        generate_mock_call_bytecode,
+        eth, generate_mock_call_bytecode,
         test_ctx::{helpers::*, TestContext},
-        MockCallBytecodeParams,
+        MockCallBytecodeParams, MOCK_ACCOUNTS,
     };
 
     fn test_root_ok(
@@ -387,5 +387,49 @@ mod test {
             word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa"),
             0x0.into(),
         );
+    }
+
+    fn initialization_bytecode(length: usize, data_offset: Word, dst_offset: Word) -> Bytecode {
+        let memory_bytes = [0x60; 10];
+        let memory_value = Word::from_big_endian(&memory_bytes);
+
+        let code = bytecode! {
+            PUSH32(length)
+            PUSH32(data_offset)
+            PUSH32(dst_offset)
+            CALLDATACOPY
+            PUSH10(memory_value)
+            PUSH32(0)
+            MSTORE
+            PUSH2( 5 ) // length to copy
+            PUSH2(u64::try_from(memory_bytes.len()).unwrap()) // offset
+            RETURN
+        };
+
+        code
+    }
+
+    // tx deploy case.
+    #[test]
+    fn test_tx_deploy_calldatacopy() {
+        let code = initialization_bytecode(10, Word::from(10), Word::from(0x30));
+
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .gas(58000u64.into())
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }
