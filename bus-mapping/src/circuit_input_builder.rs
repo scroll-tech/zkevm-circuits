@@ -1148,7 +1148,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
         let access_set = self.get_state_accesses(&eth_block).await?;
-        let (proofs, codes) = self.get_state(block_num, access_set.into()).await?;
+        let (proofs, codes) = self.get_state(block_num, access_set).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         if eth_block.transactions.len() > self.circuits_params.max_txs {
             log::error!(
