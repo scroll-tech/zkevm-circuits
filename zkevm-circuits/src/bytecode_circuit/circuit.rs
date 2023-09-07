@@ -50,6 +50,7 @@ pub struct BytecodeCircuitConfig<F> {
     q_last: Column<Fixed>,
     bytecode_table: BytecodeTable,
     push_data_left: Column<Advice>,
+    push_acc: Column<Advice>,
     value_rlc: Column<Advice>,
     length: Column<Advice>,
     push_data_size: Column<Advice>,
@@ -89,6 +90,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         let q_last = meta.fixed_column();
         let value = bytecode_table.value;
         let push_data_left = meta.advice_column();
+        let push_acc = meta.advice_column_in(SecondPhase);
         let value_rlc = meta.advice_column_in(SecondPhase);
         let length = meta.advice_column();
         let push_data_size = meta.advice_column();
@@ -459,6 +461,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             q_last,
             bytecode_table,
             push_data_left,
+            push_acc,
             value_rlc,
             length,
             push_data_size,
@@ -639,6 +642,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         let mut push_data_left = 0;
         let mut next_push_data_left = 0;
         let mut push_data_size = 0;
+        let mut push_acc = Value::known(F::zero());
+        let mut push_rlc = Value::known(F::zero());
         let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
         let length = F::from(bytecode.bytes.len() as u64);
 
@@ -651,6 +656,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge)
             }
         });
+
+        // TODO: pad until push_data_left == 0.
 
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {
@@ -675,6 +682,12 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     push_data_left - 1
                 };
 
+                push_acc = if is_code {
+                    Value::known(F::zero())
+                } else {
+                    push_acc * challenges.evm_word() + Value::known(row.value)
+                };
+
                 value_rlc
                     .as_mut()
                     .zip(challenges.keccak_input())
@@ -696,6 +709,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     row.is_code,
                     row.value,
                     push_data_left,
+                    push_acc,
+                    push_rlc,
                     value_rlc,
                     length,
                     F::from(push_data_size),
@@ -758,6 +773,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             F::zero(),
             0,
             Value::known(F::zero()),
+            Value::known(F::zero()),
+            Value::known(F::zero()),
             F::zero(),
             F::zero(),
         )
@@ -778,6 +795,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         is_code: F,
         value: F,
         push_data_left: u64,
+        push_acc: Value<F>,
+        push_rlc: Value<F>,
         value_rlc: Value<F>,
         length: F,
         push_data_size: F,
@@ -830,6 +849,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         }
         for (name, column, value) in [
             ("code_hash", self.bytecode_table.code_hash, code_hash),
+            ("push_acc", self.push_acc, push_acc),
+            ("push_rlc", self.bytecode_table.push_rlc, push_rlc),
             ("value_rlc", self.value_rlc, value_rlc),
         ] {
             region.assign_advice(
@@ -869,6 +890,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         region.name_column(|| "BYTECODE_length", self.length);
         region.name_column(|| "BYTECODE_push_data_left", self.push_data_left);
         region.name_column(|| "BYTECODE_push_data_size", self.push_data_size);
+        region.name_column(|| "BYTECODE_push_acc", self.push_acc);
         region.name_column(|| "BYTECODE_value_rlc", self.value_rlc);
         region.name_column(|| "BYTECODE_push_data_left_inv", self.push_data_left_inv);
         region.name_column(

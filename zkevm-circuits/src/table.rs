@@ -1079,6 +1079,8 @@ pub struct BytecodeTable {
     pub is_code: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
+    /// The RLC of the PUSH data, or 0.
+    pub push_rlc: Column<Advice>,
 }
 
 impl BytecodeTable {
@@ -1086,6 +1088,7 @@ impl BytecodeTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
         let code_hash = meta.advice_column_in(SecondPhase);
+        let push_rlc = meta.advice_column_in(SecondPhase);
         Self {
             q_enable: meta.fixed_column(),
             code_hash,
@@ -1093,6 +1096,7 @@ impl BytecodeTable {
             index,
             is_code,
             value,
+            push_rlc,
         }
     }
 

@@ -111,6 +111,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             );
             is_pushed_cell_prev = is_pushed_cell.expr();
             is_padding_cell_prev = is_padding_cell.expr();
+            
         }
 
         // Sum of selectors is_pushed needs to be exactly the number of bytes
