@@ -253,12 +253,12 @@ pub(crate) fn block_precompile_oog() -> BlockTrace {
         |accs| {
             accs[0].address(addr_a).balance(Word::from(1u64 << 24));
         },
-        |mut txs, accs| {
+        |mut txs, _accs| {
             txs[0]
                 .from(wallet_a.clone())
                 .to(address!("0x0000000000000000000000000000000000000006"))
                 .input(Bytes::from(ec_add_input))
-                .gas((21_000 + GasCost::PRECOMPILE_BN256ADD.0 - 1).into());
+                .gas((21_560 + GasCost::PRECOMPILE_BN256ADD.0 - 1).into());
         },
         |block, _tx| block.number(0xcafeu64),
     )
