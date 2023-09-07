@@ -234,6 +234,7 @@ impl<F: Field> RestoreContextGadget<F> {
             memory_word_size: To(caller_memory_word_size.expr()),
             reversible_write_counter: To(reversible_write_counter),
             log_id: Same,
+            end_tx: Same,
         });
 
         Self {
@@ -1455,6 +1456,7 @@ impl<F: Field> CommonErrorGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(rw_counter_delta + cb.curr.state.reversible_write_counter.expr()),
+                end_tx: To(1.expr()),
                 ..StepStateTransition::any()
             });
         });

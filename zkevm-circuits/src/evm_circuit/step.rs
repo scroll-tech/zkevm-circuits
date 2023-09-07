@@ -557,6 +557,8 @@ pub(crate) struct StepState<F> {
     pub(crate) reversible_write_counter: Cell<F>,
     /// The counter for log index
     pub(crate) log_id: Cell<F>,
+    /// Whether this is end_tx. Boolean.
+    pub(crate) end_tx: Cell<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -597,6 +599,7 @@ impl<F: FieldExt> Step<F> {
                 memory_word_size: cell_manager.query_cell(CellType::StoragePhase1),
                 reversible_write_counter: cell_manager.query_cell(CellType::StoragePhase1),
                 log_id: cell_manager.query_cell(CellType::StoragePhase1),
+                end_tx: cell_manager.query_cell(CellType::StoragePhase1),
             }
         };
         Self {
@@ -677,6 +680,13 @@ impl<F: FieldExt> Step<F> {
         self.state
             .log_id
             .assign(region, offset, Value::known(F::from(step.log_id as u64)))?;
+        self.state.end_tx.assign(
+            region,
+            offset,
+            Value::known(F::from(
+                (step.execution_state == ExecutionState::EndTx) as u64,
+            )),
+        )?;
         Ok(())
     }
 }

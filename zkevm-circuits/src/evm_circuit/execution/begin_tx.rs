@@ -539,6 +539,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                             * transfer_with_gas_fee.reversible_w_delta(),
                 ),
                 call_id: To(call_id.expr()),
+                // FIXME
+                end_tx: To(1.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -584,6 +586,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                             + PRECOMPILE_COUNT.expr(),
                     ),
                     call_id: To(call_id.expr()),
+                    end_tx: To(1.expr()),
                     ..StepStateTransition::any()
                 });
             },

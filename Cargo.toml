@@ -12,7 +12,8 @@ members = [
     "external-tracer",
     "mock",
     "testool",
-    "aggregator"
+    "aggregator",
+    "prover"
 ]
 
 [patch.crates-io]
