@@ -36,6 +36,63 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
 /// Which circuit to test. Default is evm + state.
 pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_string()));
 
+#[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
+static mut REAL_PROVER: Lazy<prover::common::Prover> = Lazy::new(|| {
+    let params_dir = "./test_params";
+
+    let degrees: Vec<u32> = if cfg!(feature = "inner-prove") {
+        vec![*prover::config::INNER_DEGREE]
+    } else {
+        // for chunk-prove
+        (*prover::config::ZKEVM_DEGREES).clone()
+    };
+
+    let prover = prover::common::Prover::from_params_dir(params_dir, &degrees);
+    log::info!("Constructed real-prover");
+
+    prover
+});
+
+#[cfg(feature = "inner-prove")]
+static mut INNER_VERIFIER: Lazy<
+    prover::common::Verifier<
+        <prover::zkevm::circuit::SuperCircuit as prover::zkevm::circuit::TargetCircuit>::Inner,
+    >,
+> = Lazy::new(|| {
+    let params_dir = "./test_params";
+
+    let params = REAL_PROVER.params(*prover::config::INNER_DEGREE).clone();
+
+    let pk = REAL_PROVER
+        .pk("inner")
+        .expect("Failed to get inner-prove PK");
+    let vk = pk.get_vk().clone();
+
+    let verifier = prover::common::Verifier::new(params, vk);
+    log::info!("Constructed inner-verifier");
+
+    verifier
+});
+
+#[cfg(feature = "chunk-prove")]
+static mut CHUNK_VERIFIER: Lazy<prover::common::Verifier<CompressionCircuit>> = Lazy::new(|| {
+    use prover::config::LayerId;
+
+    env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
+
+    let params = REAL_PROVER.params(LayerId::Layer2.degree()).clone();
+
+    let pk = REAL_PROVER
+        .pk(LayerId::Layer2.id())
+        .expect("Failed to get chunk-prove PK");
+    let vk = pk.get_vk().clone();
+
+    let verifier = common::Verifier::<CompressionCircuit>::new(params, vk);
+    log::info!("Constructed chunk-verifier");
+
+    verifier
+});
+
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
     #[cfg(not(feature = "scroll"))]
@@ -549,8 +606,10 @@ pub fn run_test(
     suite: TestSuite,
     circuits_config: CircuitsConfig,
 ) -> Result<(), StateTestError> {
-    // get the geth traces
+    let test_id = st.id.clone();
+    log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
+    // get the geth traces
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
     #[cfg(feature = "scroll")]
@@ -662,13 +721,12 @@ pub fn run_test(
         if (*CIRCUIT) == "ccc" {
             check_ccc();
         } else {
-            // TODO: do we need to automatically adjust this k?
-            let k = 20;
-            // TODO: remove this MOCK_RANDOMNESS?
-            let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
-            let instance = circuit.instance();
-            let prover = MockProver::run(k, &circuit, instance).unwrap();
-            prover.assert_satisfied_par();
+            #[cfg(feature = "inner-prove")]
+            inner_prove(&test_id, witness_block);
+            #[cfg(feature = "chunk-prove")]
+            chunk_prove(&test_id, witness_block);
+            #[cfg(not(all(feature = "inner-prove", feature = "chunk-prove")))]
+            mock_prove(&test_id, witness_block);
         }
     };
     //#[cfg(feature = "scroll")]
@@ -703,5 +761,53 @@ pub fn run_test(
     }
     check_post(&builder, &post)?;
 
+    log::info!("{test_id}: run-test END");
     Ok(())
+}
+
+#[cfg(not(feature = "chunk-prove"))]
+fn mock_prove(test_id: &str, witness_block: Block<Fr>) {
+    log::info!("{test_id}: mock-prove BEGIN");
+    // TODO: do we need to automatically adjust this k?
+    let k = 20;
+    // TODO: remove this MOCK_RANDOMNESS?
+    let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
+    let instance = circuit.instance();
+    let prover = MockProver::run(k, &circuit, instance).unwrap();
+    prover.assert_satisfied_par();
+
+    log::info!("{test_id}: mock-prove END");
+}
+
+#[cfg(feature = "inner-prove")]
+fn inner_prove(test_id: &str, witness_block: Block<Fr>) {
+    log::info!("{test_id}: inner-prove BEGIN");
+
+    let rng = prover::utils::gen_rng();
+    let prover = unsafe { &mut REAL_PROVER };
+    let snark = prover
+        .gen_inner_snark::<prover::zkevm::circuit::SuperCircuit>("inner", rng, &witness_block)
+        .unwrap_or_else(|err| panic!("{test_id}: failed to generate inner snark: {err}"));
+    log::info!("{test_id}: generated inner snark");
+
+    let verified = INNER_VERIFIER.verify_snark(snark);
+    assert!(verified, "{}: failed to verify inner snark", test_id);
+
+    log::info!("{test_id}: inner-prove END");
+}
+
+#[cfg(feature = "chunk-prove")]
+fn chunk_prove(test_id: &str, witness_block: Block<Fr>) {
+    use prover::config::LayerId;
+
+    log::info!("{test_id}: chunk-prove BEGIN");
+
+    let prover = unsafe { &mut CHUNK_PROVER };
+    let snark = prover.load_or_gen_final_chunk_snark(test_id, witness_block, None)?;
+    log::info!("{test_id}: generated chunk snark");
+
+    let verified = CHUNK_VERIFIER.verify_snark(snark);
+    assert!(verified, "{}: failed to verify chunk snark", test_id);
+
+    log::info!("{test_id}: chunk-prove END");
 }
