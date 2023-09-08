@@ -18,6 +18,13 @@ use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+#[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
+use prover::{
+    common::{Prover, Verifier},
+    config::{INNER_DEGREE, ZKEVM_DEGREES},
+};
+#[cfg(feature = "inner-prove")]
+use prover::{utils::gen_rng, zkevm::circuit};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
@@ -36,17 +43,17 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
 pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_string()));
 
 #[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
-static mut REAL_PROVER: Lazy<prover::common::Prover> = Lazy::new(|| {
+static mut REAL_PROVER: Lazy<Prover> = Lazy::new(|| {
     let params_dir = "./test_params";
 
     let degrees: Vec<u32> = if cfg!(feature = "inner-prove") {
-        vec![*prover::config::INNER_DEGREE]
+        vec![*INNER_DEGREE]
     } else {
         // for chunk-prove
-        (*prover::config::ZKEVM_DEGREES).clone()
+        (*ZKEVM_DEGREES).clone()
     };
 
-    let prover = prover::common::Prover::from_params_dir(params_dir, &degrees);
+    let prover = Prover::from_params_dir(params_dir, &degrees);
     log::info!("Constructed real-prover");
 
     prover
@@ -54,42 +61,39 @@ static mut REAL_PROVER: Lazy<prover::common::Prover> = Lazy::new(|| {
 
 #[cfg(feature = "inner-prove")]
 static mut INNER_VERIFIER: Lazy<
-    prover::common::Verifier<
-        <prover::zkevm::circuit::SuperCircuit as prover::zkevm::circuit::TargetCircuit>::Inner,
-    >,
+    Verifier<<circuit::SuperCircuit as circuit::TargetCircuit>::Inner>,
 > = Lazy::new(|| {
     let prover = unsafe { &mut REAL_PROVER };
-    let params = prover.params(*prover::config::INNER_DEGREE).clone();
+    let params = prover.params(*INNER_DEGREE).clone();
 
     let pk = prover.pk("inner").expect("Failed to get inner-prove PK");
     let vk = pk.get_vk().clone();
 
-    let verifier = prover::common::Verifier::new(params, vk);
+    let verifier = Verifier::new(params, vk);
     log::info!("Constructed inner-verifier");
 
     verifier
 });
 
 #[cfg(feature = "chunk-prove")]
-static mut CHUNK_VERIFIER: Lazy<prover::common::Verifier<prover::CompressionCircuit>> =
-    Lazy::new(|| {
-        use prover::config::LayerId;
+static mut CHUNK_VERIFIER: Lazy<Verifier<prover::CompressionCircuit>> = Lazy::new(|| {
+    use prover::config::LayerId;
 
-        std::env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
+    std::env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
 
-        let prover = unsafe { &mut REAL_PROVER };
-        let params = prover.params(LayerId::Layer2.degree()).clone();
+    let prover = unsafe { &mut REAL_PROVER };
+    let params = prover.params(LayerId::Layer2.degree()).clone();
 
-        let pk = prover
-            .pk(LayerId::Layer2.id())
-            .expect("Failed to get chunk-prove PK");
-        let vk = pk.get_vk().clone();
+    let pk = prover
+        .pk(LayerId::Layer2.id())
+        .expect("Failed to get chunk-prove PK");
+    let vk = pk.get_vk().clone();
 
-        let verifier = prover::common::Verifier::new(params, vk);
-        log::info!("Constructed chunk-verifier");
+    let verifier = Verifier::new(params, vk);
+    log::info!("Constructed chunk-verifier");
 
-        verifier
-    });
+    verifier
+});
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -790,9 +794,9 @@ fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
         prover.clear_pks();
     }
 
-    let rng = prover::utils::gen_rng();
+    let rng = gen_rng();
     let snark = prover
-        .gen_inner_snark::<prover::zkevm::circuit::SuperCircuit>(&coinbase, rng, witness_block)
+        .gen_inner_snark::<circuit::SuperCircuit>(&coinbase, rng, witness_block)
         .unwrap_or_else(|err| panic!("{test_id}: failed to generate inner snark: {err}"));
     log::info!("{test_id}: generated inner snark");
 
