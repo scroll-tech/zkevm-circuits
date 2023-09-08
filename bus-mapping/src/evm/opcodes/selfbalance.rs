@@ -23,6 +23,14 @@ impl Opcode for Selfbalance {
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
+            CallContextField::TxId,
+            state.tx_ctx.id().into(),
+        )?;
+
+        // CallContext read of the callee_address
+        state.call_context_read(
+            &mut exec_step,
+            state.call()?.call_id,
             CallContextField::CalleeAddress,
             callee_address.to_word(),
         )?;
@@ -84,7 +92,8 @@ mod selfbalance_tests {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
-        let step = builder.block.txs()[0]
+        let tx_id = 1;
+        let step = builder.block.txs()[tx_id - 1]
             .steps()
             .iter()
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::SELFBALANCE))
@@ -104,6 +113,22 @@ mod selfbalance_tests {
                 RW::READ,
                 &CallContextOp {
                     call_id,
+                    field: CallContextField::TxId,
+                    value: tx_id.to_word(),
+                }
+            )
+        );
+
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.call_context[step.bus_mapping_instance[1].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
                     field: CallContextField::CalleeAddress,
                     value: callee_address.to_word(),
                 }
@@ -112,12 +137,13 @@ mod selfbalance_tests {
         assert_eq!(
             {
                 let operation =
-                    &builder.block.container.account[step.bus_mapping_instance[1].as_usize()];
+                    &builder.block.container.account[step.bus_mapping_instance[2].as_usize()];
                 (operation.rw(), operation.op())
             },
             (
                 RW::READ,
                 &AccountOp {
+                    tx_id,
                     address: callee_address,
                     field: AccountField::Balance,
                     value: self_balance,
@@ -128,7 +154,7 @@ mod selfbalance_tests {
         assert_eq!(
             {
                 let operation =
-                    &builder.block.container.stack[step.bus_mapping_instance[2].as_usize()];
+                    &builder.block.container.stack[step.bus_mapping_instance[3].as_usize()];
                 (operation.rw(), operation.op())
             },
             (

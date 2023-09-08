@@ -196,6 +196,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Increase caller's nonce.
         // (tx caller's nonce always increases even when tx ends with error)
         cb.account_write(
+            tx_id.expr(),
             tx_caller_address.expr(),
             AccountFieldTag::Nonce,
             sender_nonce.expr() + 1.expr(),
@@ -324,6 +325,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call_code_hash_is_empty.expr() + call_code_hash_is_zero.expr();
 
         cb.account_read(
+            tx_id.expr(),
             call_callee_address.expr(),
             AccountFieldTag::CodeHash,
             account_code_hash.expr(),
@@ -332,6 +334,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
+            tx_id.expr(),
             tx_caller_address.expr(),
             call_callee_address.expr(),
             not::expr(account_code_hash_is_zero.expr()),
@@ -414,6 +417,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
 
             cb.account_write(
+                tx_id.expr(),
                 call_callee_address.expr(),
                 AccountFieldTag::Nonce,
                 1.expr(),

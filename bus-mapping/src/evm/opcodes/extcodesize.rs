@@ -245,6 +245,7 @@ mod extcodesize_tests {
         assert_eq!(
             operation.op(),
             &AccountOp {
+                tx_id,
                 address: account.address,
                 field: AccountField::CodeHash,
                 value: if exists { code_hash } else { Word::zero() },
@@ -259,6 +260,7 @@ mod extcodesize_tests {
             assert_eq!(
                 operation.op(),
                 &AccountOp {
+                    tx_id,
                     address: account.address,
                     field: AccountField::CodeSize,
                     value: code_size,

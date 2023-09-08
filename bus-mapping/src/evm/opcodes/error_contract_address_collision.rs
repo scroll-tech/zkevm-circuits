@@ -57,6 +57,7 @@ impl<const IS_CREATE2: bool> Opcode for ContractAddressCollision<IS_CREATE2> {
         state.push_op_reversible(
             &mut exec_step,
             AccountOp {
+                tx_id: state.tx_ctx.id(),
                 address: caller.address,
                 field: AccountField::Nonce,
                 value: (caller_nonce + 1).into(),

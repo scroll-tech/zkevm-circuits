@@ -467,7 +467,7 @@ impl<'a> CircuitInputStateRef<'a> {
         field: AccountField,
         value: Word,
     ) -> Result<(), Error> {
-        let op = AccountOp::new(address, field, value, value);
+        let op = AccountOp::new(address, self.tx_ctx.id(), field, value, value);
         self.push_op(step, RW::READ, op)
     }
 
@@ -485,7 +485,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        let op = AccountOp::new(address, field, value, value_prev);
+        let op = AccountOp::new(address, self.tx_ctx.id(), field, value, value_prev);
         self.push_op(step, RW::WRITE, op)
     }
 
@@ -653,6 +653,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 step,
                 RW::WRITE,
                 AccountOp {
+                    tx_id: self.tx_ctx.id(),
                     address: sender,
                     field: AccountField::Balance,
                     value: sender_balance,
@@ -672,6 +673,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op_reversible(
                 step,
                 AccountOp {
+                    tx_id: self.tx_ctx.id(),
                     address: sender,
                     field: AccountField::Balance,
                     value: sender_balance,
@@ -705,6 +707,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.account_read(step, receiver, AccountField::CodeHash, prev_code_hash)?;
             let write_op = AccountOp::new(
                 receiver,
+                self.tx_ctx.id(),
                 AccountField::CodeHash,
                 CodeDB::empty_code_hash().to_word(),
                 prev_code_hash,
@@ -729,6 +732,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 )?;
                 let write_op = AccountOp::new(
                     receiver,
+                    self.tx_ctx.id(),
                     AccountField::KeccakCodeHash,
                     KECCAK_CODE_HASH_ZERO.to_word(),
                     prev_keccak_code_hash,
@@ -757,6 +761,7 @@ impl<'a> CircuitInputStateRef<'a> {
         );
         let write_op = AccountOp::new(
             receiver,
+            self.tx_ctx.id(),
             AccountField::Balance,
             receiver_balance,
             receiver_balance_prev,

@@ -141,6 +141,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
+                    tx_id: state.tx_ctx.id(),
                     address: caller.address,
                     field: AccountField::Nonce,
                     value: (caller_nonce + 1).into(),
@@ -225,6 +226,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
+                    tx_id: state.tx_ctx.id(),
                     address: callee.address,
                     field: AccountField::Nonce,
                     value: 1.into(),

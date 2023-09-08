@@ -58,6 +58,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let call_gadget: CommonCallGadget<F, MemoryExpandedAddressGadget<F>, false> =
             CommonCallGadget::construct(
                 cb,
+                tx_id.expr(),
                 is_call.expr(),
                 is_callcode.expr(),
                 is_delegatecall.expr(),

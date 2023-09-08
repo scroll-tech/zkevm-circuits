@@ -19,6 +19,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct SelfbalanceGadget<F> {
     same_context: SameContextGadget<F>,
+    tx_id: Cell<F>,
     callee_address: Cell<F>,
     phase2_self_balance: Cell<F>,
 }
@@ -29,10 +30,12 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::SELFBALANCE;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         let phase2_self_balance = cb.query_cell_phase2();
         cb.account_read(
+            tx_id.expr(),
             callee_address.expr(),
             AccountFieldTag::Balance,
             phase2_self_balance.expr(),
@@ -42,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
 
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(3.expr()),
+            rw_counter: Delta(4.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta((-1).expr()),
             gas_left: Delta(-OpcodeId::SELFBALANCE.constant_gas_cost().expr()),
@@ -53,6 +56,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
         Self {
             same_context,
             phase2_self_balance,
+            tx_id,
             callee_address,
         }
     }
@@ -62,12 +66,14 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
+        self.tx_id
+            .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
         self.callee_address.assign(
             region,
             offset,
@@ -78,7 +84,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
             ),
         )?;
 
-        let self_balance = block.rws[step.rw_indices[2]].stack_value();
+        let self_balance = block.rws[step.rw_indices[3]].stack_value();
         self.phase2_self_balance
             .assign(region, offset, region.word_rlc(self_balance))?;
 

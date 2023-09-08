@@ -268,6 +268,7 @@ mod balance_tests {
             operation.op(),
             &AccountOp {
                 address,
+                tx_id,
                 field: AccountField::CodeHash,
                 value: if exists { code_hash } else { U256::zero() },
                 value_prev: if exists { code_hash } else { U256::zero() },
@@ -280,6 +281,7 @@ mod balance_tests {
                 operation.op(),
                 &AccountOp {
                     address,
+                    tx_id,
                     field: AccountField::Balance,
                     value: balance,
                     value_prev: balance,

@@ -746,6 +746,7 @@ pub fn gen_begin_tx_ops(
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
+                    tx_id: state.tx_ctx.id(),
                     address: call.address,
                     field: AccountField::Nonce,
                     value: 1.into(),
@@ -1111,6 +1112,7 @@ fn dummy_gen_selfdestruct_ops(
     state.push_op_reversible(
         &mut exec_step,
         AccountOp {
+            tx_id: state.tx_ctx.id(),
             address: sender,
             field: AccountField::Balance,
             value: Word::zero(),
@@ -1120,6 +1122,7 @@ fn dummy_gen_selfdestruct_ops(
     state.push_op_reversible(
         &mut exec_step,
         AccountOp {
+            tx_id: state.tx_ctx.id(),
             address: sender,
             field: AccountField::Nonce,
             value: Word::zero(),
@@ -1129,6 +1132,7 @@ fn dummy_gen_selfdestruct_ops(
     state.push_op_reversible(
         &mut exec_step,
         AccountOp {
+            tx_id: state.tx_ctx.id(),
             address: sender,
             field: AccountField::CodeHash,
             value: Word::zero(),

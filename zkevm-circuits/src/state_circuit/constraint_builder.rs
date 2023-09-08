@@ -415,7 +415,6 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
         // ref. spec 6.0. Unused keys are 0
-        self.require_zero("id is 0 for Account", q.id());
         self.require_zero(
             "storage_key is 0 for Account",
             q.rw_table.storage_key.clone(),

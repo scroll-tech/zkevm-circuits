@@ -565,6 +565,8 @@ pub enum AccountField {
 pub struct AccountOp {
     /// Account Address
     pub address: Address,
+    /// id of the tx this occurs in
+    pub tx_id: usize,
     /// Field
     pub field: AccountField,
     /// Field Value after the operation
@@ -574,15 +576,17 @@ pub struct AccountOp {
 }
 
 impl AccountOp {
-    /// Create a new instance of a `AccountOp` from it's components.
+    /// Create a new instance of a `AccountOp` from its components.
     pub const fn new(
         address: Address,
+        tx_id: usize,
         field: AccountField,
         value: Word,
         value_prev: Word,
     ) -> AccountOp {
         AccountOp {
             address,
+            tx_id,
             field,
             value,
             value_prev,
@@ -594,8 +598,8 @@ impl fmt::Debug for AccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountOp { ")?;
         f.write_fmt(format_args!(
-            "addr: {:?}, field: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
-            self.address, self.field, self.value_prev, self.value
+            "addr: {:?}, tx_id: {:?}, field: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
+            self.address, self.tx_id, self.field, self.value_prev, self.value
         ))?;
         f.write_str(" }")
     }

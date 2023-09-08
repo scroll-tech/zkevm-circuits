@@ -184,6 +184,7 @@ pub enum Rw {
     Account {
         rw_counter: usize,
         is_write: bool,
+        tx_id: usize,
         account_address: Address,
         field_tag: AccountFieldTag,
         value: Word,
@@ -526,11 +527,12 @@ impl Rw {
             | Self::TxAccessListAccountStorage { tx_id, .. }
             | Self::TxRefund { tx_id, .. }
             | Self::TxLog { tx_id, .. }
-            | Self::TxReceipt { tx_id, .. } => Some(*tx_id),
+            | Self::TxReceipt { tx_id, .. }
+            | Self::Account { tx_id, .. } => Some(*tx_id),
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start { .. } | Self::Account { .. } => None,
+            Self::Start { .. } => None,
         }
     }
 
@@ -775,6 +777,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .map(|op| Rw::Account {
                     rw_counter: op.rwc().into(),
                     is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
                     account_address: op.op().address,
                     field_tag: match op.op().field {
                         AccountField::Nonce => AccountFieldTag::Nonce,

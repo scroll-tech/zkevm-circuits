@@ -210,6 +210,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         let caller_balance = cb.query_word_rlc();
         cb.account_read(
+            tx_id.expr(),
             create.caller_address(),
             AccountFieldTag::Balance,
             caller_balance.expr(),
@@ -218,6 +219,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         let caller_nonce = create.caller_nonce();
         cb.account_read(
+            tx_id.expr(),
             create.caller_address(),
             AccountFieldTag::Nonce,
             caller_nonce.expr(),
@@ -252,6 +254,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         cb.condition(is_precheck_ok.expr(), |cb| {
             cb.account_write(
+                tx_id.expr(),
                 create.caller_address(),
                 AccountFieldTag::Nonce,
                 caller_nonce.expr() + 1.expr(),
@@ -290,12 +293,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         // check for address collision case by code hash previous
         cb.condition(is_precheck_ok.expr(), |cb| {
             cb.account_read(
+                tx_id.expr(),
                 new_address.clone(),
                 AccountFieldTag::CodeHash,
                 code_hash_previous.expr(),
             );
             cb.condition(not::expr(code_hash_is_zero.expr()), |cb| {
                 cb.account_read(
+                    tx_id.expr(),
                     new_address.clone(),
                     AccountFieldTag::Nonce,
                     callee_nonce.expr(),
@@ -331,6 +336,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             |cb| {
                 let tansfer_gadget = TransferGadget::construct(
                     cb,
+                    tx_id.expr(),
                     create.caller_address(),
                     new_address.clone(),
                     0.expr(),
@@ -342,6 +348,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     &mut callee_reversion_info,
                 );
                 cb.account_write(
+                    tx_id.expr(),
                     new_address.clone(),
                     AccountFieldTag::Nonce,
                     1.expr(),

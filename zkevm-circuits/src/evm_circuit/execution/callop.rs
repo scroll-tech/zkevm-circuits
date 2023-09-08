@@ -126,6 +126,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let call_gadget: CommonCallGadget<F, MemoryAddressGadget<F>, true> =
             CommonCallGadget::construct(
                 cb,
+                tx_id.expr(),
                 is_call.expr(),
                 is_callcode.expr(),
                 is_delegatecall.expr(),
@@ -189,6 +190,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let caller_balance_word = cb.query_word_rlc();
         cb.account_read(
+            tx_id.expr(),
             caller_address.expr(),
             AccountFieldTag::Balance,
             caller_balance_word.expr(),
@@ -246,6 +248,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
             TransferGadget::construct(
                 cb,
+                tx_id.expr(),
                 caller_address.expr(),
                 callee_address.expr(),
                 not::expr(call_gadget.callee_not_exists.expr()),

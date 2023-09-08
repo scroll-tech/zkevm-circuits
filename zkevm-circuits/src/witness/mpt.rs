@@ -330,6 +330,7 @@ impl MptUpdate {
 #[derive(Eq, PartialEq, Hash, Clone, Debug, Copy, PartialOrd, Ord)]
 enum Key {
     Account {
+        tx_id: usize,
         address: Address,
         field_tag: AccountFieldTag,
     },
@@ -348,9 +349,14 @@ impl Key {
     fn set_non_exists(self, value_prev: Word, value: Word) -> Self {
         if value_prev.is_zero() && value.is_zero() {
             match self {
-                Key::Account { address, field_tag } => {
+                Key::Account {
+                    tx_id,
+                    address,
+                    field_tag,
+                } => {
                     if matches!(field_tag, AccountFieldTag::CodeHash) {
                         Key::Account {
+                            tx_id,
                             address,
                             field_tag: AccountFieldTag::NonExisting,
                         }
@@ -409,10 +415,12 @@ impl<F: Field> MptUpdateRow<Value<F>> {
 fn key(row: &Rw) -> Option<Key> {
     match row {
         Rw::Account {
+            tx_id,
             account_address,
             field_tag,
             ..
         } => Some(Key::Account {
+            tx_id: *tx_id,
             address: *account_address,
             field_tag: *field_tag,
         }),
@@ -457,6 +465,7 @@ mod test {
         assert!(*HASH_SCHEME_DONE,);
 
         let key = Key::Account {
+            tx_id: 10,
             address: Address::zero(),
             field_tag: AccountFieldTag::Nonce,
         };
@@ -480,6 +489,7 @@ mod test {
         assert!(*HASH_SCHEME_DONE,);
 
         let key = Key::Account {
+            tx_id: 10,
             address: Address::zero(),
             field_tag: AccountFieldTag::Balance,
         };
@@ -505,6 +515,7 @@ mod test {
     fn nonce_update(address: Address) -> MptUpdate {
         MptUpdate {
             key: Key::Account {
+                tx_id: 10,
                 address,
                 field_tag: AccountFieldTag::Nonce,
             },
@@ -563,6 +574,7 @@ mod test {
 
         updates.insert(MptUpdate {
             key: Key::Account {
+                tx_id: 10,
                 address,
                 field_tag: AccountFieldTag::NonExisting,
             },
@@ -631,6 +643,7 @@ mod test {
     fn balance_update(address: Address) -> MptUpdate {
         MptUpdate {
             key: Key::Account {
+                tx_id: 10,
                 address,
                 field_tag: AccountFieldTag::Balance,
             },
@@ -740,6 +753,7 @@ mod test {
         let mut updates = MptUpdates::default();
         let update = MptUpdate {
             key: Key::Account {
+                tx_id: 10,
                 address,
                 field_tag: AccountFieldTag::CodeSize,
             },
@@ -779,6 +793,7 @@ mod test {
         let mut updates = MptUpdates::default();
         let update = MptUpdate {
             key: Key::Account {
+                tx_id: 10,
                 address,
                 field_tag: AccountFieldTag::CodeHash,
             },
@@ -818,6 +833,7 @@ mod test {
         let mut updates = MptUpdates::default();
         let update = MptUpdate {
             key: Key::Account {
+                tx_id: 10,
                 address,
                 field_tag: AccountFieldTag::KeccakCodeHash,
             },

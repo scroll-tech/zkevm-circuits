@@ -102,6 +102,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let gas_fee_refund = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
             UpdateBalanceGadget::construct(
                 cb,
+                tx_id.expr(),
                 tx_caller_address.expr(),
                 vec![mul_gas_price_by_refund.product().clone()],
                 None,
@@ -151,6 +152,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         let coinbase_codehash = cb.query_cell_phase2();
         cb.account_read(
+            tx_id.expr(),
             coinbase.expr(),
             AccountFieldTag::CodeHash,
             coinbase_codehash.expr(),
@@ -167,6 +169,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let coinbase_transfer = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
             TransferToGadget::construct(
                 cb,
+                tx_id.expr(),
                 coinbase.expr(),
                 not::expr(coinbase_codehash_is_zero.expr()),
                 false.expr(),

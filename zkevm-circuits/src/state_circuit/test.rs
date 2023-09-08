@@ -263,6 +263,7 @@ fn diff_1_problem_repro() {
         Rw::Account {
             rw_counter: 1,
             is_write: true,
+            tx_id: 1,
             account_address: Address::default(),
             field_tag: AccountFieldTag::CodeHash,
             value: U256::zero(),
@@ -271,6 +272,7 @@ fn diff_1_problem_repro() {
         Rw::Account {
             rw_counter: 2,
             is_write: true,
+            tx_id: 1,
             account_address: Address::default(),
             field_tag: AccountFieldTag::CodeHash,
             value: U256::zero(),
@@ -377,6 +379,7 @@ fn address_limb_mismatch() {
     let rows = vec![Rw::Account {
         rw_counter: 1,
         is_write: false,
+        tx_id: 1,
         account_address: address!("0x000000000000000000000000000000000cafe002"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::zero(),
@@ -394,6 +397,7 @@ fn address_limb_out_of_range() {
     let rows = vec![Rw::Account {
         rw_counter: 1,
         is_write: false,
+        tx_id: 1,
         account_address: address!("0x0000000000000000000000000000000000010000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::zero(),
@@ -540,6 +544,7 @@ fn nonlexicographic_order_address() {
     let first = Rw::Account {
         rw_counter: 50,
         is_write: true,
+        tx_id: 1,
         account_address: address!("0x1000000000000000000000000000000000000000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::zero(),
@@ -548,6 +553,7 @@ fn nonlexicographic_order_address() {
     let second = Rw::Account {
         rw_counter: 30,
         is_write: true,
+        tx_id: 1,
         account_address: address!("0x2000000000000000000000000000000000000000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::one(),
@@ -645,6 +651,7 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
         },
         Rw::Account {
             rw_counter: 2,
+            tx_id: 23,
             is_write: true,
             account_address: address!("0x0000000000000000000000000000000000000001"),
             field_tag: AccountFieldTag::Nonce,

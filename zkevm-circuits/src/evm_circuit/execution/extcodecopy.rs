@@ -80,6 +80,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let code_hash = cb.query_cell_phase2();
         cb.account_read(
+            tx_id.expr(),
             external_address.expr(),
             AccountFieldTag::CodeHash,
             code_hash.expr(),

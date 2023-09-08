@@ -43,6 +43,7 @@ impl<F: Field> TxL1MsgGadget<F> {
 
         cb.condition(tx_is_l1msg.expr(), |cb| {
             cb.account_read(
+                tx_id.clone(),
                 caller_address.expr(),
                 AccountFieldTag::CodeHash,
                 caller_codehash.expr(),
@@ -53,6 +54,7 @@ impl<F: Field> TxL1MsgGadget<F> {
             and::expr([tx_is_l1msg.expr(), is_caller_empty.expr()]),
             |cb| {
                 cb.account_write(
+                    tx_id.clone(),
                     caller_address.expr(),
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash_rlc(),
@@ -61,6 +63,7 @@ impl<F: Field> TxL1MsgGadget<F> {
                 );
                 #[cfg(feature = "scroll")]
                 cb.account_write(
+                    tx_id.clone(),
                     caller_address.expr(),
                     AccountFieldTag::KeccakCodeHash,
                     cb.empty_keccak_hash_rlc(),

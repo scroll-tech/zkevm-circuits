@@ -364,6 +364,7 @@ mod extcodecopy_tests {
             (
                 RW::READ,
                 &AccountOp {
+                    tx_id,
                     address: external_address,
                     field: AccountField::CodeHash,
                     value: code_hash.to_word(),

@@ -279,6 +279,7 @@ mod extcodehash_tests {
             (
                 RW::READ,
                 &AccountOp {
+                    tx_id,
                     address: external_address,
                     field: if cfg!(feature = "scroll") {
                         AccountField::KeccakCodeHash
