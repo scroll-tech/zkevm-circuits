@@ -106,9 +106,7 @@ impl AccessSet {
     pub(crate) fn extend_from_traces(&mut self, traces: &HashMap<Address, GethPrestateTrace>) {
         for (address, trace) in traces.iter() {
             self.add_account(*address);
-            if trace.code.is_some() {
-                self.add_code(*address);
-            }
+            self.add_code(*address);
             if let Some(ref storage) = trace.storage {
                 for key in storage.keys() {
                     self.add_storage(*address, *key);
