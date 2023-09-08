@@ -377,8 +377,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, Word};
-    use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
+    use eth_types::{bytecode, Bytecode, Word};
+    use mock::{
+        eth, generate_mock_call_bytecode, MockCallBytecodeParams, TestContext, MOCK_ACCOUNTS,
+    };
 
     fn test_bytecode(offset: Word) -> eth_types::Bytecode {
         bytecode! {
@@ -449,5 +451,47 @@ mod test {
     fn calldataload_gadget_offset_overflow() {
         test_root_ok(Word::MAX);
         test_internal_ok(0x1010, 0xff, Word::MAX);
+    }
+
+    fn initialization_bytecode() -> Bytecode {
+        let memory_bytes = [0x60; 10];
+        let memory_value = Word::from_big_endian(&memory_bytes);
+
+        let code = bytecode! {
+            PUSH10(0x05)
+            CALLDATALOAD
+            PUSH10(memory_value)
+            PUSH32(10)
+            MSTORE
+            PUSH2( 5 ) // length to copy
+            PUSH2(u64::try_from(memory_bytes.len()).unwrap()) // offset
+            RETURN
+        };
+
+        code
+    }
+
+    // add tx deploy case.
+    #[test]
+    fn test_tx_deploy_calldataload() {
+        let code = initialization_bytecode();
+
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .gas(58000u64.into())
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

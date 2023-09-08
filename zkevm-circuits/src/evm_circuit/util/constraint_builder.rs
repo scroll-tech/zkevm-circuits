@@ -61,6 +61,7 @@ pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) memory_word_size: Transition<Expression<F>>,
     pub(crate) reversible_write_counter: Transition<Expression<F>>,
     pub(crate) log_id: Transition<Expression<F>>,
+    pub(crate) end_tx: Transition<Expression<F>>,
 }
 
 impl<F: Field> StepStateTransition<F> {
@@ -86,6 +87,7 @@ impl<F: Field> StepStateTransition<F> {
             memory_word_size: Transition::Any,
             reversible_write_counter: Transition::Any,
             log_id: Transition::Any,
+            end_tx: Transition::Same,
         }
     }
 }
