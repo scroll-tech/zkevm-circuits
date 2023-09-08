@@ -804,7 +804,7 @@ fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
 
     // Reset VK if coinbase address changed.
     if coinbase_changed {
-        let pk = prover.pk(LayerId::Layer2.id()).unwrap_or_else(|| {
+        let pk = prover.pk(&coinbase).unwrap_or_else(|| {
             panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
         });
         let vk = pk.get_vk().clone();
@@ -819,6 +819,8 @@ fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
 
 #[cfg(feature = "chunk-prove")]
 fn chunk_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
+    use prover::config::LayerId;
+
     let coinbase = coinbase.to_string();
     log::info!("{test_id}: chunk-prove BEGIN, coinbase = {coinbase}");
 
@@ -839,7 +841,7 @@ fn chunk_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
 
     // Reset VK if coinbase address changed.
     if coinbase_changed {
-        let pk = prover.pk(&coinbase).unwrap_or_else(|| {
+        let pk = prover.pk(LayerId::Layer2.id()).unwrap_or_else(|| {
             panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
         });
         let vk = pk.get_vk().clone();
