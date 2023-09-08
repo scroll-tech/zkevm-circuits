@@ -727,7 +727,7 @@ pub fn run_test(
             inner_prove(&test_id, &st.env.current_coinbase, &witness_block);
             #[cfg(feature = "chunk-prove")]
             chunk_prove(&test_id, &st.env.current_coinbase, &witness_block);
-            #[cfg(not(all(feature = "inner-prove", feature = "chunk-prove")))]
+            #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
             mock_prove(&test_id, &witness_block);
         }
     };
@@ -767,7 +767,7 @@ pub fn run_test(
     Ok(())
 }
 
-#[cfg(not(all(feature = "inner-prove", feature = "chunk-prove")))]
+#[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
 fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
     log::info!("{test_id}: mock-prove BEGIN");
     // TODO: do we need to automatically adjust this k?
