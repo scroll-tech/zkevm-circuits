@@ -653,6 +653,37 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 index,
                 is_code,
                 value: opcode,
+                push_rlc: 0.expr(),
+            }
+            .conditional(1.expr() - is_root_create),
+        );
+    }
+
+    pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
+        self.opcode_lookup_at_rlc(
+            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
+            opcode,
+            push_rlc,
+        );
+        self.program_counter_offset += 1;
+    }
+
+    pub(crate) fn opcode_lookup_at_rlc(
+        &mut self,
+        index: Expression<F>,
+        opcode: Expression<F>,
+        push_rlc: Expression<F>,
+    ) {
+        let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
+        self.add_lookup(
+            "Opcode lookup",
+            Lookup::Bytecode {
+                hash: self.curr.state.code_hash.expr(),
+                tag: BytecodeFieldTag::Byte.expr(),
+                index,
+                is_code: 1.expr(),
+                value: opcode,
+                push_rlc,
             }
             .conditional(1.expr() - is_root_create),
         );
@@ -666,6 +697,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Expression<F>,
         is_code: Expression<F>,
         value: Expression<F>,
+        push_rlc: Expression<F>,
     ) {
         self.add_lookup(
             "Bytecode (byte) lookup",
@@ -675,6 +707,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 index,
                 is_code,
                 value,
+                push_rlc,
             },
         )
     }
@@ -688,6 +721,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 index: 0.expr(),
                 is_code: 0.expr(),
                 value,
+                push_rlc: 0.expr(),
             },
         );
     }

@@ -52,7 +52,16 @@ impl<F: Field> SameContextGadget<F> {
         opcode: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        Self::construct2(cb, opcode, step_state_transition, 0.expr())
+    }
+
+    pub(crate) fn construct2(
+        cb: &mut EVMConstraintBuilder<F>,
+        opcode: Cell<F>,
+        step_state_transition: StepStateTransition<F>,
+        push_rlc: Expression<F>,
+    ) -> Self {
+        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
         cb.add_lookup(
             "Responsible opcode lookup",
             Lookup::Fixed {

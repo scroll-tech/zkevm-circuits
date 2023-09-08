@@ -1079,7 +1079,7 @@ pub struct BytecodeTable {
     pub is_code: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
-    /// The RLC of the PUSH data, or 0.
+    /// The RLC of the PUSH data (LE order), or 0.
     pub push_rlc: Column<Advice>,
 }
 

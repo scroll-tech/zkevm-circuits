@@ -754,7 +754,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         Ok(())
     }
 
-    /// Return the RLC of the given bytecode (MSB-first), and the intermediate accumulator values.
+    /// Return the RLC (LE order) of a bytecode slice, and the intermediate accumulator values.
     fn make_push_rlc(rand: Value<F>, rows: &[BytecodeRow<F>]) -> (Value<F>, Vec<Value<F>>) {
         let mut acc = Value::known(F::zero());
         let intermediates = rows

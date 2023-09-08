@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             )),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        let same_context = SameContextGadget::construct2(cb, opcode, step_state_transition, value.expr());
 
         Self {
             same_context,
