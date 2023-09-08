@@ -31,6 +31,8 @@ pub static AGG_DEGREES: Lazy<Vec<u32>> =
 
 #[derive(Clone, Copy, Debug)]
 pub enum LayerId {
+    /// Super (inner) circuit layer
+    Inner,
     /// Compression wide layer
     Layer1,
     /// Compression thin layer (to generate chunk-proof)
@@ -50,6 +52,7 @@ impl fmt::Display for LayerId {
 impl LayerId {
     pub fn id(&self) -> &str {
         match self {
+            Self::Inner => "inner",
             Self::Layer1 => "layer1",
             Self::Layer2 => "layer2",
             Self::Layer3 => "layer3",
@@ -59,6 +62,7 @@ impl LayerId {
 
     pub fn degree(&self) -> u32 {
         match self {
+            Self::Inner => *INNER_DEGREE,
             Self::Layer1 => *LAYER1_DEGREE,
             Self::Layer2 => *LAYER2_DEGREE,
             Self::Layer3 => *LAYER3_DEGREE,
@@ -72,6 +76,7 @@ impl LayerId {
             Self::Layer2 => &LAYER2_CONFIG_PATH,
             Self::Layer3 => &LAYER3_CONFIG_PATH,
             Self::Layer4 => &LAYER4_CONFIG_PATH,
+            Self::Inner => unreachable!("No config file for super (inner) circuit"),
         }
     }
 }

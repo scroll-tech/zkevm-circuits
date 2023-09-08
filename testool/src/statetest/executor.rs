@@ -720,9 +720,9 @@ pub fn run_test(
             check_ccc();
         } else {
             #[cfg(feature = "inner-prove")]
-            inner_prove(&test_id, &witness_block);
+            inner_prove(&test_id, &st.env.current_coinbase, &witness_block);
             #[cfg(feature = "chunk-prove")]
-            chunk_prove(&test_id, &witness_block);
+            chunk_prove(&test_id, &st.env.current_coinbase, &witness_block);
             #[cfg(not(all(feature = "inner-prove", feature = "chunk-prove")))]
             mock_prove(&test_id, &witness_block);
         }
@@ -778,36 +778,72 @@ fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
 }
 
 #[cfg(feature = "inner-prove")]
-fn inner_prove(test_id: &str, witness_block: &Block<Fr>) {
-    log::info!("{test_id}: inner-prove BEGIN");
+fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
+    let coinbase = coinbase.to_string();
+    log::info!("{test_id}: inner-prove BEGIN, coinbase = {coinbase}");
+
+    let prover = unsafe { &mut REAL_PROVER };
+    let coinbase_changed = prover.pk(&coinbase).is_none();
+
+    // Clear previous PKs if coinbase address changed.
+    if coinbase_changed {
+        prover.clear_pks();
+    }
 
     let rng = prover::utils::gen_rng();
-    let prover = unsafe { &mut REAL_PROVER };
     let snark = prover
-        .gen_inner_snark::<prover::zkevm::circuit::SuperCircuit>("inner", rng, witness_block)
+        .gen_inner_snark::<prover::zkevm::circuit::SuperCircuit>(&coinbase, rng, witness_block)
         .unwrap_or_else(|err| panic!("{test_id}: failed to generate inner snark: {err}"));
     log::info!("{test_id}: generated inner snark");
 
     let verifier = unsafe { &mut INNER_VERIFIER };
+
+    // Reset VK if coinbase address changed.
+    if coinbase_changed {
+        let pk = prover.pk(&coinbase).unwrap_or_else(|| {
+            panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
+        });
+        let vk = pk.get_vk().clone();
+        verifier.set_vk(vk);
+    }
+
     let verified = verifier.verify_snark(snark);
     assert!(verified, "{test_id}: failed to verify inner snark");
 
-    log::info!("{test_id}: inner-prove END");
+    log::info!("{test_id}: inner-prove END, coinbase = {coinbase}");
 }
 
 #[cfg(feature = "chunk-prove")]
-fn chunk_prove(test_id: &str, witness_block: &Block<Fr>) {
-    log::info!("{test_id}: chunk-prove BEGIN");
+fn chunk_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
+    let coinbase = coinbase.to_string();
+    log::info!("{test_id}: chunk-prove BEGIN, coinbase = {coinbase}");
 
     let prover = unsafe { &mut REAL_PROVER };
+    let coinbase_changed = prover.pk(&coinbase).is_none();
+
+    // Clear previous PKs if coinbase address changed.
+    if coinbase_changed {
+        prover.clear_pks();
+    }
+
     let snark = prover
-        .load_or_gen_final_chunk_snark(test_id, witness_block, None)
+        .load_or_gen_final_chunk_snark(test_id, witness_block, Some(&coinbase), None)
         .unwrap_or_else(|err| panic!("{test_id}: failed to generate chunk snark: {err}"));
     log::info!("{test_id}: generated chunk snark");
 
     let verifier = unsafe { &mut CHUNK_VERIFIER };
+
+    // Reset VK if coinbase address changed.
+    if coinbase_changed {
+        let pk = prover.pk(&coinbase).unwrap_or_else(|| {
+            panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
+        });
+        let vk = pk.get_vk().clone();
+        verifier.set_vk(vk);
+    }
+
     let verified = verifier.verify_snark(snark);
     assert!(verified, "{test_id}: failed to verify chunk snark");
 
-    log::info!("{test_id}: chunk-prove END");
+    log::info!("{test_id}: chunk-prove END, coinbase = {coinbase}");
 }

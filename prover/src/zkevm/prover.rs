@@ -44,6 +44,7 @@ impl Prover {
         &mut self,
         chunk_trace: Vec<BlockTrace>,
         name: Option<&str>,
+        inner_id: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<ChunkProof> {
         assert!(!chunk_trace.is_empty());
@@ -64,9 +65,12 @@ impl Prover {
             |name| name.to_string(),
         );
 
-        let snark = self
-            .inner
-            .load_or_gen_final_chunk_snark(&name, &witness_block, output_dir)?;
+        let snark = self.inner.load_or_gen_final_chunk_snark(
+            &name,
+            &witness_block,
+            inner_id,
+            output_dir,
+        )?;
 
         self.check_and_clear_raw_vk();
 

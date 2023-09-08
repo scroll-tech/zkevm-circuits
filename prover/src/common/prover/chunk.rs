@@ -1,8 +1,5 @@
 use super::Prover;
-use crate::{
-    config::{LAYER1_DEGREE, LAYER2_DEGREE},
-    utils::gen_rng,
-};
+use crate::{config::LayerId, utils::gen_rng};
 use aggregator::extract_proof_and_instances_with_pairing_check;
 use anyhow::{anyhow, Result};
 use halo2_proofs::halo2curves::bn256::Fr;
@@ -14,16 +11,18 @@ impl Prover {
         &mut self,
         name: &str,
         witness_block: &Block<Fr>,
+        inner_id: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<Snark> {
-        let layer1_snark = self.load_or_gen_last_chunk_snark(name, witness_block, output_dir)?;
+        let layer1_snark =
+            self.load_or_gen_last_chunk_snark(name, witness_block, inner_id, output_dir)?;
 
         // Load or generate compression thin snark (layer-2).
         let layer2_snark = self.load_or_gen_comp_snark(
             name,
-            "layer2",
+            LayerId::Layer2.id(),
             true,
-            *LAYER2_DEGREE,
+            LayerId::Layer2.degree(),
             layer1_snark,
             output_dir,
         )?;
@@ -38,15 +37,21 @@ impl Prover {
         &mut self,
         name: &str,
         witness_block: &Block<Fr>,
+        inner_id: Option<&str>,
         output_dir: Option<&str>,
     ) -> Result<Snark> {
         // Load or generate inner snark.
-        let inner_snark = self.load_or_gen_inner_snark(name, "inner", witness_block, output_dir)?;
+        let inner_snark = self.load_or_gen_inner_snark(
+            name,
+            inner_id.unwrap_or(LayerId::Inner.id()),
+            witness_block,
+            output_dir,
+        )?;
         log::info!("Got inner snark: {name}");
 
         // Check pairing for super circuit.
         extract_proof_and_instances_with_pairing_check(
-            self.params(*LAYER1_DEGREE),
+            self.params(LayerId::Layer1.degree()),
             &[inner_snark.clone()],
             gen_rng(),
         )
@@ -55,9 +60,9 @@ impl Prover {
         // Load or generate compression wide snark (layer-1).
         let layer1_snark = self.load_or_gen_comp_snark(
             name,
-            "layer1",
+            LayerId::Layer1.id(),
             false,
-            *LAYER1_DEGREE,
+            LayerId::Layer1.degree(),
             inner_snark,
             output_dir,
         )?;
