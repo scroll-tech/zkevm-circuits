@@ -19,7 +19,7 @@ use halo2_proofs::{
 use std::vec;
 
 use super::{
-    bytecode_unroller::{unroll_with_codehash, UnrolledBytecode},
+    bytecode_unroller::{unroll_with_codehash, BytecodeRow, UnrolledBytecode},
     param::PUSH_TABLE_WIDTH,
 };
 
@@ -642,7 +642,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         let mut push_data_left = 0;
         let mut next_push_data_left = 0;
         let mut push_data_size = 0;
-        let mut push_acc = Value::known(F::zero());
+        let mut push_acc_iter = vec![].into_iter();
         let mut push_rlc = Value::known(F::zero());
         let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
         let length = F::from(bytecode.bytes.len() as u64);
@@ -657,8 +657,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             }
         });
 
-        // TODO: pad until push_data_left == 0.
-
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {
                 log::error!(
@@ -669,8 +667,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 return Err(Error::Synthesis);
             }
 
-            // Track which byte is an opcode and which is push
-            // data
+            let push_acc = push_acc_iter.next().unwrap_or(Value::known(F::zero()));
+
             if idx > 0 {
                 let is_code = push_data_left == 0;
 
@@ -682,11 +680,17 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     push_data_left - 1
                 };
 
-                push_acc = if is_code {
-                    Value::known(F::zero())
-                } else {
-                    push_acc * challenges.evm_word() + Value::known(row.value)
-                };
+                if is_code {
+                    // Calculate the RLC of the upcoming push data, if any.
+                    let start = idx + 1;
+                    let end = (start + push_data_size as usize).min(bytecode.rows.len());
+                    let push_accumulator =
+                        Self::make_push_rlc(challenges.evm_word(), &bytecode.rows[start..end]);
+                    // Set the RLC result for all rows of the instruction, or 0.
+                    push_rlc = push_accumulator.0;
+                    // Prepare the upcoming values of the RLC accumulator, or an empty iterator.
+                    push_acc_iter = push_accumulator.1.into_iter();
+                }
 
                 value_rlc
                     .as_mut()
@@ -748,6 +752,19 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         }
 
         Ok(())
+    }
+
+    /// Return the RLC of the given bytecode (MSB-first), and the intermediate accumulator values.
+    fn make_push_rlc(rand: Value<F>, rows: &[BytecodeRow<F>]) -> (Value<F>, Vec<Value<F>>) {
+        let mut acc = Value::known(F::zero());
+        let intermediates = rows
+            .iter()
+            .map(|row| {
+                acc = acc * rand + Value::known(row.value);
+                acc
+            })
+            .collect();
+        (acc, intermediates)
     }
 
     fn set_padding_row(
