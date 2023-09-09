@@ -481,6 +481,31 @@ pub struct GethExecTrace {
     pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[doc(hidden)]
+pub struct ResultGethPrestateTraces(pub Vec<ResultGethPrestateTrace>);
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[doc(hidden)]
+pub struct ResultGethPrestateTrace {
+    pub txHash: H256,
+    pub result: HashMap<Address, GethPrestateTrace>,
+}
+
+/// The prestate trace returned by geth RPC debug_trace* methods.
+#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct GethPrestateTrace {
+    /// balance
+    pub balance: Option<U256>,
+    /// nonce
+    pub nonce: Option<u64>,
+    /// code
+    pub code: Option<Bytes>,
+    /// storage
+    pub storage: Option<HashMap<U256, U256>>,
+}
+
 #[macro_export]
 /// Create an [`Address`] from a hex string.  Panics on invalid input.
 macro_rules! address {

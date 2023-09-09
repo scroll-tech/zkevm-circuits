@@ -3,12 +3,13 @@
 
 use crate::Error;
 use eth_types::{
-    Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash, ResultGethExecTraces,
-    Transaction, Word, H256, U64,
+    Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, GethPrestateTrace, Hash,
+    ResultGethExecTraces, ResultGethPrestateTraces, Transaction, Word, H256, U64,
 };
 pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
 use serde::Serialize;
+use std::collections::HashMap;
 
 use crate::util::CHECK_MEM_STRICT;
 
@@ -158,6 +159,23 @@ impl<P: JsonRpcClient> GethClient<P> {
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))?;
         Ok(vec![resp])
+    }
+
+    /// Call `debug_traceBlockByHash` use prestateTracer to get prestate
+    pub async fn trace_block_prestate_by_hash(
+        &self,
+        hash: Hash,
+    ) -> Result<Vec<HashMap<Address, GethPrestateTrace>>, Error> {
+        let hash = serialize(&hash);
+        let cfg = serialize(&serde_json::json! ({
+            "tracer": "prestateTracer",
+        }));
+        let resp: ResultGethPrestateTraces = self
+            .0
+            .request("debug_traceBlockByHash", [hash, cfg])
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
+        Ok(resp.0.into_iter().map(|step| step.result).collect())
     }
 
     /// Calls `eth_getCode` via JSON-RPC returning a contract code

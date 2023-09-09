@@ -124,8 +124,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         // check memory copy
         let mstart = cb.query_cell_phase2();
-        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
-
+        let memory_address = MemoryAddressGadget::construct(cb, mstart.clone(), msize);
+        cb.require_equal(
+            "mstart == mstart_word value",
+            mstart.expr(),
+            mstart_word.original_word(),
+        );
         cb.condition(mstart_word.overflow(), |cb| {
             cb.require_zero(
                 "Memory size must be zero if memory start is overflow",
