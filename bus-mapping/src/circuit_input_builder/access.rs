@@ -1,5 +1,7 @@
 use crate::{operation::RW, Error};
-use eth_types::{evm_types::OpcodeId, Address, GethExecStep, GethExecTrace, ToAddress, Word};
+use eth_types::{
+    evm_types::OpcodeId, Address, GethExecStep, GethExecTrace, GethPrestateTrace, ToAddress, Word,
+};
 use ethers_core::utils::get_contract_address;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
@@ -66,37 +68,63 @@ pub struct AccessSet {
 }
 
 impl AccessSet {
-    pub(crate) fn add(&mut self, list: Vec<Access>) {
-        let state = &mut self.state;
-        let code = &mut self.code;
+    #[inline(always)]
+    pub(crate) fn add_account(&mut self, address: Address) {
+        self.state.entry(address).or_insert_with(HashSet::new);
+    }
+
+    #[inline(always)]
+    pub(crate) fn add_storage(&mut self, address: Address, key: Word) {
+        match self.state.entry(address) {
+            Entry::Vacant(entry) => {
+                let mut storage = HashSet::new();
+                storage.insert(key);
+                entry.insert(storage);
+            }
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().insert(key);
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn add_code(&mut self, address: Address) {
+        self.state.entry(address).or_insert_with(HashSet::new);
+        self.code.insert(address);
+    }
+
+    pub(crate) fn extend_from_access(&mut self, list: Vec<Access>) {
         for access in list {
             match access.value {
-                AccessValue::Account { address } => {
-                    state.entry(address).or_insert_with(HashSet::new);
-                }
-                AccessValue::Storage { address, key } => match state.entry(address) {
-                    Entry::Vacant(entry) => {
-                        let mut storage = HashSet::new();
-                        storage.insert(key);
-                        entry.insert(storage);
-                    }
-                    Entry::Occupied(mut entry) => {
-                        entry.get_mut().insert(key);
-                    }
-                },
-                AccessValue::Code { address } => {
-                    state.entry(address).or_insert_with(HashSet::new);
-                    code.insert(address);
+                AccessValue::Account { address } => self.add_account(address),
+                AccessValue::Storage { address, key } => self.add_storage(address, key),
+                AccessValue::Code { address } => self.add_code(address),
+            }
+        }
+    }
+
+    pub(crate) fn extend_from_traces(&mut self, traces: &HashMap<Address, GethPrestateTrace>) {
+        for (address, trace) in traces.iter() {
+            self.add_account(*address);
+            self.add_code(*address);
+            if let Some(ref storage) = trace.storage {
+                for key in storage.keys() {
+                    self.add_storage(*address, *key);
                 }
             }
         }
+    }
+
+    pub(crate) fn extend(&mut self, other: &mut Self) {
+        self.state.extend(other.state.drain());
+        self.code.extend(other.code.drain());
     }
 }
 
 impl From<Vec<Access>> for AccessSet {
     fn from(list: Vec<Access>) -> Self {
         let mut access_set = AccessSet::default();
-        access_set.add(list);
+        access_set.extend_from_access(list);
         access_set
     }
 }

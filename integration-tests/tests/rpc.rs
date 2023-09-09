@@ -87,3 +87,15 @@ async fn test_get_proof() {
         .unwrap();
     assert_eq!(expected_storage_proof, proof.storage_proof[0]);
 }
+
+#[tokio::test]
+async fn test_prestate_tracer() {
+    let cli = get_client();
+    cli.trace_block_prestate_by_hash(
+        "0x25bf297a83c6de4ba7e7672d66c25a3ddd93f9c78878daf9806f6610f7a193bc"
+            .parse()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+}

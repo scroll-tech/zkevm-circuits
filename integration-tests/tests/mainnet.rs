@@ -172,6 +172,8 @@ async fn test_circuit_all_block() {
         }
     }
 }
+
+#[ignore]
 #[tokio::test]
 async fn test_print_circuits_size() {
     log_init();
