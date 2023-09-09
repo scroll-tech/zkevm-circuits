@@ -21,11 +21,12 @@ use once_cell::sync::Lazy;
 #[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
 use prover::{
     common::{Prover, Verifier},
+    config::LayerId,
     config::{INNER_DEGREE, ZKEVM_DEGREES},
 };
 #[cfg(feature = "inner-prove")]
 use prover::{utils::gen_rng, zkevm::circuit};
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, env, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
     bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
@@ -35,7 +36,7 @@ use zkevm_circuits::{
 
 /// Read env var with default value
 pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
-    std::env::var(var_name)
+    env::var(var_name)
         .map(|s| s.parse::<T>().unwrap_or_else(|_| default.clone()))
         .unwrap_or(default)
 }
@@ -66,7 +67,8 @@ static mut INNER_VERIFIER: Lazy<
     let prover = unsafe { &mut REAL_PROVER };
     let params = prover.params(*INNER_DEGREE).clone();
 
-    let pk = prover.pk("inner").expect("Failed to get inner-prove PK");
+    let id = read_env_var("COINBASE", LayerId::Inner.id().to_string());
+    let pk = prover.pk(&id).expect("Failed to get inner-prove PK");
     let vk = pk.get_vk().clone();
 
     let verifier = Verifier::new(params, vk);
@@ -77,9 +79,7 @@ static mut INNER_VERIFIER: Lazy<
 
 #[cfg(feature = "chunk-prove")]
 static mut CHUNK_VERIFIER: Lazy<Verifier<prover::CompressionCircuit>> = Lazy::new(|| {
-    use prover::config::LayerId;
-
-    std::env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
+    env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
 
     let prover = unsafe { &mut REAL_PROVER };
     let params = prover.params(LayerId::Layer2.degree()).clone();
@@ -366,13 +366,10 @@ fn trace_config_to_witness_block_l2(
         .collect::<Vec<_>>();
     check_geth_traces(&geth_traces, &suite, verbose)?;
 
-    std::env::set_var(
-        "COINBASE",
-        format!("0x{}", hex::encode(block_trace.coinbase.address.unwrap())),
-    );
-    std::env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
+    set_env_coinbase(&block_trace.coinbase.address.unwrap());
+    env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
     let difficulty_be_bytes = [0u8; 32];
-    std::env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+    env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
     let mut builder =
         CircuitInputBuilder::new_from_l2_trace(circuits_params, &block_trace, false, false)
             .expect("could not handle block tx");
@@ -767,6 +764,14 @@ pub fn run_test(
     Ok(())
 }
 
+#[cfg(feature = "scroll")]
+fn set_env_coinbase(coinbase: &Address) -> String {
+    let coinbase = format!("0x{}", hex::encode(coinbase));
+    env::set_var("COINBASE", &coinbase);
+
+    coinbase
+}
+
 #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
 fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
     log::info!("{test_id}: mock-prove BEGIN");
@@ -783,7 +788,7 @@ fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
 
 #[cfg(feature = "inner-prove")]
 fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
-    let coinbase = coinbase.to_string();
+    let coinbase = set_env_coinbase(coinbase);
     log::info!("{test_id}: inner-prove BEGIN, coinbase = {coinbase}");
 
     let prover = unsafe { &mut REAL_PROVER };
@@ -819,9 +824,7 @@ fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
 
 #[cfg(feature = "chunk-prove")]
 fn chunk_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
-    use prover::config::LayerId;
-
-    let coinbase = coinbase.to_string();
+    let coinbase = set_env_coinbase(coinbase);
     log::info!("{test_id}: chunk-prove BEGIN, coinbase = {coinbase}");
 
     let prover = unsafe { &mut REAL_PROVER };
