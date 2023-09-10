@@ -81,6 +81,7 @@ use crate::{
     util::{circuit_stats, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block, Transaction},
 };
+use std::{cell::RefCell, collections::BTreeSet, time::Instant};
 
 #[cfg(feature = "zktrie")]
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
@@ -157,7 +158,23 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
+        let advice_queries_before = RefCell::new(BTreeSet::new());
         let log_circuit_info = |meta: &ConstraintSystem<Fr>, tag: &str| {
+            let advice_queries_after = meta
+                .advice_queries
+                .iter()
+                .map(|(c, q)| (c.index, q.0))
+                .collect::<BTreeSet<_>>();
+            let prev_rotation_diffs = advice_queries_after
+                .difference(&advice_queries_before.borrow())
+                .filter_map(|(_, q)| if *q < 0 { Some(*q) } else { None })
+                .collect_vec();
+            advice_queries_before.replace(advice_queries_after);
+            log::debug!(
+                "previous rotations circuit {} have: {:?}",
+                tag,
+                prev_rotation_diffs
+            );
             log::debug!("circuit info after {}: {:#?}", tag, circuit_stats(meta));
         };
         let challenges_expr = challenges.exprs(meta);
@@ -541,6 +558,17 @@ impl<
     }
 }
 
+macro_rules! measure_time {
+    ($circuit:expr, $s:stmt) => {
+        {
+            let timer = Instant::now();
+            let circ_name = String::from(stringify!($circuit));
+            $s
+            log::info!("{} circuit synthesis took {:?}", circ_name, timer.elapsed());
+        }
+    }
+}
+
 // Eventhough the SuperCircuit is not a subcircuit we implement the SubCircuit
 // trait for it in order to get the `new_from_block` and `instance` methods that
 // allow us to generalize integration tests.
@@ -637,44 +665,80 @@ impl<
         layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
         log::debug!("assigning evm_circuit");
-        self.evm_circuit
-            .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+        measure_time!(
+            evm,
+            self.evm_circuit
+                .synthesize_sub(&config.evm_circuit, challenges, layouter)?
+        );
         log::debug!("assigning keccak_circuit");
-        self.keccak_circuit
-            .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
+        measure_time!(
+            keccak,
+            self.keccak_circuit
+                .synthesize_sub(&config.keccak_circuit, challenges, layouter)?
+        );
         log::debug!("assigning poseidon_circuit");
-        self.poseidon_circuit
-            .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;
+        measure_time!(
+            poseidon,
+            self.poseidon_circuit
+                .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?
+        );
         log::debug!("assigning bytecode_circuit");
-        self.bytecode_circuit
-            .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
+        measure_time!(
+            bytecode,
+            self.bytecode_circuit
+                .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?
+        );
         log::debug!("assigning tx_circuit");
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
+        measure_time!(
+            tx,
+            self.tx_circuit
+                .synthesize_sub(&config.tx_circuit, challenges, layouter)?
+        );
         log::debug!("assigning sig_circuit");
-        self.sig_circuit
-            .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
+        measure_time!(
+            sig,
+            self.sig_circuit
+                .synthesize_sub(&config.sig_circuit, challenges, layouter)?
+        );
         log::debug!("assigning ecc_circuit");
-        self.ecc_circuit
-            .synthesize_sub(&config.ecc_circuit, challenges, layouter)?;
+        measure_time!(
+            ecc,
+            self.ecc_circuit
+                .synthesize_sub(&config.ecc_circuit, challenges, layouter)?
+        );
         log::debug!("assigning modexp_circuit");
-        self.modexp_circuit
-            .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
+        measure_time!(
+            modexp,
+            self.modexp_circuit
+                .synthesize_sub(&config.modexp_circuit, challenges, layouter)?
+        );
         log::debug!("assigning state_circuit");
-        self.state_circuit
-            .synthesize_sub(&config.state_circuit, challenges, layouter)?;
+        measure_time!(
+            state,
+            self.state_circuit
+                .synthesize_sub(&config.state_circuit, challenges, layouter)?
+        );
         log::debug!("assigning copy_circuit");
-        self.copy_circuit
-            .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
+        measure_time!(
+            copy,
+            self.copy_circuit
+                .synthesize_sub(&config.copy_circuit, challenges, layouter)?
+        );
         log::debug!("assigning exp_circuit");
-        self.exp_circuit
-            .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
+        measure_time!(
+            exp,
+            self.exp_circuit
+                .synthesize_sub(&config.exp_circuit, challenges, layouter)?
+        );
 
         log::debug!("assigning pi_circuit");
         self.pi_circuit
             .import_tx_values(self.tx_circuit.value_cells.borrow().clone().unwrap());
-        self.pi_circuit
-            .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
+        measure_time!(
+            pi,
+            self.pi_circuit
+                .synthesize_sub(&config.pi_circuit, challenges, layouter)?
+        );
         self.pi_circuit.connect_export(
             layouter,
             self.state_circuit.exports.borrow().as_ref(),
@@ -682,15 +746,21 @@ impl<
         )?;
 
         log::debug!("assigning rlp_circuit");
-        self.rlp_circuit
-            .synthesize_sub(&config.rlp_circuit, challenges, layouter)?;
+        measure_time!(
+            rlp,
+            self.rlp_circuit
+                .synthesize_sub(&config.rlp_circuit, challenges, layouter)?
+        );
 
         // load both poseidon table and zktrie table
         #[cfg(feature = "zktrie")]
         {
             log::debug!("assigning mpt_circuit");
-            self.mpt_circuit
-                .synthesize_sub(&config.mpt_circuit, challenges, layouter)?;
+            measure_time!(
+                mpt,
+                self.mpt_circuit
+                    .synthesize_sub(&config.mpt_circuit, challenges, layouter)?
+            )
         }
 
         log::debug!("super circuit synthesize_sub done");
