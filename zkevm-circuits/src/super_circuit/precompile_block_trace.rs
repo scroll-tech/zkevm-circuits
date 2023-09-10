@@ -352,8 +352,7 @@ pub(crate) fn block_precompile_oog() -> BlockTrace {
                 .from(wallet_a.clone())
                 .to(address!("0x0000000000000000000000000000000000000005"))
                 .input(Bytes::from(mod_exp_input))
-                // .gas((21_000 + GasCost::PRECOMPILE_MODEXP.0 - 1).into());
-                .gas((12_901 + GasCost::PRECOMPILE_MODEXP.0 - 1).into());
+                .gas((22_200 + GasCost::PRECOMPILE_MODEXP.0 - 1).into());
         },
         |block, _tx| block.number(0xcafeu64),
     )
