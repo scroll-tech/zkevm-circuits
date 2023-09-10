@@ -73,4 +73,8 @@ impl Prover {
     pub fn raw_vk(&self, id: &str) -> Option<Vec<u8>> {
         self.pk_map.get(id).map(|pk| serialize_vk(pk.get_vk()))
     }
+
+    pub fn clear_pks(&mut self) {
+        self.pk_map.clear();
+    }
 }

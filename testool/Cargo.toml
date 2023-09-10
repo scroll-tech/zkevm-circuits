@@ -22,6 +22,7 @@ itertools = "0.10"
 mock = { path = "../mock" }
 once_cell = "1.10"
 prettytable-rs = "0.10"
+prover = { path = "../prover", optional = true }
 rayon = "1.5"
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
@@ -43,5 +44,8 @@ default = ["ignore-test-docker", "skip-self-destruct", "shanghai"]
 onephase = ["zkevm-circuits/onephase"]
 ignore-test-docker = []
 skip-self-destruct = []
-shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai"]
-scroll = ["bus-mapping/scroll", "eth-types/scroll", "external-tracer/scroll", "mock/scroll", "zkevm-circuits/scroll"]
+shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai", "prover?/shanghai"]
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "external-tracer/scroll", "mock/scroll", "zkevm-circuits/scroll", "prover?/scroll"]
+parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn", "prover?/parallel_syn"]
+inner-prove = ["prover", "parallel_syn", "scroll", "shanghai"]
+chunk-prove = ["prover", "parallel_syn", "scroll", "shanghai"]

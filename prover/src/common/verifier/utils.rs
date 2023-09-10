@@ -14,4 +14,8 @@ impl<C: CircuitExt<Fr>> Verifier<C> {
     pub fn vk(&self) -> &VerifyingKey<G1Affine> {
         &self.vk
     }
+
+    pub fn set_vk(&mut self, vk: VerifyingKey<G1Affine>) {
+        self.vk = vk;
+    }
 }
