@@ -341,17 +341,21 @@ pub(crate) fn block_precompile_oog() -> BlockTrace {
                 .from(wallet_a.clone())
                 .to(address!("0x0000000000000000000000000000000000000007"))
                 .input(Bytes::from(ec_mul_input))
-                .gas((22_000 + GasCost::PRECOMPILE_BN256MUL.0 - 1).into());
+                // .gas((12_345 + GasCost::PRECOMPILE_BN256MUL.0 - 1).into());
+                .gas((12_345).into());
+
             txs[2]
                 .from(wallet_a.clone())
                 .to(address!("0x0000000000000000000000000000000000000008"))
                 .input(Bytes::from(ec_pairing_input))
-                .gas((21_000 + GasCost::PRECOMPILE_BN256PAIRING.0 - 1).into());
+                // .gas((12_678 + GasCost::PRECOMPILE_BN256PAIRING.0 - 1).into());
+                .gas((12_678).into());
             txs[3]
                 .from(wallet_a.clone())
                 .to(address!("0x0000000000000000000000000000000000000005"))
                 .input(Bytes::from(mod_exp_input))
-                .gas((21_000 + GasCost::PRECOMPILE_MODEXP.0 - 1).into());
+                // .gas((21_000 + GasCost::PRECOMPILE_MODEXP.0 - 1).into());
+                .gas((12_901 + GasCost::PRECOMPILE_MODEXP.0 - 1).into());
         },
         |block, _tx| block.number(0xcafeu64),
     )
