@@ -227,7 +227,7 @@ pub(crate) fn block_ec_ops() -> BlockTrace {
     .clone()
 }
 
-// #[cfg(feature = "scroll")]
+#[cfg(feature = "scroll")]
 pub(crate) fn block_precompile_oog() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
     let chain_id = *MOCK_CHAIN_ID;
