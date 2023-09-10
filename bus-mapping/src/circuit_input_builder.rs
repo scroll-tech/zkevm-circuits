@@ -16,8 +16,9 @@ use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
 use crate::{
     error::Error,
-    evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops},
+    evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
+    precompile::is_precompiled,
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
@@ -27,7 +28,7 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
     self,
-    evm_types::OpcodeId,
+    evm_types::{GasCost, OpcodeId},
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256,
@@ -568,11 +569,41 @@ impl<'a> CircuitInputBuilder {
                 }
             }
         }
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: BeginTx
-        // - op: None
+
         // Generate BeginTx step
-        gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx), geth_trace)?;
+        let mut begin_tx_step = gen_associated_steps(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            ExecState::BeginTx,
+        )?;
+
+        // check gas cost
+        {
+            let real_gas_cost = if geth_trace.struct_logs.is_empty() {
+                GasCost(geth_trace.gas.0)
+            } else {
+                GasCost(tx.gas - geth_trace.struct_logs[0].gas.0)
+            };
+            if real_gas_cost != begin_tx_step.gas_cost {
+                let is_precompile = tx.to.map(|ref addr| is_precompiled(addr)).unwrap_or(false);
+                if is_precompile {
+                    // FIXME after we implement all precompiles
+                    if begin_tx_step.gas_cost != real_gas_cost {
+                        log::warn!(
+                            "change begin tx precompile gas from {:?} to {real_gas_cost:?}, step {begin_tx_step:?}",
+                            begin_tx_step.gas_cost
+                        );
+                        begin_tx_step.gas_cost = real_gas_cost;
+                    }
+                } else {
+                    // EIP2930 not implemented
+                    if tx.access_list.is_none() {
+                        debug_assert_eq!(begin_tx_step.gas_cost, real_gas_cost);
+                    }
+                }
+            }
+        }
+
+        tx.steps_mut().push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let tx_gas = tx.gas;
@@ -655,12 +686,10 @@ impl<'a> CircuitInputBuilder {
             tx.steps_mut().extend(exec_steps);
         }
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: EndTx
-        // - op: None
         // Generate EndTx step
         log::trace!("gen_end_tx_ops");
-        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let end_tx_step =
+            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
