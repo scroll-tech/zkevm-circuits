@@ -42,7 +42,9 @@ impl Default for CodeDB {
 impl CodeDB {
     /// Create a new empty Self.
     pub fn new() -> Self {
-        Self(HashMap::new())
+        let mut codedb = Self(HashMap::new());
+        codedb.insert(Vec::new());
+        codedb
     }
     /// Insert code indexed by code hash, and return the code hash.
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {

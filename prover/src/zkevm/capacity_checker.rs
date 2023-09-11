@@ -108,7 +108,7 @@ impl RowUsage {
             .map(|x| x.row_number)
             .max()
             .unwrap();
-        self.is_ok = self.row_number < NORMALIZED_ROW_LIMIT;
+        self.is_ok = self.row_number <= NORMALIZED_ROW_LIMIT;
     }
 }
 

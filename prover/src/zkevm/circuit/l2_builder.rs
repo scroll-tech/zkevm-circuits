@@ -15,9 +15,7 @@ use mpt_zktrie::state::ZktrieState;
 use once_cell::sync::Lazy;
 use std::{collections::HashMap, time::Instant};
 use zkevm_circuits::{
-    evm_circuit::witness::{
-        block_apply_mpt_state, block_convert, block_convert_with_l1_queue_index, Block,
-    },
+    evm_circuit::witness::{block_apply_mpt_state, block_convert_with_l1_queue_index, Block},
     util::SubCircuit,
     witness::WithdrawProof,
 };
@@ -220,7 +218,6 @@ fn prepare_default_builder(
 }
 
 // check if block traces match preset parameters
-#[allow(dead_code)]
 fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
     let chain_id = block_traces
         .iter()
@@ -275,71 +272,6 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
     }
 }
 
-#[deprecated]
-#[allow(dead_code)]
-pub fn block_traces_to_padding_witness_block(block_traces: &[BlockTrace]) -> Result<Block<Fr>> {
-    log::debug!(
-        "block_traces_to_padding_witness_block, input len {:?}",
-        block_traces.len()
-    );
-    validite_block_traces(block_traces)?;
-
-    // the only purpose here it to get the final zktrie state and
-    // proof for withdraw root
-    let mut padding_builder = if block_traces.is_empty() {
-        log::debug!("preparing default builder");
-        prepare_default_builder(H256::zero(), None)
-    } else {
-        let start_l1_queue_index = block_traces[0].start_l1_queue_index;
-        log::debug!(
-            "new from l2 trace, block num {:?}",
-            block_traces[0].header.number
-        );
-        let mut builder = CircuitInputBuilder::new_from_l2_trace(
-            get_super_circuit_params(),
-            &block_traces[0],
-            block_traces.len() > 1,
-            false,
-        )?;
-        for (idx, block_trace) in block_traces[1..].iter().enumerate() {
-            log::debug!(
-                "adding more l2 trace block_trace idx {}, block num {:?}",
-                idx + 1,
-                block_trace.header.number
-            );
-            builder.add_more_l2_trace(
-                block_trace,
-                idx + 2 == block_traces.len(), //not typo, we use 1..end of the traces only
-                false,
-            )?;
-        }
-        builder.finalize_building()?;
-        let mut witness_block = block_convert_with_l1_queue_index::<Fr>(
-            &builder.block,
-            &builder.code_db,
-            start_l1_queue_index,
-        )?;
-        log::debug!(
-            "witness_block built with circuits_params {:?} for padding",
-            witness_block.circuits_params
-        );
-        // so we have the finalized state which contain withdraw proof
-        block_apply_mpt_state(&mut witness_block, &builder.mpt_init_state);
-        let old_root = H256(*builder.mpt_init_state.root());
-        prepare_default_builder(old_root, Some(builder.mpt_init_state))
-    };
-
-    // TODO: when prev_witness_block.tx.is_empty(), the `withdraw_proof` here should be a subset of
-    // storage proofs of prev block
-    padding_builder.finalize_building()?;
-
-    let mut padding_block = block_convert(&padding_builder.block, &padding_builder.code_db)?;
-    // drag the withdraw proof from zktrie state
-    block_apply_mpt_state(&mut padding_block, &padding_builder.mpt_init_state);
-
-    Ok(padding_block)
-}
-
 /// update the builder with another batch of trace and then *FINALIZE* it
 /// (so the buidler CAN NOT be update any more)
 /// light_mode skip the time consuming calculation on mpt root for each
@@ -349,6 +281,8 @@ pub fn block_traces_to_witness_block_with_updated_state(
     builder: &mut CircuitInputBuilder,
     light_mode: bool,
 ) -> Result<Block<Fr>> {
+    validite_block_traces(block_traces)?;
+
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
         let block = block_convert_with_l1_queue_index::<Fr>(

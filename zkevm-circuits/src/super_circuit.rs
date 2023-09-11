@@ -65,7 +65,10 @@ use crate::{
     ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitArgs, ExpCircuitConfig},
-    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    keccak_circuit::{
+        keccak_packed_multi::get_num_rows_per_round, KeccakCircuit, KeccakCircuitConfig,
+        KeccakCircuitConfigArgs,
+    },
     modexp_circuit::{ModExpCircuit, ModExpCircuitConfig},
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
@@ -200,6 +203,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let u16_table = U16Table::construct(meta);
         log_circuit_info(meta, "u16 table");
 
+        assert!(get_num_rows_per_round() == 12);
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
             KeccakCircuitConfigArgs {
@@ -639,6 +643,16 @@ impl<
         log::debug!("assigning evm_circuit");
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+
+        if !challenges.lookup_input().is_none() {
+            let is_mock_prover = format!("{:?}", challenges.lookup_input()) == *"Value { inner: Some(0x207a52ba34e1ed068be1e33b0bc39c8ede030835f549fe5c0dbe91dce97d17d2) }";
+            if is_mock_prover {
+                log::info!("continue assignment only for 3rd phase");
+            } else {
+                log::info!("only evm circuit needs 3rd phase assignment");
+                return Ok(());
+            }
+        }
         log::debug!("assigning keccak_circuit");
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
