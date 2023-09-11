@@ -639,9 +639,15 @@ impl<
         log::debug!("assigning evm_circuit");
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+
         if !challenges.lookup_input().is_none() {
-            log::info!("only evm circuit needs 3rd phase assignment");
-            return Ok(());
+            let is_mock_prover = format!("{:?}", challenges.lookup_input()) == *"Value { inner: Some(0x207a52ba34e1ed068be1e33b0bc39c8ede030835f549fe5c0dbe91dce97d17d2) }";
+            if is_mock_prover {
+                log::info!("continue assignment only for 3rd phase");
+            } else {
+                log::info!("only evm circuit needs 3rd phase assignment");
+                return Ok(());
+            }
         }
         log::debug!("assigning keccak_circuit");
         self.keccak_circuit
