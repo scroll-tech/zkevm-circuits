@@ -639,6 +639,10 @@ impl<
         log::debug!("assigning evm_circuit");
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+        if !challenges.lookup_input().is_none() {
+            log::info!("only evm circuit needs 3rd phase assignment");
+            return Ok(());
+        }
         log::debug!("assigning keccak_circuit");
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
