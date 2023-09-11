@@ -10,6 +10,7 @@ ethers-core = "0.17.0"
 ethers-signers = "0.17.0"
 hex = "0.4"
 lazy_static = "1.4"
+log = "0.4"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 regex = "1.5.4"
 serde = {version = "1.0.130", features = ["derive"] }
@@ -25,6 +26,11 @@ num-bigint = { version = "0.4" }
 strum_macros = "0.24"
 strum = "0.24"
 poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
+
+[dev-dependencies]
+ctor = "0.1.22"
+env_logger = "0.9"
+
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []

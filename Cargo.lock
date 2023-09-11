@@ -34,7 +34,7 @@ name = "aggregator"
 version = "0.1.0"
 dependencies = [
  "ark-std",
- "env_logger 0.10.0",
+ "env_logger 0.9.3",
  "eth-types",
  "ethers-core",
  "halo2_proofs",
@@ -1450,6 +1450,8 @@ dependencies = [
 name = "eth-types"
 version = "0.1.0"
 dependencies = [
+ "ctor",
+ "env_logger 0.9.3",
  "ethers-core",
  "ethers-signers",
  "halo2_proofs",
@@ -1457,6 +1459,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "libsecp256k1",
+ "log",
  "num",
  "num-bigint",
  "poseidon-circuit",

@@ -696,6 +696,155 @@ impl OpcodeId {
             .chain(max_stack_ptr.checked_add(1).unwrap()..=1024)
             .collect()
     }
+    /// Stack push num, stack pop num
+    pub fn push_pop_num(&self) -> (u32, u32) {
+        match self {
+            OpcodeId::STOP => (0, 0),
+            OpcodeId::ADD => (1, 2),
+            OpcodeId::MUL => (1, 2),
+            OpcodeId::SUB => (1, 2),
+            OpcodeId::DIV => (1, 2),
+            OpcodeId::SDIV => (1, 2),
+            OpcodeId::MOD => (1, 2),
+            OpcodeId::SMOD => (1, 2),
+            OpcodeId::ADDMOD => (1, 3),
+            OpcodeId::MULMOD => (1, 3),
+            OpcodeId::EXP => (1, 2),
+            OpcodeId::SIGNEXTEND => (1, 2),
+            OpcodeId::LT => (1, 2),
+            OpcodeId::GT => (1, 2),
+            OpcodeId::SLT => (1, 2),
+            OpcodeId::SGT => (1, 2),
+            OpcodeId::EQ => (1, 2),
+            OpcodeId::ISZERO => (1, 1),
+            OpcodeId::AND => (1, 2),
+            OpcodeId::OR => (1, 2),
+            OpcodeId::XOR => (1, 2),
+            OpcodeId::NOT => (1, 1),
+            OpcodeId::BYTE => (1, 2),
+            OpcodeId::SHL => (1, 2),
+            OpcodeId::SHR => (1, 2),
+            OpcodeId::SAR => (1, 2),
+            OpcodeId::SHA3 => (1, 2),
+            OpcodeId::ADDRESS => (1, 0),
+            OpcodeId::BALANCE => (1, 1),
+            OpcodeId::ORIGIN => (1, 0),
+            OpcodeId::CALLER => (1, 0),
+            OpcodeId::CALLVALUE => (1, 0),
+            OpcodeId::CALLDATALOAD => (1, 1),
+            OpcodeId::CALLDATASIZE => (1, 0),
+            OpcodeId::CALLDATACOPY => (0, 3),
+            OpcodeId::CODESIZE => (1, 0),
+            OpcodeId::CODECOPY => (0, 3),
+            OpcodeId::GASPRICE => (1, 0),
+            OpcodeId::EXTCODESIZE => (1, 1),
+            OpcodeId::EXTCODECOPY => (0, 4),
+            OpcodeId::RETURNDATASIZE => (1, 0),
+            OpcodeId::RETURNDATACOPY => (0, 3),
+            OpcodeId::EXTCODEHASH => (1, 1),
+            OpcodeId::BLOCKHASH => (1, 1),
+            OpcodeId::COINBASE => (1, 0),
+            OpcodeId::TIMESTAMP => (1, 0),
+            OpcodeId::NUMBER => (1, 0),
+            OpcodeId::DIFFICULTY => (1, 0),
+            OpcodeId::GASLIMIT => (1, 0),
+            OpcodeId::CHAINID => (1, 0),
+            OpcodeId::SELFBALANCE => (1, 0),
+            OpcodeId::BASEFEE => (1, 0),
+            OpcodeId::POP => (0, 1),
+            OpcodeId::MLOAD => (1, 1),
+            OpcodeId::MSTORE => (0, 2),
+            OpcodeId::MSTORE8 => (0, 2),
+            OpcodeId::SLOAD => (1, 1),
+            OpcodeId::SSTORE => (0, 2),
+            OpcodeId::JUMP => (0, 1),
+            OpcodeId::JUMPI => (0, 2),
+            OpcodeId::PC => (1, 0),
+            OpcodeId::MSIZE => (1, 0),
+            OpcodeId::GAS => (1, 0),
+            OpcodeId::JUMPDEST => (0, 0),
+            OpcodeId::PUSH0 => (1, 0),
+            OpcodeId::PUSH1 => (1, 0),
+            OpcodeId::PUSH2 => (1, 0),
+            OpcodeId::PUSH3 => (1, 0),
+            OpcodeId::PUSH4 => (1, 0),
+            OpcodeId::PUSH5 => (1, 0),
+            OpcodeId::PUSH6 => (1, 0),
+            OpcodeId::PUSH7 => (1, 0),
+            OpcodeId::PUSH8 => (1, 0),
+            OpcodeId::PUSH9 => (1, 0),
+            OpcodeId::PUSH10 => (1, 0),
+            OpcodeId::PUSH11 => (1, 0),
+            OpcodeId::PUSH12 => (1, 0),
+            OpcodeId::PUSH13 => (1, 0),
+            OpcodeId::PUSH14 => (1, 0),
+            OpcodeId::PUSH15 => (1, 0),
+            OpcodeId::PUSH16 => (1, 0),
+            OpcodeId::PUSH17 => (1, 0),
+            OpcodeId::PUSH18 => (1, 0),
+            OpcodeId::PUSH19 => (1, 0),
+            OpcodeId::PUSH20 => (1, 0),
+            OpcodeId::PUSH21 => (1, 0),
+            OpcodeId::PUSH22 => (1, 0),
+            OpcodeId::PUSH23 => (1, 0),
+            OpcodeId::PUSH24 => (1, 0),
+            OpcodeId::PUSH25 => (1, 0),
+            OpcodeId::PUSH26 => (1, 0),
+            OpcodeId::PUSH27 => (1, 0),
+            OpcodeId::PUSH28 => (1, 0),
+            OpcodeId::PUSH29 => (1, 0),
+            OpcodeId::PUSH30 => (1, 0),
+            OpcodeId::PUSH31 => (1, 0),
+            OpcodeId::PUSH32 => (1, 0),
+            OpcodeId::DUP1 => (1, 1),
+            OpcodeId::DUP2 => (1, 2),
+            OpcodeId::DUP3 => (1, 3),
+            OpcodeId::DUP4 => (1, 4),
+            OpcodeId::DUP5 => (1, 5),
+            OpcodeId::DUP6 => (1, 6),
+            OpcodeId::DUP7 => (1, 7),
+            OpcodeId::DUP8 => (1, 8),
+            OpcodeId::DUP9 => (1, 9),
+            OpcodeId::DUP10 => (1, 10),
+            OpcodeId::DUP11 => (1, 11),
+            OpcodeId::DUP12 => (1, 12),
+            OpcodeId::DUP13 => (1, 13),
+            OpcodeId::DUP14 => (1, 14),
+            OpcodeId::DUP15 => (1, 15),
+            OpcodeId::DUP16 => (1, 16),
+            OpcodeId::SWAP1 => (0, 2),
+            OpcodeId::SWAP2 => (0, 3),
+            OpcodeId::SWAP3 => (0, 4),
+            OpcodeId::SWAP4 => (0, 5),
+            OpcodeId::SWAP5 => (0, 6),
+            OpcodeId::SWAP6 => (0, 7),
+            OpcodeId::SWAP7 => (0, 8),
+            OpcodeId::SWAP8 => (0, 9),
+            OpcodeId::SWAP9 => (0, 10),
+            OpcodeId::SWAP10 => (0, 11),
+            OpcodeId::SWAP11 => (0, 12),
+            OpcodeId::SWAP12 => (0, 13),
+            OpcodeId::SWAP13 => (0, 14),
+            OpcodeId::SWAP14 => (0, 15),
+            OpcodeId::SWAP15 => (0, 16),
+            OpcodeId::SWAP16 => (0, 17),
+            OpcodeId::LOG0 => (0, 2),
+            OpcodeId::LOG1 => (0, 3),
+            OpcodeId::LOG2 => (0, 4),
+            OpcodeId::LOG3 => (0, 5),
+            OpcodeId::LOG4 => (0, 6),
+            OpcodeId::CREATE => (1, 3),
+            OpcodeId::CALL => (1, 7),
+            OpcodeId::CALLCODE => (1, 7),
+            OpcodeId::RETURN => (0, 2),
+            OpcodeId::DELEGATECALL => (1, 6),
+            OpcodeId::CREATE2 => (1, 4),
+            OpcodeId::STATICCALL => (1, 6),
+            OpcodeId::REVERT => (0, 2),
+            OpcodeId::SELFDESTRUCT => (0, 1),
+            _ => (0, 0),
+        }
+    }
     /// Returns valid stack pointer range of `OpcodeId`
     pub fn valid_stack_ptr_range(&self) -> (u32, u32) {
         let (min_stack_ptr, max_stack_ptr): (u32, u32) = match self {
@@ -826,7 +975,6 @@ impl OpcodeId {
             OpcodeId::SWAP7 => (0, 1016),
             OpcodeId::SWAP8 => (0, 1015),
             OpcodeId::SWAP9 => (0, 1014),
-
             OpcodeId::SWAP10 => (0, 1013),
             OpcodeId::SWAP11 => (0, 1012),
             OpcodeId::SWAP12 => (0, 1011),
@@ -848,7 +996,7 @@ impl OpcodeId {
             OpcodeId::STATICCALL => (0, 1018),
             OpcodeId::REVERT => (0, 1022),
             OpcodeId::SELFDESTRUCT => (0, 1023),
-            _ => (0, 0),
+            _ => (0, 1024),
         };
 
         debug_assert!(max_stack_ptr <= 1024);
@@ -1279,6 +1427,21 @@ impl fmt::Display for OpcodeId {
 #[cfg(test)]
 mod opcode_ids_tests {
     use super::*;
+
+    #[test]
+    fn push_pop_num() {
+        for op in 0u8..0xffu8 {
+            let opcode = OpcodeId::from(op);
+            if !opcode.is_dup() {
+                let valid_range = opcode.valid_stack_ptr_range();
+                let (push, pop) = opcode.push_pop_num();
+                log::debug!("test opcode {opcode:?}");
+                assert_eq!(valid_range.1, 1024 - pop);
+                assert_eq!(valid_range.0, push.checked_sub(pop).unwrap_or_default());
+                assert_eq!(valid_range.0, (push > pop) as u32);
+            }
+        }
+    }
 
     #[test]
     fn push_n() {

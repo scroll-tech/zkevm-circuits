@@ -1,7 +1,7 @@
 use super::CodeSource;
 use crate::{exec_trace::OperationRef, Error};
 use eth_types::{
-    evm_types::{Memory, OpcodeId},
+    evm_types::{Memory, OpcodeId, Stack},
     Address, Hash, Word,
 };
 
@@ -141,8 +141,10 @@ pub struct CallContext {
     /// Call data (copy of tx input or caller's
     /// memory[call_data_offset..call_data_offset + call_data_length])
     pub call_data: Vec<u8>,
-    /// memory context of current call
+    /// memory of current call context
     pub memory: Memory,
+    /// stack of current call context
+    pub stack: Stack,
     /// return data buffer
     pub return_data: Vec<u8>,
 }

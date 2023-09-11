@@ -382,6 +382,13 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
+    /////////// check stack  ///////////
+    debug_assert_eq!(
+        state.call_ctx()?.stack.0[0..geth_steps[0].stack.0.len()],
+        geth_steps[0].stack.0
+    );
+
+    /////////// check memory ///////////
     let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
     if check_level >= 1 {
         let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());

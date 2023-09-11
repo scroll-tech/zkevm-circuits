@@ -37,7 +37,7 @@ pretty_assertions = "1.0.0"
 tokio = { version = "1.13", features = ["macros"] }
 url = "2.2.2"
 ctor = "0.1.22"
-env_logger = "0.9.0"
+env_logger = "0.9"
 mock = { path = "../mock" }
 rand = "0.8"
 
