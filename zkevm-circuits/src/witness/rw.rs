@@ -180,6 +180,11 @@ impl RwMap {
         rows.sort_by_key(Rw::as_key);
         rows
     }
+
+    /// Return rw number for the specified tag.
+    pub fn rw_num(&self, tag: RwTableTag) -> usize {
+        self.0.get(&tag).map(|v| v.len()).unwrap_or_default()
+    }
 }
 
 /// Read-write records in execution. Rws are used for connecting evm circuit and
