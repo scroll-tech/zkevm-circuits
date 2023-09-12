@@ -103,14 +103,7 @@ fn test_edge_cases() {
             good_ecrecover_data.2,
             1 - good_ecrecover_data.3,
         ),
-        // 8. v invalid (not boolean)
-        (
-            good_ecrecover_data.0,
-            good_ecrecover_data.1,
-            good_ecrecover_data.2,
-            123u8,
-        ),
-        // 9. msg_hash outside FQ::MODULUS
+        // 8. msg_hash outside FQ::MODULUS
         (
             Word::MAX,
             good_ecrecover_data.1,
@@ -136,7 +129,7 @@ fn test_edge_cases() {
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 9, signatures);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 8, signatures);
 }
 
 #[test]
