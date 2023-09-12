@@ -167,7 +167,7 @@ pub fn chunk_trace_to_witness_block(mut chunk_trace: Vec<BlockTrace>) -> Result<
 
 // Return the output dir.
 pub fn init_env_and_log(id: &str) -> String {
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     let output_dir = create_output_dir(id);
 
     LOGGER.call_once(|| {
