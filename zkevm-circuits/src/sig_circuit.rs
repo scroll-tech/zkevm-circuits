@@ -334,9 +334,7 @@ impl<F: Field> SigCircuit<F> {
     ) -> Result<AssignedECDSA<F, FpChip<F>>, Error> {
         let gate = ecdsa_chip.gate();
         let zero = gate.load_zero(ctx);
-        let one = gate.load_constant(ctx, F::one());
 
-        log::trace!("start ecdsa assignment");
         let SignData {
             signature,
             pk,
@@ -379,28 +377,16 @@ impl<F: Field> SigCircuit<F> {
         // =======================================
         // constrains v == y.is_oddness()
         // =======================================
-        let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
-        let v_is_zero = gate.is_equal(
-            ctx,
-            QuantumCell::Existing(zero),
-            QuantumCell::Existing(assigned_y_is_odd),
-        );
-        let v_is_one = gate.is_equal(
-            ctx,
-            QuantumCell::Existing(one),
-            QuantumCell::Existing(assigned_y_is_odd),
-        );
-        let v_is_bool = gate.or(
-            ctx,
-            QuantumCell::Existing(v_is_zero),
-            QuantumCell::Existing(v_is_one),
-        );
+        assert!(*v == 0 || *v == 1, "v is not boolean");
 
         // we constrain:
         // - v + 2*tmp = y where y is already range checked (88 bits)
         // - v is a binary
         // - tmp is also < 88 bits (this is crucial otherwise tmp may wrap around and break
         //   soundness)
+
+        let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
+        gate.assert_bit(ctx, assigned_y_is_odd);
 
         // the last 88 bits of y
         let assigned_y_limb = &y_coord.limbs()[0];
@@ -429,7 +415,6 @@ impl<F: Field> SigCircuit<F> {
         );
 
         // last step we want to constrain assigned_y_tmp is 87 bits
-        let zero = gate.load_zero(ctx);
         let assigned_y_tmp = gate.select(
             ctx,
             QuantumCell::Existing(zero),
@@ -448,7 +433,6 @@ impl<F: Field> SigCircuit<F> {
                 QuantumCell::Existing(sig_is_valid),
                 QuantumCell::Existing(y_is_ok),
                 QuantumCell::Existing(y_coord_not_zero),
-                QuantumCell::Existing(v_is_bool),
             ],
         );
 

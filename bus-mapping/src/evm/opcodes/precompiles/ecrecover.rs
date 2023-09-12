@@ -63,24 +63,6 @@ pub(crate) fn opt_data(
             Some(PrecompileAuxData::Ecrecover(aux_data)),
         )
     } else {
-        let sign_data = SignData {
-            signature: (
-                Fq::from_bytes(&aux_data.sig_r.to_le_bytes()).unwrap(),
-                Fq::from_bytes(&aux_data.sig_s.to_le_bytes()).unwrap(),
-                aux_data.sig_v.byte(0),
-            ),
-            pk: Secp256k1Affine::identity(),
-            msg: Bytes::default(),
-            msg_hash: {
-                let msg_hash = BigUint::from_bytes_be(&aux_data.msg_hash.to_be_bytes());
-                let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
-                let msg_hash_le = biguint_to_32bytes_le(msg_hash);
-                Fq::from_repr(msg_hash_le).unwrap()
-            },
-        };
-        (
-            Some(PrecompileEvent::Ecrecover(sign_data)),
-            Some(PrecompileAuxData::Ecrecover(aux_data)),
-        )
+        (None, Some(PrecompileAuxData::Ecrecover(aux_data)))
     }
 }

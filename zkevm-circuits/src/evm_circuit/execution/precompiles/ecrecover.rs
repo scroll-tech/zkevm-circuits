@@ -186,29 +186,31 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         // lookup to the sign_verify table:
         //
         // || msg_hash | v | r | s | recovered_addr | recovered ||
-        cb.condition(r_s_canonical.expr(), |cb| {
-            cb.sig_table_lookup(
-                msg_hash.expr(),
-                select::expr(
-                    sig_v_valid,
+        cb.condition(
+            and::expr([r_s_canonical.expr(), sig_v_valid.expr()]),
+            |cb| {
+                cb.sig_table_lookup(
+                    msg_hash.expr(),
                     sig_v.cells[0].expr() - 27.expr(),
-                    sig_v.cells[0].expr(),
-                ),
-                sig_r.expr(),
-                sig_s.expr(),
-                select::expr(
+                    sig_r.expr(),
+                    sig_s.expr(),
+                    select::expr(
+                        recovered.expr(),
+                        from_bytes::expr(&recovered_addr_keccak_rlc.cells),
+                        0.expr(),
+                    ),
                     recovered.expr(),
-                    from_bytes::expr(&recovered_addr_keccak_rlc.cells),
-                    0.expr(),
-                ),
-                recovered.expr(),
-            );
-        });
+                );
+            },
+        );
         cb.condition(not::expr(r_s_canonical.expr()), |cb| {
             cb.require_zero(
                 "recovered == false if r or s not canonical",
                 recovered.expr(),
             );
+        });
+        cb.condition(not::expr(sig_v_valid.expr()), |cb| {
+            cb.require_zero("recovered == false if sig_v != 27 or 28", recovered.expr());
         });
         cb.condition(not::expr(recovered.expr()), |cb| {
             cb.require_zero(
