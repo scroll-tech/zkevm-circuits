@@ -16,7 +16,7 @@ bus-mapping = { path = "../bus-mapping" }
 either = "1.9"
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-ethers-core = "2.0.7"
+ethers-core = { version = "2.0.7", features = ["scroll"] }
 ethers-signers = { version = "2.0.7", optional = true }
 mock = { path = "../mock", optional = true }
 strum = "0.24"
