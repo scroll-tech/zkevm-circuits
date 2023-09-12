@@ -436,6 +436,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
                 not::expr(meta.query_advice(is_calldata, Rotation::next())),
             ]))
         });
