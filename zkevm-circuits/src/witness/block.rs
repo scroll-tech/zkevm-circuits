@@ -1,10 +1,14 @@
 use ethers_core::types::Signature;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
+use crate::{
+    evm_circuit::util::rlc,
+    table::{BlockContextFieldTag, RwTableTag},
+    util::SubCircuit,
+};
 use bus_mapping::{
     circuit_input_builder::{
         self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
@@ -14,6 +18,7 @@ use bus_mapping::{
 };
 use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
+use itertools::Itertools;
 
 use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
@@ -129,6 +134,101 @@ impl<F: Field> Block<F> {
     /// Get BigModexp operations from all precompiled contract calls in this block.
     pub(crate) fn get_big_modexp(&self) -> Vec<BigModExp> {
         self.precompile_events.get_modexp_events()
+    }
+
+    pub(crate) fn print_evm_circuit_row_usage(&self) {
+        let mut num_rows = 0;
+        let mut counter = HashMap::new();
+        let mut step_num = 0;
+        for transaction in &self.txs {
+            step_num += transaction.steps.len();
+            for step in &transaction.steps {
+                let height = step.execution_state.get_step_height();
+                num_rows += height;
+                *counter.entry(step.execution_state).or_insert(0) += height;
+            }
+        }
+        // TODO: change to log::trace?
+        let mut counter_vec: Vec<_> = counter.into_iter().collect();
+        // DESC
+        counter_vec.sort_by_key(|(_e, c)| -(*c as i64));
+        let print_top_k = 10;
+        for (idx, (e, usage)) in counter_vec.iter().enumerate() {
+            if idx > print_top_k {
+                break;
+            }
+            let height = e.get_step_height();
+            log::debug!(
+                "evm circuit row usage: {:?}, step ratio {}, row ratio {}, height {}",
+                e,
+                (usage / height) as f64 / step_num as f64,
+                *usage as f64 / num_rows as f64,
+                height
+            );
+        }
+    }
+
+    pub(crate) fn print_rw_usage(&self) {
+        // opcode -> (count, mem_rw_len, stack_rw_len)
+        let mut opcode_info_map = BTreeMap::new();
+        for t in &self.txs {
+            for step in &t.steps {
+                if let Some(op) = step.opcode {
+                    opcode_info_map.entry(op).or_insert((0, 0, 0));
+                    let mut values = opcode_info_map[&op];
+                    values.0 += 1;
+                    values.1 += step
+                        .rw_indices
+                        .iter()
+                        .filter(|rw| rw.0 == RwTableTag::Memory)
+                        .count();
+                    values.2 += step
+                        .rw_indices
+                        .iter()
+                        .filter(|rw| rw.0 == RwTableTag::Stack)
+                        .count();
+                    opcode_info_map.insert(op, values);
+                }
+            }
+        }
+        for (op, (count, mem, stack)) in opcode_info_map
+            .iter()
+            .sorted_by_key(|(_, (_, m, _))| m)
+            .rev()
+        {
+            log::debug!(
+                "op {:?}, count {}, memory_word rw {}(avg {:.2}), stack rw {}(avg {:.2})",
+                op,
+                count,
+                mem,
+                *mem as f32 / *count as f32,
+                stack,
+                *stack as f32 / *count as f32
+            );
+        }
+        log::debug!("memory_word num: {}", self.rws.rw_num(RwTableTag::Memory));
+        log::debug!("stack num: {}", self.rws.rw_num(RwTableTag::Stack));
+        log::debug!(
+            "storage num: {}",
+            self.rws.rw_num(RwTableTag::AccountStorage)
+        );
+        log::debug!(
+            "tx_access_list_account num: {}",
+            self.rws.rw_num(RwTableTag::TxAccessListAccount)
+        );
+        log::debug!(
+            "tx_access_list_account_storage num: {}",
+            self.rws.rw_num(RwTableTag::TxAccessListAccountStorage)
+        );
+        log::debug!("tx_refund num: {}", self.rws.rw_num(RwTableTag::TxRefund));
+        log::debug!("account num: {}", self.rws.rw_num(RwTableTag::Account));
+        log::debug!(
+            "call_context num: {}",
+            self.rws.rw_num(RwTableTag::CallContext)
+        );
+        log::debug!("tx_receipt num: {}", self.rws.rw_num(RwTableTag::TxReceipt));
+        log::debug!("tx_log num: {}", self.rws.rw_num(RwTableTag::TxLog));
+        log::debug!("start num: {}", self.rws.rw_num(RwTableTag::Start));
     }
 }
 
