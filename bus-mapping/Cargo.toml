@@ -12,9 +12,9 @@ keccak256 = { path = "../keccak256" }
 mpt-zktrie = {path = "../zktrie"}
 mock = { path = "../mock", optional = true }
 
-ethers-core = "0.17.0"
-ethers-signers = "0.17.0"
-ethers-providers = "0.17.0"
+ethers-core = "2.0.7"
+ethers-signers = "2.0.7"
+ethers-providers = "2.0.7"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
 itertools = "0.10"

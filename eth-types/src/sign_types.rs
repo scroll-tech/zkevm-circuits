@@ -72,7 +72,7 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
     let mut sk_be_scalar = [0u8; 32];
     sk_be_scalar[31] = 1_u8;
 
-    let sk = SigningKey::from_bytes(&sk_be_scalar).expect("sign key = 1");
+    let sk = SigningKey::from_bytes((&sk_be_scalar).into()).expect("sign key = 1");
     let wallet = ethers_signers::Wallet::from(sk);
 
     let tx = TransactionRequest::new()
@@ -84,7 +84,7 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
         .data(Bytes::default());
     let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
 
-    let sig = wallet.sign_hash(sighash);
+    let sig = wallet.sign_hash(sighash).expect("sign dummy tx using dummy sk");
     assert_eq!(sig.v, 28);
     assert_eq!(
         sig.r,
