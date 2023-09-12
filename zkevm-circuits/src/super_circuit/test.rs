@@ -414,7 +414,7 @@ fn serial_test_super_circuit_ec_ops_txs() {
 #[test]
 fn serial_test_super_circuit_precompile_oog() {
     const MAX_TXS: usize = 4;
-    const MAX_CALLDATA: usize = 0x260;
+    const MAX_CALLDATA: usize = 0x261;
 
     let block = precompile_block_trace::block_precompile_oog();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
