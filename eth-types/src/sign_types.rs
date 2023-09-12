@@ -84,7 +84,9 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
         .data(Bytes::default());
     let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
 
-    let sig = wallet.sign_hash(sighash).expect("sign dummy tx using dummy sk");
+    let sig = wallet
+        .sign_hash(sighash)
+        .expect("sign dummy tx using dummy sk");
     assert_eq!(sig.v, 28);
     assert_eq!(
         sig.r,
