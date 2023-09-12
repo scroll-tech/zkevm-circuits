@@ -136,7 +136,7 @@ impl<F: Field> Block<F> {
         self.precompile_events.get_modexp_events()
     }
 
-    pub(crate) fn get_num_rows_required_no_padding(&self) -> usize {
+    pub(crate) fn print_evm_circuit_row_usage(&self) {
         let mut num_rows = 0;
         let mut counter = HashMap::new();
         let mut step_num = 0;
@@ -166,13 +166,6 @@ impl<F: Field> Block<F> {
                 height
             );
         }
-
-        // EndBlock
-        num_rows += 1;
-        // Plus 1 so we can be sure there is an unused `next` row available
-        num_rows += 1;
-
-        num_rows
     }
 
     pub(crate) fn print_rw_usage(&self) {
