@@ -176,6 +176,7 @@ impl<F: Field> Block<F> {
     }
 
     pub(crate) fn print_rw_usage(&self) {
+        // opcode -> (count, mem_rw_len, stack_rw_len)
         let mut opcode_info_map = BTreeMap::new();
         for t in &self.txs {
             for step in &t.steps {
