@@ -59,7 +59,7 @@ where
     // u3 = 1 if u1 == 1
     // u3 = -1 if u1 != 1
     // this ensures u1 + u3 != 0
-    let u3 = scalar_chip.select(ctx, &neg_one, &one, &u1_is_one);
+    let u3 = scalar_chip.select(ctx, &one, &neg_one, &u1_is_one);
 
     let u1_plus_u3 = scalar_chip.add_no_carry(ctx, &u1, &u3);
     let u1_plus_u3 = scalar_chip.carry_mod(ctx, &u1_plus_u3);
@@ -88,7 +88,7 @@ where
         let neg_generator = -generator;
         let generator = ecc_chip.assign_constant_point(ctx, generator);
         let neg_generator = ecc_chip.assign_constant_point(ctx, neg_generator);
-        ecc_chip.select(ctx, &neg_generator, &generator, &u1_is_one)
+        ecc_chip.select(ctx, &generator, &neg_generator, &u1_is_one)
     };
 
     // compute u2 * pubkey + u3 * G
