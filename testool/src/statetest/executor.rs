@@ -739,8 +739,8 @@ pub fn run_test(
             let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
             if !exist {
                 // modified from bus-mapping/src/mock.rs
-                let keccak_code_hash = H256(keccak256(account.code.to_vec()));
-                let code_hash = CodeDB::hash(&account.code.to_vec());
+                let keccak_code_hash = H256(keccak256(&account.code));
+                let code_hash = CodeDB::hash(&account.code);
                 *acc_in_local_sdb = bus_mapping::state_db::Account {
                     nonce: account.nonce,
                     balance: account.balance,

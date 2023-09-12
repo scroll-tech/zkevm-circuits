@@ -302,7 +302,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 address,
                 get_create2_address(
                     caller.address,
-                    salt.to_be_bytes().to_vec(),
+                    salt.to_be_bytes(),
                     initialization_code.clone(),
                 )
             );

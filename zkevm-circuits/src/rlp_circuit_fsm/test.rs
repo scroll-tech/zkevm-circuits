@@ -33,7 +33,7 @@ fn get_tx(is_eip155: bool) -> Transaction {
         (TxType::PreEip155, tx.rlp_unsigned().to_vec())
     };
     let typed_tx: TypedTransaction = tx.into();
-    let sig = from.sign_transaction_sync(&typed_tx);
+    let sig = from.sign_transaction_sync(&typed_tx).unwrap();
     let signed_bytes = typed_tx.rlp_signed(&sig).to_vec();
 
     log::debug!("num_unsigned_bytes: {}", unsigned_bytes.len());
