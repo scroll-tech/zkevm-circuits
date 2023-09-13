@@ -217,8 +217,8 @@ fn prepare_default_builder(
     }
 }
 
-// check if block traces match preset parameters
-fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
+/// check if block traces match preset parameters
+pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
     let chain_id = block_traces
         .iter()
         .map(|block_trace| block_trace.chain_id)
@@ -234,6 +234,7 @@ fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
 }
 
 pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Block<Fr>> {
+    validite_block_traces(block_traces)?;
     let block_num = block_traces.len();
     let total_tx_num = block_traces
         .iter()
@@ -281,8 +282,6 @@ pub fn block_traces_to_witness_block_with_updated_state(
     builder: &mut CircuitInputBuilder,
     light_mode: bool,
 ) -> Result<Block<Fr>> {
-    validite_block_traces(block_traces)?;
-
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
         let block = block_convert_with_l1_queue_index::<Fr>(

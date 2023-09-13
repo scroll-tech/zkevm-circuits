@@ -1,7 +1,10 @@
 #![allow(missing_docs)]
 use std::collections::HashMap;
 
-use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
+use bus_mapping::{
+    operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
+    Error,
+};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
@@ -46,7 +49,7 @@ impl RwMap {
     }
 
     /// Check value but don't construct mpt
-    pub fn check_value(&self) {
+    pub fn check_value(&self) -> Result<(), Error> {
         let groups = self
             .table_assignments()
             .into_iter()
@@ -65,8 +68,7 @@ impl RwMap {
                         if first.value_word() != U256::zero() {
                             // EIP2930 and don't check codehash
                             if !(first.tag() == RwTableTag::TxAccessListAccountStorage
-                                || (first.tag() == RwTableTag::Account
-                                    && first.field_tag() == Some(AccountFieldTag::CodeHash as u64)))
+                                || first.tag() == RwTableTag::Account)
                             {
                                 errs.push((idx, ERR_MSG_FIRST, first, None));
                             }
@@ -90,8 +92,10 @@ impl RwMap {
             for e in errs {
                 log::error!("err is {:?}", e);
             }
+            Err(Error::InternalError("check rw failed"))
         } else {
             log::debug!("rw value check err num: {}", errs.len());
+            Ok(())
         }
     }
 
