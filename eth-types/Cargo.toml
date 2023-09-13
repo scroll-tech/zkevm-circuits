@@ -6,8 +6,8 @@ authors = ["The appliedzkp team"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-ethers-core = "0.17.0"
-ethers-signers = "0.17.0"
+ethers-core = { version = "2.0.7", features = ["scroll"] }
+ethers-signers = "2.0.7"
 hex = "0.4"
 lazy_static = "1.4"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }

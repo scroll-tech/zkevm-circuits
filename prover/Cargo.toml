@@ -20,7 +20,7 @@ base64 = "0.13.0"
 blake2 = "0.10.3"
 chrono = "0.4.19"
 dotenvy = "0.15.7"
-ethers-core = "0.17.0"
+ethers-core = { version = "2.0.7", features = ["scroll"] }
 git-version = "0.3.5"
 hex = "0.4.3"
 itertools = "0.10.5"

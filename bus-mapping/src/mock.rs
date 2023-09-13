@@ -67,11 +67,11 @@ impl BlockData {
         }
 
         for account in geth_data.accounts {
-            let keccak_code_hash = H256(keccak256(account.code.to_vec()));
+            let keccak_code_hash = H256(keccak256(&account.code));
             log::trace!(
                 "trace code {:?} {:?}",
                 keccak_code_hash,
-                hex::encode(account.code.to_vec())
+                hex::encode(&account.code)
             );
             let code_hash = code_db.insert(account.code.to_vec());
             sdb.set_account(

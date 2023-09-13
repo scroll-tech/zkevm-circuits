@@ -312,6 +312,7 @@ pub(crate) enum Lookup<F> {
         sig_r_rlc: Expression<F>,
         sig_s_rlc: Expression<F>,
         recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
     },
     ModExpTable {
         base_limbs: [Expression<F>; 3],
@@ -481,6 +482,7 @@ impl<F: Field> Lookup<F> {
                 sig_r_rlc,
                 sig_s_rlc,
                 recovered_addr,
+                is_valid,
             } => vec![
                 1.expr(), // q_enable
                 msg_hash_rlc.clone(),
@@ -488,6 +490,7 @@ impl<F: Field> Lookup<F> {
                 sig_r_rlc.clone(),
                 sig_s_rlc.clone(),
                 recovered_addr.clone(),
+                is_valid.clone(),
             ],
             Self::ModExpTable {
                 base_limbs,

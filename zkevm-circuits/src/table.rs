@@ -2209,7 +2209,6 @@ pub struct SigTable {
     /// Random-linear combination of the Keccak256 hash of the message that's signed.
     pub msg_hash_rlc: Column<Advice>,
     /// should be in range [0, 1]
-    /// TODO: we need to constrain v <=> pub.y oddness
     pub sig_v: Column<Advice>,
     /// Random-linear combination of the signature's `r` component.
     pub sig_r_rlc: Column<Advice>,
@@ -2269,7 +2268,6 @@ impl SigTable {
                     });
                     let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
                     let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
-
                     region.assign_fixed(
                         || format!("sig table q_enable {offset}"),
                         self.q_enable,
@@ -2282,7 +2280,11 @@ impl SigTable {
                         ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
                         ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
                         ("recovered_addr", self.recovered_addr, recovered_addr),
-                        ("is_valid", self.is_valid, Value::known(F::one())),
+                        (
+                            "is_valid",
+                            self.is_valid,
+                            Value::known(F::from(!sign_data.get_addr().is_zero())),
+                        ),
                     ] {
                         region.assign_advice(
                             || format!("sig table {column_name} {offset}"),
@@ -2323,20 +2325,6 @@ impl<F: Field> LookupTable<F> for SigTable {
             String::from("sig_s_rlc"),
             String::from("recovered_addr"),
             String::from("is_valid"),
-        ]
-    }
-
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        vec![
-            // ignore the is_valid field as the EVM circuit's use-case (Ecrecover precompile) does
-            // not care whether the signature is valid or not. It only cares about the recovered
-            // address.
-            meta.query_fixed(self.q_enable, Rotation::cur()),
-            meta.query_advice(self.msg_hash_rlc, Rotation::cur()),
-            meta.query_advice(self.sig_v, Rotation::cur()),
-            meta.query_advice(self.sig_r_rlc, Rotation::cur()),
-            meta.query_advice(self.sig_s_rlc, Rotation::cur()),
-            meta.query_advice(self.recovered_addr, Rotation::cur()),
         ]
     }
 }

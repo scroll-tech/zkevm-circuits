@@ -225,7 +225,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     let rlp_unsigned = tx.rlp().to_vec();
     let tx: TypedTransaction = tx.into();
 
-    let sig = wallet.sign_transaction_sync(&tx);
+    let sig = wallet.sign_transaction_sync(&tx).unwrap();
     let rlp_signed = tx.rlp_signed(&sig).to_vec();
     let tx_hash = keccak256(tx.rlp_signed(&sig));
     let accounts = st.pre;
@@ -448,7 +448,7 @@ fn trace_config_to_witness_block_l1(
         ..eth_types::Block::default()
     };
 
-    let wallet: LocalWallet = ethers_core::k256::ecdsa::SigningKey::from_bytes(&st.secret_key)
+    let wallet: LocalWallet = ethers_core::k256::ecdsa::SigningKey::from_slice(&st.secret_key)
         .unwrap()
         .into();
     let mut wallets = HashMap::new();
@@ -739,8 +739,8 @@ pub fn run_test(
             let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
             if !exist {
                 // modified from bus-mapping/src/mock.rs
-                let keccak_code_hash = H256(keccak256(account.code.to_vec()));
-                let code_hash = CodeDB::hash(&account.code.to_vec());
+                let keccak_code_hash = H256(keccak256(&account.code));
+                let code_hash = CodeDB::hash(&account.code);
                 *acc_in_local_sdb = bus_mapping::state_db::Account {
                     nonce: account.nonce,
                     balance: account.balance,
