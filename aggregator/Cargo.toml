@@ -12,7 +12,7 @@ zkevm-circuits = { path = "../zkevm-circuits" }
 
 ark-std = "0.3.0"
 env_logger = "0.10.0"
-ethers-core = "0.17.0"
+ethers-core = { version = "2.0.7", features = ["scroll"] }
 hex = "0.4.3"
 log = "0.4"
 itertools = "0.10.3"

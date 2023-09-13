@@ -208,7 +208,7 @@ impl StateTest {
         let value = parse_u256(tx.next().unwrap_or("0"))?;
         let gas_limit = u64::from_str(tx.next().unwrap_or("10000000"))?;
         let secret_key = Bytes::from(&[1u8; 32]);
-        let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
+        let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
 
         let mut pre = BTreeMap::<Address, Account>::new();
 

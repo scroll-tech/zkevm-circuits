@@ -49,7 +49,7 @@
 //!   - [x] Bytecode Circuit
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
-
+pub(crate) mod precompile_block_trace;
 #[cfg(any(feature = "test", test))]
 pub(crate) mod test;
 
