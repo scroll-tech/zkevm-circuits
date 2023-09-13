@@ -53,34 +53,33 @@ impl RwMap {
     pub fn check_value(&self) -> Result<(), Error> {
         let rows = self.table_assignments_with_idx();
         let errs = rows
-            .group_by(|(_, a), (_, b)| a.as_key() == b.as_key())
+            .into_values()
             .par_bridge()
             .flat_map(|group| {
-                // can we unwrap here? aka. is there any case that group is empty?
+                // assumption: errs is mostly empty, Vec::new won't do heap allocation
                 let mut errs = Vec::new();
                 debug_assert!(!group.is_empty(), "group cannot be empty");
-                let mut group = group.iter();
-                if let Some((idx, first)) = group.next() {
-                    let mut prev = first;
-                    if !first.is_write() {
-                        // first access reads don't change value
-                        if first.value_word() != U256::zero()
-                            && !(first.tag() == RwTableTag::TxAccessListAccountStorage
-                                || first.tag() == RwTableTag::Account
-                                || first.tag() == RwTableTag::AccountStorage)
-                        {
-                            errs.push((idx, ERR_MSG_FIRST, *first, None));
+                let mut group = group.into_iter();
+                let (idx, first) = group.next().unwrap();
+                let mut prev = first;
+                if !first.is_write() {
+                    // first access reads don't change value
+                    if first.value_word() != U256::zero()
+                        && !(first.tag() == RwTableTag::TxAccessListAccountStorage
+                            || first.tag() == RwTableTag::Account
+                            || first.tag() == RwTableTag::AccountStorage)
+                    {
+                        errs.push((idx, ERR_MSG_FIRST, first, None));
+                    }
+                }
+                for (idx, rw) in group {
+                    if !rw.is_write() {
+                        // non-first access reads don't change value
+                        if rw.value_word() != prev.value_word() {
+                            errs.push((idx, ERR_MSG_NON_FIRST, rw, Some(prev)));
                         }
                     }
-                    for (idx, rw) in group {
-                        if !rw.is_write() {
-                            // non-first access reads don't change value
-                            if rw.value_word() != prev.value_word() {
-                                errs.push((idx, ERR_MSG_NON_FIRST, *rw, Some(*prev)));
-                            }
-                        }
-                        prev = rw;
-                    }
+                    prev = rw;
                 }
                 errs
             })
@@ -191,10 +190,18 @@ impl RwMap {
     }
 
     /// Build Rws for assignment
-    pub fn table_assignments_with_idx(&self) -> Vec<(usize, Rw)> {
-        let mut rows: Vec<(usize, Rw)> = self.0.values().flatten().copied().enumerate().collect();
-        rows.sort_by_key(|(_, rw)| rw.as_key());
-        rows
+    pub fn table_assignments_with_idx(&self) -> HashMap<RwKey, Vec<(usize, Rw)>> {
+        // key/value ratio is about 23-24
+        // each key has about ~250 rows
+        // each Rw has size of 168 bytes
+        // so each array has size of ~42KB
+        let total_len = self.0.values().map(|v| v.len()).sum::<usize>();
+        // take roughly estimated capacity
+        let mut map = HashMap::<RwKey, Vec<(usize, Rw)>>::with_capacity(total_len / 22);
+        for (idx, row) in self.0.values().flatten().copied().enumerate() {
+            map.entry(row.as_key()).or_default().push((idx, row));
+        }
+        map
     }
 
     /// Return rw number for the specified tag.
@@ -202,6 +209,9 @@ impl RwMap {
         self.0.get(&tag).map(|v| v.len()).unwrap_or_default()
     }
 }
+
+/// Rw key
+pub type RwKey = (u64, usize, Address, u64, Word);
 
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
@@ -778,7 +788,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn as_key(&self) -> (u64, usize, Address, u64, Word) {
+    pub(crate) fn as_key(&self) -> RwKey {
         (
             self.tag() as u64,
             self.id().unwrap_or_default(),
