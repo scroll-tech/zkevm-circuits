@@ -9,6 +9,7 @@ use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256}
 
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
+use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 use crate::{
     evm_circuit::util::rlc,
@@ -50,17 +51,15 @@ impl RwMap {
 
     /// Check value but don't construct mpt
     pub fn check_value(&self) -> Result<(), Error> {
-        let groups = self
-            .table_assignments()
-            .into_iter()
-            .enumerate()
-            .group_by(|(_, rw)| rw.as_key());
-
-        let errs = groups
-            .into_iter()
-            .flat_map(|(_key, mut group)| {
+        let rows = self.table_assignments_with_idx();
+        let errs = rows
+            .group_by(|(_, a), (_, b)| a.as_key() == b.as_key())
+            .par_bridge()
+            .flat_map(|group| {
                 // can we unwrap here? aka. is there any case that group is empty?
                 let mut errs = Vec::new();
+                debug_assert!(!group.is_empty(), "group cannot be empty");
+                let mut group = group.iter();
                 if let Some((idx, first)) = group.next() {
                     let mut prev = first;
                     if !first.is_write() {
@@ -70,7 +69,7 @@ impl RwMap {
                             if !(first.tag() == RwTableTag::TxAccessListAccountStorage
                                 || first.tag() == RwTableTag::Account)
                             {
-                                errs.push((idx, ERR_MSG_FIRST, first, None));
+                                errs.push((idx, ERR_MSG_FIRST, *first, None));
                             }
                         }
                     }
@@ -78,7 +77,7 @@ impl RwMap {
                         if !rw.is_write() {
                             // non-first access reads don't change value
                             if rw.value_word() != prev.value_word() {
-                                errs.push((idx, ERR_MSG_NON_FIRST, rw, Some(prev)));
+                                errs.push((idx, ERR_MSG_NON_FIRST, *rw, Some(*prev)));
                             }
                         }
                         prev = rw;
@@ -189,6 +188,13 @@ impl RwMap {
     pub fn table_assignments(&self) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
         rows.sort_by_key(Rw::as_key);
+        rows
+    }
+
+    /// Build Rws for assignment
+    pub fn table_assignments_with_idx(&self) -> Vec<(usize, Rw)> {
+        let mut rows: Vec<(usize, Rw)> = self.0.values().flatten().copied().enumerate().collect();
+        rows.sort_by_key(|(_, rw)| rw.as_key());
         rows
     }
 
