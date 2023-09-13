@@ -85,9 +85,13 @@ impl RwMap {
                 errs
             })
             .collect::<Vec<_>>();
-        log::error!("rw value check err num: {}", errs.len());
-        for e in errs {
-            log::error!("err is {:?}", e);
+        if !errs.is_empty() {
+            log::error!("rw value check err num: {}", errs.len());
+            for e in errs {
+                log::error!("err is {:?}", e);
+            }
+        } else {
+            log::debug!("rw value check err num: {}", errs.len());
         }
     }
 
