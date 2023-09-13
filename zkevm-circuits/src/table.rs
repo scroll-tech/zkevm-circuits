@@ -1137,6 +1137,25 @@ impl BytecodeTable {
             },
         )
     }
+
+    /// A sub-table of bytecode without is_code nor push_rlc.
+    fn columns_mini<F: Field>(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.code_hash.into(),
+            self.tag.into(),
+            self.index.into(),
+            self.value.into(),
+        ]
+    }
+
+    /// The expressions of the sub-table of bytecode without is_code nor push_rlc.
+    pub fn table_exprs_mini<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        self.columns_mini::<F>()
+            .iter()
+            .map(|&column| meta.query_any(column, Rotation::cur()))
+            .collect()
+    }
 }
 
 impl<F: Field> LookupTable<F> for BytecodeTable {
@@ -1506,7 +1525,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
 
 /// CopyThread is the state used while generating rows of the copy table.
 struct CopyThread<F: Field> {
@@ -1618,22 +1637,12 @@ impl CopyTable {
                     value: read_step.0,
                     prev_value: read_step.0,
                     mask: read_step.2,
-                    is_code: if copy_event.src_type == CopyDataType::Bytecode {
-                        Some(read_step.1)
-                    } else {
-                        None
-                    },
                 };
                 let write_step = CopyStep {
                     value: write_step.0,
                     // Will overwrite if previous values are given.
                     prev_value: write_step.0,
                     mask: write_step.2,
-                    is_code: if copy_event.dst_type == CopyDataType::Bytecode {
-                        Some(write_step.1)
-                    } else {
-                        None
-                    },
                 };
                 once((true, read_step)).chain(once((false, write_step)))
             })
@@ -1682,9 +1691,6 @@ impl CopyTable {
 
             let word_index = (step_idx as u64 / 2) % 32;
 
-            // is_code
-            let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
-
             // For LOG, format the address including the log_id.
             let addr = if thread.tag == CopyDataType::TxLog {
                 build_tx_log_address(thread.addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
@@ -1714,7 +1720,6 @@ impl CopyTable {
                     (thread.word_rlc_prev, "value_word_rlc_prev"),
                     (thread.value_acc, "value_acc"),
                     (Value::known(F::from(is_pad)), "is_pad"),
-                    (is_code, "is_code"),
                     (Value::known(F::from(copy_step.mask)), "mask"),
                     (Value::known(F::from(thread.front_mask)), "front_mask"),
                     (Value::known(F::from(word_index)), "word_index"),
