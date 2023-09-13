@@ -23,8 +23,7 @@ fn test_edge_cases() {
         sign_types::{biguint_to_32bytes_le, recover_pk, SECP256K1_Q},
         word, ToBigEndian, ToLittleEndian, Word,
     };
-    use ethers_core::k256::elliptic_curve::PrimeField;
-    use halo2_proofs::halo2curves::secp256k1::Fq;
+    use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1::Fq};
     use num::{BigUint, Integer};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
