@@ -111,7 +111,6 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             );*/
             is_pushed_cell_prev = is_pushed_cell.expr();
             is_padding_cell_prev = is_padding_cell.expr();
-            
         }
 
         // Sum of selectors is_pushed needs to be exactly the number of bytes
@@ -141,7 +140,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             )),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        let same_context =
+            SameContextGadget::construct2(cb, opcode, step_state_transition, 0.expr()); // TODO: value.expr()
 
         Self {
             same_context,

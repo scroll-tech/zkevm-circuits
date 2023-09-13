@@ -18,7 +18,7 @@ impl Bytecode {
     pub fn table_assignments<F: Field>(
         &self,
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 5]> {
+    ) -> Vec<[Value<F>; 6]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
         let hash = if cfg!(feature = "poseidon-codehash") {
@@ -38,6 +38,7 @@ impl Bytecode {
             Value::known(F::zero()),
             Value::known(F::zero()),
             Value::known(F::from(self.bytes.len() as u64)),
+            Value::known(F::zero()),
         ]);
 
         let mut push_data_left = 0;
@@ -57,6 +58,7 @@ impl Bytecode {
                 Value::known(F::from(idx as u64)),
                 Value::known(F::from(is_code as u64)),
                 Value::known(F::from(*byte as u64)),
+                Value::known(F::zero()), // TODO: get push_rlc
             ])
         }
         rows
@@ -81,5 +83,15 @@ impl Bytecode {
 
         // here dest > bytecodes len
         panic!("can not find byte in the bytecodes list")
+    }
+
+    /// Return (byte, is_code, push_rlc) at index `dest`
+    pub fn get_byte_row<F: Field>(
+        &self,
+        dest: usize,
+        challenges: &Challenges<Value<F>>,
+    ) -> (u8, bool, Value<F>) {
+        let [byte, is_code] = self.get(dest);
+        (byte, is_code != 0, Value::known(F::zero())) // TODO: get push_rlc
     }
 }

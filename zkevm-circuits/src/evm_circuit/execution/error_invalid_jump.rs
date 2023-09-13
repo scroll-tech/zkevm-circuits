@@ -141,22 +141,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // set default value in case can not find value, is_code from bytecode table
         let dest = u64::try_from(dest).unwrap_or(code_len);
-        let mut code_pair = [0u8, 0u8];
+        let mut code_pair = (0u8, false, Value::known(F::zero()));
         if dest < code_len {
             // get real value from bytecode table
-            code_pair = code.get(dest as usize);
+            code_pair = code.get_byte_row(dest as usize, region.challenges());
         }
 
         self.value
-            .assign(region, offset, Value::known(F::from(code_pair[0] as u64)))?;
+            .assign(region, offset, Value::known(F::from(code_pair.0 as u64)))?;
         self.is_code
-            .assign(region, offset, Value::known(F::from(code_pair[1] as u64)))?;
+            .assign(region, offset, Value::known(F::from(code_pair.1)))?;
         self.push_rlc
             .assign(region, offset, Value::known(F::zero()))?; // TODO: get push_rlc.
         self.is_jump_dest.assign(
             region,
             offset,
-            F::from(code_pair[0] as u64),
+            F::from(code_pair.0 as u64),
             F::from(OpcodeId::JUMPDEST.as_u64()),
         )?;
 

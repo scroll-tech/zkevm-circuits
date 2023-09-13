@@ -632,12 +632,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
-        self.opcode_lookup_at(
-            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
-            opcode,
-            is_code,
-        );
-        self.program_counter_offset += 1;
+        assert_eq!(is_code, 1.expr());
+        self.opcode_lookup_rlc(opcode, 0.expr());
     }
 
     pub(crate) fn opcode_lookup_at(
@@ -647,19 +643,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         is_code: Expression<F>,
     ) {
         assert_eq!(is_code, 1.expr());
-        let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
-        self.add_lookup(
-            "Opcode lookup",
-            Lookup::Bytecode {
-                hash: self.curr.state.code_hash.expr(),
-                tag: BytecodeFieldTag::Byte.expr(),
-                index,
-                is_code,
-                value: opcode,
-                push_rlc: 0.expr(),
-            }
-            .conditional(1.expr() - is_root_create),
-        );
+        self.opcode_lookup_at_rlc(index, opcode, 0.expr());
     }
 
     pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
