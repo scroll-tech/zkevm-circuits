@@ -13,10 +13,10 @@ use halo2_proofs::{
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
 pub(super) const MAX_NUM_SIG: usize = 128;
-// Each ecdsa signature requires 462274 cells
-pub(super) const CELLS_PER_SIG: usize = 462274;
-// Each ecdsa signature requires 62994 lookup cells
-pub(super) const LOOKUP_CELLS_PER_SIG: usize = 62994;
+// Each ecdsa signature requires 461540 cells
+pub(super) const CELLS_PER_SIG: usize = 461540;
+// Each ecdsa signature requires 63489 lookup cells
+pub(super) const LOOKUP_CELLS_PER_SIG: usize = 63489;
 // Total number of rows allocated for ecdsa chip
 pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
 // Max number of columns allowed
@@ -67,6 +67,7 @@ pub(super) type FpChip<F> = FpConfig<F, Fp>;
 
 pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint>,
+    pub(super) pk_is_zero: AssignedValue<F>,
     pub(super) msg_hash: CRTInteger<F>,
     pub(super) integer_r: CRTInteger<F>,
     pub(super) integer_s: CRTInteger<F>,
@@ -95,11 +96,4 @@ pub(super) struct SignDataDecomposed<F: Field> {
     pub(super) r_cells: Vec<QuantumCell<F>>,
     pub(super) s_cells: Vec<QuantumCell<F>>,
     //v:  AssignedValue<'v, F>, // bool
-}
-
-// FIXME: is this correct? not used anywhere?
-pub(crate) fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
-    pk_hash[32 - 20..]
-        .iter()
-        .fold(F::zero(), |acc, b| acc * F::from(256) + F::from(*b as u64))
 }

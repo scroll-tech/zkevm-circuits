@@ -236,6 +236,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 gas_left: Delta(-memory_expansion.gas_cost() - code_deposit_cost.expr()),
                 reversible_write_counter: To(0.expr()),
                 memory_word_size: To(0.expr()),
+                end_tx: To(1.expr()),
                 ..StepStateTransition::default()
             });
         });

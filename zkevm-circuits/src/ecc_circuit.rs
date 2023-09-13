@@ -622,10 +622,10 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let infinity = EcPoint::construct(
             ecc_chip
                 .field_chip()
-                .load_private(ctx, Value::known(0.into())),
+                .load_constant(ctx, fe_to_biguint(&Fq::zero())),
             ecc_chip
                 .field_chip()
-                .load_private(ctx, Value::known(0.into())),
+                .load_constant(ctx, fe_to_biguint(&Fq::zero())),
         );
         // for invalid case, take a random point.
         let dummy_g1 = ecc_chip.load_random_point::<G1Affine>(ctx);

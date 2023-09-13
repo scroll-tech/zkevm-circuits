@@ -122,7 +122,7 @@ impl<'a> JsonStateTestBuilder<'a> {
 
             let to = parse::parse_to_address(&test.transaction.to)?;
             let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
-            let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
+            let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
             let nonce = parse::parse_u256(&test.transaction.nonce)?;
             let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
 

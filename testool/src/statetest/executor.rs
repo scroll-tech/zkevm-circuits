@@ -4,7 +4,6 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::CodeDB,
 };
-
 #[cfg(feature = "scroll")]
 use eth_types::ToBigEndian;
 use eth_types::{
@@ -19,7 +18,15 @@ use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use std::{collections::HashMap, str::FromStr};
+#[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
+use prover::{
+    common::{Prover, Verifier},
+    config::LayerId,
+    config::{INNER_DEGREE, ZKEVM_DEGREES},
+};
+#[cfg(feature = "inner-prove")]
+use prover::{utils::gen_rng, zkevm::circuit};
+use std::{collections::HashMap, env, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
     bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
@@ -29,12 +36,64 @@ use zkevm_circuits::{
 
 /// Read env var with default value
 pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
-    std::env::var(var_name)
+    env::var(var_name)
         .map(|s| s.parse::<T>().unwrap_or_else(|_| default.clone()))
         .unwrap_or(default)
 }
 /// Which circuit to test. Default is evm + state.
 pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_string()));
+
+#[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
+static mut REAL_PROVER: Lazy<Prover> = Lazy::new(|| {
+    let params_dir = "./test_params";
+
+    let degrees: Vec<u32> = if cfg!(feature = "inner-prove") {
+        vec![*INNER_DEGREE]
+    } else {
+        // for chunk-prove
+        (*ZKEVM_DEGREES).clone()
+    };
+
+    let prover = Prover::from_params_dir(params_dir, &degrees);
+    log::info!("Constructed real-prover");
+
+    prover
+});
+
+#[cfg(feature = "inner-prove")]
+static mut INNER_VERIFIER: Lazy<
+    Verifier<<circuit::SuperCircuit as circuit::TargetCircuit>::Inner>,
+> = Lazy::new(|| {
+    let prover = unsafe { &mut REAL_PROVER };
+    let params = prover.params(*INNER_DEGREE).clone();
+
+    let id = read_env_var("COINBASE", LayerId::Inner.id().to_string());
+    let pk = prover.pk(&id).expect("Failed to get inner-prove PK");
+    let vk = pk.get_vk().clone();
+
+    let verifier = Verifier::new(params, vk);
+    log::info!("Constructed inner-verifier");
+
+    verifier
+});
+
+#[cfg(feature = "chunk-prove")]
+static mut CHUNK_VERIFIER: Lazy<Verifier<prover::CompressionCircuit>> = Lazy::new(|| {
+    env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
+
+    let prover = unsafe { &mut REAL_PROVER };
+    let params = prover.params(LayerId::Layer2.degree()).clone();
+
+    let pk = prover
+        .pk(LayerId::Layer2.id())
+        .expect("Failed to get chunk-prove PK");
+    let vk = pk.get_vk().clone();
+
+    let verifier = Verifier::new(params, vk);
+    log::info!("Constructed chunk-verifier");
+
+    verifier
+});
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -166,7 +225,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     let rlp_unsigned = tx.rlp().to_vec();
     let tx: TypedTransaction = tx.into();
 
-    let sig = wallet.sign_transaction_sync(&tx);
+    let sig = wallet.sign_transaction_sync(&tx).unwrap();
     let rlp_signed = tx.rlp_signed(&sig).to_vec();
     let tx_hash = keccak256(tx.rlp_signed(&sig));
     let accounts = st.pre;
@@ -307,13 +366,10 @@ fn trace_config_to_witness_block_l2(
         .collect::<Vec<_>>();
     check_geth_traces(&geth_traces, &suite, verbose)?;
 
-    std::env::set_var(
-        "COINBASE",
-        format!("0x{}", hex::encode(block_trace.coinbase.address.unwrap())),
-    );
-    std::env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
+    set_env_coinbase(&block_trace.coinbase.address.unwrap());
+    env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
     let difficulty_be_bytes = [0u8; 32];
-    std::env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+    env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
     let mut builder =
         CircuitInputBuilder::new_from_l2_trace(circuits_params, &block_trace, false, false)
             .expect("could not handle block tx");
@@ -392,7 +448,7 @@ fn trace_config_to_witness_block_l1(
         ..eth_types::Block::default()
     };
 
-    let wallet: LocalWallet = ethers_core::k256::ecdsa::SigningKey::from_bytes(&st.secret_key)
+    let wallet: LocalWallet = ethers_core::k256::ecdsa::SigningKey::from_slice(&st.secret_key)
         .unwrap()
         .into();
     let mut wallets = HashMap::new();
@@ -518,7 +574,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
         max_exp_steps: 5000,
         max_keccak_rows: 0, // dynamic?
         max_poseidon_rows: 0,
-        max_vertical_circuit_rows: 0,
+        max_vertical_circuit_rows: MAX_VERTICLE_ROWS, // is it good?
         max_inner_blocks: 64,
         max_rlp_rows: 6000,
         max_ec_ops: PrecompileEcParams {
@@ -529,7 +585,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
     }
 }
 
-fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<Fr> {
+fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) {
     let num_row = C::min_num_rows_block(block).1;
     let k = zkevm_circuits::util::log2_ceil(num_row + 256);
     log::debug!(
@@ -538,7 +594,8 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &Block<Fr>) -> MockProver<F
     );
     //debug_assert!(k <= 22);
     let circuit = C::new_from_block(block);
-    MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
+    let prover = MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap();
+    prover.assert_satisfied_par();
 }
 
 type ScrollSuperCircuit = SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>;
@@ -548,8 +605,10 @@ pub fn run_test(
     suite: TestSuite,
     circuits_config: CircuitsConfig,
 ) -> Result<(), StateTestError> {
-    // get the geth traces
+    let test_id = st.id.clone();
+    log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
+    // get the geth traces
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
     #[cfg(feature = "scroll")]
@@ -595,64 +654,78 @@ pub fn run_test(
     log::debug!("witness_block created");
     //builder.sdb.list_accounts();
 
+    let check_ccc = || {
+        let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
+        let mut overflow = false;
+        for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
+            if num.row_num_real > *limit {
+                log::warn!(
+                    "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
+                    suite.id,
+                    st.id,
+                    num.name,
+                    num.row_num_real,
+                    limit
+                );
+                overflow = true;
+            }
+        }
+        let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
+        if overflow {
+            log::warn!(
+                "ccc overflow: st.id {}, detail {} {}",
+                st.id,
+                max_row_usage.name,
+                max_row_usage.row_num_real
+            );
+            panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
+        } else {
+            log::info!(
+                "ccc ok: st.id {}, detail {} {}",
+                st.id,
+                max_row_usage.name,
+                max_row_usage.row_num_real
+            );
+        }
+    };
+
     if !circuits_config.super_circuit {
         if (*CIRCUIT).is_empty() {
             CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
                 .copy_checks(None)
                 .run();
+        } else if (*CIRCUIT) == "ccc" {
+            check_ccc();
         } else {
-            let prover = match (*CIRCUIT).as_str() {
+            match (*CIRCUIT).as_str() {
                 "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
                 "bytecode" => test_with::<BytecodeCircuit<Fr>>(&witness_block),
                 "ecc" => test_with::<EccCircuit<Fr, 9>>(&witness_block),
-                "sig" => test_with::<SigCircuit<Fr>>(&witness_block),
+                "sig" => {
+                    if !witness_block
+                        .precompile_events
+                        .get_ecrecover_events()
+                        .is_empty()
+                    {
+                        test_with::<SigCircuit<Fr>>(&witness_block);
+                    } else {
+                        log::warn!("no ec recover event {}, skip", st.id);
+                    }
+                }
                 _ => unimplemented!(),
             };
-            prover.assert_satisfied_par();
         }
     } else {
         log::debug!("test super circuit {}", *CIRCUIT);
         if (*CIRCUIT) == "ccc" {
-            let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
-            let mut overflow = false;
-            for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
-                if num.row_num_real > *limit {
-                    log::warn!(
-                        "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
-                        suite.id,
-                        st.id,
-                        num.name,
-                        num.row_num_real,
-                        limit
-                    );
-                    overflow = true;
-                }
-            }
-            let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
-            if overflow {
-                log::warn!(
-                    "ccc overflow: st.id {}, detail {} {}",
-                    st.id,
-                    max_row_usage.name,
-                    max_row_usage.row_num_real
-                );
-                panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
-            } else {
-                log::info!(
-                    "ccc ok: st.id {}, detail {} {}",
-                    st.id,
-                    max_row_usage.name,
-                    max_row_usage.row_num_real
-                );
-            }
+            check_ccc();
         } else {
-            // TODO: do we need to automatically adjust this k?
-            let k = 20;
-            // TODO: remove this MOCK_RANDOMNESS?
-            let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
-            let instance = circuit.instance();
-            let prover = MockProver::run(k, &circuit, instance).unwrap();
-            prover.assert_satisfied_par();
+            #[cfg(feature = "inner-prove")]
+            inner_prove(&test_id, &st.env.current_coinbase, &witness_block);
+            #[cfg(feature = "chunk-prove")]
+            chunk_prove(&test_id, &st.env.current_coinbase, &witness_block);
+            #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
+            mock_prove(&test_id, &witness_block);
         }
     };
     //#[cfg(feature = "scroll")]
@@ -666,8 +739,8 @@ pub fn run_test(
             let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
             if !exist {
                 // modified from bus-mapping/src/mock.rs
-                let keccak_code_hash = H256(keccak256(account.code.to_vec()));
-                let code_hash = CodeDB::hash(&account.code.to_vec());
+                let keccak_code_hash = H256(keccak256(&account.code));
+                let code_hash = CodeDB::hash(&account.code);
                 *acc_in_local_sdb = bus_mapping::state_db::Account {
                     nonce: account.nonce,
                     balance: account.balance,
@@ -687,5 +760,99 @@ pub fn run_test(
     }
     check_post(&builder, &post)?;
 
+    log::info!("{test_id}: run-test END");
     Ok(())
+}
+
+#[cfg(feature = "scroll")]
+fn set_env_coinbase(coinbase: &Address) -> String {
+    let coinbase = format!("0x{}", hex::encode(coinbase));
+    env::set_var("COINBASE", &coinbase);
+
+    coinbase
+}
+
+#[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
+fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
+    log::info!("{test_id}: mock-prove BEGIN");
+    // TODO: do we need to automatically adjust this k?
+    let k = 20;
+    // TODO: remove this MOCK_RANDOMNESS?
+    let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
+    let instance = circuit.instance();
+    let prover = MockProver::run(k, &circuit, instance).unwrap();
+    prover.assert_satisfied_par();
+
+    log::info!("{test_id}: mock-prove END");
+}
+
+#[cfg(feature = "inner-prove")]
+fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
+    let coinbase = set_env_coinbase(coinbase);
+    log::info!("{test_id}: inner-prove BEGIN, coinbase = {coinbase}");
+
+    let prover = unsafe { &mut REAL_PROVER };
+    let coinbase_changed = prover.pk(&coinbase).is_none();
+
+    // Clear previous PKs if coinbase address changed.
+    if coinbase_changed {
+        prover.clear_pks();
+    }
+
+    let rng = gen_rng();
+    let snark = prover
+        .gen_inner_snark::<circuit::SuperCircuit>(&coinbase, rng, witness_block)
+        .unwrap_or_else(|err| panic!("{test_id}: failed to generate inner snark: {err}"));
+    log::info!("{test_id}: generated inner snark");
+
+    let verifier = unsafe { &mut INNER_VERIFIER };
+
+    // Reset VK if coinbase address changed.
+    if coinbase_changed {
+        let pk = prover.pk(&coinbase).unwrap_or_else(|| {
+            panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
+        });
+        let vk = pk.get_vk().clone();
+        verifier.set_vk(vk);
+    }
+
+    let verified = verifier.verify_snark(snark);
+    assert!(verified, "{test_id}: failed to verify inner snark");
+
+    log::info!("{test_id}: inner-prove END, coinbase = {coinbase}");
+}
+
+#[cfg(feature = "chunk-prove")]
+fn chunk_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
+    let coinbase = set_env_coinbase(coinbase);
+    log::info!("{test_id}: chunk-prove BEGIN, coinbase = {coinbase}");
+
+    let prover = unsafe { &mut REAL_PROVER };
+    let coinbase_changed = prover.pk(&coinbase).is_none();
+
+    // Clear previous PKs if coinbase address changed.
+    if coinbase_changed {
+        prover.clear_pks();
+    }
+
+    let snark = prover
+        .load_or_gen_final_chunk_snark(test_id, witness_block, Some(&coinbase), None)
+        .unwrap_or_else(|err| panic!("{test_id}: failed to generate chunk snark: {err}"));
+    log::info!("{test_id}: generated chunk snark");
+
+    let verifier = unsafe { &mut CHUNK_VERIFIER };
+
+    // Reset VK if coinbase address changed.
+    if coinbase_changed {
+        let pk = prover.pk(LayerId::Layer2.id()).unwrap_or_else(|| {
+            panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
+        });
+        let vk = pk.get_vk().clone();
+        verifier.set_vk(vk);
+    }
+
+    let verified = verifier.verify_snark(snark);
+    assert!(verified, "{test_id}: failed to verify chunk snark");
+
+    log::info!("{test_id}: chunk-prove END, coinbase = {coinbase}");
 }

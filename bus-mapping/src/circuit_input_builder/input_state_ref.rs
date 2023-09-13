@@ -902,8 +902,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let salt = step.stack.nth_last(3)?;
         let call_ctx = self.call_ctx()?;
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
-        let address =
-            get_create2_address(self.call()?.address, salt.to_be_bytes().to_vec(), init_code);
+        let address = get_create2_address(self.call()?.address, salt.to_be_bytes(), init_code);
         log::trace!(
             "create2_address {:?}, from {:?}, salt {:?}",
             address,

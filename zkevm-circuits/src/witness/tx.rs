@@ -1172,7 +1172,7 @@ mod tests {
             Fr::from(eth_tx.gas.as_u64()),
             eth_tx.to.unwrap().to_scalar().unwrap(),
             rlc(&eth_tx.value.to_be_bytes(), evm_word),
-            rlc(&eth_tx.input.to_vec(), keccak_input),
+            rlc(&eth_tx.input, keccak_input),
         ];
         if let Some(access_list) = eth_tx.access_list {
             for item in access_list.0.iter() {

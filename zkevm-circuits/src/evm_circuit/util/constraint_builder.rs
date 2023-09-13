@@ -61,6 +61,7 @@ pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) memory_word_size: Transition<Expression<F>>,
     pub(crate) reversible_write_counter: Transition<Expression<F>>,
     pub(crate) log_id: Transition<Expression<F>>,
+    pub(crate) end_tx: Transition<Expression<F>>,
 }
 
 impl<F: Field> StepStateTransition<F> {
@@ -86,6 +87,7 @@ impl<F: Field> StepStateTransition<F> {
             memory_word_size: Transition::Any,
             reversible_write_counter: Transition::Any,
             log_id: Transition::Any,
+            end_tx: Transition::Same,
         }
     }
 }
@@ -1412,6 +1414,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         sig_r_rlc: Expression<F>,
         sig_s_rlc: Expression<F>,
         recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
     ) {
         self.add_lookup(
             "sig table",
@@ -1421,6 +1424,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 sig_r_rlc: sig_r_rlc.expr(),
                 sig_s_rlc: sig_s_rlc.expr(),
                 recovered_addr: recovered_addr.expr(),
+                is_valid: is_valid.expr(),
             },
         );
     }

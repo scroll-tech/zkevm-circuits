@@ -15,6 +15,7 @@ use halo2_proofs::{
     halo2curves::{
         group::{
             ff::{Field as GroupField, PrimeField},
+            prime::PrimeCurveAffine,
             Curve,
         },
         secp256k1::{self, Secp256k1Affine},
@@ -72,7 +73,7 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
     let mut sk_be_scalar = [0u8; 32];
     sk_be_scalar[31] = 1_u8;
 
-    let sk = SigningKey::from_bytes(&sk_be_scalar).expect("sign key = 1");
+    let sk = SigningKey::from_bytes((&sk_be_scalar).into()).expect("sign key = 1");
     let wallet = ethers_signers::Wallet::from(sk);
 
     let tx = TransactionRequest::new()
@@ -84,7 +85,9 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
         .data(Bytes::default());
     let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
 
-    let sig = wallet.sign_hash(sighash);
+    let sig = wallet
+        .sign_hash(sighash)
+        .expect("sign dummy tx using dummy sk");
     assert_eq!(sig.v, 28);
     assert_eq!(
         sig.r,
@@ -101,6 +104,9 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
 impl SignData {
     /// Recover address of the signature
     pub fn get_addr(&self) -> Address {
+        if self.pk == Secp256k1Affine::identity() {
+            return Address::zero();
+        }
         let pk_le = pk_bytes_le(&self.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         let pk_hash = keccak256(pk_be);

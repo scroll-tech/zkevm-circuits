@@ -355,7 +355,8 @@ impl MockTransaction {
                         .from
                         .as_wallet()
                         .with_chain_id(self.chain_id)
-                        .sign_transaction_sync(&tx.into());
+                        .sign_transaction_sync(&tx.into())
+                        .expect("sign mock tx");
                     // Set sig parameters
                     self.sig_data((sig.v, sig.r, sig.s));
                 }

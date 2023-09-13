@@ -16,8 +16,9 @@ use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
 use crate::{
     error::Error,
-    evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops},
+    evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
+    precompile::is_precompiled,
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
@@ -27,7 +28,7 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
     self,
-    evm_types::OpcodeId,
+    evm_types::{GasCost, OpcodeId},
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256,
@@ -568,11 +569,41 @@ impl<'a> CircuitInputBuilder {
                 }
             }
         }
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: BeginTx
-        // - op: None
+
         // Generate BeginTx step
-        gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx), geth_trace)?;
+        let mut begin_tx_step = gen_associated_steps(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            ExecState::BeginTx,
+        )?;
+
+        // check gas cost
+        {
+            let real_gas_cost = if geth_trace.struct_logs.is_empty() {
+                GasCost(geth_trace.gas.0)
+            } else {
+                GasCost(tx.gas - geth_trace.struct_logs[0].gas.0)
+            };
+            if real_gas_cost != begin_tx_step.gas_cost {
+                let is_precompile = tx.to.map(|ref addr| is_precompiled(addr)).unwrap_or(false);
+                if is_precompile {
+                    // FIXME after we implement all precompiles
+                    if begin_tx_step.gas_cost != real_gas_cost {
+                        log::warn!(
+                            "change begin tx precompile gas from {:?} to {real_gas_cost:?}, step {begin_tx_step:?}",
+                            begin_tx_step.gas_cost
+                        );
+                        begin_tx_step.gas_cost = real_gas_cost;
+                    }
+                } else {
+                    // EIP2930 not implemented
+                    if tx.access_list.is_none() {
+                        debug_assert_eq!(begin_tx_step.gas_cost, real_gas_cost);
+                    }
+                }
+            }
+        }
+
+        tx.steps_mut().push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let tx_gas = tx.gas;
@@ -655,12 +686,10 @@ impl<'a> CircuitInputBuilder {
             tx.steps_mut().extend(exec_steps);
         }
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: EndTx
-        // - op: None
         // Generate EndTx step
         log::trace!("gen_end_tx_ops");
-        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let end_tx_step =
+            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
@@ -1023,11 +1052,26 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     }
 
     /// Step 2. Get State Accesses from TxExecTraces
-    pub fn get_state_accesses(
-        eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<Vec<Access>, Error> {
-        get_state_accesses(eth_block, geth_traces)
+    pub async fn get_state_accesses(&self, eth_block: &EthBlock) -> Result<AccessSet, Error> {
+        let mut access_set = AccessSet::default();
+        access_set.add_account(
+            eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+        );
+        let traces = self
+            .cli
+            .trace_block_prestate_by_hash(
+                eth_block
+                    .hash
+                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+            )
+            .await?;
+        for trace in traces.into_iter() {
+            access_set.extend_from_traces(&trace);
+        }
+
+        Ok(access_set)
     }
 
     /// Step 3. Query geth for all accounts, storage keys, and codes from
@@ -1132,8 +1176,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     > {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
-        let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
-        let (proofs, codes) = self.get_state(block_num, access_set.into()).await?;
+        let access_set = self.get_state_accesses(&eth_block).await?;
+        let (proofs, codes) = self.get_state(block_num, access_set).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         if eth_block.transactions.len() > self.circuits_params.max_txs {
             log::error!(
@@ -1168,8 +1212,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let mut access_set = AccessSet::default();
         for block_num in block_num_begin..block_num_end {
             let (eth_block, geth_traces, _, _) = self.get_block(block_num).await?;
-            let access_list = Self::get_state_accesses(&eth_block, &geth_traces)?;
-            access_set.add(access_list);
+            let mut access_list = self.get_state_accesses(&eth_block).await?;
+            access_set.extend(&mut access_list);
             blocks_and_traces.push((eth_block, geth_traces));
         }
         let (proofs, codes) = self.get_state(block_num_begin, access_set).await?;

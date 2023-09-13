@@ -7,7 +7,7 @@ use crate::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
+                Transition::{Delta, Same, To},
             },
             math_gadget::LtGadget,
             CachedRegion, Cell,
@@ -68,6 +68,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(1.expr()),
+                end_tx: To(1.expr()),
                 ..StepStateTransition::any()
             });
         });
