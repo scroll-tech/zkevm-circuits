@@ -2655,9 +2655,9 @@ impl<F: Field> TxCircuit<F> {
                     // set next tx's total_l1_popped_before
                     total_l1_popped_before = total_l1_popped_after;
                 }
-                let calldata_first_row = self.max_txs * TX_LEN + 1;
-                assert_eq!(offset, calldata_first_row);
+                assert_eq!(offset, self.max_txs * TX_LEN + 1);
 
+                let calldata_first_row = self.max_txs * TX_LEN + 1;
                 let calldata_last_row = calldata_first_row + self.max_calldata;
                 // 3. Assign call data of txs
                 // 3.1 padding txs have no calldata bytes
@@ -2675,7 +2675,7 @@ impl<F: Field> TxCircuit<F> {
                         challenges,
                     )?;
                 }
-                assert!(offset < calldata_last_row, "{offset}, {calldata_last_row}");
+                assert!(offset <= calldata_last_row, "{offset}, {calldata_last_row}");
                 // 3.2 pad calldata with zeros
                 config.assign_calldata_zeros(
                     &mut region,
