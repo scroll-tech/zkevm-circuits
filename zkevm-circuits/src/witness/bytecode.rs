@@ -1,6 +1,7 @@
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::circuit::Value;
+use itertools::Itertools;
 
 use crate::{evm_circuit::util::rlc, table::BytecodeFieldTag, util::Challenges};
 
@@ -41,16 +42,24 @@ impl Bytecode {
             Value::known(F::zero()),
         ]);
 
+        let mut push_rlc = Value::known(F::zero());
+
         let mut push_data_left = 0;
         for (idx, byte) in self.bytes.iter().enumerate() {
             let is_code = push_data_left == 0;
 
-            push_data_left = if is_code {
+            if is_code {
                 // push_data_left will be > 0 only if it is a push opcode
-                OpcodeId::from(*byte).data_len()
+                push_data_left = OpcodeId::from(*byte).data_len();
+
+                // Calculate the RLC of the upcoming push data, if any.
+                // Set the RLC result for all rows of the instruction, or 0.
+                let start = idx + 1;
+                let end = (start + push_data_left).min(self.bytes.len());
+                push_rlc = Self::make_push_rlc(challenges.evm_word(), &self.bytes[start..end]);
             } else {
-                push_data_left - 1
-            };
+                push_data_left -= 1;
+            }
 
             rows.push([
                 hash,
@@ -58,10 +67,19 @@ impl Bytecode {
                 Value::known(F::from(idx as u64)),
                 Value::known(F::from(is_code as u64)),
                 Value::known(F::from(*byte as u64)),
-                Value::known(F::zero()), // TODO: get push_rlc
+                push_rlc,
             ])
         }
         rows
+    }
+
+    /// Return the RLC (LE order) of a bytecode slice.
+    fn make_push_rlc<F: Field>(rand: Value<F>, rows: &[u8]) -> Value<F> {
+        let mut acc = Value::known(F::zero());
+        for byte in rows {
+            acc = acc * rand + Value::known(F::from(*byte as u64));
+        }
+        acc
     }
 
     /// get byte value and is_code pair

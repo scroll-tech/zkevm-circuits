@@ -151,8 +151,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .assign(region, offset, Value::known(F::from(code_pair.0 as u64)))?;
         self.is_code
             .assign(region, offset, Value::known(F::from(code_pair.1)))?;
-        self.push_rlc
-            .assign(region, offset, Value::known(F::zero()))?; // TODO: get push_rlc.
+        self.push_rlc.assign(region, offset, code_pair.2)?;
         self.is_jump_dest.assign(
             region,
             offset,
