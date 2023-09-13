@@ -644,6 +644,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         opcode: Expression<F>,
         is_code: Expression<F>,
     ) {
+        assert_eq!(is_code, 1.expr());
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
         self.add_lookup(
             "Opcode lookup",

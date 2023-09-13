@@ -1167,6 +1167,7 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
             self.index.into(),
             self.is_code.into(),
             self.value.into(),
+            self.push_rlc.into(),
         ]
     }
 
@@ -1178,6 +1179,7 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
             String::from("index"),
             String::from("is_code"),
             String::from("value"),
+            String::from("push_rlc"),
         ]
     }
 }

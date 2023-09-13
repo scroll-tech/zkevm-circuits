@@ -714,7 +714,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     row.value,
                     push_data_left,
                     push_acc,
-                    push_rlc,
+                    Value::known(F::zero()), // TODO: merge push_acc and push_rlc
                     value_rlc,
                     length,
                     F::from(push_data_size),

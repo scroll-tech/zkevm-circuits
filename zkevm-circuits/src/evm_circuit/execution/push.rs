@@ -103,12 +103,12 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
                     );
                 },
             );
-            cb.condition(
+            /*cb.condition(
                 and::expr(&[is_pushed_cell.expr(), not::expr(is_padding_cell.expr())]),
                 |cb| {
                     cb.opcode_lookup_at(index, byte.expr(), 0.expr());
                 },
-            );
+            );*/
             is_pushed_cell_prev = is_pushed_cell.expr();
             is_padding_cell_prev = is_padding_cell.expr();
             
@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             )),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct2(cb, opcode, step_state_transition, value.expr());
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,

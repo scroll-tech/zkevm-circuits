@@ -414,7 +414,7 @@ impl<F: Field> Lookup<F> {
                     index.clone(),
                     is_code.clone(),
                     value.clone(),
-                    // TODO: push_rlc
+                    push_rlc.clone(),
                 ]
             }
             Self::Block {
