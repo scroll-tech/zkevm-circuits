@@ -2,9 +2,8 @@ use eth_types::{
     sign_types::{biguint_to_32bytes_le, recover_pk, SignData, SECP256K1_Q},
     Bytes, ToBigEndian, ToLittleEndian,
 };
-use ethers_core::k256::elliptic_curve::PrimeField;
 use halo2_proofs::halo2curves::{
-    group::prime::PrimeCurveAffine,
+    group::{ff::PrimeField, prime::PrimeCurveAffine},
     secp256k1::{Fq, Secp256k1Affine},
 };
 use num::{BigUint, Integer};
