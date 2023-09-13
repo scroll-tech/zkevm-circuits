@@ -458,8 +458,7 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);
-    #[cfg(debug_assertions)]
-    rws.check_value();
+    rws.check_value()?;
     let num_txs = block.txs().len();
     let last_block_num = block
         .headers

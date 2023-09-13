@@ -8,6 +8,10 @@ pub fn get_super_circuit_params() -> CircuitsParams {
     unimplemented!("Must build with feature scroll")
 }
 
+pub fn validite_block_traces(_block_traces: &[BlockTrace]) -> Result<()> {
+    unimplemented!("Must build with feature scroll")
+}
+
 pub fn calculate_row_usage_of_trace(
     _block_trace: &BlockTrace,
 ) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
