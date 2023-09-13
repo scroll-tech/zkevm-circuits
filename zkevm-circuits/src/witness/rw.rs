@@ -64,13 +64,12 @@ impl RwMap {
                     let mut prev = first;
                     if !first.is_write() {
                         // first access reads don't change value
-                        if first.value_word() != U256::zero() {
-                            if !(first.tag() == RwTableTag::TxAccessListAccountStorage
+                        if first.value_word() != U256::zero()
+                            && !(first.tag() == RwTableTag::TxAccessListAccountStorage
                                 || first.tag() == RwTableTag::Account
                                 || first.tag() == RwTableTag::AccountStorage)
-                            {
-                                errs.push((idx, ERR_MSG_FIRST, *first, None));
-                            }
+                        {
+                            errs.push((idx, ERR_MSG_FIRST, *first, None));
                         }
                     }
                     for (idx, rw) in group {
