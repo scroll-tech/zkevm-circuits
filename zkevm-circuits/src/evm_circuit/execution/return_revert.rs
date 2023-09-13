@@ -543,8 +543,30 @@ mod test {
             PUSH32(CALLEE_ADDRESS.to_word())
             PUSH32(4000) // gas
             CALL
+            REVERT
+            RETURNDATASIZE
             STOP
         }
+    }
+
+    fn callee_bytecode_edge(has_return: bool, offset: u128, length: u64) -> Bytecode {
+        let memory_bytes = [0xFF; 6];
+        let memory_address = 0;
+        let memory_value = Word::from_big_endian(&memory_bytes);
+        let mut code: Bytecode = bytecode! {
+            REVERT
+            PUSH6(memory_value)
+            PUSH1(memory_address)
+            MSTORE
+            PUSH2(length)
+            PUSH17(offset)
+        };
+        code.write_op(if has_return {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::INVALID(0xa5)
+        });
+        code
     }
 
     #[test]
@@ -635,13 +657,37 @@ mod test {
         }
     }
 
+
+    #[test]
+    fn test_return_root_create_edge() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), has_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            let tx_input = callee_bytecode_edge(*has_return, *offset, *length).code();
+            let ctx = TestContext::<1, 1>::new(
+                None,
+                |accs| {
+                    accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                },
+                |mut txs, accs| {
+                    txs[0].from(accs[0].address).input(tx_input.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        }
+    }
+
     #[test]
     fn test_return_nonroot_create() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
-            let initializer = callee_bytecode(*is_return, *offset, *length).code();
+            let initializer = callee_bytecode_edge(*is_return, *offset, *length).code();
 
             let root_code = bytecode! {
                 PUSH32(Word::from_big_endian(&initializer))
