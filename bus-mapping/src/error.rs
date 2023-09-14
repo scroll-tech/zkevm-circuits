@@ -11,7 +11,7 @@ use crate::geth_errors::{
 };
 
 /// Error type for any BusMapping related failure.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     /// Serde de/serialization error.
     SerdeError(serde_json::error::Error),
