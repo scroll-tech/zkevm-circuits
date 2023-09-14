@@ -543,8 +543,6 @@ mod test {
             PUSH32(CALLEE_ADDRESS.to_word())
             PUSH32(4000) // gas
             CALL
-            REVERT
-            RETURNDATASIZE
             STOP
         }
     }
@@ -583,10 +581,9 @@ mod test {
             PUSH1(0) // call data length
             PUSH1(0) // call data offset
             PUSH0 // value
-            PUSH32(CALLEE_ADDRESS.to_word()) // caller address ?
+            PUSH32(CALLER_ADDRESS.to_word()) // caller
             PUSH32(4000) // gas
             CALL
-            RETURN
         };
         code.write_op(if is_return {
             OpcodeId::RETURN
@@ -684,7 +681,6 @@ mod test {
         }
     }
 
-
     #[test]
     fn test_return_root_create_edge() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
@@ -714,7 +710,7 @@ mod test {
         for ((offset, length), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
-            let tx_input = callee_bytecode_with_call (*is_return, *offset, *length).code();
+            let tx_input = callee_bytecode_with_call(*is_return, *offset, *length).code();
             let ctx = TestContext::<1, 1>::new(
                 None,
                 |accs| {
@@ -784,19 +780,29 @@ mod test {
 
     #[test]
     fn test_return_nonroot_create_initcode() {
-        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
-        for ((offset, length), has_return) in
-            test_parameters.iter().cartesian_product(&[true, false])
+        let test_parameters = [(0, 10), (1000, 1000)];
+        for (((offset, length), is_return), has_call) in test_parameters
+            .iter()
+            .cartesian_product(&[true, false])
+            .cartesian_product(&[true, false])
         {
-            let initializer = callee_bytecode_edge(*has_return, *offset, *length).code();
+            let initializer = if *has_call {
+                callee_bytecode_with_call(*is_return, *offset, *length).code()
+            } else {
+                callee_bytecode_edge(*is_return, *offset, *length).code()
+            };
+            let mut root_code: Bytecode = bytecode! {};
+            let mut offset = 0;
+            for byte_chunk in initializer.chunks(32) {
+                root_code.push(32, Word::from_big_endian(byte_chunk));
+                root_code.push(1, offset);
+                offset += 32;
+                root_code.write_op(OpcodeId::MSTORE);
+            }
 
             let root_code = bytecode! {
-                PUSH32(Word::from_big_endian(&initializer))
-                PUSH1(0)
-                MSTORE
-
                 PUSH1(initializer.len())        // size
-                PUSH1(32 - initializer.len())   // offset
+                PUSH1(0)                        // offset
                 PUSH1(0)                        // value
 
                 CREATE
