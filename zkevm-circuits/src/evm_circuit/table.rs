@@ -250,6 +250,7 @@ pub(crate) enum Lookup<F> {
         /// Value corresponding to the tag.
         value: Expression<F>,
         /// The RLC of the PUSH data (LE order), or 0.
+        /// Warning: If the bytecode is truncated, this is the actual data, without zero-padding.
         push_rlc: Expression<F>,
     },
     /// Lookup to block table, which contains constants of this block.

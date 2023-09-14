@@ -75,7 +75,7 @@ mod memory_expansion_test;
 #[cfg(feature = "test")]
 pub use callop::tests::PrecompileCallArgs;
 
-use self::{sha3::Sha3, pushn::PushN};
+use self::{pushn::PushN, sha3::Sha3};
 
 use address::Address;
 use balance::Balance;
