@@ -83,7 +83,8 @@ impl Bytecode {
     }
 
     /// get byte value and is_code pair
-    pub fn get(&self, dest: usize) -> [u8; 2] {
+    fn get(&self, dest: usize) -> (u8, bool, Option<(usize, usize)>) {
+        let mut push_range = None;
         let mut push_data_left = 0;
         for (idx, byte) in self.bytes.iter().enumerate() {
             let mut is_code = true;
@@ -92,10 +93,13 @@ impl Bytecode {
                 push_data_left -= 1;
             } else if (OpcodeId::PUSH0.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(byte) {
                 push_data_left = *byte as usize - OpcodeId::PUSH0.as_u8() as usize;
+                push_range = Some((idx + 1, push_data_left));
+            } else {
+                push_range = None;
             }
 
             if idx == dest {
-                return [*byte, is_code as u8];
+                return (*byte, is_code, push_range);
             }
         }
 
@@ -109,7 +113,17 @@ impl Bytecode {
         dest: usize,
         challenges: &Challenges<Value<F>>,
     ) -> (u8, bool, Value<F>) {
-        let [byte, is_code] = self.get(dest);
-        (byte, is_code != 0, Value::known(F::zero())) // TODO: get push_rlc
+        let (byte, is_code, push_range) = self.get(dest);
+
+        let push_rlc = match push_range {
+            None => Value::known(F::zero()),
+
+            Some((start, length)) => {
+                let end = (start + length).min(self.bytes.len());
+                Self::make_push_rlc(challenges.evm_word(), &self.bytes[start..end])
+            }
+        };
+
+        (byte, is_code, push_rlc)
     }
 }

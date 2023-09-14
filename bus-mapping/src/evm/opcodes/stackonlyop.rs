@@ -35,7 +35,7 @@ impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
                 geth_step.stack.nth_last(i)?,
             )?;
         }
-
+ 
         // N_PUSH stack writes
         for i in 0..N_PUSH {
             state.stack_write(

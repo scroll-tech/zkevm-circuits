@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             );
 
             // byte is 0 if it is either not pushed or padding
-            cb.condition(
+            /*cb.condition(
                 or::expr(&[not::expr(is_pushed_cell.expr()), is_padding_cell.expr()]),
                 |cb| {
                     cb.require_zero(
@@ -102,7 +102,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
                         byte.expr(),
                     );
                 },
-            );
+            );*/
             /*cb.condition(
                 and::expr(&[is_pushed_cell.expr(), not::expr(is_padding_cell.expr())]),
                 |cb| {
