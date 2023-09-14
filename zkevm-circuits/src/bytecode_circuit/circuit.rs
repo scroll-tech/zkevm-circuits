@@ -221,11 +221,18 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         meta.create_gate("Byte row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
+            let is_code = meta.query_advice(bytecode_table.is_code, Rotation::cur());
+            let push_acc = meta.query_advice(push_acc, Rotation::cur());
+
             cb.require_equal(
                 "cur.is_code == (cur.push_data_left == 0)",
-                meta.query_advice(bytecode_table.is_code, Rotation::cur()),
+                is_code.clone(),
                 push_data_left_is_zero.clone().is_zero_expression,
             );
+
+            cb.condition(is_code, |cb| {
+                cb.require_zero("init push_acc=0", push_acc);
+            });
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -383,6 +390,32 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 ),
             );
 
+            let is_code_next = meta.query_advice(bytecode_table.is_code, Rotation::next());
+            let value_next = meta.query_advice(bytecode_table.value, Rotation::next());
+            let push_acc_next = meta.query_advice(push_acc, Rotation::next());
+            let push_acc = meta.query_advice(push_acc, Rotation::cur());
+            let push_rlc_next = meta.query_advice(bytecode_table.push_rlc, Rotation::next());
+            let push_rlc = meta.query_advice(bytecode_table.push_rlc, Rotation::cur());
+
+            let push_rlc_next_or_finish = select::expr(
+                is_code_next.clone(),  // If last push data row,
+                push_acc.clone(),      // final RLC,
+                push_rlc_next.clone(), // else copy forward.
+            );
+            cb.require_equal(
+                "push_rlc is copied forward, or it equals the final push_acc",
+                push_rlc,
+                push_rlc_next_or_finish,
+            );
+
+            cb.condition(not::expr(is_code_next), |cb| {
+                cb.require_equal(
+                    "accumulate the next value into the next push_acc",
+                    push_acc_next,
+                    push_acc.clone() * challenges.evm_word() + value_next,
+                );
+            });
+
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_fixed(q_last, Rotation::cur())),
@@ -418,6 +451,10 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
                 meta.query_advice(length, Rotation::cur()),
             );
+
+            let push_rlc = meta.query_advice(bytecode_table.push_rlc, Rotation::cur());
+            let push_acc = meta.query_advice(push_acc, Rotation::cur());
+            cb.require_equal("push_rlc equals the final push_acc", push_rlc, push_acc);
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
