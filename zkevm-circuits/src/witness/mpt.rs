@@ -38,30 +38,6 @@ pub struct MptUpdate {
     original_rws: Vec<Rw>,
 }
 
-impl MptUpdate {
-    fn proof_type(&self) -> MPTProofType {
-        match self.key {
-            Key::AccountStorage { .. } => {
-                if self.old_value.is_zero() && self.new_value.is_zero() {
-                    MPTProofType::StorageDoesNotExist
-                } else {
-                    MPTProofType::StorageChanged
-                }
-            }
-            Key::Account { field_tag, .. } => {
-                if matches!(field_tag, AccountFieldTag::CodeHash)
-                    && self.old_value.is_zero()
-                    && self.new_value.is_zero()
-                {
-                    MPTProofType::AccountDoesNotExist
-                } else {
-                    field_tag.into()
-                }
-            }
-        }
-    }
-}
-
 /// All the MPT updates in the MptCircuit, accessible by their key
 #[derive(Default, Clone, Debug)]
 pub struct MptUpdates {
@@ -154,19 +130,24 @@ impl MptUpdates {
             log::debug!("roots consistent ({:#x},{:#x})", root_pair.0, root_pair.1);
         }
 
-        // generate withdraw proof
-        let address = *bus_mapping::l2_predeployed::message_queue::ADDRESS;
-        let key = *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT;
-        let account_proof = wit_gen.account_proof(address);
-        let storage_proof = wit_gen.storage_proof(address, key);
-        // TODO: add withdraw_root to WithdrawProof?
-        let withdraw_proof = WithdrawProof {
-            state_root: self.new_root,
-            account_proof,
-            storage_proof,
-        };
-        log::debug!("withdraw proof {withdraw_proof:?}");
-        self.withdraw_proof = withdraw_proof;
+        let gen_withdraw_proof = false;
+        if gen_withdraw_proof {
+            // generate withdraw proof
+            let address = *bus_mapping::l2_predeployed::message_queue::ADDRESS;
+            let key = *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT;
+            let account_proof = wit_gen.account_proof(address);
+            let storage_proof = wit_gen.storage_proof(address, key);
+            // TODO: add withdraw_root to WithdrawProof?
+            let withdraw_proof = WithdrawProof {
+                state_root: self.new_root,
+                account_proof,
+                storage_proof,
+            };
+            log::debug!("withdraw proof {withdraw_proof:?}");
+            self.withdraw_proof = withdraw_proof;
+        }
+        log::debug!("fill_state_roots done");
+        self.pretty_print();
     }
 
     fn fill_state_roots_from_generator(
@@ -266,28 +247,18 @@ impl MptUpdates {
     ) -> Vec<MptUpdateRow<Value<F>>> {
         self.updates
             .values()
-            .map(|update| {
-                let (new_root, old_root) = randomness
-                    .map(|randomness| update.root_assignments(randomness))
-                    .unzip();
-                let (new_value, old_value) = randomness
-                    .map(|randomness| update.value_assignments(randomness))
-                    .unzip();
-                MptUpdateRow([
-                    Value::known(update.key.address()),
-                    randomness.map(|randomness| update.key.storage_key(randomness)),
-                    Value::known(F::from(update.proof_type() as u64)),
-                    new_root,
-                    old_root,
-                    new_value,
-                    old_value,
-                ])
-            })
+            .map(|update| update.table_assignments(randomness))
             .collect()
     }
 
     fn insert(&mut self, update: MptUpdate) {
         self.updates.insert(update.key, update);
+    }
+
+    pub(crate) fn pretty_print(&self) {
+        for (idx, update) in self.updates.values().enumerate() {
+            log::trace!("mpt_update {idx} {update:?}");
+        }
     }
 }
 
@@ -324,6 +295,48 @@ impl MptUpdate {
             rlc::value(&self.new_root.to_le_bytes(), word_randomness),
             rlc::value(&self.old_root.to_le_bytes(), word_randomness),
         )
+    }
+
+    pub(crate) fn table_assignments<F: Field>(
+        &self,
+        randomness: Value<F>,
+    ) -> MptUpdateRow<Value<F>> {
+        let (new_root, old_root) = randomness
+            .map(|randomness| self.root_assignments(randomness))
+            .unzip();
+        let (new_value, old_value) = randomness
+            .map(|randomness| self.value_assignments(randomness))
+            .unzip();
+        MptUpdateRow([
+            Value::known(self.key.address()),
+            randomness.map(|randomness| self.key.storage_key(randomness)),
+            Value::known(F::from(self.proof_type() as u64)),
+            new_root,
+            old_root,
+            new_value,
+            old_value,
+        ])
+    }
+    fn proof_type(&self) -> MPTProofType {
+        match self.key {
+            Key::AccountStorage { .. } => {
+                if self.old_value.is_zero() && self.new_value.is_zero() {
+                    MPTProofType::StorageDoesNotExist
+                } else {
+                    MPTProofType::StorageChanged
+                }
+            }
+            Key::Account { field_tag, .. } => {
+                if matches!(field_tag, AccountFieldTag::CodeHash)
+                    && self.old_value.is_zero()
+                    && self.new_value.is_zero()
+                {
+                    MPTProofType::AccountDoesNotExist
+                } else {
+                    field_tag.into()
+                }
+            }
+        }
     }
 }
 

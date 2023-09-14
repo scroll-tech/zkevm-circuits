@@ -107,7 +107,7 @@ impl Opcode for ReturnRevert {
                 let prev_keccak_code_hash = if account.is_empty() {
                     Word::zero()
                 } else {
-                    crate::util::KECCAK_CODE_HASH_ZERO.to_word()
+                    crate::util::KECCAK_CODE_HASH_EMPTY.to_word()
                 };
                 state.account_read(
                     &mut exec_step,

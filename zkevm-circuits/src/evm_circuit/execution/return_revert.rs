@@ -547,6 +547,52 @@ mod test {
         }
     }
 
+    // init bytecode can have no 'RETURN' and error case(invalid opcode).
+    fn callee_bytecode_edge(has_return: bool, offset: u128, length: u64) -> Bytecode {
+        let memory_bytes = [0xFF; 6];
+        let memory_address = 0;
+        let memory_value = Word::from_big_endian(&memory_bytes);
+        let mut code: Bytecode = bytecode! {
+            PUSH6(memory_value)
+            PUSH1(memory_address)
+            MSTORE
+            PUSH2(length)
+            PUSH17(offset)
+        };
+        code.write_op(if has_return {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::INVALID(0xa5)
+        });
+        code
+    }
+
+    // init code call other contract
+    fn callee_bytecode_with_call(is_return: bool, offset: u128, length: u64) -> Bytecode {
+        let memory_bytes = [0x60; 6];
+        let memory_address = 0;
+        let memory_value = Word::from_big_endian(&memory_bytes);
+        let mut code: Bytecode = bytecode! {
+            PUSH6(memory_value)
+            PUSH1(memory_address)
+            MSTORE
+            PUSH2(length)
+            PUSH2(Word::from(offset) + 32 - memory_bytes.len())
+            PUSH1(0) // call data length
+            PUSH1(0) // call data offset
+            PUSH0 // value
+            PUSH32(CALLER_ADDRESS.to_word()) // caller
+            PUSH32(4000) // gas
+            CALL
+        };
+        code.write_op(if is_return {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        });
+        code
+    }
+
     #[test]
     fn test_return_root_noncreate() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
@@ -636,6 +682,52 @@ mod test {
     }
 
     #[test]
+    fn test_return_root_create_edge() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), has_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            let tx_input = callee_bytecode_edge(*has_return, *offset, *length).code();
+            let ctx = TestContext::<1, 1>::new(
+                None,
+                |accs| {
+                    accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                },
+                |mut txs, accs| {
+                    txs[0].from(accs[0].address).input(tx_input.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        }
+    }
+
+    #[test]
+    fn test_return_root_create_initcode_call() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), is_return) in
+            test_parameters.iter().cartesian_product(&[true, false])
+        {
+            let tx_input = callee_bytecode_with_call(*is_return, *offset, *length).code();
+            let ctx = TestContext::<1, 1>::new(
+                None,
+                |accs| {
+                    accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                },
+                |mut txs, accs| {
+                    txs[0].from(accs[0].address).input(tx_input.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        }
+    }
+
+    #[test]
     fn test_return_nonroot_create() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
@@ -650,6 +742,67 @@ mod test {
 
                 PUSH1(initializer.len())        // size
                 PUSH1(32 - initializer.len())   // offset
+                PUSH1(0)                        // value
+
+                CREATE
+                RETURNDATASIZE
+            };
+
+            let caller = Account {
+                address: CALLER_ADDRESS,
+                code: root_code.into(),
+                nonce: Word::one(),
+                balance: eth(10),
+                ..Default::default()
+            };
+
+            let ctx = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x000000000000000000000000000000000000cafe"))
+                        .balance(eth(10));
+                    accs[1].account(&caller);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(100000u64.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        }
+    }
+
+    #[test]
+    fn test_return_nonroot_create_initcode() {
+        let test_parameters = [(0, 10), (1000, 1000)];
+        for (((offset, length), is_return), has_call) in test_parameters
+            .iter()
+            .cartesian_product(&[true, false])
+            .cartesian_product(&[true, false])
+        {
+            let initializer = if *has_call {
+                callee_bytecode_with_call(*is_return, *offset, *length).code()
+            } else {
+                callee_bytecode_edge(*is_return, *offset, *length).code()
+            };
+            let mut root_code: Bytecode = bytecode! {};
+            let mut offset = 0;
+            for byte_chunk in initializer.chunks(32) {
+                root_code.push(32, Word::from_big_endian(byte_chunk));
+                root_code.push(1, offset);
+                offset += 32;
+                root_code.write_op(OpcodeId::MSTORE);
+            }
+
+            let root_code = bytecode! {
+                PUSH1(initializer.len())        // size
+                PUSH1(0)                        // offset
                 PUSH1(0)                        // value
 
                 CREATE

@@ -31,12 +31,7 @@ pub(crate) fn ecdsa_verify_no_pubkey_check<F: PrimeField, CF: PrimeField, SF: Pr
     msghash: &CRTInteger<F>,
     var_window_bits: usize,
     fixed_window_bits: usize,
-) -> (
-    AssignedValue<F>,
-    AssignedValue<F>,
-    CRTInteger<F>,
-    AssignedValue<F>,
-)
+) -> (AssignedValue<F>, AssignedValue<F>, CRTInteger<F>)
 where
     GA: CurveAffineExt<Base = CF, ScalarExt = SF>,
 {
@@ -221,6 +216,5 @@ where
         ],
     );
 
-    let y_is_zero = scalar_chip.is_soft_zero(ctx, &sum.y);
-    (res, is_pubkey_zero, sum.y, y_is_zero)
+    (res, is_pubkey_zero, sum.y)
 }
