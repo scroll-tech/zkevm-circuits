@@ -12,11 +12,11 @@ pub use builder::{AccountData, StorageData};
 use std::{cell::RefCell, fmt, rc::Rc};
 
 /// represent a storage state being applied in specified block
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ZktrieState {
     accounts: HashMap<Address, AccountData>,
     account_storages: HashMap<(Address, Word), StorageData>,
-    zk_db: Rc<RefCell<ZkMemoryDb>>,
+    zk_db: RefCell<Rc<ZkMemoryDb>>,
     trie_root: ZkTrieHash,
 }
 
@@ -60,11 +60,11 @@ impl ZktrieState {
             "must set hash scheme into zktrie"
         );
 
-        let zk_db = ZkMemoryDb::default();
         Self {
-            zk_db: Rc::new(RefCell::new(zk_db)),
+            zk_db: RefCell::new(ZkMemoryDb::new()),
             trie_root: state_root.0,
-            ..Default::default()
+            accounts: Default::default(),
+            account_storages: Default::default(),
         }
     }
 

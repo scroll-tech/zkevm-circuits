@@ -97,14 +97,9 @@ impl WitnessGenerator {
             key.to_big_endian(word_buf.as_mut_slice());
             (hash_zktrie_key(&word_buf), HexBytes(word_buf))
         };
-        // TODO: use or_else to optimize
-        let default_trie = &ZktrieState::default()
-            .zk_db
-            .borrow_mut()
-            .new_trie(&ZkTrieHash::default())
-            .unwrap();
-        let trie: &ZkTrie = self.storages.get(&address).unwrap_or(default_trie);
-        trie.prove(key.as_ref()).unwrap()
+        self.storages.get(&address)
+        .map(|trie|trie.prove(key.as_ref()).unwrap())
+        .unwrap_or_default()
     }
     fn trace_storage_update(
         &mut self,
@@ -127,12 +122,10 @@ impl WitnessGenerator {
             return trace;
         }
 
+        // all trie share the same underlay db, so we can create new trie here
+        let zk_db = self.trie.get_db();
         self.storages.entry(address).or_insert_with(|| {
-            ZktrieState::default()
-                .zk_db
-                .borrow_mut()
-                .new_trie(&ZkTrieHash::default())
-                .unwrap()
+            zk_db.new_trie(&ZkTrieHash::default()).unwrap()
         });
 
         let trie = self.storages.get_mut(&address).unwrap();
