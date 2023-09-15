@@ -6,7 +6,7 @@ use super::{
     TransactionContext,
 };
 #[cfg(feature = "scroll")]
-use crate::util::KECCAK_CODE_HASH_ZERO;
+use crate::util::KECCAK_CODE_HASH_EMPTY;
 use crate::{
     circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
     error::{
@@ -719,7 +719,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 let prev_keccak_code_hash = if account.is_empty() {
                     Word::zero()
                 } else {
-                    KECCAK_CODE_HASH_ZERO.to_word()
+                    KECCAK_CODE_HASH_EMPTY.to_word()
                 };
                 self.account_read(
                     step,
@@ -730,7 +730,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 let write_op = AccountOp::new(
                     receiver,
                     AccountField::KeccakCodeHash,
-                    KECCAK_CODE_HASH_ZERO.to_word(),
+                    KECCAK_CODE_HASH_EMPTY.to_word(),
                     prev_keccak_code_hash,
                 );
                 if reversible {

@@ -1,5 +1,6 @@
 //! ..
 use eth_types::{Hash, U256};
+pub use eth_types::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY};
 use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
 use once_cell::sync::Lazy;
 
@@ -69,6 +70,12 @@ pub fn hash_code_poseidon(code: &[u8]) -> Hash {
     Hash::from_slice(&buf)
 }
 
+#[test]
+fn test_empty_code_hash() {
+    assert_eq!(*POSEIDON_CODE_HASH_EMPTY, hash_code_poseidon(&[]));
+    assert_eq!(*KECCAK_CODE_HASH_EMPTY, hash_code_keccak(&[]));
+}
+
 #[cfg(feature = "scroll")]
 #[test]
 fn code_hashing() {
@@ -103,8 +110,3 @@ fn code_hashing() {
         "0x26f706f949ff4faad54ee72308e9d30ece46e37cf8b9968bdb274e750a264937"
     );
 }
-
-/// the zero keccak code hash
-pub static KECCAK_CODE_HASH_ZERO: Lazy<Hash> = Lazy::new(|| hash_code_keccak(&[]));
-/// the zero poseidon code hash
-pub static POSEIDON_CODE_HASH_ZERO: Lazy<Hash> = Lazy::new(|| hash_code_poseidon(&[]));

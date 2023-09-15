@@ -3,7 +3,6 @@ use super::{
     builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof},
     MPTProofType, ZktrieState,
 };
-//use bus_mapping::{state_db::CodeDB, util::KECCAK_CODE_HASH_ZERO};
 use eth_types::{Address, Hash, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use mpt_circuits::serde::{
@@ -49,15 +48,12 @@ impl From<&ZktrieState> for WitnessGenerator {
             .iter()
             // filter out the account data which is empty can provide update applying some
             // convenient
-            .filter(|(_, acc)| !acc.keccak_code_hash.is_zero())
             .filter(|(addr, acc)| {
-                let non_exist = format!("{:?}", acc.poseidon_code_hash) == *"0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864"
-                    && acc.balance.is_zero() && acc.nonce == 0;
-                    if non_exist {
-
-                log::error!("why empty add {addr:?} {acc:?}");
-                    }
-                !non_exist
+                debug_assert!(
+                    !acc.is_empty(),
+                    "empty account should not be part of trie {addr} {acc:?}"
+                );
+                !acc.poseidon_code_hash.is_zero()
             })
             .map(|(key, acc)| (*key, *acc))
             .collect();
@@ -229,11 +225,10 @@ impl WitnessGenerator {
 
     fn trace_account_update<U>(&mut self, address: Address, update_account_data: U) -> SMTTrace
     where
-        U: FnOnce(Option<&mut AccountData>) -> Option<AccountData>,
+        U: FnOnce(Option<&AccountData>) -> Option<AccountData>,
     {
-        let mut account_data_before = self.accounts.get(&address).copied();
+        let account_data_before = self.accounts.get(&address).copied();
 
-        log::error!("account_data_before {address:?} {account_data_before:?}");
         let proofs = match self.trie.prove(address.as_bytes()) {
             Ok(proofs) => proofs,
             Err(e) => {
@@ -245,7 +240,7 @@ impl WitnessGenerator {
 
         let account_path_before = decode_proof_for_mpt_path(address_key, proofs).unwrap();
 
-        let account_data_after = update_account_data(account_data_before.as_mut());
+        let account_data_after = update_account_data(account_data_before.as_ref());
 
         if let Some(account_data_after) = account_data_after {
             let mut nonce_codesize = [0u8; 32];
@@ -324,57 +319,32 @@ impl WitnessGenerator {
         if let Some(key) = key {
             self.trace_storage_update(address, key, new_val, old_val)
         } else {
-            self.trace_account_update(address, |acc_before: Option<&mut AccountData>| {
-                let mut acc_data: AccountData =
-                    acc_before.as_ref().map(|x| **x).unwrap_or_default();
-                let acc_data_default = &mut AccountData::default();
-                let is_none = acc_before.is_none();
-                let old_acc_data = acc_before.unwrap_or(acc_data_default);
+            self.trace_account_update(address, |acc_before: Option<&AccountData>| {
+                let mut acc_data = acc_before.copied().unwrap_or_default();
                 match proof_type {
                     MPTProofType::NonceChanged => {
                         assert!(old_val <= u64::MAX.into());
                         // TODO: fix (hypothetical) inconsistency where CREATE gadget allows nonce
                         // to be 1 << 64, but mpt circuit does not support this.
                         assert!(new_val <= Word::from(u64::MAX) + Word::one());
-                        //assert_eq!(old_val.as_u64(), acc_data.nonce);
+                        assert_eq!(old_val.as_u64(), acc_data.nonce);
                         acc_data.nonce = new_val.as_u64();
                     }
                     MPTProofType::BalanceChanged => {
                         assert_eq!(old_val, acc_data.balance);
                         acc_data.balance = new_val;
-                        {
-                            log::error!("update acc_data balance {new_val}, {acc_data:?}");
-                        }
                     }
                     MPTProofType::CodeHashExists => {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
-                        if H256::from(code_hash) != acc_data.keccak_code_hash {
-                            log::debug!(
-                                "codehash {} ->keccak {}(nil)",
-                                H256::from(code_hash),
-                                acc_data.keccak_code_hash
-                            );
-                            if old_val.is_zero() {
-                                old_acc_data.keccak_code_hash = H256::zero();
-                            }
-                        }
+                        debug_assert_eq!(H256::from(code_hash), acc_data.keccak_code_hash);
                         new_val.to_big_endian(code_hash.as_mut_slice());
                         acc_data.keccak_code_hash = H256::from(code_hash);
                     }
                     MPTProofType::PoseidonCodeHashExists => {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
-                        if H256::from(code_hash) != acc_data.poseidon_code_hash {
-                            log::debug!(
-                                "codehash {} ->poseidon {}(nil)",
-                                H256::from(code_hash),
-                                acc_data.poseidon_code_hash
-                            );
-                            if old_val.is_zero() {
-                                old_acc_data.poseidon_code_hash = H256::zero();
-                            }
-                        }
+                        debug_assert_eq!(H256::from(code_hash), acc_data.poseidon_code_hash);
                         new_val.to_big_endian(code_hash.as_mut_slice());
                         acc_data.poseidon_code_hash = H256::from(code_hash);
                     }
@@ -391,7 +361,7 @@ impl WitnessGenerator {
                     }
                     MPTProofType::AccountDoesNotExist => {
                         // for proof NotExist, the account_before must be empty
-                        assert!(is_none);
+                        assert!(acc_before.is_none());
                         assert!(
                             acc_data.balance.is_zero(),
                             "not-exist proof on existed account balance: {address}"

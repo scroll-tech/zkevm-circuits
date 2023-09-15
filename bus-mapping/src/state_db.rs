@@ -3,7 +3,7 @@
 
 use crate::{
     precompile::is_precompiled,
-    util::{hash_code, KECCAK_CODE_HASH_ZERO},
+    util::{hash_code, KECCAK_CODE_HASH_EMPTY},
 };
 use eth_types::{Address, Hash, Word, H256, U256};
 use lazy_static::lazy_static;
@@ -90,20 +90,23 @@ impl Account {
             balance: Word::zero(),
             storage: HashMap::new(),
             code_hash: CodeDB::empty_code_hash(),
-            keccak_code_hash: *KECCAK_CODE_HASH_ZERO,
+            keccak_code_hash: *KECCAK_CODE_HASH_EMPTY,
             code_size: Word::zero(),
         }
     }
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        let is_empty = self.nonce.is_zero()
-            && self.balance.is_zero()
-            && self.code_hash.eq(&CodeDB::empty_code_hash());
-        if is_empty {
+        debug_assert_ne!(
+            self.code_hash,
+            Hash::zero(),
+            "codehash inside statedb should never be 0, {self:?}"
+        );
+        let is_code_hash_empty = self.code_hash.eq(&CodeDB::empty_code_hash());
+        if is_code_hash_empty {
             debug_assert_eq!(Word::zero(), self.code_size);
         }
-        is_empty
+        self.nonce.is_zero() && self.balance.is_zero() && is_code_hash_empty
     }
 
     /// Return the expected read code hash, i.e. in
