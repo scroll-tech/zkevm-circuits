@@ -1039,7 +1039,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
                 .iter()
                 .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
                 .sum::<usize>()
-                + rows_per_chunk, // reserved for first dummy chunk
+                + get_num_rows_per_round(), // reserved for first 12 dummy rows
             max(
                 block.circuits_params.max_keccak_rows,
                 *(aux_tables_rows.iter().max().unwrap()),
