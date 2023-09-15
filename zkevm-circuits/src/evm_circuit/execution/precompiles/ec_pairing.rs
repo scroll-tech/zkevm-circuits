@@ -1122,6 +1122,8 @@ mod test {
         let call_kinds = vec![
             OpcodeId::CALL,
             OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
         ];
 
         INVALID_LEN_TEST
