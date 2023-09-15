@@ -294,6 +294,10 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             // len(input) related assignment.
             self.input_is_zero
                 .assign(region, offset, F::from(call.call_data_length))?;
+            log::trace!(
+                "assign ec pairing exec step: calldata_len = {}",
+                call.call_data_length
+            );
             self.input_lt_769.assign(
                 region,
                 offset,
@@ -1047,6 +1051,23 @@ mod test {
                 },
             ]
         };
+        static ref INVALID_LEN_TEST: Vec<PrecompileCallArgs> = {
+            vec![
+                #[cfg(feature = "scroll")]
+                PrecompileCallArgs {
+                    name: "ecPairing (invalid): len(input) > 768",
+                    setup_code: bytecode! {},
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x10340.into(),
+                    ret_offset: 0xC0.into(),
+                    ret_size: 0x20.into(),
+                    value: 1.into(),
+                    address: PrecompileCalls::Bn128Pairing.address().to_word(),
+                    gas: 12_000_000.into(),
+                    ..Default::default()
+                },
+            ]
+        };
     }
 
     #[test]
@@ -1085,6 +1106,23 @@ mod test {
             .iter()
             .cartesian_product(&call_kinds)
             .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
+    }
+
+    #[test]
+    fn precompile_ec_pairing_invalid_len_test() {
+        let call_kinds = vec![OpcodeId::CALL];
+
+        INVALID_LEN_TEST
+            .iter()
+            .cartesian_product(&call_kinds)
             .for_each(|(test_vector, &call_kind)| {
                 let bytecode = test_vector.with_call_op(call_kind);
 
