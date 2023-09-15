@@ -42,6 +42,7 @@ pub use ethers_core::{
     },
 };
 
+use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
 
@@ -291,6 +292,15 @@ impl<F: Field> ToScalar<F> for usize {
     }
 }
 
+/// Code hash related
+/// the empty keccak code hash
+pub static KECCAK_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+    Hash::from_str("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470").unwrap()
+});
+/// the empty poseidon code hash
+pub static POSEIDON_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+    Hash::from_str("0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864").unwrap()
+});
 /// Struct used to define the storage proof
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct StorageProof {

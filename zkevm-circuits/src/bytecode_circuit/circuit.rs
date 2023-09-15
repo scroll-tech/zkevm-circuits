@@ -8,7 +8,7 @@ use crate::{
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };
-use bus_mapping::{state_db::EMPTY_CODE_HASH_LE, util::POSEIDON_CODE_HASH_ZERO};
+use bus_mapping::{state_db::EMPTY_CODE_HASH_LE, util::POSEIDON_CODE_HASH_EMPTY};
 use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
@@ -266,7 +266,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             );
 
             let empty_hash = if cfg!(feature = "poseidon-codehash") {
-                Expression::Constant(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap())
+                Expression::Constant(POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap())
             } else {
                 rlc::expr(
                     &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
@@ -511,7 +511,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         let empty_hash = challenges.evm_word().map(|challenge| {
             if cfg!(feature = "poseidon-codehash") {
-                POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap()
+                POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap()
             } else {
                 rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge)
             }

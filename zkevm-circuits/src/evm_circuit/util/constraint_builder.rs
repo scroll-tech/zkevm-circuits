@@ -13,7 +13,7 @@ use crate::{
 };
 use bus_mapping::{
     state_db::EMPTY_CODE_HASH_LE,
-    util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+    util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY},
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
 use gadgets::util::{and, not, sum};
@@ -506,13 +506,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn empty_keccak_hash_rlc(&self) -> Expression<F> {
-        let bytes = KECCAK_CODE_HASH_ZERO.to_word().to_le_bytes();
+        let bytes = KECCAK_CODE_HASH_EMPTY.to_word().to_le_bytes();
         self.word_rlc(bytes.map(|byte| byte.expr()))
     }
 
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
         if cfg!(feature = "poseidon-codehash") {
-            let codehash = POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap();
+            let codehash = POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap();
             Expression::Constant(codehash)
         } else {
             self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))

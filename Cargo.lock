@@ -1591,6 +1591,7 @@ dependencies = [
  "libsecp256k1",
  "num",
  "num-bigint",
+ "once_cell",
  "poseidon-circuit",
  "regex",
  "serde",

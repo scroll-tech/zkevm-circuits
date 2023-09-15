@@ -7,7 +7,7 @@ use crate::{
     table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };
-use bus_mapping::util::POSEIDON_CODE_HASH_ZERO;
+use bus_mapping::util::POSEIDON_CODE_HASH_EMPTY;
 use eth_types::{Field, ToScalar, ToWord};
 use gadgets::is_zero::IsZeroChip;
 use halo2_proofs::{
@@ -434,7 +434,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             last_row_offset
         );
 
-        let empty_hash = Value::known(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap());
+        let empty_hash = Value::known(POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap());
 
         layouter.assign_region(
             || "assign bytecode with poseidon hash extension",

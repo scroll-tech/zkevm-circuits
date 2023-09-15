@@ -650,9 +650,10 @@ impl<F: Field> CopyCircuitConfig<F> {
                         ev_idx,
                         copy_event.full_length(),
                         {
-                            let mut copy_event = copy_event.clone();
-                            copy_event.copy_bytes.bytes.clear();
-                            copy_event
+                            CopyEvent {
+                                copy_bytes: Default::default(),
+                                ..copy_event.clone()
+                            }
                         }
                     );
                     self.assign_copy_event(
