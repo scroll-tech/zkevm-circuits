@@ -85,6 +85,7 @@ impl ZktrieState {
                 AccountProof::try_from(BytesArray(bytes.into_iter()))?,
                 &builder::extend_address_to_h256(addr),
             );
+            log::info!("account proof {addr:?} {acc_proof:?}");
             let acc_data = acc_proof.data;
             let acc = self.accounts.get(addr);
             if acc.is_some() {

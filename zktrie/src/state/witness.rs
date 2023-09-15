@@ -3,7 +3,7 @@ use super::{
     builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof},
     MPTProofType, ZktrieState,
 };
-// use bus_mapping::{state_db::CodeDB, util::KECCAK_CODE_HASH_ZERO};
+//use bus_mapping::{state_db::CodeDB, util::KECCAK_CODE_HASH_ZERO};
 use eth_types::{Address, Hash, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use mpt_circuits::serde::{
@@ -50,6 +50,15 @@ impl From<&ZktrieState> for WitnessGenerator {
             // filter out the account data which is empty can provide update applying some
             // convenient
             .filter(|(_, acc)| !acc.keccak_code_hash.is_zero())
+            .filter(|(addr, acc)| {
+                let non_exist = format!("{:?}", acc.poseidon_code_hash) == *"0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864"
+                    && acc.balance.is_zero() && acc.nonce == 0;
+                    if non_exist {
+
+                log::error!("why empty add {addr:?} {acc:?}");
+                    }
+                !non_exist
+            })
             .map(|(key, acc)| (*key, *acc))
             .collect();
 
@@ -224,6 +233,7 @@ impl WitnessGenerator {
     {
         let mut account_data_before = self.accounts.get(&address).copied();
 
+        log::error!("account_data_before {address:?} {account_data_before:?}");
         let proofs = match self.trie.prove(address.as_bytes()) {
             Ok(proofs) => proofs,
             Err(e) => {
@@ -332,6 +342,9 @@ impl WitnessGenerator {
                     MPTProofType::BalanceChanged => {
                         assert_eq!(old_val, acc_data.balance);
                         acc_data.balance = new_val;
+                        {
+                            log::error!("update acc_data balance {new_val}, {acc_data:?}");
+                        }
                     }
                     MPTProofType::CodeHashExists => {
                         let mut code_hash = [0u8; 32];
