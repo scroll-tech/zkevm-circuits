@@ -220,9 +220,9 @@ impl WitnessGenerator {
 
     fn trace_account_update<U>(&mut self, address: Address, update_account_data: U) -> SMTTrace
     where
-        U: FnOnce(Option<&AccountData>) -> Option<AccountData>,
+        U: FnOnce(Option<&mut AccountData>) -> Option<AccountData>,
     {
-        let account_data_before = self.accounts.get(&address).copied();
+        let mut account_data_before = self.accounts.get(&address).copied();
 
         let proofs = match self.trie.prove(address.as_bytes()) {
             Ok(proofs) => proofs,
@@ -235,7 +235,7 @@ impl WitnessGenerator {
 
         let account_path_before = decode_proof_for_mpt_path(address_key, proofs).unwrap();
 
-        let account_data_after = update_account_data(account_data_before.as_ref());
+        let account_data_after = update_account_data(account_data_before.as_mut());
 
         if let Some(account_data_after) = account_data_after {
             let mut nonce_codesize = [0u8; 32];
@@ -314,8 +314,12 @@ impl WitnessGenerator {
         if let Some(key) = key {
             self.trace_storage_update(address, key, new_val, old_val)
         } else {
-            self.trace_account_update(address, |acc_before: Option<&AccountData>| {
-                let mut acc_data = acc_before.copied().unwrap_or_default();
+            self.trace_account_update(address, |acc_before: Option<&mut AccountData>| {
+                let mut acc_data: AccountData =
+                    acc_before.as_ref().map(|x| **x).unwrap_or_default();
+                let acc_data_default = &mut AccountData::default();
+                let is_none = acc_before.is_none();
+                let old_acc_data = acc_before.unwrap_or(acc_data_default);
                 match proof_type {
                     MPTProofType::NonceChanged => {
                         assert!(old_val <= u64::MAX.into());
@@ -333,11 +337,14 @@ impl WitnessGenerator {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
                         if H256::from(code_hash) != acc_data.keccak_code_hash {
-                            log::trace!(
+                            log::debug!(
                                 "codehash {} ->keccak {}(nil)",
                                 H256::from(code_hash),
                                 acc_data.keccak_code_hash
                             );
+                            if old_val.is_zero() {
+                                old_acc_data.keccak_code_hash = H256::zero();
+                            }
                         }
                         new_val.to_big_endian(code_hash.as_mut_slice());
                         acc_data.keccak_code_hash = H256::from(code_hash);
@@ -346,11 +353,14 @@ impl WitnessGenerator {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
                         if H256::from(code_hash) != acc_data.poseidon_code_hash {
-                            log::trace!(
+                            log::debug!(
                                 "codehash {} ->poseidon {}(nil)",
                                 H256::from(code_hash),
                                 acc_data.poseidon_code_hash
                             );
+                            if old_val.is_zero() {
+                                old_acc_data.poseidon_code_hash = H256::zero();
+                            }
                         }
                         new_val.to_big_endian(code_hash.as_mut_slice());
                         acc_data.poseidon_code_hash = H256::from(code_hash);
@@ -368,7 +378,7 @@ impl WitnessGenerator {
                     }
                     MPTProofType::AccountDoesNotExist => {
                         // for proof NotExist, the account_before must be empty
-                        assert!(acc_before.is_none());
+                        assert!(is_none);
                         assert!(
                             acc_data.balance.is_zero(),
                             "not-exist proof on existed account balance: {address}"

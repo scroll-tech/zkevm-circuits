@@ -367,7 +367,7 @@ pub enum NumberOrHash {
 ///
 /// Additionally, when the destination is memory, `bytes_write_prev` holds the memory content
 /// *before* the write.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CopyBytes {
     /// Represents the list of (bytes, is_code, mask) copied during this copy event
     pub bytes: Vec<(u8, bool, bool)>,
