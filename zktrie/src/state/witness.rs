@@ -50,6 +50,16 @@ impl From<&ZktrieState> for WitnessGenerator {
             // filter out the account data which is empty can provide update applying some
             // convenient
             .filter(|(_, acc)| !acc.keccak_code_hash.is_zero())
+            .filter(|(addr, acc)| {
+                let non_exist = format!("{:?}", acc.poseidon_code_hash)
+                    == *"0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864"
+                    && acc.balance.is_zero()
+                    && acc.nonce == 0;
+                if non_exist {
+                    log::error!("why empty add {addr:?} {acc:?}");
+                }
+                !non_exist
+            })
             .map(|(key, acc)| (*key, *acc))
             .collect();
 
