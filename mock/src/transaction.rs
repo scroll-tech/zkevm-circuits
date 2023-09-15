@@ -176,7 +176,7 @@ impl Default for MockTransaction {
             to: None,
             value: Word::zero(),
             gas_price: *MOCK_GASPRICE,
-            gas: Word::from(14_000_000u64),
+            gas: Word::from(1_000_000u64),
             input: Bytes::default(),
             v: None,
             r: None,

@@ -433,13 +433,14 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
 #[cfg(test)]
 mod test {
     use bus_mapping::{
+        circuit_input_builder::CircuitsParams,
         evm::{OpcodeId, PrecompileCallArgs},
         precompile::PrecompileCalls,
     };
     use eth_types::{bytecode, evm_types::GasCost, word, ToWord, Word};
     use halo2_proofs::halo2curves::bn256::{G1Affine, G2Affine};
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::{test_ctx::helpers::account_0_code_wallet_0_no_code, TestContext, MOCK_WALLETS};
     use rayon::iter::{ParallelBridge, ParallelIterator};
 
     use crate::test_util::CircuitTestBuilder;
@@ -1118,18 +1119,37 @@ mod test {
 
     #[test]
     fn precompile_ec_pairing_invalid_len_test() {
-        let call_kinds = vec![OpcodeId::CALL];
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+        ];
 
         INVALID_LEN_TEST
             .iter()
             .cartesian_product(&call_kinds)
+            .par_bridge()
             .for_each(|(test_vector, &call_kind)| {
                 let bytecode = test_vector.with_call_op(call_kind);
 
-                CircuitTestBuilder::new_from_test_ctx(
-                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                let test_ctx: TestContext<2, 1> = TestContext::new(
+                    None,
+                    account_0_code_wallet_0_no_code(bytecode),
+                    |mut txs, accs| {
+                        txs[0]
+                            .from(MOCK_WALLETS[0].clone())
+                            .to(accs[0].address)
+                            .gas(0x1200_0000.into());
+                    },
+                    |block, _txs| block.number(0xcafeu64),
                 )
-                .run();
+                .unwrap();
+                CircuitTestBuilder::new_from_test_ctx(test_ctx)
+                    .params(CircuitsParams {
+                        max_rws: 100_000,
+                        max_copy_rows: 140_000,
+                        ..CircuitsParams::default()
+                    })
+                    .run()
             })
     }
 }
