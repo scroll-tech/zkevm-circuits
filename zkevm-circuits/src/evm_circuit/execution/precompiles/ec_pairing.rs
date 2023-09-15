@@ -37,7 +37,9 @@ pub struct EcPairingGadget<F> {
     // 1. input_len > 4 * 192
     // 2. input_len % 192 != 0
     input_is_zero: IsZeroGadget<F>,
-    input_lt_769: LtGadget<F, 2>,
+
+    // call_data_len must less than 2^32.
+    input_lt_769: LtGadget<F, 4>,
     input_mod_192: Cell<F>,
     input_div_192: Cell<F>,
     input_mod_192_lt: LtGadget<F, 1>,
