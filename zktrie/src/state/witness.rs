@@ -48,14 +48,14 @@ impl From<&ZktrieState> for WitnessGenerator {
             .iter()
             // filter out the account data which is empty can provide update applying some
             // convenient
-            .filter(|(addr, acc)| {
+            .filter(|(_, acc)| !acc.poseidon_code_hash.is_zero())
+            .map(|(key, acc)| {
                 debug_assert!(
                     !acc.is_empty(),
-                    "empty account should not be part of trie {addr} {acc:?}"
+                    "empty account should not be part of trie {key} {acc:?}"
                 );
-                !acc.poseidon_code_hash.is_zero()
+                (*key, *acc)
             })
-            .map(|(key, acc)| (*key, *acc))
             .collect();
 
         let storages: HashMap<_, _> = state
