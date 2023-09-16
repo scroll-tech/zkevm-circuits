@@ -362,7 +362,7 @@ impl<F: Field> SigCircuit<F> {
         //
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
-        let (sig_is_valid, pk_is_zero, y_coord, y_coord_is_zero) =
+        let (sig_is_valid, pk_is_zero, y_coord) =
             ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
                 &ecc_chip.field_chip,
                 ctx,
@@ -419,20 +419,20 @@ impl<F: Field> SigCircuit<F> {
             ctx,
             QuantumCell::Existing(zero),
             QuantumCell::Existing(assigned_y_tmp),
-            QuantumCell::Existing(y_coord_is_zero),
+            QuantumCell::Existing(pk_is_zero),
         );
         ecc_chip
             .field_chip
             .range
             .range_check(ctx, &assigned_y_tmp, 87);
 
-        let y_coord_not_zero = gate.not(ctx, QuantumCell::Existing(y_coord_is_zero));
+        let pk_not_zero = gate.not(ctx, QuantumCell::Existing(pk_is_zero));
         let sig_is_valid = gate.and_many(
             ctx,
             vec![
                 QuantumCell::Existing(sig_is_valid),
                 QuantumCell::Existing(y_is_ok),
-                QuantumCell::Existing(y_coord_not_zero),
+                QuantumCell::Existing(pk_not_zero),
             ],
         );
 
