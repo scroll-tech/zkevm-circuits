@@ -135,7 +135,7 @@ fn test_edge_cases() {
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 16, signatures);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 9, signatures);
 }
 
 #[test]
