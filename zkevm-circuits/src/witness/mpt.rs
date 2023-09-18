@@ -5,11 +5,14 @@ use crate::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
+#[cfg(test)]
+use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 use mpt_zktrie::{
     mpt_circuits::{serde::SMTTrace, MPTProofType},
     state,
     state::witness::WitnessGenerator,
 };
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -78,9 +81,10 @@ impl MptUpdates {
         })
     }
 
-    pub(crate) fn mock_fill_state_roots(&mut self) {
-        // initialize a mock witness generator that is consistent with the old values of
-        // self.updates
+    #[cfg(test)]
+    /// initialize a mock witness generator that is consistent with the old values of self.updates
+    pub fn mock_fill_state_roots(&mut self) {
+        assert!(*HASH_SCHEME_DONE);
         let mut wit_gen = WitnessGenerator::from(&ZktrieState::default());
         for (key, update) in &mut self.updates {
             let key = key.set_non_exists(Word::zero(), update.old_value);
