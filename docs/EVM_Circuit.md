@@ -278,16 +278,20 @@ This gadget is applied to every execution step in order to check the correct tra
 
 #### `mulmod`
 
-According to the [ETH Yellow Paper], the MULMOD opcode (modulo addition operation) pops $3$ EVM words $\boldsymbol{\mu}_{\textbf{s}}[0], \boldsymbol{\mu}_{\textbf{s}}[1], \boldsymbol{\mu}_{\textbf{s}}[2]$ each with 256-bit (32 byte) size from the stack and push back one EVM word $\boldsymbol{\mu}_{\textbf{s}}'[0]$. 
+According to the [ETH Yellow Paper], the MULMOD opcode (modulo addition operation) pops 3 EVM words $\boldsymbol{\mu}_s[0]$, $\boldsymbol{\mu}_s[1]$,  $\boldsymbol{\mu}_s[1]$,   
+each with 256-bit (32 byte) size from the stack and push back one EVM word $\boldsymbol{\mu}_s'[0]$. 
 
-To make our notations simpler, we denote $a=\boldsymbol{\mu}_{\textbf{s}}[0]$, $b=\boldsymbol{\mu}_{\textbf{s}}[1]$ and $n=\boldsymbol{\mu}_{\textbf{s}}[2]$ and $r=\boldsymbol{\mu}_{\textbf{s}}'[0]$, then the EVM behavior of MULMOD opcode can be viewed as a mapping 
-$$(a, b, n)\stackrel{\text{MULMOD}}{\rightarrow}  
+To make our notations simpler, we denote $a=\boldsymbol{\mu}_s[0]$, $b=\boldsymbol{\mu}_s[1]$ and $n=\boldsymbol{\mu}_s[2]$ and $r=\boldsymbol{\mu}_s'[0]$, then the EVM behavior of MULMOD opcode can be viewed as a mapping  
+
+```math
+(a, b, n) \stackrel{MULMOD}{\rightarrow}    
 r=\left\{\begin{array}{ll} 
 0 & \text{ if } n=0 \ ,
 \\
 a\cdot b \mod n & \text{ if } n\neq 0 \ .
 \end{array}\right.
-$$ 
+``` 
+
 The intermediate calculation is the multiplication of two $32$-byte words $a$ and $b$, and this operation is supposed to be <i>not</i> subject to $2^{256}$ modulo. 
 
 Of course, a full characterization of the EVM behavior under MULMOD also involves the correct stack push-pop: $3$ stack pops and $1$ stack push, and together with a gas cost of $8$.
