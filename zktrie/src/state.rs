@@ -14,20 +14,18 @@ use std::{cell::RefCell, fmt, rc::Rc};
 /// represent a storage state being applied in specified block
 #[derive(Clone)]
 pub struct ZktrieState {
-    accounts: HashMap<Address, AccountData>,
-    account_storages: HashMap<(Address, Word), StorageData>,
     zk_db: RefCell<Rc<ZkMemoryDb>>,
     trie_root: ZkTrieHash,
 }
 
-unsafe impl Send for ZktrieState {}
+//unsafe impl Send for ZktrieState {}
 
 impl fmt::Debug for ZktrieState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "ZktrieState: {{accounts: {:?}, storage: {:?}, trie: {:x?}}}",
-            self.accounts, self.account_storages, self.trie_root,
+            "ZktrieState: {:x?}",
+            self.trie_root,
         )
     }
 }
@@ -37,17 +35,6 @@ impl ZktrieState {
     pub fn root(&self) -> &ZkTrieHash {
         &self.trie_root
     }
-
-    /// help to query account data
-    pub fn state(&self) -> &HashMap<Address, AccountData> {
-        &self.accounts
-    }
-
-    /// help to query storage data
-    pub fn storage(&self) -> &HashMap<(Address, Word), StorageData> {
-        &self.account_storages
-    }
-
     /// construct from external data
     pub fn construct(
         //sdb: StateDB,
@@ -63,10 +50,55 @@ impl ZktrieState {
         Self {
             zk_db: RefCell::new(ZkMemoryDb::new()),
             trie_root: state_root.0,
-            accounts: Default::default(),
-            account_storages: Default::default(),
         }
     }
+
+    /// Helper for parsing account data from external data (mainly storage trace)
+    pub fn parse_account_from_proofs<'d: 'a, 'a, BYTES>(
+        account_proofs: impl Iterator<Item = (&'a Address, BYTES)> + 'd,
+    ) -> impl Iterator<Item = Result<(Address, AccountData), Error>> + 'a
+    where
+        BYTES: IntoIterator<Item = &'a [u8]>,
+    {
+        use builder::{AccountProof, BytesArray};
+        account_proofs
+        .map(|(&addr, bytes)|{
+            let acc_proof = builder::verify_proof_leaf(
+                AccountProof::try_from(BytesArray(bytes.into_iter()))?,
+                &builder::extend_address_to_h256(&addr),
+            );
+            Ok((addr, acc_proof.data))        
+        })
+    }
+
+    /// Helper for parsing storage value from external data
+    pub fn parse_storage_from_proofs<'d: 'a, 'a, BYTES>(
+        storage_proofs: impl Iterator<Item = (&'a Address, &'a Word, BYTES)> + 'd,
+    ) -> impl Iterator<Item = Result<((Address, Word), StorageData), Error>> + 'a
+    where
+        BYTES: IntoIterator<Item = &'a [u8]>,
+    {
+        use builder::{BytesArray, StorageProof};
+        storage_proofs.map(|(&addr, &key, bytes)|{
+            let storage_key: (Address, Word) = (addr, key);
+            let mut key_buf = [0u8; 32];
+            key.to_big_endian(key_buf.as_mut_slice());
+            let bytes_array = BytesArray(bytes.into_iter());
+            let store_proof =
+                builder::verify_proof_leaf(StorageProof::try_from(bytes_array)?, &key_buf);            
+            if store_proof.key.is_some() {
+                log::trace!(
+                    "insert storage key {:?} value {:?}",
+                    storage_key,
+                    *store_proof.data.as_ref()
+                );
+                Ok((storage_key, store_proof.data))
+            } else {
+                log::trace!("insert storage key {:?} for zero", storage_key);
+                Ok((storage_key, Default::default()))
+            }
+        })
+    }    
 
     /// incremental updating for account from external data, catch each written of new account in
     /// tries
@@ -78,34 +110,6 @@ impl ZktrieState {
     where
         BYTES: IntoIterator<Item = &'d [u8]>,
     {
-        use builder::{AccountProof, BytesArray};
-
-        for (addr, bytes) in account_proofs {
-            let acc_proof = builder::verify_proof_leaf(
-                AccountProof::try_from(BytesArray(bytes.into_iter()))?,
-                &builder::extend_address_to_h256(addr),
-            );
-            let acc_data = acc_proof.data;
-            let acc = self.accounts.get(addr);
-            if acc.is_some() {
-                log::trace!(
-                    "skip trace account into sdb: addr {:?}, new {:?}, keep old: {:?}",
-                    addr,
-                    acc_data,
-                    acc
-                );
-                continue;
-            }
-            if acc_proof.key.is_some() {
-                log::trace!("trace account into sdb: {:?} => {:?}", addr, acc_data);
-                on_account(addr, &acc_data)?;
-                self.accounts.insert(*addr, acc_data);
-            } else {
-                on_account(addr, &Default::default())?;
-                self.accounts.insert(*addr, Default::default());
-            }
-        }
-
         Ok(())
     }
 
@@ -119,40 +123,11 @@ impl ZktrieState {
     where
         BYTES: IntoIterator<Item = &'d [u8]>,
     {
-        use builder::{BytesArray, StorageProof};
-
-        for (&addr, &key, bytes) in storage_proofs {
-            let storage_key: (Address, Word) = (addr, key);
-            let old_value = self.account_storages.get(&storage_key);
-            if old_value.is_some() {
-                continue;
-            }
-            let mut key_buf = [0u8; 32];
-            key.to_big_endian(key_buf.as_mut_slice());
-            let bytes_array = BytesArray(bytes.into_iter());
-            let store_proof =
-                builder::verify_proof_leaf(StorageProof::try_from(bytes_array)?, &key_buf);
-            if store_proof.key.is_some() {
-                log::trace!(
-                    "insert storage key {:?} value {:?}",
-                    storage_key,
-                    *store_proof.data.as_ref()
-                );
-
-                on_storage(&storage_key, &store_proof.data)?;
-                self.account_storages.insert(storage_key, store_proof.data);
-            } else {
-                log::trace!("insert storage key {:?} for zero", storage_key);
-                self.account_storages
-                    .insert(storage_key, Default::default());
-            }
-        }
-
         Ok(())
     }
 
     /// incremental updating nodes in db from external data
-    pub fn update_nodes_from_proofs<'d, BYTES1, BYTES2>(
+    pub fn update_from_trace<'d, BYTES1, BYTES2>(
         &mut self,
         account_proofs: impl Iterator<Item = (&'d Address, BYTES1)>,
         storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES2)>,
@@ -175,26 +150,23 @@ impl ZktrieState {
     /// provided
     pub fn from_trace_with_additional<'d, BYTES1, BYTES2>(
         state_root: Hash,
-        account_proofs: impl Iterator<Item = (&'d Address, BYTES1)> + Clone,
-        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES2)> + Clone,
+        account_proofs: impl Iterator<Item = (&'d Address, BYTES1)>,
+        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES2)>,
         additional_proofs: impl Iterator<Item = &'d [u8]>,
-        light_mode: bool,
     ) -> Result<Self, Error>
     where
         BYTES1: IntoIterator<Item = &'d [u8]>,
         BYTES2: IntoIterator<Item = &'d [u8]>,
     {
         let mut state = ZktrieState::construct(state_root);
-        if !light_mode {
-            // a lot of poseidon computation
-            state.update_nodes_from_proofs(
-                account_proofs.clone(),
-                storage_proofs.clone(),
-                additional_proofs,
-            );
-        }
-        state.update_account_from_proofs(account_proofs, |_, _| Ok(()))?;
-        state.update_storage_from_proofs(storage_proofs, |_, _| Ok(()))?;
+        
+        // a lot of poseidon computation
+        state.update_from_trace(
+            account_proofs,
+            storage_proofs,
+            additional_proofs,
+        );
+    
 
         Ok(state)
     }
