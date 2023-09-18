@@ -1,22 +1,24 @@
 #![allow(missing_docs)]
 //! wrapping of mpt-circuit
+// #[cfg(test)]
+// use crate::mpt_circuit::mpt;
 use crate::{
     table::{LookupTable, MptTable, PoseidonTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
 use eth_types::Field;
+#[cfg(test)]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Value},
     halo2curves::bn256::Fr,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
-use mpt_zktrie::mpt_circuits::{
-    gadgets::{mpt_update::hash_traces, poseidon::PoseidonLookup},
-    mpt,
-    types::Proof,
-};
+#[cfg(test)]
+use mpt_zktrie::mpt_circuits::gadgets::mpt_update::hash_traces;
+use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
 
 impl PoseidonLookup for PoseidonTable {
     fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 6]) {

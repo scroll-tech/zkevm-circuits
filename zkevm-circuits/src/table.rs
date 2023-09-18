@@ -893,7 +893,7 @@ impl PoseidonTable {
 
     #[cfg(test)]
     /// Load mpt hashes (without the poseidon circuit) for testing purposes.
-    pub fn load<'d, F: Field>(
+    pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         hashes: &[[Value<F>; 6]],

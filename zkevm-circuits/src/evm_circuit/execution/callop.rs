@@ -22,24 +22,19 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
-    witness::block_convert,
 };
 use bus_mapping::{
     circuit_input_builder::CopyDataType,
     evm::OpcodeId,
-    mock::BlockData,
     precompile::{is_precompiled, PrecompileCalls},
 };
 use eth_types::{
     evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE},
-    geth_types::GethData,
     Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::cmp::min;
-//#[cfg(feature = "zktrie")]
-use crate::mpt_circuit::MptCircuit;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -1163,13 +1158,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
+    use crate::{
+        mpt_circuit::MptCircuit, test_util::CircuitTestBuilder, util::SubCircuit,
+        witness::block_convert,
     };
-
-    use crate::util::SubCircuit;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use eth_types::{
+        address, bytecode,
+        evm_types::OpcodeId,
+        geth_types::{Account, GethData},
+        word, Address, ToWord, Word,
+    };
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use itertools::Itertools;
     use mock::{
