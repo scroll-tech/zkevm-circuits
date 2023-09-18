@@ -12,7 +12,11 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
-use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
+use mpt_zktrie::mpt_circuits::{
+    gadgets::{mpt_update::hash_traces, poseidon::PoseidonLookup},
+    mpt,
+    types::Proof,
+};
 
 impl PoseidonLookup for PoseidonTable {
     fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 6]) {
@@ -94,6 +98,9 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
             .zip_eq(block.mpt_updates.smt_traces.iter().cloned())
             .collect();
 
+        dbg!(traces.clone());
+        panic!();
+
         Self {
             proofs: traces.into_iter().map(Proof::from).collect(),
             row_limit: block.circuits_params.max_mpt_rows,
@@ -137,7 +144,7 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
 
 #[cfg(any(feature = "test", test))]
 impl Circuit<Fr> for MptCircuit<Fr> {
-    type Config = (MptCircuitConfig<Fr>, Challenges);
+    type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -149,7 +156,7 @@ impl Circuit<Fr> for MptCircuit<Fr> {
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let challenges = Challenges::construct(meta);
-        let poseidon_table = PoseidonTable::dev_construct(meta);
+        let poseidon_table = PoseidonTable::construct(meta);
         let mpt_table = MptTable::construct(meta);
 
         let config = {
@@ -163,15 +170,46 @@ impl Circuit<Fr> for MptCircuit<Fr> {
             )
         };
 
-        (config, challenges)
+        (config, poseidon_table, challenges)
     }
 
     fn synthesize(
         &self,
-        (config, challenges): Self::Config,
+        (mpt_config, poseidon_table, challenges): Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        // let hashes_traces =
+        // mpt_zktrie::mpt_circuits::gadgets::mpt_update::hash_traces(&self.proofs);
+
+        //             q_enable: meta.fixed_column(),
+        // hash_id: meta.advice_column(),
+        // input0: meta.advice_column(),
+        // input1: meta.advice_column(),
+        // control: meta.advice_column(),
+        // domain_spec: meta.advice_column(),
+        // heading_mark: meta.advice_column(),
+
+        dbg!(self.proofs.clone());
+        dbg!(hash_traces(&self.proofs));
+        // panic!();
+
+        let poseidon_table_rows: Vec<_> = hash_traces(&self.proofs)
+            .iter()
+            .map(|([left, right], domain, hash)| {
+                // dbg!(left, right, hash, domain);
+                [
+                    *hash,
+                    *left,
+                    *right,
+                    Fr::zero(),
+                    *domain,
+                    Fr::one(),
+                ]
+                .map(Value::known)
+            })
+            .collect();
+        poseidon_table.load(&mut layouter, &poseidon_table_rows)?;
         let challenges = challenges.values(&layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
+        self.synthesize_sub(&mpt_config, &challenges, &mut layouter)
     }
 }

@@ -891,16 +891,11 @@ impl PoseidonTable {
         }
     }
 
-    /// Construct a new PoseidonTable for dev
-    pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self::construct(meta)
-    }
-
     pub(crate) fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &[Value<F>],
+        row: [Value<F>; 6],
     ) -> Result<(), Error> {
         region.assign_fixed(
             || "assign poseidon table row value",
@@ -914,32 +909,31 @@ impl PoseidonTable {
                 || "assign poseidon table row value",
                 *column,
                 offset,
-                || *value,
+                || value,
             )?;
         }
         Ok(())
     }
 
-    // Is this method used anyhwhere?
     pub(crate) fn load<'d, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        hashes: impl Iterator<Item = &'d [Value<F>]> + Clone,
+        hashes: &[[Value<F>; 6]],
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "poseidon table",
-            |mut region| self.load_with_region(&mut region, hashes.clone()),
+            |mut region| self.load_with_region(&mut region, hashes),
         )
     }
 
     pub(crate) fn load_with_region<'d, F: Field>(
         &self,
         region: &mut Region<'_, F>,
-        hashes: impl Iterator<Item = &'d [Value<F>]>,
+        hashes: &[[Value<F>; 6]],
     ) -> Result<(), Error> {
-        self.assign(region, 0, [Value::known(F::zero()); 6].as_slice())?;
-        for (offset, row) in hashes.enumerate() {
-            self.assign(region, offset + 1, row)?;
+        self.assign(region, 0, [Value::known(F::zero()); 6])?;
+        for (offset, row) in hashes.iter().enumerate() {
+            self.assign(region, offset + 1, *row)?;
         }
         Ok(())
     }

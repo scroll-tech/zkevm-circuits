@@ -1599,7 +1599,11 @@ mod test {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        dbg!(block.mpt_updates.clone());
+        panic!();
         let mpt_circuit = MptCircuit::new_from_block(&block);
+        // dbg!(mpt_circuit.proofs);
+        panic!();
         let prover = MockProver::<Fr>::run(12, &mpt_circuit, vec![]).unwrap();
         println!("prover result: {:?}", prover.verify());
         assert!(prover.verify().is_ok());

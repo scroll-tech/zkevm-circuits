@@ -518,6 +518,8 @@ pub fn block_convert<F: Field>(
         log::error!("withdraw root is not avaliable");
     }
 
+    dbg!(mpt_updates.len());
+
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),

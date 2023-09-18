@@ -233,6 +233,8 @@ impl MptUpdates {
                 )
             })
             .collect();
+        dbg!(rows_len, updates.len());
+        // panic!();
         MptUpdates {
             updates,
             old_root,
