@@ -295,26 +295,6 @@ fn check_geth_traces(
     suite: &TestSuite,
     verbose: bool,
 ) -> Result<(), StateTestError> {
-    /*
-        #[cfg(feature = "skip-self-destruct")]
-        if geth_traces.iter().any(|gt| {
-            gt.struct_logs.iter().any(|sl| {
-                sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
-                    || sl.op == eth_types::evm_types::OpcodeId::INVALID(0xff)
-            })
-        }) {
-            return Err(StateTestError::SkipTestSelfDestruct);
-        }
-
-        #[cfg(feature = "scroll")]
-        if geth_traces.iter().any(|gt| {
-            gt.struct_logs
-                .iter()
-                .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
-        }) {
-            return Err(StateTestError::SkipTestDifficulty);
-        }
-    */
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
             geth_traces[0].struct_logs.len(),
@@ -732,7 +712,7 @@ pub fn run_test(
     };
     //#[cfg(feature = "scroll")]
     //    if false
-    if false {
+    if !builder.should_skip_post_check() {
         {
             // fill these "untouched" storage slots
             // It is better to fill these info after (instead of before) bus-mapping re-exec.

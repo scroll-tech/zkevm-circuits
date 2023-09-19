@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, Memory},
+    evm_types::{gas_utils::tx_data_gas_cost, Memory, OpcodeId},
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
     AccessList, Address, GethExecTrace, Signature, Word, H256,
@@ -463,6 +463,28 @@ impl Transaction {
         let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
 
         self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
+    }
+}
+
+#[cfg(feature = "test")]
+impl Transaction {
+    /// test if the transaction should skip post state check
+    pub fn should_skip_post_check(&self) -> bool {
+        use crate::{circuit_input_builder::execution::ExecState, precompile::PrecompileCalls};
+        let unsupported = self.steps.iter().any(|step| {
+            matches!(
+                step.exec_state,
+                ExecState::Op(OpcodeId::SELFDESTRUCT)
+                    | ExecState::Op(OpcodeId::INVALID(0xff))
+                    | ExecState::Op(OpcodeId::DIFFICULTY)
+                    | ExecState::Precompile(PrecompileCalls::Sha256)
+                    | ExecState::Precompile(PrecompileCalls::Ripemd160)
+                    | ExecState::Precompile(PrecompileCalls::Modexp)
+                    | ExecState::Precompile(PrecompileCalls::Bn128Pairing)
+            )
+        });
+
+        unsupported
     }
 }
 

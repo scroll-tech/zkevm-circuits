@@ -700,6 +700,14 @@ impl<'a> CircuitInputBuilder {
     }
 }
 
+#[cfg(feature = "test")]
+impl CircuitInputBuilder {
+    /// test if this circuit should skip post state check
+    pub fn should_skip_post_check(&self) -> bool {
+        self.block.txs.iter().any(|tx| tx.should_skip_post_check())
+    }
+}
+
 /// Return all the keccak inputs used during the processing of the current
 /// block.
 pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
