@@ -295,26 +295,26 @@ fn check_geth_traces(
     suite: &TestSuite,
     verbose: bool,
 ) -> Result<(), StateTestError> {
-/*
-    #[cfg(feature = "skip-self-destruct")]
-    if geth_traces.iter().any(|gt| {
-        gt.struct_logs.iter().any(|sl| {
-            sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
-                || sl.op == eth_types::evm_types::OpcodeId::INVALID(0xff)
-        })
-    }) {
-        return Err(StateTestError::SkipTestSelfDestruct);
-    }
+    /*
+        #[cfg(feature = "skip-self-destruct")]
+        if geth_traces.iter().any(|gt| {
+            gt.struct_logs.iter().any(|sl| {
+                sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
+                    || sl.op == eth_types::evm_types::OpcodeId::INVALID(0xff)
+            })
+        }) {
+            return Err(StateTestError::SkipTestSelfDestruct);
+        }
 
-    #[cfg(feature = "scroll")]
-    if geth_traces.iter().any(|gt| {
-        gt.struct_logs
-            .iter()
-            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
-    }) {
-        return Err(StateTestError::SkipTestDifficulty);
-    }
-*/
+        #[cfg(feature = "scroll")]
+        if geth_traces.iter().any(|gt| {
+            gt.struct_logs
+                .iter()
+                .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
+        }) {
+            return Err(StateTestError::SkipTestDifficulty);
+        }
+    */
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
             geth_traces[0].struct_logs.len(),
@@ -615,9 +615,8 @@ pub fn run_test(
     #[cfg(feature = "scroll")]
     for (_, acc) in trace_config.accounts.iter_mut() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
-acc.balance = U256::from(1u128<<127);
+            acc.balance = U256::from(1u128 << 127);
             //return Err(StateTestError::SkipTestBalanceOverflow);
-           
         }
     }
     log::debug!("trace_config generated");
@@ -732,39 +731,39 @@ acc.balance = U256::from(1u128<<127);
         }
     };
     //#[cfg(feature = "scroll")]
-//    if false
-if false {
-    {
-        // fill these "untouched" storage slots
-        // It is better to fill these info after (instead of before) bus-mapping re-exec.
-        // To prevent these data being used unexpectedly.
-        // TODO: another method will be to skip empty account inside check_post?
-        for account in trace_config.accounts.values() {
-            builder.code_db.insert(account.code.to_vec());
-            let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
-            if !exist {
-                // modified from bus-mapping/src/mock.rs
-                let keccak_code_hash = H256(keccak256(&account.code));
-                let code_hash = CodeDB::hash(&account.code);
-                *acc_in_local_sdb = bus_mapping::state_db::Account {
-                    nonce: account.nonce,
-                    balance: account.balance,
-                    storage: account.storage.clone(),
-                    code_hash,
-                    keccak_code_hash,
-                    code_size: account.code.len().to_word(),
-                };
-            } else {
-                for (k, v) in &account.storage {
-                    if !acc_in_local_sdb.storage.contains_key(k) {
-                        acc_in_local_sdb.storage.insert(*k, *v);
+    //    if false
+    if false {
+        {
+            // fill these "untouched" storage slots
+            // It is better to fill these info after (instead of before) bus-mapping re-exec.
+            // To prevent these data being used unexpectedly.
+            // TODO: another method will be to skip empty account inside check_post?
+            for account in trace_config.accounts.values() {
+                builder.code_db.insert(account.code.to_vec());
+                let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
+                if !exist {
+                    // modified from bus-mapping/src/mock.rs
+                    let keccak_code_hash = H256(keccak256(&account.code));
+                    let code_hash = CodeDB::hash(&account.code);
+                    *acc_in_local_sdb = bus_mapping::state_db::Account {
+                        nonce: account.nonce,
+                        balance: account.balance,
+                        storage: account.storage.clone(),
+                        code_hash,
+                        keccak_code_hash,
+                        code_size: account.code.len().to_word(),
+                    };
+                } else {
+                    for (k, v) in &account.storage {
+                        if !acc_in_local_sdb.storage.contains_key(k) {
+                            acc_in_local_sdb.storage.insert(*k, *v);
+                        }
                     }
                 }
             }
         }
+        check_post(&builder, &post)?;
     }
-    check_post(&builder, &post)?;
-}
     log::info!("{test_id}: run-test END");
     Ok(())
 }

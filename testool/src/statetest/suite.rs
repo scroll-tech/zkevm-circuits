@@ -189,7 +189,7 @@ pub fn run_statetests_suite(
     } else {
         const PARALLELISM: usize = 10;
         tcs.chunks(PARALLELISM)
-            .for_each(|chunk| chunk.par_iter().for_each(|ref tc| run_state_test(tc)));
+            .for_each(|chunk| chunk.par_iter().for_each(|tc| run_state_test(tc)));
     }
     Ok(())
 }
