@@ -345,7 +345,11 @@ fn trace_config_to_witness_block_l2(
         .iter()
         .map(From::from)
         .collect::<Vec<_>>();
-    check_geth_traces(&geth_traces, &suite, verbose)?;
+    let exceed_max_steps = match check_geth_traces(&geth_traces, &suite, verbose) {
+        Err(StateTestError::SkipTestMaxSteps(steps)) => steps,
+        Err(e) => return Err(e),
+        Ok(_) => 0,
+    };
 
     set_env_coinbase(&block_trace.coinbase.address.unwrap());
     env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
@@ -360,6 +364,9 @@ fn trace_config_to_witness_block_l2(
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
     zkevm_circuits::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    if exceed_max_steps != 0 {
+        return Err(StateTestError::SkipTestMaxSteps(exceed_max_steps));
+    }
     Ok(Some((block, builder)))
 }
 
