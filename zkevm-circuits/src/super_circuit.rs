@@ -471,64 +471,48 @@ impl<
     }
     /// Return the minimum number of rows required to prove the block
     pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> Vec<SubcircuitRowUsage> {
+        log::debug!("start min_num_rows_block_subcircuits");
+        let mut rows = Vec::new();
+        let mut push = |name, usage| {
+            log::debug!("{name} circuit row: {usage:?}");
+            rows.push((name, usage));
+        };
         let evm = EvmCircuit::min_num_rows_block(block);
+        push("evm", evm);
         let state = StateCircuit::min_num_rows_block(block);
+        push("state", state);
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
+        push("bytecode", bytecode);
         let copy = CopyCircuit::min_num_rows_block(block);
+        push("copy", copy);
         let keccak = KeccakCircuit::min_num_rows_block(block);
+        push("keccak", keccak);
         let tx = TxCircuit::min_num_rows_block(block);
+        push("tx", tx);
         let rlp = RlpCircuit::min_num_rows_block(block);
+        push("rlp", rlp);
         let exp = ExpCircuit::min_num_rows_block(block);
+        push("exp", exp);
         let mod_exp = ModExpCircuit::min_num_rows_block(block);
+        push("mod_exp", mod_exp);
         let pi = PiCircuit::min_num_rows_block(block);
+        push("pi", pi);
         let poseidon = PoseidonCircuit::min_num_rows_block(block);
+        push("poseidon", poseidon);
         let sig = SigCircuit::min_num_rows_block(block);
+        push("sig", sig);
         let ecc = EccCircuit::<Fr, 9>::min_num_rows_block(block);
+        push("ecc", ecc);
         #[cfg(feature = "zktrie")]
-        let mpt = MptCircuit::<Fr>::min_num_rows_block(block);
+        {
+            let mpt = MptCircuit::<Fr>::min_num_rows_block(block);
+            push("mpt", mpt);
+        }
 
-        let rows: Vec<(usize, usize)> = vec![
-            evm,
-            state,
-            bytecode,
-            copy,
-            keccak,
-            tx,
-            rlp,
-            exp,
-            mod_exp,
-            pi,
-            poseidon,
-            sig,
-            ecc,
-            #[cfg(feature = "zktrie")]
-            mpt,
-        ];
-        let sub_circuit_names: Vec<String> = [
-            "evm",
-            "state",
-            "bytecode",
-            "copy",
-            "keccak",
-            "tx",
-            "rlp",
-            "exp",
-            "modexp",
-            "pi",
-            "poseidon",
-            "sig",
-            "ecc",
-            #[cfg(feature = "zktrie")]
-            "mpt",
-        ]
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect();
-        let row_usage_details = sub_circuit_names
+        let row_usage_details = rows
             .into_iter()
-            .zip_eq(rows.into_iter())
             .map(|(name, (row_num_real, row_num_total))| SubcircuitRowUsage {
-                name,
+                name: name.to_string(),
                 row_num_real,
                 row_num_total,
             })
