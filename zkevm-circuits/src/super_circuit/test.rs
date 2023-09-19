@@ -57,7 +57,7 @@ fn test_super_circuit<
 
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
     block.randomness = Fr::from(MOCK_RANDOMNESS);
-    block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    block_apply_mpt_state(&mut block, &builder.mpt_init_state.unwrap());
 
     let active_row_num =SuperCircuit::<
         Fr,

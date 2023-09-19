@@ -32,6 +32,12 @@ impl fmt::Debug for ZktrieState {
     }
 }
 
+impl Default for ZktrieState {
+    fn default() -> Self {
+        Self::construct(Default::default())
+    }
+}
+
 impl ZktrieState {
     /// help to query account data
     pub fn root(&self) -> &ZkTrieHash {

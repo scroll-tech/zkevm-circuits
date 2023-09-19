@@ -53,21 +53,27 @@ impl WitnessGenerator {
     pub fn dump(&self) {
         // log::info!("account data {:#?}", self.accounts);
     }
-    // /// get account proof
-    // pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
-    //     self.trie.prove(address.as_bytes()).unwrap()
-    // }
-    // /// get storage proof
-    // pub fn storage_proof(&self, address: Address, key: Word) -> Vec<Vec<u8>> {
-    //     let (_storage_key, key) = {
-    //         let mut word_buf = [0u8; 32];
-    //         key.to_big_endian(word_buf.as_mut_slice());
-    //         (hash_zktrie_key(&word_buf), HexBytes(word_buf))
-    //     };
-    //     self.storages.get(&address)
-    //     .map(|trie|trie.prove(key.as_ref()).unwrap())
-    //     .unwrap_or_default()
-    // }
+    /// get account proof
+    pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
+        self.trie.prove(address.as_bytes()).unwrap()
+    }
+    /// get storage proof
+    pub fn storage_proof(&self, address: Address, key: Word) -> Vec<Vec<u8>> {
+        let key = {
+            let mut word_buf = [0u8; 32];
+            key.to_big_endian(word_buf.as_mut_slice());
+            HexBytes(word_buf)
+        };
+
+        self.storages_cache.get(&address).map(Clone::clone)
+        .or_else(||{
+            self.trie.get_account(address.as_bytes())
+            .map(AccountData::from)
+            .and_then(|account|self.trie.get_db().new_trie(&account.storage_root.0))
+        })
+        .and_then(|trie|trie.prove(key.as_ref()).ok())
+        .unwrap_or_default()
+    }
     fn fetch_storage_cache(&mut self, address: Address) -> Option<&mut ZkTrie>{
         let cache_entry = self.storages_cache.entry(address);
         match cache_entry {
