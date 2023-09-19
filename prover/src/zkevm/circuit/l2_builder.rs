@@ -209,7 +209,7 @@ fn prepare_default_builder(
             "the provided zktrie state must be the prev state"
         );
         let state_db = StateDB::from(&mpt_state);
-        let mut builder = CircuitInputBuilder::new(state_db, code_db, &builder_block);
+        let mut builder = CircuitInputBuilder::new_with_trie_state(state_db, code_db, &builder_block, mpt_state);
         builder.mpt_init_state = mpt_state;
         builder
     } else {
@@ -325,7 +325,7 @@ pub fn block_traces_to_witness_block_with_updated_state(
             "add_more_l2_trace idx {idx}, block num {:?}",
             block_trace.header.number
         );
-        builder.add_more_l2_trace(block_trace, !is_last, false)?;
+        builder.add_more_l2_trace(block_trace, !is_last)?;
         if per_block_metric {
             metric(builder, idx + initial_blk_index)?;
         }
@@ -342,14 +342,14 @@ pub fn block_traces_to_witness_block_with_updated_state(
         witness_block.circuits_params
     );
 
-    if !light_mode && *builder.mpt_init_state.root() != [0u8; 32] {
+    if !light_mode && *builder.mpt_init_state.unwrap().root() != [0u8; 32] {
         log::debug!("block_apply_mpt_state");
-        block_apply_mpt_state(&mut witness_block, &builder.mpt_init_state);
+        block_apply_mpt_state(&mut witness_block, &builder.mpt_init_state.unwrap());
         log::debug!("block_apply_mpt_state done");
     }
     log::debug!(
         "finish replay trie updates, root {}",
-        hex::encode(builder.mpt_init_state.root())
+        hex::encode(builder.mpt_init_state.unwrap().root())
     );
     Ok(witness_block)
 }

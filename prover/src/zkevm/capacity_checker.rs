@@ -184,7 +184,7 @@ impl CircuitCapacityChecker {
                     mpt_state,
                     &builder_block,
                 );
-                builder.add_more_l2_trace(&txs[0], txs.len() > 1, self.light_mode)?;
+                builder.add_more_l2_trace(&txs[0], txs.len() > 1)?;
                 (builder, Some(code_db))
             } else {
                 (
@@ -233,7 +233,7 @@ impl CircuitCapacityChecker {
         self.builder_ctx.replace((
             code_db,
             estimate_builder.sdb,
-            estimate_builder.mpt_init_state,
+            estimate_builder.mpt_init_state.unwrap_or_default(),
         ));
         Ok(self.acc_row_usage.normalize())
     }
