@@ -5,6 +5,8 @@ pub mod consts;
 pub mod inner;
 pub mod io;
 pub mod proof;
+#[cfg(feature = "test")]
+pub mod test;
 pub mod types;
 pub mod utils;
 pub mod zkevm;

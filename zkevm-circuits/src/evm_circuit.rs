@@ -283,6 +283,13 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
+// the diff is from the num of valid opcodes: self-destruct?
+#[cfg(not(feature = "scroll"))]
+const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3647;
+#[cfg(feature = "scroll")]
+const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3646;
+const FIXED_TABLE_ROWS: usize = FIXED_TABLE_ROWS_NO_BITWISE + 3 * 65536;
+
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     type Config = EvmCircuitConfig<F>;
 
@@ -300,20 +307,18 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let num_rows_required_for_execution_steps: usize =
             Self::get_num_rows_required_no_padding(block);
-        let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
-            .iter()
-            .map(|tag| tag.build::<F>().count())
-            .sum();
-        (
-            num_rows_required_for_execution_steps,
-            std::cmp::max(
-                block.circuits_params.max_evm_rows,
-                std::cmp::max(
-                    num_rows_required_for_fixed_table,
-                    num_rows_required_for_execution_steps,
-                ),
-            ),
-        )
+        let mut total_rows = num_rows_required_for_execution_steps;
+        total_rows = total_rows.max(block.circuits_params.max_evm_rows);
+
+        if total_rows <= FIXED_TABLE_ROWS {
+            // for many test cases, there is no need for bitwise table.
+            // So using `detect_fixed_table_tags` can greatly improve CI time.
+            let num_rows_required_for_fixed_table =
+                get_fixed_table_row_num(need_bitwise_lookup(block));
+            total_rows = total_rows.max(num_rows_required_for_fixed_table)
+        }
+
+        (num_rows_required_for_execution_steps, total_rows)
     }
 
     /// Make the assignments to the EvmCircuit
@@ -334,9 +339,16 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     }
 }
 
-/// create fixed_table_tags needed given witness block
-pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
-    let need_bitwise_lookup = block.txs.iter().any(|tx| {
+fn get_fixed_table_row_num(need_bitwise_lookup: bool) -> usize {
+    if need_bitwise_lookup {
+        FIXED_TABLE_ROWS
+    } else {
+        FIXED_TABLE_ROWS_NO_BITWISE
+    }
+}
+
+fn need_bitwise_lookup<F: Field>(block: &Block<F>) -> bool {
+    block.txs.iter().any(|tx| {
         tx.steps.iter().any(|step| {
             matches!(
                 step.opcode,
@@ -346,15 +358,24 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
                     | Some(OpcodeId::NOT)
             )
         })
-    });
-    FixedTableTag::iter()
-        .filter(|t| {
-            !matches!(
-                t,
-                FixedTableTag::BitwiseAnd | FixedTableTag::BitwiseOr | FixedTableTag::BitwiseXor
-            ) || need_bitwise_lookup
-        })
-        .collect()
+    })
+}
+/// create fixed_table_tags needed given witness block
+pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+    if need_bitwise_lookup(block) {
+        FixedTableTag::iter().collect()
+    } else {
+        FixedTableTag::iter()
+            .filter(|t| {
+                !matches!(
+                    t,
+                    FixedTableTag::BitwiseAnd
+                        | FixedTableTag::BitwiseOr
+                        | FixedTableTag::BitwiseXor
+                )
+            })
+            .collect()
+    }
 }
 
 #[cfg(all(feature = "disabled", test))]
@@ -532,7 +553,8 @@ mod evm_circuit_stats {
                 N_PHASE2_COPY_COLUMNS,
             },
             step::ExecutionState,
-            EvmCircuit,
+            table::FixedTableTag,
+            EvmCircuit, FIXED_TABLE_ROWS, FIXED_TABLE_ROWS_NO_BITWISE,
         },
         stats::print_circuit_stats_by_states,
         test_util::CircuitTestBuilder,
@@ -555,6 +577,39 @@ mod evm_circuit_stats {
         },
         MOCK_ACCOUNTS,
     };
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn test_fixed_table_rows() {
+        let row_num_by_tags = |tags: Vec<FixedTableTag>| -> usize {
+            tags.iter()
+                .map(|tag| {
+                    let count = tag.build::<Fr>().count();
+                    log::debug!("fixed tab {tag:?} needs {count} rows");
+                    count
+                })
+                .sum::<usize>()
+        };
+        assert_eq!(
+            FIXED_TABLE_ROWS,
+            row_num_by_tags(FixedTableTag::iter().collect_vec())
+        );
+        assert_eq!(
+            FIXED_TABLE_ROWS_NO_BITWISE,
+            row_num_by_tags(
+                FixedTableTag::iter()
+                    .filter(|t| {
+                        !matches!(
+                            t,
+                            FixedTableTag::BitwiseAnd
+                                | FixedTableTag::BitwiseOr
+                                | FixedTableTag::BitwiseXor
+                        )
+                    })
+                    .collect_vec()
+            )
+        );
+    }
 
     #[test]
     fn evm_circuit_unusable_rows() {

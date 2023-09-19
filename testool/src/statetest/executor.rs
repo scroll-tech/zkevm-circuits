@@ -18,14 +18,6 @@ use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-#[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
-use prover::{
-    common::{Prover, Verifier},
-    config::LayerId,
-    config::{INNER_DEGREE, ZKEVM_DEGREES},
-};
-#[cfg(feature = "inner-prove")]
-use prover::{utils::gen_rng, zkevm::circuit};
 use std::{collections::HashMap, env, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
@@ -42,58 +34,6 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
 }
 /// Which circuit to test. Default is evm + state.
 pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_string()));
-
-#[cfg(any(feature = "inner-prove", feature = "chunk-prove"))]
-static mut REAL_PROVER: Lazy<Prover> = Lazy::new(|| {
-    let params_dir = "./test_params";
-
-    let degrees: Vec<u32> = if cfg!(feature = "inner-prove") {
-        vec![*INNER_DEGREE]
-    } else {
-        // for chunk-prove
-        (*ZKEVM_DEGREES).clone()
-    };
-
-    let prover = Prover::from_params_dir(params_dir, &degrees);
-    log::info!("Constructed real-prover");
-
-    prover
-});
-
-#[cfg(feature = "inner-prove")]
-static mut INNER_VERIFIER: Lazy<
-    Verifier<<circuit::SuperCircuit as circuit::TargetCircuit>::Inner>,
-> = Lazy::new(|| {
-    let prover = unsafe { &mut REAL_PROVER };
-    let params = prover.params(*INNER_DEGREE).clone();
-
-    let id = read_env_var("COINBASE", LayerId::Inner.id().to_string());
-    let pk = prover.pk(&id).expect("Failed to get inner-prove PK");
-    let vk = pk.get_vk().clone();
-
-    let verifier = Verifier::new(params, vk);
-    log::info!("Constructed inner-verifier");
-
-    verifier
-});
-
-#[cfg(feature = "chunk-prove")]
-static mut CHUNK_VERIFIER: Lazy<Verifier<prover::CompressionCircuit>> = Lazy::new(|| {
-    env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
-
-    let prover = unsafe { &mut REAL_PROVER };
-    let params = prover.params(LayerId::Layer2.degree()).clone();
-
-    let pk = prover
-        .pk(LayerId::Layer2.id())
-        .expect("Failed to get chunk-prove PK");
-    let vk = pk.get_vk().clone();
-
-    let verifier = Verifier::new(params, vk);
-    log::info!("Constructed chunk-verifier");
-
-    verifier
-});
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -721,9 +661,15 @@ pub fn run_test(
             check_ccc();
         } else {
             #[cfg(feature = "inner-prove")]
-            inner_prove(&test_id, &st.env.current_coinbase, &witness_block);
+            {
+                set_env_coinbase(&st.env.current_coinbase);
+                prover::test::inner_prove(&test_id, &witness_block);
+            }
             #[cfg(feature = "chunk-prove")]
-            chunk_prove(&test_id, &st.env.current_coinbase, &witness_block);
+            {
+                set_env_coinbase(&st.env.current_coinbase);
+                prover::test::chunk_prove(&test_id, &witness_block);
+            }
             #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
             mock_prove(&test_id, &witness_block);
         }
@@ -769,6 +715,9 @@ fn set_env_coinbase(coinbase: &Address) -> String {
     let coinbase = format!("0x{}", hex::encode(coinbase));
     env::set_var("COINBASE", &coinbase);
 
+    // Used for inner-prove and chunk-prove.
+    env::set_var("INNER_LAYER_ID", &coinbase);
+
     coinbase
 }
 
@@ -784,75 +733,4 @@ fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
     prover.assert_satisfied_par();
 
     log::info!("{test_id}: mock-prove END");
-}
-
-#[cfg(feature = "inner-prove")]
-fn inner_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
-    let coinbase = set_env_coinbase(coinbase);
-    log::info!("{test_id}: inner-prove BEGIN, coinbase = {coinbase}");
-
-    let prover = unsafe { &mut REAL_PROVER };
-    let coinbase_changed = prover.pk(&coinbase).is_none();
-
-    // Clear previous PKs if coinbase address changed.
-    if coinbase_changed {
-        prover.clear_pks();
-    }
-
-    let rng = gen_rng();
-    let snark = prover
-        .gen_inner_snark::<circuit::SuperCircuit>(&coinbase, rng, witness_block)
-        .unwrap_or_else(|err| panic!("{test_id}: failed to generate inner snark: {err}"));
-    log::info!("{test_id}: generated inner snark");
-
-    let verifier = unsafe { &mut INNER_VERIFIER };
-
-    // Reset VK if coinbase address changed.
-    if coinbase_changed {
-        let pk = prover.pk(&coinbase).unwrap_or_else(|| {
-            panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
-        });
-        let vk = pk.get_vk().clone();
-        verifier.set_vk(vk);
-    }
-
-    let verified = verifier.verify_snark(snark);
-    assert!(verified, "{test_id}: failed to verify inner snark");
-
-    log::info!("{test_id}: inner-prove END, coinbase = {coinbase}");
-}
-
-#[cfg(feature = "chunk-prove")]
-fn chunk_prove(test_id: &str, coinbase: &Address, witness_block: &Block<Fr>) {
-    let coinbase = set_env_coinbase(coinbase);
-    log::info!("{test_id}: chunk-prove BEGIN, coinbase = {coinbase}");
-
-    let prover = unsafe { &mut REAL_PROVER };
-    let coinbase_changed = prover.pk(&coinbase).is_none();
-
-    // Clear previous PKs if coinbase address changed.
-    if coinbase_changed {
-        prover.clear_pks();
-    }
-
-    let snark = prover
-        .load_or_gen_final_chunk_snark(test_id, witness_block, Some(&coinbase), None)
-        .unwrap_or_else(|err| panic!("{test_id}: failed to generate chunk snark: {err}"));
-    log::info!("{test_id}: generated chunk snark");
-
-    let verifier = unsafe { &mut CHUNK_VERIFIER };
-
-    // Reset VK if coinbase address changed.
-    if coinbase_changed {
-        let pk = prover.pk(LayerId::Layer2.id()).unwrap_or_else(|| {
-            panic!("{test_id}: failed to get inner-prove PK, coinbase = {coinbase}")
-        });
-        let vk = pk.get_vk().clone();
-        verifier.set_vk(vk);
-    }
-
-    let verified = verifier.verify_snark(snark);
-    assert!(verified, "{test_id}: failed to verify chunk snark");
-
-    log::info!("{test_id}: chunk-prove END, coinbase = {coinbase}");
 }
