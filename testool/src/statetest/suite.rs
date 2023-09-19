@@ -187,7 +187,9 @@ pub fn run_statetests_suite(
     if circuits_config.super_circuit {
         tcs.into_iter().for_each(|ref tc| run_state_test(tc));
     } else {
-        tcs.into_par_iter().for_each(|ref tc| run_state_test(tc));
+        const PARALLELISM: usize = 10;
+        tcs.chunks(PARALLELISM)
+            .for_each(|chunk| chunk.par_iter().for_each(|ref tc| run_state_test(tc)));
     }
     Ok(())
 }
