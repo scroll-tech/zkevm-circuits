@@ -8,11 +8,11 @@ use eth_types::{
     self,
     evm_types::OpcodeId,
     l2_types::{BlockTrace, EthBlock, ExecStep, StorageTrace},
-    Address, ToAddress, Word, H256,
+    Address, ToAddress, Word, H256, ToWord,
 };
-use ethers_core::types::{Bytes, U256};
+use ethers_core::types::Bytes;
 use mpt_zktrie::state::{AccountData, ZktrieState};
-use std::collections::hash_map::Entry;
+use std::collections::hash_map::{HashMap, Entry};
 
 impl From<&AccountData> for state_db::Account {
     fn from(acc_data: &AccountData) -> Self {
@@ -28,29 +28,6 @@ impl From<&AccountData> for state_db::Account {
                 storage: Default::default(),
             }
         }
-    }
-}
-
-impl From<&ZktrieState> for StateDB {
-    fn from(mpt_state: &ZktrieState) -> Self {
-        let mut sdb = StateDB::new();
-
-        for (addr, acc) in mpt_state.state() {
-            sdb.set_account(addr, acc.into())
-        }
-
-        for (storage_key, data) in mpt_state.storage() {
-            // Since the StateDB is a partical db, 0 means we know it is zero instead of "unknown".
-            log::trace!(
-                "trace sdb: addr {:?} key {:?} value {:?}",
-                storage_key.0,
-                storage_key.1,
-                *data.as_ref()
-            );
-            let (_, acc) = sdb.get_account_mut(&storage_key.0);
-            acc.storage.insert(storage_key.1, *data.as_ref());
-        }
-        sdb
     }
 }
 
@@ -302,7 +279,7 @@ impl CircuitInputBuilder {
             code_db,
             block: block.clone(),
             block_ctx: BlockContext::new(),
-            mpt_init_state,
+            mpt_init_state: Some(mpt_init_state),
         }
     }
 
@@ -322,25 +299,43 @@ impl CircuitInputBuilder {
             hex::encode(old_root),
         );
 
-        let mpt_init_state = ZktrieState::from_trace_with_additional(
-            old_root,
+        let mpt_init_state = if !light_mode {
+            let mpt_init_state = ZktrieState::from_trace_with_additional(
+                old_root,
+                Self::collect_account_proofs(&l2_trace.storage_trace),
+                Self::collect_storage_proofs(&l2_trace.storage_trace),
+                l2_trace
+                    .storage_trace
+                    .deletion_proofs
+                    .iter()
+                    .map(Bytes::as_ref),
+            ).map_err(Error::IoError)?;
+
+            log::debug!(
+                "building partial statedb done, root {}",
+                hex::encode(mpt_init_state.root())
+            );
+
+            Some(mpt_init_state)
+    
+        }else {
+            None
+        };
+
+        let mut sdb = StateDB::new();
+        for parsed in ZktrieState::parse_account_from_proofs(
             Self::collect_account_proofs(&l2_trace.storage_trace),
+        ){
+            let (addr, acc) = parsed.map_err(Error::IoError)?;
+            sdb.set_account(&addr, state_db::Account::from(&acc));
+        }
+
+        for parsed in ZktrieState::parse_storage_from_proofs(
             Self::collect_storage_proofs(&l2_trace.storage_trace),
-            l2_trace
-                .storage_trace
-                .deletion_proofs
-                .iter()
-                .map(Bytes::as_ref),
-            light_mode,
-        )
-        .unwrap();
-
-        log::debug!(
-            "building partial statedb done, root {}",
-            hex::encode(mpt_init_state.root())
-        );
-
-        let sdb = StateDB::from(&mpt_init_state);
+        ){
+            let ((addr, key), val) = parsed.map_err(Error::IoError)?;
+            *sdb.get_storage_mut(&addr, &key).1 = val.into();
+        }
 
         /*
         let (zero_coinbase_exist, _) = sdb.get_account(&Default::default());
@@ -355,7 +350,7 @@ impl CircuitInputBuilder {
 
         let mut builder_block = circuit_input_builder::Block::from_headers(&[], circuits_params);
         builder_block.chain_id = chain_id;
-        builder_block.prev_state_root = U256::from(mpt_init_state.root());
+        builder_block.prev_state_root = old_root.to_word();
         builder_block.start_l1_queue_index = l2_trace.start_l1_queue_index;
         let mut builder = Self {
             sdb,
@@ -374,11 +369,10 @@ impl CircuitInputBuilder {
         &mut self,
         l2_trace: &BlockTrace,
         more: bool,
-        light_mode: bool,
     ) -> Result<(), Error> {
-        // update sdb for new data from storage
-        if !light_mode {
-            self.mpt_init_state.update_nodes_from_proofs(
+        // update init state new data from storage
+        if let Some(mpt_init_state) = &mut self.mpt_init_state {
+            mpt_init_state.update_from_trace(
                 Self::collect_account_proofs(&l2_trace.storage_trace),
                 Self::collect_storage_proofs(&l2_trace.storage_trace),
                 l2_trace
@@ -389,25 +383,22 @@ impl CircuitInputBuilder {
             );
         }
 
-        self.mpt_init_state
-            .update_account_from_proofs(
-                Self::collect_account_proofs(&l2_trace.storage_trace),
-                |addr, acc_data| {
-                    self.sdb.set_account(addr, acc_data.into());
-                    Ok(())
-                },
-            )
-            .map_err(Error::IoError)?;
+        for parsed in ZktrieState::parse_account_from_proofs(
+            Self::collect_account_proofs(&l2_trace.storage_trace)
+            .filter(|(addr, _)|{let (existed, _) = self.sdb.get_account(addr); !existed}),
+        ){
+            let (addr, acc) = parsed.map_err(Error::IoError)?;
+            self.sdb.set_account(&addr, state_db::Account::from(&acc));
+        }
 
-        self.mpt_init_state
-            .update_storage_from_proofs(
-                Self::collect_storage_proofs(&l2_trace.storage_trace),
-                |storage_key, value| {
-                    *self.sdb.get_storage_mut(&storage_key.0, &storage_key.1).1 = *value.as_ref();
-                    Ok(())
-                },
-            )
-            .map_err(Error::IoError)?;
+
+        for parsed in ZktrieState::parse_storage_from_proofs(
+            Self::collect_storage_proofs(&l2_trace.storage_trace)
+            .filter(|(addr, key, _)|{let (existed, _) = self.sdb.get_committed_storage(addr, key); !existed}),
+        ){
+            let ((addr, key), val) = parsed.map_err(Error::IoError)?;
+            *self.sdb.get_storage_mut(&addr, &key).1 = val.into();
+        }
 
         update_codedb(&mut self.code_db, &self.sdb, l2_trace)?;
 

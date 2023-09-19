@@ -179,7 +179,7 @@ pub struct CircuitInputBuilder {
     pub block_ctx: BlockContext,
     #[cfg(feature = "scroll")]
     /// Initial Zktrie Status for a incremental updating
-    pub mpt_init_state: ZktrieState,
+    pub mpt_init_state: Option<ZktrieState>,
 }
 
 impl<'a> CircuitInputBuilder {
