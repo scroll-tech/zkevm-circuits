@@ -7,7 +7,11 @@ use chrono::Utc;
 use eth_types::{l2_types::BlockTrace, Address};
 use git_version::git_version;
 use halo2_proofs::{
-    halo2curves::bn256::{Bn256, Fr},
+    arithmetic::{g_to_lagrange, parallelize, Field},
+    halo2curves::{
+        bn256::{Bn256, Fr, G1Affine, G1},
+        group::Curve,
+    },
     poly::kzg::commitment::ParamsKZG,
     SerdeFormat,
 };
@@ -20,7 +24,9 @@ use log4rs::{
     config::{Appender, Config, Root},
 };
 use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha20Rng;
 use rand_xorshift::XorShiftRng;
+use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::{
     fs::{self, metadata, File},
     io::{BufReader, Read},
@@ -35,6 +41,8 @@ pub static LOGGER: Once = Once::new();
 pub const DEFAULT_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytesUnchecked;
 pub const GIT_VERSION: &str = git_version!(args = ["--abbrev=7", "--always"]);
 
+// FIXME: update me once the the srs is re-randomized
+#[cfg(feature = "unrandomized_srs")]
 pub const PARAMS_G2_SECRET_POWER: &str = "(Fq2 { c0: 0x17944351223333f260ddc3b4af45191b856689eda9eab5cbcddbbe570ce860d2, c1: 0x186282957db913abd99f91db59fe69922e95040603ef44c0bd7aa3adeef8f5ac }, Fq2 { c0: 0x297772d34bc9aa8ae56162486363ffe417b02dc7e8c207fc2cc20203e67a02ad, c1: 0x298adc7396bd3865cbf6d6df91bae406694e6d2215baa893bdeadb63052895f4 })";
 
 /// Load setup params from a file.
@@ -77,12 +85,52 @@ pub fn load_params(
     }
 
     let p = ParamsKZG::<Bn256>::read_custom::<_>(&mut BufReader::new(f), serde_fmt)?;
+
+    #[cfg(feature = "unrandomized_srs")]
     if format!("{:?}", p.s_g2()) != PARAMS_G2_SECRET_POWER {
         bail!("Wrong params file of degree {}", degree);
     }
 
     log::info!("load params successfully!");
     Ok(p)
+}
+
+pub fn re_randomize_srs(param: &mut ParamsKZG<Bn256>, seed: &[u8; 32]) {
+    log::info!("start re-randomization");
+    let mut rng = ChaCha20Rng::from_seed(*seed);
+    let secret = Fr::random(&mut rng);
+    let num_threads = rayon::current_num_threads();
+    let chunk_size = param.n as usize / num_threads;
+    // Old g = [G1, [s] G1, [s^2] G1, ..., [s^(n-1)] G1]
+    // we multiply each g by secret^i
+    // and the new secret becomes s*secret
+    log::info!("generating new seed");
+    let mut powers = vec![Fr::one(), secret];
+    for _ in 0..param.n - 2 {
+        powers.push(secret * powers.last().unwrap())
+    }
+    log::info!("build new params");
+    let new_g_proj = param
+        .g
+        .par_iter()
+        .zip(powers.par_iter())
+        .chunks(chunk_size)
+        .flat_map_iter(|pair| pair.iter().map(|(g, s)| *g * *s).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    log::info!("normalizing new params");
+    param.g = {
+        let mut g = vec![G1Affine::default(); param.n as usize];
+        parallelize(&mut g, |g, starts| {
+            G1::batch_normalize(&new_g_proj[starts..(starts + g.len())], g);
+        });
+        g
+    };
+    log::info!("converting to lagrange basis");
+    param.g_lagrange = g_to_lagrange(new_g_proj, param.k);
+    param.s_g2 = (param.s_g2 * secret).into();
+
+    log::info!("finished re-randomization");
 }
 
 /// get a block-result from file
@@ -238,5 +286,119 @@ pub fn short_git_version() -> String {
         commit_version.to_string()
     } else {
         commit_version[1..8].to_string()
+    }
+}
+#[cfg(test)]
+mod tests {
+
+    use aggregator::RlcConfig;
+    use ark_std::test_rng;
+    use halo2_proofs::{
+        circuit::*,
+        halo2curves::bn256::{Bn256, Fr},
+        plonk::*,
+        poly::kzg::commitment::ParamsKZG,
+    };
+    use snark_verifier_sdk::{
+        evm_verify, gen_evm_proof_shplonk, gen_evm_verifier_shplonk, gen_pk, CircuitExt,
+    };
+    use zkevm_circuits::util::Challenges;
+
+    use crate::utils::re_randomize_srs;
+
+    #[derive(Clone, Default)]
+    struct MyCircuit {
+        f1: Fr,
+        f2: Fr,
+        f3: Fr,
+    }
+
+    impl Circuit<Fr> for MyCircuit {
+        type Config = RlcConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+            let challenges = Challenges::construct(meta);
+            RlcConfig::configure(meta, challenges)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<Fr>,
+        ) -> Result<(), Error> {
+            let mut first_pass = true;
+            layouter.assign_region(
+                || "test field circuit",
+                |mut region| -> Result<(), Error> {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
+
+                    config.init(&mut region)?;
+
+                    let mut offset = 0;
+
+                    let f1 = config.load_private(&mut region, &self.f1, &mut offset)?;
+                    let f2 = config.load_private(&mut region, &self.f2, &mut offset)?;
+                    let f3 = config.load_private(&mut region, &self.f3, &mut offset)?;
+                    {
+                        let f3_rec = config.add(&mut region, &f1, &f2, &mut offset)?;
+                        region.constrain_equal(f3.cell(), f3_rec.cell())?;
+                    }
+
+                    Ok(())
+                },
+            )?;
+            Ok(())
+        }
+    }
+
+    impl CircuitExt<Fr> for MyCircuit {
+        fn num_instance(&self) -> Vec<usize> {
+            vec![]
+        }
+
+        fn instances(&self) -> Vec<Vec<Fr>> {
+            vec![]
+        }
+
+        fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
+            None
+        }
+
+        fn selectors(_config: &Self::Config) -> Vec<Selector> {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_srs_rerandomization() {
+        let k = 5;
+        let mut rng = test_rng();
+        let mut param = ParamsKZG::<Bn256>::unsafe_setup(k);
+        re_randomize_srs(&mut param, &[0; 32]);
+
+        let circuit = MyCircuit {
+            f1: Fr::from(10),
+            f2: Fr::from(15),
+            f3: Fr::from(25),
+        };
+
+        let pk = gen_pk(&param, &circuit, None);
+        let proof =
+            gen_evm_proof_shplonk(&param, &pk, circuit.clone(), circuit.instances(), &mut rng);
+        let deployment_code = gen_evm_verifier_shplonk::<MyCircuit>(
+            &param,
+            pk.get_vk(),
+            circuit.num_instance(),
+            None,
+        );
+        evm_verify(deployment_code, circuit.instances(), proof.clone());
     }
 }

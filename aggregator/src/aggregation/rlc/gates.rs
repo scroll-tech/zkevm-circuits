@@ -12,7 +12,7 @@ use super::RlcConfig;
 
 impl RlcConfig {
     /// initialize the chip with fixed cells
-    pub(crate) fn init(&self, region: &mut Region<Fr>) -> Result<(), Error> {
+    pub fn init(&self, region: &mut Region<Fr>) -> Result<(), Error> {
         region.assign_fixed(|| "const zero", self.fixed, 0, || Value::known(Fr::zero()))?;
         region.assign_fixed(|| "const one", self.fixed, 1, || Value::known(Fr::one()))?;
         region.assign_fixed(|| "const two", self.fixed, 2, || Value::known(Fr::from(2)))?;
@@ -115,7 +115,7 @@ impl RlcConfig {
         }
     }
 
-    pub(crate) fn load_private(
+    pub fn load_private(
         &self,
         region: &mut Region<Fr>,
         f: &Fr,
@@ -171,8 +171,7 @@ impl RlcConfig {
     }
 
     /// Enforce res = a + b
-    #[allow(dead_code)]
-    pub(crate) fn add(
+    pub fn add(
         &self,
         region: &mut Region<Fr>,
         a: &AssignedCell<Fr, Fr>,

@@ -3988,6 +3988,7 @@ version = "0.1.0"
 dependencies = [
  "aggregator",
  "anyhow",
+ "ark-std 0.4.0",
  "base64 0.13.1",
  "blake2",
  "bus-mapping",
@@ -4005,7 +4006,9 @@ dependencies = [
  "num-bigint",
  "once_cell",
  "rand",
+ "rand_chacha",
  "rand_xorshift",
+ "rayon",
  "serde",
  "serde_derive",
  "serde_json",

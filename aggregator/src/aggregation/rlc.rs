@@ -1,4 +1,4 @@
 mod config;
 mod gates;
 
-pub(crate) use config::RlcConfig;
+pub use config::RlcConfig;

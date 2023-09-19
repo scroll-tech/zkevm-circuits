@@ -7,4 +7,4 @@ mod rlc;
 
 pub use circuit::AggregationCircuit;
 pub use config::AggregationConfig;
-pub(crate) use rlc::RlcConfig;
+pub use rlc::RlcConfig;

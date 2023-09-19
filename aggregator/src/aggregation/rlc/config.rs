@@ -22,7 +22,7 @@ pub struct RlcConfig {
 }
 
 impl RlcConfig {
-    pub(crate) fn configure(meta: &mut ConstraintSystem<Fr>, challenge: Challenges) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<Fr>, challenge: Challenges) -> Self {
         let selector = meta.complex_selector();
         let enable_challenge = meta.complex_selector();
         let challenge_expr = challenge.exprs(meta);
