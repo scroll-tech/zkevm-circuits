@@ -12,8 +12,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
-use halo2_proofs::plonk::Error;
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
@@ -75,15 +75,15 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             F::from(opcode.as_u64() - OpcodeId::PUSH0.as_u64()),
         )?;
 
-        let value = if opcode.is_push_with_data() {
-            block.rws[step.rw_indices[0]].stack_value()
+        let value_rlc = if opcode.is_push_with_data() {
+            let value = block.rws[step.rw_indices[0]].stack_value();
+            region
+                .challenges()
+                .evm_word()
+                .map(|challenge| rlc::value(&value.to_le_bytes(), challenge))
         } else {
-            U256::zero()
+            Value::known(F::zero())
         };
-        let value_rlc = region
-            .challenges()
-            .evm_word()
-            .map(|challenge| rlc::value(&value.to_le_bytes(), challenge));
         self.value.assign(region, offset, value_rlc)?;
 
         Ok(())

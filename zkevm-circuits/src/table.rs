@@ -1092,6 +1092,7 @@ pub struct BytecodeTable {
     /// Value
     pub value: Column<Advice>,
     /// The RLC of the PUSH data (LE order), or 0.
+    /// Warning: If the bytecode is truncated, this is the actual data, without zero-padding.
     pub push_rlc: Column<Advice>,
 }
 

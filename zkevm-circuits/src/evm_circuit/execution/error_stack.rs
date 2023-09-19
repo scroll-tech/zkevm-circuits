@@ -17,6 +17,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorStackGadget<F> {
     opcode: Cell<F>,
+    push_rlc: Cell<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -27,6 +28,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let push_rlc = cb.query_cell_phase2();
 
         cb.add_lookup(
             "Responsible opcode lookup for invalid stack pointer",
@@ -40,10 +42,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
             },
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 2.expr());
+        let common_error_gadget =
+            CommonErrorGadget::construct2(cb, opcode.expr(), 2.expr(), push_rlc.expr());
 
         Self {
             opcode,
+            push_rlc,
             common_error_gadget,
         }
     }
@@ -60,6 +64,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+        let push_rlc = CommonErrorGadget::get_push_rlc(region, block, call, step);
+        self.push_rlc.assign(region, offset, push_rlc)?;
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;
