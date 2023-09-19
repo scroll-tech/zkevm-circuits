@@ -57,6 +57,27 @@ impl ZktrieState {
         }
     }
 
+    /// prepare to switch to another root state (trie snapshot)
+    /// it is ok that even the db is not ready for this state
+    /// cache is cleared so user can fill db with new storage traces
+    pub fn prepare_switch_to(&mut self, new_root: ZkTrieHash) {
+        self.trie_root = new_root;
+        self.addr_cache.clear();
+        self.storage_cache.clear();
+    }
+
+    /// switch to another root state (trie snapshot)
+    /// return true if the switch success, or false if db have not contain
+    /// corresponding root yet
+    pub fn switch_to(&mut self, new_root: ZkTrieHash) -> bool {
+        let test_trie = self.zk_db.borrow_mut().new_trie(&new_root);
+        if test_trie.is_none() {
+            return false
+        }
+        self.prepare_switch_to(new_root);
+        true
+    }
+
     /// Helper for parsing account data from external data (mainly storage trace)
     pub fn parse_account_from_proofs<'d: 'a, 'a, BYTES>(
         account_proofs: impl Iterator<Item = (&'a Address, BYTES)> + 'd,
