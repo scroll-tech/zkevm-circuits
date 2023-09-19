@@ -383,21 +383,32 @@ impl CircuitInputBuilder {
             );
         }
 
-        for parsed in ZktrieState::parse_account_from_proofs(
+        let new_accounts = ZktrieState::parse_account_from_proofs(
             Self::collect_account_proofs(&l2_trace.storage_trace)
             .filter(|(addr, _)|{let (existed, _) = self.sdb.get_account(addr); !existed}),
-        ){
+        ).fold(Ok(HashMap::new()), |m, parsed|->Result<HashMap<_, _>, Error>{
+            let mut m = m?;
             let (addr, acc) = parsed.map_err(Error::IoError)?;
+            m.insert(addr, acc);
+            Ok(m)
+        })?;
+
+        for (addr, acc) in new_accounts{
             self.sdb.set_account(&addr, state_db::Account::from(&acc));
         }
 
-
-        for parsed in ZktrieState::parse_storage_from_proofs(
+        let new_storages = ZktrieState::parse_storage_from_proofs(
             Self::collect_storage_proofs(&l2_trace.storage_trace)
             .filter(|(addr, key, _)|{let (existed, _) = self.sdb.get_committed_storage(addr, key); !existed}),
-        ){
+        ).fold(Ok(HashMap::new()), |m, parsed|->Result<HashMap<(Address, Word), Word>, Error>{
+            let mut m = m?;
             let ((addr, key), val) = parsed.map_err(Error::IoError)?;
-            *self.sdb.get_storage_mut(&addr, &key).1 = val.into();
+            m.insert((addr, key), val.into());
+            Ok(m)
+        })?;
+
+        for ((addr, key), val) in new_storages {
+            *self.sdb.get_storage_mut(&addr, &key).1 = val;
         }
 
         update_codedb(&mut self.code_db, &self.sdb, l2_trace)?;
