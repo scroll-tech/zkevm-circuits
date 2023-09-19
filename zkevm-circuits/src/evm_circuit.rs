@@ -283,8 +283,8 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
-const FIXED_TABLE_ROWS: usize = 200254;
-const FIXED_TABLE_ROWS_NO_BITWISE: usize = 254;
+const FIXED_TABLE_ROWS: usize = 200255;
+const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3647;
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     type Config = EvmCircuitConfig<F>;
@@ -309,10 +309,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         if total_rows <= FIXED_TABLE_ROWS {
             // for many test cases, there is no need for bitwise table.
             // So using `detect_fixed_table_tags` can greatly improve CI time.
-            let tag = detect_fixed_table_tags(block);
-            let num_rows_required_for_fixed_table: usize =
-                tag.iter().map(|tag| tag.build::<F>().count()).sum();
-            log::debug!("num_rows_required_for_fixed_table is {num_rows_required_for_fixed_table:?}, tables: {tag:?}");
+            let num_rows_required_for_fixed_table =
+                get_fixed_table_row_num(need_bitwise_lookup(block));
             total_rows = total_rows.max(num_rows_required_for_fixed_table)
         }
 
@@ -345,9 +343,8 @@ fn get_fixed_table_row_num(need_bitwise_lookup: bool) -> usize {
     }
 }
 
-/// create fixed_table_tags needed given witness block
-pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
-    let need_bitwise_lookup = block.txs.iter().any(|tx| {
+fn need_bitwise_lookup<F: Field>(block: &Block<F>) -> bool {
+    block.txs.iter().any(|tx| {
         tx.steps.iter().any(|step| {
             matches!(
                 step.opcode,
@@ -357,8 +354,11 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
                     | Some(OpcodeId::NOT)
             )
         })
-    });
-    if need_bitwise_lookup {
+    })
+}
+/// create fixed_table_tags needed given witness block
+pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+    if need_bitwise_lookup(block) {
         FixedTableTag::iter().collect()
     } else {
         FixedTableTag::iter()
@@ -549,8 +549,8 @@ mod evm_circuit_stats {
                 N_PHASE2_COPY_COLUMNS,
             },
             step::ExecutionState,
-            table::FixedTableTag,
-            EvmCircuit, FIXED_TABLE_ROWS,
+            table::{FixedTableTag, FixedTableTagIter},
+            EvmCircuit, FIXED_TABLE_ROWS, FIXED_TABLE_ROWS_NO_BITWISE,
         },
         stats::print_circuit_stats_by_states,
         test_util::CircuitTestBuilder,
@@ -577,15 +577,33 @@ mod evm_circuit_stats {
 
     #[test]
     fn test_fixed_table_rows() {
-        assert_eq!(
-            FIXED_TABLE_ROWS,
-            FixedTableTag::iter()
+        let row_num_by_tags = |tags: Vec<FixedTableTag>| -> usize {
+            tags.iter()
                 .map(|tag| {
                     let count = tag.build::<Fr>().count();
                     log::debug!("fixed tab {tag:?} needs {count} rows");
                     count
                 })
                 .sum::<usize>()
+        };
+        assert_eq!(
+            FIXED_TABLE_ROWS,
+            row_num_by_tags(FixedTableTag::iter().collect_vec())
+        );
+        assert_eq!(
+            FIXED_TABLE_ROWS_NO_BITWISE,
+            row_num_by_tags(
+                FixedTableTag::iter()
+                    .filter(|t| {
+                        !matches!(
+                            t,
+                            FixedTableTag::BitwiseAnd
+                                | FixedTableTag::BitwiseOr
+                                | FixedTableTag::BitwiseXor
+                        )
+                    })
+                    .collect_vec()
+            )
         );
     }
 
