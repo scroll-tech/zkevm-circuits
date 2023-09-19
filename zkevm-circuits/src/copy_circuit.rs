@@ -552,7 +552,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             )?;
 
             let pad = unwrap_value(circuit_row[6].0);
-            let mask = unwrap_value(circuit_row[8].0);
+            let mask = unwrap_value(circuit_row[7].0);
             let non_pad_non_mask = pad.is_zero_vartime() && mask.is_zero_vartime();
             region.assign_advice(
                 || format!("non_pad_non_mask at row: {offset}"),
