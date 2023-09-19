@@ -549,7 +549,7 @@ mod evm_circuit_stats {
                 N_PHASE2_COPY_COLUMNS,
             },
             step::ExecutionState,
-            table::{FixedTableTag, FixedTableTagIter},
+            table::FixedTableTag,
             EvmCircuit, FIXED_TABLE_ROWS, FIXED_TABLE_ROWS_NO_BITWISE,
         },
         stats::print_circuit_stats_by_states,
