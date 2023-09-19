@@ -1,6 +1,6 @@
 use super::*;
 use eth_types::{Bytes, Word};
-use log::{info, warn};
+use log::info;
 use serde::Deserialize;
 use std::collections::HashMap;
 

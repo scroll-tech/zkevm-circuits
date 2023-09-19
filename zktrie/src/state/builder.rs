@@ -176,6 +176,12 @@ impl AsRef<Word> for StorageData {
     }
 }
 
+impl From<StorageData> for Word {
+    fn from(data: StorageData) -> Self {
+        data.0
+    }
+}
+
 impl From<zktrie::StoreData> for StorageData {
     fn from(store_field: zktrie::StoreData) -> Self {
         Self(Word::from(store_field))

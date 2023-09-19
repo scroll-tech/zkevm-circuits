@@ -2,7 +2,7 @@
 use eth_types::{Address, Hash, Word};
 use mpt_circuits::MPTProofType;
 
-use std::{collections::HashMap, io::Error};
+use std::{collections::HashSet, io::Error};
 pub use zktrie::{Hash as ZkTrieHash, ZkMemoryDb, ZkTrie, ZkTrieNode};
 
 pub mod builder;
@@ -16,6 +16,8 @@ use std::{cell::RefCell, fmt, rc::Rc};
 pub struct ZktrieState {
     zk_db: RefCell<Rc<ZkMemoryDb>>,
     trie_root: ZkTrieHash,
+    addr_cache: HashSet<Address>,
+    storage_cache: HashSet<(Address, Word)>,
 }
 
 //unsafe impl Send for ZktrieState {}
@@ -50,6 +52,8 @@ impl ZktrieState {
         Self {
             zk_db: RefCell::new(ZkMemoryDb::new()),
             trie_root: state_root.0,
+            addr_cache: HashSet::new(),
+            storage_cache: HashSet::new(),
         }
     }
 
@@ -100,32 +104,6 @@ impl ZktrieState {
         })
     }    
 
-    /// incremental updating for account from external data, catch each written of new account in
-    /// tries
-    pub fn update_account_from_proofs<'d, BYTES>(
-        &mut self,
-        account_proofs: impl Iterator<Item = (&'d Address, BYTES)>,
-        mut on_account: impl FnMut(&Address, &AccountData) -> Result<(), Error> + 'd,
-    ) -> Result<(), Error>
-    where
-        BYTES: IntoIterator<Item = &'d [u8]>,
-    {
-        Ok(())
-    }
-
-    /// incremental updating for storage from external data, catch each written of new (non-zero)
-    /// value in tries
-    pub fn update_storage_from_proofs<'d, BYTES>(
-        &mut self,
-        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES)>,
-        mut on_storage: impl FnMut(&(Address, Word), &StorageData) -> Result<(), Error> + 'd,
-    ) -> Result<(), Error>
-    where
-        BYTES: IntoIterator<Item = &'d [u8]>,
-    {
-        Ok(())
-    }
-
     /// incremental updating nodes in db from external data
     pub fn update_from_trace<'d, BYTES1, BYTES2>(
         &mut self,
@@ -137,8 +115,13 @@ impl ZktrieState {
         BYTES2: IntoIterator<Item = &'d [u8]>,
     {
         let proofs = account_proofs
+            .filter(|(&addr, _)|self.addr_cache.insert(addr))
             .flat_map(|(_, bytes)| bytes)
-            .chain(storage_proofs.flat_map(|(_, _, bytes)| bytes))
+            .chain(
+                storage_proofs
+                .filter(|(&addr, &key, _)|self.storage_cache.insert((addr, key)))
+                .flat_map(|(_, _, bytes)| bytes)
+            )
             .chain(additional_proofs);
         let mut zk_db = self.zk_db.borrow_mut();
         for bytes in proofs {
