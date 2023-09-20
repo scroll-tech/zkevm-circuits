@@ -1,17 +1,23 @@
 #![allow(missing_docs)]
 //! wrapping of mpt-circuit
+// #[cfg(test)]
+// use crate::mpt_circuit::mpt;
 use crate::{
     table::{LookupTable, MptTable, PoseidonTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
 use eth_types::Field;
+#[cfg(test)]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Value},
     halo2curves::bn256::Fr,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
+#[cfg(test)]
+use mpt_zktrie::mpt_circuits::gadgets::mpt_update::hash_traces;
 use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
 
 impl PoseidonLookup for PoseidonTable {
@@ -135,9 +141,9 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 impl Circuit<Fr> for MptCircuit<Fr> {
-    type Config = (MptCircuitConfig<Fr>, Challenges);
+    type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -149,7 +155,7 @@ impl Circuit<Fr> for MptCircuit<Fr> {
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let challenges = Challenges::construct(meta);
-        let poseidon_table = PoseidonTable::dev_construct(meta);
+        let poseidon_table = PoseidonTable::construct(meta);
         let mpt_table = MptTable::construct(meta);
 
         let config = {
@@ -163,15 +169,22 @@ impl Circuit<Fr> for MptCircuit<Fr> {
             )
         };
 
-        (config, challenges)
+        (config, poseidon_table, challenges)
     }
 
     fn synthesize(
         &self,
-        (config, challenges): Self::Config,
+        (mpt_config, poseidon_table, challenges): Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        let poseidon_table_rows: Vec<_> = hash_traces(&self.proofs)
+            .iter()
+            .map(|([left, right], domain, hash)| {
+                [*hash, *left, *right, Fr::zero(), *domain, Fr::one()].map(Value::known)
+            })
+            .collect();
+        poseidon_table.load(&mut layouter, &poseidon_table_rows)?;
         let challenges = challenges.values(&layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
+        self.synthesize_sub(&mpt_config, &challenges, &mut layouter)
     }
 }
