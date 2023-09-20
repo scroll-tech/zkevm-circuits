@@ -178,12 +178,20 @@ impl CircuitCapacityChecker {
                 // notice the trace has included all code required for builidng witness block,
                 // so we do not need to pick them from previous one, but we still keep the
                 // old codedb in previous run for some dedup work
-                let mut builder = CircuitInputBuilder::new_with_trie_state(
-                    sdb,
-                    CodeDB::new(),
-                    mpt_state,
-                    &builder_block,
-                );
+                let mut builder = if !self.light_mode {
+                    CircuitInputBuilder::new_with_trie_state(
+                        sdb,
+                        CodeDB::new(),
+                        mpt_state,
+                        &builder_block,
+                    )                    
+                } else {
+                    CircuitInputBuilder::new(
+                        sdb,
+                        CodeDB::new(),
+                        &builder_block,
+                    )                    
+                };
                 builder.add_more_l2_trace(&txs[0], txs.len() > 1)?;
                 (builder, Some(code_db))
             } else {
@@ -201,7 +209,6 @@ impl CircuitCapacityChecker {
         let witness_block = block_traces_to_witness_block_with_updated_state(
             traces,
             &mut estimate_builder,
-            self.light_mode,
         )?;
         let mut rows = calculate_row_usage_of_witness_block(&witness_block)?;
 
@@ -229,6 +236,14 @@ impl CircuitCapacityChecker {
         let tx_row_usage = RowUsage::from_row_usage_details(row_usage_details);
         self.row_usages.push(tx_row_usage.clone());
         self.acc_row_usage.add(&tx_row_usage);
+
+        let mpt_state = estimate_builder
+            .mpt_init_state
+            .take()
+            .and_then(|mut state|{
+                state.switch_to(new_root)
+            });
+
 
         self.builder_ctx.replace((
             code_db,
