@@ -481,7 +481,7 @@ pub fn block_convert<F: Field>(
     };
 
     let mpt_updates = MptUpdates::from_rws_with_mock_state_roots(
-        &rws.table_assignments(),
+        &rws.table_assignments_unsorted(),
         block.prev_state_root,
         block.end_state_root(),
     );

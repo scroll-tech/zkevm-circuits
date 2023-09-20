@@ -183,8 +183,14 @@ impl RwMap {
         (padding.chain(rows.into_iter()).collect(), padding_length)
     }
     /// Build Rws for assignment
+    #[inline(always)]
+    pub fn table_assignments_unsorted(&self) -> Vec<Rw> {
+        self.0.values().flatten().cloned().collect()
+    }
+
+    /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
-        let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
+        let mut rows = self.table_assignments_unsorted();
         rows.sort_by_cached_key(Rw::as_key);
         rows
     }

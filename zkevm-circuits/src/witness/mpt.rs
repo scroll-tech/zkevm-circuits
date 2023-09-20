@@ -4,7 +4,6 @@ use crate::{
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
-use itertools::Itertools;
 #[cfg(test)]
 use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 use mpt_zktrie::{
@@ -208,14 +207,14 @@ impl MptUpdates {
     ) -> Self {
         log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
         let rows_len = rows.len();
-        let updates: BTreeMap<_, _> = rows
-            .iter()
-            .group_by(|row| key(row))
+        let mut updates = BTreeMap::new();
+        for (key, row) in rows.iter().filter_map(|row| key(row).map(|key| (key, row))) {
+            updates.entry(key).or_insert_with(|| Vec::new()).push(*row);
+        }
+        let updates: BTreeMap<_, _> = updates
             .into_iter()
-            .filter_map(|(key, rows)| key.map(|key| (key, rows)))
             .enumerate()
             .map(|(i, (key, rows))| {
-                let rows: Vec<Rw> = rows.copied().collect_vec();
                 let first = &rows[0];
                 let last = rows.iter().last().unwrap_or(first);
                 let key_exists = key;
