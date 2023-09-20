@@ -5,7 +5,7 @@ use bus_mapping::{
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
     Error,
 };
-use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
@@ -614,9 +614,9 @@ impl Rw {
             | Self::AccountStorage {
                 account_address, ..
             } => Some(*account_address),
-            Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
+            Self::Memory { memory_address, .. } => Some(Address::from_low_u64_be(*memory_address)),
             Self::Stack { stack_pointer, .. } => {
-                Some(U256::from(*stack_pointer as u64).to_address())
+                Some(Address::from_low_u64_be(*stack_pointer as u64))
             }
             Self::TxLog {
                 log_id,
