@@ -15,7 +15,7 @@ mod super_circuit;
 pub use self::builder::{
     block_traces_to_witness_block, block_traces_to_witness_block_with_updated_state,
     calculate_row_usage_of_trace, calculate_row_usage_of_witness_block, check_batch_capacity,
-    get_super_circuit_params, normalize_withdraw_proof, validite_block_traces,
+    get_super_circuit_params, validite_block_traces,
 };
 pub use super_circuit::SuperCircuit;
 
