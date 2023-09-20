@@ -730,11 +730,19 @@ pub fn run_test(
             mock_prove(&test_id, &witness_block);
         }
     };
+    log::debug!("balance_overflow = {balance_overflow}");
+    log::debug!(
+        "has_l2_unsupported_tx = {}",
+        builder.has_l2_unsupported_tx()
+    );
     let skip_post = if cfg!(feature = "scroll") {
-        balance_overflow || builder.should_skip_post_check()
+        balance_overflow || builder.has_l2_unsupported_tx()
     } else {
         false
     };
+    if skip_post {
+        log::warn!("skip post check");
+    }
     if !skip_post {
         {
             // fill these "untouched" storage slots

@@ -702,9 +702,9 @@ impl<'a> CircuitInputBuilder {
 
 #[cfg(feature = "test")]
 impl CircuitInputBuilder {
-    /// test if this circuit should skip post state check
-    pub fn should_skip_post_check(&self) -> bool {
-        self.block.txs.iter().any(|tx| tx.should_skip_post_check())
+    /// test if this circuit has any unsupported tx
+    pub fn has_l2_unsupported_tx(&self) -> bool {
+        self.block.txs.iter().any(|tx| tx.has_l2_unsupported_step())
     }
 }
 
