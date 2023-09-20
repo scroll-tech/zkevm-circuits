@@ -481,6 +481,7 @@ impl Transaction {
                     | ExecState::Precompile(PrecompileCalls::Ripemd160)
                     | ExecState::Precompile(PrecompileCalls::Modexp)
                     | ExecState::Precompile(PrecompileCalls::Bn128Pairing)
+                    | ExecState::Precompile(PrecompileCalls::Blake2F)
             )
         });
 
