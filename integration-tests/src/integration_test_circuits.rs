@@ -313,8 +313,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_num,
             block_tag
         );
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         let circuit = C::new_from_block(&block);
         let instance = circuit.instance();
 
