@@ -55,8 +55,14 @@ impl From<&ZktrieState> for WitnessGenerator {
 
 impl WitnessGenerator {
     /// dump inner data for debugging
-    pub fn dump(&self) {
-        // log::info!("account data {:#?}", self.accounts);
+    pub fn dump<'a>(&self, addrs: impl Iterator<Item = &'a Address>) {
+        for addr in addrs {
+            let acc = self
+                .trie
+                .get_account(addr.as_bytes())
+                .map(AccountData::from);
+            log::info!("account data {:#x}: {:#?}", addr, acc);
+        }
     }
     /// get account proof
     pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
