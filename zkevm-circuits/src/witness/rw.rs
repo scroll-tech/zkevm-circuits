@@ -185,7 +185,7 @@ impl RwMap {
     /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        rows.sort_by_key(Rw::as_key);
+        rows.sort_by_cached_key(Rw::as_key);
         rows
     }
 
