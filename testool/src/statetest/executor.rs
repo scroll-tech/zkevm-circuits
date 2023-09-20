@@ -4,10 +4,9 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::CodeDB,
 };
-#[cfg(feature = "scroll")]
-use eth_types::ToBigEndian;
 use eth_types::{
-    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToWord, H256, U256, U64,
+    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
+    U64,
 };
 use ethers_core::{
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
