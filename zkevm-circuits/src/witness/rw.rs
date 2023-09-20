@@ -1,11 +1,15 @@
 #![allow(missing_docs)]
 use std::collections::HashMap;
 
-use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
+use bus_mapping::{
+    operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
+    Error,
+};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
+use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 use crate::{
     evm_circuit::util::rlc,
@@ -14,6 +18,9 @@ use crate::{
 };
 
 use super::MptUpdates;
+
+const ERR_MSG_FIRST: &str = "first access reads don't change value";
+const ERR_MSG_NON_FIRST: &str = "non-first access reads don't change value";
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
@@ -41,12 +48,57 @@ impl RwMap {
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }
+
+    /// Check value but don't construct mpt
+    pub fn check_value(&self) -> Result<(), Error> {
+        let rows = self.table_assignments_with_idx();
+        let errs = rows
+            .into_values()
+            .par_bridge()
+            .flat_map(|group| {
+                // assumption: errs is mostly empty, Vec::new won't do heap allocation
+                let mut errs = Vec::new();
+                debug_assert!(!group.is_empty(), "group cannot be empty");
+                let mut group = group.into_iter();
+                let (idx, first) = group.next().unwrap();
+                let mut prev = first;
+                if !first.is_write() {
+                    // first access reads don't change value
+                    if first.value_word() != U256::zero()
+                        && !(first.tag() == RwTableTag::TxAccessListAccountStorage
+                            || first.tag() == RwTableTag::Account
+                            || first.tag() == RwTableTag::AccountStorage)
+                    {
+                        errs.push((idx, ERR_MSG_FIRST, first, None));
+                    }
+                }
+                for (idx, rw) in group {
+                    if !rw.is_write() {
+                        // non-first access reads don't change value
+                        if rw.value_word() != prev.value_word() {
+                            errs.push((idx, ERR_MSG_NON_FIRST, rw, Some(prev)));
+                        }
+                    }
+                    prev = rw;
+                }
+                errs
+            })
+            .collect::<Vec<_>>();
+        if !errs.is_empty() {
+            log::error!("rw value check err num: {}", errs.len());
+            for e in errs {
+                log::error!("err is {:?}", e);
+            }
+            Err(Error::InternalError("check rw failed"))
+        } else {
+            log::debug!("rw value check err num: {}", errs.len());
+            Ok(())
+        }
+    }
+
     /// Check value in the same way like StateCircuit
-    /// TODO: speedup this
-    pub fn check_value(&self) {
+    pub fn check_value_strict(&self) {
         let mock_rand = Fr::from(0x1000u64);
-        let err_msg_first = "first access reads don't change value";
-        let err_msg_non_first = "non-first access reads don't change value";
         let rows = self.table_assignments();
         let updates = MptUpdates::from_rws_with_mock_state_roots(
             &rows,
@@ -80,14 +132,14 @@ impl RwMap {
                     if value != init_value {
                         // EIP2930
                         if row.tag() != RwTableTag::TxAccessListAccountStorage {
-                            errs.push((idx, err_msg_first, *row, None));
+                            errs.push((idx, ERR_MSG_FIRST, *row, None));
                         }
                     }
                 } else {
                     // value == prev_value
                     let prev_value = prev_row.value_assignment::<Fr>(mock_rand);
                     if value != prev_value {
-                        errs.push((idx, err_msg_non_first, *row, Some(*prev_row)));
+                        errs.push((idx, ERR_MSG_NON_FIRST, *row, Some(*prev_row)));
                     }
                 }
             }
@@ -133,17 +185,23 @@ impl RwMap {
     /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        rows.sort_by_key(|row| {
-            (
-                row.tag() as u64,
-                row.id().unwrap_or_default(),
-                row.address().unwrap_or_default(),
-                row.field_tag().unwrap_or_default(),
-                row.storage_key().unwrap_or_default(),
-                row.rw_counter(),
-            )
-        });
+        rows.sort_by_key(Rw::as_key);
         rows
+    }
+
+    /// Build Rws for assignment
+    pub fn table_assignments_with_idx(&self) -> HashMap<RwKey, Vec<(usize, Rw)>> {
+        // key/value ratio is about 23-24
+        // each key has about ~250 rows
+        // each Rw has size of 168 bytes
+        // so each array has size of ~42KB
+        let total_len = self.0.values().map(|v| v.len()).sum::<usize>();
+        // take roughly estimated capacity
+        let mut map = HashMap::<RwKey, Vec<(usize, Rw)>>::with_capacity(total_len / 22);
+        for (idx, row) in self.0.values().flatten().copied().enumerate() {
+            map.entry(row.as_key()).or_default().push((idx, row));
+        }
+        map
     }
 
     /// Return rw number for the specified tag.
@@ -151,6 +209,9 @@ impl RwMap {
         self.0.get(&tag).map(|v| v.len()).unwrap_or_default()
     }
 }
+
+/// Rw key
+pub type RwKey = (u64, usize, Address, u64, Word);
 
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
@@ -663,6 +724,21 @@ impl Rw {
         }
     }
 
+    pub(crate) fn value_word(&self) -> U256 {
+        match self {
+            Self::Start { .. } => U256::zero(),
+            Self::CallContext { value, .. } => *value,
+            Self::Account { value, .. }
+            | Self::AccountStorage { value, .. }
+            | Self::Stack { value, .. }
+            | Self::Memory { value, .. }
+            | Self::TxLog { value, .. } => *value,
+            Self::TxAccessListAccount { is_warm, .. }
+            | Self::TxAccessListAccountStorage { is_warm, .. } => U256::from(*is_warm as u64),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => U256::from(*value),
+        }
+    }
+
     pub(crate) fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
             Self::Account {
@@ -710,6 +786,16 @@ impl Rw {
             } => Some(rlc::value(&committed_value.to_le_bytes(), randomness)),
             _ => None,
         }
+    }
+
+    pub(crate) fn as_key(&self) -> RwKey {
+        (
+            self.tag() as u64,
+            self.id().unwrap_or_default(),
+            self.address().unwrap_or_default(),
+            self.field_tag().unwrap_or_default(),
+            self.storage_key().unwrap_or_default(),
+        )
     }
 }
 

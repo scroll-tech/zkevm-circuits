@@ -271,9 +271,6 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     }
 }
 
-/// Using values like this will make it easier to debug...
-pub const DEFAULT_RAND: u128 = 0x10000;
-
 #[derive(Debug)]
 pub(crate) struct CircuitStats {
     num_constraints: usize,

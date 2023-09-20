@@ -1,6 +1,6 @@
 use super::circuit::{
     MAX_BYTECODE, MAX_CALLDATA, MAX_EXP_STEPS, MAX_KECCAK_ROWS, MAX_MPT_ROWS, MAX_POSEIDON_ROWS,
-    MAX_RWS, MAX_VERTICLE_ROWS,
+    MAX_RWS, MAX_VERTICAL_ROWS,
 };
 
 use super::circuit::{
@@ -53,14 +53,14 @@ impl RowUsage {
             (MAX_BYTECODE, 0.95),      // bytecode
             (MAX_RWS, 0.95),           // copy
             (MAX_KECCAK_ROWS, 0.95),   // keccak
-            (MAX_VERTICLE_ROWS, 0.95), // tx
+            (MAX_VERTICAL_ROWS, 0.95), // tx
             (MAX_CALLDATA, 0.95),      // rlp
             (7 * MAX_EXP_STEPS, 0.95), // exp
             (MAX_KECCAK_ROWS, 0.95),   // modexp
             (MAX_RWS, 0.95),           // pi
             (MAX_POSEIDON_ROWS, 0.95), // poseidon
-            (MAX_VERTICLE_ROWS, 0.95), // sig
-            (MAX_VERTICLE_ROWS, 1.0),  // ecc
+            (MAX_VERTICAL_ROWS, 0.95), // sig
+            (MAX_VERTICAL_ROWS, 1.0),  // ecc
             (MAX_MPT_ROWS, 0.95),      // mpt
         ]
         .map(|(limit, confidence)| (limit as f32 * confidence) as usize);

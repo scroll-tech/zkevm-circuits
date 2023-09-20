@@ -15,7 +15,7 @@ use rand_chacha::ChaCha20Rng;
 use std::env::set_var;
 
 use crate::{super_circuit::test::block_2tx, witness::block_convert};
-use bus_mapping::mock::BlockData;
+use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::{bytecode, geth_types::GethData};
 use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
@@ -65,7 +65,12 @@ fn block_2txs() -> Block<Fr> {
     use crate::super_circuit::test::block_1tx;
 
     let block = block_2tx();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let params = CircuitsParams {
+        max_txs: 2,
+        ..Default::default()
+    };
+    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+        .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();

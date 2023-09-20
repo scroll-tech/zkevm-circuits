@@ -3,7 +3,6 @@ use super::{
     builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof},
     MPTProofType, ZktrieState,
 };
-// use bus_mapping::{state_db::CodeDB, util::KECCAK_CODE_HASH_ZERO};
 use eth_types::{Address, Hash, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use mpt_circuits::serde::{
@@ -49,8 +48,14 @@ impl From<&ZktrieState> for WitnessGenerator {
             .iter()
             // filter out the account data which is empty can provide update applying some
             // convenient
-            .filter(|(_, acc)| !acc.keccak_code_hash.is_zero())
-            .map(|(key, acc)| (*key, *acc))
+            .filter(|(_, acc)| !acc.poseidon_code_hash.is_zero())
+            .map(|(key, acc)| {
+                debug_assert!(
+                    !acc.is_empty(),
+                    "empty account should not be part of trie {key} {acc:?}"
+                );
+                (*key, *acc)
+            })
             .collect();
 
         let storages: HashMap<_, _> = state
@@ -322,7 +327,7 @@ impl WitnessGenerator {
                         // TODO: fix (hypothetical) inconsistency where CREATE gadget allows nonce
                         // to be 1 << 64, but mpt circuit does not support this.
                         assert!(new_val <= Word::from(u64::MAX) + Word::one());
-                        //assert_eq!(old_val.as_u64(), acc_data.nonce);
+                        assert_eq!(old_val.as_u64(), acc_data.nonce);
                         acc_data.nonce = new_val.as_u64();
                     }
                     MPTProofType::BalanceChanged => {
@@ -332,26 +337,14 @@ impl WitnessGenerator {
                     MPTProofType::CodeHashExists => {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
-                        if H256::from(code_hash) != acc_data.keccak_code_hash {
-                            log::trace!(
-                                "codehash {} ->keccak {}(nil)",
-                                H256::from(code_hash),
-                                acc_data.keccak_code_hash
-                            );
-                        }
+                        debug_assert_eq!(H256::from(code_hash), acc_data.keccak_code_hash);
                         new_val.to_big_endian(code_hash.as_mut_slice());
                         acc_data.keccak_code_hash = H256::from(code_hash);
                     }
                     MPTProofType::PoseidonCodeHashExists => {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
-                        if H256::from(code_hash) != acc_data.poseidon_code_hash {
-                            log::trace!(
-                                "codehash {} ->poseidon {}(nil)",
-                                H256::from(code_hash),
-                                acc_data.poseidon_code_hash
-                            );
-                        }
+                        debug_assert_eq!(H256::from(code_hash), acc_data.poseidon_code_hash);
                         new_val.to_big_endian(code_hash.as_mut_slice());
                         acc_data.poseidon_code_hash = H256::from(code_hash);
                     }

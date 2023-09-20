@@ -42,7 +42,7 @@ use strum::IntoEnumIterator;
 /// while decoding a tx of a given format.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpFsmDataTable {
-    /// Transaction index in the batch of txs.
+    /// Transaction index in the chunk of txs.
     pub tx_id: Column<Advice>,
     /// Format of the tx being decoded.
     pub format: Column<Advice>,

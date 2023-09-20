@@ -109,6 +109,13 @@ fn test_edge_cases() {
             good_ecrecover_data.2,
             good_ecrecover_data.3,
         ),
+        // 9. valid msg_hash, r, s, v but pubkey not recovered
+        (
+            word!("0x571b659b539a9da729fca1f2efdd8b07d6a7042e0640ac5ce3a8c5e3445523d7"),
+            word!("0x5d14c6d7824ddecc43d307891c4fae49307e370f827fae93e014796665705800"),
+            word!("0x6b0c5c6fb456b976d50eb155a6a15c9e9e93c4afa99d4cad4d86f4ba0cc175fd"),
+            1u8,
+        ),
     ];
     let signatures = ecrecover_data
         .iter()
@@ -128,7 +135,7 @@ fn test_edge_cases() {
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 8, signatures);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 9, signatures);
 }
 
 #[test]

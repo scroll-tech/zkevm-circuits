@@ -37,7 +37,9 @@ pub struct EcPairingGadget<F> {
     // 1. input_len > 4 * 192
     // 2. input_len % 192 != 0
     input_is_zero: IsZeroGadget<F>,
-    input_lt_769: LtGadget<F, 2>,
+
+    // call_data_len must less than 2^32.
+    input_lt_769: LtGadget<F, 4>,
     input_mod_192: Cell<F>,
     input_div_192: Cell<F>,
     input_mod_192_lt: LtGadget<F, 1>,
@@ -294,6 +296,10 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             // len(input) related assignment.
             self.input_is_zero
                 .assign(region, offset, F::from(call.call_data_length))?;
+            log::trace!(
+                "assign ec pairing exec step: calldata_len = {}",
+                call.call_data_length
+            );
             self.input_lt_769.assign(
                 region,
                 offset,
@@ -429,13 +435,14 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
 #[cfg(test)]
 mod test {
     use bus_mapping::{
+        circuit_input_builder::CircuitsParams,
         evm::{OpcodeId, PrecompileCallArgs},
         precompile::PrecompileCalls,
     };
     use eth_types::{bytecode, evm_types::GasCost, word, ToWord, Word};
     use halo2_proofs::halo2curves::bn256::{G1Affine, G2Affine};
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::{test_ctx::helpers::account_0_code_wallet_0_no_code, TestContext, MOCK_WALLETS};
     use rayon::iter::{ParallelBridge, ParallelIterator};
 
     use crate::test_util::CircuitTestBuilder;
@@ -1047,6 +1054,23 @@ mod test {
                 },
             ]
         };
+        static ref INVALID_LEN_TEST: Vec<PrecompileCallArgs> = {
+            vec![
+                #[cfg(feature = "scroll")]
+                PrecompileCallArgs {
+                    name: "ecPairing (invalid): len(input) > 768",
+                    setup_code: bytecode! {},
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x10340.into(),
+                    ret_offset: 0xC0.into(),
+                    ret_size: 0x20.into(),
+                    value: 1.into(),
+                    address: PrecompileCalls::Bn128Pairing.address().to_word(),
+                    gas: 12_000_000.into(),
+                    ..Default::default()
+                },
+            ]
+        };
     }
 
     #[test]
@@ -1092,6 +1116,44 @@ mod test {
                     TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
                 )
                 .run();
+            })
+    }
+
+    #[test]
+    fn precompile_ec_pairing_invalid_len_test() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
+
+        INVALID_LEN_TEST
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
+
+                let test_ctx: TestContext<2, 1> = TestContext::new(
+                    None,
+                    account_0_code_wallet_0_no_code(bytecode),
+                    |mut txs, accs| {
+                        txs[0]
+                            .from(MOCK_WALLETS[0].clone())
+                            .to(accs[0].address)
+                            .gas(0x1200_0000.into());
+                    },
+                    |block, _txs| block.number(0xcafeu64),
+                )
+                .unwrap();
+                CircuitTestBuilder::new_from_test_ctx(test_ctx)
+                    .params(CircuitsParams {
+                        max_rws: 100_000,
+                        max_copy_rows: 140_000,
+                        ..CircuitsParams::default()
+                    })
+                    .run()
             })
     }
 }
