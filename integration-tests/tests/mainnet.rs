@@ -194,10 +194,11 @@ async fn test_print_circuits_size() {
         let evm_rows = EvmCircuit::get_num_rows_required(&block);
         let keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
 
+        let mock_randomness = Fr::from(0x100u64);
         let challenges = Challenges::mock(
-            Value::known(block.randomness),
-            Value::known(block.randomness),
-            Value::known(block.randomness),
+            Value::known(mock_randomness),
+            Value::known(mock_randomness),
+            Value::known(mock_randomness),
         );
         let keccak_rows = multi_keccak(&keccak_inputs, challenges, None)
             .unwrap()

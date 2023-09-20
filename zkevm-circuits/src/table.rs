@@ -2059,7 +2059,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 pub struct RlpFsmRlpTable {
     /// Whether the row is enabled.
     pub q_enable: Column<Fixed>,
-    /// The transaction's index in the batch.
+    /// The transaction's index in the chunk.
     pub tx_id: Column<Advice>,
     /// The format of the tx being decoded.
     pub format: Column<Advice>,

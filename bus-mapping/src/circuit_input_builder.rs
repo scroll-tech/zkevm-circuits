@@ -84,7 +84,6 @@ pub struct CircuitsParams {
     /// number of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
     pub max_rws: usize,
-    // TODO: evm_rows: Maximum number of rows in the EVM Circuit
     /// Maximum number of txs in the Tx Circuit
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
@@ -93,10 +92,11 @@ pub struct CircuitsParams {
     pub max_rlp_rows: usize,
     /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
-    /// Maximum number of inner blocks in a batch
+    /// Maximum number of inner blocks in a chunk
     pub max_inner_blocks: usize,
     /// Max number of steps that the ExpCircuit can have. Each step is further
     /// expressed in 7 rows
+    /// TODO: change this to max_exp_rows too
     pub max_exp_steps: usize,
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
@@ -204,7 +204,7 @@ impl<'a> CircuitInputBuilder {
         headers: &[BlockHead],
     ) -> Self {
         // lispczz@scroll:
-        // the `block` here is in fact "batch" for l2.
+        // the `block` here is in fact "chunk" for l2.
         // while "headers" in the "block"(usually single tx) for l2.
         // But to reduce the code conflicts with upstream, we still use the name `block`
         Self::new(sdb, code_db, &Block::from_headers(headers, circuits_params))
@@ -296,21 +296,21 @@ impl<'a> CircuitInputBuilder {
             eth_block.transactions.len()
         );
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let batch_tx_idx = self.block.txs.len();
+            let chunk_tx_idx = self.block.txs.len();
             if self.block.txs.len() >= self.block.circuits_params.max_txs {
-                log::warn!(
-                    "skip tx outside MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
+                log::error!(
+                    "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
                     self.block.circuits_params.max_txs,
-                    batch_tx_idx,
+                    chunk_tx_idx,
                     tx.transaction_index.unwrap_or_default(),
                     tx.hash
                 );
-                continue;
+                return Err(Error::InternalError("tx num overflow"));
             }
             let geth_trace = &geth_traces[tx_index];
             log::info!(
                 "handling {}th tx(inner idx: {}): {:?} rwc {:?}, to: {:?}, input_len {:?}",
-                batch_tx_idx,
+                chunk_tx_idx,
                 tx.transaction_index.unwrap_or_default(),
                 tx.hash,
                 self.block_ctx.rwc,
@@ -318,7 +318,7 @@ impl<'a> CircuitInputBuilder {
                 tx.input.len(),
             );
             let mut tx = tx.clone();
-            // needed for multi block feature
+            // Chunk can contain multi blocks, so transaction_index needs to be updated
             tx.transaction_index = Some(self.block.txs.len().into());
             self.handle_tx(
                 &tx,
@@ -326,8 +326,8 @@ impl<'a> CircuitInputBuilder {
                 check_last_tx && tx_index + 1 == eth_block.transactions.len(),
             )?;
             log::debug!(
-                "after handle {}th tx: rwc {:?}, block total gas {:?}",
-                batch_tx_idx,
+                "after handle {}th tx: rwc {:?}, total gas {:?}",
+                chunk_tx_idx,
                 self.block_ctx.rwc,
                 self.block_ctx.cumulative_gas_used
             );
@@ -378,7 +378,7 @@ impl<'a> CircuitInputBuilder {
             self.set_end_block()?;
         }
         log::info!(
-            "handling block done, total gas {:?}",
+            "handle_block_inner, total gas {:?}",
             self.block_ctx.cumulative_gas_used
         );
         Ok(())

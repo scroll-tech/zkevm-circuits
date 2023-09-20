@@ -181,8 +181,8 @@ impl BlockHead {
 /// Circuit Input related to a block.
 #[derive(Debug, Default, Clone)]
 pub struct Block {
-    /// The `Block` struct is in fact "Batch" for l2
-    /// while "headers" are "Blocks" insides a batch
+    /// The `Block` struct is in fact "chunk" for l2
+    /// while "headers" are "Blocks" insides a chunk
     pub headers: BTreeMap<u64, BlockHead>,
     /// State root of the previous block
     pub prev_state_root: Word,
@@ -212,6 +212,8 @@ pub struct Block {
     pub start_l1_queue_index: u64,
     /// IO to/from the precompiled contract calls.
     pub precompile_events: PrecompileEvents,
+    /// circuit capacity counter
+    copy_counter: usize,
 }
 
 impl Block {
@@ -326,7 +328,19 @@ impl Block {
 impl Block {
     /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
+        self.copy_counter += event.full_length() as usize;
         self.copy_events.push(event);
+        // Each byte needs 2 rows
+        // TODO: magic num
+        if self.copy_counter > 500_000 {
+            panic!("copy event len overflow {}", self.copy_counter);
+        }
+    }
+    fn copy_event_total_len(&self) -> usize {
+        self.copy_events
+            .iter()
+            .map(|c| c.full_length() as usize)
+            .sum()
     }
     /// Push an exponentiation event to the block.
     pub fn add_exp_event(&mut self, event: ExpEvent) {

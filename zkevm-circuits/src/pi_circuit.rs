@@ -255,7 +255,7 @@ pub struct PiCircuitConfig<F: Field> {
     max_txs: usize,
     /// Max number of supported calldata bytes
     max_calldata: usize,
-    /// Max number of supported inner blocks in a batch
+    /// Max number of supported inner blocks in a chunk
     max_inner_blocks: usize,
 
     /// dedicated column to store the difficulty, coinbase constants
@@ -303,7 +303,7 @@ pub struct PiCircuitConfigArgs<F: Field> {
     pub max_txs: usize,
     /// Max number of supported calldata bytes
     pub max_calldata: usize,
-    /// Max number of supported blocks in a batch
+    /// Max number of supported blocks in a chunk
     pub max_inner_blocks: usize,
     /// TxTable
     pub tx_table: TxTable,
