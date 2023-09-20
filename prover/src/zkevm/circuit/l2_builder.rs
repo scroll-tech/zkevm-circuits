@@ -8,7 +8,7 @@ use bus_mapping::{
 use eth_types::{l2_types::BlockTrace, ToWord, H256};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
-use mpt_zktrie::state::ZktrieState;
+use mpt_zktrie::state::{ZkTrieHash, ZktrieState};
 use once_cell::sync::Lazy;
 use std::time::Instant;
 use zkevm_circuits::{
@@ -335,20 +335,23 @@ pub fn block_traces_to_witness_block_with_updated_state(
         witness_block.circuits_params
     );
 
-    if let Some(state) = &builder.mpt_init_state {
-        let root_after = if *state.root() != [0u8; 32] {
+    if let Some(state) = &mut builder.mpt_init_state {
+        if *state.root() != [0u8; 32] {
             log::debug!("block_apply_mpt_state");
-            let new_root = block_apply_mpt_state(&mut witness_block, state);
+            block_apply_mpt_state(&mut witness_block, state);
             log::debug!("block_apply_mpt_state done");
-            new_root
-        } else {
-            Default::default()
         };
+        let root_after = witness_block.state_root.unwrap_or_default();
+
         log::debug!(
             "finish replay trie updates, root {}, root after {:#x?}",
             hex::encode(state.root()),
             root_after,
-        );    
+        );
+        // switch state to new root
+        let mut new_root_hash = ZkTrieHash::default();
+        root_after.to_big_endian(&mut new_root_hash);
+        assert!(state.switch_to(new_root_hash));
     }
 
     Ok(witness_block)
