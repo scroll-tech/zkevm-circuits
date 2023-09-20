@@ -354,6 +354,8 @@ fn trace_config_to_witness_block_l2(
         .iter()
         .map(From::from)
         .collect::<Vec<_>>();
+    // if the trace exceed max steps, we cannot fit it into circuit
+    // but we still want to make it go through bus-mapping generation
     let exceed_max_steps = match check_geth_traces(&geth_traces, &suite, verbose) {
         Err(StateTestError::SkipTestMaxSteps(steps)) => steps,
         Err(e) => return Err(e),
@@ -373,6 +375,8 @@ fn trace_config_to_witness_block_l2(
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
     zkevm_circuits::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    // as mentioned above, we cannot fit the trace into circuit
+    // stop here
     if exceed_max_steps != 0 {
         return Err(StateTestError::SkipTestMaxSteps(exceed_max_steps));
     }
@@ -735,15 +739,15 @@ pub fn run_test(
         "has_l2_unsupported_tx = {}",
         builder.has_l2_unsupported_tx()
     );
-    let skip_post = if cfg!(feature = "scroll") {
+    let skip_post_check = if cfg!(feature = "scroll") {
         balance_overflow || builder.has_l2_unsupported_tx()
     } else {
         false
     };
-    if skip_post {
+    if skip_post_check {
         log::warn!("skip post check");
     }
-    if !skip_post {
+    if !skip_post_check {
         {
             // fill these "untouched" storage slots
             // It is better to fill these info after (instead of before) bus-mapping re-exec.
