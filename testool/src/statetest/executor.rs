@@ -609,7 +609,6 @@ pub fn run_test(
     // get the geth traces
     let (_, mut trace_config, post) = into_traceconfig(st.clone());
 
-    #[cfg(feature = "scroll")]
     let balance_overflow = trace_config
         .accounts
         .iter()
