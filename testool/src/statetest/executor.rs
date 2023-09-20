@@ -430,7 +430,7 @@ pub const MAX_BYTECODE: usize = 600_000;
 pub const MAX_MPT_ROWS: usize = 1_000_000;
 pub const MAX_KECCAK_ROWS: usize = 1_000_000;
 pub const MAX_POSEIDON_ROWS: usize = 1_000_000;
-pub const MAX_VERTICLE_ROWS: usize = 1_000_000;
+pub const MAX_VERTICAL_ROWS: usize = 1_000_000;
 pub const MAX_RWS: usize = 1_000_000;
 pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
 pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
@@ -450,8 +450,8 @@ fn get_sub_circuit_limit_l2() -> Vec<usize> {
         MAX_KECCAK_ROWS,   // modexp
         MAX_RWS,           // pi
         MAX_POSEIDON_ROWS, // poseidon
-        MAX_VERTICLE_ROWS, // sig
-        MAX_VERTICLE_ROWS, // ecc
+        MAX_VERTICAL_ROWS, // sig
+        MAX_VERTICAL_ROWS, // ecc
         MAX_MPT_ROWS,      // mpt
     ]
 }
@@ -467,7 +467,7 @@ fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_keccak_rows: MAX_KECCAK_ROWS,
         max_poseidon_rows: MAX_POSEIDON_ROWS,
-        max_vertical_circuit_rows: MAX_VERTICLE_ROWS,
+        max_vertical_circuit_rows: MAX_VERTICAL_ROWS,
         max_exp_steps: MAX_EXP_STEPS,
         max_mpt_rows: MAX_MPT_ROWS,
         max_rlp_rows: MAX_RLP_ROWS,
@@ -514,7 +514,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
         max_exp_steps: 5000,
         max_keccak_rows: 0, // dynamic?
         max_poseidon_rows: 0,
-        max_vertical_circuit_rows: MAX_VERTICLE_ROWS, // is it good?
+        max_vertical_circuit_rows: MAX_VERTICAL_ROWS, // is it good?
         max_inner_blocks: 64,
         max_rlp_rows: 6000,
         max_ec_ops: PrecompileEcParams {

@@ -33,7 +33,7 @@ pub const MAX_BYTECODE: usize = 600_000;
 pub const MAX_MPT_ROWS: usize = 1_000_000;
 pub const MAX_KECCAK_ROWS: usize = 1_000_000;
 pub const MAX_POSEIDON_ROWS: usize = 1_000_000;
-pub const MAX_VERTICLE_ROWS: usize = 1_000_000;
+pub const MAX_VERTICAL_ROWS: usize = 1_000_000;
 pub const MAX_RWS: usize = 1_000_000;
 pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
 pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
@@ -51,7 +51,7 @@ pub fn get_super_circuit_params() -> CircuitsParams {
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_keccak_rows: MAX_KECCAK_ROWS,
         max_poseidon_rows: MAX_POSEIDON_ROWS,
-        max_vertical_circuit_rows: MAX_VERTICLE_ROWS,
+        max_vertical_circuit_rows: MAX_VERTICAL_ROWS,
         max_exp_steps: MAX_EXP_STEPS,
         max_mpt_rows: MAX_MPT_ROWS,
         max_rlp_rows: MAX_RLP_ROWS,
