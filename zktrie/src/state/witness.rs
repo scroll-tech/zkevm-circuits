@@ -469,12 +469,7 @@ fn decode_proof_for_mpt_path(
         path_bit_now *= 2_u32;
     }
 
-    let node = if Some(expected_key) == trie_proof.key.as_ref().map(ToWord::to_word) {
-        trie_proof.data.0
-    } else {
-        None
-    };
-
+    let node = trie_proof.data.0;
     let leaf = trie_proof.key.as_ref().map(|h| SMTNode {
         node_type: trie_proof.key_type.expect("key type should has been set"),
         value: smt_hash_from_bytes(
@@ -485,6 +480,12 @@ fn decode_proof_for_mpt_path(
         ),
         sibling: smt_hash_from_bytes(h.as_bytes()),
     });
+
+    let node = if trie_proof.key.as_ref().map(ToWord::to_word) == Some(expected_key) {
+        node
+    } else {
+        None
+    };
 
     Ok((
         SMTPath {
