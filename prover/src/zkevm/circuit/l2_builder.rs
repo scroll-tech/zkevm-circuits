@@ -202,19 +202,17 @@ fn prepare_default_builder(
     builder_block.prev_state_root = old_root.to_word();
     let code_db = CodeDB::new();
 
-    if let Some(mpt_state) = initial_mpt_state {
+    if let Some(mpt_state) = &initial_mpt_state {
         assert_eq!(
             H256::from_slice(mpt_state.root()),
             old_root,
             "the provided zktrie state must be the prev state"
         );
-        let state_db = StateDB::from(&mpt_state);
-        let mut builder = CircuitInputBuilder::new_with_trie_state(state_db, code_db, &builder_block, mpt_state);
-        builder.mpt_init_state = mpt_state;
-        builder
-    } else {
-        CircuitInputBuilder::new(StateDB::new(), code_db, &builder_block)
     }
+
+    let mut builder = CircuitInputBuilder::new(StateDB::new(), code_db, &builder_block);
+    builder.mpt_init_state = initial_mpt_state;
+    builder
 }
 
 /// check if block traces match preset parameters
@@ -342,15 +340,20 @@ pub fn block_traces_to_witness_block_with_updated_state(
         witness_block.circuits_params
     );
 
-    if !light_mode && *builder.mpt_init_state.unwrap().root() != [0u8; 32] {
-        log::debug!("block_apply_mpt_state");
-        block_apply_mpt_state(&mut witness_block, &builder.mpt_init_state.unwrap());
-        log::debug!("block_apply_mpt_state done");
+    if !light_mode {
+        let state = builder.mpt_init_state.as_ref()
+        .expect("init state must be set for non-light mode");
+        if *state.root() != [0u8; 32]{
+            log::debug!("block_apply_mpt_state");
+            block_apply_mpt_state(&mut witness_block, state);
+            log::debug!("block_apply_mpt_state done");    
+        }
+        log::debug!(
+            "finish replay trie updates, root {}",
+            hex::encode(state.root())
+        );        
     }
-    log::debug!(
-        "finish replay trie updates, root {}",
-        hex::encode(builder.mpt_init_state.unwrap().root())
-    );
+
     Ok(witness_block)
 }
 
