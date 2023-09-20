@@ -585,6 +585,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn id(&self) -> Option<usize> {
         match self {
             Self::AccountStorage { tx_id, .. }
@@ -600,6 +601,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn address(&self) -> Option<Address> {
         match self {
             Self::TxAccessListAccount {
@@ -634,6 +636,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn field_tag(&self) -> Option<u64> {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
@@ -652,6 +655,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn storage_key(&self) -> Option<Word> {
         match self {
             Self::AccountStorage { storage_key, .. }
@@ -788,6 +792,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn as_key(&self) -> RwKey {
         (
             self.tag() as u64,
