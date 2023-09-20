@@ -44,7 +44,7 @@ pub use ethers_core::{
 
 use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Serialize};
-use std::{collections::HashMap, fmt, str::FromStr};
+use std::{collections::HashMap, fmt, str::FromStr, sync::Arc};
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
@@ -350,7 +350,7 @@ struct GethExecStepInternal {
     #[serde(rename = "gasCost")]
     gas_cost: GasCost,
     depth: u16,
-    error: Option<String>,
+    error: Option<Arc<String>>,
     // stack is in hex 0x prefixed
     #[serde(default)]
     stack: Vec<DebugU256>,
@@ -373,7 +373,7 @@ pub struct GethExecStep {
     pub gas_cost: GasCost,
     pub refund: Gas,
     pub depth: u16,
-    pub error: Option<String>,
+    pub error: Option<Arc<String>>,
     // stack is in hex 0x prefixed
     pub stack: Stack,
     // memory is in chunks of 32 bytes, in hex

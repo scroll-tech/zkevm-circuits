@@ -6,7 +6,7 @@ use crate::{
 };
 use ethers_core::types::{Address, Bytes, U256, U64};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 /// l2 block full trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
@@ -213,7 +213,7 @@ pub struct ExecStep {
     #[serde(default)]
     pub refund: u64,
     pub depth: isize,
-    pub error: Option<String>,
+    pub error: Option<Arc<String>>,
     pub stack: Option<Vec<Word>>,
     pub memory: Option<Vec<Word>>,
     pub storage: Option<HashMap<Word, Word>>,
