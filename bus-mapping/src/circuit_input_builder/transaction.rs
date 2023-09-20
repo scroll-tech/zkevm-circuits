@@ -468,7 +468,7 @@ impl Transaction {
 
 #[cfg(feature = "test")]
 impl Transaction {
-    /// test if the transaction has unsupported opcodes or precompiles
+    /// test if the transaction has different evm behaviour opcodes or precompiles
     pub fn has_l2_different_evm_behaviour_step(&self) -> bool {
         use crate::{
             circuit_input_builder::execution::ExecState, error::ExecError,

@@ -702,7 +702,7 @@ impl<'a> CircuitInputBuilder {
 
 #[cfg(feature = "test")]
 impl CircuitInputBuilder {
-    /// test if this circuit has any unsupported tx
+    /// test if this circuit has any different evm behaviour trace
     pub fn has_l2_different_evm_behaviour_trace(&self) -> bool {
         self.block
             .txs
