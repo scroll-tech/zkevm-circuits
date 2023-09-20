@@ -3,7 +3,7 @@
 use crate::{
     address,
     geth_types::{Transaction, TxType},
-    word, Error, ToBigEndian, Word, H256,
+    word, Error, Word, H256,
 };
 use ethers_core::{
     k256::{
@@ -151,36 +151,6 @@ pub fn biguint_to_32bytes_le(v: BigUint) -> [u8; 32] {
     let v_le = v.to_bytes_le();
     res[..v_le.len()].copy_from_slice(&v_le);
     res
-}
-
-/// Recover the public key from a secp256k1 signature and the message hash.
-pub fn recover_pk(
-    v: u8,
-    r: &Word,
-    s: &Word,
-    msg_hash: &[u8; 32],
-) -> Result<Secp256k1Affine, libsecp256k1::Error> {
-    let mut sig_bytes = [0u8; 64];
-    sig_bytes[..32].copy_from_slice(&r.to_be_bytes());
-    sig_bytes[32..].copy_from_slice(&s.to_be_bytes());
-    let signature = libsecp256k1::Signature::parse_standard(&sig_bytes)?;
-    let msg_hash = libsecp256k1::Message::parse_slice(msg_hash.as_slice())?;
-    let recovery_id = libsecp256k1::RecoveryId::parse(v)?;
-    let pk = libsecp256k1::recover(&msg_hash, &signature, &recovery_id)?;
-    let pk_be = pk.serialize();
-    let pk_le = pk_bytes_swap_endianness(&pk_be[1..]);
-    let x = ct_option_ok_or(
-        Fp::from_bytes(pk_le[..32].try_into().unwrap()),
-        libsecp256k1::Error::InvalidPublicKey,
-    )?;
-    let y = ct_option_ok_or(
-        Fp::from_bytes(pk_le[32..].try_into().unwrap()),
-        libsecp256k1::Error::InvalidPublicKey,
-    )?;
-    ct_option_ok_or(
-        Secp256k1Affine::from_xy(x, y),
-        libsecp256k1::Error::InvalidPublicKey,
-    )
 }
 
 /// Recover the public key from a secp256k1 signature and the message hash.
