@@ -341,17 +341,19 @@ pub fn block_traces_to_witness_block_with_updated_state(
     );
 
     if !light_mode {
-        let state = builder.mpt_init_state.as_ref()
-        .expect("init state must be set for non-light mode");
-        if *state.root() != [0u8; 32]{
+        let state = builder
+            .mpt_init_state
+            .as_ref()
+            .expect("init state must be set for non-light mode");
+        if *state.root() != [0u8; 32] {
             log::debug!("block_apply_mpt_state");
             block_apply_mpt_state(&mut witness_block, state);
-            log::debug!("block_apply_mpt_state done");    
+            log::debug!("block_apply_mpt_state done");
         }
         log::debug!(
             "finish replay trie updates, root {}",
             hex::encode(state.root())
-        );        
+        );
     }
 
     Ok(witness_block)

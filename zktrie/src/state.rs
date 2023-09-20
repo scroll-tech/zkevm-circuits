@@ -24,11 +24,7 @@ pub struct ZktrieState {
 
 impl fmt::Debug for ZktrieState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "ZktrieState: {:x?}",
-            self.trie_root,
-        )
+        write!(f, "ZktrieState: {:x?}", self.trie_root,)
     }
 }
 
@@ -78,7 +74,7 @@ impl ZktrieState {
     pub fn switch_to(&mut self, new_root: ZkTrieHash) -> bool {
         let test_trie = self.zk_db.borrow_mut().new_trie(&new_root);
         if test_trie.is_none() {
-            return false
+            return false;
         }
         self.prepare_switch_to(new_root);
         true
@@ -92,13 +88,12 @@ impl ZktrieState {
         BYTES: IntoIterator<Item = &'a [u8]>,
     {
         use builder::{AccountProof, BytesArray};
-        account_proofs
-        .map(|(&addr, bytes)|{
+        account_proofs.map(|(&addr, bytes)| {
             let acc_proof = builder::verify_proof_leaf(
                 AccountProof::try_from(BytesArray(bytes.into_iter()))?,
                 &builder::extend_address_to_h256(&addr),
             );
-            Ok((addr, acc_proof.data))        
+            Ok((addr, acc_proof.data))
         })
     }
 
@@ -110,13 +105,13 @@ impl ZktrieState {
         BYTES: IntoIterator<Item = &'a [u8]>,
     {
         use builder::{BytesArray, StorageProof};
-        storage_proofs.map(|(&addr, &key, bytes)|{
+        storage_proofs.map(|(&addr, &key, bytes)| {
             let storage_key: (Address, Word) = (addr, key);
             let mut key_buf = [0u8; 32];
             key.to_big_endian(key_buf.as_mut_slice());
             let bytes_array = BytesArray(bytes.into_iter());
             let store_proof =
-                builder::verify_proof_leaf(StorageProof::try_from(bytes_array)?, &key_buf);            
+                builder::verify_proof_leaf(StorageProof::try_from(bytes_array)?, &key_buf);
             if store_proof.key.is_some() {
                 log::trace!(
                     "insert storage key {:?} value {:?}",
@@ -129,7 +124,7 @@ impl ZktrieState {
                 Ok((storage_key, Default::default()))
             }
         })
-    }    
+    }
 
     /// incremental updating nodes in db from external data
     pub fn update_from_trace<'d, BYTES1, BYTES2>(
@@ -142,12 +137,12 @@ impl ZktrieState {
         BYTES2: IntoIterator<Item = &'d [u8]>,
     {
         let proofs = account_proofs
-            .filter(|(&addr, _)|self.addr_cache.insert(addr))
+            .filter(|(&addr, _)| self.addr_cache.insert(addr))
             .flat_map(|(_, bytes)| bytes)
             .chain(
                 storage_proofs
-                .filter(|(&addr, &key, _)|self.storage_cache.insert((addr, key)))
-                .flat_map(|(_, _, bytes)| bytes)
+                    .filter(|(&addr, &key, _)| self.storage_cache.insert((addr, key)))
+                    .flat_map(|(_, _, bytes)| bytes),
             )
             .chain(additional_proofs);
         let mut zk_db = self.zk_db.borrow_mut();
@@ -169,14 +164,9 @@ impl ZktrieState {
         BYTES2: IntoIterator<Item = &'d [u8]>,
     {
         let mut state = ZktrieState::construct(state_root);
-        
+
         // a lot of poseidon computation
-        state.update_from_trace(
-            account_proofs,
-            storage_proofs,
-            additional_proofs,
-        );
-    
+        state.update_from_trace(account_proofs, storage_proofs, additional_proofs);
 
         Ok(state)
     }

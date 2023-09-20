@@ -30,21 +30,25 @@ struct BlockTrace {
 fn build_state_from_string(sample_str: &str) -> (ZktrieState, AccountDatas, StorageDatas) {
     let trace: StorageTrace = serde_json::from_str(sample_str).unwrap();
 
-    let account_traces = trace.proofs.iter().flat_map(|kv_map|{
-            kv_map.iter().map(|(k, bts)| (k, bts.iter().map(Bytes::as_ref)))
-        });
+    let account_traces = trace.proofs.iter().flat_map(|kv_map| {
+        kv_map
+            .iter()
+            .map(|(k, bts)| (k, bts.iter().map(Bytes::as_ref)))
+    });
 
     let storage_traces = trace.storage_proofs.iter().flat_map(|(k, kv_map)| {
-            kv_map
+        kv_map
             .iter()
             .map(move |(sk, bts)| (k, sk, bts.iter().map(Bytes::as_ref)))
-        });
+    });
 
     let account_datas = ZktrieState::parse_account_from_proofs(account_traces.clone())
-        .map(|r|r.unwrap()).collect::<AccountDatas>();
+        .map(|r| r.unwrap())
+        .collect::<AccountDatas>();
 
     let storage_datas = ZktrieState::parse_storage_from_proofs(storage_traces.clone())
-        .map(|r|r.unwrap()).collect::<StorageDatas>();
+        .map(|r| r.unwrap())
+        .collect::<StorageDatas>();
 
     (
         ZktrieState::from_trace_with_additional(
@@ -54,13 +58,12 @@ fn build_state_from_string(sample_str: &str) -> (ZktrieState, AccountDatas, Stor
             std::iter::empty(),
         )
         .unwrap(),
-        account_datas, storage_datas,
+        account_datas,
+        storage_datas,
     )
 }
 
-
-const EXAMPLE_TRACE: &str = 
-    r#"
+const EXAMPLE_TRACE: &str = r#"
     {
         "proofs": {
             "0x1C5A77d9FA7eF466951B2F01F724BCa3A5820b63": [
@@ -249,7 +252,13 @@ fn witgen_update_one() {
     );
 
     // check value of storage slot 0 is 10
-    assert_eq!(Some(U256::from(10u32)), storages.get(&(target_addr, U256::zero())).map(AsRef::as_ref).copied());
+    assert_eq!(
+        Some(U256::from(10u32)),
+        storages
+            .get(&(target_addr, U256::zero()))
+            .map(AsRef::as_ref)
+            .copied()
+    );
 
     let trace = w.handle_new_state(
         MPTProofType::StorageChanged,

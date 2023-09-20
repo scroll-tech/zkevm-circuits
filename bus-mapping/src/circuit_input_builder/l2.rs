@@ -8,11 +8,11 @@ use eth_types::{
     self,
     evm_types::OpcodeId,
     l2_types::{BlockTrace, EthBlock, ExecStep, StorageTrace},
-    Address, ToAddress, Word, H256, ToWord,
+    Address, ToAddress, ToWord, Word, H256,
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::{AccountData, ZktrieState};
-use std::collections::hash_map::{HashMap, Entry};
+use std::collections::hash_map::{Entry, HashMap};
 
 impl From<&AccountData> for state_db::Account {
     fn from(acc_data: &AccountData) -> Self {
@@ -309,7 +309,8 @@ impl CircuitInputBuilder {
                     .deletion_proofs
                     .iter()
                     .map(Bytes::as_ref),
-            ).map_err(Error::IoError)?;
+            )
+            .map_err(Error::IoError)?;
 
             log::debug!(
                 "building partial statedb done, root {}",
@@ -317,22 +318,21 @@ impl CircuitInputBuilder {
             );
 
             Some(mpt_init_state)
-    
-        }else {
+        } else {
             None
         };
 
         let mut sdb = StateDB::new();
-        for parsed in ZktrieState::parse_account_from_proofs(
-            Self::collect_account_proofs(&l2_trace.storage_trace),
-        ){
+        for parsed in ZktrieState::parse_account_from_proofs(Self::collect_account_proofs(
+            &l2_trace.storage_trace,
+        )) {
             let (addr, acc) = parsed.map_err(Error::IoError)?;
             sdb.set_account(&addr, state_db::Account::from(&acc));
         }
 
-        for parsed in ZktrieState::parse_storage_from_proofs(
-            Self::collect_storage_proofs(&l2_trace.storage_trace),
-        ){
+        for parsed in ZktrieState::parse_storage_from_proofs(Self::collect_storage_proofs(
+            &l2_trace.storage_trace,
+        )) {
             let ((addr, key), val) = parsed.map_err(Error::IoError)?;
             *sdb.get_storage_mut(&addr, &key).1 = val.into();
         }
@@ -365,11 +365,7 @@ impl CircuitInputBuilder {
     }
 
     /// ...
-    pub fn add_more_l2_trace(
-        &mut self,
-        l2_trace: &BlockTrace,
-        more: bool,
-    ) -> Result<(), Error> {
+    pub fn add_more_l2_trace(&mut self, l2_trace: &BlockTrace, more: bool) -> Result<(), Error> {
         // update init state new data from storage
         if let Some(mpt_init_state) = &mut self.mpt_init_state {
             mpt_init_state.update_from_trace(
@@ -384,28 +380,40 @@ impl CircuitInputBuilder {
         }
 
         let new_accounts = ZktrieState::parse_account_from_proofs(
-            Self::collect_account_proofs(&l2_trace.storage_trace)
-            .filter(|(addr, _)|{let (existed, _) = self.sdb.get_account(addr); !existed}),
-        ).fold(Ok(HashMap::new()), |m, parsed|->Result<HashMap<_, _>, Error>{
-            let mut m = m?;
-            let (addr, acc) = parsed.map_err(Error::IoError)?;
-            m.insert(addr, acc);
-            Ok(m)
-        })?;
+            Self::collect_account_proofs(&l2_trace.storage_trace).filter(|(addr, _)| {
+                let (existed, _) = self.sdb.get_account(addr);
+                !existed
+            }),
+        )
+        .fold(
+            Ok(HashMap::new()),
+            |m, parsed| -> Result<HashMap<_, _>, Error> {
+                let mut m = m?;
+                let (addr, acc) = parsed.map_err(Error::IoError)?;
+                m.insert(addr, acc);
+                Ok(m)
+            },
+        )?;
 
-        for (addr, acc) in new_accounts{
+        for (addr, acc) in new_accounts {
             self.sdb.set_account(&addr, state_db::Account::from(&acc));
         }
 
         let new_storages = ZktrieState::parse_storage_from_proofs(
-            Self::collect_storage_proofs(&l2_trace.storage_trace)
-            .filter(|(addr, key, _)|{let (existed, _) = self.sdb.get_committed_storage(addr, key); !existed}),
-        ).fold(Ok(HashMap::new()), |m, parsed|->Result<HashMap<(Address, Word), Word>, Error>{
-            let mut m = m?;
-            let ((addr, key), val) = parsed.map_err(Error::IoError)?;
-            m.insert((addr, key), val.into());
-            Ok(m)
-        })?;
+            Self::collect_storage_proofs(&l2_trace.storage_trace).filter(|(addr, key, _)| {
+                let (existed, _) = self.sdb.get_committed_storage(addr, key);
+                !existed
+            }),
+        )
+        .fold(
+            Ok(HashMap::new()),
+            |m, parsed| -> Result<HashMap<(Address, Word), Word>, Error> {
+                let mut m = m?;
+                let ((addr, key), val) = parsed.map_err(Error::IoError)?;
+                m.insert((addr, key), val.into());
+                Ok(m)
+            },
+        )?;
 
         for ((addr, key), val) in new_storages {
             *self.sdb.get_storage_mut(&addr, &key).1 = val;

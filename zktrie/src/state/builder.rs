@@ -120,7 +120,7 @@ impl From<zktrie::AccountData> for AccountData {
         let nonce = U64::from_big_endian(&field0[24..]);
         let balance = U256::from_big_endian(&acc_fields[1]);
         let storage_root = H256::from(&acc_fields[2]);
-        let keccak_code_hash = H256::from(&acc_fields[3]); 
+        let keccak_code_hash = H256::from(&acc_fields[3]);
         let poseidon_code_hash = H256::from(&acc_fields[4]);
 
         Self {
@@ -158,7 +158,7 @@ impl CanRead for AccountData {
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
 
-        let mut read_buf = [0; zktrie::ACCOUNTFIELDS].map(|_|[0u8; zktrie::FIELDSIZE]);
+        let mut read_buf = [0; zktrie::ACCOUNTFIELDS].map(|_| [0u8; zktrie::FIELDSIZE]);
         for field_buf in read_buf.iter_mut() {
             rd.read_exact(field_buf.as_mut_slice())?;
         }
@@ -187,7 +187,6 @@ impl From<zktrie::StoreData> for StorageData {
         Self(Word::from(store_field))
     }
 }
-
 
 impl CanRead for StorageData {
     fn try_parse(mut rd: impl Read) -> Result<Self, Error> {
