@@ -736,11 +736,11 @@ pub fn run_test(
     };
     log::debug!("balance_overflow = {balance_overflow}");
     log::debug!(
-        "has_l2_unsupported_tx = {}",
-        builder.has_l2_unsupported_tx()
+        "has_l2_different_evm_behaviour_trace = {}",
+        builder.has_l2_different_evm_behaviour_trace()
     );
     let skip_post_check = if cfg!(feature = "scroll") {
-        balance_overflow || builder.has_l2_unsupported_tx()
+        balance_overflow || builder.has_l2_different_evm_behaviour_trace()
     } else {
         false
     };

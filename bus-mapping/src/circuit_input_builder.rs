@@ -703,8 +703,11 @@ impl<'a> CircuitInputBuilder {
 #[cfg(feature = "test")]
 impl CircuitInputBuilder {
     /// test if this circuit has any unsupported tx
-    pub fn has_l2_unsupported_tx(&self) -> bool {
-        self.block.txs.iter().any(|tx| tx.has_l2_unsupported_step())
+    pub fn has_l2_different_evm_behaviour_trace(&self) -> bool {
+        self.block
+            .txs
+            .iter()
+            .any(|tx| tx.has_l2_different_evm_behaviour_step())
     }
 }
 

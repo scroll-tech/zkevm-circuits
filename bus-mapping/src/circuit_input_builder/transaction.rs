@@ -469,23 +469,28 @@ impl Transaction {
 #[cfg(feature = "test")]
 impl Transaction {
     /// test if the transaction has unsupported opcodes or precompiles
-    pub fn has_l2_unsupported_step(&self) -> bool {
-        use crate::{circuit_input_builder::execution::ExecState, error::ExecError};
-        let unsupported_opcodes = self.steps.iter().any(|step| {
+    pub fn has_l2_different_evm_behaviour_step(&self) -> bool {
+        use crate::{
+            circuit_input_builder::execution::ExecState, error::ExecError,
+            precompile::PrecompileCalls,
+        };
+        let different_opcodes = self.steps.iter().any(|step| {
             matches!(
                 step.exec_state,
                 ExecState::Op(OpcodeId::SELFDESTRUCT)
                     | ExecState::Op(OpcodeId::INVALID(0xff))
                     | ExecState::Op(OpcodeId::DIFFICULTY)
+                    | ExecState::Precompile(PrecompileCalls::Modexp)
+                    | ExecState::Precompile(PrecompileCalls::Bn128Pairing)
             )
         });
 
-        let unsupported_precompiles = self
+        let different_precompiles = self
             .steps
             .iter()
             .any(|step| step.error == Some(ExecError::PrecompileFailed));
 
-        unsupported_opcodes || unsupported_precompiles
+        different_opcodes || different_precompiles
     }
 }
 
