@@ -1601,9 +1601,7 @@ mod test {
         block.mpt_updates.mock_fill_state_roots();
         let mpt_circuit = MptCircuit::new_from_block(&block);
         let prover = MockProver::<Fr>::run(12, &mpt_circuit, vec![]).unwrap();
-        println!("prover result: {:?}", prover.verify());
         assert!(prover.verify().is_ok());
-        //prover.assert_satisfied_par();
     }
 
     // minimal testool case: returndatasize_bug_d0_g0_v0
