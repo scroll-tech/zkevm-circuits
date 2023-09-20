@@ -1,8 +1,8 @@
 use anyhow::Result;
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use eth_types::l2_types::{BlockTrace, StorageTrace};
+use eth_types::l2_types::BlockTrace;
 use halo2_proofs::halo2curves::bn256::Fr;
-use zkevm_circuits::{evm_circuit::witness::Block, witness::WithdrawProof};
+use zkevm_circuits::evm_circuit::witness::Block;
 
 pub fn get_super_circuit_params() -> CircuitsParams {
     unimplemented!("Must build with feature scroll")
@@ -37,9 +37,5 @@ pub fn block_traces_to_witness_block_with_updated_state(
     _builder: &mut CircuitInputBuilder,
     _light_mode: bool,
 ) -> Result<Block<Fr>> {
-    unimplemented!("Must build with feature scroll")
-}
-
-pub fn normalize_withdraw_proof(_proof: &WithdrawProof) -> StorageTrace {
     unimplemented!("Must build with feature scroll")
 }

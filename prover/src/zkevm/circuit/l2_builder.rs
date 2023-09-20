@@ -5,19 +5,15 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::{CodeDB, StateDB},
 };
-use eth_types::{
-    l2_types::{BlockTrace, StorageTrace},
-    ToBigEndian, ToWord, H256,
-};
+use eth_types::{l2_types::BlockTrace, ToWord, H256};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use mpt_zktrie::state::ZktrieState;
 use once_cell::sync::Lazy;
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 use zkevm_circuits::{
     evm_circuit::witness::{block_apply_mpt_state, block_convert_with_l1_queue_index, Block},
     util::SubCircuit,
-    witness::WithdrawProof,
 };
 
 static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 53077));
@@ -352,35 +348,4 @@ pub fn block_traces_to_witness_block_with_updated_state(
         hex::encode(builder.mpt_init_state.root())
     );
     Ok(witness_block)
-}
-
-pub fn normalize_withdraw_proof(proof: &WithdrawProof) -> StorageTrace {
-    let address = *bus_mapping::l2_predeployed::message_queue::ADDRESS;
-    let key = *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT;
-    StorageTrace {
-        // Not typo! We are preparing `StorageTrace` for the dummy padding chunk
-        // So `post_state_root` of prev chunk will be `root_before` for new chunk
-        root_before: H256::from(proof.state_root.to_be_bytes()),
-        root_after: H256::from(proof.state_root.to_be_bytes()),
-        proofs: Some(HashMap::from([(
-            address,
-            proof
-                .account_proof
-                .iter()
-                .map(|b| b.clone().into())
-                .collect(),
-        )])),
-        storage_proofs: HashMap::from([(
-            address,
-            HashMap::from([(
-                key,
-                proof
-                    .storage_proof
-                    .iter()
-                    .map(|b| b.clone().into())
-                    .collect(),
-            )]),
-        )]),
-        deletion_proofs: Default::default(),
-    }
 }
