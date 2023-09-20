@@ -1158,12 +1158,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
+    use crate::{
+        mpt_circuit::MptCircuit, test_util::CircuitTestBuilder, util::SubCircuit,
+        witness::block_convert,
     };
-
+    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use eth_types::{
+        address, bytecode,
+        evm_types::OpcodeId,
+        geth_types::{Account, GethData},
+        word, Address, ToWord, Word,
+    };
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use itertools::Itertools;
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
@@ -1559,6 +1565,43 @@ mod test {
                 ..Default::default()
             })
             .run();
+    }
+
+    // maybe consider to move to mpt_circuit module
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn call_non_exist_with_value_mpt_circuit() {
+        let callee_code = bytecode! {
+            .op_call(0xc350, 0xff, 0x13, 0x0, 0x0, 0x0, 0x0)
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(callee_code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        let block: GethData = ctx.into();
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 1024,
+                max_copy_rows: 1024,
+                max_mpt_rows: 3500,
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        block.mpt_updates.mock_fill_state_roots();
+        let mpt_circuit = MptCircuit::new_from_block(&block);
+        let prover = MockProver::<Fr>::run(12, &mpt_circuit, vec![]).unwrap();
+        assert!(prover.verify().is_ok());
     }
 
     // minimal testool case: returndatasize_bug_d0_g0_v0

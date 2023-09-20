@@ -6,6 +6,8 @@ tags: scroll documentation
 
 code: https://github.com/scroll-tech/misc-precompiled-circuit
 
+link to the original HackMD file: https://hackmd.io/@dieGzUCgSGmRZFQ7SDxXCA/SyHlJiRin
+
 Let $p$ be the prime used in Modexp. When $x$ is U256, $\langle x \rangle$ stands for its limb representation; and $\langle x \rangle_p$ stands for $x\mod p$.
 
 
@@ -21,12 +23,14 @@ and $\langle a^b\rangle_p=R_{n-1}$.
 
 Note that in binary representation $b_{k-1}=0 \text { or } 1$ depending on the exact bit. Also, $\langle u \cdot v \rangle_p=\langle \langle u \rangle_p \cdot \langle v \rangle_p \rangle_p$, so the recursion for $R$ can be further written as
 
-$$(1) \qquad R_0=1, R_k=\left\{
+```math
+(1) \qquad R_0=1, R_k=\left\{
 \begin{array}{ll}
 \langle \langle R_{k-1}\cdot R_{k-1}\rangle_p\cdot a\rangle_p & \text{ if } b_{k-1}=1;
 \\
 \langle R_{k-1}\cdot R_{k-1}\rangle_p &  \text{ if } b_{k-1}=0 \ ,
-\end{array}\right.$$
+\end{array}\right.
+```
 and $\langle a^b\rangle_p=R_{n-1}$.
 
 Note that the number of iterations $n$ is the number of bits of the exponent $b$. If $b$ is U256, then $n$ will not exceed 256.
@@ -36,18 +40,33 @@ Note that the number of iterations $n$ is the number of bits of the exponent $b$
 
 Let $x$ be U256 (`Number`) and denote the limb representation of $x$ as $\langle x \rangle=[x_0, x_1, x_2, x_3]$. The rule is
 $$x=x_0+x_1\cdot 2^{108}+x_2\cdot 2^{216} \ ,$$
-i.e., $\langle x \rangle = \overline{
+i.e., 
+```math
+\langle x \rangle = \overline{
 \underbrace{\xi_0\xi_1\cdots \xi_{107}}_{x_0}
 \underbrace{\xi_{108}\xi_{109}\cdots  \xi_{215}}_{x_1}
-\underbrace{\xi_{216}\xi_{217}\cdots  \xi_{255}}_{x_2}}$ in little-endian. This guarentees that $x_0\leq 2^{108}$, $x_1\leq 2^{108}$ and $x_2\leq 2^{108}$, so each of $x_0, x_1, x_2$ can be fit into an $\mathbb{F}_r$ element of Halo2.
+\underbrace{\xi_{216}\xi_{217}\cdots  \xi_{255}}_{x_2}}
+```
+in little-endian. This guarentees that $x_0\leq 2^{108}$, $x_1\leq 2^{108}$ and $x_2\leq 2^{108}$, so each of $x_0, x_1, x_2$ can be fit into an $\mathbb{F}_r$ element of Halo2.
 
 In addition, $x_3$ stands for $x_3=x\mod r$.
 
 ## Constraint system for $x y \mod p = d$
 
-Let $x, y$ be in U256 and $p$ be the prime used in Modexp, $d<p$ be the remainder, both also in U256. Then the constraints for $x y \mod p = d$ is the same of that for $x y= kp+d$ with some $k$ and $d<p$.
+Let x, y be in U256 and p be the prime used in Modexp, d<p be the remainder, both also in U256. Then the constraints for 
+$x y \mod p = d$ 
+is the same of that for 
+$x y= kp+d$ 
+with some $k$ and d<p.
 
-Note that $k$ may well overflow U256. For example, let $p=2$ and $x,y$ are close to $2^{256}-1$, then $k$ will easily overflow U256. To prevent this, we observe that in the iteration $(1)$ the $R_k$ ($k\geq 2$) is always a $\mod p$ value and the $\langle R_{k-1} \cdot R_{k-1} \rangle_p$ is also a $\mod p$ value. Since $xy \mod p = (x\mod p)\cdot y \mod p$, so in practice when applying to the iteration (1), we always have $x$ replaced by $x\mod p$. This ensures $xy< py$ so that $k<(kp+d)/p=xy/p<y<2^{256}$. 
+Note that k may well overflow U256. For example, let p=2 and x,y are close to $2^{256}-1$, then k will easily overflow U256. To prevent this, we observe that in the iteration (1) the $R_k$ ($k\geq 2$) is always a $\mod p$ value and the 
+```math
+\langle R_{k-1} \cdot R_{k-1} \rangle_p
+```
+is also a $\mod p$ value. Since 
+$xy \mod p = (x\mod p)\cdot y \mod p$, 
+so in practice when applying to the iteration (1), we always have $x$ replaced by $x\mod p$. This ensures 
+xy < py so that k<(kp+d)/p=xy/p<y<2^{256}.
 
 We use the [Chinese Remainder Theorem](https://en.wikipedia.org/wiki/Chinese_remainder_theorem) (CRT):
 
@@ -59,37 +78,44 @@ For any $n$ the relation $xy=kp+d \mod n$ is equivalent to
 $$\langle x\rangle_n \langle y\rangle_n\equiv \langle k\rangle_n\langle p\rangle_n+\langle d \rangle_n \mod n \ .$$
 
 For an $x$ expressed in limbs, we get
-$$\begin{array}{l}
+```math
+\begin{array}{l}
 & \langle x \rangle_{n_1}
 \\
 = & x_0 + x_1 \cdot \langle 2^{108} \rangle_{n_1} +  x_2 \cdot \langle 2^{216} \rangle_{n_1} \mod (2^{108}-1)
 \\
 = & \langle x_0+x_1+x_2\rangle_{n_1}
-\end{array}$$
+\end{array}
+```
 since $\langle 2^{108} \rangle_{n_1}=\langle 2^{216} \rangle_{n_1}=1$. 
 
 Also, 
-$$\begin{array}{l}
+```math
+\begin{array}{l}
 & \langle x \rangle_{n_2}
 \\
 = & x_0  + x_1 \cdot  2^{108}  +  x_2 \cdot 2^{216} \mod 2^{216}
 \\
 = & \langle x_0 + x_1 \cdot 2^{108} \rangle_{n_2} \ .
-\end{array}$$
+\end{array}
+```
 
 And by definition $\langle x\rangle_{n_3}=x_3$. Notice that if both $x, y$ are decomposed into limbs, then 
-$$\begin{array}{l}
+```math
+\begin{array}{l}
 & \langle x y \rangle_{n_2}
 \\
 = & (x_0 + x_1 \cdot 2^{108})(y_0 + y_1 \cdot 2^{108}) \mod n_2
 \\
 = & \langle x_0y_0 + (x_1y_0+x_0y_1)\cdot 2^{108}\rangle_{n_2} \ ,
-\end{array}$$
+\end{array}
+```
 because $n_2=2^{216}$.
 
 So constraints that ensure $xy=kp+d$ is given by
 
-$$(2) \left\{\begin{array}{rcll}
+```math
+(2) \left\{\begin{array}{rcll}
 (x_0+x_1+x_2)(y_0+y_1+y_2) & \equiv & (k_0+k_1+k_2)(p_0+p_1+p_2) + (d_0+d_1+d_2)  & \mod (2^{108}-1) \ ,
 \\
 x_0y_0 + (x_1y_0+x_0y_1)\cdot 2^{108} & \equiv & k_0p_0 + (k_1p_0+k_0p_1)\cdot 2^{108} + d_0+d_1\cdot 2^{108} & \mod 2^{216} \ ,
@@ -97,7 +123,8 @@ x_0y_0 + (x_1y_0+x_0y_1)\cdot 2^{108} & \equiv & k_0p_0 + (k_1p_0+k_0p_1)\cdot 2
 x_3y_3 & \equiv & k_3p_3 + d_3 & \mod r \ ,
 \\
 d & < & p \ . &
-\end{array}\right.$$
+\end{array}\right.
+```
 
 
 ## Circuit Design and Layout
@@ -315,12 +342,12 @@ This method returns `rem.limb3`.
 
 We take two U256 `Number` denoted as `lhs` (stand for $x$) and `rhs` (stand for $y$), then 
 
-- call `mod_native_mul` with `lhs`$=x$, `rhs`=$y$, `rem`$=d$, `quotient`$=k$, `modulus`$=p$. This checks $x_3y_3\equiv k_3p_3 + d_3 \mod r$ in (2). (Since field is $\mathbb{F}_r$, operation $\mod r$ is done automatically when doing field operations.)
+- call `mod_native_mul` with `lhs`$=x$, `rhs`$=y$, `rem`$=d$, `quotient`$=k$, `modulus`$=p$. This checks $x_3y_3\equiv k_3p_3 + d_3 \mod r$ in (2). (Since field is $\mathbb{F}_r$, operation $\mod r$ is done automatically when doing field operations.)
 
 
-### constraint for $d<p$
+### constraint for d<p
 
-A remaining constraint in (2) to ensure that $xy = kp + d$ is the comparison $d<p$. This makes use of the `lt_number` and `le_limb` functions.
+A remaining constraint in (2) to ensure that $xy = kp + d$ is the comparison d<p. This makes use of the `lt_number` and `le_limb` functions.
 
 #### `lt_number` method
 
