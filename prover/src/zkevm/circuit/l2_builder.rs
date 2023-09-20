@@ -255,7 +255,7 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
     // etc, so the generated block maybe invalid without any message
     if block_traces.is_empty() {
         let mut builder = prepare_default_builder(eth_types::Hash::zero(), None);
-        block_traces_to_witness_block_with_updated_state(&[], &mut builder, false)
+        block_traces_to_witness_block_with_updated_state(&[], &mut builder)
     } else {
         let mut builder = CircuitInputBuilder::new_from_l2_trace(
             get_super_circuit_params(),
@@ -263,7 +263,7 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
             block_traces.len() > 1,
             false,
         )?;
-        block_traces_to_witness_block_with_updated_state(&block_traces[1..], &mut builder, false)
+        block_traces_to_witness_block_with_updated_state(&block_traces[1..], &mut builder)
     }
 }
 
@@ -274,7 +274,6 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
 pub fn block_traces_to_witness_block_with_updated_state(
     block_traces: &[BlockTrace],
     builder: &mut CircuitInputBuilder,
-    light_mode: bool,
 ) -> Result<Block<Fr>> {
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
@@ -336,20 +335,20 @@ pub fn block_traces_to_witness_block_with_updated_state(
         witness_block.circuits_params
     );
 
-    if !light_mode {
-        let state = builder
-            .mpt_init_state
-            .as_ref()
-            .expect("init state must be set for non-light mode");
-        if *state.root() != [0u8; 32] {
+    if let Some(state) = &builder.mpt_init_state {
+        let root_after = if *state.root() != [0u8; 32] {
             log::debug!("block_apply_mpt_state");
-            block_apply_mpt_state(&mut witness_block, state);
+            let new_root = block_apply_mpt_state(&mut witness_block, state);
             log::debug!("block_apply_mpt_state done");
-        }
+            new_root
+        } else {
+            Default::default()
+        };
         log::debug!(
-            "finish replay trie updates, root {}",
-            hex::encode(state.root())
-        );
+            "finish replay trie updates, root {}, root after {:#x?}",
+            hex::encode(state.root()),
+            root_after,
+        );    
     }
 
     Ok(witness_block)

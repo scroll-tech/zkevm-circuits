@@ -584,6 +584,7 @@ pub fn block_convert_with_l1_queue_index<F: Field>(
 }
 
 /// Attach witness block with mpt states
-pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) {
+pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) -> Word{
     block.mpt_updates.fill_state_roots(mpt_state);
+    block.mpt_updates.new_root()
 }
