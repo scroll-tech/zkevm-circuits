@@ -600,6 +600,11 @@ pub fn run_test(
     let (_, mut trace_config, post) = into_traceconfig(st.clone());
 
     #[cfg(feature = "scroll")]
+    let balance_overflow = trace_config
+        .accounts
+        .iter()
+        .any(|(_, acc)| acc.balance.to_be_bytes()[0] != 0u8);
+    #[cfg(feature = "scroll")]
     for (_, acc) in trace_config.accounts.iter_mut() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
             acc.balance = U256::from(1u128 << 127);
@@ -717,9 +722,8 @@ pub fn run_test(
             mock_prove(&test_id, &witness_block);
         }
     };
-    //#[cfg(feature = "scroll")]
-    //    if false
-    if !builder.should_skip_post_check() {
+    #[cfg(feature = "scroll")]
+    if !(balance_overflow || builder.should_skip_post_check()) {
         {
             // fill these "untouched" storage slots
             // It is better to fill these info after (instead of before) bus-mapping re-exec.
