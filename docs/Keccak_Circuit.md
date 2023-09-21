@@ -6,6 +6,8 @@ tags: scroll documentation
 
 code: https://github.com/scroll-tech/zkevm-circuits/blob/develop/zkevm-circuits/src/keccak_circuit.rs `develop` branch
 
+link to the original HackMD file: https://hackmd.io/@dieGzUCgSGmRZFQ7SDxXCA/H1vMF0_u2
+
 [NIST Keccak Spec]: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
 
 [Keccak Team Keccak Spec]: https://keccak.team/files/Keccak-implementation-3.2.pdf
@@ -27,18 +29,20 @@ We shall first explain the Keccak hash function to be proved by our Keccak Circu
 
 ### Keccak-f permutation function
 
-Any instance of the Keccak sponge function family makes use of one of the seven Keccak-$f$ permutations, denoted Keccak-$f[b]$, where $b \in \{25, 50, 100, 200, 400, 800, 1600\}$ is the width of the permutation. These Keccak-$f$ permutations are iterated constructions consisting of a sequence of almost identical rounds. The number of rounds $n_r$ depends on the permutation width, and is given by $n_r = 12 + 2 \ell$, where $2^\ell = \dfrac{b}{25}$. 
+Any instance of the Keccak sponge function family makes use of one of the seven Keccak-f permutations, denoted Keccak-f[b], where $b \in \{25, 50, 100, 200, 400, 800, 1600\}$ is the width of the permutation. These Keccak-f permutations are iterated constructions consisting of a sequence of almost identical rounds. The number of rounds $n_r$ depends on the permutation width, and is given by $n_r = 12 + 2 \ell$, where $2^\ell = \dfrac{b}{25}$. 
 
-We focus on Keccak-$f[1600]$ which has $n_r=24$ rounds. At each round $1\leq k\leq n_r$, input are $5\times 5$ lanes of 64 bit words $A[x,y]$, where $[x,y]\in \{0,...,4\}\times \{0,...,4\}$ indicate the lane and the length of each lane is $64$-bit word. We then perform the following operations on $A[x,y]$:
+We focus on Keccak-f[1600] which has $n_r=24$ rounds. At each round $1\leq k\leq n_r$, input are $5\times 5$ lanes of 64 bit words $A[x,y]$, where $[x,y]\in \{0,...,4\}\times \{0,...,4\}$ indicate the lane and the length of each lane is $64$-bit word. We then perform the following operations on $A[x,y]$:
 
 - $\theta$-step:  
-$$\begin{array}{rl}
+```math
+\begin{array}{rl}
 C[x]& =A[x,0]\oplus A[x,1]\oplus A[x,2] \oplus A[x,3]\oplus A[x,4] \ , \ x=0,...,4 \ ,
 \\
 D[x,z]& =C[x-1]\oplus \text{ROT}(C[x+1], 1) \ , \ x=0,...,4, \ , 
 \\
 A[x,y] & = A[x,y]\oplus D[x] \ , \ x=0,...,4, y=0,...,4, \ .
-\end{array}$$
+\end{array}
+```
 
 - $\rho$ and $\pi$-steps:  
 $$B[y,2x+3y]=\text{ROT}(A[x,y], r[x,y]) \ , \ x=0,...,4, y=0,...,4 \ ,$$
@@ -143,28 +147,33 @@ After padding, the input is extended to be with length in bytes a multiple of `R
 #### Absorb
 
 Following the result of padding represented in bits, in each chunk further divide this chunk into 17 sections with length 64 for each section. At the first chunk, initialize from all $A[i][j]=0$, then we perform the following absorb operation: for each of the first 17 words $A[i][j], i+5j<17$, we let $\verb"idx"=i+5j$ and we update
-$$A[i][j] \leftarrow A[i][j]\oplus \verb"chunk[idx * 64..(idx + 1) * 64]"$$ to obtain output $A[i][j]$. We perform this absorb operation before the 24 rounds of Keccak-$f$ permutation. Then the 24-rounds of Keccak-$f$ permutation is followed to operate on all $A[i][j]$'s where $0\leq i, j\leq 4$. After that we move to next chunk and repeat this process starting from the output $A[i][j]$ from last iteration (absorb + permutation). Such iteration is continued until the final chunk (which may contain padding data).
+$$A[i][j] \leftarrow A[i][j]\oplus \verb"chunk[idx * 64..(idx + 1) * 64]"$$ to obtain output $A[i][j]$. We perform this absorb operation before the 24 rounds of Keccak-f permutation. Then the 24-rounds of Keccak-f permutation is followed to operate on all $A[i][j]$'s where $0\leq i, j\leq 4$. After that we move to next chunk and repeat this process starting from the output $A[i][j]$ from last iteration (absorb + permutation). Such iteration is continued until the final chunk (which may contain padding data).
 
 #### Squeeze
 
 At the end of the above absorb process, take $A[0][0], A[1][0], A[2][0], A[3][0]$ to form $4$ words, each word is $64$-bit. The Keccak hash output would then be the $256$-bit word
-$$A[3][0]|\!|A[2][0]|\!|A[1][0]|\!|A[0][0]$$
+$$A[3][0] || A[2][0] || A[1][0] || A[0][0]$$
 
 
 ### Keccak Hash function Input and Output RLCs
 
 #### input_rlc (data_rlc)
-We are given the Keccak original input in bytes but without the padding bytes in the following order $$\verb"bytes"_0, ..., \verb"bytes"_{n-1}$$
+We are given the Keccak original input in bytes but without the padding bytes in the following order 
+```math
+\verb"bytes"_0, ..., \verb"bytes"_{n-1}
+```
 Then RLC using Keccak input $\verb"challenge"$ (which is after `FirstPhase`) to obtain
 
-$$\verb"input_rlc"=\verb"bytes"_{n-1}+\verb"bytes"_{n-2}*\verb"challenge"+...+\verb"bytes"_0 * \verb"challenge"^{n-1} \ .$$
+```math
+\verb"input_rlc"=\verb"bytes"_{n-1}+\verb"bytes"_{n-2}*\verb"challenge"+...+\verb"bytes"_0 * \verb"challenge"^{n-1} \ .
+```
 
 In the Keccak Circuit, it corresponds to the column $\verb"data_rlc"$.
 
 
 #### output_rlc (hash_rlc)
 We are given the Keccak hash output being the $256$-bit word
-$$A[3][0]|\!|A[2][0]|\!|A[1][0]|\!|A[0][0] \ .$$
+$$A[3][0] || A[2][0] || A[1][0] || A[0][0] \ .$$
 We divide each of above $4$ words into byte representation as $A[i][0]=\overline{A[i][0][7], ..., A[i][0][0]}$. This gives $32$ bytes $A[0][0][0..7]$, $A[1][0][0..7]$, $A[2][0][0..7]$, $A[3][0][0..7]$ for $i=0,1,2,3$. Then RLC using Keccak output $\verb"challenge"$ (= the challenge for evm word, i.e., after `FirstPhase`) to obtain $$\verb"ouput_rlc"=A[0][0][0]+A[0][0][1]*\verb"challenge"+...+A[3][0][7] * \verb"challenge"^{31} \ .$$
 which is the output of Keccak hash's RLC that we use in our zkevm-circuits' Keccak table. In the Keccak Circuit, it corresponds to the column $\verb"hash_rlc"$.
 
@@ -184,14 +193,16 @@ The multi-packed implementation for the Keccak Circuit uses special arithmetic c
 
 Each bit in the sparse-word-representation holds `BIT_COUNT` (=3) number of 0/1 bits, so equivalent to `BIT_SIZE` (=8) as the base of bit in the sparse-word-representation.
 
-A 64-bit word in sparse-word-representation can thus be expressed as a single field element since 64$\times$ 3=192<254.
+A 64-bit word in sparse-word-representation can thus be expressed as a single field element since 64 x 3=192<254.
 
-A `pack_table` indicates the relation between the standard bit-representation and the Keccak-sparse-word-representation, e.g. map 3=$\overline{1100}$ (little-endian-form) to 9. This is done by `pack`. The reverse operation is `unpack`. So 
-$$\begin{array}{rl}
+A `pack_table` indicates the relation between the standard bit-representation and the Keccak-sparse-word-representation, e.g. map 3 = $\overline{1100}$ (little-endian-form) to 9. This is done by `pack`. The reverse operation is `unpack`. So 
+```math
+\begin{array}{rl}
 \verb"pack": & \overline{a_0a_1...a_{63}} \text{ (little endian)} \rightarrow a_0+a_1\cdot 8 +...+a_{63}\cdot 8^{63} \ ,
 \\
 \verb"unpack": & a_0+a_1\cdot 8+...+a_{63}\cdot 8^{63} \rightarrow \overline{a_0a_1...a_{63}} \text{ (little endian)} \ .
-\end{array}$$
+\end{array}
+```
 These operations have to go back-and-forth between input (to Keccak internal) and output (from Keccak internal).
 
 It must be noticed that the packing related functions/modules `pack`, `unpack`, `into_bits`, `to_bytes` etc used inside Keccak Circuit are all in terms of little-endian order (in bits).
@@ -322,7 +333,7 @@ So total number of Keccak rows consumed by one hash is equal to the product of t
 
 ### State data
 
-State data (used to be denoted as $A[x,y]$ in our section on Keccak-$f$ permutation) before and after the Keccak-$f$ permutation are stored in $s[i][j]$ and $s_{\text{next}}[i][j]$ for $0\leq i,j\leq 4$. Each $s[i][j]$ stands for a $64$-bit Keccak-sparse-word-representation (with bits stand for `[0,...,7]`).
+State data (used to be denoted as $A[x,y]$ in our section on Keccak-f permutation) before and after the Keccak-f permutation are stored in $s[i][j]$ and $s_{\text{next}}[i][j]$ for $0\leq i,j\leq 4$. Each $s[i][j]$ stands for a $64$-bit Keccak-sparse-word-representation (with bits stand for `[0,...,7]`).
 
 ### theta-step
 
@@ -338,9 +349,9 @@ After that, calculate
 $$os[i][j]=s[i][j]+bc[(i+4)\mod 5]+\text{rot}(bc[(i+1)\mod 5], 1) $$ and set it to be the new state $s[i][j]$.
 
 #### Rationale 
-- <i>Soundness</i>: Use the symbols in the previous section on Keccak-$f$ permutation function, it can be checked that $C[x]$ is the same as the parity of $A[x,0]+A[x,1]+...+A[x,4]$. So this is what $bc[i]$ checks at the `normalize_6` table lookup step. 
+- <i>Soundness</i>: Use the symbols in the previous section on Keccak-f permutation function, it can be checked that $C[x]$ is the same as the parity of $A[x,0]+A[x,1]+...+A[x,4]$. So this is what $bc[i]$ checks at the `normalize_6` table lookup step. 
 In a same rationale, $os[i][j]$ after normalization stands for the parity of $A[x,y]\oplus D[x]$. This normalization is postponed to $\rho/\pi$-step using `normalize_4` table lookup. 
-- <i>Completeness</i>: Since $C[x]$ is the same as the parity of $A[x,0]+A[x,1]+...+A[x,4]$, any selection of witnesses that satisfy original $\theta$-step in the Section on Keccak-$f$ permutation function will pass the constraints.
+- <i>Completeness</i>: Since $C[x]$ is the same as the parity of $A[x,0]+A[x,1]+...+A[x,4]$, any selection of witnesses that satisfy original $\theta$-step in the Section on Keccak-f permutation function will pass the constraints.
 
 ### rho/pi-step
 
@@ -384,7 +395,7 @@ Do $s[i][j]\oplus (\text{NOT } s[i+1 \mod 5][j] \text{ AND } s[i+2 \mod 5][j])$ 
 
 So we lookup to table generated from mapping $[0,1,2,3,4]\mapsto [0,1,1,0,0]$. 
 
-- <i>Completeness</i>: From the above table we see that any array of $0$-$1$ bits $(a,b,c,d)$ that satisfy $a\oplus (\text{NOT } b \text{ AND } c)=d$ must satisfy the $3a+2b-c$ lookup table constraint. 
+- <i>Completeness</i>: From the above table we see that any array of 0/1 bits $(a,b,c,d)$ that satisfy $a\oplus (\text{NOT } b \text{ AND } c)=d$ must satisfy the $3a+2b-c$ lookup table constraint. 
 
 ### iota-step
 
@@ -438,12 +449,12 @@ RLC uses keccak input $\verb"challenge"$ (same as evm_words challenge).
 Update `data_rlcs` on each of the $17$ rounds where we absorb data based on input bytes. At each round, produce a sequence of 
 $$\verb"data_rlcs[0..NUM_BYTES_PER_WORD]",$$
 with RLC iteration at each step
-$$\begin{array}{l} 
+```math
+\begin{array}{l} 
 \verb"data_rlcs[NUM_BYTES_PER_WORD - (idx + 1)] " 
 \\
 \verb" = data_rlcs[NUM_BYTES_PER_WORD - idx] * challenge + byte_value"
-\end{array}$$
+\end{array}
+```
 and
 $$\verb"data_rlcs[NUM_BYTES_PER_WORD]"=\verb"data_rlcs[0]"$$ which is previous round RLC result, initialized from $0$. This means after each round $\verb"data_rlcs[0]"$ contains the final RLC of input bytes up to this round. This is set to be the `data_rlc` of the current round, and it is passed to the next round so that after all 17 absorb rounds, we get the final `data_rlc` for the current chunk data. This is then passed to the next chunk until the last byte of input data, where `data_rlc` must exclude padding data. So in the final part of the input byte `data_rlc` will be equal to the corresponding `input_rlc` in the Keccak table.  
-
-

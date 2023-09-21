@@ -144,11 +144,14 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Check whether rws will overflow circuit limit.
     pub fn check_rw_num_limit(&self) -> Result<(), Error> {
         let max_rws = self.block.circuits_params.max_rws;
-        if max_rws == 0 {
-            return Ok(());
-        }
+        let effective_limit = if max_rws == 0 {
+            // even for dynamic case, we don't want to handle > 1M rows.
+            1_000_000
+        } else {
+            max_rws
+        };
         let rwc = self.block_ctx.rwc.0;
-        if rwc > max_rws {
+        if rwc > effective_limit {
             log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
             return Err(Error::InternalError("rws not enough"));
         };

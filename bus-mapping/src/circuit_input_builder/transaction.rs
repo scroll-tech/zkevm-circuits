@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, Memory},
+    evm_types::{gas_utils::tx_data_gas_cost, Memory, OpcodeId},
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
     AccessList, Address, GethExecTrace, Signature, Word, H256,
@@ -463,6 +463,34 @@ impl Transaction {
         let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
 
         self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
+    }
+}
+
+#[cfg(feature = "test")]
+impl Transaction {
+    /// test if the transaction has different evm behaviour opcodes or precompiles
+    pub fn has_l2_different_evm_behaviour_step(&self) -> bool {
+        use crate::{
+            circuit_input_builder::execution::ExecState, error::ExecError,
+            precompile::PrecompileCalls,
+        };
+        let different_opcodes = self.steps.iter().any(|step| {
+            matches!(
+                step.exec_state,
+                ExecState::Op(OpcodeId::SELFDESTRUCT)
+                    | ExecState::Op(OpcodeId::INVALID(0xff))
+                    | ExecState::Op(OpcodeId::DIFFICULTY)
+                    | ExecState::Precompile(PrecompileCalls::Modexp)
+                    | ExecState::Precompile(PrecompileCalls::Bn128Pairing)
+            )
+        });
+
+        let different_precompiles = self
+            .steps
+            .iter()
+            .any(|step| step.error == Some(ExecError::PrecompileFailed));
+
+        different_opcodes || different_precompiles
     }
 }
 

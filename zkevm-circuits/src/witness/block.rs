@@ -24,15 +24,15 @@ use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
     MptUpdates, RwMap, Transaction,
 };
-use crate::util::{Challenges, DEFAULT_RAND};
+use crate::util::Challenges;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
 #[derive(Debug, Clone, Default)]
 pub struct Block<F> {
-    /// The randomness for random linear combination
-    pub randomness: F,
+    /// For historical reasons..
+    pub _marker: std::marker::PhantomData<F>,
     /// Transactions in the block
     pub txs: Vec<Transaction>,
     /// Signatures in the block
@@ -52,8 +52,6 @@ pub struct Block<F> {
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
     pub exp_events: Vec<ExpEvent>,
-    /// Pad exponentiation circuit to make selectors fixed.
-    pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
@@ -519,7 +517,7 @@ pub fn block_convert<F: Field>(
     }
 
     Ok(Block {
-        randomness: F::from_u128(DEFAULT_RAND),
+        _marker: Default::default(),
         context: block.into(),
         rws,
         txs: block
@@ -559,7 +557,6 @@ pub fn block_convert<F: Field>(
             max_rws,
             ..block.circuits_params
         },
-        exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         withdraw_root: block.withdraw_root,
         prev_withdraw_root: block.prev_withdraw_root,

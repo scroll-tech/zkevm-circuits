@@ -795,8 +795,7 @@ impl<
     pub fn build_from_circuit_input_builder(
         builder: &CircuitInputBuilder,
     ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.randomness = Fr::from(MOCK_RANDOMNESS);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
         Self::build_from_witness_block(block)

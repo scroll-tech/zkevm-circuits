@@ -6,6 +6,8 @@ tags: scroll documentation
 
 code: https://github.com/scroll-tech/zkevm-circuits/blob/develop/zkevm-circuits/src/evm_circuit.rs `develop` branch.
 
+link to the original HackMD file: https://hackmd.io/@dieGzUCgSGmRZFQ7SDxXCA/BJF7RZad2
+
 [Ethereum Virtual Machine]: https://ethereum.org/en/developers/docs/evm/
 
 [opcodes]: https://www.evm.codes/?fork=shanghai
@@ -16,7 +18,7 @@ code: https://github.com/scroll-tech/zkevm-circuits/blob/develop/zkevm-circuits/
 
 The [Ethereum Virtual Machine] (EVM) is a state machine that defines the rules of valid state transition in the Ethereum protocol. This means that it specifies a deterministic function under which the next valid EVM state is computed from the current EVM state. The execution part of EVM uses [opcodes] to realize these state transitions, which results in an <i>Exection trace</i>.
 
-![EVMExecutionTrace-Circuit](https://hackmd.io/_uploads/SJyjmfR_3.png =60%x)
+![EVMExecutionTrace-Circuit](https://hackmd.io/_uploads/SJyjmfR_3.png)
 
 The execution trace consists of each step of execution defined by the opcode. EVM Circuit aims at constructing a constraint system corresponding to this execution trace, that can be proved by some backend zk-proof system such as Halo2. 
 
@@ -278,23 +280,25 @@ This gadget is applied to every execution step in order to check the correct tra
 
 #### `mulmod`
 
-According to the [ETH Yellow Paper], the MULMOD opcode (modulo addition operation) pops $3$ EVM words $\boldsymbol{\mu}_{\textbf{s}}[0], \boldsymbol{\mu}_{\textbf{s}}[1], \boldsymbol{\mu}_{\textbf{s}}[2]$ each with 256-bit (32 byte) size from the stack and push back one EVM word $\boldsymbol{\mu}_{\textbf{s}}'[0]$. 
+According to the [ETH Yellow Paper], the MULMOD opcode (modulo addition operation) pops $3$ EVM words $\mu_{s}[0]$, $\mu_{s}[1]$, $\mu_{s}[2]$ each with 256-bit (32 byte) size from the stack and push back one EVM word $\mu_{s}'[0]$. 
 
-To make our notations simpler, we denote $a=\boldsymbol{\mu}_{\textbf{s}}[0]$, $b=\boldsymbol{\mu}_{\textbf{s}}[1]$ and $n=\boldsymbol{\mu}_{\textbf{s}}[2]$ and $r=\boldsymbol{\mu}_{\textbf{s}}'[0]$, then the EVM behavior of MULMOD opcode can be viewed as a mapping 
-$$(a, b, n)\stackrel{\text{MULMOD}}{\rightarrow}  
+To make our notations simpler, we denote $a=\mu_{s}[0]$, $b=\mu_{s}[1]$ and $n=\mu_{s}[2]$ and $r=\mu_{s}'[0]$, then the EVM behavior of MULMOD opcode can be viewed as a mapping 
+```math
+(a, b, n)\stackrel{\text{MULMOD}}{\rightarrow}  
 r=\left\{\begin{array}{ll} 
 0 & \text{ if } n=0 \ ,
 \\
 a\cdot b \mod n & \text{ if } n\neq 0 \ .
 \end{array}\right.
-$$ 
+```
 The intermediate calculation is the multiplication of two $32$-byte words $a$ and $b$, and this operation is supposed to be <i>not</i> subject to $2^{256}$ modulo. 
 
 Of course, a full characterization of the EVM behavior under MULMOD also involves the correct stack push-pop: $3$ stack pops and $1$ stack push, and together with a gas cost of $8$.
 
 For the MULMOD opcode, EVM Circuit assigns $(a, b, n, r, k, a_{\text{reduced}}, d, e)$, each of which is 32-byte word:
 
-$$\begin{array}{rl}
+```math
+\begin{array}{rl}
 a & =\overline{a_0a_1...a_{31}}=\sum\limits_{i=0}^{31} a_i \cdot 256^i \ ,
 \\
 b & =\overline{b_0b_1...b_{31}}=\sum\limits_{i=0}^{31} b_i\cdot 256^i \ , 
@@ -310,25 +314,25 @@ d & =\overline{p_0p_1...p_{31}}=\sum\limits_{i=0}^{31} p_i\cdot 256^i \ ,
 e & =\overline{p_{32}p_{33}...p_{63}}=\sum\limits_{i=0}^{31} p_{32+i} \cdot 256^i \ ,
 \\
 k & =\overline{k_0k_1...k_{31}}=\sum\limits_{i=0}^{31} k_i \cdot 256^i \ .
-\end{array}$$
+\end{array}
+```
 
 It also assigns $\verb#n_sum#=n_0+...+n_{31}$.
 
 Then the constraints are
 
-- $a_{\text{reduced}} 
+- $a_\text{reduced} 
 == a\mod n \ \text{ if } n\neq 0
-\text{ and } a_{\text{reduced}} == 0 \text{ if } n=0$ (ModGadget); 
-- $a_{\text{reduced}}\cdot b + 0  
-== d\cdot 2^{256} + e$ (MulAddWords512Gadget);
+\text{ and } a_\text{reduced} == 0 \text{ if } n=0$ (ModGadget); 
+- $a_\text{reduced}\cdot b + 0  == d\cdot 2^{256} + e$ (MulAddWords512Gadget);
 - $k\cdot n + r == d\cdot 2^{256} + e$ (MulAddWords512Gadget);
-- $1-\mathbf{1}_{\{r<n\}}-\mathbf{1}_{\{\verb#n_sum#=0\}}==0$ (IsZeroGadget, LtWordGadget);
+- `1 - 1(r<n) - 1(n_sum=0) == 0` (IsZeroGadget, LtWordGadget);
 - `SameContextGadget`
     - opcodeID checks: opId $==$ OpcodeId(0x09);
     - state transition: rw_counter +4; stack\_pointer +2; pc +1; gas - op_cost;
-    - Lookups: $4$ busmapping lookups: $a=\boldsymbol{\mu}_{\textbf{s}}[0]$, 
-$b=\boldsymbol{\mu}_{\textbf{s}}[1]$, $n=\boldsymbol{\mu}_{\textbf{s}}[2]$, 
-$r=\boldsymbol{\mu}_{\textbf{s}}'[0]$;
+    - Lookups: $4$ busmapping lookups: $a=\mu_{s}[0]$, 
+$b=\mu_{s}[1]$, $n=\mu_{s}[2]$, 
+$r=\mu_{s}'[0]$;
     - Exceptions: 
         - 1. stack undeflow: $1022 \leq$ stack\_pointer $\leq 1024$; 
         - 2. out of gas: Remaining gas is not enough.
@@ -336,20 +340,22 @@ $r=\boldsymbol{\mu}_{\textbf{s}}'[0]$;
 
 #### `returndatacopy`
 
-According to the [ETH Yellow Paper], the RETURNDATACOPY opcode pops 3 stack elements $\boldsymbol{\mu}_{\textbf{s}}[0]$=`dest_offset`, $\boldsymbol{\mu}_{\textbf{s}}[1]$=`data_offset` and $\boldsymbol{\mu}_{\textbf{s}}[2]$=`size`. It copies output data from the previous call to memory. The copied output data starts from `data_offset` within return data from last call and memory copy starts from `dest_offset`, with copy data size equal to `size`. Denote by $\boldsymbol{\mu}'_{\textbf{m}}$ the updated memory state and $\boldsymbol{\mu}_{\textbf{o}}$ the return data from last call, then the rule is given by the following formula
-$$\forall i\in \{0... \boldsymbol{\mu}_{\textbf{s}}[2]-1\}: \boldsymbol{\mu}_{\textbf{m}}'[\boldsymbol{\mu}_{\textbf{s}}[0]+i]=\left\{
+According to the [ETH Yellow Paper], the RETURNDATACOPY opcode pops 3 stack elements $\mu_{s}[0]$=`dest_offset`, $\mu_{s}[1]$=`data_offset` and $\mu_{s}[2]$=`size`. It copies output data from the previous call to memory. The copied output data starts from `data_offset` within return data from last call and memory copy starts from `dest_offset`, with copy data size equal to `size`. Denote by $\mu'_m$ the updated memory state and $\mu_o$ the return data from last call, then the rule is given by the following formula
+```math
+\forall i\in \{0... \boldsymbol{\mu}_{\textbf{s}}[2]-1\}: \boldsymbol{\mu}_{\textbf{m}}'[\boldsymbol{\mu}_{\textbf{s}}[0]+i]=\left\{
 \begin{array}{ll}
 \boldsymbol{\mu}_{\textbf{o}}[\boldsymbol{\mu}_{\textbf{s}}[1]+i] & \text{ if } \boldsymbol{\mu}_{\textbf{s}}[1]+i<\|\boldsymbol{\mu}_{\textbf{o}}\|
 \\
 0 & \text{ otherwise .}
 \end{array}
-\right.$$
-Note that the data to be copied to memory that exceeds return data size ($\|\boldsymbol{\mu}_{\textbf{o}}\|$) will be padded by 0.
+\right.
+```
+Note that the data to be copied to memory that exceeds return data size ($||\mu_{o}||$) will be padded by 0.
 
 For RETURNDATACOPY opcode, EVM Circuit does the following type of constraint checks together with witness assignments:
 
 - Constraints for stack pop of `dest_offset`, `data_offset` and `size`. This means they are assigned from the step's rw data (via bus mapping) and then they are checked by doing RwTable lookups with `tag=RwTableTag::Stack`, as well as verifying correct stack pointer update;
-- Constraints for call context related data including `last_callee_id`, `return_data_offset` (offset for $\boldsymbol{\mu}_{\textbf{o}}$) and `return_data_size` ($\|\boldsymbol{\mu}_{\textbf{o}}\|$). These are assigned and then checked by RwTable lookups with `tag=RwTableTag::CallContext`. Here return data means the output data from last call, from which we fetch data that is to be copied into memory;
+- Constraints for call context related data including `last_callee_id`, `return_data_offset` (offset for $\mu_{o}$) and `return_data_size` ($\|\mu_o\|$). These are assigned and then checked by RwTable lookups with `tag=RwTableTag::CallContext`. Here return data means the output data from last call, from which we fetch data that is to be copied into memory;
 - Constraints for ensuring no out-of-bound errors happen with `return_data_size`;
 - Constraints for memory related behavior. This includes memory address and expansion via `dest_offset` and `size`, as well as gas cost for memory expansion;
 - Constraints for copy behavior. This is done by lookup to CopyTable with `src_id=last_callee_id` (source call id) and `dst_id=` current step call id (destination call id), and corresponding source and destination addresses determined by `return_data_offset`, `return_data_size`, `data_offset`, `dest_offset` and `size` (that computes destination memory address);

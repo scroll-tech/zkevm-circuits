@@ -56,7 +56,6 @@ fn test_super_circuit<
         .expect("could not finalize building block");
 
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-    block.randomness = Fr::from(MOCK_RANDOMNESS);
     block_apply_mpt_state(&mut block, &builder.mpt_init_state);
 
     let active_row_num =SuperCircuit::<

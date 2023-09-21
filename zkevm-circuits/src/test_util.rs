@@ -259,6 +259,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // Run evm circuit test
         if let Some(evm_checks) = &self.evm_checks {
             let k = block.get_evm_test_circuit_degree();
+            assert!(k <= 20);
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = EvmCircuit::get_test_cicuit_from_block(block.clone());
@@ -271,6 +272,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         if let Some(state_checks) = &self.state_checks {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
             let k = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
+            assert!(k <= 20);
             let state_circuit = StateCircuit::<Fr>::new(block.rws.clone(), params.max_rws);
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
