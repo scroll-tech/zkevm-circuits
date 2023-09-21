@@ -700,6 +700,17 @@ impl<'a> CircuitInputBuilder {
     }
 }
 
+#[cfg(feature = "test")]
+impl CircuitInputBuilder {
+    /// test if this circuit has any different evm behaviour trace
+    pub fn has_l2_different_evm_behaviour_trace(&self) -> bool {
+        self.block
+            .txs
+            .iter()
+            .any(|tx| tx.has_l2_different_evm_behaviour_step())
+    }
+}
+
 /// Return all the keccak inputs used during the processing of the current
 /// block.
 pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {

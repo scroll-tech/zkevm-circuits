@@ -46,5 +46,5 @@ jobs:
     runs-on: ${{ inputs.bastion-host }}
     concurrency: ${{ needs.select.outputs.matrix1 }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: .github/ciChecksScripts/wakeUpRunner.sh
