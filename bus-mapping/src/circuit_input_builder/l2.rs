@@ -227,7 +227,7 @@ fn dump_code_db(cdb: &CodeDB) {
 }
 
 impl CircuitInputBuilder {
-    fn apply_l2_trace(&mut self, block_trace: &BlockTrace, is_last: bool) -> Result<(), Error> {
+    fn apply_l2_trace(&mut self, block_trace: BlockTrace, is_last: bool) -> Result<(), Error> {
         log::trace!(
             "apply_l2_trace start, block num {:?}, is_last {is_last}",
             block_trace.header.number
@@ -309,7 +309,7 @@ impl CircuitInputBuilder {
     /// Create a new CircuitInputBuilder from the given `l2_trace` and `circuits_params`
     pub fn new_from_l2_trace(
         circuits_params: CircuitsParams,
-        l2_trace: &BlockTrace,
+        l2_trace: BlockTrace,
         more: bool,
         light_mode: bool,
     ) -> Result<Self, Error> {
@@ -351,7 +351,7 @@ impl CircuitInputBuilder {
 
         let mut code_db = CodeDB::new();
         code_db.insert(Vec::new());
-        update_codedb(&mut code_db, &sdb, l2_trace)?;
+        update_codedb(&mut code_db, &sdb, &l2_trace)?;
 
         let mut builder_block = circuit_input_builder::Block::from_headers(&[], circuits_params);
         builder_block.chain_id = chain_id;
@@ -372,7 +372,7 @@ impl CircuitInputBuilder {
     /// ...
     pub fn add_more_l2_trace(
         &mut self,
-        l2_trace: &BlockTrace,
+        l2_trace: BlockTrace,
         more: bool,
         light_mode: bool,
     ) -> Result<(), Error> {
@@ -409,7 +409,7 @@ impl CircuitInputBuilder {
             )
             .map_err(Error::IoError)?;
 
-        update_codedb(&mut self.code_db, &self.sdb, l2_trace)?;
+        update_codedb(&mut self.code_db, &self.sdb, &l2_trace)?;
 
         self.apply_l2_trace(l2_trace, !more)?;
         Ok(())

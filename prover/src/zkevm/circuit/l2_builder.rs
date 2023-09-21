@@ -257,15 +257,19 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
     // etc, so the generated block maybe invalid without any message
     if block_traces.is_empty() {
         let mut builder = prepare_default_builder(eth_types::Hash::zero(), None);
-        block_traces_to_witness_block_with_updated_state(&[], &mut builder, false)
+        block_traces_to_witness_block_with_updated_state(vec![], &mut builder, false)
     } else {
         let mut builder = CircuitInputBuilder::new_from_l2_trace(
             get_super_circuit_params(),
-            &block_traces[0],
+            block_traces[0].clone(),
             block_traces.len() > 1,
             false,
         )?;
-        block_traces_to_witness_block_with_updated_state(&block_traces[1..], &mut builder, false)
+        block_traces_to_witness_block_with_updated_state(
+            block_traces[1..].to_vec(),
+            &mut builder,
+            false,
+        )
     }
 }
 
@@ -274,7 +278,7 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
 /// light_mode skip the time consuming calculation on mpt root for each
 /// tx, currently used in row estimation
 pub fn block_traces_to_witness_block_with_updated_state(
-    block_traces: &[BlockTrace],
+    block_traces: Vec<BlockTrace>,
     builder: &mut CircuitInputBuilder,
     light_mode: bool,
 ) -> Result<Block<Fr>> {
@@ -315,8 +319,9 @@ pub fn block_traces_to_witness_block_with_updated_state(
         1
     };
 
-    for (idx, block_trace) in block_traces.iter().enumerate() {
-        let is_last = idx == block_traces.len() - 1;
+    let block_traces_len = block_traces.len();
+    for (idx, block_trace) in block_traces.into_iter().enumerate() {
+        let is_last = idx == block_traces_len - 1;
         log::debug!(
             "add_more_l2_trace idx {idx}, block num {:?}",
             block_trace.header.number
