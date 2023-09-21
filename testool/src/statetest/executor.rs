@@ -301,7 +301,8 @@ fn trace_config_to_witness_block_l2(
 
     let geth_traces = block_trace
         .execution_results
-        .iter()
+        .clone()
+        .into_iter()
         .map(From::from)
         .collect::<Vec<_>>();
     check_geth_traces(&geth_traces, &suite, verbose)?;

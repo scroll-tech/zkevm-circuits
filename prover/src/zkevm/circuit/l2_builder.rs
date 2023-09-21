@@ -61,9 +61,9 @@ pub fn get_super_circuit_params() -> CircuitsParams {
 
 // TODO: optimize it later
 pub fn calculate_row_usage_of_trace(
-    block_trace: &BlockTrace,
+    block_trace: BlockTrace,
 ) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
-    let witness_block = block_traces_to_witness_block(std::slice::from_ref(block_trace))?;
+    let witness_block = block_traces_to_witness_block(vec![block_trace])?;
     calculate_row_usage_of_witness_block(&witness_block)
 }
 
@@ -136,7 +136,7 @@ pub fn check_batch_capacity(block_traces: &mut Vec<BlockTrace>) -> Result<()> {
     let mut n_txs = 0;
     let mut truncate_idx = block_traces.len();
     for (idx, block) in block_traces.iter().enumerate() {
-        let usage = calculate_row_usage_of_trace(block)?
+        let usage = calculate_row_usage_of_trace(block.clone())?
             .into_iter()
             .map(|x| crate::zkevm::SubCircuitRowUsage {
                 name: x.name,
@@ -229,8 +229,8 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
     Ok(())
 }
 
-pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Block<Fr>> {
-    validite_block_traces(block_traces)?;
+pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block<Fr>> {
+    validite_block_traces(&block_traces)?;
     let block_num = block_traces.len();
     let total_tx_num = block_traces
         .iter()
@@ -249,7 +249,7 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
         block_num,
         total_tx_num,
     );
-    for block_trace in block_traces {
+    for block_trace in block_traces.iter() {
         log::debug!("start_l1_queue_index: {}", block_trace.start_l1_queue_index,);
     }
 
