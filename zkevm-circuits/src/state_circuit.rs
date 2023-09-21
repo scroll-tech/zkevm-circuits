@@ -752,7 +752,7 @@ impl<F: Field> StateCircuitConfig<F> {
                             return Ok(vec![]);
                         }
 
-                        log::info!(
+                        log::debug!(
                             "[part {}] state circuit: {} ~ {}",
                             part_idx,
                             indices.first().unwrap(),

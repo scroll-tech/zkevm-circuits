@@ -4,10 +4,9 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::CodeDB,
 };
-#[cfg(feature = "scroll")]
-use eth_types::ToBigEndian;
 use eth_types::{
-    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToWord, H256, U256, U64,
+    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
+    U64,
 };
 use ethers_core::{
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -235,7 +234,7 @@ fn check_geth_traces(
     suite: &TestSuite,
     verbose: bool,
 ) -> Result<(), StateTestError> {
-    #[cfg(feature = "skip-self-destruct")]
+    #[cfg(all(feature = "skip-self-destruct", not(feature = "scroll")))]
     if geth_traces.iter().any(|gt| {
         gt.struct_logs.iter().any(|sl| {
             sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
@@ -243,15 +242,6 @@ fn check_geth_traces(
         })
     }) {
         return Err(StateTestError::SkipTestSelfDestruct);
-    }
-
-    #[cfg(feature = "scroll")]
-    if geth_traces.iter().any(|gt| {
-        gt.struct_logs
-            .iter()
-            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
-    }) {
-        return Err(StateTestError::SkipTestDifficulty);
     }
 
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
@@ -304,7 +294,13 @@ fn trace_config_to_witness_block_l2(
         .iter()
         .map(From::from)
         .collect::<Vec<_>>();
-    check_geth_traces(&geth_traces, &suite, verbose)?;
+    // if the trace exceed max steps, we cannot fit it into circuit
+    // but we still want to make it go through bus-mapping generation
+    let exceed_max_steps = match check_geth_traces(&geth_traces, &suite, verbose) {
+        Err(StateTestError::SkipTestMaxSteps(steps)) => steps,
+        Err(e) => return Err(e),
+        Ok(_) => 0,
+    };
 
     set_env_coinbase(&block_trace.coinbase.address.unwrap());
     env::set_var("CHAIN_ID", format!("{}", block_trace.chain_id));
@@ -319,6 +315,11 @@ fn trace_config_to_witness_block_l2(
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
     zkevm_circuits::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    // as mentioned above, we cannot fit the trace into circuit
+    // stop here
+    if exceed_max_steps != 0 {
+        return Err(StateTestError::SkipTestMaxSteps(exceed_max_steps));
+    }
     Ok(Some((block, builder)))
 }
 
@@ -549,12 +550,17 @@ pub fn run_test(
     log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
     // get the geth traces
-    let (_, trace_config, post) = into_traceconfig(st.clone());
+    let (_, mut trace_config, post) = into_traceconfig(st.clone());
 
+    let balance_overflow = trace_config
+        .accounts
+        .iter()
+        .any(|(_, acc)| acc.balance.to_be_bytes()[0] != 0u8);
     #[cfg(feature = "scroll")]
-    for acc in trace_config.accounts.values() {
+    for (_, acc) in trace_config.accounts.iter_mut() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
-            return Err(StateTestError::SkipTestBalanceOverflow);
+            acc.balance = U256::from(1u128 << 127);
+            //return Err(StateTestError::SkipTestBalanceOverflow);
         }
     }
     log::debug!("trace_config generated");
@@ -674,38 +680,51 @@ pub fn run_test(
             mock_prove(&test_id, &witness_block);
         }
     };
-    //#[cfg(feature = "scroll")]
-    {
-        // fill these "untouched" storage slots
-        // It is better to fill these info after (instead of before) bus-mapping re-exec.
-        // To prevent these data being used unexpectedly.
-        // TODO: another method will be to skip empty account inside check_post?
-        for account in trace_config.accounts.values() {
-            builder.code_db.insert(account.code.to_vec());
-            let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
-            if !exist {
-                // modified from bus-mapping/src/mock.rs
-                let keccak_code_hash = H256(keccak256(&account.code));
-                let code_hash = CodeDB::hash(&account.code);
-                *acc_in_local_sdb = bus_mapping::state_db::Account {
-                    nonce: account.nonce,
-                    balance: account.balance,
-                    storage: account.storage.clone(),
-                    code_hash,
-                    keccak_code_hash,
-                    code_size: account.code.len().to_word(),
-                };
-            } else {
-                for (k, v) in &account.storage {
-                    if !acc_in_local_sdb.storage.contains_key(k) {
-                        acc_in_local_sdb.storage.insert(*k, *v);
+    log::debug!("balance_overflow = {balance_overflow}");
+    log::debug!(
+        "has_l2_different_evm_behaviour_trace = {}",
+        builder.has_l2_different_evm_behaviour_trace()
+    );
+    let skip_post_check = if cfg!(feature = "scroll") {
+        balance_overflow || builder.has_l2_different_evm_behaviour_trace()
+    } else {
+        false
+    };
+    if skip_post_check {
+        log::warn!("skip post check");
+    }
+    if !skip_post_check {
+        {
+            // fill these "untouched" storage slots
+            // It is better to fill these info after (instead of before) bus-mapping re-exec.
+            // To prevent these data being used unexpectedly.
+            // TODO: another method will be to skip empty account inside check_post?
+            for account in trace_config.accounts.values() {
+                builder.code_db.insert(account.code.to_vec());
+                let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
+                if !exist {
+                    // modified from bus-mapping/src/mock.rs
+                    let keccak_code_hash = H256(keccak256(&account.code));
+                    let code_hash = CodeDB::hash(&account.code);
+                    *acc_in_local_sdb = bus_mapping::state_db::Account {
+                        nonce: account.nonce,
+                        balance: account.balance,
+                        storage: account.storage.clone(),
+                        code_hash,
+                        keccak_code_hash,
+                        code_size: account.code.len().to_word(),
+                    };
+                } else {
+                    for (k, v) in &account.storage {
+                        if !acc_in_local_sdb.storage.contains_key(k) {
+                            acc_in_local_sdb.storage.insert(*k, *v);
+                        }
                     }
                 }
             }
         }
+        check_post(&builder, &post)?;
     }
-    check_post(&builder, &post)?;
-
     log::info!("{test_id}: run-test END");
     Ok(())
 }

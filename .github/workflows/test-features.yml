@@ -39,10 +39,10 @@ jobs:
           - test-circuits
           - warn-unimplemented
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
 
       # Go cache for building geth-utils
       - name: Go cache

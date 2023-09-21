@@ -13,7 +13,7 @@ on:
   push:
     branches:
       - develop
-  workflow_dispatch:    
+  workflow_dispatch:
     inputs:
       provertype:
         description: 'invoke real vs mock prover'
@@ -58,10 +58,10 @@ jobs:
     needs: set-outputs
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
