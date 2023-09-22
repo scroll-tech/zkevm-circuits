@@ -35,9 +35,9 @@ pub struct BlockTrace {
 }
 
 impl From<BlockTrace> for EthBlock {
-    fn from(mut b: BlockTrace) -> Self {
+    fn from(b: BlockTrace) -> Self {
         let mut txs = Vec::new();
-        for (idx, tx_data) in b.transactions.iter_mut().enumerate() {
+        for (idx, tx_data) in b.transactions.iter().enumerate() {
             let tx_idx = Some(U64::from(idx));
             let tx = tx_data.to_eth_tx(b.header.hash, b.header.number, tx_idx);
             txs.push(tx)
@@ -46,6 +46,22 @@ impl From<BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             ..b.header
+        }
+    }
+}
+
+impl From<&BlockTrace> for EthBlock {
+    fn from(b: &BlockTrace) -> Self {
+        let mut txs = Vec::new();
+        for (idx, tx_data) in b.transactions.iter().enumerate() {
+            let tx_idx = Some(U64::from(idx));
+            let tx = tx_data.to_eth_tx(b.header.hash, b.header.number, tx_idx);
+            txs.push(tx)
+        }
+        EthBlock {
+            transactions: txs,
+            difficulty: 0.into(),
+            ..b.header.clone()
         }
     }
 }
