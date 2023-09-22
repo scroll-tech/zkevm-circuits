@@ -12,7 +12,7 @@ use mpt_zktrie::{
     state::witness::WitnessGenerator,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 pub use state::ZktrieState;
 
