@@ -13,10 +13,8 @@ on:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: true
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: git
   RUST_MIN_STACK: 16777216
-
-## `actions-rs/toolchain@v1` overwrite set to false so that
-## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
   skip_check:
@@ -48,13 +46,13 @@ jobs:
         os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: set HOME env
         run: |
           echo "HOME=/home/CI" >> $GITHUB_ENV
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
@@ -76,16 +74,10 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
       - name: Run light tests # light tests are run in parallel
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --release --all --exclude integration-tests --exclude circuit-benchmarks
+        run: cargo test --verbose --release --all --exclude integration-tests --exclude circuit-benchmarks
       - name: Run heavy tests # heavy tests are run serially to avoid OOM
         if: false
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
+        run: cargo test --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
 
   test-scroll:
     name: Test Scroll
@@ -97,13 +89,13 @@ jobs:
         os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: set HOME env
         run: |
           echo "HOME=/home/CI" >> $GITHUB_ENV
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
@@ -125,25 +117,13 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
       - name: Run light tests # light tests are run in parallel
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
+        run: cargo test --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
       - name: Run heavy tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored
+        run: cargo test --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored
       - name: Run parallel assignment tests(bytecode)
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release --package zkevm-circuits --lib bytecode_circuit::test --features scroll,parallel_syn -- --nocapture
+        run: cargo test --release --package zkevm-circuits --lib bytecode_circuit::test --features scroll,parallel_syn -- --nocapture
       - name: Run parallel assignment tests(state)
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release --package zkevm-circuits --lib state_circuit::test --features scroll,parallel_syn -- --nocapture
+        run: cargo test --release --package zkevm-circuits --lib state_circuit::test --features scroll,parallel_syn -- --nocapture
 
   build:
     needs: [skip_check]
@@ -161,10 +141,10 @@ jobs:
           - wasm32-wasi
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
       - name: Add target
         run: rustup target add ${{ matrix.target }}
       # Go cache for building geth-utils
@@ -183,16 +163,10 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
       - name: cargo build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all-features
+        run: cargo build --all-features
       # Make sure benchmarks compile.
       - name: cargo build benchmarks no-run
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --release --all-features -p circuit-benchmarks --no-run
+        run: cargo test --verbose --release --all-features -p circuit-benchmarks --no-run
 
   bitrot:
     needs: [skip_check]
@@ -204,10 +178,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -225,10 +199,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --benches --examples --all-features
+        run: cargo build --benches --examples --all-features
 
   doc-links:
     needs: [skip_check]
@@ -240,10 +211,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -260,17 +231,12 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
       - name: cargo fetch
-        uses: actions-rs/cargo@v1
-        with:
-          command: fetch
+        run: cargo fetch
 
       # Ensure intra-documentation links all resolve correctly
       # Requires #![deny(intra_doc_link_resolution_failure)] in crates.
       - name: Check intra-doc links
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps --all --document-private-items
+        run: cargo doc --no-deps --all --document-private-items
 
   fmt:
     needs: [skip_check]
@@ -282,10 +248,11 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2022-12-10
+          components: rustfmt
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -301,13 +268,7 @@ jobs:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
-      - name: cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --all-features
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - name: Cargo check
+        run: cargo check --all-features
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check

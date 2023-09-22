@@ -333,7 +333,8 @@ impl Block {
         // Each byte needs 2 rows
         // TODO: magic num
         if self.copy_counter > 500_000 {
-            panic!("copy event len overflow {}", self.copy_counter);
+            log::error!("copy event len overflow {}", self.copy_counter);
+            panic!("copy event len overflow");
         }
     }
     fn copy_event_total_len(&self) -> usize {

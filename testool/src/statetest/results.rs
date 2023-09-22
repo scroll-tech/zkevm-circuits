@@ -376,7 +376,7 @@ impl Results {
         }
 
         info.sort_by(|a, b| b.0.cmp(&a.0));
-        for entry in info.iter().take(25) {
+        for entry in info.iter() {
             by_result.add_row(row![format!("{}", entry.0), entry.1]);
         }
 

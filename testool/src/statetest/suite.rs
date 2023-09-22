@@ -187,7 +187,15 @@ pub fn run_statetests_suite(
     if circuits_config.super_circuit {
         tcs.into_iter().for_each(|ref tc| run_state_test(tc));
     } else {
-        tcs.into_par_iter().for_each(|ref tc| run_state_test(tc));
+        const PARALLELISM: usize = 20;
+        let mut groups =
+            [(); PARALLELISM].map(|_| Vec::with_capacity((tcs.len() / PARALLELISM) + 1));
+        tcs.into_iter().enumerate().for_each(|(i, tc)| {
+            groups[i % PARALLELISM].push(tc);
+        });
+        groups
+            .into_par_iter()
+            .for_each(|chunk| chunk.into_iter().for_each(|ref tc| run_state_test(tc)));
     }
     Ok(())
 }
