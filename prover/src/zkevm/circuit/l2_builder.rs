@@ -229,6 +229,32 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
     Ok(())
 }
 
+pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block<Fr>> {
+    let chain_id = block_trace.chain_id;
+    if *CHAIN_ID != chain_id {
+        bail!(
+            "CHAIN_ID env var is wrong. chain id in trace {chain_id}, CHAIN_ID {}",
+            *CHAIN_ID
+        );
+    }
+    let total_tx_num = block_trace.transactions.len();
+    if total_tx_num > MAX_TXS {
+        bail!(
+            "block {}tx num overflow {total_tx_num}",
+            block_trace.header.number.unwrap()
+        );
+    }
+    log::info!("block_trace_to_witness_block, tx num {total_tx_num}");
+    log::debug!("start_l1_queue_index: {}", block_trace.start_l1_queue_index);
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(
+        get_super_circuit_params(),
+        block_trace,
+        false,
+        false,
+    )?;
+    block_traces_to_witness_block_with_updated_state(vec![], &mut builder, false)
+}
+
 pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block<Fr>> {
     validite_block_traces(&block_traces)?;
     let block_num = block_traces.len();
@@ -259,14 +285,16 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
         let mut builder = prepare_default_builder(eth_types::Hash::zero(), None);
         block_traces_to_witness_block_with_updated_state(vec![], &mut builder, false)
     } else {
+        let block_traces_len = block_traces.len();
+        let mut traces = block_traces.into_iter();
         let mut builder = CircuitInputBuilder::new_from_l2_trace(
             get_super_circuit_params(),
-            block_traces[0].clone(),
-            block_traces.len() > 1,
+            traces.next().unwrap(),
+            block_traces_len > 1,
             false,
         )?;
         block_traces_to_witness_block_with_updated_state(
-            block_traces[1..].to_vec(),
+            traces.collect(), // this is a cold path
             &mut builder,
             false,
         )
