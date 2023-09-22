@@ -40,6 +40,24 @@ pub struct MptUpdate {
     original_rws: Vec<Rw>,
 }
 
+// just for convenience
+impl Default for MptUpdate {
+    fn default() -> Self {
+        Self {
+            key: Key::Account {
+                address: Address::zero(),
+                field_tag: AccountFieldTag::Nonce,
+            },
+            old_value: Word::zero(),
+            new_value: Word::zero(),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+            #[cfg(debug_assertions)]
+            original_rws: Vec::new(),
+        }
+    }
+}
+
 /// All the MPT updates in the MptCircuit, accessible by their key
 #[derive(Default, Clone, Debug)]
 pub struct MptUpdates {

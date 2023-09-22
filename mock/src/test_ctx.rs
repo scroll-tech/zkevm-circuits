@@ -196,7 +196,8 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         #[cfg(feature = "scroll")]
         let geth_traces = block_trace
             .execution_results
-            .iter()
+            .clone()
+            .into_iter()
             .map(From::from)
             .collect::<Vec<_>>();
 

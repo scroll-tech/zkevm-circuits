@@ -301,7 +301,8 @@ fn trace_config_to_witness_block_l2(
 
     let geth_traces = block_trace
         .execution_results
-        .iter()
+        .clone()
+        .into_iter()
         .map(From::from)
         .collect::<Vec<_>>();
     check_geth_traces(&geth_traces, &suite, verbose)?;
@@ -311,7 +312,7 @@ fn trace_config_to_witness_block_l2(
     let difficulty_be_bytes = [0u8; 32];
     env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
     let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, &block_trace, false, false)
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace, false, false)
             .expect("could not handle block tx");
     builder
         .finalize_building()
