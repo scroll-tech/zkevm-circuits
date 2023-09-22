@@ -2,7 +2,7 @@ use crate::{
     common::{Prover, Verifier},
     config::{LayerId, ZKEVM_DEGREES},
     utils::read_env_var,
-    CompressionCircuit, WitnessBlock,
+    ChunkHash, ChunkProof, CompressionCircuit, WitnessBlock,
 };
 use once_cell::sync::Lazy;
 use std::env;
@@ -32,7 +32,7 @@ static mut CHUNK_VERIFIER: Lazy<Verifier<CompressionCircuit>> = Lazy::new(|| {
     verifier
 });
 
-pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) {
+pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
     log::info!("{test}: chunk-prove BEGIN");
 
     let prover = unsafe { &mut CHUNK_PROVER };
@@ -60,8 +60,15 @@ pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) {
         verifier.set_vk(vk);
     }
 
-    let verified = verifier.verify_snark(snark);
+    let verified = verifier.verify_snark(snark.clone());
     assert!(verified, "{test}: failed to verify chunk snark");
 
     log::info!("{test}: chunk-prove END");
+
+    ChunkProof::new(
+        snark,
+        prover.pk(LayerId::Layer2.id()),
+        Some(ChunkHash::from_witness_block(witness_block, false)),
+    )
+    .unwrap_or_else(|err| panic!("{test}: failed to crate chunk proof: {err}"))
 }
