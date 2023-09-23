@@ -1073,7 +1073,7 @@ fn constrain_flags(
 
     let mut res = chunk_are_valid[0].clone();
     for (index, cell) in chunk_are_valid.iter().enumerate().skip(1) {
-        rlc_config.enforce_binary(region, &cell, offset)?;
+        rlc_config.enforce_binary(region, cell, offset)?;
 
         // if the element is 1, the previous element must also be 1
         rlc_config.conditional_enforce_equal(
