@@ -1054,9 +1054,10 @@ mod test {
 
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, address, bytecode, evm_types::GasCost, word, Bytecode, Hash, Word};
-    use ethers_core::types::Bytes;
-
+    use eth_types::{
+        self, address, bytecode, evm_types::GasCost, word, Address, Bytecode, Hash, Word, U256,
+    };
+    use ethers_core::{types::Bytes, utils::get_contract_address};
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
@@ -1436,5 +1437,37 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    // Test that we handle the case where account creation tx happens for an account that already
+    // has a non-zero balance and codehash.
+    #[test]
+    fn create_tx_for_existing_account() {
+        let address = Address::repeat_byte(23);
+        let nonce = U256::from(4);
+        let new_address = get_contract_address(address, nonce + U256::one());
+        dbg!(nonce);
+        dbg!(new_address);
+
+        let ctx = TestContext::<1, 2>::new(
+            None,
+            |accs| {
+                accs[0].address(address).nonce(nonce).balance(eth(10));
+            },
+            |mut txs, _| {
+                txs[0]
+                    .from(address)
+                    .to(new_address)
+                    .value(eth(2))
+                    .nonce(nonce);
+                txs[1].from(address).nonce(nonce + U256::one());
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .block_modifier(Box::new(|block| block.circuits_params.max_txs = 3))
+            .run();
     }
 }

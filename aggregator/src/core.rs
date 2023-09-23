@@ -524,17 +524,15 @@ pub(crate) fn conditional_constraints(
                 let chunk_is_valid_cells = chunks_are_valid
                     .iter()
                     .map(|chunk_is_valid| -> Result<_, halo2_proofs::plonk::Error> {
-                        let cell = rlc_config.load_private(
+                        rlc_config.load_private(
                             &mut region,
                             &Fr::from(*chunk_is_valid as u64),
                             &mut offset,
-                        )?;
-                        rlc_config.enforce_binary(&mut region, &cell, &mut offset)?;
-                        Ok(cell)
+                        )
                     })
                     .collect::<Result<Vec<_>, halo2_proofs::plonk::Error>>()?;
                 let num_valid_snarks =
-                    num_valid_snarks(rlc_config, &mut region, &chunk_is_valid_cells, &mut offset)?;
+                    constrain_flags(rlc_config, &mut region, &chunk_is_valid_cells, &mut offset)?;
 
                 log::trace!("number of valid chunks: {:?}", num_valid_snarks.value());
                 //
@@ -1047,17 +1045,46 @@ pub(crate) fn conditional_constraints(
     Ok(())
 }
 
-// Input a list of flags whether the snark is valid
-// Return a cell for number of valid snarks
-fn num_valid_snarks(
+/// Input a list of flags whether the snark is valid
+///
+/// Assert the following relations on the flags:
+/// - all elements are binary
+/// - the first element is 1
+/// - for the next elements, if the element is 1, the previous element must also be 1
+///
+/// Return a cell for number of valid snarks
+fn constrain_flags(
     rlc_config: &RlcConfig,
     region: &mut Region<Fr>,
     chunk_are_valid: &[AssignedCell<Fr, Fr>],
     offset: &mut usize,
 ) -> Result<AssignedCell<Fr, Fr>, halo2_proofs::plonk::Error> {
+    assert!(!chunk_are_valid.is_empty());
+
+    let one = {
+        let one = rlc_config.load_private(region, &Fr::one(), offset)?;
+        let one_cell = rlc_config.one_cell(chunk_are_valid[0].cell().region_index);
+        region.constrain_equal(one.cell(), one_cell)?;
+        one
+    };
+
+    // the first element is 1
+    region.constrain_equal(chunk_are_valid[0].cell(), one.cell())?;
+
     let mut res = chunk_are_valid[0].clone();
-    for e in chunk_are_valid.iter().skip(1) {
-        res = rlc_config.add(region, &res, e, offset)?;
+    for (index, cell) in chunk_are_valid.iter().enumerate().skip(1) {
+        rlc_config.enforce_binary(region, cell, offset)?;
+
+        // if the element is 1, the previous element must also be 1
+        rlc_config.conditional_enforce_equal(
+            region,
+            &chunk_are_valid[index - 1],
+            &one,
+            cell,
+            offset,
+        )?;
+
+        res = rlc_config.add(region, &res, cell, offset)?;
     }
     Ok(res)
 }
