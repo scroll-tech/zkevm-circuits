@@ -12,8 +12,9 @@ use mpt_zktrie::state::ZktrieState;
 use once_cell::sync::Lazy;
 use std::time::Instant;
 use zkevm_circuits::{
-    evm_circuit::witness::{block_apply_mpt_state, block_convert_with_l1_queue_index, Block},
+    evm_circuit::witness::{block_apply_mpt_state, Block},
     util::SubCircuit,
+    witness::block_convert,
 };
 
 static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 53077));
@@ -293,11 +294,14 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
             block_traces_len > 1,
             false,
         )?;
-        block_traces_to_witness_block_with_updated_state(
+        let witness = block_traces_to_witness_block_with_updated_state(
             traces.collect(), // this is a cold path
             &mut builder,
             false,
-        )
+        );
+        // send to other thread to drop
+        std::thread::spawn(move || std::mem::drop(builder));
+        witness
     }
 }
 
@@ -312,11 +316,7 @@ pub fn block_traces_to_witness_block_with_updated_state(
 ) -> Result<Block<Fr>> {
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
-        let block = block_convert_with_l1_queue_index::<Fr>(
-            &builder.block,
-            &builder.code_db,
-            builder.block.start_l1_queue_index,
-        )?;
+        let block = block_convert(&builder.block, &builder.code_db)?;
         log::debug!("block convert time {:?}", t.elapsed());
         let rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block(&block);
         log::debug!(
@@ -361,11 +361,10 @@ pub fn block_traces_to_witness_block_with_updated_state(
     }
 
     builder.finalize_building()?;
-    let start_l1_queue_index = builder.block.start_l1_queue_index;
 
     log::debug!("converting builder.block to witness block");
-    let mut witness_block =
-        block_convert_with_l1_queue_index(&builder.block, &builder.code_db, start_l1_queue_index)?;
+
+    let mut witness_block = block_convert(&builder.block, &builder.code_db)?;
     log::debug!(
         "witness_block built with circuits_params {:?}",
         witness_block.circuits_params
