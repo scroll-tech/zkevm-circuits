@@ -40,6 +40,38 @@ pub struct MptUpdate {
     original_rws: Vec<Rw>,
 }
 
+impl MptUpdate {
+    fn from_rows(
+        key: Key,
+        rows: Vec<Rw>,
+        offset: usize,
+        total_lens: usize,
+        old_root: Word,
+        new_root: Word,
+    ) -> (Key, Self) {
+        let first = &rows[0];
+        let last = rows.iter().last().unwrap_or(first);
+        let key_exists = key;
+        let key = key.set_non_exists(value_prev(first), value(last));
+        (
+            key_exists,
+            MptUpdate {
+                key,
+                old_root: Word::from(offset as u64) + old_root,
+                new_root: if offset + 1 == total_lens {
+                    new_root
+                } else {
+                    Word::from(offset as u64 + 1) + old_root
+                },
+                old_value: value_prev(first),
+                new_value: value(last),
+                #[cfg(debug_assertions)]
+                original_rws: rows,
+            },
+        )
+    }
+}
+
 // just for convenience
 impl Default for MptUpdate {
     fn default() -> Self {
@@ -227,32 +259,13 @@ impl MptUpdates {
         let rows_len = rows.len();
         let mut updates = BTreeMap::new(); // TODO: preallocate
         for (key, row) in rows.iter().filter_map(|row| key(row).map(|key| (key, row))) {
-            updates.entry(key).or_insert_with(|| Vec::new()).push(row); // TODO: preallocate
+            updates.entry(key).or_insert_with(|| Vec::new()).push(*row); // TODO: preallocate
         }
         let updates: BTreeMap<_, _> = updates
             .into_iter()
             .enumerate()
             .map(|(i, (key, rows))| {
-                let first = &rows[0];
-                let last = rows.iter().last().unwrap_or(first);
-                let key_exists = key;
-                let key = key.set_non_exists(value_prev(first), value(last));
-                (
-                    key_exists,
-                    MptUpdate {
-                        key,
-                        old_root: Word::from(i as u64) + old_root,
-                        new_root: if i + 1 == rows_len {
-                            new_root
-                        } else {
-                            Word::from(i as u64 + 1) + old_root
-                        },
-                        old_value: value_prev(first),
-                        new_value: value(last),
-                        #[cfg(debug_assertions)]
-                        original_rws: rows.into_iter().map(|row| *row).collect(),
-                    },
-                )
+                MptUpdate::from_rows(key, rows, i, rows_len, old_root, new_root)
             })
             .collect();
         let mpt_updates = MptUpdates {
@@ -286,26 +299,7 @@ impl MptUpdates {
             .enumerate()
             .map(|(i, (key, rows))| {
                 let rows: Vec<Rw> = rows.copied().collect_vec();
-                let first = &rows[0];
-                let last = rows.iter().last().unwrap_or(first);
-                let key_exists = key;
-                let key = key.set_non_exists(value_prev(first), value(last));
-                (
-                    key_exists,
-                    MptUpdate {
-                        key,
-                        old_root: Word::from(i as u64) + old_root,
-                        new_root: if i + 1 == rows_len {
-                            new_root
-                        } else {
-                            Word::from(i as u64 + 1) + old_root
-                        },
-                        old_value: value_prev(first),
-                        new_value: value(last),
-                        #[cfg(debug_assertions)]
-                        original_rws: rows,
-                    },
-                )
+                MptUpdate::from_rows(key, rows, i, rows_len, old_root, new_root)
             })
             .collect();
         MptUpdates {
