@@ -1593,6 +1593,8 @@ dependencies = [
  "num-bigint",
  "once_cell",
  "poseidon-circuit",
+ "rand",
+ "rayon",
  "regex",
  "serde",
  "serde_json",

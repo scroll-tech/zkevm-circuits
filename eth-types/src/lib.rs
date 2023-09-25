@@ -21,6 +21,7 @@ pub mod bytecode;
 pub mod evm_types;
 pub mod geth_types;
 pub mod l2_types;
+pub mod parser;
 pub mod sign_types;
 
 pub use bytecode::Bytecode;
@@ -514,23 +515,6 @@ pub struct GethPrestateTrace {
     pub code: Option<Bytes>,
     /// storage
     pub storage: Option<HashMap<U256, U256>>,
-}
-
-#[macro_export]
-/// Create an [`Address`] from a hex string.  Panics on invalid input.
-macro_rules! address {
-    ($addr_hex:expr) => {{
-        use std::str::FromStr;
-        $crate::Address::from_str(&$addr_hex).expect("invalid hex Address")
-    }};
-}
-
-#[macro_export]
-/// Create a [`Word`] from a hex string.  Panics on invalid input.
-macro_rules! word {
-    ($word_hex:expr) => {
-        $crate::Word::from_str_radix(&$word_hex, 16).expect("invalid hex Word")
-    };
 }
 
 #[macro_export]
