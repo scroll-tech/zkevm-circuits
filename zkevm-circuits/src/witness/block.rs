@@ -480,7 +480,7 @@ pub fn block_convert<F: Field>(
         block.circuits_params.max_rws
     };
 
-    let mpt_updates = MptUpdates::from_rws_with_mock_state_roots(
+    let mpt_updates = MptUpdates::from_unsorted_rws_with_mock_state_roots(
         &rws.table_assignments_unsorted(),
         block.prev_state_root,
         block.end_state_root(),

@@ -4,6 +4,7 @@ use crate::{
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
+use itertools::Itertools;
 #[cfg(test)]
 use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 use mpt_zktrie::{
@@ -12,9 +13,8 @@ use mpt_zktrie::{
     state::witness::WitnessGenerator,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-
 pub use state::ZktrieState;
+use std::collections::BTreeMap;
 
 /// Used to store withdraw proof
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -218,50 +218,13 @@ impl MptUpdates {
         Self::from_rws_with_mock_state_roots(rows, 0xcafeu64.into(), 0xdeadbeefu64.into())
     }
 
-    pub(crate) fn from_rws_with_mock_state_roots(
+    pub(crate) fn from_unsorted_rws_with_mock_state_roots(
         rows: &[Rw],
         old_root: U256,
         new_root: U256,
     ) -> Self {
         log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
         let rows_len = rows.len();
-        #[cfg(debug_assertions)]
-        let old_updates = {
-            use itertools::Itertools;
-            let mut rows = rows.to_vec();
-            rows.sort_by_key(Rw::as_key);
-            let updates: BTreeMap<_, _> = rows
-                .iter()
-                .group_by(|row| key(row))
-                .into_iter()
-                .filter_map(|(key, rows)| key.map(|key| (key, rows)))
-                .enumerate()
-                .map(|(i, (key, rows))| {
-                    let rows: Vec<Rw> = rows.copied().collect_vec();
-                    let first = &rows[0];
-                    let last = rows.iter().last().unwrap_or(first);
-                    let key_exists = key;
-                    let key = key.set_non_exists(value_prev(first), value(last));
-                    (
-                        key_exists,
-                        MptUpdate {
-                            key,
-                            old_root: Word::from(i as u64) + old_root,
-                            new_root: if i + 1 == rows_len {
-                                new_root
-                            } else {
-                                Word::from(i as u64 + 1) + old_root
-                            },
-                            old_value: value_prev(first),
-                            new_value: value(last),
-                            #[cfg(debug_assertions)]
-                            original_rws: rows,
-                        },
-                    )
-                })
-                .collect();
-            updates
-        };
         let mut updates = BTreeMap::new(); // TODO: preallocate
         for (key, row) in rows.iter().filter_map(|row| key(row).map(|key| (key, row))) {
             updates.entry(key).or_insert_with(|| Vec::new()).push(row); // TODO: preallocate
@@ -292,8 +255,59 @@ impl MptUpdates {
                 )
             })
             .collect();
+        let mpt_updates = MptUpdates {
+            updates,
+            old_root,
+            new_root,
+            ..Default::default()
+        };
         #[cfg(debug_assertions)]
-        assert_eq!(updates, old_updates);
+        {
+            let mut rows = rows.to_vec();
+            rows.sort_by_key(Rw::as_key);
+            let old_updates = Self::from_rws_with_mock_state_roots(&rows, old_root, new_root);
+            assert_eq!(old_updates.updates, mpt_updates.updates);
+        }
+        mpt_updates
+    }
+
+    pub(crate) fn from_rws_with_mock_state_roots(
+        rows: &[Rw],
+        old_root: U256,
+        new_root: U256,
+    ) -> Self {
+        log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
+        let rows_len = rows.len();
+        let updates: BTreeMap<_, _> = rows
+            .iter()
+            .group_by(|row| key(row))
+            .into_iter()
+            .filter_map(|(key, rows)| key.map(|key| (key, rows)))
+            .enumerate()
+            .map(|(i, (key, rows))| {
+                let rows: Vec<Rw> = rows.copied().collect_vec();
+                let first = &rows[0];
+                let last = rows.iter().last().unwrap_or(first);
+                let key_exists = key;
+                let key = key.set_non_exists(value_prev(first), value(last));
+                (
+                    key_exists,
+                    MptUpdate {
+                        key,
+                        old_root: Word::from(i as u64) + old_root,
+                        new_root: if i + 1 == rows_len {
+                            new_root
+                        } else {
+                            Word::from(i as u64 + 1) + old_root
+                        },
+                        old_value: value_prev(first),
+                        new_value: value(last),
+                        #[cfg(debug_assertions)]
+                        original_rws: rows,
+                    },
+                )
+            })
+            .collect();
         MptUpdates {
             updates,
             old_root,
