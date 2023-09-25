@@ -551,7 +551,7 @@ pub fn run_test(
     log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
     // get the geth traces
-    let (_, trace_config, post) = into_traceconfig(st.clone());
+    let (_, mut trace_config, post) = into_traceconfig(st.clone());
 
     let balance_overflow = trace_config
         .accounts
