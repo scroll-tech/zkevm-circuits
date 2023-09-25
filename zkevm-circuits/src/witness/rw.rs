@@ -221,7 +221,7 @@ pub type RwKey = (u64, usize, Address, u64, Word);
 
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Rw {
     /// Start
     Start { rw_counter: usize },

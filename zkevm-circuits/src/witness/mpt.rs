@@ -28,7 +28,7 @@ pub struct WithdrawProof {
 }
 
 /// An MPT update whose validity is proved by the MptCircuit
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MptUpdate {
     key: Key,
     old_value: Word,
@@ -225,6 +225,43 @@ impl MptUpdates {
     ) -> Self {
         log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
         let rows_len = rows.len();
+        #[cfg(debug_assertions)]
+        let old_updates = {
+            use itertools::Itertools;
+            let mut rows = rows.to_vec();
+            rows.sort_by_key(Rw::as_key);
+            let updates: BTreeMap<_, _> = rows
+                .iter()
+                .group_by(|row| key(row))
+                .into_iter()
+                .filter_map(|(key, rows)| key.map(|key| (key, rows)))
+                .enumerate()
+                .map(|(i, (key, rows))| {
+                    let rows: Vec<Rw> = rows.copied().collect_vec();
+                    let first = &rows[0];
+                    let last = rows.iter().last().unwrap_or(first);
+                    let key_exists = key;
+                    let key = key.set_non_exists(value_prev(first), value(last));
+                    (
+                        key_exists,
+                        MptUpdate {
+                            key,
+                            old_root: Word::from(i as u64) + old_root,
+                            new_root: if i + 1 == rows_len {
+                                new_root
+                            } else {
+                                Word::from(i as u64 + 1) + old_root
+                            },
+                            old_value: value_prev(first),
+                            new_value: value(last),
+                            #[cfg(debug_assertions)]
+                            original_rws: rows,
+                        },
+                    )
+                })
+                .collect();
+            updates
+        };
         let mut updates = BTreeMap::new(); // TODO: preallocate
         for (key, row) in rows.iter().filter_map(|row| key(row).map(|key| (key, row))) {
             updates.entry(key).or_insert_with(|| Vec::new()).push(row); // TODO: preallocate
@@ -255,6 +292,8 @@ impl MptUpdates {
                 )
             })
             .collect();
+        #[cfg(debug_assertions)]
+        assert_eq!(updates, old_updates);
         MptUpdates {
             updates,
             old_root,
