@@ -69,7 +69,6 @@ fn common_call_ctx_reads(
             CallContextField::CalleeAddress,
             call.code_address().unwrap().to_word(),
         ),
-        (CallContextField::CallerId, call.caller_id.into()),
         (
             CallContextField::CallDataOffset,
             call.call_data_offset.into(),

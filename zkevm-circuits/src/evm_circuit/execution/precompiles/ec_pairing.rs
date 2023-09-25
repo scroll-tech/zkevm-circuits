@@ -53,7 +53,6 @@ pub struct EcPairingGadget<F> {
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
-    caller_id: Cell<F>,
     call_data_offset: Cell<F>,
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
@@ -72,11 +71,10 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         let n_pairs = cb.query_cell();
         let n_pairs_cmp = BinaryNumberGadget::construct(cb, n_pairs.expr());
 
-        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
+        let [is_success, callee_address, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
                 CallContextFieldTag::CalleeAddress,
-                CallContextFieldTag::CallerId,
                 CallContextFieldTag::CallDataOffset,
                 CallContextFieldTag::CallDataLength,
                 CallContextFieldTag::ReturnDataOffset,
@@ -272,7 +270,6 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
 
             is_success,
             callee_address,
-            caller_id,
             call_data_offset,
             call_data_length,
             return_data_offset,
@@ -405,8 +402,6 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             offset,
             Value::known(call.code_address.unwrap().to_scalar().unwrap()),
         )?;
-        self.caller_id
-            .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
         self.call_data_offset.assign(
             region,
             offset,
@@ -428,7 +423,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             Value::known(F::from(call.return_data_length)),
         )?;
         self.restore_context
-            .assign(region, offset, block, call, step, 7)
+            .assign(region, offset, block, call, step, 6)
     }
 }
 
