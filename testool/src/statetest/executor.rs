@@ -551,7 +551,7 @@ pub fn run_test(
     log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
     // get the geth traces
-    let (_, mut trace_config, post) = into_traceconfig(st.clone());
+    let (_, trace_config, post) = into_traceconfig(st.clone());
 
     let balance_overflow = trace_config
         .accounts
@@ -747,7 +747,7 @@ fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
     // TODO: do we need to automatically adjust this k?
     let k = 20;
     // TODO: remove this MOCK_RANDOMNESS?
-    let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
+    let circuit = ScrollSuperCircuit::new_from_block(witness_block);
     let instance = circuit.instance();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     prover.assert_satisfied_par();

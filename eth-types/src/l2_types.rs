@@ -206,9 +206,9 @@ impl From<ExecutionResult> for GethExecTrace {
             l1_fee: e.l1_fee.as_u64(),
             gas: Gas(e.gas),
             failed: e.failed,
-            return_value: e.return_value.clone(),
+            return_value: e.return_value,
             struct_logs,
-            account_after: e.account_after.clone(),
+            account_after: e.account_after,
         }
     }
 }

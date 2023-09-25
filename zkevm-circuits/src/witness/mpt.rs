@@ -259,7 +259,7 @@ impl MptUpdates {
         let rows_len = rows.len();
         let mut updates = BTreeMap::new(); // TODO: preallocate
         for (key, row) in rows.iter().filter_map(|row| key(row).map(|key| (key, row))) {
-            updates.entry(key).or_insert_with(|| Vec::new()).push(*row); // TODO: preallocate
+            updates.entry(key).or_insert_with(Vec::new).push(*row); // TODO: preallocate
         }
         let updates: BTreeMap<_, _> = updates
             .into_iter()
