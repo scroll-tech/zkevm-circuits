@@ -312,7 +312,7 @@ impl RlcConfig {
         cond: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        // (cond - 1) * b + cond * a
+        // (1 - cond) * b + cond * a
         let cond_not = self.not(region, cond, offset)?;
         let tmp = self.mul(region, a, cond, offset)?;
         self.mul_add(region, b, &cond_not, &tmp, offset)
@@ -360,8 +360,7 @@ impl RlcConfig {
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         assert!(flags.len() == inputs.len());
-
-        let mut acc = inputs[0].clone();
+        let mut acc = self.mul(region, &inputs[0], &flags[0], offset)?;
         for (input, flag) in inputs.iter().zip(flags.iter()).skip(1) {
             let tmp = self.mul_add(region, &acc, challenge, input, offset)?;
             acc = self.select(region, &tmp, &acc, flag, offset)?;
