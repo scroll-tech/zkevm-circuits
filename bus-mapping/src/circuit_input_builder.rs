@@ -106,7 +106,7 @@ pub struct CircuitsParams {
     /// In this case it will contain as many rows for all steps + 1 row
     /// for EndBlock.
     pub max_evm_rows: usize,
-    /// Max amount of rows that the CopyCircuit can have.
+    /// Max amount of rows that the MptCircuit can have.
     pub max_mpt_rows: usize,
     /// Pad the keccak circuit with this number of invocations to a static
     /// capacity.  Number of keccak_f that the Keccak circuit will support.
@@ -136,7 +136,7 @@ impl Default for CircuitsParams {
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
             max_copy_rows: 2000,
-            max_mpt_rows: 1000,
+            max_mpt_rows: 2049,
             max_exp_steps: 1000,
             max_bytecode: 512,
             max_evm_rows: 0,

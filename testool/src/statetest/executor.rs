@@ -486,7 +486,7 @@ fn get_params_for_super_circuit_test() -> CircuitsParams {
         max_calldata: MAX_CALLDATA,
         max_rws: 256,
         max_copy_rows: 256,
-        max_mpt_rows: 256,
+        max_mpt_rows: 2049,
         max_exp_steps: 256,
         max_bytecode: 512,
         max_evm_rows: 0,

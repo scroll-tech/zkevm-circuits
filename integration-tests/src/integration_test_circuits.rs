@@ -48,7 +48,7 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 /// MAX_TXS
 const MAX_TXS: usize = 4;
 /// MAX_CALLDATA
-const MAX_CALLDATA: usize = 512;
+const MAX_CALLDATA: usize = 2049;
 /// MAX_RLP_ROWS
 const MAX_RLP_ROWS: usize = 1000;
 /// MAX_RWS
