@@ -266,10 +266,14 @@ impl CircuitInputBuilder {
         self.handle_block_inner(&eth_block, &geth_trace, false, is_last)?;
         // TODO: remove this when GethExecStep don't contains heap data
         // send to another thread to drop the heap data
-        std::thread::spawn(move || {
-            std::mem::drop(eth_block);
-            std::mem::drop(geth_trace);
-        });
+        // here we use a magic number from benchmark to decide whether to
+        // spawn-drop or not
+        if !geth_trace.is_empty() && geth_trace[0].struct_logs.len() > 2000 {
+            std::thread::spawn(move || {
+                std::mem::drop(eth_block);
+                std::mem::drop(geth_trace);
+            });
+        }
         log::debug!("apply_l2_trace done for block {:?}", block_num);
         //self.sdb.list_accounts();
         Ok(())
