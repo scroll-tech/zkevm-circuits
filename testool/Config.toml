@@ -3,7 +3,22 @@ id="default"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-ignore_tests = []
+ignore_tests = [
+	"stTimeConsuming/CALLBlake2f_MaxRounds.json",
+	"stTimeConsuming/sstore_combinations_initial00.json",
+	"stTimeConsuming/sstore_combinations_initial00_2.json",
+	"stTimeConsuming/sstore_combinations_initial01.json",
+	"stTimeConsuming/sstore_combinations_initial01_2.json",
+	"stTimeConsuming/sstore_combinations_initial10.json",
+	"stTimeConsuming/sstore_combinations_initial10_2.json",
+	"stTimeConsuming/sstore_combinations_initial11.json",
+	"stTimeConsuming/sstore_combinations_initial11_2.json",
+	"stTimeConsuming/sstore_combinations_initial20.json",
+	"stTimeConsuming/sstore_combinations_initial20_2.json",
+	"stTimeConsuming/sstore_combinations_initial21.json",
+	"stTimeConsuming/sstore_combinations_initial21_2.json",
+	"stTimeConsuming/static_Call50000_sha256.json",
+]
 
 [[suite]]
 id="precompile"
