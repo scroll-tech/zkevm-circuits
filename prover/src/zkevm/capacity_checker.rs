@@ -147,6 +147,9 @@ impl CircuitCapacityChecker {
         self.acc_row_usage = RowUsage::new();
         self.row_usages = Vec::new();
     }
+    pub fn set_light_mode(&mut self, light_mode: bool) {
+        self.light_mode = light_mode;
+    }
     pub fn get_tx_num(&self) -> usize {
         self.row_usages.len()
     }
