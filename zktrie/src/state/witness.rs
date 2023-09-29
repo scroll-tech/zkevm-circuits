@@ -1,18 +1,23 @@
 //! witness generator
 use super::{
-    builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof},
+    builder::{
+        extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof, SECURE_HASH_DOMAIN,
+    },
     MPTProofType, ZktrieState,
 };
-use eth_types::{Address, Hash, Word, H256, U256};
+use eth_types::{Address, Hash, ToWord, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use mpt_circuits::serde::{
     AccountData as SMTAccount, Hash as SMTHash, HexBytes, SMTNode, SMTPath, SMTTrace, StateData,
 };
 use std::collections::HashMap;
-use zktrie::{Hash as ZkTrieHash, ZkTrie, ZkTrieNode};
+use zktrie::{ZkTrie, ZkTrieNode};
 
 use num_bigint::BigUint;
-use std::io::{Error as IoError, Read};
+use std::{
+    fmt,
+    io::{Error as IoError, Read},
+};
 
 impl From<AccountData> for SMTAccount {
     fn from(acc: AccountData) -> Self {
@@ -36,55 +41,28 @@ impl From<AccountData> for SMTAccount {
 /// witness generator for producing SMTTrace
 pub struct WitnessGenerator {
     trie: ZkTrie,
-    accounts: HashMap<Address, AccountData>,
-    storages: HashMap<Address, ZkTrie>,
+    storages_cache: HashMap<Address, ZkTrie>,
 }
 
 impl From<&ZktrieState> for WitnessGenerator {
     fn from(state: &ZktrieState) -> Self {
-        let trie = state.zk_db.borrow_mut().new_trie(&state.trie_root).unwrap();
-        let accounts: HashMap<_, _> = state
-            .accounts
-            .iter()
-            // filter out the account data which is empty can provide update applying some
-            // convenient
-            .filter(|(_, acc)| !acc.poseidon_code_hash.is_zero())
-            .map(|(key, acc)| {
-                debug_assert!(
-                    !acc.is_empty(),
-                    "empty account should not be part of trie {key} {acc:?}"
-                );
-                (*key, *acc)
-            })
-            .collect();
-
-        let storages: HashMap<_, _> = state
-            .accounts
-            .iter()
-            .map(|(addr, acc)| {
-                (
-                    *addr,
-                    state.zk_db.borrow_mut().new_trie(&acc.storage_root.0),
-                )
-            })
-            // if an account has no storage slot being touched in execution, they do not need
-            // storage trie and would be filter out here
-            .filter(|(_, storage_trie)| storage_trie.is_some())
-            .map(|(addr, storage_trie)| (addr, storage_trie.expect("None has been filtered")))
-            .collect();
-
         Self {
-            trie,
-            accounts,
-            storages,
+            trie: state.zk_db.borrow_mut().new_trie(&state.trie_root).unwrap(),
+            storages_cache: HashMap::new(),
         }
     }
 }
 
 impl WitnessGenerator {
     /// dump inner data for debugging
-    pub fn dump(&self) {
-        log::info!("account data {:#?}", self.accounts);
+    pub fn dump<'a>(&self, addrs: impl Iterator<Item = &'a Address>) {
+        for addr in addrs {
+            let acc = self
+                .trie
+                .get_account(addr.as_bytes())
+                .map(AccountData::from);
+            log::info!("account data {:#x}: {:#?}", addr, acc);
+        }
     }
     /// get account proof
     pub fn account_proof(&self, address: Address) -> Vec<Vec<u8>> {
@@ -92,20 +70,42 @@ impl WitnessGenerator {
     }
     /// get storage proof
     pub fn storage_proof(&self, address: Address, key: Word) -> Vec<Vec<u8>> {
-        let (_storage_key, key) = {
+        let key = {
             let mut word_buf = [0u8; 32];
             key.to_big_endian(word_buf.as_mut_slice());
-            (hash_zktrie_key(&word_buf), HexBytes(word_buf))
+            HexBytes(word_buf)
         };
-        // TODO: use or_else to optimize
-        let default_trie = &ZktrieState::default()
-            .zk_db
-            .borrow_mut()
-            .new_trie(&ZkTrieHash::default())
-            .unwrap();
-        let trie: &ZkTrie = self.storages.get(&address).unwrap_or(default_trie);
-        trie.prove(key.as_ref()).unwrap()
+
+        self.storages_cache
+            .get(&address)
+            .map(Clone::clone)
+            .or_else(|| {
+                self.trie
+                    .get_account(address.as_bytes())
+                    .map(AccountData::from)
+                    .and_then(|account| self.trie.get_db().new_trie(&account.storage_root.0))
+            })
+            .and_then(|trie| trie.prove(key.as_ref()).ok())
+            .unwrap_or_default()
     }
+    fn fetch_storage_cache(&mut self, address: Address) -> Option<&mut ZkTrie> {
+        let cache_entry = self.storages_cache.entry(address);
+        match cache_entry {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let account = self.trie.get_account(address.as_bytes());
+                account
+                    .map(AccountData::from)
+                    .and_then(|acc_data| {
+                        // all trie share the same underlay db, so we can create new trie here
+                        let zk_db = self.trie.get_db();
+                        zk_db.new_trie(&acc_data.storage_root.0)
+                    })
+                    .map(|trie| entry.insert(trie))
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
+        }
+    }
+
     fn trace_storage_update(
         &mut self,
         address: Address,
@@ -119,49 +119,19 @@ impl WitnessGenerator {
             (hash_zktrie_key(&word_buf), HexBytes(word_buf))
         };
 
-        // Handle corner case where the account doesn't exist at all. In this case we produce an
-        // non-existing account proof, but with the state_key field set.
-        if new_value.is_zero() && !self.accounts.contains_key(&address) {
-            let mut trace = self.trace_account_update(address, |_| None);
-            trace.state_key = Some(key);
-            return trace;
-        }
-
-        self.storages.entry(address).or_insert_with(|| {
-            ZktrieState::default()
-                .zk_db
-                .borrow_mut()
-                .new_trie(&ZkTrieHash::default())
-                .unwrap()
-        });
-
-        let trie = self.storages.get_mut(&address).unwrap();
-
-        let store_before = {
-            let mut word_buf = [0u8; 32];
-            old_value.to_big_endian(word_buf.as_mut_slice());
-            // sanity check
-            let old_value_in_statedb = trie.get_store(key.as_ref()).unwrap_or_default();
-            if word_buf != old_value_in_statedb {
-                log::error!(
-                    "old value in proof {:?} != old value in partial db {:?}",
-                    hex::encode(word_buf),
-                    hex::encode(old_value_in_statedb)
-                );
-                log::error!(
-                    "address {:?} key {:?} new_value {:?} old_value {:?}",
-                    address,
-                    key,
-                    new_value,
-                    old_value
-                );
+        let trie = if let Some(trie) = self.fetch_storage_cache(address) {
+            trie
+        } else {
+            // Handle corner case where the account doesn't exist at all. In this case we produce an
+            // non-existing account proof, but with the state_key field set.
+            if new_value.is_zero() {
+                let mut trace = self.trace_account_update(address, |_| None);
+                trace.state_key = Some(key);
+                return trace;
             }
-            assert_eq!(word_buf, old_value_in_statedb);
-            StateData {
-                key,
-                value: HexBytes(word_buf),
-            }
+            panic!("");
         };
+
         let store_after = {
             let mut word_buf = [0u8; 32];
             new_value.to_big_endian(word_buf.as_mut_slice());
@@ -171,7 +141,27 @@ impl WitnessGenerator {
             }
         };
         let storage_before_proofs = trie.prove(key.as_ref()).unwrap();
-        let storage_before_path = decode_proof_for_mpt_path(storage_key, storage_before_proofs);
+        let storage_before = decode_proof_for_mpt_path(storage_key, storage_before_proofs);
+
+        let store_before = {
+            let mut word_buf = [0u8; 32];
+            old_value.to_big_endian(word_buf.as_mut_slice());
+            // sanity check
+            let old_value_in_trie = storage_before
+                .as_ref()
+                .ok()
+                .and_then(|(_, nd)| nd.as_ref())
+                .and_then(|nd| nd.as_storage())
+                .unwrap_or_default();
+            assert_eq!(hex::encode(word_buf), hex::encode(old_value_in_trie),
+                "for (address {address:?} key {key:?}): old value in proof != old value in partial trie",
+            );
+            StateData {
+                key,
+                value: HexBytes(word_buf),
+            }
+        };
+
         if !new_value.is_zero() {
             trie.update_store(key.as_ref(), &store_after.value.0)
                 .unwrap();
@@ -184,14 +174,14 @@ impl WitnessGenerator {
 
         let storage_root_after = H256(trie.root());
         let storage_after_proofs = trie.prove(key.as_ref()).unwrap();
-        let storage_after_path = decode_proof_for_mpt_path(storage_key, storage_after_proofs);
+        let storage_after = decode_proof_for_mpt_path(storage_key, storage_after_proofs);
 
         // sanity check
         assert_eq!(
             smt_hash_from_bytes(storage_root_after.as_bytes()),
-            storage_after_path
+            storage_after
                 .as_ref()
-                .map(|p| p.root)
+                .map(|(p, _)| p.root)
                 .unwrap_or(HexBytes([0; 32]))
         );
 
@@ -200,9 +190,9 @@ impl WitnessGenerator {
                 // sanity check
                 assert_eq!(
                     smt_hash_from_bytes(acc.storage_root.as_bytes()),
-                    storage_before_path
+                    storage_before
                         .as_ref()
-                        .map(|p| p.root)
+                        .map(|(p, _)| p.root)
                         .unwrap_or(HexBytes([0; 32]))
                 );
                 let mut acc = *acc;
@@ -218,7 +208,10 @@ impl WitnessGenerator {
         out.common_state_root = None; // clear common state root
         out.state_key = Some(smt_hash_from_u256(&storage_key));
 
-        out.state_path = [storage_before_path.ok(), storage_after_path.ok()];
+        out.state_path = [
+            storage_before.map(|(p, _)| p).ok(),
+            storage_after.map(|(p, _)| p).ok(),
+        ];
         out.state_update = Some([Some(store_before), Some(store_after)]);
         out
     }
@@ -227,8 +220,6 @@ impl WitnessGenerator {
     where
         U: FnOnce(Option<&AccountData>) -> Option<AccountData>,
     {
-        let account_data_before = self.accounts.get(&address).copied();
-
         let proofs = match self.trie.prove(address.as_bytes()) {
             Ok(proofs) => proofs,
             Err(e) => {
@@ -238,7 +229,11 @@ impl WitnessGenerator {
 
         let address_key = hash_zktrie_key(&extend_address_to_h256(&address));
 
-        let account_path_before = decode_proof_for_mpt_path(address_key, proofs).unwrap();
+        let (account_path_before, account_data_before) =
+            decode_proof_for_mpt_path(address_key, proofs).expect("unless the db is totally empty");
+        let account_data_before = account_data_before
+            .and_then(|nd| nd.as_account())
+            .map(AccountData::from);
 
         let account_data_after = update_account_data(account_data_before.as_ref());
 
@@ -271,18 +266,18 @@ impl WitnessGenerator {
                 log::warn!("invalid update {:?}", rs);
             }
 
-            self.accounts.insert(address, account_data_after);
+            // self.accounts_cache.insert(address, account_data_after);
             // if account_data_before.is_none() {
             //     self.storages.insert(address, ZkTrie::new());
             // }
         } else if account_data_before.is_some() {
             log::warn!("trace update try delete account {address:?} trie while we have no SELFDESTRUCT yet");
             self.trie.delete(address.as_bytes());
-            self.accounts.remove(&address);
+            // self.accounts_cache.remove(&address);
         } // no touch for non-exist proof
 
         let proofs = self.trie.prove(address.as_bytes()).unwrap();
-        let account_path_after = decode_proof_for_mpt_path(address_key, proofs).unwrap();
+        let (account_path_after, _) = decode_proof_for_mpt_path(address_key, proofs).unwrap();
 
         SMTTrace {
             address: HexBytes(address.0),
@@ -410,44 +405,48 @@ fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
     let bt_high = Fr::from_u128(u128::from_be_bytes(first_16bytes));
     let bt_low = Fr::from_u128(u128::from_be_bytes(last_16bytes));
 
-    let hash = Fr::hash_with_domain([bt_high, bt_low], Fr::from(512));
+    let hash = Fr::hash_with_domain([bt_high, bt_low], Fr::from(SECURE_HASH_DOMAIN));
 
     U256::from_little_endian(hash.to_repr().as_ref())
 }
 
-#[derive(Debug, Default, Clone)]
-struct LeafNodeHash(H256);
+#[derive(Default)]
+struct LeafNode(Option<ZkTrieNode>);
 
-impl CanRead for LeafNodeHash {
+impl fmt::Debug for LeafNode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({:?})", self.0.as_ref().and_then(|n| n.value_hash()),)
+    }
+}
+
+impl CanRead for LeafNode {
     fn try_parse(mut _rd: impl Read) -> Result<Self, IoError> {
         panic!("this entry is not used")
     }
     fn parse_leaf(data: &[u8]) -> Result<Self, IoError> {
-        let node = ZkTrieNode::parse(data);
-        Ok(Self(
-            node.value_hash()
-                .expect("leaf should has value hash")
-                .into(),
-        ))
+        let node = ZkTrieNode::parse(data).ok();
+        // sanity check
+        if let Some(node_r) = node.as_ref() {
+            assert!(node_r.is_tip(), "the bytes we have parsed must be a leaf");
+        }
+        Ok(Self(node))
     }
 }
 
-impl AsRef<[u8]> for LeafNodeHash {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTPath, IoError> {
+fn decode_proof_for_mpt_path(
+    mut key: Word,
+    proofs: Vec<Vec<u8>>,
+) -> Result<(SMTPath, Option<ZkTrieNode>), IoError> {
     let root = if let Some(arr) = proofs.first() {
-        let n = ZkTrieNode::parse(arr.as_slice());
+        let n = ZkTrieNode::parse(arr.as_slice()).expect("wrong proof bytes");
         smt_hash_from_bytes(n.node_hash().as_slice())
     } else {
         HexBytes::<32>([0; 32])
     };
 
+    let expected_key = key;
     let proof_bytes = proofs.iter().map(Vec::as_slice);
-    let trie_proof = TrieProof::<LeafNodeHash>::try_from(BytesArray(proof_bytes))?;
+    let trie_proof = TrieProof::<LeafNode>::try_from(BytesArray(proof_bytes))?;
 
     // convert path part
     let mut path_bit_now = BigUint::from(1_u32);
@@ -476,16 +475,31 @@ fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTP
         path_bit_now *= 2_u32;
     }
 
+    let node = trie_proof.data.0;
     let leaf = trie_proof.key.as_ref().map(|h| SMTNode {
         node_type: trie_proof.key_type.expect("key type should has been set"),
-        value: smt_hash_from_bytes(trie_proof.data.as_ref()),
+        value: smt_hash_from_bytes(
+            &node
+                .as_ref()
+                .and_then(ZkTrieNode::value_hash)
+                .expect("the node must exit and has value hash if we has parsed the node hash"),
+        ),
         sibling: smt_hash_from_bytes(h.as_bytes()),
     });
 
-    Ok(SMTPath {
-        root,
-        leaf,
-        path,
-        path_part,
-    })
+    let node = if trie_proof.key.as_ref().map(ToWord::to_word) == Some(expected_key) {
+        node
+    } else {
+        None
+    };
+
+    Ok((
+        SMTPath {
+            root,
+            leaf,
+            path,
+            path_part,
+        },
+        node,
+    ))
 }

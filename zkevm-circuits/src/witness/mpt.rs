@@ -129,7 +129,17 @@ impl MptUpdates {
                 root_pair2.0,
                 root_pair2.1
             );
-            wit_gen.dump();
+            wit_gen.dump(
+                self.updates
+                    .iter()
+                    .group_by(|(k, _)| match k {
+                        Key::Account { address, .. } | Key::AccountStorage { address, .. } => {
+                            address
+                        }
+                    })
+                    .into_iter()
+                    .map(|(addr, _)| addr),
+            );
         } else {
             log::debug!("roots consistent ({:#x},{:#x})", root_pair.0, root_pair.1);
         }

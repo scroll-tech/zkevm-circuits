@@ -42,6 +42,9 @@ impl<F: Field, const N_BYTES: usize> ComparatorConfig<F, N_BYTES> {
         meta: &mut VirtualCells<F>,
         rotation: Option<Rotation>,
     ) -> (Expression<F>, Expression<F>) {
+        let rotation_is_cur = rotation.map_or(true, |r| r == Rotation::cur());
+        assert!(rotation_is_cur);
+
         (
             self.lt_chip.config.is_lt(meta, rotation),
             self.eq_chip.config.is_equal_expression.clone(),

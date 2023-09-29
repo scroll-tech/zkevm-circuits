@@ -314,7 +314,10 @@ fn trace_config_to_witness_block_l2(
         .expect("could not finalize building block");
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-    zkevm_circuits::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    zkevm_circuits::witness::block_apply_mpt_state(
+        &mut block,
+        builder.mpt_init_state.as_ref().unwrap(),
+    );
     // as mentioned above, we cannot fit the trace into circuit
     // stop here
     if exceed_max_steps != 0 {
@@ -486,7 +489,7 @@ fn get_params_for_super_circuit_test() -> CircuitsParams {
         max_calldata: MAX_CALLDATA,
         max_rws: 256,
         max_copy_rows: 256,
-        max_mpt_rows: 256,
+        max_mpt_rows: 2049,
         max_exp_steps: 256,
         max_bytecode: 512,
         max_evm_rows: 0,

@@ -92,6 +92,16 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
     type Config = MptCircuitConfig<Fr>;
 
     fn new_from_block(block: &witness::Block<Fr>) -> Self {
+        // 0 means "dynamic"
+        if block.circuits_params.max_mpt_rows != 0 {
+            // Fixed byte-bit-index lookup needs 2049 rows.
+            if block.circuits_params.max_mpt_rows < 2049 {
+                panic!(
+                    "invalid max_mpt_rows {}",
+                    block.circuits_params.max_mpt_rows
+                );
+            }
+        }
         let traces: Vec<_> = block
             .mpt_updates
             .proof_types
@@ -112,8 +122,10 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
         (
             // For an empty storage proof, we may need to lookup the canonical representations of
             // three different keys. Each lookup requires 32 rows.
+            // The key bit lookup within the mpt circuit requires a minimum of 8 * 256 rows. The +1
+            // comes from the fact that the mpt circuit starts assigning at offset = 1.
             3 * 32 * block.mpt_updates.len(),
-            block.circuits_params.max_mpt_rows,
+            block.circuits_params.max_mpt_rows.max(8 * 256 + 1),
         )
     }
 

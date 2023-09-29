@@ -71,13 +71,13 @@ extern "C" fn hash_scheme(
     }
 }
 
-const NODE_TYPE_MIDDLE_0: u8 = 6;
-const NODE_TYPE_MIDDLE_1: u8 = 7;
-const NODE_TYPE_MIDDLE_2: u8 = 8;
-const NODE_TYPE_MIDDLE_3: u8 = 9;
-const NODE_TYPE_LEAF: u8 = 4;
-const NODE_TYPE_EMPTY: u8 = 5;
-const SECURE_HASH_DOMAIN: u64 = 512;
+pub(crate) const NODE_TYPE_MIDDLE_0: u8 = 6;
+pub(crate) const NODE_TYPE_MIDDLE_1: u8 = 7;
+pub(crate) const NODE_TYPE_MIDDLE_2: u8 = 8;
+pub(crate) const NODE_TYPE_MIDDLE_3: u8 = 9;
+pub(crate) const NODE_TYPE_LEAF: u8 = 4;
+pub(crate) const NODE_TYPE_EMPTY: u8 = 5;
+pub(crate) const SECURE_HASH_DOMAIN: u64 = 512;
 
 /// AccountData
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
@@ -112,6 +112,28 @@ impl AccountData {
     }
 }
 
+impl From<zktrie::AccountData> for AccountData {
+    fn from(acc_fields: zktrie::AccountData) -> Self {
+        let field0 = acc_fields[0];
+
+        let code_size = U64::from_big_endian(&field0[16..24]);
+        let nonce = U64::from_big_endian(&field0[24..]);
+        let balance = U256::from_big_endian(&acc_fields[1]);
+        let storage_root = H256::from(&acc_fields[2]);
+        let keccak_code_hash = H256::from(&acc_fields[3]);
+        let poseidon_code_hash = H256::from(&acc_fields[4]);
+
+        Self {
+            nonce: nonce.as_u64(),
+            balance,
+            keccak_code_hash,
+            poseidon_code_hash,
+            code_size: code_size.as_u64(),
+            storage_root,
+        }
+    }
+}
+
 pub(crate) fn extend_address_to_h256(src: &Address) -> [u8; 32] {
     let mut bts: Vec<u8> = src.as_bytes().into();
     bts.resize(32, 0);
@@ -136,32 +158,11 @@ impl CanRead for AccountData {
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
 
-        let mut byte8_buf = [0u8; 8];
-        let mut byte16_buf = [0u8; 16];
-        let mut byte32_buf = [0; 32];
-        rd.read_exact(&mut byte16_buf)?;
-        rd.read_exact(&mut byte8_buf)?;
-        let code_size = U64::from_big_endian(&byte8_buf);
-        rd.read_exact(&mut byte8_buf)?;
-        let nonce = U64::from_big_endian(&byte8_buf);
-
-        rd.read_exact(&mut byte32_buf)?; // balance
-        let balance = U256::from_big_endian(&byte32_buf);
-        rd.read_exact(&mut byte32_buf)?; // storage root
-        let storage_root = H256::from(&byte32_buf);
-        rd.read_exact(&mut byte32_buf)?; // keccak hash of code
-        let keccak_code_hash = H256::from(&byte32_buf);
-        rd.read_exact(&mut byte32_buf)?; // poseidon hash of code
-        let poseidon_code_hash = H256::from(&byte32_buf);
-
-        Ok(AccountData {
-            nonce: nonce.as_u64(),
-            balance,
-            keccak_code_hash,
-            poseidon_code_hash,
-            code_size: code_size.as_u64(),
-            storage_root,
-        })
+        let mut read_buf = [0; zktrie::ACCOUNTFIELDS].map(|_| [0u8; zktrie::FIELDSIZE]);
+        for field_buf in read_buf.iter_mut() {
+            rd.read_exact(field_buf.as_mut_slice())?;
+        }
+        Ok(read_buf.into())
     }
 }
 
@@ -172,6 +173,18 @@ pub struct StorageData(Word);
 impl AsRef<Word> for StorageData {
     fn as_ref(&self) -> &Word {
         &self.0
+    }
+}
+
+impl From<StorageData> for Word {
+    fn from(data: StorageData) -> Self {
+        data.0
+    }
+}
+
+impl From<zktrie::StoreData> for StorageData {
+    fn from(store_field: zktrie::StoreData) -> Self {
+        Self(Word::from(store_field))
     }
 }
 
