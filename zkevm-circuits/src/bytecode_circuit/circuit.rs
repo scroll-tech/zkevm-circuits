@@ -19,7 +19,7 @@ use halo2_proofs::{
 use std::vec;
 
 use super::{
-    bytecode_unroller::{unroll_with_codehash, UnrolledBytecode},
+    bytecode_unroller::{unroll_with_codehash, BytecodeRow, UnrolledBytecode},
     param::PUSH_TABLE_WIDTH,
 };
 
@@ -50,6 +50,7 @@ pub struct BytecodeCircuitConfig<F> {
     q_last: Column<Fixed>,
     bytecode_table: BytecodeTable,
     push_data_left: Column<Advice>,
+    push_acc: Column<Advice>,
     value_rlc: Column<Advice>,
     length: Column<Advice>,
     push_data_size: Column<Advice>,
@@ -89,6 +90,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         let q_last = meta.fixed_column();
         let value = bytecode_table.value;
         let push_data_left = meta.advice_column();
+        let push_acc = meta.advice_column_in(SecondPhase);
         let value_rlc = meta.advice_column_in(SecondPhase);
         let length = meta.advice_column();
         let push_data_size = meta.advice_column();
@@ -219,11 +221,18 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         meta.create_gate("Byte row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
+            let is_code = meta.query_advice(bytecode_table.is_code, Rotation::cur());
+            let push_acc = meta.query_advice(push_acc, Rotation::cur());
+
             cb.require_equal(
                 "cur.is_code == (cur.push_data_left == 0)",
-                meta.query_advice(bytecode_table.is_code, Rotation::cur()),
+                is_code.clone(),
                 push_data_left_is_zero.clone().is_zero_expression,
             );
+
+            cb.condition(is_code, |cb| {
+                cb.require_zero("init push_acc=0", push_acc);
+            });
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -381,6 +390,32 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 ),
             );
 
+            let is_code_next = meta.query_advice(bytecode_table.is_code, Rotation::next());
+            let value_next = meta.query_advice(bytecode_table.value, Rotation::next());
+            let push_acc_next = meta.query_advice(push_acc, Rotation::next());
+            let push_acc = meta.query_advice(push_acc, Rotation::cur());
+            let push_rlc_next = meta.query_advice(bytecode_table.push_rlc, Rotation::next());
+            let push_rlc = meta.query_advice(bytecode_table.push_rlc, Rotation::cur());
+
+            let push_rlc_next_or_finish = select::expr(
+                is_code_next.clone(), // If last push data row,
+                push_acc.clone(),     // final RLC,
+                push_rlc_next,        // else copy forward.
+            );
+            cb.require_equal(
+                "push_rlc is copied forward, or it equals the final push_acc",
+                push_rlc,
+                push_rlc_next_or_finish,
+            );
+
+            cb.condition(not::expr(is_code_next), |cb| {
+                cb.require_equal(
+                    "accumulate the next value into the next push_acc",
+                    push_acc_next,
+                    push_acc.clone() * challenges.evm_word() + value_next,
+                );
+            });
+
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_fixed(q_last, Rotation::cur())),
@@ -416,6 +451,10 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
                 meta.query_advice(length, Rotation::cur()),
             );
+
+            let push_rlc = meta.query_advice(bytecode_table.push_rlc, Rotation::cur());
+            let push_acc = meta.query_advice(push_acc, Rotation::cur());
+            cb.require_equal("push_rlc equals the final push_acc", push_rlc, push_acc);
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -459,6 +498,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             q_last,
             bytecode_table,
             push_data_left,
+            push_acc,
             value_rlc,
             length,
             push_data_size,
@@ -639,6 +679,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         let mut push_data_left = 0;
         let mut next_push_data_left = 0;
         let mut push_data_size = 0;
+        let mut push_acc_iter = vec![].into_iter();
+        let mut push_rlc = Value::known(F::zero());
         let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
         let length = F::from(bytecode.bytes.len() as u64);
 
@@ -662,8 +704,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 return Err(Error::Synthesis);
             }
 
-            // Track which byte is an opcode and which is push
-            // data
+            let push_acc = push_acc_iter.next().unwrap_or(Value::known(F::zero()));
+
             if idx > 0 {
                 let is_code = push_data_left == 0;
 
@@ -674,6 +716,18 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 } else {
                     push_data_left - 1
                 };
+
+                if is_code {
+                    // Calculate the RLC of the upcoming push data, if any.
+                    let start = idx + 1;
+                    let end = (start + push_data_size as usize).min(bytecode.rows.len());
+                    let push_accumulator =
+                        Self::make_push_rlc(challenges.evm_word(), &bytecode.rows[start..end]);
+                    // Set the RLC result for all rows of the instruction, or 0.
+                    push_rlc = push_accumulator.0;
+                    // Prepare the upcoming values of the RLC accumulator, or an empty iterator.
+                    push_acc_iter = push_accumulator.1.into_iter();
+                }
 
                 value_rlc
                     .as_mut()
@@ -696,6 +750,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     row.is_code,
                     row.value,
                     push_data_left,
+                    push_acc,
+                    push_rlc,
                     value_rlc,
                     length,
                     F::from(push_data_size),
@@ -735,6 +791,19 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         Ok(())
     }
 
+    /// Return the RLC (LE order) of a bytecode slice, and the intermediate accumulator values.
+    fn make_push_rlc(rand: Value<F>, rows: &[BytecodeRow<F>]) -> (Value<F>, Vec<Value<F>>) {
+        let mut acc = Value::known(F::zero());
+        let intermediates = rows
+            .iter()
+            .map(|row| {
+                acc = acc * rand + Value::known(row.value);
+                acc
+            })
+            .collect();
+        (acc, intermediates)
+    }
+
     fn set_padding_row(
         &self,
         region: &mut Region<'_, F>,
@@ -758,6 +827,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             F::zero(),
             0,
             Value::known(F::zero()),
+            Value::known(F::zero()),
+            Value::known(F::zero()),
             F::zero(),
             F::zero(),
         )
@@ -778,6 +849,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         is_code: F,
         value: F,
         push_data_left: u64,
+        push_acc: Value<F>,
+        push_rlc: Value<F>,
         value_rlc: Value<F>,
         length: F,
         push_data_size: F,
@@ -830,6 +903,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         }
         for (name, column, value) in [
             ("code_hash", self.bytecode_table.code_hash, code_hash),
+            ("push_acc", self.push_acc, push_acc),
+            ("push_rlc", self.bytecode_table.push_rlc, push_rlc),
             ("value_rlc", self.value_rlc, value_rlc),
         ] {
             region.assign_advice(
@@ -869,6 +944,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         region.name_column(|| "BYTECODE_length", self.length);
         region.name_column(|| "BYTECODE_push_data_left", self.push_data_left);
         region.name_column(|| "BYTECODE_push_data_size", self.push_data_size);
+        region.name_column(|| "BYTECODE_push_acc", self.push_acc);
         region.name_column(|| "BYTECODE_value_rlc", self.value_rlc);
         region.name_column(|| "BYTECODE_push_data_left_inv", self.push_data_left_inv);
         region.name_column(
