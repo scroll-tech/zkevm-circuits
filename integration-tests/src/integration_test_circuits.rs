@@ -48,7 +48,7 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 /// MAX_TXS
 const MAX_TXS: usize = 4;
 /// MAX_CALLDATA
-const MAX_CALLDATA: usize = 512;
+const MAX_CALLDATA: usize = 2049;
 /// MAX_RLP_ROWS
 const MAX_RLP_ROWS: usize = 1000;
 /// MAX_RWS
@@ -67,8 +67,8 @@ const MAX_EXP_STEPS: usize = 1000;
 const MAX_KECCAK_ROWS: usize = 15000;
 /// MAX_POSEIDON_ROWS
 const MAX_POSEIDON_ROWS: usize = 15000;
-/// MAX_VERTICLE_CIRCUIT_ROWS
-const MAX_VERTICLE_CIRCUIT_ROWS: usize = 0;
+/// MAX_VERTICAL_CIRCUIT_ROWS
+const MAX_VERTICAL_CIRCUIT_ROWS: usize = 0;
 /// Max number of EcAdd ops.
 const MAX_EC_ADD: usize = 10;
 /// Max number of EcMul ops.
@@ -88,7 +88,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_exp_steps: MAX_EXP_STEPS,
     max_keccak_rows: MAX_KECCAK_ROWS,
     max_poseidon_rows: MAX_POSEIDON_ROWS,
-    max_vertical_circuit_rows: MAX_VERTICLE_CIRCUIT_ROWS,
+    max_vertical_circuit_rows: MAX_VERTICAL_CIRCUIT_ROWS,
     max_rlp_rows: MAX_RLP_ROWS,
     max_ec_ops: PrecompileEcParams {
         ec_add: MAX_EC_ADD,

@@ -56,7 +56,10 @@ fn test_super_circuit<
         .expect("could not finalize building block");
 
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-    block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    block_apply_mpt_state(
+        &mut block,
+        &builder.mpt_init_state.expect("used non-light mode"),
+    );
 
     let active_row_num =SuperCircuit::<
         Fr,
@@ -238,7 +241,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
         max_copy_rows: 256,
         max_exp_steps: 256,
         max_bytecode: 512,
-        max_mpt_rows: 512,
+        max_mpt_rows: 2049,
         max_poseidon_rows: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
@@ -267,7 +270,7 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
         max_calldata: MAX_CALLDATA,
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
-        max_mpt_rows: 1024,
+        max_mpt_rows: 2049,
         max_poseidon_rows: 1024,
         max_bytecode: 512,
         max_keccak_rows: 0,
@@ -298,7 +301,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
         max_copy_rows: 256,
         max_exp_steps: 256,
         max_bytecode: 512,
-        max_mpt_rows: 512,
+        max_mpt_rows: 2049,
         max_poseidon_rows: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
@@ -328,7 +331,7 @@ fn serial_test_super_circuit_2tx_4max_tx() {
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
         max_bytecode: 512,
-        max_mpt_rows: 512,
+        max_mpt_rows: 2049,
         max_poseidon_rows: 512,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
@@ -356,7 +359,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_calldata: MAX_CALLDATA,
         max_rws: 256,
         max_copy_rows: 256,
-        max_mpt_rows: 512,
+        max_mpt_rows: 2049,
         max_poseidon_rows: 512,
         max_exp_steps: 256,
         max_bytecode: 512,
@@ -382,7 +385,7 @@ fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> Circ
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
         max_bytecode: 16384,
-        max_mpt_rows: 2048,
+        max_mpt_rows: 2049,
         max_poseidon_rows: 8192,
         max_evm_rows: 0,
         // modexp ref this to decide its ability, we

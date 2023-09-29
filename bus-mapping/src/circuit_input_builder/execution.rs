@@ -342,9 +342,6 @@ pub struct CopyStep {
     pub prev_value: u8,
     /// mask indicates this byte won't be copied.
     pub mask: bool,
-    /// Optional field which is enabled only for the source being `bytecode`,
-    /// and represents whether or not the byte is an opcode.
-    pub is_code: Option<bool>,
 }
 
 /// Defines an enum type that can hold either a number or a hash value.

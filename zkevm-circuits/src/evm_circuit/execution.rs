@@ -5,7 +5,7 @@ use super::{
         N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS,
         RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
-    util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    util::{instrumentation::Instrument, CachedRegion, CellManager, Inverter, StoredExpression},
     EvmCircuitExports,
 };
 use crate::{
@@ -987,6 +987,7 @@ impl<F: Field> ExecutionConfig<F> {
     fn assign_q_step(
         &self,
         region: &mut Region<'_, F>,
+        inverter: &Inverter<F>,
         offset: usize,
         height: usize,
     ) -> Result<(), Error> {
@@ -1000,22 +1001,18 @@ impl<F: Field> ExecutionConfig<F> {
                 offset,
                 || Value::known(if idx == 0 { F::one() } else { F::zero() }),
             )?;
-            let value = if idx == 0 {
-                F::zero()
-            } else {
-                F::from((height - idx) as u64)
-            };
+            let value = if idx == 0 { 0 } else { (height - idx) as u64 };
             region.assign_advice(
                 || "step height",
                 self.num_rows_until_next_step,
                 offset,
-                || Value::known(value),
+                || Value::known(F::from(value)),
             )?;
             region.assign_advice(
                 || "step height inv",
                 self.num_rows_inv,
                 offset,
-                || Value::known(value.invert().unwrap_or(F::zero())),
+                || Value::known(inverter.get(value)),
             )?;
         }
         Ok(())
@@ -1046,6 +1043,8 @@ impl<F: Field> ExecutionConfig<F> {
                     return Ok(());
                 }
                 let mut offset = 0;
+
+                let inverter = Inverter::new(MAX_STEP_HEIGHT as u64);
 
                 // Annotate the EVMCircuit columns within it's single region.
                 self.annotate_circuit(&mut region);
@@ -1131,7 +1130,7 @@ impl<F: Field> ExecutionConfig<F> {
                     )?;
 
                     // q_step logic
-                    self.assign_q_step(&mut region, offset, height)?;
+                    self.assign_q_step(&mut region, &inverter, offset, height)?;
 
                     offset += height;
                 }
@@ -1168,7 +1167,7 @@ impl<F: Field> ExecutionConfig<F> {
                     )?;
 
                     for row_idx in offset..last_row {
-                        self.assign_q_step(&mut region, row_idx, height)?;
+                        self.assign_q_step(&mut region, &inverter, row_idx, height)?;
                     }
                     offset = last_row;
                 }
@@ -1188,7 +1187,7 @@ impl<F: Field> ExecutionConfig<F> {
                     None,
                     challenges,
                 )?;
-                self.assign_q_step(&mut region, offset, height)?;
+                self.assign_q_step(&mut region, &inverter, offset, height)?;
                 // enable q_step_last
                 self.q_step_last.enable(&mut region, offset)?;
                 offset += height;

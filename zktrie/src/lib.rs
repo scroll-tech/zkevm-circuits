@@ -1,6 +1,7 @@
 //! mpt-zktrie circuits and utils
 //
 #![deny(missing_docs)]
+#![allow(dead_code)]
 
 pub use mpt_circuits;
 // use mpt_circuits::{hash::Hashable, operation::AccountOp, EthTrie,

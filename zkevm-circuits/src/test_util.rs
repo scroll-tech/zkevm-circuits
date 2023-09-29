@@ -203,11 +203,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
-        let params = if let Some(block) = self.block.as_ref() {
+        let mut params = if let Some(block) = self.block.as_ref() {
             block.circuits_params
         } else {
             self.circuits_params.unwrap_or_default()
         };
+        params.max_txs = NTX;
         log::debug!("params in CircuitTestBuilder: {:?}", params);
 
         let block: Block<Fr> = if self.block.is_some() {
@@ -230,7 +231,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                         .expect("could not finalize building block");
                     let mut block =
                         crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-                    crate::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+                    crate::witness::block_apply_mpt_state(
+                        &mut block,
+                        &builder.mpt_init_state.unwrap(),
+                    );
                     block
                 }
 
