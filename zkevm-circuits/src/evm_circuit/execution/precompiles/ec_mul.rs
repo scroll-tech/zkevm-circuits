@@ -287,20 +287,20 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
 
         if let Some(PrecompileAuxData::EcMul(aux_data)) = &step.aux_data {
             for (col, is_zero_gadget, word_value) in [
-                (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
-                (&self.point_p_y_rlc, &self.p_y_is_zero, aux_data.p_y),
+                (&self.point_p_x, &self.p_x_is_zero, aux_data.p_x),
+                (&self.point_p_y, &self.p_y_is_zero, aux_data.p_y),
             ] {
-                let rlc_val = region.keccak_rlc(&word_value.to_le_bytes());
-                col.assign(region, offset, rlc_val)?;
-                is_zero_gadget.assign_value(region, offset, rlc_val)?;
+                col.assign_u256(region, offset, word_value)?;
+                is_zero_gadget.assign_u256(region, offset, word_value)?;
             }
 
+            &self.scalar_s_raw.assign_u256(region, offset, aux_data.s_raw)?;
+
             for (col, word_value) in [
-                (&self.scalar_s_raw_rlc, aux_data.s_raw),
-                (&self.point_r_x_rlc, aux_data.r_x),
-                (&self.point_r_y_rlc, aux_data.r_y),
+                (&self.point_r_x, aux_data.r_x),
+                (&self.point_r_y, aux_data.r_y),
             ] {
-                col.assign(region, offset, region.keccak_rlc(&word_value.to_le_bytes()))?;
+                col.assign_u256(region, offset, word_value)?;
             }
 
             for (col, word_value) in [
