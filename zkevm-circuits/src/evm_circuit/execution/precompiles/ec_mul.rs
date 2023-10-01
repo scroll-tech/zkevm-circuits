@@ -77,18 +77,18 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (point_p_x_rlc, point_p_y_rlc, scalar_s_raw_rlc, point_r_x_rlc, point_r_y_rlc) = (
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
+        let (point_p_x, point_p_y, scalar_s_raw, point_r_x, point_r_y) = (
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
         );
 
         let (scalar_s_raw, scalar_s, fr_modulus) = (
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
+            cb.query_word32(),
+            cb.query_word32(),
+            cb.query_word32(),
         );
         cb.require_equal(
             "Scalar s (raw 32-bytes) equality",
