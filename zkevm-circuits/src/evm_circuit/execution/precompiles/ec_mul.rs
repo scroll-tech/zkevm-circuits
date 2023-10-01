@@ -41,36 +41,28 @@ lazy_static::lazy_static! {
 pub struct EcMulGadget<F> {
     point_p_x: WordCell<F>,
     point_p_y: WordCell<F>,
-    scalar_s_raw: WordCell<F>,
+    scalar_s_raw: Word32Cell<F>,
     point_r_x: WordCell<F>,
     point_r_y: WordCell<F>,
 
-    p_x_is_zero: IsZeroWordGadget<F, Word<F>>,
-    p_y_is_zero: IsZeroWordGadget<F, Word<F>>,
-    s_is_zero: IsZeroWordGadget<F, Word<F>>,
+    p_x_is_zero: IsZeroWordGadget<F, WordCell<F>>,
+    p_y_is_zero: IsZeroWordGadget<F, WordCell<F>>,
+    s_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 
     // Two Words (s_raw, scalar_s) that satisfies
     // k * Fr::MODULUS + scalar_s = s_raw
     // Used for proving correct modulo by Fr
-    scalar_s: WordCell<F>,
-    fr_modulus: WordCell<F>,   // Fr::MODULUS
+    scalar_s: Word32Cell<F>,
+    fr_modulus: Word32Cell<F>,   // Fr::MODULUS
     modword: ModGadget<F>,
 
     point_p_y_raw: Word32Cell<F>,
     point_r_y_raw: Word32Cell<F>,
-    s_is_fr_mod_minus_1: IsEqualWordGadget<F, Word<F>, Word<F>>,
-    fq_modulus: Word<F>,
+    fr_modulus_minus_1: Word32Cell<F>,
+    s_is_fr_mod_minus_1: IsEqualWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    fq_modulus: Word32Cell<F>,
     p_y_plus_r_y: AddWordsGadget<F, 2, false>,
 
-    // point_p_x_rlc: Cell<F>,
-    // point_p_y_rlc: Cell<F>,
-    // scalar_s_raw_rlc: Cell<F>,
-    // point_r_x_rlc: Cell<F>,
-    // point_r_y_rlc: Cell<F>,
-
-    // scalar_s_raw: Word<F>, // raw
-    // scalar_s: Word<F>,     // mod by Fr::MODULUS
-    
     is_success: Cell<F>,
     callee_address: Cell<F>,
     caller_id: Cell<F>,
@@ -99,16 +91,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_word32(),
         );
 
-        // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
-        // of that value. Instead we use the native value.
-        // let scalar_s_native = rlc::expr(
-        //     &scalar_s
-        //         .cells
-        //         .iter()
-        //         .map(Expr::expr)
-        //         .collect::<Vec<Expression<F>>>(),
-        //     256.expr(),
-        // );
         // k * n + scalar_s = s_raw
         let modword = ModGadget::construct(cb, [&scalar_s_raw, &fr_modulus, &scalar_s]);
 
@@ -123,10 +105,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         let s_is_zero = cb.annotation("ecMul(s == 0)", |cb| {
             IsZeroWordGadget::construct(cb, &scalar_s_raw)
         });
+        let fr_modulus_minus_1 = cb.query_word32();
         let s_is_fr_mod_minus_1 = cb.annotation("ecMul(s == Fr::MODULUS - 1)", |cb| {
-            IsEqualWordGadget::construct(cb, &scalar_s, &{
-                Word::from(FR_MODULUS.sub(&U256::one()))
-            })
+            IsEqualWordGadget::construct(cb, &scalar_s, &fr_modulus_minus_1)
+                
         });
 
         let (point_p_y_raw, point_r_y_raw, fq_modulus) = (
@@ -272,6 +254,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             
             point_p_y_raw,
             point_r_y_raw,
+            fr_modulus_minus_1,
             s_is_fr_mod_minus_1,
             fq_modulus,
             p_y_plus_r_y,
@@ -296,6 +279,12 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+
+
+        // Word::from(U256::from
+        //     FR_MODULUS.sub(&U256::one().to_scalar().expect(""))))
+
+
         if let Some(PrecompileAuxData::EcMul(aux_data)) = &step.aux_data {
             for (col, is_zero_gadget, word_value) in [
                 (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
