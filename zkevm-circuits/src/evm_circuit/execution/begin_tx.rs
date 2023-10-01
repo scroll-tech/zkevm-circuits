@@ -17,10 +17,12 @@ use crate::{
                 ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
                 LtGadget, MulWordByU64Gadget, RangeCheckGadget,
             },
-            CachedRegion, Cell, StepRws, Word,
+            CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
+        
     },
+    util::word::Word,
     table::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
         TxFieldTag as TxContextFieldTag,
@@ -294,7 +296,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_coinbase_warm = cb.query_bool();
         cb.block_lookup(
             BlockContextFieldTag::Coinbase.expr(),
-            cb.curr.state.block_number.expr(),
+            Some(cb.curr.state.block_number.expr()),
             coinbase.expr(),
         );
 

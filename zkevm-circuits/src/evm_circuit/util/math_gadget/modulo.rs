@@ -105,7 +105,7 @@ mod tests {
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
-        mod_gadget: ModGadget<F, true>,
+        mod_gadget: ModGadget<F>,
         a: util::Word<F>,
         n: util::Word<F>,
         r: util::Word<F>,

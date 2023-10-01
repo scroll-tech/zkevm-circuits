@@ -16,9 +16,10 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtWordGadget, ModGadget},
-            rlc, CachedRegion, Cell, RandomLinearCombination, Word,
+            rlc, CachedRegion, Cell, RandomLinearCombination,
         },
     },
+    util::word::Word,
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -41,7 +42,7 @@ pub struct EcrecoverGadget<F> {
     msg_hash_raw: Word<F>,
     msg_hash: Word<F>,
     fq_modulus: Word<F>,
-    msg_hash_mod: ModGadget<F, true>,
+    msg_hash_mod: ModGadget<F>,
 
     sig_r: Word<F>,
     sig_r_canonical: LtWordGadget<F>,

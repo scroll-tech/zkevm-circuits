@@ -16,9 +16,10 @@ use crate::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{AddWordsGadget, IsEqualGadget, IsZeroGadget, ModGadget},
-            rlc, CachedRegion, Cell, Word,
+            rlc, CachedRegion, Cell,
         },
     },
+    util::word::Word,
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -59,7 +60,7 @@ pub struct EcMulGadget<F> {
     scalar_s_raw: Word<F>, // raw
     scalar_s: Word<F>,     // mod by Fr::MODULUS
     fr_modulus: Word<F>,   // Fr::MODULUS
-    modword: ModGadget<F, false>,
+    modword: ModGadget<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,

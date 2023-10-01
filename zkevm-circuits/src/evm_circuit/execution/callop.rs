@@ -16,12 +16,15 @@ use crate::{
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             not, or,
             precompile_gadget::PrecompileGadget,
-            rlc, select, CachedRegion, Cell, StepRws, Word,
+            rlc, select, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::Word,
+        Expr
+    }
 };
 use bus_mapping::{
     circuit_input_builder::CopyDataType,
