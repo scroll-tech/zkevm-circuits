@@ -15,7 +15,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{AddWordsGadget, IsEqualGadget, IsZeroGadget, ModGadget},
+            math_gadget::{AddWordsGadget, IsEqualWordGadget, IsZeroWordGadget, ModGadget},
             rlc, CachedRegion, Cell,
         },
     },
@@ -77,8 +77,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (point_p_x, point_p_y, scalar_s_raw, point_r_x, point_r_y) = (
-            cb.query_word_unchecked(),
+        let (point_p_x, point_p_y, point_r_x, point_r_y) = (
             cb.query_word_unchecked(),
             cb.query_word_unchecked(),
             cb.query_word_unchecked(),
@@ -89,11 +88,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.query_word32(),
             cb.query_word32(),
             cb.query_word32(),
-        );
-        cb.require_equal(
-            "Scalar s (raw 32-bytes) equality",
-            scalar_s_raw_rlc.expr(),
-            scalar_s_raw.expr(),
         );
 
         // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
