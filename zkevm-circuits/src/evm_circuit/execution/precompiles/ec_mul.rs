@@ -92,35 +92,31 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
 
         // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
         // of that value. Instead we use the native value.
-        let scalar_s_native = rlc::expr(
-            &scalar_s
-                .cells
-                .iter()
-                .map(Expr::expr)
-                .collect::<Vec<Expression<F>>>(),
-            256.expr(),
-        );
+        // let scalar_s_native = rlc::expr(
+        //     &scalar_s
+        //         .cells
+        //         .iter()
+        //         .map(Expr::expr)
+        //         .collect::<Vec<Expression<F>>>(),
+        //     256.expr(),
+        // );
         // k * n + scalar_s = s_raw
         let modword = ModGadget::construct(cb, [&scalar_s_raw, &fr_modulus, &scalar_s]);
 
         // Conditions for dealing with infinity/empty points and zero/empty scalar
         let p_x_is_zero = cb.annotation("ecMul(P_x)", |cb| {
-            IsZeroGadget::construct(cb, point_p_x_rlc.expr())
+            IsZeroWordGadget::construct(cb, &point_p_x)
         });
         let p_y_is_zero = cb.annotation("ecMul(P_y)", |cb| {
-            IsZeroGadget::construct(cb, point_p_y_rlc.expr())
+            IsZeroWordGadget::construct(cb, &point_p_y)
         });
         let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
         let s_is_zero = cb.annotation("ecMul(s == 0)", |cb| {
-            IsZeroGadget::construct(cb, scalar_s.expr())
+            IsZeroWordGadget::construct(cb, &scalar_s_raw)
         });
         let s_is_fr_mod_minus_1 = cb.annotation("ecMul(s == Fr::MODULUS - 1)", |cb| {
-            IsEqualGadget::construct(cb, scalar_s_native.expr(), {
-                let fr_mod_minus_1 = FR_MODULUS
-                    .sub(&U256::one())
-                    .to_scalar()
-                    .expect("Fr::MODULUS - 1 fits in scalar field");
-                Expression::Constant(fr_mod_minus_1)
+            IsEqualWordGadget::construct(cb, &scalar_s, &{
+                Word::from(FR_MODULUS.sub(&U256::one()))
             })
         });
         let (point_p_y_raw, point_r_y_raw, fq_modulus) = (
