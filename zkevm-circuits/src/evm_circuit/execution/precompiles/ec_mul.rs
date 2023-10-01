@@ -19,7 +19,7 @@ use crate::{
             rlc, CachedRegion, Cell,
         },
     },
-    util::word::Word,
+    util::word::{Word, WordCell, WordExpr, Word32Cell},
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -39,29 +39,38 @@ lazy_static::lazy_static! {
 
 #[derive(Clone, Debug)]
 pub struct EcMulGadget<F> {
-    point_p_x_rlc: Cell<F>,
-    point_p_y_rlc: Cell<F>,
-    scalar_s_raw_rlc: Cell<F>,
-    point_r_x_rlc: Cell<F>,
-    point_r_y_rlc: Cell<F>,
+    point_p_x: WordCell<F>,
+    point_p_y: WordCell<F>,
+    scalar_s_raw: WordCell<F>,
+    point_r_x: WordCell<F>,
+    point_r_y: WordCell<F>,
 
     p_x_is_zero: IsZeroWordGadget<F, Word<F>>,
     p_y_is_zero: IsZeroWordGadget<F, Word<F>>,
     s_is_zero: IsZeroWordGadget<F, Word<F>>,
-    s_is_fr_mod_minus_1: IsEqualWordGadget<F, Word<F>, Word<F>>,
-    point_p_y_raw: Word<F>,
-    point_r_y_raw: Word<F>,
-    fq_modulus: Word<F>,
-    p_y_plus_r_y: AddWordsGadget<F, 2, false>,
 
     // Two Words (s_raw, scalar_s) that satisfies
     // k * Fr::MODULUS + scalar_s = s_raw
     // Used for proving correct modulo by Fr
-    scalar_s_raw: Word<F>, // raw
-    scalar_s: Word<F>,     // mod by Fr::MODULUS
-    fr_modulus: Word<F>,   // Fr::MODULUS
+    scalar_s: WordCell<F>,
+    fr_modulus: WordCell<F>,   // Fr::MODULUS
     modword: ModGadget<F>,
 
+    point_p_y_raw: Word32Cell<F>,
+    point_r_y_raw: Word32Cell<F>,
+    s_is_fr_mod_minus_1: IsEqualWordGadget<F, Word<F>, Word<F>>,
+    fq_modulus: Word<F>,
+    p_y_plus_r_y: AddWordsGadget<F, 2, false>,
+
+    // point_p_x_rlc: Cell<F>,
+    // point_p_y_rlc: Cell<F>,
+    // scalar_s_raw_rlc: Cell<F>,
+    // point_r_x_rlc: Cell<F>,
+    // point_r_y_rlc: Cell<F>,
+
+    // scalar_s_raw: Word<F>, // raw
+    // scalar_s: Word<F>,     // mod by Fr::MODULUS
+    
     is_success: Cell<F>,
     callee_address: Cell<F>,
     caller_id: Cell<F>,
@@ -119,33 +128,34 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 Word::from(FR_MODULUS.sub(&U256::one()))
             })
         });
+
         let (point_p_y_raw, point_r_y_raw, fq_modulus) = (
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
+            cb.query_word32(),
+            cb.query_word32(),
+            cb.query_word32(),
         );
-        cb.require_equal(
+        cb.require_equal_word(
             "ecMul(P_y): equality",
-            point_p_y_raw.expr(),
-            point_p_y_rlc.expr(),
+            point_p_y.to_word(),
+            point_p_y_raw.to_word(),
         );
-        cb.require_equal(
+        cb.require_equal_word(
             "ecMul(R_y): equality",
-            point_r_y_raw.expr(),
-            point_r_y_rlc.expr(),
+            point_r_y.to_word(),
+            point_r_y_raw.to_word(),
         );
 
-        let (fq_modulus_lo, fq_modulus_hi) = split_u256(&FQ_MODULUS);
-        cb.require_equal(
-            "fq_modulus(lo) equality",
-            sum::expr(&fq_modulus.cells[0x00..0x10]),
-            sum::expr(fq_modulus_lo.to_le_bytes()),
-        );
-        cb.require_equal(
-            "fq_modulus(hi) equality",
-            sum::expr(&fq_modulus.cells[0x10..0x20]),
-            sum::expr(fq_modulus_hi.to_le_bytes()),
-        );
+        // let (fq_modulus_lo, fq_modulus_hi) = split_u256(&FQ_MODULUS);
+        // cb.require_equal(
+        //     "fq_modulus(lo) equality",
+        //     sum::expr(&fq_modulus.cells[0x00..0x10]),
+        //     sum::expr(fq_modulus_lo.to_le_bytes()),
+        // );
+        // cb.require_equal(
+        //     "fq_modulus(hi) equality",
+        //     sum::expr(&fq_modulus.cells[0x10..0x20]),
+        //     sum::expr(fq_modulus_hi.to_le_bytes()),
+        // );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -180,29 +190,29 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 cb.ecc_table_lookup(
                     u64::from(PrecompileCalls::Bn128Mul).expr(),
                     is_success.expr(),
-                    point_p_x,
-                    point_p_y,
-                    scalar_s_native.expr(),
-                    0.expr(),
-                    0.expr(),
-                    point_r_x,
-                    point_r_y,
+                    point_p_x.to_word(),
+                    point_p_y.to_word(),
+                    scalar_s.to_word(),
+                    Word::zero(),
+                    Word::zero(),
+                    point_r_x.to_word(),
+                    point_r_y.to_word(),
                 );
             },
         );
         cb.condition(not::expr(is_success.expr()), |cb| {
-            cb.require_zero("R_x == 0", point_r_x_rlc.expr());
-            cb.require_zero("R_y == 0", point_r_y_rlc.expr());
+            cb.require_zero_word("R_x == 0", point_r_x.to_word());
+            cb.require_zero_word("R_y == 0", point_r_y.to_word());
         });
 
         cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
-            cb.require_zero(
+            cb.require_zero_word(
                 "if P == (0, 0) || s == 0, then R_x == 0",
-                point_r_x_rlc.expr(),
+                point_r_x.to_word(),
             );
-            cb.require_zero(
+            cb.require_zero_word(
                 "if P == (0, 0) || s == 0, then R_y == 0",
-                point_r_y_rlc.expr(),
+                point_r_y.to_word(),
             );
         });
         // If s == Fr::MODULUS - 1 then P == -R:
@@ -215,10 +225,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 not::expr(p_is_zero.expr()),
             ]),
             |cb| {
-                cb.require_equal(
+                cb.require_equal_word(
                     "ecMul(s == Fr::MODULUS - 1): P_x == R_x",
-                    point_p_x_rlc.expr(),
-                    point_r_x_rlc.expr(),
+                    point_p_x.to_word(),
+                    point_r_x.to_word(),
                 );
                 AddWordsGadget::construct(
                     cb,
@@ -246,25 +256,25 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         );
 
         Self {
-            point_p_x_rlc,
-            point_p_y_rlc,
-            scalar_s_raw_rlc,
-            point_r_x_rlc,
-            point_r_y_rlc,
+            point_p_x,
+            point_p_y,
+            scalar_s_raw,
+            point_r_x,
+            point_r_y,
 
             p_x_is_zero,
             p_y_is_zero,
             s_is_zero,
-            s_is_fr_mod_minus_1,
-            point_p_y_raw,
-            point_r_y_raw,
-            fq_modulus,
-            p_y_plus_r_y,
 
-            scalar_s_raw,
             scalar_s,
             fr_modulus,
             modword,
+            
+            point_p_y_raw,
+            point_r_y_raw,
+            s_is_fr_mod_minus_1,
+            fq_modulus,
+            p_y_plus_r_y,
 
             is_success,
             callee_address,
