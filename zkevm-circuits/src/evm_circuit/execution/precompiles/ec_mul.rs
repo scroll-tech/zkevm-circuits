@@ -45,10 +45,10 @@ pub struct EcMulGadget<F> {
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
 
-    p_x_is_zero: IsZeroGadget<F>,
-    p_y_is_zero: IsZeroGadget<F>,
-    s_is_zero: IsZeroGadget<F>,
-    s_is_fr_mod_minus_1: IsEqualGadget<F>,
+    p_x_is_zero: IsZeroWordGadget<F, Word<F>>,
+    p_y_is_zero: IsZeroWordGadget<F, Word<F>>,
+    s_is_zero: IsZeroWordGadget<F, Word<F>>,
+    s_is_fr_mod_minus_1: IsEqualWordGadget<F, Word<F>, Word<F>>,
     point_p_y_raw: Word<F>,
     point_r_y_raw: Word<F>,
     fq_modulus: Word<F>,
@@ -184,13 +184,13 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 cb.ecc_table_lookup(
                     u64::from(PrecompileCalls::Bn128Mul).expr(),
                     is_success.expr(),
-                    point_p_x_rlc.expr(),
-                    point_p_y_rlc.expr(),
+                    point_p_x,
+                    point_p_y,
                     scalar_s_native.expr(),
                     0.expr(),
                     0.expr(),
-                    point_r_x_rlc.expr(),
-                    point_r_y_rlc.expr(),
+                    point_r_x,
+                    point_r_y,
                 );
             },
         );
