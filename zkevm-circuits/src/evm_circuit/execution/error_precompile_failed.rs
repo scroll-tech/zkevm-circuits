@@ -17,7 +17,7 @@ use crate::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToLittleEndian, U256, H256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -69,16 +69,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
         //let gas = cb.query_word_rlc();
-        let gas = cb.query_word_unchecked();
+        let gas = cb.query_word32();
         //  let callee_address = cb.query_word_rlc();
         let callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
         let value = cb.query_word32();
 
-        let cd_offset = cb.query_cell_phase2();
-        let cd_length = cb.query_word32();
-        let rd_offset = cb.query_cell_phase2();
-        let rd_length = cb.query_word32();
+        let cd_offset = cb.query_word_unchecked();
+        let cd_length = cb.query_memory_address();
+        let rd_offset = cb.query_word_unchecked();
+        let rd_length = cb.query_memory_address();
 
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
@@ -179,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         )?;
         self.gas.assign_u256(region, offset, gas)?;
         self.callee_address
-            .assign_h160(region, offset, callee_address.to_address())?;
+            .assign_h160(region, offset, H256::from(callee_address.to_le_bytes()).into())?;
         self.value.assign_u256(region, offset, value)?;
         self.cd_address
             .assign(region, offset, cd_offset, cd_length)?;
