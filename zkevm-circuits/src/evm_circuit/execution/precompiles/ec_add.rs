@@ -13,6 +13,7 @@ use crate::{
             rlc, CachedRegion, Cell,
         },
     },
+    util::word::{Word, WordCell, WordExpr},
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -20,12 +21,12 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct EcAddGadget<F> {
     // EC points: P, Q, R
-    point_p_x_rlc: Cell<F>,
-    point_p_y_rlc: Cell<F>,
-    point_q_x_rlc: Cell<F>,
-    point_q_y_rlc: Cell<F>,
-    point_r_x_rlc: Cell<F>,
-    point_r_y_rlc: Cell<F>,
+    point_p_x: WordCell<F>,
+    point_p_y: WordCell<F>,
+    point_q_x: WordCell<F>,
+    point_q_y: WordCell<F>,
+    point_r_x: WordCell<F>,
+    point_r_y: WordCell<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -44,19 +45,19 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let (
-            point_p_x_rlc,
-            point_p_y_rlc,
-            point_q_x_rlc,
-            point_q_y_rlc,
-            point_r_x_rlc,
-            point_r_y_rlc,
+            point_p_x,
+            point_p_y,
+            point_q_x,
+            point_q_y,
+            point_r_x,
+            point_r_y,
         ) = (
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
-            cb.query_cell_phase2(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
+            cb.query_word_unchecked(),
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
@@ -87,17 +88,17 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
         cb.ecc_table_lookup(
             u64::from(PrecompileCalls::Bn128Add).expr(),
             is_success.expr(),
-            point_p_x_rlc.expr(),
-            point_p_y_rlc.expr(),
-            point_q_x_rlc.expr(),
-            point_q_y_rlc.expr(),
-            0.expr(), // input_rlc
-            point_r_x_rlc.expr(),
-            point_r_y_rlc.expr(),
+            point_p_x.to_word(),
+            point_p_y.to_word(),
+            point_q_x.to_word(),
+            point_q_y.to_word(),
+            Word::zero(), // input_rlc
+            point_r_x.to_word(),
+            point_r_y.to_word(),
         );
         cb.condition(not::expr(is_success.expr()), |cb| {
-            cb.require_zero("R_x == 0", point_r_x_rlc.expr());
-            cb.require_zero("R_y == 0", point_r_y_rlc.expr());
+            cb.require_zero_word("R_x == 0", point_r_x.to_word());
+            cb.require_zero_word("R_y == 0", point_r_y.to_word());
         });
 
         let restore_context = RestoreContextGadget::construct2(
@@ -112,12 +113,12 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
         );
 
         Self {
-            point_p_x_rlc,
-            point_p_y_rlc,
-            point_q_x_rlc,
-            point_q_y_rlc,
-            point_r_x_rlc,
-            point_r_y_rlc,
+            point_p_x,
+            point_p_y,
+            point_q_x,
+            point_q_y,
+            point_r_x,
+            point_r_y,
 
             is_success,
             callee_address,
