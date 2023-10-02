@@ -127,18 +127,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             point_r_y_raw.to_word(),
         );
 
-        // let (fq_modulus_lo, fq_modulus_hi) = split_u256(&FQ_MODULUS);
-        // cb.require_equal(
-        //     "fq_modulus(lo) equality",
-        //     sum::expr(&fq_modulus.cells[0x00..0x10]),
-        //     sum::expr(fq_modulus_lo.to_le_bytes()),
-        // );
-        // cb.require_equal(
-        //     "fq_modulus(hi) equality",
-        //     sum::expr(&fq_modulus.cells[0x10..0x20]),
-        //     sum::expr(fq_modulus_hi.to_le_bytes()),
-        // );
-
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
@@ -307,39 +295,41 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 (&self.scalar_s_raw, aux_data.s_raw),
                 (&self.fr_modulus, *FR_MODULUS),
             ] {
-                col.assign(region, offset, Some(word_value.to_le_bytes()))?;
+                col.assign_u256(region, offset, word_value)?;
             }
             self.scalar_s
-                .assign(region, offset, Some(aux_data.s.to_le_bytes()))?;
-            self.s_is_zero.assign_value(
+                .assign_u256(region, offset, aux_data.s)?;
+            self.s_is_zero.assign_u256(
                 region,
                 offset,
-                region.keccak_rlc(&aux_data.s.to_le_bytes()),
+                aux_data.s,
             )?;
-            self.s_is_fr_mod_minus_1.assign(
-                region,
-                offset,
-                aux_data
-                    .s
-                    .to_scalar()
-                    .expect("ecMul(s) fits in scalar field"),
-                FR_MODULUS
-                    .sub(&U256::one())
-                    .to_scalar()
-                    .expect("Fr::MODULUS - 1 fits in scalar field"),
-            )?;
-            self.point_p_y_raw
-                .assign(region, offset, Some(aux_data.p_y.to_le_bytes()))?;
-            self.point_r_y_raw
-                .assign(region, offset, Some(aux_data.r_y.to_le_bytes()))?;
+            // self.s_is_fr_mod_minus_1.assign(
+            //     region,
+            //     offset,
+            //     aux_data
+            //         .s
+            //         .to_scalar()
+            //         .expect("ecMul(s) fits in scalar field"),
+            //     FR_MODULUS
+            //         .sub(&U256::one())
+            //         .to_scalar()
+            //         .expect("Fr::MODULUS - 1 fits in scalar field"),
+            // )?;
+            for (col, word_value) in [
+                (&self.point_p_y_raw, aux_data.p_y),
+                (&self.point_r_y_raw, aux_data.r_y),
+                (&self.fq_modulus, U256::from_little_endian(&FQ_MODULUS.to_le_bytes())),
+                (&self.fr_modulus_minus_1, U256::from_little_endian(&FR_MODULUS.sub(&U256::one()).to_le_bytes()))
+            ] {
+                col.assign_u256(region, offset, word_value)?;
+            }
             self.p_y_plus_r_y.assign(
                 region,
                 offset,
                 [aux_data.p_y, aux_data.r_y],
                 aux_data.p_y.add(&aux_data.r_y),
             )?;
-            self.fq_modulus
-                .assign(region, offset, Some(FQ_MODULUS.to_le_bytes()))?;
 
             let (k, _) = aux_data.s_raw.div_mod(*FR_MODULUS);
             self.modword
