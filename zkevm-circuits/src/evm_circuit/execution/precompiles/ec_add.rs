@@ -143,18 +143,14 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
         if let Some(PrecompileAuxData::EcAdd(aux_data)) = &step.aux_data {
             let keccak_rand = region.challenges().keccak_input();
             for (col, word_value) in [
-                (&self.point_p_x_rlc, aux_data.p_x),
-                (&self.point_p_y_rlc, aux_data.p_y),
-                (&self.point_q_x_rlc, aux_data.q_x),
-                (&self.point_q_y_rlc, aux_data.q_y),
-                (&self.point_r_x_rlc, aux_data.r_x),
-                (&self.point_r_y_rlc, aux_data.r_y),
+                (&self.point_p_x, aux_data.p_x),
+                (&self.point_p_y, aux_data.p_y),
+                (&self.point_q_x, aux_data.q_x),
+                (&self.point_q_y, aux_data.q_y),
+                (&self.point_r_x, aux_data.r_x),
+                (&self.point_r_y, aux_data.r_y),
             ] {
-                col.assign(
-                    region,
-                    offset,
-                    keccak_rand.map(|r| rlc::value(&word_value.to_le_bytes(), r)),
-                )?;
+                col.assign_u256(region, offset, word_value)?;
             }
             // FIXME: when we handle invalid inputs (and hence failures in the precompile calls),
             // this will be assigned either fixed gas cost (in case of success) or the
