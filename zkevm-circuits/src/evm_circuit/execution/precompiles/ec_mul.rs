@@ -309,32 +309,23 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 col.assign_u256(region, offset, word_value)?;
             }
 
-            // s_is_fr_mod_minus_1,
-            // self.s_is_fr_mod_minus_1.assign(
-            //     region,
-            //     offset,
-            //     aux_data
-            //         .s
-            //         .to_scalar()
-            //         .expect("ecMul(s) fits in scalar field"),
-            //     FR_MODULUS
-            //         .sub(&U256::one())
-            //         .to_scalar()
-            //         .expect("Fr::MODULUS - 1 fits in scalar field"),
-            // )?;
+            self.s_is_fr_mod_minus_1.assign_u256(
+                region,
+                offset,
+                aux_data.s,
+                FR_MODULUS.sub(&U256::one())
+            )?;
 
-            // p_y_plus_r_y,
-            // self.p_y_plus_r_y.assign(
-            //     region,
-            //     offset,
-            //     [aux_data.p_y, aux_data.r_y],
-            //     aux_data.p_y.add(&aux_data.r_y),
-            // )?;
+            self.p_y_plus_r_y.assign(
+                region,
+                offset,
+                [aux_data.p_y, aux_data.r_y],
+                aux_data.p_y.add(&aux_data.r_y),
+            )?;
 
-            // modword,
-            // let (k, _) = aux_data.s_raw.div_mod(*FR_MODULUS);
-            // self.modword
-            //     .assign(region, offset, aux_data.s_raw, *FR_MODULUS, aux_data.s, k)?;
+            let (k, _) = aux_data.s_raw.div_mod(*FR_MODULUS);
+            self.modword
+                .assign(region, offset, aux_data.s_raw, *FR_MODULUS, aux_data.s, k)?;
         } else {
             log::error!("unexpected aux_data {:?} for ecMul", step.aux_data);
             return Err(Error::Synthesis);
