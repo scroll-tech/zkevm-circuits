@@ -16,6 +16,18 @@ members = [
     "prover"
 ]
 
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+env_logger = "0.10"
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "develop" }
+itertools = "0.10"
+lazy_static = "1.4"
+log = "0.4"
+
 [patch.crates-io]
 ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }

@@ -1,13 +1,13 @@
 [package]
 name = "integration-tests"
-version = "0.1.0"
-edition = "2021"
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lazy_static = "1.4"
+lazy_static.workspace = true
 ethers = { version = "2.0.7", features = ["ethers-solc"] }
 serde_json = "1.0.66"
 serde = { version = "1.0.130", features = ["derive"] }
@@ -17,9 +17,9 @@ zkevm-circuits = { path = "../zkevm-circuits", default-features = false, feature
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"
-log = "0.4.14"
-env_logger = "0.9"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+log.workspace = true
+env_logger.workspace = true
+halo2_proofs.workspace = true
 hex = "0.4.3"
 strum = "0.24.1"
 rand_chacha = "0.3"

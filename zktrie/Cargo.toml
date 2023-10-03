@@ -1,24 +1,24 @@
 [package]
 name = "mpt-zktrie"
-version = "0.1.0"
-edition = "2021"
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+halo2_proofs.workspace = true
 mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", tag = "v0.7.0" }
 zktrie = { git = "https://github.com/scroll-tech/zktrie.git", branch = "v0.7"}
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
 eth-types = { path = "../eth-types" }
-lazy_static = "1.4"
+lazy_static.workspace = true
 num-bigint = { version = "0.4" }
-log = "0.4"
+log.workspace = true
 hex = "0.4"
 
 [dev-dependencies]
-env_logger = "0.9"
+env_logger.workspace = true
 serde = {version = "1", features = ["derive"] }
 serde_json = "1"
 

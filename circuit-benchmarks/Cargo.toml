@@ -1,22 +1,22 @@
 [package]
 name = "circuit-benchmarks"
-version = "0.1.0"
-edition = "2021"
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+halo2_proofs.workspace = true
 ark-std = { version = "0.3" }
 zkevm-circuits = { path = "../zkevm-circuits", features = ["test"]}
 keccak256 = { path = "../keccak256" }
 bus-mapping = { path = "../bus-mapping",  features = ["test"] }
 rand_xorshift = "0.3"
 rand = "0.8"
-itertools = "0.10"
+itertools.workspace = true
 eth-types = { path = "../eth-types" }
-env_logger = "0.9"
+env_logger.workspace = true
 log="0.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 ethers-signers = "2.0.7"

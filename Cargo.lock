@@ -494,7 +494,7 @@ name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
  "ctor",
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "eth-types",
  "ethers-core",
  "ethers-providers",
@@ -666,7 +666,7 @@ version = "0.1.0"
 dependencies = [
  "ark-std 0.3.0",
  "bus-mapping",
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "eth-types",
  "ethers",
  "ethers-signers",
@@ -1505,19 +1505,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
-dependencies = [
- "atty",
- "humantime",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
@@ -2275,7 +2262,7 @@ dependencies = [
 name = "geth-utils"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "gobuild 0.1.0-alpha.2 (git+https://github.com/scroll-tech/gobuild.git)",
  "log",
 ]
@@ -2875,7 +2862,7 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "bus-mapping",
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "eth-types",
  "ethers",
  "halo2_proofs",
@@ -2992,7 +2979,7 @@ dependencies = [
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "eth-types",
  "halo2_proofs",
  "itertools",
@@ -3267,7 +3254,7 @@ dependencies = [
 name = "mpt-zktrie"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "eth-types",
  "halo2-mpt-circuits",
  "halo2_proofs",
@@ -5144,7 +5131,7 @@ dependencies = [
  "bus-mapping",
  "clap 3.2.25",
  "ctor",
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "eth-types",
  "ethers-core",
  "ethers-signers",
@@ -5948,7 +5935,7 @@ dependencies = [
  "criterion",
  "ctor",
  "either",
- "env_logger 0.9.3",
+ "env_logger 0.10.0",
  "eth-types",
  "ethers-core",
  "ethers-signers",

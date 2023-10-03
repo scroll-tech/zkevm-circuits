@@ -1,14 +1,13 @@
 [package]
 name = "zkevm-circuits"
-version = "0.1.0"
-authors = ["therealyingtong <yingtong@z.cash>"]
-edition = "2021"
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+halo2_proofs.workspace = true
 num = "0.4"
 sha3 = "0.10"
 array-init = "2.0.0"
@@ -23,12 +22,12 @@ strum = "0.24"
 strum_macros = "0.24"
 rand_xorshift = "0.3"
 rand = "0.8"
-itertools = "0.10.3"
-lazy_static = "1.4"
+itertools.workspace = true
+lazy_static.workspace = true
 mpt-zktrie = { path = "../zktrie" }
 keccak256 = { path = "../keccak256"}
-log = "0.4"
-env_logger = "0.9"
+log.workspace = true
+env_logger.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.78"
 
@@ -56,7 +55,6 @@ criterion = "0.3"
 ctor = "0.1.22"
 ethers-signers = "2.0.7"
 hex = "0.4.3"
-itertools = "0.10.1"
 mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
 cli-table = "0.4"
