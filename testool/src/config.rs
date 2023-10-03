@@ -142,6 +142,6 @@ mod tests {
     #[test]
     fn test_filter() {
         let builder = FilterBuilder::from(FILTER_TESTS);
-        println!("{:?}", builder);
+        println!("{builder:?}");
     }
 }
