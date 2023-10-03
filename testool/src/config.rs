@@ -91,7 +91,7 @@ struct FilterBuilder {
 impl From<&[&str]> for FilterBuilder {
     fn from(value: &[&str]) -> Self {
         let regex = value
-            .into_iter()
+            .iter()
             .map(|s| {
                 let glob = regex::escape(s)
                     .replace(r"\*", ".*")
