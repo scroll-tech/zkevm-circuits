@@ -4,7 +4,7 @@ use eth_types::{geth_types::TxType, word, Address};
 use ethers_core::{
     types::{
         transaction::eip2718::TypedTransaction, Eip1559TransactionRequest,
-        Transaction as EthTransaction, TransactionRequest,
+        Eip2930TransactionRequest, Transaction as EthTransaction, TransactionRequest,
     },
     utils::rlp::{Decodable, Rlp},
 };
@@ -116,9 +116,40 @@ fn test_eip1559_tx() {
         .expect("decode tx's rlp bytes shall not fail");
 
     let eth_tx_req: Eip1559TransactionRequest = (&eth_tx).into();
-    let rlp_unsigned = eth_tx_req.rlp().to_vec();
+    let typed_tx: TypedTransaction = eth_tx_req.into();
+    let rlp_unsigned = typed_tx.rlp().to_vec();
 
     let tx = Transaction::new_from_rlp_bytes(TxType::Eip1559, raw_tx_rlp_bytes, rlp_unsigned);
+    let rlp_circuit = RlpCircuit::<Fr, Transaction> {
+        txs: vec![tx],
+        max_txs: 10,
+        size: 1000,
+        _marker: Default::default(),
+    };
+
+    let mock_prover = MockProver::run(14, &rlp_circuit, vec![]);
+    assert!(mock_prover.is_ok());
+    let mock_prover = mock_prover.unwrap();
+    if let Err(errors) = mock_prover.verify_par() {
+        log::debug!("errors.len() = {}", errors.len());
+    }
+
+    mock_prover.assert_satisfied_par();
+}
+
+#[test]
+fn test_eip2930_tx() {
+    let raw_tx_rlp_bytes = hex::decode("01f8710183018c418502edc2c0dc8307a1209480464c21a0639510142d510c5be486f1bd801cdb87f753258d79d80080c001a0563304e8f2306c3fafed471bee76db83690ec113965c6775a8a94625dcb03774a05bcc59f5737520f7d0dc8b4f967635473e0a58526ce9ddd69c4a2454c9955f12")
+        .expect("decode tx's hex shall not fail");
+
+    let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
+        .expect("decode tx's rlp bytes shall not fail");
+
+    let eth_tx_req: Eip2930TransactionRequest = (&eth_tx).into();
+    let typed_tx: TypedTransaction = eth_tx_req.into();
+    let rlp_unsigned = typed_tx.rlp().to_vec();
+
+    let tx = Transaction::new_from_rlp_bytes(TxType::Eip2930, raw_tx_rlp_bytes, rlp_unsigned);
     let rlp_circuit = RlpCircuit::<Fr, Transaction> {
         txs: vec![tx],
         max_txs: 10,

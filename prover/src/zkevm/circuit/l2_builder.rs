@@ -8,7 +8,7 @@ use bus_mapping::{
 use eth_types::{l2_types::BlockTrace, ToWord, H256};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
-use mpt_zktrie::state::ZktrieState;
+use mpt_zktrie::state::{ZkTrieHash, ZktrieState};
 use once_cell::sync::Lazy;
 use std::time::Instant;
 use zkevm_circuits::{
@@ -198,19 +198,17 @@ fn prepare_default_builder(
     builder_block.prev_state_root = old_root.to_word();
     let code_db = CodeDB::new();
 
-    if let Some(mpt_state) = initial_mpt_state {
+    if let Some(mpt_state) = &initial_mpt_state {
         assert_eq!(
             H256::from_slice(mpt_state.root()),
             old_root,
             "the provided zktrie state must be the prev state"
         );
-        let state_db = StateDB::from(&mpt_state);
-        let mut builder = CircuitInputBuilder::new(state_db, code_db, &builder_block);
-        builder.mpt_init_state = mpt_state;
-        builder
-    } else {
-        CircuitInputBuilder::new(StateDB::new(), code_db, &builder_block)
     }
+
+    let mut builder = CircuitInputBuilder::new(StateDB::new(), code_db, &builder_block);
+    builder.mpt_init_state = initial_mpt_state;
+    builder
 }
 
 /// check if block traces match preset parameters
@@ -257,7 +255,7 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
     // etc, so the generated block maybe invalid without any message
     if block_traces.is_empty() {
         let mut builder = prepare_default_builder(eth_types::Hash::zero(), None);
-        block_traces_to_witness_block_with_updated_state(&[], &mut builder, false)
+        block_traces_to_witness_block_with_updated_state(&[], &mut builder)
     } else {
         let mut builder = CircuitInputBuilder::new_from_l2_trace(
             get_super_circuit_params(),
@@ -265,7 +263,7 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
             block_traces.len() > 1,
             false,
         )?;
-        block_traces_to_witness_block_with_updated_state(&block_traces[1..], &mut builder, false)
+        block_traces_to_witness_block_with_updated_state(&block_traces[1..], &mut builder)
     }
 }
 
@@ -276,7 +274,6 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
 pub fn block_traces_to_witness_block_with_updated_state(
     block_traces: &[BlockTrace],
     builder: &mut CircuitInputBuilder,
-    light_mode: bool,
 ) -> Result<Block<Fr>> {
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
@@ -321,7 +318,7 @@ pub fn block_traces_to_witness_block_with_updated_state(
             "add_more_l2_trace idx {idx}, block num {:?}",
             block_trace.header.number
         );
-        builder.add_more_l2_trace(block_trace, !is_last, false)?;
+        builder.add_more_l2_trace(block_trace, !is_last)?;
         if per_block_metric {
             metric(builder, idx + initial_blk_index)?;
         }
@@ -338,14 +335,24 @@ pub fn block_traces_to_witness_block_with_updated_state(
         witness_block.circuits_params
     );
 
-    if !light_mode && *builder.mpt_init_state.root() != [0u8; 32] {
-        log::debug!("block_apply_mpt_state");
-        block_apply_mpt_state(&mut witness_block, &builder.mpt_init_state);
-        log::debug!("block_apply_mpt_state done");
+    if let Some(state) = &mut builder.mpt_init_state {
+        if *state.root() != [0u8; 32] {
+            log::debug!("block_apply_mpt_state");
+            block_apply_mpt_state(&mut witness_block, state);
+            log::debug!("block_apply_mpt_state done");
+        };
+        let root_after = witness_block.state_root.unwrap_or_default();
+
+        log::debug!(
+            "finish replay trie updates, root {}, root after {:#x?}",
+            hex::encode(state.root()),
+            root_after,
+        );
+        // switch state to new root
+        let mut new_root_hash = ZkTrieHash::default();
+        root_after.to_big_endian(&mut new_root_hash);
+        assert!(state.switch_to(new_root_hash));
     }
-    log::debug!(
-        "finish replay trie updates, root {}",
-        hex::encode(builder.mpt_init_state.root())
-    );
+
     Ok(witness_block)
 }

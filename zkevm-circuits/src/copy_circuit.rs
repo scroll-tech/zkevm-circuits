@@ -89,9 +89,6 @@ pub struct CopyCircuitConfig<F> {
     pub value_acc: Column<Advice>,
     /// Whether the row is padding for out-of-bound reads when source address >= src_addr_end.
     pub is_pad: Column<Advice>,
-    /// In case of a bytecode tag, this denotes whether or not the copied byte
-    /// is an opcode or push data byte.
-    pub is_code: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
     pub is_tx_calldata: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
@@ -162,7 +159,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
         let value_acc = meta.advice_column_in(SecondPhase);
 
-        let is_code = meta.advice_column();
         let (is_tx_calldata, is_bytecode, is_memory, is_tx_log) = (
             meta.advice_column(),
             meta.advice_column(),
@@ -410,11 +406,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(id, CURRENT),
                 BytecodeFieldTag::Byte.expr(),
                 meta.query_advice(addr, CURRENT),
-                meta.query_advice(is_code, CURRENT),
                 meta.query_advice(value, CURRENT),
             ]
             .into_iter()
-            .zip_eq(bytecode_table.table_exprs(meta).into_iter())
+            .zip_eq(bytecode_table.table_exprs_mini(meta).into_iter())
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
@@ -449,7 +444,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             front_mask,
             value_acc,
             is_pad,
-            is_code,
             is_tx_calldata,
             is_bytecode,
             is_memory,
@@ -512,7 +506,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 || Value::known(F::one()),
             )?;
 
-            // is_last, value, is_pad, is_code
+            // is_last, value, is_pad
             for (column, &(value, label)) in [
                 self.is_last,
                 self.value,
@@ -521,7 +515,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.value_word_rlc_prev,
                 self.value_acc,
                 self.is_pad,
-                self.is_code,
                 self.mask,
                 self.front_mask,
                 self.word_index,
@@ -559,7 +552,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             )?;
 
             let pad = unwrap_value(circuit_row[6].0);
-            let mask = unwrap_value(circuit_row[8].0);
+            let mask = unwrap_value(circuit_row[7].0);
             let non_pad_non_mask = pad.is_zero_vartime() && mask.is_zero_vartime();
             region.assign_advice(
                 || format!("non_pad_non_mask at row: {offset}"),
@@ -638,7 +631,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "word_index", self.word_index);
                 region.name_column(|| "mask", self.mask);
                 region.name_column(|| "front_mask", self.front_mask);
-                region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
                 region.name_column(|| "non_pad_non_mask", self.non_pad_non_mask);
 
@@ -821,13 +813,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         region.assign_advice(
             || format!("assign rlc_acc {}", *offset),
             self.copy_table.rlc_acc,
-            *offset,
-            || Value::known(F::zero()),
-        )?;
-        // is_code
-        region.assign_advice(
-            || format!("assign is_code {}", *offset),
-            self.is_code,
             *offset,
             || Value::known(F::zero()),
         )?;

@@ -6,7 +6,8 @@ use crate::{
     Word, U64,
 };
 use ethers_core::types::{
-    Eip1559TransactionRequest, Eip2930TransactionRequest, NameOrAddress, TransactionRequest, H256,
+    transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, Eip2930TransactionRequest,
+    NameOrAddress, TransactionRequest, H256,
 };
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -60,7 +61,7 @@ impl TxType {
     pub fn get_tx_type(tx: &crate::Transaction) -> Self {
         match tx.transaction_type {
             Some(x) if x == U64::from(1) => Self::Eip2930,
-            Some(x) if x == U64::from(2) => Self::Eip2930,
+            Some(x) if x == U64::from(2) => Self::Eip1559,
             Some(x) if x == U64::from(0x7e) => Self::L1Msg,
             _ => {
                 if cfg!(feature = "scroll") {
@@ -120,11 +121,13 @@ pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
         }
         TxType::Eip1559 => {
             let tx: Eip1559TransactionRequest = tx.into();
-            tx.rlp().to_vec()
+            let typed_tx: TypedTransaction = tx.into();
+            typed_tx.rlp().to_vec()
         }
         TxType::Eip2930 => {
             let tx: Eip2930TransactionRequest = tx.into();
-            tx.rlp().to_vec()
+            let typed_tx: TypedTransaction = tx.into();
+            typed_tx.rlp().to_vec()
         }
         TxType::L1Msg => {
             // L1 msg does not have signature

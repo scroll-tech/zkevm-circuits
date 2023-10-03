@@ -56,7 +56,10 @@ fn test_super_circuit<
         .expect("could not finalize building block");
 
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-    block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    block_apply_mpt_state(
+        &mut block,
+        &builder.mpt_init_state.expect("used non-light mode"),
+    );
 
     let active_row_num =SuperCircuit::<
         Fr,
