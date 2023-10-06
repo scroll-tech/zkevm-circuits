@@ -998,36 +998,4 @@ impl<F: Field> SigCircuit<F> {
 
         Ok(())
     }
-    /*
-    pub(crate) fn assert_sig_is_valid(
-        &self,
-        config: &SigCircuitConfig<F>,
-        layouter: &mut impl Layouter<F>,
-        sig_verifs: &[AssignedSignatureVerify<F>],
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "ecdsa chip verification",
-            |mut region| {
-                let one = region.assign_fixed(
-                    || "one",
-                    config.fixed_column,
-                    0,
-                    || Value::known(F::one()),
-                )?;
-
-                for (i, sig_verif) in sig_verifs.iter().enumerate() {
-                    log::trace!(
-                        "checking {}-th signature is valid: {:?}",
-                        i,
-                        sig_verif.sig_is_valid.value
-                    );
-
-                    region.constrain_equal(sig_verif.sig_is_valid.cell, one.cell())?;
-                }
-
-                Ok(())
-            },
-        )
-    }
-    */
 }
