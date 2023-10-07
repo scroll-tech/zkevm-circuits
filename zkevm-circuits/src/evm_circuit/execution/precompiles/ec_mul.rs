@@ -16,9 +16,10 @@ use crate::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{AddWordsGadget, IsEqualGadget, IsZeroGadget, ModGadget},
-            rlc, CachedRegion, Cell, Word,
+            rlc, CachedRegion, Cell,
         },
     },
+    util::word::{Word},
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
