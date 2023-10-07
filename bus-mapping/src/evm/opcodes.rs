@@ -18,6 +18,7 @@ use crate::util::CHECK_MEM_STRICT;
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
+mod arthmetic;
 mod balance;
 mod begin_end_tx;
 mod blockhash;
@@ -78,6 +79,7 @@ pub use callop::tests::PrecompileCallArgs;
 use self::{pushn::PushN, sha3::Sha3};
 
 use address::Address;
+use arthmetic::ArithmeticOpcode;
 use balance::Balance;
 use begin_end_tx::BeginEndTx;
 use blockhash::Blockhash;
@@ -171,30 +173,32 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
         OpcodeId::PUSH0 => Push0::gen_associated_ops,
         OpcodeId::STOP => Stop::gen_associated_ops,
-        OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SUB => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::DIV => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SDIV => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::MOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SMOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::ADDMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
-        OpcodeId::MULMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
-        OpcodeId::SIGNEXTEND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::LT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::GT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SLT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SGT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::EQ => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::ISZERO => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        OpcodeId::AND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::OR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::XOR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::NOT => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        OpcodeId::BYTE => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::ADD => ArithmeticOpcode::<{ OpcodeId::ADD.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::MUL => ArithmeticOpcode::<{ OpcodeId::MUL.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SUB => ArithmeticOpcode::<{ OpcodeId::SUB.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::DIV => ArithmeticOpcode::<{ OpcodeId::DIV.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SDIV => ArithmeticOpcode::<{ OpcodeId::SDIV.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::MOD => ArithmeticOpcode::<{ OpcodeId::MOD.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SMOD => ArithmeticOpcode::<{ OpcodeId::SMOD.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::ADDMOD => ArithmeticOpcode::<{ OpcodeId::ADDMOD.as_u8() }, 3>::gen_associated_ops,
+        OpcodeId::MULMOD => ArithmeticOpcode::<{ OpcodeId::MULMOD.as_u8() }, 3>::gen_associated_ops,
+        OpcodeId::SIGNEXTEND => {
+            ArithmeticOpcode::<{ OpcodeId::SIGNEXTEND.as_u8() }, 2>::gen_associated_ops
+        }
+        OpcodeId::LT => ArithmeticOpcode::<{ OpcodeId::LT.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::GT => ArithmeticOpcode::<{ OpcodeId::GT.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SLT => ArithmeticOpcode::<{ OpcodeId::SLT.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SGT => ArithmeticOpcode::<{ OpcodeId::SGT.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::EQ => ArithmeticOpcode::<{ OpcodeId::EQ.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::ISZERO => ArithmeticOpcode::<{ OpcodeId::ISZERO.as_u8() }, 1>::gen_associated_ops,
+        OpcodeId::AND => ArithmeticOpcode::<{ OpcodeId::AND.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::OR => ArithmeticOpcode::<{ OpcodeId::OR.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::XOR => ArithmeticOpcode::<{ OpcodeId::XOR.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::NOT => ArithmeticOpcode::<{ OpcodeId::NOT.as_u8() }, 1>::gen_associated_ops,
+        OpcodeId::BYTE => ArithmeticOpcode::<{ OpcodeId::BYTE.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SHL => ArithmeticOpcode::<{ OpcodeId::SHL.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SHR => ArithmeticOpcode::<{ OpcodeId::SHR.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::SAR => ArithmeticOpcode::<{ OpcodeId::SAR.as_u8() }, 2>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => Address::gen_associated_ops,
         OpcodeId::BALANCE => Balance::gen_associated_ops,
