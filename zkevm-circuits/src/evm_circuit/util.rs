@@ -15,6 +15,7 @@ use eth_types::{Address, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
+    halo2curves::group::ff::BatchInvert,
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -734,5 +735,29 @@ impl<'a> StepRws<'a> {
         let rw = self.rws[self.rw_indices[self.offset]];
         self.offset += 1;
         rw
+    }
+}
+
+/// A struct to cache field inversions.
+pub struct Inverter<F> {
+    inverses: Vec<F>,
+}
+
+impl<F: FieldExt> Inverter<F> {
+    /// Create a new Inverter with preloaded inverses up to `preload_up_to` inclusive.
+    pub fn new(preload_up_to: u64) -> Self {
+        let mut inverses = (0..=preload_up_to).map(F::from).collect::<Vec<F>>();
+
+        inverses.iter_mut().skip(1).batch_invert();
+
+        Self { inverses }
+    }
+
+    /// Return the inverse of `value`, from cache or calculated.
+    pub fn get(&self, value: u64) -> F {
+        match self.inverses.get(value as usize) {
+            Some(i) => *i,
+            None => F::from(value).invert().unwrap(),
+        }
     }
 }

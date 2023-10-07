@@ -6,8 +6,8 @@ use crate::{
         rlp_fsm::SmState,
         DataTable, Format,
         Format::{
-            L1MsgHash, TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignEip1559,
-            TxSignPreEip155,
+            L1MsgHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
+            TxSignEip1559, TxSignEip2930, TxSignPreEip155,
         },
         RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, State,
         State::DecodeTagStart,
@@ -350,7 +350,7 @@ impl Transaction {
                     TxType::PreEip155 => TxHashPreEip155,
                     TxType::Eip1559 => TxHashEip1559,
                     TxType::L1Msg => L1MsgHash,
-                    _ => unreachable!("tx type {:?} not supported", self.tx_type),
+                    TxType::Eip2930 => TxHashEip2930,
                 },
             )
         } else {
@@ -360,6 +360,7 @@ impl Transaction {
                     TxType::Eip155 => TxSignEip155,
                     TxType::PreEip155 => TxSignPreEip155,
                     TxType::Eip1559 => TxSignEip1559,
+                    TxType::Eip2930 => TxSignEip2930,
                     _ => unreachable!("tx type {:?} not supported", self.tx_type),
                 },
             )
@@ -786,9 +787,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
             TxType::Eip155 => (TxHashEip155, Some(TxSignEip155)),
             TxType::PreEip155 => (TxHashPreEip155, Some(TxSignPreEip155)),
             TxType::Eip1559 => (TxHashEip1559, Some(TxSignEip1559)),
-            TxType::Eip2930 => {
-                unimplemented!("eip2930 not supported now")
-            }
+            TxType::Eip2930 => (TxHashEip2930, Some(TxSignEip2930)),
             TxType::L1Msg => (L1MsgHash, None),
         };
 

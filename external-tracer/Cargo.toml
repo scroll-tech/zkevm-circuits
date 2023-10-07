@@ -1,16 +1,15 @@
 [package]
 name = "external-tracer"
-version = "0.1.0"
-edition = "2021"
-authors = ["The appliedzkp team"]
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 eth-types = { path = "../eth-types" }
 geth-utils = { path = "../geth-utils" }
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
-log = "0.4.14"
+log.workspace = true
 
 [features]
 default = []

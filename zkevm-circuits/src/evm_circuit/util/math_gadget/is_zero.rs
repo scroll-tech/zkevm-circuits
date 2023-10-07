@@ -49,13 +49,14 @@ impl<F: Field> IsZeroGadget<F> {
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
-        let inverse = value.invert().unwrap_or(F::zero());
-        self.inverse.assign(region, offset, Value::known(inverse))?;
-        Ok(if value.is_zero().into() {
-            F::one()
-        } else {
+        let is_zero = value.is_zero_vartime();
+        let inverse = if is_zero {
             F::zero()
-        })
+        } else {
+            value.invert().unwrap()
+        };
+        self.inverse.assign(region, offset, Value::known(inverse))?;
+        Ok(F::from(is_zero))
     }
 
     pub(crate) fn assign_value(

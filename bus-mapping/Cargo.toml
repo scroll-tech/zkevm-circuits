@@ -1,9 +1,8 @@
 [package]
 name = "bus-mapping"
-version = "0.1.0"
-edition = "2021"
-authors = ["CPerezz <c.perezbaro@gmail.com>"]
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 eth-types = { path = "../eth-types" }
@@ -15,11 +14,11 @@ mock = { path = "../mock", optional = true }
 ethers-core = { version = "2.0.7", features = ["scroll"] }
 ethers-signers = "2.0.7"
 ethers-providers = "2.0.7"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+halo2_proofs.workspace = true
 poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
-itertools = "0.10"
-lazy_static = "1.4"
-log = "0.4.14"
+itertools.workspace = true
+lazy_static.workspace = true
+log.workspace = true
 num = "0.4"
 rand = { version = "0.8", optional = true }
 serde = {version = "1.0.130", features = ["derive"] }
@@ -38,7 +37,7 @@ pretty_assertions = "1.0.0"
 tokio = { version = "1.13", features = ["macros"] }
 url = "2.2.2"
 ctor = "0.1.22"
-env_logger = "0.9.0"
+env_logger.workspace = true
 mock = { path = "../mock" }
 rand = "0.8"
 

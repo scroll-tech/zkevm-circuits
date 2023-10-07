@@ -249,6 +249,9 @@ pub(crate) enum Lookup<F> {
         is_code: Expression<F>,
         /// Value corresponding to the tag.
         value: Expression<F>,
+        /// The RLC of the PUSH data (LE order), or 0.
+        /// Warning: If the bytecode is truncated, this is the actual data, without zero-padding.
+        push_rlc: Expression<F>,
     },
     /// Lookup to block table, which contains constants of this block.
     Block {
@@ -404,6 +407,7 @@ impl<F: Field> Lookup<F> {
                 index,
                 is_code,
                 value,
+                push_rlc,
             } => {
                 vec![
                     1.expr(), // q_enable
@@ -412,6 +416,7 @@ impl<F: Field> Lookup<F> {
                     index.clone(),
                     is_code.clone(),
                     value.clone(),
+                    push_rlc.clone(),
                 ]
             }
             Self::Block {

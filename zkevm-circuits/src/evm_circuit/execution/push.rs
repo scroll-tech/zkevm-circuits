@@ -1,35 +1,25 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            and,
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
-                Transition::Delta,
-            },
-            math_gadget::{IsZeroGadget, LtGadget},
-            not, or, select, sum, CachedRegion, Cell, Word,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            math_gadget::IsZeroGadget,
+            rlc, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use array_init::array_init;
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
     is_push0: IsZeroGadget<F>,
-    value: Word<F>,
-    is_pushed: [Cell<F>; 32],
-    is_padding: [Cell<F>; 32],
-    code_length: Cell<F>,
-    is_out_of_bound: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
+    value: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
@@ -42,91 +32,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
         let is_push0 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::PUSH0.expr());
 
-        let value = cb.query_word_rlc();
+        let value = cb.query_cell_phase2();
         cb.stack_push(value.expr());
-
-        // Query selectors for each opcode_lookup whether byte in value needs to be pushed
-        let is_pushed = array_init(|_| cb.query_bool());
-        let is_padding = array_init(|_| cb.query_bool());
-
-        let code_length = cb.query_cell();
-        let code_length_left = code_length.expr() - cb.curr.state.program_counter.expr() - 1.expr();
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
-
-        let num_bytes_needed = opcode.expr() - OpcodeId::PUSH0.expr();
-        let is_out_of_bound =
-            LtGadget::construct(cb, code_length_left.expr(), num_bytes_needed.expr());
-        let num_bytes_padding = select::expr(
-            is_out_of_bound.expr(),
-            num_bytes_needed.expr() - code_length_left.expr(),
-            0.expr(),
-        );
-
-        // The pushed bytes are viewed as left-padded big-endian, but our random
-        // linear combination uses little-endian, so we lookup from the LSB
-        // which has index (program_counter + num_pushed), and then move left
-        // (program_counter + num_pushed - idx) to lookup all 32 bytes
-        // conditionally by selectors.
-        // For PUSH2 as an example, we lookup from byte0, byte1, ..., byte31,
-        // where the byte2 is actually the PUSH2 itself, and lookup are only
-        // enabled for byte0 and byte1.
-        //
-        //                    program_counter    program_counter + num_pushed(2)
-        //                           ▼                     ▼
-        //   [byte31,     ...,     byte2,     byte1,     byte0]
-        //
-        let mut is_pushed_cell_prev = true.expr();
-        let mut is_padding_cell_prev = true.expr();
-        for (idx, (is_pushed_cell, is_padding_cell)) in
-            is_pushed.iter().zip(is_padding.iter()).enumerate()
-        {
-            let byte = &value.cells[idx];
-            let index =
-                cb.curr.state.program_counter.expr() + num_bytes_needed.clone() - idx.expr();
-
-            cb.require_boolean(
-                "Constrain is_pushed can only transit from 1 to 0",
-                is_pushed_cell_prev - is_pushed_cell.expr(),
-            );
-            cb.require_boolean(
-                "Constrain is_padding can only transit from 1 to 0",
-                is_padding_cell_prev - is_padding_cell.expr(),
-            );
-
-            // byte is 0 if it is either not pushed or padding
-            cb.condition(
-                or::expr(&[not::expr(is_pushed_cell.expr()), is_padding_cell.expr()]),
-                |cb| {
-                    cb.require_zero(
-                        "Constrain byte == 0 when is_pushed == 0 or is_padding == 1",
-                        byte.expr(),
-                    );
-                },
-            );
-            cb.condition(
-                and::expr(&[is_pushed_cell.expr(), not::expr(is_padding_cell.expr())]),
-                |cb| {
-                    cb.opcode_lookup_at(index, byte.expr(), 0.expr());
-                },
-            );
-            is_pushed_cell_prev = is_pushed_cell.expr();
-            is_padding_cell_prev = is_padding_cell.expr();
-        }
-
-        // Sum of selectors is_pushed needs to be exactly the number of bytes
-        // that needs to be pushed
-        cb.require_equal(
-            "Constrain sum of is_pushed equal to num_bytes_needed",
-            sum::expr(&is_pushed),
-            num_bytes_needed.expr(),
-        );
-
-        // Sum of selectors is_padding needs to be exactly the number of padded bytes
-        cb.require_equal(
-            "Constrain sum of is_padding equal to num_padding",
-            sum::expr(&is_padding),
-            num_bytes_padding.expr(),
-        );
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -140,16 +47,13 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             )),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+        let same_context =
+            SameContextGadget::construct2(cb, opcode, step_state_transition, value.expr());
 
         Self {
             same_context,
             is_push0,
             value,
-            is_pushed,
-            is_padding,
-            code_length,
-            is_out_of_bound,
         }
     }
 
@@ -159,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        call: &Call,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -171,50 +75,16 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             F::from(opcode.as_u64() - OpcodeId::PUSH0.as_u64()),
         )?;
 
-        let bytecode = block
-            .bytecodes
-            .get(&call.code_hash)
-            .expect("could not find current environment's bytecode");
-        let code_length = bytecode.bytes.len() as u64;
-        self.code_length
-            .assign(region, offset, Value::known(F::from(code_length)))?;
-
-        let value = if opcode.is_push_with_data() {
-            block.rws[step.rw_indices[0]].stack_value()
+        let value_rlc = if opcode.is_push_with_data() {
+            let value = block.rws[step.rw_indices[0]].stack_value();
+            region
+                .challenges()
+                .evm_word()
+                .map(|challenge| rlc::value(&value.to_le_bytes(), challenge))
         } else {
-            U256::zero()
+            Value::known(F::zero())
         };
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
-
-        let code_length_left = code_length
-            .checked_sub(step.program_counter + 1)
-            .expect("unexpected underflow");
-        let num_bytes_needed = opcode.postfix().unwrap() as u64;
-        let num_padding = num_bytes_needed.saturating_sub(code_length_left);
-        self.is_out_of_bound.assign(
-            region,
-            offset,
-            F::from(code_length_left),
-            F::from(num_bytes_needed),
-        )?;
-        for (idx, (is_pushed_cell, is_padding_cell)) in self
-            .is_pushed
-            .iter()
-            .zip(self.is_padding.iter())
-            .enumerate()
-        {
-            is_pushed_cell.assign(
-                region,
-                offset,
-                Value::known(F::from(((idx as u64) < num_bytes_needed) as u64)),
-            )?;
-            is_padding_cell.assign(
-                region,
-                offset,
-                Value::known(F::from(((idx as u64) < num_padding) as u64)),
-            )?;
-        }
+        self.value.assign(region, offset, value_rlc)?;
 
         Ok(())
     }

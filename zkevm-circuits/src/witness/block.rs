@@ -58,6 +58,8 @@ pub struct Block<F> {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
+    /// State root after the block, is set if block_apply_mpt_state is called
+    pub state_root: Option<Word>, // TODO: Make this H256
     /// Withdraw root
     pub withdraw_root: Word,
     /// Withdraw roof of the previous block
@@ -558,6 +560,7 @@ pub fn block_convert<F: Field>(
             ..block.circuits_params
         },
         prev_state_root: block.prev_state_root,
+        state_root: None,
         withdraw_root: block.withdraw_root,
         prev_withdraw_root: block.prev_withdraw_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
@@ -586,4 +589,5 @@ pub fn block_convert_with_l1_queue_index<F: Field>(
 /// Attach witness block with mpt states
 pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) {
     block.mpt_updates.fill_state_roots(mpt_state);
+    block.state_root = Some(block.mpt_updates.new_root());
 }
