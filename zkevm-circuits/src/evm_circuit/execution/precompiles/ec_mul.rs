@@ -19,7 +19,7 @@ use crate::{
             rlc, CachedRegion, Cell,
         },
     },
-    util::word::{Word},
+    util::word::Word,
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
