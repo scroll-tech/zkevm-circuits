@@ -4,6 +4,7 @@ use eth_types::{
     evm_types::{Memory, OpcodeId},
     Address, Hash, Word,
 };
+use eth_types::evm_types::Stack;
 
 /// Type of a *CALL*/CREATE* Function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +144,8 @@ pub struct CallContext {
     pub call_data: Vec<u8>,
     /// memory context of current call
     pub memory: Memory,
+    /// stack context of current call
+    pub stack: Stack,
     /// return data buffer
     pub return_data: Vec<u8>,
 }

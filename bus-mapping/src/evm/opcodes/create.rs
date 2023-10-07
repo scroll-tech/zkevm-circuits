@@ -71,11 +71,10 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
-                geth_step.stack.nth_last(i)?,
-            )?;
+            assert_eq!(
+                state.stack_pop(&mut exec_step)?,
+                geth_step.stack.nth_last(i)?
+            );
         }
 
         let address = if IS_CREATE2 {
@@ -92,9 +91,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.sdb.get_account_mut(&address).1.storage.clear();
         }
 
-        state.stack_write(
+        state.stack_push(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(n_pop - 1),
             if callee.is_success {
                 address.to_word()
             } else {

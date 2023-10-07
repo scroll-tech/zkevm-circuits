@@ -18,6 +18,7 @@ impl Opcode for Address {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Get address result from next step.
+        // TODO: get address from call context.
         let address = geth_steps[1].stack.last()?;
 
         // Read the callee address in call context.
@@ -29,11 +30,7 @@ impl Opcode for Address {
         )?;
 
         // Write the address to stack.
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            address,
-        )?;
+        state.stack_push(&mut exec_step, address)?;
 
         Ok(vec![exec_step])
     }

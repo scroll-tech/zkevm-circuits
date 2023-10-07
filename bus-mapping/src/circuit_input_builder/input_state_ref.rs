@@ -351,12 +351,23 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// same as stack_write, but update the call ctx's stack
+    pub fn stack_push(&mut self, step: &mut ExecStep, value: Word) -> Result<(), Error> {
+        let call_id = self.call()?.call_id;
+        let stack = &mut self.call_ctx_mut()?.stack;
+        stack.push(value)?;
+        let address = stack.nth_last_filled(0);
+        self.push_op(step, RW::WRITE, StackOp::new(call_id, address, value))?;
+        Ok(())
+    }
+
     /// Push a read type [`StackOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter)  and `call_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
     /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO: change signature and removes the `value` parameter
     pub fn stack_read(
         &mut self,
         step: &mut ExecStep,
@@ -366,6 +377,16 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_id = self.call()?.call_id;
         self.push_op(step, RW::READ, StackOp::new(call_id, address, value))?;
         Ok(())
+    }
+
+    /// same as stack_read, but update the call ctx's stack
+    pub fn stack_pop(&mut self, step: &mut ExecStep) -> Result<Word, Error> {
+        let call_id = self.call()?.call_id;
+        let stack = &mut self.call_ctx_mut()?.stack;
+        let address = stack.nth_last_filled(0);
+        let value = stack.pop()?;
+        self.push_op(step, RW::READ, StackOp::new(call_id, address, value))?;
+        Ok(value)
     }
 
     /// First check the validity and consistency of the rw operation against the

@@ -28,11 +28,11 @@ impl Opcode for Sha3 {
 
         // byte offset in the memory.
         let offset = geth_step.stack.nth_last(0)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
+        assert_eq!(offset, state.stack_pop(&mut exec_step)?);
 
         // byte size to read in the memory.
         let size = geth_step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), size)?;
+        assert_eq!(size, state.stack_pop(&mut exec_step)?);
 
         if size.gt(&U256::zero()) {
             state
@@ -52,11 +52,7 @@ impl Opcode for Sha3 {
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&sha3_input);
         debug_assert_eq!(Word::from_big_endian(&sha3), expected_sha3);
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.last_filled(),
-            sha3.into(),
-        )?;
+        state.stack_push(&mut exec_step, sha3.into())?;
 
         // Memory read operations
         let rw_counter_start = state.block_ctx.rwc;

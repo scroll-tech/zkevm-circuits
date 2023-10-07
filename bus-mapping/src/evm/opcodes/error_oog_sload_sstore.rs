@@ -50,7 +50,7 @@ impl Opcode for OOGSloadSstore {
         )?;
 
         let key = geth_step.stack.last()?;
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), key)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, key);
 
         let is_warm = state
             .sdb

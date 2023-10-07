@@ -36,17 +36,9 @@ fn gen_codecopy_step(
     let length = geth_step.stack.nth_last(2)?;
 
     // stack reads
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(0),
-        dest_offset,
-    )?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(1),
-        code_offset,
-    )?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
+    assert_eq!(dest_offset, state.stack_pop(&mut exec_step)?);
+    assert_eq!(code_offset, state.stack_pop(&mut exec_step)?);
+    assert_eq!(length, state.stack_pop(&mut exec_step)?);
 
     Ok(exec_step)
 }

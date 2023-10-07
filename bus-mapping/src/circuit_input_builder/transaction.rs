@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, Memory, OpcodeId},
+    evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
     geth_types,
     geth_types::{get_rlp_unsigned, TxType},
     AccessList, Address, GethExecTrace, Signature, Word, H256,
@@ -180,8 +180,7 @@ impl TransactionContext {
             index: call_idx,
             reversible_write_counter: 0,
             call_data,
-            memory: Memory::default(),
-            return_data: vec![],
+            ..Default::default()
         });
     }
 

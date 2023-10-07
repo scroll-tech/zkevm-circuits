@@ -36,7 +36,7 @@ impl Opcode for PushN {
             real_value >> missing_bits
         };
 
-        state.stack_write(&mut exec_step, geth_steps[1].stack.last_filled(), value)?;
+        state.stack_push(&mut exec_step, value)?;
 
         Ok(vec![exec_step])
     }

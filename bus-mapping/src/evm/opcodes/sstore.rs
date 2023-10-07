@@ -59,12 +59,10 @@ impl Opcode for Sstore {
         )?;
 
         let key = geth_step.stack.nth_last(0)?;
-        let key_stack_position = geth_step.stack.nth_last_filled(0);
         let value = geth_step.stack.nth_last(1)?;
-        let value_stack_position = geth_step.stack.nth_last_filled(1);
 
-        state.stack_read(&mut exec_step, key_stack_position, key)?;
-        state.stack_read(&mut exec_step, value_stack_position, value)?;
+        assert_eq!(key, state.stack_pop(&mut exec_step)?);
+        assert_eq!(value, state.stack_pop(&mut exec_step)?);
 
         let is_warm = state
             .sdb

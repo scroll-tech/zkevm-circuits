@@ -90,19 +90,16 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_read(&mut exec_step, caller_call.call_id, field, value)?;
         }
 
-        for i in 0..N_ARGS {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
-                geth_step.stack.nth_last(i)?,
-            )?;
+        let stack_inputs: [Word; N_ARGS] = [(); N_ARGS]
+            .map(|_| state.stack_pop(&mut exec_step))
+            .into_iter()
+            .collect::<Result<Vec<Word>, Error>>()?
+            .try_into()
+            .unwrap();
+        for (i, input) in stack_inputs.iter().enumerate() {
+            assert_eq!(*input, geth_step.stack.nth_last(i)?);
         }
-
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(N_ARGS - 1),
-            (callee_call.is_success as u64).into(),
-        )?;
+        state.stack_push(&mut exec_step, (callee_call.is_success as u64).into())?;
 
         let callee_code_hash = callee_call.code_hash;
         let callee_acc = state.sdb.get_account(&callee_address).1;

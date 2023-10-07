@@ -39,19 +39,13 @@ impl Opcode for PrecompileFailed {
         state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
 
         for i in 0..stack_input_num {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
+            assert_eq!(
                 geth_step.stack.nth_last(i)?,
-            )?;
+                state.stack_pop(&mut exec_step)?
+            );
         }
-
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(stack_input_num - 1),
-            // Must fail.
-            (0_u64).into(),
-        )?;
+        // Must fail.
+        state.stack_push(&mut exec_step, (0_u64).into())?;
 
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),

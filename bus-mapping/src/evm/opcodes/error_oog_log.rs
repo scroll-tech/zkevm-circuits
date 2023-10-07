@@ -32,10 +32,10 @@ impl Opcode for ErrorOOGLog {
         ]
         .contains(&geth_step.op));
         let mstart = geth_step.stack.nth_last(0)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, mstart);
         let msize = geth_step.stack.nth_last(1)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, msize);
 
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), mstart)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
         // read static call property
         state.call_context_read(
             &mut exec_step,

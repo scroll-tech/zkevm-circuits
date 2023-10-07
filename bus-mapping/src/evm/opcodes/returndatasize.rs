@@ -40,11 +40,7 @@ impl Opcode for Returndatasize {
             debug_assert_eq!(real_return_data_len, local_return_data_len);
         }
 
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            value,
-        )?;
+        state.stack_push(&mut exec_step, local_return_data_len.into())?;
 
         Ok(vec![exec_step])
     }

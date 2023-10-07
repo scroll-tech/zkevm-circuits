@@ -53,8 +53,8 @@ fn gen_log_step(
     let msize = geth_step.stack.nth_last(1)?;
 
     let call_id = state.call()?.call_id;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), mstart)?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
+    assert_eq!(mstart, state.stack_pop(&mut exec_step)?);
+    assert_eq!(msize, state.stack_pop(&mut exec_step)?);
 
     state.call_context_read(
         &mut exec_step,
@@ -100,11 +100,7 @@ fn gen_log_step(
 
     for i in 0..topic_count {
         let topic = geth_step.stack.nth_last(2 + i)?;
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(2 + i),
-            topic,
-        )?;
+        assert_eq!(topic, state.stack_pop(&mut exec_step)?);
 
         if state.call()?.is_persistent {
             state.tx_log_write(

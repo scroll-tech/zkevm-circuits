@@ -16,7 +16,7 @@ impl Opcode for Origin {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        // Get origin result from next step
+        // TODO: Get origin result
         let value = geth_steps[1].stack.last()?;
         let tx_id = state.tx_ctx.id();
 
@@ -29,11 +29,7 @@ impl Opcode for Origin {
         )?;
 
         // Stack write of the origin address value
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            value,
-        )?;
+        state.stack_push(&mut exec_step, value)?;
 
         Ok(vec![exec_step])
     }

@@ -53,10 +53,9 @@ impl Opcode for Sload {
 
         // First stack read
         let key = geth_step.stack.last()?;
-        let stack_position = geth_step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.stack_read(&mut exec_step, stack_position, key)?;
+        assert_eq!(key, state.stack_pop(&mut exec_step)?);
 
         // Storage read
         let value_from_statedb = *state.sdb.get_storage(&contract_addr, &key).1;
@@ -89,7 +88,7 @@ impl Opcode for Sload {
         )?;
 
         // First stack write
-        state.stack_write(&mut exec_step, stack_position, value)?;
+        state.stack_push(&mut exec_step, value)?;
         state.push_op(
             &mut exec_step,
             RW::READ,

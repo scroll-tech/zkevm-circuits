@@ -21,30 +21,19 @@ impl Opcode for Blockhash {
         let mut exec_step = state.new_step(geth_step)?;
 
         let block_number = geth_step.stack.nth_last(0)?;
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(0),
-            block_number,
-        )?;
-
-        let block_hash = geth_steps[1].stack.last()?;
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.last_filled(),
-            block_hash,
-        )?;
+        assert_eq!(block_number, state.stack_pop(&mut exec_step)?);
 
         let current_block_number = state.tx.block_num;
-        if is_valid_block_number(block_number, current_block_number.into()) {
-            let (sha3_input, _sha3_output) =
+        let block_hash = if is_valid_block_number(block_number, current_block_number.into()) {
+            let (sha3_input, sha3_output) =
                 calculate_block_hash(state.block.chain_id, block_number);
             state.block.sha3_inputs.push(sha3_input);
-
-            #[cfg(feature = "scroll")]
-            assert_eq!(block_hash, _sha3_output);
+            sha3_output
         } else {
-            assert_eq!(block_hash, 0.into());
-        }
+            0.into()
+        };
+        assert_eq!(block_hash, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, block_hash)?;
 
         Ok(vec![exec_step])
     }

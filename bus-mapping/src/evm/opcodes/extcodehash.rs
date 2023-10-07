@@ -17,12 +17,11 @@ impl Opcode for Extcodehash {
     ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];
         let mut exec_step = state.new_step(step)?;
-        let stack_address = step.stack.last_filled();
 
         // Pop external address off stack
         let external_address_word = step.stack.last()?;
         let external_address = external_address_word.to_address();
-        state.stack_read(&mut exec_step, stack_address, external_address_word)?;
+        assert_eq!(external_address_word, state.stack_pop(&mut exec_step)?);
 
         // Read transaction id, rw_counter_end_of_reversion, and is_persistent from call
         // context
@@ -78,7 +77,7 @@ impl Opcode for Extcodehash {
         )?;
         debug_assert_eq!(steps[1].stack.last()?, code_hash.to_word());
         // Stack write of the result of EXTCODEHASH.
-        state.stack_write(&mut exec_step, stack_address, steps[1].stack.last()?)?;
+        state.stack_push(&mut exec_step, code_hash.to_word())?;
 
         Ok(vec![exec_step])
     }

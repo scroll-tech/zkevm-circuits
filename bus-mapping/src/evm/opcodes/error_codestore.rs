@@ -26,9 +26,9 @@ impl Opcode for ErrorCodeStore {
         );
 
         let offset = geth_step.stack.nth_last(0)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, offset);
         let length = geth_step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), length)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, length);
 
         // in internal call context
         let call = state.call()?;

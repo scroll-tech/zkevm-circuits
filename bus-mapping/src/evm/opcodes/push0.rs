@@ -16,11 +16,7 @@ impl Opcode for Push0 {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.last_filled(),
-            U256::zero(),
-        )?;
+        state.stack_push(&mut exec_step, U256::zero())?;
 
         Ok(vec![exec_step])
     }

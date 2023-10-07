@@ -26,19 +26,11 @@ impl Opcode for InvalidJump {
         let is_jumpi = geth_step.op == OpcodeId::JUMPI;
         let mut condition: Word = Word::zero();
         if is_jumpi {
-            condition = geth_step.stack.nth_last(1)?;
+            condition = geth_step.stack.nth_last(1)?; // TODO: remove this
         }
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.last_filled(),
-            geth_step.stack.last()?,
-        )?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, geth_step.stack.last()?);
         if is_jumpi {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(1),
-                condition,
-            )?;
+            assert_eq!(state.stack_pop(&mut exec_step)?, condition);
         }
 
         // `IsSuccess` call context operation is added in handle_return

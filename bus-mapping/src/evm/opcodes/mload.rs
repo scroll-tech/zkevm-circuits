@@ -23,20 +23,22 @@ impl Opcode for Mload {
         // First stack read
         //
         let stack_value_read = geth_step.stack.last()?;
-        let stack_position = geth_step.stack.last_filled();
 
-        // Manage first stack read at latest stack position
-        state.stack_read(&mut exec_step, stack_position, stack_value_read)?;
+        assert_eq!(stack_value_read, state.stack_pop(&mut exec_step)?);
 
         // Read the memory value from the next step of the trace.
-        let mem_read_value = geth_steps[1].stack.last()?;
+        let mem_read_value = state
+            .call_ctx()?
+            .memory
+            .read_word(stack_value_read.as_usize().into());
+        assert_eq!(mem_read_value, geth_steps[1].stack.last()?);
 
         let offset = stack_value_read.as_u64();
         let shift = offset % 32;
         let slot = offset - shift;
 
         // First stack write
-        state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
+        state.stack_push(&mut exec_step, mem_read_value)?;
 
         state.memory_read_word(&mut exec_step, slot.into())?;
         state.memory_read_word(&mut exec_step, (slot + 32).into())?;

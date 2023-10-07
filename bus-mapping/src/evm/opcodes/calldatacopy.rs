@@ -32,18 +32,9 @@ fn gen_calldatacopy_step(
     let memory_offset = geth_step.stack.nth_last(0)?;
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
-
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(0),
-        memory_offset,
-    )?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(1),
-        data_offset,
-    )?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
+    assert_eq!(memory_offset, state.stack_pop(&mut exec_step)?);
+    assert_eq!(data_offset, state.stack_pop(&mut exec_step)?);
+    assert_eq!(length, state.stack_pop(&mut exec_step)?);
 
     if state.call()?.is_root {
         state.call_context_read(

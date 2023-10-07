@@ -142,6 +142,30 @@ impl Stack {
             .cloned()
             .ok_or(Error::InvalidStackPointer)
     }
+
+    /// pops the last [`Word`] allocated in the `Stack`.
+    pub fn pop(&mut self) -> Result<Word, Error> {
+        self.0.pop().ok_or(Error::InvalidStackPointer)
+    }
+
+    /// pushes a [`Word`] allocated in the `Stack`.
+    pub fn push(&mut self, word: Word) -> Result<(), Error> {
+        if self.0.len() >= 1024 {
+            return Err(Error::InvalidStackPointer);
+        }
+        self.0.push(word);
+        Ok(())
+    }
+
+    /// swap last and n_last [`Word`] allocated in the `Stack`.
+    pub fn swap(&mut self, n_last: usize) -> Result<(), Error> {
+        if self.0.len() < (n_last + 1) {
+            return Err(Error::InvalidStackPointer);
+        }
+        let last = self.0.len() - 1;
+        self.0.swap(last, last - n_last);
+        Ok(())
+    }
 }
 
 #[cfg(test)]

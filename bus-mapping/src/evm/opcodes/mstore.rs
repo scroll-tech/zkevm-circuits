@@ -20,13 +20,11 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let mut exec_step = state.new_step(geth_step)?;
         // First stack read (offset)
         let offset = geth_step.stack.nth_last(0)?;
-        let offset_pos = geth_step.stack.nth_last_filled(0);
-        state.stack_read(&mut exec_step, offset_pos, offset)?;
+        assert_eq!(offset, state.stack_pop(&mut exec_step)?);
 
         // Second stack read (value)
         let value = geth_step.stack.nth_last(1)?;
-        let value_pos = geth_step.stack.nth_last_filled(1);
-        state.stack_read(&mut exec_step, value_pos, value)?;
+        assert_eq!(value, state.stack_pop(&mut exec_step)?);
 
         let offset_u64 = offset.as_u64() as usize;
         let shift = offset_u64 % 32;

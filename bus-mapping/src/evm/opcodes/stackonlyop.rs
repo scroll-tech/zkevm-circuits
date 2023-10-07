@@ -29,18 +29,16 @@ impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
         let mut exec_step = state.new_step(geth_step)?;
         // N_POP stack reads
         for i in 0..N_POP {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
+            assert_eq!(
                 geth_step.stack.nth_last(i)?,
-            )?;
+                state.stack_pop(&mut exec_step)?
+            );
         }
 
         // N_PUSH stack writes
-        for i in 0..N_PUSH {
-            state.stack_write(
+        for i in (0..N_PUSH).rev() {
+            state.stack_push(
                 &mut exec_step,
-                geth_steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
                 geth_steps[1].stack.nth_last(N_PUSH - 1 - i)?,
             )?;
         }

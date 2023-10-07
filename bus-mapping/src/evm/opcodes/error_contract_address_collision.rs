@@ -30,11 +30,10 @@ impl<const IS_CREATE2: bool> Opcode for ContractAddressCollision<IS_CREATE2> {
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
+            assert_eq!(
                 geth_step.stack.nth_last(i)?,
-            )?;
+                state.stack_pop(&mut exec_step)?
+            );
         }
 
         let _address = if IS_CREATE2 {
@@ -44,9 +43,8 @@ impl<const IS_CREATE2: bool> Opcode for ContractAddressCollision<IS_CREATE2> {
         };
         // TODO: assert address is collision
 
-        state.stack_write(
+        state.stack_push(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(n_pop - 1),
             Word::zero(),
         )?;
 

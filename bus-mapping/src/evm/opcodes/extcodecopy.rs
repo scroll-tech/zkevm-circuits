@@ -38,18 +38,10 @@ fn gen_extcodecopy_step(
     let length = geth_step.stack.nth_last(3)?;
 
     // stack reads
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(0),
-        external_address_word,
-    )?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(1),
-        dest_offset,
-    )?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), offset)?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(3), length)?;
+    assert_eq!(external_address_word, state.stack_pop(&mut exec_step)?);
+    assert_eq!(dest_offset, state.stack_pop(&mut exec_step)?);
+    assert_eq!(offset, state.stack_pop(&mut exec_step)?);
+    assert_eq!(length, state.stack_pop(&mut exec_step)?);
 
     for (field, value) in [
         (CallContextField::TxId, U256::from(state.tx_ctx.id())),

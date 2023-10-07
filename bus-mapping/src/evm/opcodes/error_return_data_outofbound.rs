@@ -26,20 +26,11 @@ impl Opcode for ErrorReturnDataOutOfBound {
         );
 
         let memory_offset = geth_step.stack.nth_last(0)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, memory_offset);
         let data_offset = geth_step.stack.nth_last(1)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, data_offset);
         let length = geth_step.stack.nth_last(2)?;
-
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(0),
-            memory_offset,
-        )?;
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(1),
-            data_offset,
-        )?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
+        assert_eq!(state.stack_pop(&mut exec_step)?, length);
 
         let call_id = state.call()?.call_id;
         let call_ctx = state.call_ctx()?;
