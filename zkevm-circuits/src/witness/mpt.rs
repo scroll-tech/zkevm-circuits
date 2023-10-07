@@ -284,7 +284,7 @@ impl MptUpdates {
             new_root,
             ..Default::default()
         };
-        // FIXME: we can remove this assert after the code runs a while and everthing is ok?
+        // FIXME: we can remove this assert after the code runs a while and everything is ok?
         #[cfg(debug_assertions)]
         {
             let mut rows = rows.to_vec();
