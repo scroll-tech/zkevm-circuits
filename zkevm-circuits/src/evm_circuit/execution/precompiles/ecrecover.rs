@@ -9,16 +9,17 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_WORD},
+        param::N_BYTES_WORD,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtWordGadget, ModGadget},
-            rlc, CachedRegion, Cell, RandomLinearCombination, Word,
+            rlc, CachedRegion, Cell,
         },
     },
+    util::word::{Word, Word32Cell},
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -36,12 +37,12 @@ pub struct EcrecoverGadget<F> {
     sig_v_keccak_rlc: Cell<F>,
     sig_r_keccak_rlc: Cell<F>,
     sig_s_keccak_rlc: Cell<F>,
-    recovered_addr_keccak_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    recovered_addr_keccak_rlc: Word32Cell<F>,
 
     msg_hash_raw: Word<F>,
     msg_hash: Word<F>,
     fq_modulus: Word<F>,
-    msg_hash_mod: ModGadget<F, true>,
+    msg_hash_mod: ModGadget<F>,
 
     sig_r: Word<F>,
     sig_r_canonical: LtWordGadget<F>,
@@ -82,12 +83,12 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
-            cb.query_keccak_rlc(),
+            cb.query_word32(),
         );
 
-        let msg_hash_raw = cb.query_word_rlc();
-        let msg_hash = cb.query_word_rlc();
-        let fq_modulus = cb.query_word_rlc();
+        let msg_hash_raw = cb.query_word32();
+        let msg_hash = cb.query_word32();
+        let fq_modulus = cb.query_word32();
         let msg_hash_mod = ModGadget::construct(cb, [&msg_hash_raw, &fq_modulus, &msg_hash]);
 
         let sig_r = cb.query_word_rlc();

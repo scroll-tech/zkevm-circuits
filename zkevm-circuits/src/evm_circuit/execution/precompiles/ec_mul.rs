@@ -93,14 +93,15 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         cb.require_equal(
             "Scalar s (raw 32-bytes) equality",
             scalar_s_raw_rlc.expr(),
-            scalar_s_raw.expr(),
+            // scalar_s_raw.expr(),
+            rlc::expr(&scalar_s_raw.limbs.map(|cell| cell.expr()), cb.challenges().evm_word())
         );
 
         // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
         // of that value. Instead we use the native value.
         let scalar_s_native = rlc::expr(
             &scalar_s
-                .cells
+                .limbs
                 .iter()
                 .map(Expr::expr)
                 .collect::<Vec<Expression<F>>>(),
@@ -130,9 +131,9 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             })
         });
         let (point_p_y_raw, point_r_y_raw, fq_modulus) = (
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
+            cb.query_word32(),
+            cb.query_word32(),
+            cb.query_word32(),
         );
         cb.require_equal(
             "ecMul(P_y): equality",
@@ -148,12 +149,12 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         let (fq_modulus_lo, fq_modulus_hi) = split_u256(&FQ_MODULUS);
         cb.require_equal(
             "fq_modulus(lo) equality",
-            sum::expr(&fq_modulus.cells[0x00..0x10]),
+            sum::expr(&fq_modulus.limbs[0x00..0x10]),
             sum::expr(fq_modulus_lo.to_le_bytes()),
         );
         cb.require_equal(
             "fq_modulus(hi) equality",
-            sum::expr(&fq_modulus.cells[0x10..0x20]),
+            sum::expr(&fq_modulus.limbs[0x10..0x20]),
             sum::expr(fq_modulus_hi.to_le_bytes()),
         );
 
