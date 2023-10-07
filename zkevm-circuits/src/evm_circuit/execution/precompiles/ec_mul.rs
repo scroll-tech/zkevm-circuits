@@ -60,7 +60,7 @@ pub struct EcMulGadget<F> {
     scalar_s_raw: Word<F>, // raw
     scalar_s: Word<F>,     // mod by Fr::MODULUS
     fr_modulus: Word<F>,   // Fr::MODULUS
-    modword: ModGadget<F, false>,
+    modword: ModGadget<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -86,9 +86,9 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         );
 
         let (scalar_s_raw, scalar_s, fr_modulus) = (
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
-            cb.query_keccak_rlc(),
+            cb.query_word32(),
+            cb.query_word32(),
+            cb.query_word32(),
         );
         cb.require_equal(
             "Scalar s (raw 32-bytes) equality",
