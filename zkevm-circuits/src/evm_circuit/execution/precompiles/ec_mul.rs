@@ -11,6 +11,7 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_WORD,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -93,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         cb.require_equal(
             "Scalar s (raw 32-bytes) equality",
             scalar_s_raw_rlc.expr(),
-            rlc::word32_expr(&scalar_s_raw, cb.challenges().keccak_input())
+            cb.keccak_rlc::<N_BYTES_WORD>(scalar_s_raw.limbs.map(|cell| cell.expr()))
         );
 
         // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
@@ -120,8 +121,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         let s_is_zero = cb.annotation("ecMul(s == 0)", |cb| {
             IsZeroGadget::construct(
                 cb, 
-                // scalar_s.expr()
-                rlc::word32_expr(&scalar_s, cb.challenges().keccak_input())
+                cb.keccak_rlc::<N_BYTES_WORD>(scalar_s.limbs.map(|cell| cell.expr()))
             )
         });
         let s_is_fr_mod_minus_1 = cb.annotation("ecMul(s == Fr::MODULUS - 1)", |cb| {
@@ -140,12 +140,12 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         );
         cb.require_equal(
             "ecMul(P_y): equality",
-            rlc::word32_expr(&point_p_y_raw, cb.challenges().keccak_input()),
+            cb.keccak_rlc::<N_BYTES_WORD>(point_p_y_raw.limbs.map(|cell| cell.expr())),
             point_p_y_rlc.expr(),
         );
         cb.require_equal(
             "ecMul(R_y): equality",
-            rlc::word32_expr(&point_r_y_raw, cb.challenges().keccak_input()),
+            cb.keccak_rlc::<N_BYTES_WORD>(point_r_y_raw.limbs.map(|cell| cell.expr())),
             point_r_y_rlc.expr(),
         );
 

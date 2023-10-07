@@ -91,14 +91,14 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         let fq_modulus = cb.query_word32();
         let msg_hash_mod = ModGadget::construct(cb, [&msg_hash_raw, &fq_modulus, &msg_hash]);
 
-        let sig_r = cb.query_word_rlc();
+        let sig_r = cb.query_word32();
         let sig_r_canonical = LtWordGadget::construct(cb, &sig_r, &fq_modulus);
-        let sig_s = cb.query_word_rlc();
+        let sig_s = cb.query_word32();
         let sig_s_canonical = LtWordGadget::construct(cb, &sig_s, &fq_modulus);
         let r_s_canonical = and::expr([sig_r_canonical.expr(), sig_s_canonical.expr()]);
 
         // sig_v is valid if sig_v == 27 || sig_v == 28
-        let sig_v = cb.query_word_rlc();
+        let sig_v = cb.query_word32();
         let sig_v_rest_bytes = sum::expr(&sig_v.cells[1..]);
         let sig_v_one_byte = IsZeroGadget::construct(cb, sig_v_rest_bytes);
         let sig_v_eq27 = IsEqualGadget::construct(cb, sig_v.cells[0].expr(), 27.expr());

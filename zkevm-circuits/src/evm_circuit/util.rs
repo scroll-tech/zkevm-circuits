@@ -645,10 +645,6 @@ pub(crate) mod rlc {
         }
     }
 
-    pub(crate) fn word32_expr<F: FieldExt, E: Expr<F>>(word: &WordLimbs<Cell<F>, 32>, randomness: E) -> Expression<F> {
-        expr(&word.limbs.map(|cell| cell.expr()), randomness.expr())
-    }
-
     pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
     where
         I: IntoIterator<Item = &'a u8>,
