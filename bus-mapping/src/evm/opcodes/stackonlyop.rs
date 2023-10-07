@@ -54,6 +54,28 @@ impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct StackPopOnlyOpcode<const N_POP: usize>;
+
+impl<const N_POP: usize> Opcode for StackPopOnlyOpcode<N_POP> {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
+        // N_POP stack reads
+        for i in 0..N_POP {
+            assert_eq!(
+                geth_step.stack.nth_last(i)?,
+                state.stack_pop(&mut exec_step)?
+            );
+        }
+
+        Ok(vec![exec_step])
+    }
+}
+
 #[cfg(test)]
 mod stackonlyop_tests {
     use crate::{

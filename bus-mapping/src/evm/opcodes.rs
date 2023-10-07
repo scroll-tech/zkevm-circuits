@@ -118,7 +118,7 @@ use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
-use stackonlyop::StackOnlyOpcode;
+use stackonlyop::{StackOnlyOpcode, StackPopOnlyOpcode};
 use stop::Stop;
 use swap::Swap;
 
@@ -222,14 +222,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
         OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
+        OpcodeId::POP => StackPopOnlyOpcode::<1>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
         OpcodeId::SLOAD => Sload::gen_associated_ops,
         OpcodeId::SSTORE => Sstore::gen_associated_ops,
-        OpcodeId::JUMP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
-        OpcodeId::JUMPI => StackOnlyOpcode::<2, 0>::gen_associated_ops,
+        OpcodeId::JUMP => StackPopOnlyOpcode::<1>::gen_associated_ops,
+        OpcodeId::JUMPI => StackPopOnlyOpcode::<2>::gen_associated_ops,
         OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
