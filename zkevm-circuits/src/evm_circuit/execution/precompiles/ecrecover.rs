@@ -5,7 +5,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-
+use std::ops::Deref;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -19,7 +19,7 @@ use crate::{
             rlc, CachedRegion, Cell,
         },
     },
-    util::word::{Word, Word32Cell},
+    util::word::{Word, Word32Cell, WordExpr},
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -39,17 +39,17 @@ pub struct EcrecoverGadget<F> {
     sig_s_keccak_rlc: Cell<F>,
     recovered_addr_keccak_rlc: Word32Cell<F>,
 
-    msg_hash_raw: Word<F>,
-    msg_hash: Word<F>,
-    fq_modulus: Word<F>,
+    msg_hash_raw: Word32Cell<F>,
+    msg_hash: Word32Cell<F>,
+    fq_modulus: Word32Cell<F>,
     msg_hash_mod: ModGadget<F>,
 
-    sig_r: Word<F>,
+    sig_r: Word32Cell<F>,
     sig_r_canonical: LtWordGadget<F>,
-    sig_s: Word<F>,
+    sig_s: Word32Cell<F>,
     sig_s_canonical: LtWordGadget<F>,
 
-    sig_v: Word<F>,
+    sig_v: Word32Cell<F>,
     sig_v_one_byte: IsZeroGadget<F>,
     sig_v_eq27: IsEqualGadget<F>,
     sig_v_eq28: IsEqualGadget<F>,
@@ -99,10 +99,10 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
 
         // sig_v is valid if sig_v == 27 || sig_v == 28
         let sig_v = cb.query_word32();
-        let sig_v_rest_bytes = sum::expr(&sig_v.cells[1..]);
+        let sig_v_rest_bytes = sum::expr(&sig_v.limbs[1..]);
         let sig_v_one_byte = IsZeroGadget::construct(cb, sig_v_rest_bytes);
-        let sig_v_eq27 = IsEqualGadget::construct(cb, sig_v.cells[0].expr(), 27.expr());
-        let sig_v_eq28 = IsEqualGadget::construct(cb, sig_v.cells[0].expr(), 28.expr());
+        let sig_v_eq27 = IsEqualGadget::construct(cb, sig_v.limbs[0].expr(), 27.expr());
+        let sig_v_eq28 = IsEqualGadget::construct(cb, sig_v.limbs[0].expr(), 28.expr());
         let sig_v_valid = and::expr([
             or::expr([sig_v_eq27.expr(), sig_v_eq28.expr()]),
             sig_v_one_byte.expr(),
@@ -113,7 +113,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             msg_hash_keccak_rlc.expr(),
             cb.keccak_rlc::<N_BYTES_WORD>(
                 msg_hash_raw
-                    .cells
+                    .limbs
                     .iter()
                     .map(Expr::expr)
                     .collect::<Vec<Expression<F>>>()
@@ -126,7 +126,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_r_keccak_rlc.expr(),
             cb.keccak_rlc::<N_BYTES_WORD>(
                 sig_r
-                    .cells
+                    .limbs
                     .iter()
                     .map(Expr::expr)
                     .collect::<Vec<Expression<F>>>()
@@ -139,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_s_keccak_rlc.expr(),
             cb.keccak_rlc::<N_BYTES_WORD>(
                 sig_s
-                    .cells
+                    .limbs
                     .iter()
                     .map(Expr::expr)
                     .collect::<Vec<Expression<F>>>()
@@ -152,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_v_keccak_rlc.expr(),
             cb.keccak_rlc::<N_BYTES_WORD>(
                 sig_v
-                    .cells
+                    .limbs
                     .iter()
                     .map(Expr::expr)
                     .collect::<Vec<Expression<F>>>()
@@ -160,10 +160,15 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .expect("sig_v is 32 bytes"),
             ),
         );
-        cb.require_equal(
+        // cb.require_equal(
+        //     "Secp256k1::Fq modulus assigned correctly",
+        //     fq_modulus.expr(),
+        //     cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
+        // );
+        cb.require_equal_word(
             "Secp256k1::Fq modulus assigned correctly",
-            fq_modulus.expr(),
-            cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
+            fq_modulus.to_word(),
+            Word::from(*FQ_MODULUS).to_word()
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
@@ -192,7 +197,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             |cb| {
                 cb.sig_table_lookup(
                     msg_hash.expr(),
-                    sig_v.cells[0].expr() - 27.expr(),
+                    sig_v.limbs[0].expr() - 27.expr(),
                     sig_r.expr(),
                     sig_s.expr(),
                     select::expr(
@@ -214,9 +219,9 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.require_zero("recovered == false if sig_v != 27 or 28", recovered.expr());
         });
         cb.condition(not::expr(recovered.expr()), |cb| {
-            cb.require_zero(
+            cb.require_zero_word(
                 "address == 0 if address could not be recovered",
-                recovered_addr_keccak_rlc.expr(),
+                recovered_addr_keccak_rlc.to_word()
             );
         });
 
@@ -322,13 +327,13 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 (&self.sig_s, aux_data.sig_s),
                 (&self.sig_v, aux_data.sig_v),
             ] {
-                word_rlc.assign(region, offset, Some(value.to_le_bytes()))?;
+                word_rlc.assign_u256(region, offset, value)?;
             }
             let (quotient, remainder) = aux_data.msg_hash.div_mod(*FQ_MODULUS);
             self.msg_hash
-                .assign(region, offset, Some(remainder.to_le_bytes()))?;
+                .assign_u256(region, offset, remainder)?;
             self.fq_modulus
-                .assign(region, offset, Some(FQ_MODULUS.to_le_bytes()))?;
+                .assign_u256(region, offset, *FQ_MODULUS)?;
             self.msg_hash_mod.assign(
                 region,
                 offset,
