@@ -633,6 +633,8 @@ pub(crate) mod rlc {
     use std::ops::{Add, Mul};
 
     use crate::util::Expr;
+    use crate::util::word::WordLimbs;
+    use crate::evm_circuit::util::Cell;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
@@ -641,6 +643,10 @@ pub(crate) mod rlc {
         } else {
             0.expr()
         }
+    }
+
+    pub(crate) fn word32_expr<F: FieldExt, E: Expr<F>>(word: &WordLimbs<Cell<F>, 32>, randomness: E) -> Expression<F> {
+        expr(&word.limbs.map(|cell| cell.expr()), randomness.expr())
     }
 
     pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F

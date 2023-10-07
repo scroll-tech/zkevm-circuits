@@ -19,7 +19,7 @@ use crate::{
             rlc, CachedRegion, Cell,
         },
     },
-    util::word::Word,
+    util::word::Word32Cell,
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -49,17 +49,17 @@ pub struct EcMulGadget<F> {
     p_y_is_zero: IsZeroGadget<F>,
     s_is_zero: IsZeroGadget<F>,
     s_is_fr_mod_minus_1: IsEqualGadget<F>,
-    point_p_y_raw: Word<F>,
-    point_r_y_raw: Word<F>,
-    fq_modulus: Word<F>,
+    point_p_y_raw: Word32Cell<F>,
+    point_r_y_raw: Word32Cell<F>,
+    fq_modulus: Word32Cell<F>,
     p_y_plus_r_y: AddWordsGadget<F, 2, false>,
 
     // Two Words (s_raw, scalar_s) that satisfies
     // k * Fr::MODULUS + scalar_s = s_raw
     // Used for proving correct modulo by Fr
-    scalar_s_raw: Word<F>, // raw
-    scalar_s: Word<F>,     // mod by Fr::MODULUS
-    fr_modulus: Word<F>,   // Fr::MODULUS
+    scalar_s_raw: Word32Cell<F>, // raw
+    scalar_s: Word32Cell<F>,     // mod by Fr::MODULUS
+    fr_modulus: Word32Cell<F>,   // Fr::MODULUS
     modword: ModGadget<F>,
 
     is_success: Cell<F>,
@@ -93,8 +93,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         cb.require_equal(
             "Scalar s (raw 32-bytes) equality",
             scalar_s_raw_rlc.expr(),
-            // scalar_s_raw.expr(),
-            rlc::expr(&scalar_s_raw.limbs.map(|cell| cell.expr()), cb.challenges().evm_word())
+            rlc::word32_expr(&scalar_s_raw, cb.challenges().keccak_input())
         );
 
         // we know that `scalar_s` fits in the scalar field. So we don't compute an RLC
@@ -119,7 +118,11 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         });
         let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
         let s_is_zero = cb.annotation("ecMul(s == 0)", |cb| {
-            IsZeroGadget::construct(cb, scalar_s.expr())
+            IsZeroGadget::construct(
+                cb, 
+                // scalar_s.expr()
+                rlc::word32_expr(&scalar_s, cb.challenges().keccak_input())
+            )
         });
         let s_is_fr_mod_minus_1 = cb.annotation("ecMul(s == Fr::MODULUS - 1)", |cb| {
             IsEqualGadget::construct(cb, scalar_s_native.expr(), {
@@ -137,12 +140,12 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         );
         cb.require_equal(
             "ecMul(P_y): equality",
-            point_p_y_raw.expr(),
+            rlc::word32_expr(&point_p_y_raw, cb.challenges().keccak_input()),
             point_p_y_rlc.expr(),
         );
         cb.require_equal(
             "ecMul(R_y): equality",
-            point_r_y_raw.expr(),
+            rlc::word32_expr(&point_r_y_raw, cb.challenges().keccak_input()),
             point_r_y_rlc.expr(),
         );
 
@@ -319,10 +322,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 (&self.scalar_s_raw, aux_data.s_raw),
                 (&self.fr_modulus, *FR_MODULUS),
             ] {
-                col.assign(region, offset, Some(word_value.to_le_bytes()))?;
+                col.assign_u256(region, offset, word_value)?;
             }
             self.scalar_s
-                .assign(region, offset, Some(aux_data.s.to_le_bytes()))?;
+                .assign_u256(region, offset, aux_data.s)?;
             self.s_is_zero.assign_value(
                 region,
                 offset,
@@ -341,9 +344,9 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                     .expect("Fr::MODULUS - 1 fits in scalar field"),
             )?;
             self.point_p_y_raw
-                .assign(region, offset, Some(aux_data.p_y.to_le_bytes()))?;
+                .assign_u256(region, offset, aux_data.p_y)?;
             self.point_r_y_raw
-                .assign(region, offset, Some(aux_data.r_y.to_le_bytes()))?;
+                .assign_u256(region, offset, aux_data.r_y)?;
             self.p_y_plus_r_y.assign(
                 region,
                 offset,
@@ -351,7 +354,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 aux_data.p_y.add(&aux_data.r_y),
             )?;
             self.fq_modulus
-                .assign(region, offset, Some(FQ_MODULUS.to_le_bytes()))?;
+                .assign_u256(region, offset, *FQ_MODULUS)?;
 
             let (k, _) = aux_data.s_raw.div_mod(*FR_MODULUS);
             self.modword
