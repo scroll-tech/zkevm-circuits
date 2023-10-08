@@ -1,37 +1,37 @@
-use crate::evm_circuit::util::{
+use std::marker::PhantomData;
+
+use crate::{evm_circuit::util::{
     self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
     CachedRegion,
-};
+}, util::word::WordExpr};
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
 /// lhs and rhs are both 256-bit word.
 #[derive(Clone, Debug)]
-pub struct LtWordGadget<F> {
+pub struct LtWordGadget<F, T1, T2> {
     comparison_hi: ComparisonGadget<F, 16>,
     lt_lo: LtGadget<F, 16>,
+    _marker: PhantomData<(T1, T2)>,
 }
 
-impl<F: Field> LtWordGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        lhs: &util::Word<F>,
-        rhs: &util::Word<F>,
-    ) -> Self {
+impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> LtWordGadget<F, T1, T2> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: &T1, rhs: &T2,) -> Self {
         let comparison_hi = ComparisonGadget::construct(
             cb,
-            from_bytes::expr(&lhs.cells[16..]),
-            from_bytes::expr(&rhs.cells[16..]),
+            from_bytes::expr(&lhs.limbs[16..]),
+            from_bytes::expr(&rhs.limbs[16..]),
         );
         let lt_lo = LtGadget::construct(
             cb,
-            from_bytes::expr(&lhs.cells[..16]),
-            from_bytes::expr(&rhs.cells[..16]),
+            from_bytes::expr(&lhs.limbs[..16]),
+            from_bytes::expr(&rhs.limbs[..16]),
         );
         Self {
             comparison_hi,
             lt_lo,
+            _marker: Default::default(),
         }
     }
 
@@ -72,12 +72,12 @@ mod tests {
     use super::{test_util::*, *};
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
-    use util::word::{Word32Cell, WordExpr};
+    use crate::util::word::{Word32Cell, WordExpr};
 
     #[derive(Clone)]
     /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
-        ltword_gadget: LtWordGadget<F>,
+        ltword_gadget: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
         a: Word32Cell<F>,
         b: Word32Cell<F>,
     }
