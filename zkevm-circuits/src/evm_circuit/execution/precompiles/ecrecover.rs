@@ -1,5 +1,5 @@
 use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256, ToWord};
 use gadgets::util::{and, not, or, select, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -18,7 +18,7 @@ use crate::{
             rlc, CachedRegion, Cell,
         },
     },
-    util::word::{Word, Word32Cell, WordExpr},
+    util::word::{Word32Cell, WordExpr},
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -164,10 +164,10 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         //     fq_modulus.expr(),
         //     cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
         // );
-        cb.require_equal_word(
+        cb.require_equal(
             "Secp256k1::Fq modulus assigned correctly",
-            fq_modulus.to_word(),
-            Word::from(*FQ_MODULUS).to_word()
+            cb.word_rlc::<N_BYTES_WORD>(fq_modulus.limbs.map(|cell| cell.expr())),
+            cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
