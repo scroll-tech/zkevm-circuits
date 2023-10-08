@@ -164,16 +164,16 @@ mod tests {
         const CHECK_OVERFLOW: bool,
     > {
         addwords_gadget: AddWordsGadget<F, N_ADDENDS, CHECK_OVERFLOW>,
-        addends: [util::Word<F>; N_ADDENDS],
-        sum: util::Word<F>,
+        addends: [Word32Cell<F>; N_ADDENDS],
+        sum: Word32Cell<F>,
     }
 
     impl<F: Field, const N_ADDENDS: usize, const CARRY_HI: u64, const CHECK_OVERFLOW: bool>
         MathGadgetContainer<F> for AddWordsTestContainer<F, N_ADDENDS, CARRY_HI, CHECK_OVERFLOW>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let addends = [(); N_ADDENDS].map(|_| cb.query_word_rlc());
-            let sum = cb.query_word_rlc();
+            let addends = [(); N_ADDENDS].map(|_| cb.query_word32());
+            let sum = cb.query_word32();
             let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct(
                 cb,
                 addends.clone(),
@@ -204,10 +204,10 @@ mod tests {
             let offset = 0;
             for (i, addend) in self.addends.iter().enumerate() {
                 let a = witnesses[i];
-                addend.assign(region, offset, Some(a.to_le_bytes()))?;
+                addend.assign_u256(region, offset, a)?;
             }
             let sum = witnesses[N_ADDENDS];
-            self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+            self.sum.assign_u256(region, offset, sum)?;
 
             let addends = witnesses[0..N_ADDENDS].try_into().unwrap();
             self.addwords_gadget.assign(region, 0, addends, sum)?;

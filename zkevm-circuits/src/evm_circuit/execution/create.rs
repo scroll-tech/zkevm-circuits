@@ -784,11 +784,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let mut keccak_output = keccak256(keccak_input);
         keccak_output.reverse();
 
-        self.keccak_output.assign_u256(
-            region,
-            offset,
-            U256::from_little_endian(&keccak_output),
-        )?;
+        self.keccak_output
+            .assign_u256(region, offset, U256::from_little_endian(&keccak_output))?;
 
         // self.keccak_output
         //     .assign(region, offset, Some(keccak_output))?;

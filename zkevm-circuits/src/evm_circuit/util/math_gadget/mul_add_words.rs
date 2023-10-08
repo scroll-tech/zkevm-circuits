@@ -162,19 +162,19 @@ mod tests {
     /// MulAddGadgetContainer: require(a*b + c == d + carry*(2**256))
     struct MulAddGadgetContainer<F> {
         muladd_words_gadget: MulAddWordsGadget<F>,
-        a: util::Word<F>,
-        b: util::Word<F>,
-        c: util::Word<F>,
-        d: util::Word<F>,
+        a: Word32Cell<F>,
+        b: Word32Cell<F>,
+        c: Word32Cell<F>,
+        d: Word32Cell<F>,
         carry: Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let b = cb.query_word_rlc();
-            let c = cb.query_word_rlc();
-            let d = cb.query_word_rlc();
+            let a = cb.query_word32();
+            let b = cb.query_word32();
+            let c = cb.query_word32();
+            let d = cb.query_word32();
             let carry = cb.query_cell();
             let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
             cb.require_equal("carry is correct", math_gadget.overflow(), carry.expr());
@@ -194,14 +194,10 @@ mod tests {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let offset = 0;
-            self.a
-                .assign(region, offset, Some(witnesses[0].to_le_bytes()))?;
-            self.b
-                .assign(region, offset, Some(witnesses[1].to_le_bytes()))?;
-            self.c
-                .assign(region, offset, Some(witnesses[2].to_le_bytes()))?;
-            self.d
-                .assign(region, offset, Some(witnesses[3].to_le_bytes()))?;
+            self.a.assign_u256(region, offset, witnesses[0])?;
+            self.b.assign_u256(region, offset, witnesses[1])?;
+            self.c.assign_u256(region, offset, witnesses[2])?;
+            self.d.assign_u256(region, offset, witnesses[3])?;
             self.carry.assign(
                 region,
                 offset,

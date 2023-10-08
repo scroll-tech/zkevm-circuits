@@ -18,7 +18,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToScalar};
@@ -49,24 +52,27 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
 
-        let length = cb.query_word_rlc();
-        let memory_offset = cb.query_cell_phase2();
+        let length = cb.query_memory_address();
+        let memory_offset = cb.query_word_unchecked();
         let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
 
         // Pop memory_offset, data_offset, length from stack
-        cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(data_offset.original_word());
-        cb.stack_pop(length.expr());
+        cb.stack_pop(memory_offset.to_word());
+        cb.stack_pop(data_offset.original_word().to_word());
+        cb.stack_pop(length.to_word());
 
         // Lookup the calldata_length and caller_address in Tx context table or
         // Call context table
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, src_id.expr());
-            cb.call_context_lookup(
-                false.expr(),
+            cb.call_context_lookup_read(
+                None,
+                CallContextFieldTag::TxId,
+                Word::from_lo_unchecked(src_id.expr()),
+            );
+            cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallDataLength,
-                call_data_length.expr(),
+                Word::from_lo_unchecked(call_data_length.expr()),
             );
             cb.require_zero(
                 "call_data_offset == 0 in the root call",
@@ -74,23 +80,20 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             );
         });
         cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            cb.call_context_lookup(
-                false.expr(),
+            cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallerId,
-                src_id.expr(),
+                Word::from_lo_unchecked(src_id.expr()),
             );
-            cb.call_context_lookup(
-                false.expr(),
+            cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallDataLength,
-                call_data_length.expr(),
+                Word::from_lo_unchecked(call_data_length.expr()),
             );
-            cb.call_context_lookup(
-                false.expr(),
+            cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallDataOffset,
-                call_data_offset.expr(),
+                Word::from_lo_unchecked(call_data_offset.expr()),
             );
         });
 
@@ -122,9 +125,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             let src_addr_end = call_data_offset.expr() + call_data_length.expr();
 
             cb.copy_table_lookup(
-                src_id.expr(),
+                Word::from_lo_unchecked(src_id.expr()),
                 src_tag,
-                cb.curr.state.call_id.expr(),
+                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
                 src_addr,
                 src_addr_end,

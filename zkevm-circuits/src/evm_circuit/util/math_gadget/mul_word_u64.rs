@@ -101,16 +101,16 @@ mod tests {
     /// MulWordByU64TestContainer: require(product = a*(b as u64))
     struct MulWordByU64TestContainer<F> {
         mulwords_u64_gadget: MulWordByU64Gadget<F>,
-        a: util::Word<F>,
+        a: Word32Cell<F>,
         b: Cell<F>,
-        product: util::Word<F>,
+        product: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulWordByU64TestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
+            let a = cb.query_word32();
             let b = cb.query_cell();
-            let product = cb.query_word_rlc();
+            let product = cb.query_word32();
             let mulwords_u64_gadget = MulWordByU64Gadget::<F>::construct(cb, a.clone(), b.expr());
             MulWordByU64TestContainer {
                 mulwords_u64_gadget,
@@ -130,10 +130,9 @@ mod tests {
             let product = witnesses[2];
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, a)?;
             self.b.assign(region, offset, Value::known(F::from(b)))?;
-            self.product
-                .assign(region, offset, Some(product.to_le_bytes()))?;
+            self.product.assign_u256(region, offset, product)?;
             self.mulwords_u64_gadget.assign(region, 0, a, b, product)?;
 
             Ok(())

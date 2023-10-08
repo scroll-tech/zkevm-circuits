@@ -72,20 +72,21 @@ mod tests {
     use super::{test_util::*, *};
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
+    use util::word::{Word32Cell, WordExpr};
 
     #[derive(Clone)]
     /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
         ltword_gadget: LtWordGadget<F>,
-        a: util::Word<F>,
-        b: util::Word<F>,
+        a: Word32Cell<F>,
+        b: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let b = cb.query_word_rlc();
-            let ltword_gadget = LtWordGadget::<F>::construct(cb, &a, &b);
+            let a = cb.query_word32();
+            let b = cb.query_word32();
+            let ltword_gadget = LtWordGadget::<F>::construct(cb, &a.to_word(), &b.to_word());
             cb.require_equal("a < b", ltword_gadget.expr(), 1.expr());
             LtWordTestContainer {
                 ltword_gadget,
@@ -103,8 +104,8 @@ mod tests {
             let b = witnesses[1];
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-            self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, a)?;
+            self.b.assign_u256(region, offset, b)?;
             self.ltword_gadget.assign(region, 0, a, b)?;
 
             Ok(())

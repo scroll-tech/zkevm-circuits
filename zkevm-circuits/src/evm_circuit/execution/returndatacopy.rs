@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
+        param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
             common_gadget::{CommonReturnDataCopyGadget, SameContextGadget},
@@ -14,7 +14,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            CachedRegion, Cell, RandomLinearCombination,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -65,7 +65,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         // let dest_offset = cb.query_cell_phase2();
         // let return_data_size: Cell<F> = cb.query_cell();
 
-        // let size: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> = cb.query_word_rlc();
         let dest_offset = cb.query_word_unchecked();
         let data_offset = cb.query_memory_address();
         let size = cb.query_memory_address();

@@ -11,7 +11,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToAddress, ToLittleEndian};
@@ -21,7 +24,7 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub(crate) struct AddressGadget<F> {
     same_context: SameContextGadget<F>,
-    address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    address: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
@@ -30,17 +33,11 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDRESS;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let address = cb.query_word_rlc();
+        let address = cb.query_word_unchecked();
 
         // Lookup callee address in call context.
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::CalleeAddress,
-            from_bytes::expr(&address.cells),
-        );
-
-        cb.stack_push(address.expr());
+        cb.call_context_lookup_read(None, CallContextFieldTag::CalleeAddress, address.to_word());
+        cb.stack_push(address.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -73,15 +70,8 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         let address = block.rws[step.rw_indices[1]].stack_value();
         debug_assert_eq!(call.callee_address, address.to_address());
 
-        self.address.assign(
-            region,
-            offset,
-            Some(
-                address.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.address
+            .assign_h160(region, offset, address.to_address())?;
 
         Ok(())
     }

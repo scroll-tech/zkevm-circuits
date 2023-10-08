@@ -11,7 +11,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
@@ -20,7 +23,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    return_data_size: RandomLinearCombination<F, N_BYTES_U64>,
+    return_data_size: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
@@ -32,16 +35,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the returndatasize field.
-        let return_data_size = cb.query_word_rlc();
-        cb.call_context_lookup(
-            false.expr(),
+        let return_data_size = cb.query_word_unchecked();
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataLength,
-            from_bytes::expr(&return_data_size.cells),
+            return_data_size.to_word(),
         );
 
         // The returndatasize should be pushed to the top of the stack.
-        cb.stack_push(return_data_size.expr());
+        cb.stack_push(return_data_size.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -70,15 +72,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let return_data_size = block.rws[step.rw_indices[1]].stack_value();
-        self.return_data_size.assign(
-            region,
-            offset,
-            Some(
-                return_data_size.to_le_bytes()[..N_BYTES_U64]
-                    .try_into()
-                    .expect("could not encode return_data_size as byte array in little endian"),
-            ),
-        )?;
+        self.return_data_size
+            .assign_u64(region, offset, return_data_size.as_u64())?;
 
         Ok(())
     }

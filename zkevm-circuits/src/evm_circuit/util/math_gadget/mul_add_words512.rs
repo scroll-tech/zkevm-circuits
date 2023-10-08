@@ -205,20 +205,20 @@ mod tests {
     /// MulAddWords512GadgetContainer: require(a * b + c == d * 2**256 + e)
     struct MulAddWords512GadgetContainer<F> {
         math_gadget: MulAddWords512Gadget<F>,
-        a: util::Word<F>,
-        b: util::Word<F>,
-        d: util::Word<F>,
-        e: util::Word<F>,
-        addend: util::Word<F>,
+        a: word::Word32Cell<F>,
+        b: word::Word32Cell<F>,
+        d: word::Word32Cell<F>,
+        e: word::Word32Cell<F>,
+        addend: word::Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let b = cb.query_word_rlc();
-            let d = cb.query_word_rlc();
-            let e = cb.query_word_rlc();
-            let addend = cb.query_word_rlc();
+            let a = cb.query_word32();
+            let b = cb.query_word32();
+            let d = cb.query_word32();
+            let e = cb.query_word32();
+            let addend = cb.query_word32();
             let math_gadget =
                 MulAddWords512Gadget::<F>::construct(cb, [&a, &b, &d, &e], Some(&addend));
             MulAddWords512GadgetContainer {
@@ -237,16 +237,11 @@ mod tests {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let offset = 0;
-            self.a
-                .assign(region, offset, Some(witnesses[0].to_le_bytes()))?;
-            self.b
-                .assign(region, offset, Some(witnesses[1].to_le_bytes()))?;
-            self.d
-                .assign(region, offset, Some(witnesses[2].to_le_bytes()))?;
-            self.e
-                .assign(region, offset, Some(witnesses[3].to_le_bytes()))?;
-            self.addend
-                .assign(region, offset, Some(witnesses[4].to_le_bytes()))?;
+            self.a.assign_u256(region, offset, witnesses[0])?;
+            self.b.assign_u256(region, offset, witnesses[1])?;
+            self.d.assign_u256(region, offset, witnesses[2])?;
+            self.e.assign_u256(region, offset, witnesses[3])?;
+            self.addend.assign_u256(region, offset, witnesses[4])?;
             self.math_gadget.assign(
                 region,
                 offset,

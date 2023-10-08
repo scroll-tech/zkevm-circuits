@@ -14,10 +14,10 @@ use crate::{
             },
             from_bytes,
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
-                LtGadget, MulWordByU64Gadget, RangeCheckGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsEqualWordGadget,
+                IsZeroGadget, IsZeroWordGadget, LtGadget, MulWordByU64Gadget, RangeCheckGadget,
             },
-            CachedRegion, Cell, StepRws, Word,
+            AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,12 +25,19 @@ use crate::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
         TxFieldTag as TxContextFieldTag,
     },
+    util::{
+        word::{Word, Word32Cell, WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
-use gadgets::util::{expr_from_bytes, not, select, Expr};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use gadgets::util::{expr_from_bytes, not, select};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 // For Shanghai, EIP-3651 (Warm COINBASE) adds 1 write op for coinbase.
 #[cfg(feature = "shanghai")]
@@ -46,16 +53,16 @@ pub(crate) struct BeginTxGadget<F> {
     sender_nonce: Cell<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
-    tx_gas_price: Word<F>,
+    tx_gas_price: Word32Cell<F>,
     mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
-    tx_fee: Word<F>,
-    tx_caller_address: Cell<F>,
-    tx_caller_address_is_zero: IsZeroGadget<F>,
-    tx_callee_address: Cell<F>,
+    tx_fee: Word32Cell<F>,
+    tx_caller_address: WordCell<F>,
+    tx_caller_address_is_zero: IsZeroWordGadget<F, WordCell<F>>,
+    tx_callee_address: WordCell<F>,
     tx_callee_address_is_zero: IsZeroGadget<F>,
-    call_callee_address: Cell<F>,
+    call_callee_address: AccountAddress<F>,
     tx_is_create: Cell<F>,
-    tx_value: Word<F>,
+    tx_value: Word32Cell<F>,
     tx_call_data_length: Cell<F>,
     is_call_data_empty: IsZeroGadget<F>,
     tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
@@ -66,8 +73,9 @@ pub(crate) struct BeginTxGadget<F> {
     intrinsic_gas_cost: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
-    account_code_hash: Cell<F>,
+    account_code_hash: WordCell<F>,
     account_code_hash_is_empty: IsEqualGadget<F>,
+    is_empty_code_hash: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
     account_code_hash_is_zero: IsZeroGadget<F>,
     #[cfg(feature = "scroll")]
     account_keccak_code_hash: Cell<F>,
@@ -76,14 +84,15 @@ pub(crate) struct BeginTxGadget<F> {
     call_code_hash_is_zero: IsZeroGadget<F>,
     is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
     /// Keccak256(RLP([tx_caller_address, tx_nonce]))
-    caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
+    caller_nonce_hash_bytes: Word32Cell<F>,
+
     keccak_code_hash: Cell<F>,
     init_code_rlc: Cell<F>,
     /// RLP gadget for CREATE address.
     create: ContractCreateGadget<F, false>,
     is_caller_callee_equal: Cell<F>,
     // EIP-3651 (Warm COINBASE) for Shanghai
-    coinbase: Cell<F>,
+    coinbase: WordCell<F>,
     // Caller, callee and a list addresses are added to the access list before
     // coinbase, and may be duplicate.
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
@@ -140,6 +149,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // the cost caused by l1
         let l1_fee_cost = select::expr(tx_l1_msg.is_l1_msg(), 0.expr(), tx_l1_fee.tx_l1_fee());
+        // todo: change to call_context_lookup_write ?
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
@@ -147,22 +157,29 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             l1_fee_cost.expr(),
         ); // rwc_delta += 1
 
-        cb.call_context_lookup(
-            1.expr(),
+        cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
-            tx_id.expr(),
+            Word::from_lo_unchecked(tx_id.expr()),
         ); // rwc_delta += 1
-        let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
-        let is_persistent = reversion_info.is_persistent();
-        cb.call_context_lookup(
-            1.expr(),
+        let mut reversion_info = cb.reversion_info_write_unchecked(None);
+        // rwc_delta += 2
+        cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
-            is_persistent.expr(),
+            Word::from_lo_unchecked(reversion_info.is_persistent()),
         ); // rwc_delta += 1
 
-        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
+        let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
+            .map(|field_tag| cb.tx_context_as_word32(tx_id.expr(), field_tag, None));
+
+        let [tx_caller_address, tx_callee_address] = [
+            TxContextFieldTag::CallerAddress,
+            TxContextFieldTag::CalleeAddress,
+        ]
+        .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
+
+        let tx_caller_address_is_zero = IsZeroWordGadget::construct(cb, &tx_caller_address);
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
             tx_caller_address_is_zero.expr(),
@@ -176,15 +193,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 true.expr(),
             )
         });
-        let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
-            .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
 
-        let call_callee_address = cb.query_cell();
+        let call_callee_address = cb.query_account_address();
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.require_equal(
                 "Tx to non-zero address",
-                tx_callee_address.expr(),
-                call_callee_address.expr(),
+                tx_callee_address.to_word(),
+                call_callee_address.to_word(),
             );
         });
 
@@ -195,11 +210,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Increase caller's nonce.
         // (tx caller's nonce always increases even when tx ends with error)
+        // cb.account_write(
+        //     tx_caller_address.expr(),
+        //     AccountFieldTag::Nonce,
+        //     sender_nonce.expr() + 1.expr(),
+        //     sender_nonce.expr(),
+        //     None,
+        // ); // rwc_delta += 1
+        // tx_nonce == sender_nonce ？should be correct.
         cb.account_write(
-            tx_caller_address.expr(),
+            tx_caller_address.to_word(),
             AccountFieldTag::Nonce,
-            sender_nonce.expr() + 1.expr(),
-            sender_nonce.expr(),
+            Word::from_lo_unchecked(tx_nonce.expr() + 1.expr()),
+            Word::from_lo_unchecked(tx_nonce.expr()),
             None,
         ); // rwc_delta += 1
 
@@ -208,16 +231,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Calculate transaction gas fee
         let mul_gas_fee_by_gas =
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
-        let tx_fee = cb.query_word_rlc();
+        let tx_fee = cb.query_word32();
         let l2_fee = select::expr(
             tx_l1_msg.is_l1_msg(),
             0.expr(),
-            from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
+            from_bytes::expr(&mul_gas_fee_by_gas.product().limbs[..16]),
         );
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
             l1_fee_cost + l2_fee,
-            from_bytes::expr(&tx_fee.cells[..16]),
+            from_bytes::expr(&tx_fee.limbs[..16]),
         );
 
         // a valid precompile address is: 1 <= addr <= 9 (addr != 0 && addr < 0xA)
@@ -263,13 +286,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         for addr in 1..=PRECOMPILE_COUNT {
-            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), 0.expr(), None);
+            cb.account_access_list_write_unchecked(
+                tx_id.expr(),
+                addr.expr(),
+                1.expr(),
+                0.expr(),
+                None,
+            ); // rwc_delta += 1
         } // rwc_delta += PRECOMPILE_COUNT
 
         // Prepare access list of caller and callee
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
-            tx_caller_address.expr(),
+            tx_caller_address.to_word(),
             1.expr(),
             0.expr(),
             None,
@@ -277,7 +306,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_caller_callee_equal = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            call_callee_address.expr(),
+            call_callee_address.to_word(),
             1.expr(),
             // No extra constraint being used here.
             // Correctness will be enforced in build_tx_access_list_account_constraints
@@ -290,27 +319,29 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         ); // rwc_delta += 1
 
         // Query coinbase address for Shanghai.
-        let coinbase = cb.query_cell();
+        let coinbase = cb.query_word_unchecked();
         let is_coinbase_warm = cb.query_bool();
         cb.block_lookup(
             BlockContextFieldTag::Coinbase.expr(),
             cb.curr.state.block_number.expr(),
-            coinbase.expr(),
+            coinbase.to_word(),
         );
 
         #[cfg(feature = "shanghai")]
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
-            coinbase.expr(),
+            coinbase.to_word(),
             1.expr(),
             is_coinbase_warm.expr(),
             None,
         ); // rwc_delta += 1
 
-        let account_code_hash = cb.query_cell_phase2();
+        //let account_code_hash = cb.query_cell_phase2();
+        let account_code_hash = cb.query_word_unchecked();
+
         let account_code_hash_is_empty =
-            IsEqualGadget::construct(cb, account_code_hash.expr(), cb.empty_code_hash_rlc());
-        let account_code_hash_is_zero = IsZeroGadget::construct(cb, account_code_hash.expr());
+            IsEqualWordGadget::construct(cb, &account_code_hash.to_word(), &cb.empty_code_hash());
+        let account_code_hash_is_zero = IsZeroWordGadget::construct(cb, &code_hash);
         let account_code_hash_is_empty_or_zero =
             account_code_hash_is_empty.expr() + account_code_hash_is_zero.expr();
         #[cfg(feature = "scroll")]
@@ -324,9 +355,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call_code_hash_is_empty.expr() + call_code_hash_is_zero.expr();
 
         cb.account_read(
-            call_callee_address.expr(),
+            call_callee_address.to_word(),
             AccountFieldTag::CodeHash,
-            account_code_hash.expr(),
+            account_code_hash.to_word(),
         ); // rwc_delta += 1
 
         // Transfer value from caller to callee, creating account if necessary.

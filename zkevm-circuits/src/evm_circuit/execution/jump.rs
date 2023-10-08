@@ -9,11 +9,11 @@ use crate::{
                 EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes, CachedRegion, RandomLinearCombination,
+            from_bytes, CachedRegion, RandomLinearCombination, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
@@ -21,7 +21,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct JumpGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
+    destination: U64Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
@@ -30,23 +30,19 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let destination = cb.query_word_rlc();
+        let destination = cb.query_u64();
 
         // Pop the value from the stack
-        cb.stack_pop(destination.expr());
+        cb.stack_pop(destination.to_word());
 
         // Lookup opcode at destination
-        cb.opcode_lookup_at(
-            from_bytes::expr(&destination.cells),
-            OpcodeId::JUMPDEST.expr(),
-            1.expr(),
-        );
+        cb.opcode_lookup_at(destination.expr(), OpcodeId::JUMPDEST.expr(), 1.expr());
 
         // State transition
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),
-            program_counter: To(from_bytes::expr(&destination.cells)),
+            program_counter: To(destination.expr()),
             stack_pointer: Delta(1.expr()),
             gas_left: Delta(-OpcodeId::JUMP.constant_gas_cost().expr()),
             ..Default::default()
@@ -71,15 +67,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let destination = block.rws[step.rw_indices[0]].stack_value();
-        self.destination.assign(
-            region,
-            offset,
-            Some(
-                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.destination.assign_u256(region, offset, destination)?;
 
         Ok(())
     }

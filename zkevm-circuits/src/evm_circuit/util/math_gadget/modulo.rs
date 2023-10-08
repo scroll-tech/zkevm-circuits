@@ -105,17 +105,24 @@ mod tests {
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
+<<<<<<< HEAD
         mod_gadget: ModGadget<F>,
         a: util::Word<F>,
         n: util::Word<F>,
         r: util::Word<F>,
+=======
+        mod_gadget: ModGadget<F, true>,
+        a: Word32Cell<F>,
+        n: Word32Cell<F>,
+        r: Word32Cell<F>,
+>>>>>>> word_hi_lo
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let n = cb.query_word_rlc();
-            let r = cb.query_word_rlc();
+            let a = cb.query_word32();
+            let n = cb.query_word32();
+            let r = cb.query_word32();
             let mod_gadget = ModGadget::construct(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,
@@ -141,9 +148,9 @@ mod tests {
 
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-            self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-            self.r.assign(region, offset, Some(r.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, a)?;
+            self.n.assign_u256(region, offset, n)?;
+            self.r.assign_u256(region, offset, r)?;
 
             self.mod_gadget.assign(region, 0, a, n, r, k)
         }

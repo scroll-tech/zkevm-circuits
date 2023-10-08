@@ -185,7 +185,7 @@ pub(crate) type BitLengthGadget<F> = ByteOrBitSizeGadget<F, N_BITS_U8, false>;
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
-    use crate::evm_circuit::util;
+    use crate::{evm_circuit::util, util::word::Word32Cell};
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -193,24 +193,16 @@ mod tests {
     /// ByteSizeGadgetContainer: require(N = byte_size(a))
     struct ByteSizeGadgetContainerM<F, const N: u8, const TEST_MSB: bool = false> {
         bytesize_gadget: ByteSizeGadget<F>,
-        a: util::Word<F>,
+        a: Word32Cell<F>,
     }
 
     impl<F: Field, const N: u8, const TEST_MSB: bool> MathGadgetContainer<F>
         for ByteSizeGadgetContainerM<F, N, TEST_MSB>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let value_rlc = cb.query_word_rlc();
-            let bytesize_gadget = ByteSizeGadget::<F>::construct(
-                cb,
-                value_rlc
-                    .cells
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-            );
+            let value_word32 = cb.query_word32();
+            let bytesize_gadget =
+                ByteSizeGadget::<F>::construct(cb, value_word32.to_word_n().limbs);
 
             if TEST_MSB {
                 cb.require_equal(
@@ -228,7 +220,7 @@ mod tests {
 
             Self {
                 bytesize_gadget,
-                a: value_rlc,
+                a: value_word32,
             }
         }
 
@@ -239,7 +231,7 @@ mod tests {
         ) -> Result<(), Error> {
             let offset = 0;
             let x = witnesses[0];
-            self.a.assign(region, offset, Some(x.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, x)?;
             self.bytesize_gadget
                 .assign(region, offset, ByteOrWord::Word(x))?;
 

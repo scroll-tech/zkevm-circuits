@@ -477,6 +477,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cells(CellType::LookupByte, count)
     }
 
+    pub(crate) fn query_account_address(&mut self) -> AccountAddress<F> {
+        AccountAddress::<F>::new(self.query_bytes())
+    }
+
     pub(crate) fn query_memory_address(&mut self) -> MemoryAddress<F> {
         MemoryAddress::<F>::new(self.query_bytes())
     }
@@ -881,6 +885,30 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Access list
+    pub(crate) fn account_access_list_write_unchecked(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Word<Expression<F>>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.reversible_write(
+            "TxAccessListAccount write",
+            RwTableTag::TxAccessListAccount,
+            RwValues::new(
+                tx_id,
+                address_word_to_expr(account_address),
+                0.expr(),
+                Word::zero(),
+                Word::from_lo_unchecked(value),
+                Word::from_lo_unchecked(value_prev),
+                Word::zero(),
+                Word::zero(),
+            ),
+            reversion_info,
+        );
+    }
 
     pub(crate) fn account_access_list_write(
         &mut self,
@@ -1253,6 +1281,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn reversion_info_write(
+        &mut self,
+        call_id: Option<Expression<F>>,
+    ) -> ReversionInfo<F> {
+        self.reversion_info(call_id, true)
+    }
+
+    pub(crate) fn reversion_info_write_unchecked(
         &mut self,
         call_id: Option<Expression<F>>,
     ) -> ReversionInfo<F> {
