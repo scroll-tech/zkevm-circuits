@@ -6,21 +6,11 @@ use crate::{
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to all the Stack only operations: take N words and return one.
-/// The following cases exist in the EVM:
-/// - N = 1: UnaryOpcode
-/// - N = 2: BinaryOpcode
-/// - N = 3: TernaryOpcode
+/// corresponding to all the Stack only operations: take N words and return nothing.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct StackOnlyOpcode<
-    const N_POP: usize,
-    const N_PUSH: usize,
-    const IS_ERR: bool = { false },
->;
+pub(crate) struct StackPopOnlyOpcode<const N_POP: usize, const IS_ERR: bool = { false }>;
 
-impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
-    for StackOnlyOpcode<N_POP, N_PUSH, IS_ERR>
-{
+impl<const N_POP: usize, const IS_ERR: bool> Opcode for StackPopOnlyOpcode<N_POP, IS_ERR> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
@@ -33,14 +23,6 @@ impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
                 geth_step.stack.nth_last(i)?,
                 state.stack_pop(&mut exec_step)?
             );
-        }
-
-        // N_PUSH stack writes
-        for i in (0..N_PUSH).rev() {
-            state.stack_push(
-                &mut exec_step,
-                geth_steps[1].stack.nth_last(N_PUSH - 1 - i)?,
-            )?;
         }
 
         if IS_ERR {
@@ -48,28 +30,6 @@ impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
             let err = state.get_step_err(geth_step, next_step);
             exec_step.error = err.unwrap();
             state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
-        }
-
-        Ok(vec![exec_step])
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct StackPopOnlyOpcode<const N_POP: usize>;
-
-impl<const N_POP: usize> Opcode for StackPopOnlyOpcode<N_POP> {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        geth_steps: &[GethExecStep],
-    ) -> Result<Vec<ExecStep>, Error> {
-        let geth_step = &geth_steps[0];
-        let mut exec_step = state.new_step(geth_step)?;
-        // N_POP stack reads
-        for i in 0..N_POP {
-            assert_eq!(
-                geth_step.stack.nth_last(i)?,
-                state.stack_pop(&mut exec_step)?
-            );
         }
 
         Ok(vec![exec_step])

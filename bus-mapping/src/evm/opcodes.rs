@@ -122,7 +122,7 @@ use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
-use stackonlyop::{StackOnlyOpcode, StackPopOnlyOpcode};
+use stackonlyop::StackPopOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
 
@@ -312,7 +312,7 @@ fn fn_gen_error_state_associated_ops(
 ) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
-        ExecError::InvalidOpcode => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops),
         // Depth error could occur in CALL, CALLCODE, DELEGATECALL and STATICCALL.
         ExecError::Depth(DepthError::Call) => match geth_step.op {
             OpcodeId::CALL | OpcodeId::CALLCODE => Some(CallOpcode::<7>::gen_associated_ops),
@@ -326,34 +326,34 @@ fn fn_gen_error_state_associated_ops(
         ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => {
-            Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::Create) => match geth_step.op {
-            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 0, true>::gen_associated_ops),
-            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops),
+            OpcodeId::CREATE => Some(StackPopOnlyOpcode::<3, true>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(StackPopOnlyOpcode::<4, true>::gen_associated_ops),
             op => unreachable!("OOG Create cannot occur in {op}"),
         },
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
-            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<2, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
-            Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<1, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::Exp) => {
-            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<2, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::Sha3) => {
-            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<2, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::AccountAccess) => {
             Some(ErrorOOGAccountAccess::gen_associated_ops)
         }
         // ExecError::
-        ExecError::StackOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
-        ExecError::StackUnderflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
+        ExecError::StackOverflow => Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops),
+        ExecError::StackUnderflow => Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
         ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
