@@ -27,8 +27,7 @@ pub(crate) struct ErrorPrecompileFailedGadget<F> {
     is_callcode: IsZeroGadget<F>,
     is_delegatecall: IsZeroGadget<F>,
     is_staticcall: IsZeroGadget<F>,
-    //gas: Word<F>,
-    gas: Word32Cell<F>,
+    gas: WordCell<F>,
     callee_address: WordCell<F>,
     value: Word32Cell<F>,
     cd_address: MemoryAddressGadget<F>,
@@ -68,17 +67,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
-        //let gas = cb.query_word_rlc();
         let gas = cb.query_word_unchecked();
-        //  let callee_address = cb.query_word_rlc();
         let callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
         let value = cb.query_word32();
 
-        let cd_offset = cb.query_cell_phase2();
-        let cd_length = cb.query_word32();
-        let rd_offset = cb.query_cell_phase2();
-        let rd_length = cb.query_word32();
+        let cd_offset = cb.query_word_unchecked();
+        let cd_length = cb.query_memory_address();
+        let rd_offset = cb.query_word_unchecked();
+        let rd_length = cb.query_memory_address();
 
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
@@ -179,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         )?;
         self.gas.assign_u256(region, offset, gas)?;
         self.callee_address
-            .assign_h160(region, offset, callee_address.to_address())?;
+            .assign_u256(region, offset, callee_address)?;
         self.value.assign_u256(region, offset, value)?;
         self.cd_address
             .assign(region, offset, cd_offset, cd_length)?;
