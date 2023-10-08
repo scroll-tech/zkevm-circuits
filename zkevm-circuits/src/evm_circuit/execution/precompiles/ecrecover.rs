@@ -1,5 +1,5 @@
 use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256, H160};
 use gadgets::util::{and, not, or, select, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -196,13 +196,13 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             and::expr([r_s_canonical.expr(), sig_v_valid.expr()]),
             |cb| {
                 cb.sig_table_lookup(
-                    msg_hash.expr(),
+                    cb.word_rlc(msg_hash.limbs.map(|cell| cell.expr())),
                     sig_v.limbs[0].expr() - 27.expr(),
-                    sig_r.expr(),
-                    sig_s.expr(),
+                    cb.word_rlc(sig_r.limbs.map(|cell| cell.expr())),
+                    cb.word_rlc(sig_s.limbs.map(|cell| cell.expr())),
                     select::expr(
                         recovered.expr(),
-                        from_bytes::expr(&recovered_addr_keccak_rlc.cells),
+                        from_bytes::expr(&recovered_addr_keccak_rlc.limbs),
                         0.expr(),
                     ),
                     recovered.expr(),
@@ -371,14 +371,14 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 F::from(aux_data.sig_v.to_le_bytes()[0] as u64),
                 F::from(28),
             )?;
-            self.recovered_addr_keccak_rlc.assign(
+            self.recovered_addr_keccak_rlc.assign_u256(
                 region,
                 offset,
-                Some({
+                U256::from_little_endian({
                     let mut recovered_addr = aux_data.recovered_addr.to_fixed_bytes();
                     recovered_addr.reverse();
-                    recovered_addr
-                }),
+                    &recovered_addr
+                })
             )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecrecover", step.aux_data);
