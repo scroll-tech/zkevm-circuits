@@ -511,47 +511,47 @@ impl<F: FieldExt> CellManager<F> {
     }
 }
 
-// #[derive(Clone, Debug)]
-// pub(crate) struct RandomLinearCombination<F, const N: usize> {
-//     // random linear combination expression of cells
-//     expression: Expression<F>,
-//     // inner cells in little-endian for synthesis
-//     pub(crate) cells: [Cell<F>; N],
-// }
+#[derive(Clone, Debug)]
+pub(crate) struct RandomLinearCombination<F, const N: usize> {
+    // random linear combination expression of cells
+    expression: Expression<F>,
+    // inner cells in little-endian for synthesis
+    pub(crate) cells: [Cell<F>; N],
+}
 
-// impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
-//     const N_BYTES: usize = N;
+impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
+    const N_BYTES: usize = N;
 
-//     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
-//         Self {
-//             expression: rlc::expr(&cells.clone().map(|cell| cell.expr()), randomness),
-//             cells,
-//         }
-//     }
+    pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
+        Self {
+            expression: rlc::expr(&cells.clone().map(|cell| cell.expr()), randomness),
+            cells,
+        }
+    }
 
-//     pub(crate) fn assign(
-//         &self,
-//         region: &mut CachedRegion<'_, '_, F>,
-//         offset: usize,
-//         bytes: Option<[u8; N]>,
-//     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-//         bytes.map_or(Err(Error::Synthesis), |bytes| {
-//             self.cells
-//                 .iter()
-//                 .zip(bytes.iter())
-//                 .map(|(cell, byte)| {
-//                     cell.assign(region, offset, Value::known(F::from(*byte as u64)))
-//                 })
-//                 .collect()
-//         })
-//     }
-// }
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        bytes: Option<[u8; N]>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        bytes.map_or(Err(Error::Synthesis), |bytes| {
+            self.cells
+                .iter()
+                .zip(bytes.iter())
+                .map(|(cell, byte)| {
+                    cell.assign(region, offset, Value::known(F::from(*byte as u64)))
+                })
+                .collect()
+        })
+    }
+}
 
-// impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
-//     fn expr(&self) -> Expression<F> {
-//         self.expression.clone()
-//     }
-// }
+impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
+    fn expr(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+}
 
 pub(crate) type MemoryAddress<F> = IntDecomposition<F, N_BYTES_MEMORY_ADDRESS>;
 
