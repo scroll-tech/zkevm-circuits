@@ -13,7 +13,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, word::Word32Cell},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
@@ -27,7 +27,7 @@ pub(crate) struct SignedDivModGadget<F> {
     remainder_abs_word: AbsWordGadget<F>,
     dividend_abs_word: AbsWordGadget<F>,
     mul_add_words: MulAddWordsGadget<F>,
-    remainder_abs_lt_divisor_abs: LtWordGadget<F>,
+    remainder_abs_lt_divisor_abs: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
     dividend_is_signed_overflow: LtGadget<F, 1>,
     quotient_is_zero: IsZeroGadget<F>,
     divisor_is_zero: IsZeroGadget<F>,

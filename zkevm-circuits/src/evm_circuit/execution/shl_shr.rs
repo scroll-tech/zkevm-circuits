@@ -49,7 +49,7 @@ pub(crate) struct ShlShrGadget<F> {
     /// Check if remainder is zero
     remainder_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     /// Check if remainder < divisor when divisor != 0
-    remainder_lt_divisor: LtWordGadget<F>,
+    remainder_lt_divisor: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
@@ -214,7 +214,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.remainder_is_zero
             .assign(region, offset, Word::from(remainder))?;
         self.remainder_lt_divisor
-            .assign(region, offset, remainder, divisor)?;
+            .assign(region, offset, remainder, divisor)
     }
 }
 

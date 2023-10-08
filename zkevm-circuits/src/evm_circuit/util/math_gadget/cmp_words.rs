@@ -48,6 +48,7 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> CmpWordsGadget<F, T1, T2> {
             comparison_hi,
             lt,
             eq,
+            _marker: Default::default(),
         }
     }
 
@@ -83,7 +84,7 @@ mod tests {
     use super::{test_util::*, *};
     use crate::{
         evm_circuit::util::constraint_builder::ConstrainBuilderCommon,
-        util::{word::WordExpr, Expr},
+        util::{word::{WordExpr, WordCell}, Expr},
     };
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
@@ -91,7 +92,7 @@ mod tests {
     #[derive(Clone)]
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
     struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
-        cmp_gadget: CmpWordsGadget<F>,
+        cmp_gadget: CmpWordsGadget<F, WordCell<F>, WordCell<F>>,
         a_word: WordCell<F>,
         b_word: WordCell<F>,
     }

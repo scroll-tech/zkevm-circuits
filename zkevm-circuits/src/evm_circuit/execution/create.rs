@@ -64,7 +64,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     create: ContractCreateGadget<F, IS_CREATE2>,
     caller_balance: WordCell<F>,
     is_depth_in_range: LtGadget<F, N_BYTES_U64>,
-    is_insufficient_balance: LtWordGadget<F>,
+    is_insufficient_balance: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
     is_nonce_in_range: LtGadget<F, N_BYTES_U64>,
     // check address collision use
     callee_nonce: Cell<F>,
