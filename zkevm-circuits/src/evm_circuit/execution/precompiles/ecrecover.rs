@@ -1,5 +1,5 @@
 use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256, ToWord};
+use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, or, select, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
