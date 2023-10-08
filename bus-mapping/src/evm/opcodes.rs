@@ -94,7 +94,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
-use environment::GetBlockHeaderField;
+use environment::{Gas, GetBlockHeaderField, Msize, Pc};
 use error_codestore::ErrorCodeStore;
 use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
@@ -248,9 +248,9 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SSTORE => Sstore::gen_associated_ops,
         OpcodeId::JUMP => StackPopOnlyOpcode::<1>::gen_associated_ops,
         OpcodeId::JUMPI => StackPopOnlyOpcode::<2>::gen_associated_ops,
-        OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::PC => Pc::gen_associated_ops,
+        OpcodeId::MSIZE => Msize::gen_associated_ops,
+        OpcodeId::GAS => Gas::gen_associated_ops,
         OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,

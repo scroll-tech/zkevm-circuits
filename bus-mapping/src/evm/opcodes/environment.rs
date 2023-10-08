@@ -74,3 +74,54 @@ where
         Ok(vec![exec_step])
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Pc;
+
+impl Opcode for Pc {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let mut exec_step = state.new_step(&geth_steps[0])?;
+        let output = geth_steps[0].pc.0.into();
+        assert_eq!(output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, output)?;
+
+        Ok(vec![exec_step])
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Msize;
+
+impl Opcode for Msize {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let mut exec_step = state.new_step(&geth_steps[0])?;
+        let output = state.call_ctx()?.memory.len().into();
+        assert_eq!(output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, output)?;
+
+        Ok(vec![exec_step])
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Gas;
+
+impl Opcode for Gas {
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let mut exec_step = state.new_step(&geth_steps[0])?;
+        let output = geth_steps[1].gas.0.into();
+        assert_eq!(output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, output)?;
+
+        Ok(vec![exec_step])
+    }
+}
