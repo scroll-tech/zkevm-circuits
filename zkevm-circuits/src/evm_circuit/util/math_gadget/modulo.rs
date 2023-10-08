@@ -105,17 +105,10 @@ mod tests {
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
-<<<<<<< HEAD
-        mod_gadget: ModGadget<F>,
-        a: util::Word<F>,
-        n: util::Word<F>,
-        r: util::Word<F>,
-=======
         mod_gadget: ModGadget<F, true>,
         a: Word32Cell<F>,
         n: Word32Cell<F>,
         r: Word32Cell<F>,
->>>>>>> word_hi_lo
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
