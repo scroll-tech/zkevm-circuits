@@ -1,23 +1,25 @@
 use std::marker::PhantomData;
 
-use crate::{evm_circuit::util::{
-    constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
-    CachedRegion,
-}, util::word::WordExpr};
+use crate::{
+    evm_circuit::util::{
+        constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
+        CachedRegion, Cell
+    }, 
+    util::word::{WordLimbs, WordExpr}
+};
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
 /// lhs and rhs are both 256-bit word.
 #[derive(Clone, Debug)]
-pub struct LtWordGadget<F, T1, T2> {
+pub struct LtWordGadget<F> {
     comparison_hi: ComparisonGadget<F, 16>,
     lt_lo: LtGadget<F, 16>,
-    _marker: PhantomData<(T1, T2)>,
 }
 
-impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> LtWordGadget<F, T1, T2> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: &T1, rhs: &T2,) -> Self {
+impl<F: Field, const N1: usize, const N2: usize> LtWordGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: &WordLimbs<Cell<F>, N1>, rhs: &WordLimbs<Cell<F>, N2>) -> Self {
         let comparison_hi = ComparisonGadget::construct(
             cb,
             from_bytes::expr(&lhs.limbs[16..]),
@@ -31,7 +33,6 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> LtWordGadget<F, T1, T2> {
         Self {
             comparison_hi,
             lt_lo,
-            _marker: Default::default(),
         }
     }
 
@@ -77,7 +78,7 @@ mod tests {
     #[derive(Clone)]
     /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
-        ltword_gadget: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
+        ltword_gadget: LtWordGadget<F>,
         a: Word32Cell<F>,
         b: Word32Cell<F>,
     }
