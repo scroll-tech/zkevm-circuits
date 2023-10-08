@@ -33,6 +33,7 @@ mod codecopy;
 mod codesize;
 mod create;
 mod dup;
+mod environment;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -93,6 +94,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
+use environment::GetBlockHeaderField;
 use error_codestore::ErrorCodeStore;
 use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
@@ -218,14 +220,26 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => Blockhash::gen_associated_ops,
-        OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::GASLIMIT => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::COINBASE => {
+            GetBlockHeaderField::<{ OpcodeId::COINBASE.as_u8() }>::gen_associated_ops
+        }
+        OpcodeId::TIMESTAMP => {
+            GetBlockHeaderField::<{ OpcodeId::TIMESTAMP.as_u8() }>::gen_associated_ops
+        }
+        OpcodeId::NUMBER => GetBlockHeaderField::<{ OpcodeId::NUMBER.as_u8() }>::gen_associated_ops,
+        OpcodeId::DIFFICULTY => {
+            GetBlockHeaderField::<{ OpcodeId::DIFFICULTY.as_u8() }>::gen_associated_ops
+        }
+        OpcodeId::GASLIMIT => {
+            GetBlockHeaderField::<{ OpcodeId::GASLIMIT.as_u8() }>::gen_associated_ops
+        }
+        OpcodeId::CHAINID => {
+            GetBlockHeaderField::<{ OpcodeId::CHAINID.as_u8() }>::gen_associated_ops
+        }
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
-        OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::BASEFEE => {
+            GetBlockHeaderField::<{ OpcodeId::BASEFEE.as_u8() }>::gen_associated_ops
+        }
         OpcodeId::POP => StackPopOnlyOpcode::<1>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
