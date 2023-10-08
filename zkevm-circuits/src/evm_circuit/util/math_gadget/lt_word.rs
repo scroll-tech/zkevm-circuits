@@ -5,7 +5,7 @@ use crate::{
         constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
         CachedRegion, Cell
     }, 
-    util::word::{WordLimbs, WordExpr}
+    util::word::{WordExpr, Word32Cell}
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -18,8 +18,8 @@ pub struct LtWordGadget<F> {
     lt_lo: LtGadget<F, 16>,
 }
 
-impl<F: Field, const N1: usize, const N2: usize> LtWordGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: &WordLimbs<Cell<F>, N1>, rhs: &WordLimbs<Cell<F>, N2>) -> Self {
+impl<F: Field> LtWordGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: &Word32Cell<F>, rhs: &Word32Cell<F>) -> Self {
         let comparison_hi = ComparisonGadget::construct(
             cb,
             from_bytes::expr(&lhs.limbs[16..]),
@@ -87,7 +87,7 @@ mod tests {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word32();
             let b = cb.query_word32();
-            let ltword_gadget = LtWordGadget::<F>::construct(cb, &a.to_word(), &b.to_word());
+            let ltword_gadget = LtWordGadget::<F>::construct(cb, &a, &b);
             cb.require_equal("a < b", ltword_gadget.expr(), 1.expr());
             LtWordTestContainer {
                 ltword_gadget,

@@ -25,7 +25,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell},
+        word::{Word, Word32Cell, WordCell, WordExpr},
         Expr,
     },
 };
@@ -212,11 +212,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             create.caller_address(),
         );
 
-        let caller_balance = cb.query_word_rlc();
+        let caller_balance = cb.query_word32();
         cb.account_read(
             create.caller_address(),
             AccountFieldTag::Balance,
-            caller_balance.expr(),
+            caller_balance.to_word(),
         );
         let is_insufficient_balance = LtWordGadget::construct(cb, &caller_balance, &value);
 

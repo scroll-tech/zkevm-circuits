@@ -186,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let caller_balance = cb.query_word_unchecked();
+        let caller_balance = cb.query_word32();
         cb.account_read(
             caller_address.to_word(),
             AccountFieldTag::Balance,
@@ -195,7 +195,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
         // callee_reversion_info.rw_delta()
         let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance.to_word(), &call_gadget.value.to_word());
+            LtWordGadget::construct(cb, &caller_balance, &call_gadget.value);
         // depth < 1025
         let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
 
