@@ -5,7 +5,6 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-use std::ops::Deref;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
