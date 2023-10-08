@@ -10,8 +10,8 @@ dev-graph = ["halo2_proofs/dev-graph", "plotters"]
 [dependencies]
 halo2_proofs.workspace = true
 itertools.workspace = true
-num-bigint = "0.4.2"
-num-traits = "0.2.14"
+num-bigint.workspace = true
+num-traits.workspace = true
 plotters = { version = "0.3.0", optional = true }
 eth-types = { path = "../eth-types" }
 lazy_static.workspace = true
@@ -19,5 +19,5 @@ log.workspace = true
 env_logger.workspace = true
 
 [dev-dependencies]
-pretty_assertions = "1.0"
-rand = "0.8"
+pretty_assertions.workspace = true
+rand.workspace = true

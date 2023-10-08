@@ -7,8 +7,8 @@ license.workspace = true
 [dependencies]
 eth-types = { path = "../eth-types" }
 geth-utils = { path = "../geth-utils" }
-serde = {version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.66"
+serde.workspace = true
+serde_json.workspace = true
 log.workspace = true
 
 [features]

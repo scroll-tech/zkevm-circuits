@@ -6,11 +6,10 @@ license.workspace = true
 
 [dependencies]
 halo2_proofs.workspace = true
-sha3 = "0.7.2"
+sha3.workspace = true
 eth-types = { path = "../eth-types" }
-digest = "0.7.6"
-strum = "0.24"
+strum.workspace = true
 
 [dev-dependencies]
-rand_xorshift = "0.3"
-rand = "0.8"
+rand_xorshift.workspace = true
+rand.workspace = true

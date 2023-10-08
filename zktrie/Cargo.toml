@@ -10,17 +10,17 @@ license.workspace = true
 halo2_proofs.workspace = true
 mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", tag = "v0.7.0" }
 zktrie = { git = "https://github.com/scroll-tech/zktrie.git", branch = "v0.7"}
-hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
+hash-circuit.workspace = true
 eth-types = { path = "../eth-types" }
 lazy_static.workspace = true
-num-bigint = { version = "0.4" }
+num-bigint.workspace = true
 log.workspace = true
-hex = "0.4"
+hex.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true
-serde = {version = "1", features = ["derive"] }
-serde_json = "1"
+serde.workspace = true
+serde_json.workspace = true
 
 [features]
 default = []

@@ -9,10 +9,10 @@ eth-types = { path = "../eth-types" }
 external-tracer = { path = "../external-tracer" }
 lazy_static.workspace = true
 itertools.workspace = true
-ethers-signers = "2.0.7"
-ethers-core = { version = "2.0.7", features = ["scroll"] }
-rand_chacha = "0.3"
-rand = "0.8"
+ethers-signers.workspace = true
+ethers-core.workspace = true
+rand_chacha.workspace = true
+rand.workspace = true
 log.workspace = true
 
 [features]

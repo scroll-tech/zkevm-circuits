@@ -8,22 +8,22 @@ license.workspace = true
 
 [dependencies]
 halo2_proofs.workspace = true
-ark-std = { version = "0.3" }
+ark-std.workspace = true
 zkevm-circuits = { path = "../zkevm-circuits", features = ["test"]}
 keccak256 = { path = "../keccak256" }
 bus-mapping = { path = "../bus-mapping",  features = ["test"] }
-rand_xorshift = "0.3"
-rand = "0.8"
+rand_xorshift.workspace = true
+rand.workspace = true
 itertools.workspace = true
 eth-types = { path = "../eth-types" }
 env_logger.workspace = true
-log="0.4"
-tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
-ethers-signers = "2.0.7"
-ethers = { version = "2.0.7", features = ["ethers-solc"] }
+log.workspace = true
+tokio.workspace = true
+ethers-signers.workspace = true
+ethers.workspace = true
 mock = { path="../mock" }
-rand_chacha = "0.3"
-url="2.2.2"
+rand_chacha.workspace = true
+url.workspace = true
 
 [features]
 default = []

@@ -6,39 +6,39 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = "1"
+anyhow.workspace = true
 bus-mapping = { path = "../bus-mapping" }
 clap = { version = "3.1", features = ["derive"] }
 env_logger.workspace = true
 eth-types = { path="../eth-types" }
-ethers-core = { version = "2.0.7", features = ["scroll"] }
-ethers-signers = "2.0.7"
+ethers-core.workspace = true
+ethers-signers.workspace = true
 external-tracer = { path="../external-tracer" }
 glob = "0.3"
 handlebars = "4.3"
-hex = "0.4.3"
+hex.workspace = true
 keccak256 = { path = "../keccak256" }
 log.workspace = true
 itertools.workspace = true
 mock = { path = "../mock" }
-once_cell = "1.10"
+once_cell.workspace = true
 prettytable-rs = "0.10"
 prover = { path = "../prover", optional = true }
-rayon = "1.5"
-regex = "1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-strum= "0.24"
-strum_macros = "0.24"
+rayon.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+strum.workspace = true
+strum_macros.workspace = true
 thiserror = "1.0"
 toml = "0.5"
 yaml-rust = "0.4.5"
 zkevm-circuits = { path="../zkevm-circuits", features=["test"] }
-rand_chacha = "0.3"
-rand = "0.8"
+rand_chacha.workspace = true
+rand.workspace = true
 halo2_proofs.workspace = true
 urlencoding = "2.1.2"
-ctor = "0.1.22"
+ctor.workspace = true
 
 [features]
 default = ["ignore-test-docker", "skip-self-destruct", "shanghai"]

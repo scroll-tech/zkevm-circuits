@@ -5,26 +5,26 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-ethers-core = { version = "2.0.7", features = ["scroll"] }
-ethers-signers = "2.0.7"
-hex = "0.4"
+ethers-core.workspace = true
+ethers-signers.workspace = true
+hex.workspace = true
 lazy_static.workspace = true
-once_cell = "1.17.0"
+once_cell.workspace = true
 halo2_proofs.workspace = true
-regex = "1.5.4"
-serde = {version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.66"
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 serde_with = "1.12"
 uint = "0.9.1"
 itertools.workspace = true
-libsecp256k1 = "0.7"
-subtle = "2.4"
-sha3 = "0.10"
-num = "0.4"
-num-bigint = { version = "0.4" }
-strum_macros = "0.24"
-strum = "0.24"
-poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
+libsecp256k1.workspace = true
+subtle.workspace = true
+sha3.workspace = true
+num.workspace = true
+num-bigint.workspace = true
+strum_macros.workspace = true
+strum.workspace = true
+hash-circuit.workspace = true
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []
