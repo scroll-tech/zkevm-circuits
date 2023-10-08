@@ -3,14 +3,14 @@ use crate::{
         self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        select, sum, CachedRegion,
+        sum, CachedRegion,
     },
     util::{
-        word::{self, Word32Cell, WordExpr},
+        word::{self, Word, Word32Cell, WordExpr},
         Expr,
     },
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word as U256};
 use halo2_proofs::plonk::Error;
 
 /// Constraints for the words a, n, r:
@@ -39,15 +39,20 @@ impl<F: Field> ModGadget<F> {
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.limbs));
         let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.limbs));
 
-        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
-        let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
+        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.limbs));
+        let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.limbs));
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
         let lt = LtWordGadget::construct(cb, r, n);
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
-        cb.require_equal(
+        cb.require_equal_word(
             "a_or_zero == if n == 0 { 0 } else { a }",
-            a_or_zero.expr(),
-            select::expr(n_is_zero.expr(), 0.expr(), a.expr()),
+            a_or_zero.to_word(),
+            Word::select(
+                n_is_zero.expr(),
+                Word::zero(),
+                a.to_word()
+            )
+            // select::expr(n_is_zero.expr(), 0.expr(), a.expr()),
         );
 
         // Constrain the result r to be valid: (r<n) ^ n==0
@@ -74,16 +79,16 @@ impl<F: Field> ModGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        a: Word,
-        n: Word,
-        r: Word,
-        k: Word,
+        a: U256,
+        n: U256,
+        r: U256,
+        k: U256,
     ) -> Result<(), Error> {
-        let a_or_zero = if n.is_zero() { Word::zero() } else { a };
+        let a_or_zero = if n.is_zero() { U256::zero() } else { a };
 
         self.k.assign_u256(region, offset, k)?;
         self.a_or_zero
-            .assign_u256(region, offset, a_or_zero.to_le_bytes())?;
+            .assign_u256(region, offset, a_or_zero)?;
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
         let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
         self.n_is_zero.assign(region, offset, F::from(n_sum))?;
@@ -153,37 +158,37 @@ mod tests {
     fn test_mod_n_expected_rem() {
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(0), Word::from(0)],
+            vec![U256::from(0), U256::from(0), U256::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(0), Word::from(0)],
+            vec![U256::from(1), U256::from(0), U256::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(548), Word::from(50), Word::from(48)],
+            vec![U256::from(548), U256::from(50), U256::from(48)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(30), Word::from(50), Word::from(30)],
+            vec![U256::from(30), U256::from(50), U256::from(30)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
+            vec![WORD_LOW_MAX, U256::from(1024), U256::from(1023)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
+            vec![WORD_HIGH_MAX, U256::from(1024), U256::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, Word::from(2), Word::from(0)],
+            vec![WORD_CELL_MAX, U256::from(2), U256::from(0)],
             true,
         );
     }
@@ -201,9 +206,9 @@ mod tests {
         try_test!(
             ModGadgetTestContainer<Fr>,
             vec![
-                Word::from(2),
-                Word::from(3),
-                Word::from(0),
+                U256::from(2),
+                U256::from(3),
+                U256::from(0),
                 // magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3
                 U256::try_from(U512([2, 0, 0, 0, 1, 0, 0, 0]) / U512::from(3)).unwrap(),
             ],
@@ -211,27 +216,27 @@ mod tests {
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(1), Word::from(1)],
+            vec![U256::from(1), U256::from(1), U256::from(1)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(46), Word::from(50), Word::from(48)],
+            vec![U256::from(46), U256::from(50), U256::from(48)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
+            vec![WORD_LOW_MAX, U256::from(999999), U256::from(888888)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
+            vec![WORD_CELL_MAX, U256::from(999999999), U256::from(666666666)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
+            vec![WORD_HIGH_MAX, U256::from(999999), U256::from(777777)],
             false,
         );
     }
