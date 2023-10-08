@@ -110,6 +110,16 @@ impl Stack {
         Stack(words)
     }
 
+    /// Returns the length of the stack.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns if the stack is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Returns the first available/free `StackAddress`.
     pub fn stack_pointer(&self) -> StackAddress {
         // Stack has 1024 slots.

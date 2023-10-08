@@ -11,7 +11,7 @@ use ethers_providers::JsonRpcClient;
 use serde::Serialize;
 use std::collections::HashMap;
 
-use crate::util::CHECK_MEM_STRICT;
+use crate::util::CHECK_MEM_STACK_STRICT;
 
 /// Serialize a type.
 ///
@@ -149,7 +149,8 @@ impl<P: JsonRpcClient> GethClient<P> {
     pub async fn trace_tx_by_hash(&self, hash: H256) -> Result<Vec<GethExecTrace>, Error> {
         let hash = serialize(&hash);
         let cfg = GethLoggerConfig {
-            enable_memory: *CHECK_MEM_STRICT,
+            enable_memory: *CHECK_MEM_STACK_STRICT,
+            // TODO: disable_stack: !*CHECK_MEM_STACK_STRICT,
             ..Default::default()
         };
         let cfg = serialize(&cfg);

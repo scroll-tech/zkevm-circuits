@@ -13,7 +13,8 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
         .unwrap_or(default)
 }
 /// ..
-pub static CHECK_MEM_STRICT: Lazy<bool> = Lazy::new(|| read_env_var("CHECK_MEM_STRICT", false));
+pub static CHECK_MEM_STACK_STRICT: Lazy<bool> =
+    Lazy::new(|| read_env_var("CHECK_MEM_STACK_STRICT", false));
 
 /// Default number of bytes to pack into a field element.
 pub const POSEIDON_HASH_BYTES_IN_FIELD: usize = 31;
