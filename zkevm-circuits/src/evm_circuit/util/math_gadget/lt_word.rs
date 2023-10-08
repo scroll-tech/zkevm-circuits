@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{evm_circuit::util::{
-    self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
+    constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
     CachedRegion,
 }, util::word::WordExpr};
 use eth_types::{Field, Word};
