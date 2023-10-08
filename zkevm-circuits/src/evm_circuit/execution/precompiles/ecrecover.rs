@@ -44,9 +44,9 @@ pub struct EcrecoverGadget<F> {
     msg_hash_mod: ModGadget<F>,
 
     sig_r: Word32Cell<F>,
-    sig_r_canonical: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    sig_r_canonical: LtWordGadget<F>,
     sig_s: Word32Cell<F>,
-    sig_s_canonical: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    sig_s_canonical: LtWordGadget<F>,
 
     sig_v: Word32Cell<F>,
     sig_v_one_byte: IsZeroGadget<F>,

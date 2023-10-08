@@ -38,7 +38,7 @@ pub(crate) struct MulDivModGadget<F> {
     /// Check if divisor is zero for DIV and MOD
     divisor_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     /// Check if residue < divisor when divisor != 0 for DIV and MOD
-    lt_word: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    lt_word: LtWordGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {

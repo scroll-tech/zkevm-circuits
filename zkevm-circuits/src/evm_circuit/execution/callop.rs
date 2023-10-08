@@ -65,7 +65,7 @@ pub(crate) struct CallOpGadget<F> {
     // current handling Call* opcode's caller balance
     caller_balance: WordCell<F>,
     // check if insufficient balance case
-    is_insufficient_balance: LtWordGadget<F, WordCell<F>, Word32Cell<F>>,
+    is_insufficient_balance: LtWordGadget<F>,
     is_depth_ok: LtGadget<F, N_BYTES_U64>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,

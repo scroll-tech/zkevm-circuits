@@ -27,7 +27,7 @@ pub(crate) struct SignedDivModGadget<F> {
     remainder_abs_word: AbsWordGadget<F>,
     dividend_abs_word: AbsWordGadget<F>,
     mul_add_words: MulAddWordsGadget<F>,
-    remainder_abs_lt_divisor_abs: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    remainder_abs_lt_divisor_abs: LtWordGadget<F>,
     dividend_is_signed_overflow: LtGadget<F, 1>,
     quotient_is_zero: IsZeroGadget<F>,
     divisor_is_zero: IsZeroGadget<F>,
