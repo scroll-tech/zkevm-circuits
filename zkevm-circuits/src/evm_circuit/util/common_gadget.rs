@@ -1569,7 +1569,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.word.original_ref()
     }
 
-    pub(crate) fn original_word(&self) -> Expression<F> {
+    pub(crate) fn original_word(&self) -> Word32Cell<F> {
         self.word.original_word()
     }
 

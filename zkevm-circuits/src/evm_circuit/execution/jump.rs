@@ -9,7 +9,7 @@ use crate::{
                 EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes, CachedRegion, RandomLinearCombination, U64Cell,
+            CachedRegion, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

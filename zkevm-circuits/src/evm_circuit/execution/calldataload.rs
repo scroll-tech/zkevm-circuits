@@ -26,7 +26,7 @@ use crate::{
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word, Word32, Word32Cell, WordExpr},
         Expr,
     },
 };
@@ -60,9 +60,9 @@ pub(crate) struct CallDataLoadGadget<F> {
     // memory_address: MemoryWordAddress<F>,
     address_align: MemoryWordAddress<F>,
     mask: MemoryMask<F>,
-    value: Word<F>,
-    value_left: Word<F>,
-    value_right: Word<F>,
+    value: Word32Cell<F>,
+    value_left: Word32Cell<F>,
+    value_right: Word32Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
@@ -77,27 +77,25 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
 
-        let value = cb.query_word_rlc();
-        let value_left = cb.query_word_rlc();
-        let value_right = cb.query_word_rlc();
+        let value = cb.query_word32();
+        let value_left = cb.query_word32();
+        let value_right = cb.query_word32();
 
         let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
-        cb.stack_pop(data_offset.original_word());
+        cb.stack_pop(data_offset.original_word().to_word());
 
         cb.condition(
             and::expr([data_offset.not_overflow(), cb.curr.state.is_root.expr()]),
             |cb| {
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::TxId,
-                    src_id.expr(),
+                    Word::from_lo_unchecked(src_id.expr()),
                 );
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataLength,
-                    call_data_length.expr(),
+                    Word::from_lo_unchecked(call_data_length.expr()),
                 );
                 cb.require_equal(
                     "if is_root then call_data_offset == 0",
@@ -113,23 +111,20 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 not::expr(cb.curr.state.is_root.expr()),
             ]),
             |cb| {
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallerId,
-                    src_id.expr(),
+                    Word::from_lo_unchecked(src_id.expr()),
                 );
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataLength,
-                    call_data_length.expr(),
+                    Word::from_lo_unchecked(call_data_length.expr()),
                 );
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataOffset,
-                    call_data_offset.expr(),
+                    Word::from_lo_unchecked(call_data_offset.expr()),
                 );
             },
         );
@@ -162,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                             src_id.expr(),
                             TxContextFieldTag::CallData,
                             Some(src_addr.expr() + idx.expr()),
-                            buffer_reader.byte(idx),
+                            Word::from_lo_unchecked(buffer_reader.byte(idx)),
                         );
                     },
                 );
@@ -172,11 +167,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         // Since the stack is interpreted as MSB-first in CALLDATALOAD, we reverse the bytes here.
         calldata_word.reverse();
         let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
-        let calldata_word = cb.word_rlc(calldata_word);
+        let calldata_word = Word32::new(calldata_word);
 
         // Now that we have the address in the caller’s memory, decompose it to work out the
         // alignment.
-        let address = cb.query_word_rlc();
+        let address = cb.query_memory_address();
         cb.require_equal(
             "memory address decomposition",
             from_bytes::expr(&address.cells),
@@ -197,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 // zero. The MLOAD value is MSB-first, the reverse order of the buffer_reader.
                 let mem_calldata_overlap: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
                     let reversed_i = N_BYTES_WORD - 1 - i;
-                    value.cells[i].expr() * buffer_reader.read_flag(reversed_i)
+                    value.limbs[i].expr() * buffer_reader.read_flag(reversed_i)
                 });
                 cb.require_equal(
                     "calldata equals memory data",
@@ -229,12 +224,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
-        cb.require_zero(
+        cb.require_zero_word(
             "Stack push result must be 0 if stack pop offset is Uint64 overflow",
-            data_offset.overflow() * calldata_word.expr(),
+            calldata_word.to_word().mul_selector(data_offset.overflow()),
         );
 
-        cb.stack_push(calldata_word);
+        cb.stack_push(calldata_word.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
@@ -319,20 +314,17 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         if !call.is_root && offset_not_overflow {
             // assign value_left, value_right word
-            value_left_bytes = block.rws[step.rw_indices[4]]
-                .memory_word_pair()
-                .0
-                .to_le_bytes();
-            value_right_bytes = block.rws[step.rw_indices[5]]
-                .memory_word_pair()
-                .0
-                .to_le_bytes();
+            let value_left_word = block.rws[step.rw_indices[4]].memory_word_pair().0;
+            let value_right_word = block.rws[step.rw_indices[5]].memory_word_pair().0;
+
+            value_left_bytes = value_left_word.to_le_bytes();
+            value_right_bytes = value_right_word.to_le_bytes();
 
             // Here we write exactly what is in the RW table.
             self.value_left
-                .assign(region, offset, Some(value_left_bytes))?;
+                .assign_u256(region, offset, value_left_word)?;
             self.value_right
-                .assign(region, offset, Some(value_right_bytes))?;
+                .assign_u256(region, offset, value_right_word)?;
 
             // The RW values were BE order (see bus-mapping), so go back to normal memory order.
             value_left_bytes.reverse();
@@ -342,6 +334,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         // reconstruct the unaligned word.
         let value_bytes =
             MemoryMask::<F>::make_unaligned_word(shift, &value_left_bytes, &value_right_bytes);
+        // use assign_u256 for `value` ?
         self.value.assign(region, offset, Some(value_bytes))?;
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];

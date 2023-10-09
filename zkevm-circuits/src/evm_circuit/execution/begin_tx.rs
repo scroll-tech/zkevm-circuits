@@ -341,7 +341,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let account_code_hash_is_empty =
             IsEqualWordGadget::construct(cb, &account_code_hash.to_word(), &cb.empty_code_hash());
-        let account_code_hash_is_zero = IsZeroWordGadget::construct(cb, &code_hash);
+        let account_code_hash_is_zero = IsZeroWordGadget::construct(cb, &account_code_hash);
         let account_code_hash_is_empty_or_zero =
             account_code_hash_is_empty.expr() + account_code_hash_is_zero.expr();
         #[cfg(feature = "scroll")]
@@ -566,7 +566,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         // (corresponding to `handle_reversion` call in `gen_begin_tx_ops`).
                         // TODO:
                         // Move it to code of generating precompiled operations when implemented.
-                        + not::expr(is_persistent.expr())
+                        + not::expr(reversion_info.is_persistent())
                             * transfer_with_gas_fee.reversible_w_delta(),
                 ),
                 call_id: To(call_id.expr()),

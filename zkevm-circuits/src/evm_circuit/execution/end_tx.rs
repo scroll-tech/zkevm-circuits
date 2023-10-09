@@ -132,7 +132,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             )
         });
 
-        let effective_fee = cb.query_word_rlc();
+        let effective_fee = cb.query_word32();
 
         cb.condition(tx_is_l1msg.expr(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_l1_fee.expr());
@@ -145,7 +145,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     0.expr(),
                     from_bytes::expr(&mul_effective_tip_by_gas_used.product().cells[..16]),
                 ),
-            from_bytes::expr(&effective_fee.cells[..16]),
+            from_bytes::expr(&effective_fee.limbs[..16]),
         );
 
         cb.condition(tx_is_l1msg.expr(), |cb| {
@@ -418,7 +418,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         self.tx_l1_fee
             .assign(region, offset, Value::known(F::from(tx_l1_fee)))?;
         self.effective_fee
-            .assign(region, offset, Some(effective_fee.to_le_bytes()))?;
+            .assign_u256(region, offset, effective_fee)?;
 
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0

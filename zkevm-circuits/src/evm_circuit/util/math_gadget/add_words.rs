@@ -9,7 +9,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Field, ToScalar, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Construction of 2 256-bit words addition and result, which is useful for

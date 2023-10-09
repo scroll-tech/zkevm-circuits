@@ -9,7 +9,7 @@ use crate::{
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::{MemoryMask, MemoryWordAddress},
-            CachedRegion, Cell, RandomLinearCombination,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -27,7 +27,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct ErrorInvalidCreationCodeGadget<F> {
     opcode: Cell<F>,
     memory_address: MemoryWordAddress<F>,
-    length: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>,
+    length: Word32Cell<F>,
     value_left: Word32Cell<F>,
     first_byte: Cell<F>,
     is_first_byte_invalid: IsEqualGadget<F>,

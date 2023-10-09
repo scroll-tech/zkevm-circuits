@@ -146,7 +146,7 @@ use address::AddressGadget;
 use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
-use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
+use block_ctx::BlockCtxGadget;
 use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
@@ -325,9 +325,7 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: Box<StopGadget<F>>,
     swap_gadget: Box<SwapGadget<F>>,
     blockhash_gadget: Box<BlockHashGadget<F>>,
-    block_ctx_u64_gadget: Box<BlockCtxU64Gadget<F>>,
-    block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
-    block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
+    block_ctx_gadget: Box<BlockCtxGadget<F>>,
     // error gadgets
     error_oog_call: Box<ErrorOOGCallGadget<F>>,
     error_oog_precompile: Box<ErrorOOGPrecompileGadget<F>>,
