@@ -20,7 +20,6 @@ impl Opcode for GasPrice {
         let mut exec_step = state.new_step(geth_step)?;
         // Get gasprice result from next step
         let gasprice = state.tx.gas_price;
-        assert_eq!(gasprice, geth_steps[1].stack.last()?);
         let tx_id = state.tx_ctx.id();
 
         // CallContext read of the TxId
@@ -32,6 +31,8 @@ impl Opcode for GasPrice {
         )?;
 
         // Stack write of the gasprice value
+        #[cfg(feature = "stack-check")]
+        assert_eq!(gasprice, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, gasprice)?;
 
         Ok(vec![exec_step])

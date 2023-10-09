@@ -20,7 +20,6 @@ impl Opcode for Caller {
         let mut exec_step = state.new_step(geth_step)?;
         // Get caller_address result from next step
         let caller_address = state.call()?.caller_address.to_word();
-        assert_eq!(caller_address, geth_steps[1].stack.last()?);
         // CallContext read of the caller_address
         state.call_context_read(
             &mut exec_step,
@@ -30,6 +29,8 @@ impl Opcode for Caller {
         )?;
 
         // Stack write of the caller_address
+        #[cfg(feature = "stack-check")]
+        assert_eq!(caller_address, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, caller_address)?;
 
         Ok(vec![exec_step])

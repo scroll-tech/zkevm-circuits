@@ -25,10 +25,14 @@ impl Opcode for PrecompileFailed {
         let mut exec_step = state.new_step(geth_step)?;
         exec_step.error = Some(ExecError::PrecompileFailed);
 
-        let args_offset = geth_step.stack.nth_last(stack_input_num - 4)?.as_usize();
-        let args_length = geth_step.stack.nth_last(stack_input_num - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(stack_input_num - 2)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(stack_input_num - 1)?.as_usize();
+        let [args_offset, args_length, ret_offset, ret_length] = {
+            let stack = &state.call_ctx()?.stack;
+            let args_offset = stack.nth_last(stack_input_num - 4)?.low_u64() as usize;
+            let args_length = stack.nth_last(stack_input_num - 3)?.as_usize();
+            let ret_offset = stack.nth_last(stack_input_num - 2)?.low_u64() as usize;
+            let ret_length = stack.nth_last(stack_input_num - 1)?.as_usize();
+            [args_offset, args_length, ret_offset, ret_length]
+        };
 
         // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
@@ -38,12 +42,13 @@ impl Opcode for PrecompileFailed {
         state.caller_ctx_mut()?.return_data.clear();
         state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
 
-        for i in 0..stack_input_num {
-            assert_eq!(
-                geth_step.stack.nth_last(i)?,
-                state.stack_pop(&mut exec_step)?
-            );
+        let stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
+        if cfg!(feature = "stack-check") {
+            for (i, v) in stack_inputs.into_iter().enumerate() {
+                assert_eq!(v, geth_step.stack.nth_last(i)?);
+            }
         }
+
         // Must fail.
         state.stack_push(&mut exec_step, (0_u64).into())?;
 

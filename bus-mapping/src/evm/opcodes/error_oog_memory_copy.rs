@@ -42,7 +42,7 @@ impl Opcode for OOGMemoryCopy {
                 state.tx_ctx.id().into(),
             )?;
 
-            let external_address = geth_step.stack.last()?.to_address();
+            let external_address = state.call_ctx()?.stack.last()?.to_address();
             let is_warm = state.sdb.check_account_in_access_list(&external_address);
             state.push_op(
                 &mut exec_step,
@@ -59,11 +59,11 @@ impl Opcode for OOGMemoryCopy {
         // Each of CALLDATACOPY, CODECOPY and RETURNDATACOPY has 3 stack read values.
         // But EXTCODECOPY has 4. It has an extra stack pop for external address.
         let stack_read_num = if is_extcodecopy { 4 } else { 3 };
-        for i in 0..stack_read_num {
-            assert_eq!(
-                state.stack_pop(&mut exec_step)?,
-                geth_step.stack.nth_last(i)?
-            );
+        let stack_inputs = state.stack_pops(&mut exec_step, stack_read_num)?;
+        if cfg!(feature = "stack-check") {
+            for (i, v) in stack_inputs.iter().enumerate() {
+                assert_eq!(*v, geth_step.stack.nth_last(i)?);
+            }
         }
 
         state.handle_return(&mut [&mut exec_step], geth_steps, true)?;

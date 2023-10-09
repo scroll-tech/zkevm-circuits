@@ -51,8 +51,12 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // stack operation
         // Get low Uint64 of offset to generate copy steps. Since offset could
         // be Uint64 overflow if length is zero.
-        let offset = geth_step.stack.nth_last(1)?.low_u64() as usize;
-        let length = geth_step.stack.nth_last(2)?.as_usize();
+        let [offset, length] = {
+            let stack = &state.call_ctx()?.stack;
+            let offset = stack.nth_last(1)?.low_u64() as usize;
+            let length = stack.nth_last(2)?.as_usize();
+            [offset, length]
+        };
 
         if length != 0 {
             state
@@ -70,11 +74,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         )?;
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
-        for i in 0..n_pop {
-            assert_eq!(
-                state.stack_pop(&mut exec_step)?,
-                geth_step.stack.nth_last(i)?
-            );
+        let stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
+        if cfg!(feature = "stack-check") {
+            for (i, value) in stack_inputs.iter().enumerate() {
+                assert_eq!(*value, geth_step.stack.nth_last(i)?);
+            }
         }
 
         let address = if IS_CREATE2 {
@@ -201,7 +205,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ),
             (
                 CallContextField::StackPointer,
-                geth_step.stack.nth_last_filled(n_pop - 1).0.into(),
+                state.caller_ctx()?.stack.stack_pointer().0.into(),
             ),
             (CallContextField::GasLeft, caller_gas_left.into()),
             (CallContextField::MemorySize, next_memory_word_size.into()),
@@ -226,7 +230,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         if is_precheck_ok {
             // handle keccak_table_lookup
             let keccak_input = if IS_CREATE2 {
-                let salt = geth_step.stack.nth_last(3)?;
+                let salt = stack_inputs[3];
                 assert_eq!(
                     address,
                     get_create2_address(

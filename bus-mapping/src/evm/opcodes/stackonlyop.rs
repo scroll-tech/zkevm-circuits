@@ -18,11 +18,11 @@ impl<const N_POP: usize, const IS_ERR: bool> Opcode for StackPopOnlyOpcode<N_POP
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         // N_POP stack reads
-        for i in 0..N_POP {
-            assert_eq!(
-                geth_step.stack.nth_last(i)?,
-                state.stack_pop(&mut exec_step)?
-            );
+        let stack_inputs = state.stack_pops(&mut exec_step, N_POP)?;
+        if cfg!(feature = "stack-check") {
+            for (i, v) in stack_inputs.into_iter().enumerate() {
+                assert_eq!(v, geth_step.stack.nth_last(i)?);
+            }
         }
 
         if IS_ERR {

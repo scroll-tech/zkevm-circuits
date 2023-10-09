@@ -18,6 +18,7 @@ impl Opcode for Selfbalance {
         let mut exec_step = state.new_step(geth_step)?;
         let callee_address = state.call()?.address;
         let self_balance = state.sdb.get_balance(&callee_address);
+        #[cfg(feature = "stack-check")]
         assert_eq!(self_balance, geth_steps[1].stack.last()?);
 
         // CallContext read of the callee_address

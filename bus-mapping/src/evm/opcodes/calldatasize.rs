@@ -19,13 +19,14 @@ impl Opcode for Calldatasize {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         let call_data_length = Word::from(state.call()?.call_data_length);
-        assert_eq!(call_data_length, geth_steps[1].stack.last()?);
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CallDataLength,
             call_data_length,
         )?;
+        #[cfg(feature = "stack-check")]
+        assert_eq!(call_data_length, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, call_data_length)?;
         Ok(vec![exec_step])
     }

@@ -58,11 +58,13 @@ impl Opcode for Sstore {
             state.call()?.address.to_word(),
         )?;
 
-        let key = geth_step.stack.nth_last(0)?;
-        let value = geth_step.stack.nth_last(1)?;
-
-        assert_eq!(key, state.stack_pop(&mut exec_step)?);
-        assert_eq!(value, state.stack_pop(&mut exec_step)?);
+        let key = state.stack_pop(&mut exec_step)?;
+        let value = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "stack-check")]
+        {
+            assert_eq!(key, geth_step.stack.nth_last(0)?);
+            assert_eq!(value, geth_step.stack.nth_last(1)?);
+        }
 
         let is_warm = state
             .sdb

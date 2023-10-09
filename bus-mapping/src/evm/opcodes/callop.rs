@@ -38,10 +38,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.low_u64() as usize;
-        let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
-        let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
+        let [args_offset, args_length, ret_offset, ret_length] = {
+            let stack = &state.call_ctx()?.stack;
+            let args_offset = stack.nth_last(N_ARGS - 4)?.low_u64() as usize;
+            let args_length = stack.nth_last(N_ARGS - 3)?.as_usize();
+            let ret_offset = stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
+            let ret_length = stack.nth_last(N_ARGS - 1)?.as_usize();
+            [args_offset, args_length, ret_offset, ret_length]
+        };
 
         // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
@@ -90,14 +94,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_read(&mut exec_step, caller_call.call_id, field, value)?;
         }
 
-        let stack_inputs: [Word; N_ARGS] = [(); N_ARGS]
-            .map(|_| state.stack_pop(&mut exec_step))
-            .into_iter()
-            .collect::<Result<Vec<Word>, Error>>()?
-            .try_into()
-            .unwrap();
-        for (i, input) in stack_inputs.iter().enumerate() {
-            assert_eq!(*input, geth_step.stack.nth_last(i)?);
+        let stack_inputs: Vec<Word> = state.stack_pops(&mut exec_step, N_ARGS)?;
+        if cfg!(feature = "stack-check") {
+            for (i, input) in stack_inputs.iter().enumerate() {
+                assert_eq!(*input, geth_step.stack.nth_last(i)?);
+            }
         }
         state.stack_push(&mut exec_step, (callee_call.is_success as u64).into())?;
 
@@ -212,7 +213,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         } else {
             0
         } + memory_expansion_gas_cost;
-        let gas_specified = geth_step.stack.last()?;
+        let gas_specified = stack_inputs[0];
         debug_assert!(
             geth_step.gas.0 >= gas_cost,
             "gas {:?} gas_cost {:?} memory_expansion_gas_cost {:?}",
@@ -237,13 +238,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // panic with full info
             let info1 = format!("callee_gas_left {callee_gas_left} gas_specified {gas_specified} gas_cost {gas_cost} is_warm {is_warm} has_value {has_value} current_memory_word_size {curr_memory_word_size} next_memory_word_size {next_memory_word_size}, memory_expansion_gas_cost {memory_expansion_gas_cost}");
             let info2 = format!("args gas:{:?} addr:{:?} value:{:?} cd_pos:{:?} cd_len:{:?} rd_pos:{:?} rd_len:{:?}",
-                        geth_step.stack.nth_last(0),
-                        geth_step.stack.nth_last(1),
-                        geth_step.stack.nth_last(2),
-                        geth_step.stack.nth_last(3),
-                        geth_step.stack.nth_last(4),
-                        geth_step.stack.nth_last(5),
-                        geth_step.stack.nth_last(6)
+                                stack_inputs[0],
+                                stack_inputs[1],
+                                stack_inputs[2],
+                                stack_inputs[3],
+                                stack_inputs[4],
+                                stack_inputs[5],
+                                stack_inputs[6]
                     );
             let full_ctx = format!(
                 "step0 {:?} step1 {:?} call {:?}, {} {}",
@@ -326,7 +327,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                        state.caller_ctx()?.stack.stack_pointer().0.into(),
                     ),
                     (
                         CallContextField::GasLeft,
@@ -528,7 +529,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                        state.caller_ctx()?.stack.stack_pointer().0.into(),
                     ),
                     (
                         CallContextField::GasLeft,

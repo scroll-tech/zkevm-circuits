@@ -31,10 +31,13 @@ impl Opcode for ErrorOOGLog {
             OpcodeId::LOG4
         ]
         .contains(&geth_step.op));
-        let mstart = geth_step.stack.nth_last(0)?;
-        assert_eq!(state.stack_pop(&mut exec_step)?, mstart);
-        let msize = geth_step.stack.nth_last(1)?;
-        assert_eq!(state.stack_pop(&mut exec_step)?, msize);
+        let mstart = state.stack_pop(&mut exec_step)?;
+        let msize = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "stack-check")]
+        {
+            assert_eq!(mstart, geth_step.stack.nth_last(0)?);
+            assert_eq!(msize, geth_step.stack.nth_last(1)?);
+        }
 
         // read static call property
         state.call_context_read(

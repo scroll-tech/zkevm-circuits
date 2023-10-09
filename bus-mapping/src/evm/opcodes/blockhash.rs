@@ -20,8 +20,9 @@ impl Opcode for Blockhash {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let block_number = geth_step.stack.nth_last(0)?;
-        assert_eq!(block_number, state.stack_pop(&mut exec_step)?);
+        let block_number = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "stack-check")]
+        assert_eq!(block_number, geth_step.stack.nth_last(0)?);
 
         let current_block_number = state.tx.block_num;
         let block_hash = if is_valid_block_number(block_number, current_block_number.into()) {
@@ -39,6 +40,7 @@ impl Opcode for Blockhash {
         } else {
             0.into()
         };
+        #[cfg(feature = "stack-check")]
         assert_eq!(block_hash, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, block_hash)?;
 

@@ -25,10 +25,13 @@ impl Opcode for ErrorCodeStore {
                 || exec_step.error == Some(ExecError::MaxCodeSizeExceeded)
         );
 
-        let offset = geth_step.stack.nth_last(0)?;
-        assert_eq!(state.stack_pop(&mut exec_step)?, offset);
-        let length = geth_step.stack.nth_last(1)?;
-        assert_eq!(state.stack_pop(&mut exec_step)?, length);
+        let offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "stack-check")]
+        {
+            assert_eq!(offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(length, geth_step.stack.nth_last(1)?);
+        }
 
         // in internal call context
         let call = state.call()?;

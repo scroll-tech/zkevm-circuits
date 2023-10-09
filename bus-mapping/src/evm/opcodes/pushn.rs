@@ -27,9 +27,11 @@ impl Opcode for PushN {
         if data_len <= max_len {
             value_bytes[32 - data_len..].copy_from_slice(&code[data_start..data_start + data_len]);
         } else {
-            value_bytes[32 - max_len..].copy_from_slice(&code[data_start..]);
+            value_bytes[32 - data_len..32 - data_len + max_len]
+                .copy_from_slice(&code[data_start..]);
         };
         let real_value = Word::from_big_endian(&value_bytes);
+        #[cfg(feature = "stack-check")]
         assert_eq!(real_value, geth_steps[1].stack.last()?);
         let missing_bits = data_len.saturating_sub(max_len) * 8;
 

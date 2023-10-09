@@ -20,16 +20,21 @@ impl<const N: usize> Opcode for Swap<N> {
 
         // Peek b and a
         let stack_b_value_read = state.call_ctx()?.stack.nth_last(N)?;
-        assert_eq!(stack_b_value_read, geth_step.stack.nth_last(N)?);
         let stack_b_position = state.call_ctx()?.stack.nth_last_filled(N);
-        assert_eq!(stack_b_position, geth_step.stack.nth_last_filled(N));
         state.stack_read(&mut exec_step, stack_b_position, stack_b_value_read)?;
 
         let stack_a_value_read = state.call_ctx()?.stack.last()?;
-        assert_eq!(stack_a_value_read, geth_step.stack.last()?);
         let stack_a_position = state.call_ctx()?.stack.last_filled();
-        assert_eq!(stack_a_position, geth_step.stack.last_filled());
         state.stack_read(&mut exec_step, stack_a_position, stack_a_value_read)?;
+
+        #[cfg(feature = "stack-check")]
+        {
+            assert_eq!(stack_b_value_read, geth_step.stack.nth_last(N)?);
+            assert_eq!(stack_b_position, geth_step.stack.nth_last_filled(N));
+
+            assert_eq!(stack_a_value_read, geth_step.stack.last()?);
+            assert_eq!(stack_a_position, geth_step.stack.last_filled());
+        }
 
         // Write a into b_position, write b into a_position
         state.stack_write(&mut exec_step, stack_b_position, stack_a_value_read)?;

@@ -18,8 +18,12 @@ impl<const IS_CREATE2: bool> Opcode for ContractAddressCollision<IS_CREATE2> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let offset = geth_step.stack.nth_last(1)?.as_usize();
-        let length = geth_step.stack.nth_last(2)?.as_usize();
+        let [offset, length] = {
+            let stack = &state.call_ctx()?.stack;
+            let offset = stack.nth_last(1)?.as_usize();
+            let length = stack.nth_last(2)?.as_usize();
+            [offset, length]
+        };
 
         if length != 0 {
             state
@@ -29,11 +33,11 @@ impl<const IS_CREATE2: bool> Opcode for ContractAddressCollision<IS_CREATE2> {
         }
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
-        for i in 0..n_pop {
-            assert_eq!(
-                geth_step.stack.nth_last(i)?,
-                state.stack_pop(&mut exec_step)?
-            );
+        let stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
+        if cfg!(feature = "stack-check") {
+            for (i, value) in stack_inputs.iter().enumerate() {
+                assert_eq!(*value, geth_step.stack.nth_last(i)?);
+            }
         }
 
         let _address = if IS_CREATE2 {
@@ -43,10 +47,7 @@ impl<const IS_CREATE2: bool> Opcode for ContractAddressCollision<IS_CREATE2> {
         };
         // TODO: assert address is collision
 
-        state.stack_push(
-            &mut exec_step,
-            Word::zero(),
-        )?;
+        state.stack_push(&mut exec_step, Word::zero())?;
 
         let caller = state.call()?.clone();
 

@@ -22,8 +22,8 @@ impl Opcode for Codesize {
         let code = state.code(code_hash)?;
         let codesize = code.len();
 
-        debug_assert_eq!(codesize, geth_steps[1].stack.last()?.as_usize());
-
+        #[cfg(feature = "stack-check")]
+        assert_eq!(codesize, geth_steps[1].stack.last()?.as_usize());
         state.stack_push(&mut exec_step, codesize.into())?;
 
         Ok(vec![exec_step])

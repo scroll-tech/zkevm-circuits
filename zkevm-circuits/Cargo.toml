@@ -74,3 +74,4 @@ poseidon-codehash = []
 parallel_syn = ["hash-circuit/parallel_syn", "halo2_proofs/parallel_syn"]
 
 debug-annotations = []
+stack-check = ["bus-mapping/stack-check"]

@@ -20,7 +20,6 @@ impl Opcode for Callvalue {
         let mut exec_step = state.new_step(geth_step)?;
         // Get call_value result from next step
         let value = state.call()?.value;
-        assert_eq!(value, geth_steps[1].stack.last()?);
         // CallContext read of the call_value
         state.call_context_read(
             &mut exec_step,
@@ -30,6 +29,8 @@ impl Opcode for Callvalue {
         )?;
 
         // Stack write of the call_value
+        #[cfg(feature = "stack-check")]
+        assert_eq!(value, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, value)?;
 
         Ok(vec![exec_step])

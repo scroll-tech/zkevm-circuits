@@ -49,8 +49,9 @@ impl Opcode for OOGSloadSstore {
             callee_address.to_word(),
         )?;
 
-        let key = geth_step.stack.last()?;
-        assert_eq!(state.stack_pop(&mut exec_step)?, key);
+        let key = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "stack-check")]
+        assert_eq!(key, geth_step.stack.last()?);
 
         let is_warm = state
             .sdb
@@ -69,8 +70,9 @@ impl Opcode for OOGSloadSstore {
 
         // Special operations are only used for SSTORE.
         if geth_step.op == OpcodeId::SSTORE {
-            let value = geth_step.stack.nth_last(1)?;
-            state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), value)?;
+            let value = state.stack_pop(&mut exec_step)?;
+            #[cfg(feature = "stack-check")]
+            assert_eq!(value, geth_step.stack.nth_last(1)?);
 
             let (_, value_prev) = state.sdb.get_storage(&callee_address, &key);
             let (_, original_value) = state.sdb.get_committed_storage(&callee_address, &key);

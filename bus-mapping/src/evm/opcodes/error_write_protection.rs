@@ -47,10 +47,10 @@ impl Opcode for ErrorWriteProtection {
             // get only the frist three stack elements since the third one is the value we
             // want to check.
             for i in 0..3 {
-                assert_eq!(
-                    state.stack_pop(&mut exec_step)?,
-                    geth_step.stack.nth_last(i)?
-                );
+                let v = state.stack_pop(&mut exec_step)?;
+                if cfg!(feature = "stack-check") {
+                    assert_eq!(v, geth_step.stack.nth_last(i)?);
+                }
             }
         }
 

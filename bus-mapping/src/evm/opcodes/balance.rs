@@ -18,9 +18,10 @@ impl Opcode for Balance {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Read account address from stack.
-        let address_word = geth_step.stack.last()?;
+        let address_word = state.stack_pop(&mut exec_step)?;
         let address = address_word.to_address();
-        assert_eq!(address_word, state.stack_pop(&mut exec_step)?);
+        #[cfg(feature = "stack-check")]
+        assert_eq!(address_word, geth_step.stack.last()?);
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent
         // from call context.
@@ -64,7 +65,6 @@ impl Opcode for Balance {
         } else {
             H256::zero()
         };
-        debug_assert_eq!(balance, geth_steps[1].stack.nth_last(0)?);
         state.account_read(
             &mut exec_step,
             address,
@@ -76,6 +76,7 @@ impl Opcode for Balance {
         }
 
         // Write the BALANCE result to stack.
+        #[cfg(feature = "stack-check")]
         assert_eq!(geth_steps[1].stack.nth_last(0)?, balance);
         state.stack_push(&mut exec_step, balance)?;
 

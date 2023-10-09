@@ -18,13 +18,13 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        // First stack read (offset)
-        let offset = geth_step.stack.nth_last(0)?;
-        assert_eq!(offset, state.stack_pop(&mut exec_step)?);
-
-        // Second stack read (value)
-        let value = geth_step.stack.nth_last(1)?;
-        assert_eq!(value, state.stack_pop(&mut exec_step)?);
+        let offset = state.stack_pop(&mut exec_step)?;
+        let value = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "stack-check")]
+        {
+            assert_eq!(offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(value, geth_step.stack.nth_last(1)?);
+        }
 
         let offset_u64 = offset.as_u64() as usize;
         let shift = offset_u64 % 32;

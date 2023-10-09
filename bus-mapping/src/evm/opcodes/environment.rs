@@ -66,9 +66,9 @@ where
         let mut exec_step = state.new_step(geth_step)?;
         let block_head = state.block.headers.get(&state.tx.block_num).unwrap();
         let output = Self::handle(block_head);
-        assert_eq!(output, geth_steps[1].stack.last()?);
 
-        // Stack write of coinbase
+        #[cfg(feature = "stack-check")]
+        assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 
         Ok(vec![exec_step])
@@ -85,6 +85,7 @@ impl Opcode for Pc {
     ) -> Result<Vec<ExecStep>, Error> {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output = geth_steps[0].pc.0.into();
+        #[cfg(feature = "stack-check")]
         assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 
@@ -102,6 +103,8 @@ impl Opcode for Msize {
     ) -> Result<Vec<ExecStep>, Error> {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output = state.call_ctx()?.memory.len().into();
+
+        #[cfg(feature = "stack-check")]
         assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 
@@ -119,6 +122,8 @@ impl Opcode for Gas {
     ) -> Result<Vec<ExecStep>, Error> {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output = geth_steps[1].gas.0.into();
+
+        #[cfg(feature = "stack-check")]
         assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 

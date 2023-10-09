@@ -389,6 +389,14 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(value)
     }
 
+    /// pop n values from stack variant
+    pub fn stack_pops(&mut self, step: &mut ExecStep, n: usize) -> Result<Vec<Word>, Error> {
+        (0..n)
+            .map(|_| self.stack_pop(step))
+            .into_iter()
+            .collect::<Result<Vec<Word>, Error>>()
+    }
+
     /// First check the validity and consistency of the rw operation against the
     /// account in the StateDB, then if the rw operation is a write, apply
     /// it to the corresponding account in the StateDB.

@@ -41,10 +41,13 @@ impl Opcode for Exponentiation {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let base = geth_step.stack.nth_last(0)?;
-        assert_eq!(base, state.stack_pop(&mut exec_step)?);
-        let exponent = geth_step.stack.nth_last(1)?;
-        assert_eq!(exponent, state.stack_pop(&mut exec_step)?);
+        let base = state.stack_pop(&mut exec_step)?;
+        let exponent = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "stack-check")]
+        {
+            assert_eq!(base, geth_step.stack.nth_last(0)?);
+            assert_eq!(exponent, geth_step.stack.nth_last(1)?);
+        }
 
         let (exponentiation, _) = base.overflowing_pow(exponent);
         state.stack_push(&mut exec_step, exponentiation)?;

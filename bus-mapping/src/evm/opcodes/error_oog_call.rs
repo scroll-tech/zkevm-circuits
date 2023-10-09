@@ -34,7 +34,6 @@ impl Opcode for OOGCall {
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
 
         let tx_id = state.tx_ctx.id();
-        let call_address = geth_step.stack.nth_last(1)?.to_address();
 
         let current_call = state.call()?.clone();
         for (field, value) in [
@@ -47,18 +46,16 @@ impl Opcode for OOGCall {
             state.call_context_read(&mut exec_step, current_call.call_id, field, value)?;
         }
 
-        for i in 0..stack_input_num {
-            assert_eq!(
-                geth_step.stack.nth_last(i)?,
-                state.stack_pop(&mut exec_step)?
-            );
+        let stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
+        let call_address = stack_inputs[1].to_address();
+        #[cfg(feature = "stack-check")]
+        {
+            for (i, v) in stack_inputs.iter().enumerate() {
+                assert_eq!(*v, geth_step.stack.nth_last(i)?);
+            }
         }
-
-        state.stack_push(
-            &mut exec_step,
-            // Must fail.
-            (0_u64).into(),
-        )?;
+        // Must fail.
+        state.stack_push(&mut exec_step, (0_u64).into())?;
 
         let (_, callee_account) = state.sdb.get_account(&call_address);
         let callee_exists = !callee_account.is_empty();

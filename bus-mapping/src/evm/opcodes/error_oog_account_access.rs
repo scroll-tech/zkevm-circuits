@@ -27,9 +27,10 @@ impl Opcode for ErrorOOGAccountAccess {
         ]
         .contains(&geth_step.op));
         // Read account address from stack.
-        let address_word = geth_step.stack.last()?;
-        assert_eq!(state.stack_pop(&mut exec_step)?, address_word);
+        let address_word = state.stack_pop(&mut exec_step)?;
         let address = address_word.to_address();
+        #[cfg(feature = "stack-check")]
+        assert_eq!(address_word, geth_step.stack.last()?);
 
         // Read transaction ID from call context.
         state.call_context_read(
