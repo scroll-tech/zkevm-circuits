@@ -910,21 +910,18 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code<'a>(
-    call_ctx: &'a CallContext,
-    step: &GethExecStep,
-) -> Result<&'a [u8], Error> {
+pub fn get_create_init_code(call_ctx: &CallContext, step: &GethExecStep) -> Result<Vec<u8>, Error> {
     let offset = step.stack.nth_last(1)?.low_u64() as usize;
     let length = step.stack.nth_last(2)?.as_usize();
 
     let mem_len = call_ctx.memory.0.len();
-    if offset >= mem_len {
-        return Ok(&[]);
+    let mut result = vec![0u8; length];
+    if length > 0 && offset < mem_len {
+        let offset_end = offset.checked_add(length).unwrap().min(mem_len);
+        let copy_len = offset_end - offset;
+        result[..copy_len].copy_from_slice(&call_ctx.memory.0[offset..offset_end]);
     }
-
-    let offset_end = offset.checked_add(length).unwrap_or(mem_len);
-
-    Ok(&call_ctx.memory.0[offset..offset_end])
+    Ok(result)
 }
 
 /// Retrieve the memory offset and length of call.

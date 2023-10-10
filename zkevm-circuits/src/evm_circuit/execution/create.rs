@@ -521,6 +521,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
                     gas_left: To(gas_left.quotient()),
                     reversible_write_counter: Delta(2.expr()),
+                    memory_word_size: To(memory_expansion.next_memory_word_size()),
                     ..Default::default()
                 })
             });
@@ -832,7 +833,7 @@ mod test {
     };
     use itertools::Itertools;
     use lazy_static::lazy_static;
-    use mock::{eth, TestContext};
+    use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
@@ -894,6 +895,12 @@ mod test {
             OpcodeId::CREATE2
         } else {
             OpcodeId::CREATE
+        });
+        // Add some basic check to make sure rw consistency
+        code.append(&bytecode! {
+            MSIZE
+            GAS
+            RETURNDATASIZE
         });
         if !is_persistent {
             code.append(&bytecode! {
@@ -1045,6 +1052,46 @@ mod test {
             ..Default::default()
         };
         run_test_circuits(test_context(caller));
+    }
+
+    #[test]
+    fn test_create_address_collision_and_mem_expansion() {
+        for offset in [100, 200] {
+            /*
+            create2(value=0, offset=0, length=100, salt=0);
+            create2(value=0, offset=100-or-200, length=100, salt=0);
+            */
+            let code_bytes = bytecode! {
+                PUSH0
+                PUSH32(100)
+                PUSH0
+                PUSH0
+                CREATE2
+                PUSH0
+                PUSH32(100)
+                PUSH32(offset)
+                PUSH0
+                CREATE2
+            };
+
+            let ctx = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0].address(MOCK_ACCOUNTS[0]).balance(mock::eth(10));
+                    accs[1]
+                        .address(MOCK_ACCOUNTS[1])
+                        .code(code_bytes)
+                        .balance(mock::eth(10));
+                },
+                |mut txs, accs| {
+                    txs[0].from(accs[0].address).to(accs[1].address);
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        }
     }
 
     // Ignore this test case. It could run successfully but slow for CI.

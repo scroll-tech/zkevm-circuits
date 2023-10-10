@@ -5,7 +5,7 @@ use bus_mapping::{
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
     Error,
 };
-use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
@@ -183,9 +183,15 @@ impl RwMap {
         (padding.chain(rows.into_iter()).collect(), padding_length)
     }
     /// Build Rws for assignment
+    #[inline(always)]
+    pub fn table_assignments_unsorted(&self) -> Vec<Rw> {
+        self.0.values().flatten().cloned().collect()
+    }
+
+    /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
-        let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        rows.sort_by_key(Rw::as_key);
+        let mut rows = self.table_assignments_unsorted();
+        rows.sort_by_cached_key(Rw::as_key);
         rows
     }
 
@@ -215,7 +221,7 @@ pub type RwKey = (u64, usize, Address, u64, Word);
 
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Rw {
     /// Start
     Start { rw_counter: usize },
@@ -585,6 +591,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn id(&self) -> Option<usize> {
         match self {
             Self::AccountStorage { tx_id, .. }
@@ -600,6 +607,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn address(&self) -> Option<Address> {
         match self {
             Self::TxAccessListAccount {
@@ -614,9 +622,9 @@ impl Rw {
             | Self::AccountStorage {
                 account_address, ..
             } => Some(*account_address),
-            Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
+            Self::Memory { memory_address, .. } => Some(Address::from_low_u64_be(*memory_address)),
             Self::Stack { stack_pointer, .. } => {
-                Some(U256::from(*stack_pointer as u64).to_address())
+                Some(Address::from_low_u64_be(*stack_pointer as u64))
             }
             Self::TxLog {
                 log_id,
@@ -634,6 +642,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn field_tag(&self) -> Option<u64> {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
@@ -652,6 +661,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub fn storage_key(&self) -> Option<Word> {
         match self {
             Self::AccountStorage { storage_key, .. }
@@ -788,6 +798,7 @@ impl Rw {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn as_key(&self) -> RwKey {
         (
             self.tag() as u64,

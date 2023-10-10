@@ -10,11 +10,11 @@ use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use zkevm_circuits::witness::Block;
 
 impl<C: TargetCircuit> Prover<C> {
-    pub fn mock_prove_target_circuit(block_trace: &BlockTrace) -> anyhow::Result<()> {
-        Self::mock_prove_target_circuit_batch(&[block_trace.clone()])
+    pub fn mock_prove_target_circuit(block_trace: BlockTrace) -> anyhow::Result<()> {
+        Self::mock_prove_target_circuit_batch(vec![block_trace])
     }
 
-    pub fn mock_prove_target_circuit_batch(block_traces: &[BlockTrace]) -> anyhow::Result<()> {
+    pub fn mock_prove_target_circuit_batch(block_traces: Vec<BlockTrace>) -> anyhow::Result<()> {
         let witness_block = block_traces_to_witness_block(block_traces)?;
         Self::mock_prove_witness_block(&witness_block)
     }

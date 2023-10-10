@@ -33,7 +33,7 @@ pub fn hash_code_keccak(code: &[u8]) -> Hash {
 
 /// Poseidon code hash
 pub fn hash_code_poseidon(code: &[u8]) -> Hash {
-    use poseidon_circuit::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
+    use hash_circuit::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
 
     let bytes_in_field = POSEIDON_HASH_BYTES_IN_FIELD;
     let fls = (0..(code.len() / bytes_in_field))

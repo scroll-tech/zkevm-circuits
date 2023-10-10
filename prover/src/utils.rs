@@ -162,7 +162,7 @@ pub fn chunk_trace_to_witness_block(mut chunk_trace: Vec<BlockTrace>) -> Result<
     // Check if the trace exceeds the circuit capacity.
     check_batch_capacity(&mut chunk_trace)?;
 
-    block_traces_to_witness_block(&chunk_trace)
+    block_traces_to_witness_block(chunk_trace)
 }
 
 // Return the output dir.

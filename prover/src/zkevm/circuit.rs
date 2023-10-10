@@ -13,9 +13,10 @@ mod l1_builder;
 use l1_builder as builder;
 mod super_circuit;
 pub use self::builder::{
-    block_traces_to_witness_block, block_traces_to_witness_block_with_updated_state,
-    calculate_row_usage_of_trace, calculate_row_usage_of_witness_block, check_batch_capacity,
-    get_super_circuit_params, validite_block_traces,
+    block_trace_to_witness_block, block_traces_to_witness_block,
+    block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_trace,
+    calculate_row_usage_of_witness_block, check_batch_capacity, get_super_circuit_params,
+    validite_block_traces,
 };
 pub use super_circuit::SuperCircuit;
 
@@ -52,19 +53,21 @@ pub trait TargetCircuit {
     where
         Self: Sized,
     {
-        Self::from_block_traces(&[]).unwrap().0
+        Self::from_block_traces(vec![]).unwrap().0
     }
 
     /// Build the inner circuit and the instances from a traces
-    fn from_block_trace(block_trace: &BlockTrace) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
+    fn from_block_trace(block_trace: BlockTrace) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
     where
         Self: Sized,
     {
-        Self::from_block_traces(std::slice::from_ref(block_trace))
+        Self::from_block_traces(vec![block_trace])
     }
 
     /// Build the inner circuit and the instances from a list of traces
-    fn from_block_traces(block_traces: &[BlockTrace]) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
+    fn from_block_traces(
+        block_traces: Vec<BlockTrace>,
+    ) -> anyhow::Result<(Self::Inner, Vec<Vec<Fr>>)>
     where
         Self: Sized,
     {
@@ -79,7 +82,12 @@ pub trait TargetCircuit {
     where
         Self: Sized;
 
-    fn estimate_rows(block_traces: &[BlockTrace]) -> anyhow::Result<usize> {
+    fn estimate_block_rows(block_trace: BlockTrace) -> anyhow::Result<usize> {
+        let witness_block = block_trace_to_witness_block(block_trace)?;
+        Ok(Self::estimate_rows_from_witness_block(&witness_block))
+    }
+
+    fn estimate_rows(block_traces: Vec<BlockTrace>) -> anyhow::Result<usize> {
         let witness_block = block_traces_to_witness_block(block_traces)?;
         Ok(Self::estimate_rows_from_witness_block(&witness_block))
     }

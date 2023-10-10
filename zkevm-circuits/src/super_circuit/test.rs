@@ -48,7 +48,7 @@ fn test_super_circuit<
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
     let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, &l2_trace, false, false)
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, l2_trace, false, false)
             .expect("could not handle block tx");
 
     builder
