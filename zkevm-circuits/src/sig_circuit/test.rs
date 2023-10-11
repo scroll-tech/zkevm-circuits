@@ -116,6 +116,20 @@ fn test_edge_cases() {
             word!("0x6b0c5c6fb456b976d50eb155a6a15c9e9e93c4afa99d4cad4d86f4ba0cc175fd"),
             1u8,
         ),
+        // 10. special case: u1.G + u2.PK == point at infinity
+        //
+        // where m * s^{-1} (mod n) and r * s^{-1} (mod n)
+        // i.e. m == -r (mod n)
+        {
+            let m = BigUint::from_bytes_le(&secp256k1::Fq::random(&mut rng).to_bytes());
+            let r = &*SECP256K1_Q - m.clone();
+            (
+                Word::from_little_endian(&biguint_to_32bytes_le(m)),
+                Word::from_little_endian(&biguint_to_32bytes_le(r)),
+                Word::from_little_endian(&secp256k1::Fq::random(&mut rng).to_bytes()),
+                0,
+            )
+        },
     ];
     let signatures = ecrecover_data
         .iter()
@@ -135,7 +149,7 @@ fn test_edge_cases() {
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 9, signatures);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 10, signatures);
 }
 
 #[test]
