@@ -91,12 +91,12 @@ where
     );
 
     // compute u1 = m * s^{-1} mod n
-    let s2 = scalar_chip.select(ctx, &one, s, &s_is_zero);
-    let u1 = scalar_chip.divide(ctx, msghash, &s2);
+    let s_prime = scalar_chip.select(ctx, &one, s, &s_is_zero);
+    let u1 = scalar_chip.divide(ctx, msghash, &s_prime);
     let u1 = scalar_chip.select(ctx, &zero, &u1, &s_is_zero);
 
     // compute u2 = r * s^{-1} mod n
-    let u2 = scalar_chip.divide(ctx, r, &s2);
+    let u2 = scalar_chip.divide(ctx, r, &s_prime);
     let u2 = scalar_chip.select(ctx, &zero, &u2, &s_is_zero);
 
     // we want to compute u1*G + u2*PK, there are two edge cases
@@ -140,18 +140,74 @@ where
     // =================================
     // case 2:
     // =================================
-    // compute tmp = u1 G + u2 Pk + random point and check if tmp == random point
-    let random_point = ecc_chip.load_random_point::<GA>(ctx);
-    let tmp = ecc_chip.add_unequal(ctx, &u1_mul, &random_point, false);
-    let tmp = ecc_chip.add_unequal(ctx, &u2_mul, &tmp, false);
-    let sum_is_infinity = ecc_chip.is_equal(ctx, &tmp, &random_point);
+    // u1.G == (u1_mul_x, u1_mul_y) and u2.Pk == (u2_mul_x, u2_mul_y)
+    //
+    // u1.G + u2.Pk == point_at_infinity iff:
+    // - (u1_is_zero AND u2_is_zero) OR
+    // - (u1_mul_x == u2_mul_x) AND (u1_mul_y == neg(u2_mul_y))
+    let u1_u2_are_zero =
+        base_chip
+            .range()
+            .gate()
+            .and(ctx, Existing(u1_is_zero), Existing(u2_is_zero));
+    let u1_u2_x_eq = base_chip.is_equal(ctx, u1_mul.x(), u2_mul.x());
+    let u1_u2_y_neg = {
+        let u2_y_neg = base_chip.negate(ctx, u2_mul.y());
+        base_chip.is_equal(ctx, u1_mul.y(), &u2_y_neg)
+    };
+    let sum_is_infinity = base_chip.range().gate().or_and(
+        ctx,
+        Existing(u1_u2_are_zero),
+        Existing(u1_u2_x_eq),
+        Existing(u1_u2_y_neg),
+    );
     let sum_is_not_infinity = base_chip
         .gate()
         .not(ctx, QuantumCell::Existing(sum_is_infinity));
-    let sum = ecc_chip.sub_unequal(ctx, &tmp, &random_point, false);
-    let sum = ecc_chip.select(ctx, &point_at_infinity, &sum, &sum_is_infinity);
 
-    let equal_check = base_chip.is_equal(ctx, &sum.x, r);
+    // For a valid ECDSA signature, the x co-ordinate of u1.G + u2.Pk, i.e. x_3, MUST EQUAL r
+    //
+    // For ec_add:
+    // P:(x_1, y_1) + Q:(x_2, y_2) == (x_3, y_3) we have:
+    // - lambda == (y_2 - y_1) / (x_2 - x_1) (mod n)
+    // - x_3 == (lambda * lambda) - x_1 - x_2 (mod n)
+    // - y_3 == lambda * (x_1 - x_3) - y_1 (mod n)
+    let (x_3, y_3) = {
+        // we implement divide_unsafe in a non-panicking way, lambda = dy/dx (mod n)
+        let dx = base_chip.sub_no_carry(ctx, u2_mul.x(), u1_mul.x());
+        let dy = base_chip.sub_no_carry(ctx, u2_mul.y(), u1_mul.y());
+        let lambda = {
+            let a_val = base_chip.get_assigned_value(&dy);
+            let b_val = base_chip.get_assigned_value(&dx);
+            let b_inv = b_val.map(|bv| bv.invert().unwrap_or(CF::zero()));
+            let quot_val = a_val.zip(b_inv).map(|(a, bi)| a * bi);
+            let quot = base_chip.load_private(ctx, FpConfig::<F, CF>::fe_to_witness(&quot_val));
+            // constrain quot * b - a = 0 mod p
+            let quot_b = base_chip.mul_no_carry(ctx, &quot, &dx);
+            let quot_constraint = base_chip.sub_no_carry(ctx, &quot_b, &dy);
+            base_chip.check_carry_mod_to_zero(ctx, &quot_constraint);
+            quot
+        };
+        let lambda_sq = base_chip.mul_no_carry(ctx, &lambda, &lambda);
+        let lambda_sq_minus_px = base_chip.sub_no_carry(ctx, &lambda_sq, u1_mul.x());
+        let x_3_no_carry = base_chip.sub_no_carry(ctx, &lambda_sq_minus_px, u2_mul.x());
+        let x_3 = base_chip.carry_mod(ctx, &x_3_no_carry);
+        let dx_13 = base_chip.sub_no_carry(ctx, u1_mul.x(), &x_3);
+        let lambda_dx_13 = base_chip.mul_no_carry(ctx, &lambda, &dx_13);
+        let y_3_no_carry = base_chip.sub_no_carry(ctx, &lambda_dx_13, u1_mul.y());
+        let y_3 = base_chip.carry_mod(ctx, &y_3_no_carry);
+
+        // edge cases
+        let x_3 = base_chip.select(ctx, u2_mul.x(), &x_3, &u1_is_zero);
+        let x_3 = base_chip.select(ctx, u1_mul.x(), &x_3, &u2_is_zero);
+        let x_3 = base_chip.select(ctx, &zero, &x_3, &sum_is_infinity);
+        let y_3 = base_chip.select(ctx, u2_mul.y(), &y_3, &u1_is_zero);
+        let y_3 = base_chip.select(ctx, u1_mul.y(), &y_3, &u2_is_zero);
+        let y_3 = base_chip.select(ctx, &zero, &y_3, &sum_is_infinity);
+
+        (x_3, y_3)
+    };
+    let equal_check = base_chip.is_equal(ctx, &x_3, r);
 
     // TODO: maybe the big_less_than is optional?
     let u1_small = big_less_than::assign::<F>(
@@ -190,5 +246,5 @@ where
         ],
     );
 
-    (res, is_pubkey_zero, sum.y)
+    (res, is_pubkey_zero, y_3)
 }
