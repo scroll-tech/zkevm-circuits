@@ -467,7 +467,7 @@ mod tests {
         );
 
         let container = builder.block.container.clone();
-        let operation = &container.stack[step.bus_mapping_instance[1].as_usize()];
+        let operation = &container.stack[step.bus_mapping_instance[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
     }
 }
