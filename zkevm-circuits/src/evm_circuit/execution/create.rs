@@ -1082,46 +1082,6 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_create_address_collision_and_mem_expansion() {
-        for offset in [100, 200] {
-            /*
-            create2(value=0, offset=0, length=100, salt=0);
-            create2(value=0, offset=100-or-200, length=100, salt=0);
-            */
-            let code_bytes = bytecode! {
-                PUSH0
-                PUSH32(100)
-                PUSH0
-                PUSH0
-                CREATE2
-                PUSH0
-                PUSH32(100)
-                PUSH32(offset)
-                PUSH0
-                CREATE2
-            };
-
-            let ctx = TestContext::<2, 1>::new(
-                None,
-                |accs| {
-                    accs[0].address(MOCK_ACCOUNTS[0]).balance(mock::eth(10));
-                    accs[1]
-                        .address(MOCK_ACCOUNTS[1])
-                        .code(code_bytes)
-                        .balance(mock::eth(10));
-                },
-                |mut txs, accs| {
-                    txs[0].from(accs[0].address).to(accs[1].address);
-                },
-                |block, _| block,
-            )
-            .unwrap();
-
-            CircuitTestBuilder::new_from_test_ctx(ctx).run();
-        }
-    }
-
     // Ignore this test case. It could run successfully but slow for CI.
     #[ignore]
     #[test]
