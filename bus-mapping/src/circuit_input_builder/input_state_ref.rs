@@ -920,6 +920,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(address)
     }
 
+    /// read reversion info
     pub(crate) fn reversion_info_read(
         &mut self,
         step: &mut ExecStep,
@@ -933,6 +934,24 @@ impl<'a> CircuitInputStateRef<'a> {
             (CallContextField::IsPersistent, call.is_persistent.to_word()),
         ] {
             self.call_context_read(step, call.call_id, field, value)?;
+        }
+        Ok(())
+    }
+
+    /// write reversion info
+    pub(crate) fn reversion_info_write(
+        &mut self,
+        step: &mut ExecStep,
+        call: &Call,
+    ) -> Result<(), Error> {
+        for (field, value) in [
+            (
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        ] {
+            self.call_context_write(step, call.call_id, field, value)?;
         }
         Ok(())
     }
