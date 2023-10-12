@@ -215,17 +215,17 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
         }
 
+        let (initialization_code, keccak_code_hash, code_hash) = if is_precheck_ok && length > 0 {
+            handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
+        } else {
+            (vec![], H256(keccak256([])), CodeDB::empty_code_hash())
+        };
+
         state.push_call(callee.clone());
         state.reversion_info_write(&mut exec_step, &callee)?;
 
         // successful contract creation
-        if is_precheck_ok && !is_address_collision {
-            let (initialization_code, keccak_code_hash, code_hash) = if length > 0 {
-                handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
-            } else {
-                (vec![], H256(keccak256([])), CodeDB::empty_code_hash())
-            };
-
+        if is_precheck_ok {
             // handle keccak_table_lookup
             let keccak_input = if IS_CREATE2 {
                 let salt = geth_step.stack.nth_last(3)?;
@@ -256,7 +256,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
             state.block.sha3_inputs.push(keccak_input);
             state.block.sha3_inputs.push(initialization_code);
-
+        }
+        if is_precheck_ok && !is_address_collision {
             // Transfer function will skip transfer if the value is zero
             state.transfer(
                 &mut exec_step,
@@ -335,15 +336,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 fn handle_copy(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,
-    callee_id: usize,
+    call_id: usize,
     offset: usize,
     length: usize,
 ) -> Result<(Vec<u8>, H256, H256), Error> {
     let rw_counter_start = state.block_ctx.rwc;
     let call_ctx = state.call_ctx_mut()?;
-    //let memory: &mut Memory = &mut call_ctx.memory;
-    let memory: &mut Memory = &mut call_ctx.memory;
-    memory.extend_for_range(Word::from(offset as u64), Word::from(length as u64));
+    let memory: &Memory = &mut call_ctx.memory;
 
     let initialization_bytes = memory.0[offset..offset + length].to_vec();
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
@@ -379,7 +378,7 @@ fn handle_copy(
         CopyEvent {
             rw_counter_start,
             src_type: CopyDataType::Memory,
-            src_id: NumberOrHash::Number(callee_id),
+            src_id: NumberOrHash::Number(call_id),
             src_addr: offset.try_into().unwrap(),
             src_addr_end: (offset + length).try_into().unwrap(),
             dst_type: CopyDataType::Bytecode,
