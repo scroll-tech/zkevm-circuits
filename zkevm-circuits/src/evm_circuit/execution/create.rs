@@ -266,13 +266,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 caller_nonce,
                 Some(&mut reversion_info),
             );
-            cb.account_access_list_write(
-                tx_id.expr(),
-                new_address.clone(),
-                1.expr(),
-                was_warm.expr(),
-                Some(&mut reversion_info),
-            );
 
             // add callee to access list
             cb.account_access_list_write(
@@ -611,9 +604,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let caller_nonce = rws.next().account_nonce_pair().1.low_u64();
         let is_precheck_ok =
             call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX;
-            let was_warm = rws.next().tx_access_list_value_pair().1;
-            self.was_warm
-                .assign(region, offset, Value::known(was_warm.to_scalar().unwrap()))?;
 
         self.caller_balance
             .assign(region, offset, Some(caller_balance.to_le_bytes()))?;

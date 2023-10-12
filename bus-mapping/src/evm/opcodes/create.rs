@@ -143,7 +143,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     value_prev: caller_nonce.into(),
                 },
             )?;
-            state.tx_access_list_write(&mut exec_step, address)?;
 
             // add contract address to access list
             state.tx_access_list_write(&mut exec_step, address)?;
