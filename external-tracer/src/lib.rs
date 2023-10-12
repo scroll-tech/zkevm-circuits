@@ -144,7 +144,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
 
     Ok(block_trace
         .execution_results
-        .iter()
+        .into_iter()
         .map(From::from)
         .collect::<Vec<_>>())
 }

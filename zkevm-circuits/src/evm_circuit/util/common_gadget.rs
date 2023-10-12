@@ -52,7 +52,16 @@ impl<F: Field> SameContextGadget<F> {
         opcode: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        Self::construct2(cb, opcode, step_state_transition, 0.expr())
+    }
+
+    pub(crate) fn construct2(
+        cb: &mut EVMConstraintBuilder<F>,
+        opcode: Cell<F>,
+        step_state_transition: StepStateTransition<F>,
+        push_rlc: Expression<F>,
+    ) -> Self {
+        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
         cb.add_lookup(
             "Responsible opcode lookup",
             Lookup::Fixed {
@@ -1412,13 +1421,16 @@ impl<F: Field> CommonErrorGadget<F> {
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
-        Self::construct_with_lastcallee_return_data(
-            cb,
-            opcode,
-            rw_counter_delta,
-            0.expr(),
-            0.expr(),
-        )
+        Self::construct2(cb, opcode, rw_counter_delta, 0.expr())
+    }
+
+    pub(crate) fn construct2(
+        cb: &mut EVMConstraintBuilder<F>,
+        opcode: Expression<F>,
+        rw_counter_delta: Expression<F>,
+        push_rlc: Expression<F>,
+    ) -> Self {
+        Self::construct_full(cb, opcode, rw_counter_delta, 0.expr(), 0.expr(), push_rlc)
     }
 
     pub(crate) fn construct_with_lastcallee_return_data(
@@ -1428,7 +1440,25 @@ impl<F: Field> CommonErrorGadget<F> {
         return_data_offset: Expression<F>,
         return_data_length: Expression<F>,
     ) -> Self {
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        Self::construct_full(
+            cb,
+            opcode,
+            rw_counter_delta,
+            return_data_offset,
+            return_data_length,
+            0.expr(),
+        )
+    }
+
+    fn construct_full(
+        cb: &mut EVMConstraintBuilder<F>,
+        opcode: Expression<F>,
+        rw_counter_delta: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+        push_rlc: Expression<F>,
+    ) -> Self {
+        cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
 
         let rw_counter_end_of_reversion = cb.query_cell();
 
@@ -1510,6 +1540,21 @@ impl<F: Field> CommonErrorGadget<F> {
 
         // NOTE: return value not use for now.
         Ok(1u64)
+    }
+
+    pub(crate) fn get_push_rlc(
+        region: &CachedRegion<'_, '_, F>,
+        block: &Block<F>,
+        call: &Call,
+        step: &ExecStep,
+    ) -> Value<F> {
+        let code = block
+            .bytecodes
+            .get(&call.code_hash)
+            .expect("could not find current environment's bytecode");
+
+        let pc = step.program_counter as usize;
+        code.get_byte_row(pc, region.challenges()).2
     }
 }
 

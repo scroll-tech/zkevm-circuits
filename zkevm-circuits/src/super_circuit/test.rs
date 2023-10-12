@@ -48,7 +48,7 @@ fn test_super_circuit<
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
     let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, &l2_trace, false, false)
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, l2_trace, false, false)
             .expect("could not handle block tx");
 
     builder
@@ -56,7 +56,10 @@ fn test_super_circuit<
         .expect("could not finalize building block");
 
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-    block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    block_apply_mpt_state(
+        &mut block,
+        &builder.mpt_init_state.expect("used non-light mode"),
+    );
 
     let active_row_num =SuperCircuit::<
         Fr,

@@ -35,9 +35,9 @@ pub struct BlockTrace {
 }
 
 impl From<BlockTrace> for EthBlock {
-    fn from(mut b: BlockTrace) -> Self {
+    fn from(b: BlockTrace) -> Self {
         let mut txs = Vec::new();
-        for (idx, tx_data) in b.transactions.iter_mut().enumerate() {
+        for (idx, tx_data) in b.transactions.iter().enumerate() {
             let tx_idx = Some(U64::from(idx));
             let tx = tx_data.to_eth_tx(b.header.hash, b.header.number, tx_idx);
             txs.push(tx)
@@ -46,6 +46,22 @@ impl From<BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             ..b.header
+        }
+    }
+}
+
+impl From<&BlockTrace> for EthBlock {
+    fn from(b: &BlockTrace) -> Self {
+        let mut txs = Vec::new();
+        for (idx, tx_data) in b.transactions.iter().enumerate() {
+            let tx_idx = Some(U64::from(idx));
+            let tx = tx_data.to_eth_tx(b.header.hash, b.header.number, tx_idx);
+            txs.push(tx)
+        }
+        EthBlock {
+            transactions: txs,
+            difficulty: 0.into(),
+            ..b.header.clone()
         }
     }
 }
@@ -183,20 +199,16 @@ pub struct ExecutionResult {
     pub exec_steps: Vec<ExecStep>,
 }
 
-impl From<&ExecutionResult> for GethExecTrace {
-    fn from(e: &ExecutionResult) -> Self {
-        let mut struct_logs = Vec::new();
-        for exec_step in &e.exec_steps {
-            let step = exec_step.into();
-            struct_logs.push(step)
-        }
+impl From<ExecutionResult> for GethExecTrace {
+    fn from(e: ExecutionResult) -> Self {
+        let struct_logs = e.exec_steps.into_iter().map(GethExecStep::from).collect();
         GethExecTrace {
             l1_fee: e.l1_fee.as_u64(),
             gas: Gas(e.gas),
             failed: e.failed,
-            return_value: e.return_value.clone(),
+            return_value: e.return_value,
             struct_logs,
-            account_after: e.account_after.clone(),
+            account_after: e.account_after,
         }
     }
 }
@@ -221,11 +233,11 @@ pub struct ExecStep {
     pub extra_data: Option<ExtraData>,
 }
 
-impl From<&ExecStep> for GethExecStep {
-    fn from(e: &ExecStep) -> Self {
-        let stack = e.stack.clone().map_or_else(Stack::new, Stack::from);
-        let storage = e.storage.clone().map_or_else(Storage::empty, Storage::from);
-        let memory = e.memory.clone().map_or_else(Memory::default, Memory::from);
+impl From<ExecStep> for GethExecStep {
+    fn from(e: ExecStep) -> Self {
+        let stack = e.stack.map_or_else(Stack::new, Stack::from);
+        let storage = e.storage.map_or_else(Storage::empty, Storage::from);
+        let memory = e.memory.map_or_else(Memory::default, Memory::from);
 
         GethExecStep {
             pc: ProgramCounter(e.pc as usize),
@@ -235,7 +247,7 @@ impl From<&ExecStep> for GethExecStep {
             gas_cost: GasCost(e.gas_cost),
             refund: Gas(e.refund),
             depth: e.depth as u16,
-            error: e.error.clone(),
+            error: e.error,
             stack,
             memory,
             storage,

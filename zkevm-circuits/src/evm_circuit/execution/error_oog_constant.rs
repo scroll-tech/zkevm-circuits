@@ -19,6 +19,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGConstantGadget<F> {
     opcode: Cell<F>,
+    push_rlc: Cell<F>,
     // constrain gas left is less than required
     gas_required: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
@@ -32,6 +33,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let push_rlc = cb.query_cell_phase2();
 
         let gas_required = cb.query_cell();
 
@@ -46,10 +48,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             1.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 2.expr());
+        let common_error_gadget =
+            CommonErrorGadget::construct2(cb, opcode.expr(), 2.expr(), push_rlc.expr());
 
         Self {
             opcode,
+            push_rlc,
             gas_required,
             insufficient_gas,
             common_error_gadget,
@@ -66,9 +70,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+        let push_rlc = CommonErrorGadget::get_push_rlc(region, block, call, step);
+        self.push_rlc.assign(region, offset, push_rlc)?;
+
         // Inputs/Outputs
         self.gas_required
             .assign(region, offset, Value::known(F::from(step.gas_cost)))?;

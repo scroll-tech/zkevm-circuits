@@ -15,14 +15,14 @@ use std::{
 };
 
 pub fn load_statetests_suite(
-    path: &str,
+    suite: &TestSuite,
     config: Config,
     compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
     let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
-    let tcs = glob::glob(path)
+    let tcs = glob::glob(&suite.path)
         .context("failed to read glob")?
         .filter_map(|v| v.ok())
         .filter(|f| {
@@ -53,7 +53,7 @@ pub fn load_statetests_suite(
                         }
                     };
 
-                    tcs.retain(|v| !skip_tests.contains(&&v.id));
+                    tcs.retain(|v| !skip_tests.contains(&&v.id) && suite.allowed(&v.id));
                     Ok(tcs)
                 })();
 

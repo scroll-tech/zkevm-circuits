@@ -221,7 +221,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 {
                     let mut builder = CircuitInputBuilder::new_from_l2_trace(
                         params,
-                        self.test_ctx.unwrap().l2_trace(),
+                        self.test_ctx.unwrap().l2_trace().clone(),
                         false,
                         false,
                     )
@@ -231,7 +231,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                         .expect("could not finalize building block");
                     let mut block =
                         crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-                    crate::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+                    crate::witness::block_apply_mpt_state(
+                        &mut block,
+                        &builder.mpt_init_state.unwrap(),
+                    );
                     block
                 }
 

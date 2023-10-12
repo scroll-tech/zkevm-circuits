@@ -291,7 +291,8 @@ fn trace_config_to_witness_block_l2(
 
     let geth_traces = block_trace
         .execution_results
-        .iter()
+        .clone()
+        .into_iter()
         .map(From::from)
         .collect::<Vec<_>>();
     // if the trace exceed max steps, we cannot fit it into circuit
@@ -307,14 +308,17 @@ fn trace_config_to_witness_block_l2(
     let difficulty_be_bytes = [0u8; 32];
     env::set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
     let mut builder =
-        CircuitInputBuilder::new_from_l2_trace(circuits_params, &block_trace, false, false)
+        CircuitInputBuilder::new_from_l2_trace(circuits_params, block_trace, false, false)
             .expect("could not handle block tx");
     builder
         .finalize_building()
         .expect("could not finalize building block");
     let mut block =
         zkevm_circuits::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-    zkevm_circuits::witness::block_apply_mpt_state(&mut block, &builder.mpt_init_state);
+    zkevm_circuits::witness::block_apply_mpt_state(
+        &mut block,
+        builder.mpt_init_state.as_ref().unwrap(),
+    );
     // as mentioned above, we cannot fit the trace into circuit
     // stop here
     if exceed_max_steps != 0 {
@@ -746,7 +750,7 @@ fn mock_prove(test_id: &str, witness_block: &Block<Fr>) {
     // TODO: do we need to automatically adjust this k?
     let k = 20;
     // TODO: remove this MOCK_RANDOMNESS?
-    let circuit = ScrollSuperCircuit::new_from_block(&witness_block);
+    let circuit = ScrollSuperCircuit::new_from_block(witness_block);
     let instance = circuit.instance();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     prover.assert_satisfied_par();
