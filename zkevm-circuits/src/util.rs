@@ -249,8 +249,9 @@ pub trait SubCircuitConfig<F: Field> {
 }
 
 /// Ceiling of log_2(n)
+/// `log2_ceil(0)` returns 0.
 pub fn log2_ceil(n: usize) -> u32 {
-    u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
+    (u32::BITS - (n as u32).leading_zeros()) - u32::from(n.is_power_of_two())
 }
 
 pub(crate) fn keccak(msg: &[u8]) -> Word {
