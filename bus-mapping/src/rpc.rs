@@ -179,6 +179,23 @@ impl<P: JsonRpcClient> GethClient<P> {
         Ok(resp.0.into_iter().map(|step| step.result).collect())
     }
 
+    /// Call `debug_traceTransaction` use prestateTracer to get prestate
+    pub async fn trace_tx_prestate(
+        &self,
+        hash: Hash,
+    ) -> Result<HashMap<Address, GethPrestateTrace>, Error> {
+        let hash = serialize(&hash);
+        let cfg = serialize(&serde_json::json! ({
+            "tracer": "prestateTracer",
+        }));
+        let resp: HashMap<Address, GethPrestateTrace> = self
+            .0
+            .request("debug_traceTransaction", [hash, cfg])
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
+        Ok(resp)
+    }
+
     /// Calls `eth_getCode` via JSON-RPC returning a contract code
     pub async fn get_code(
         &self,

@@ -12,7 +12,6 @@ mod l2;
 mod tracer_tests;
 mod transaction;
 
-use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
 use crate::{
     error::Error,
@@ -946,29 +945,6 @@ pub struct BuilderClient<P: JsonRpcClient> {
     circuits_params: CircuitsParams,
 }
 
-/// Get State Accesses from TxExecTraces
-pub fn get_state_accesses(
-    eth_block: &EthBlock,
-    geth_traces: &[eth_types::GethExecTrace],
-) -> Result<Vec<Access>, Error> {
-    let mut block_access_trace = vec![Access::new(
-        None,
-        RW::WRITE,
-        AccessValue::Account {
-            address: eth_block
-                .author
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-        },
-    )];
-    for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-        let geth_trace = &geth_traces[tx_index];
-        let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
-        block_access_trace.extend(tx_access_trace);
-    }
-
-    Ok(block_access_trace)
-}
-
 /// Build a partial StateDB from step 3
 pub fn build_state_code_db(
     proofs: Vec<eth_types::EIP1186ProofResponse>,
@@ -1251,22 +1227,14 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         eth_block.transactions = vec![tx.clone()];
 
-        let mut block_access_trace = vec![Access::new(
-            None,
-            RW::WRITE,
-            AccessValue::Account {
-                address: eth_block.author.unwrap(),
-            },
-        )];
-        let geth_trace = &geth_traces[0];
-        let tx_access_trace = gen_state_access_trace(
-            &eth_types::Block::<eth_types::Transaction>::default(),
-            &tx,
-            geth_trace,
-        )?;
-        block_access_trace.extend(tx_access_trace);
-
-        let access_set = AccessSet::from(block_access_trace);
+        let mut access_set = AccessSet::default();
+        access_set.add_account(
+            eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+        );
+        let tx_access_trace = self.cli.trace_tx_prestate(tx_hash).await?;
+        access_set.extend_from_traces(&tx_access_trace);
 
         let (proofs, codes) = self
             .get_state(tx.block_number.unwrap().as_u64(), access_set)

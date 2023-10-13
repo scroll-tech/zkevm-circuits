@@ -209,6 +209,7 @@ impl From<ExecutionResult> for GethExecTrace {
             return_value: e.return_value,
             struct_logs,
             account_after: e.account_after,
+            prestate: None,
         }
     }
 }

@@ -471,6 +471,7 @@ pub struct ResultGethExecTrace {
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GethExecTrace {
     /// L1 fee
     #[serde(default)]
@@ -489,6 +490,8 @@ pub struct GethExecTrace {
     /// List of accounts' (coinbase etc) status AFTER execution
     /// Only viable for scroll mode
     pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
+    /// prestate trace
+    pub prestate: Option<HashMap<Address, GethPrestateTrace>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -700,6 +703,7 @@ mod tests {
                         ]),
                     }
                 ],
+                prestate: None,
             }
         );
     }
