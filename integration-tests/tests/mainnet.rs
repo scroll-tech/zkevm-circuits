@@ -109,7 +109,7 @@ fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
     } else if *CIRCUIT == "state" {
         test_with::<StateCircuit<Fr>>(block)
     } else if *CIRCUIT == "super" {
-        test_with::<SuperCircuit<Fr, 350, 2_000_000, 64, 0x1000>>(block)
+        test_with::<SuperCircuit<Fr, 128, 2_000_000, 64, 0x1000>>(block)
     } else {
         unimplemented!()
     };
