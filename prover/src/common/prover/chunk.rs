@@ -70,12 +70,9 @@ impl Prover {
     }
 
     fn check_pairing_for_inner_snark(&self, inner_id: &str, inner_snark: &Snark) -> Result<()> {
-        // Params must exist.
-        let params = &self.params_map[&LayerId::Layer1.degree()];
-
         // Check pairing for snark.
         let pairing_result = extract_proof_and_instances_with_pairing_check(
-            params,
+            &self.params_map[&LayerId::Layer1.degree()],
             slice::from_ref(inner_snark),
             gen_rng(),
         );
@@ -87,7 +84,7 @@ impl Prover {
         let verified_result = if let Some(pk) = self.pk(inner_id) {
             // WARN: this may impact performance if failed to check pairing frequently.
             let verified = verify_snark_shplonk::<<SuperCircuit as TargetCircuit>::Inner>(
-                params.verifier_params(),
+                self.params_map[&LayerId::Inner.degree()].verifier_params(),
                 inner_snark.clone(),
                 pk.get_vk(),
             );
