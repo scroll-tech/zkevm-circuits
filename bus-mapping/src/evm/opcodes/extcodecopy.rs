@@ -24,7 +24,7 @@ impl Opcode for Extcodecopy {
         let dest_offset = state.stack_pop(&mut exec_step)?;
         let offset = state.stack_pop(&mut exec_step)?;
         let length = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(external_address_word, geth_step.stack.nth_last(0)?);
             assert_eq!(dest_offset, geth_step.stack.nth_last(1)?);

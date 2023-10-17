@@ -25,12 +25,12 @@ impl Opcode for ErrorReturnDataOutOfBound {
             Some(ExecError::ReturnDataOutOfBounds)
         );
 
-        let memory_offset = state.stack_pop(&mut exec_step)?;
+        let _memory_offset = state.stack_pop(&mut exec_step)?;
         let data_offset = state.stack_pop(&mut exec_step)?;
         let length = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
-            assert_eq!(memory_offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(_memory_offset, geth_step.stack.nth_last(0)?);
             assert_eq!(data_offset, geth_step.stack.nth_last(1)?);
             assert_eq!(length, geth_step.stack.nth_last(2)?);
         }

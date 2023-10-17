@@ -27,7 +27,7 @@ impl<const N: usize> Opcode for Swap<N> {
         let stack_a_position = state.call_ctx()?.stack.last_filled();
         state.stack_read(&mut exec_step, stack_a_position, stack_a_value_read)?;
 
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(stack_b_value_read, geth_step.stack.nth_last(N)?);
             assert_eq!(stack_b_position, geth_step.stack.nth_last_filled(N));

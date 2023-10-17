@@ -25,7 +25,7 @@ impl Opcode for Calldatasize {
             CallContextField::CallDataLength,
             call_data_length,
         )?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(call_data_length, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, call_data_length)?;
         Ok(vec![exec_step])

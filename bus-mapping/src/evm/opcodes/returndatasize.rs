@@ -27,7 +27,7 @@ impl Opcode for Returndatasize {
         )?;
 
         // TODO: fix error in deposit_ether.json...
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             let real_size = geth_steps[1].stack.last()?.as_usize();
             if real_size != size {

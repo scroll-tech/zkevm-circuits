@@ -43,7 +43,7 @@ impl Opcode for Exponentiation {
 
         let base = state.stack_pop(&mut exec_step)?;
         let exponent = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(base, geth_step.stack.nth_last(0)?);
             assert_eq!(exponent, geth_step.stack.nth_last(1)?);

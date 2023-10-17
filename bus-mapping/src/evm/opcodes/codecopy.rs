@@ -23,7 +23,7 @@ impl Opcode for Codecopy {
         let code_offset = state.stack_pop(&mut exec_step)?;
         let length = state.stack_pop(&mut exec_step)?;
 
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(dest_offset, geth_step.stack.nth_last(0)?);
             assert_eq!(code_offset, geth_step.stack.nth_last(1)?);

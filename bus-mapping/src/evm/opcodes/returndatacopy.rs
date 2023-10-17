@@ -22,7 +22,7 @@ impl Opcode for Returndatacopy {
         let data_offset = state.stack_pop(&mut exec_step)?;
         let length = state.stack_pop(&mut exec_step)?;
 
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(memory_offset, geth_step.stack.nth_last(0)?);
             assert_eq!(data_offset, geth_step.stack.nth_last(1)?);

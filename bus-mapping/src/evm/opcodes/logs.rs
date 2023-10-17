@@ -22,7 +22,7 @@ impl Opcode for Log {
 
         let mstart = state.stack_pop(&mut exec_step)?;
         let msize = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(mstart, geth_step.stack.nth_last(0)?);
             assert_eq!(msize, geth_step.stack.nth_last(1)?);

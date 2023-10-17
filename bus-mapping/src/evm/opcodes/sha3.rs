@@ -26,7 +26,7 @@ impl Opcode for Sha3 {
 
         let offset = state.stack_pop(&mut exec_step)?;
         let size = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(offset, geth_step.stack.nth_last(0)?);
             assert_eq!(size, geth_step.stack.nth_last(1)?);
@@ -49,9 +49,9 @@ impl Opcode for Sha3 {
 
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&sha3_input);
-        let output = Word::from_big_endian(&sha3);
-        #[cfg(feature = "stack-check")]
-        assert_eq!(output, geth_steps[1].stack.last()?);
+        let _output = Word::from_big_endian(&sha3);
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(_output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, sha3.into())?;
 
         // Memory read operations

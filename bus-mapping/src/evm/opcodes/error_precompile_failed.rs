@@ -43,7 +43,7 @@ impl Opcode for PrecompileFailed {
         state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
 
         let stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
-        if cfg!(feature = "stack-check") {
+        if cfg!(feature = "enable-stack") {
             for (i, v) in stack_inputs.into_iter().enumerate() {
                 assert_eq!(v, geth_step.stack.nth_last(i)?);
             }

@@ -67,7 +67,7 @@ where
         let block_head = state.block.headers.get(&state.tx.block_num).unwrap();
         let output = Self::handle(block_head);
 
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 
@@ -85,7 +85,7 @@ impl Opcode for Pc {
     ) -> Result<Vec<ExecStep>, Error> {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output = geth_steps[0].pc.0.into();
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 
@@ -104,7 +104,7 @@ impl Opcode for Msize {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output = state.call_ctx()?.memory.len().into();
 
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 
@@ -123,7 +123,7 @@ impl Opcode for Gas {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output = geth_steps[1].gas.0.into();
 
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, output)?;
 

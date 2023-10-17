@@ -53,7 +53,7 @@ impl Opcode for Sload {
 
         // First stack read
         let key = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(key, geth_step.stack.last()?);
 
         // Storage read
@@ -65,7 +65,7 @@ impl Opcode for Sload {
             assert_eq!(value_from_step, value_from_statedb, "inconsistent sload: step proof {value_from_step:?}, local statedb {value_from_statedb:?} in contract {contract_addr:?}, key {key:?}",);
 
             // 2. value_from_step == value_from_stack
-            #[cfg(feature = "stack-check")]
+            #[cfg(feature = "enable-stack")]
             assert_eq!(value_from_step, geth_steps[1].stack.last()?, "inconsistent sload: step proof {value_from_step:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?);
         }
         let value = value_from_statedb;

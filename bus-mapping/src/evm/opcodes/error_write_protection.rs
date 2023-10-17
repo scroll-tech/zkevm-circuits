@@ -48,7 +48,7 @@ impl Opcode for ErrorWriteProtection {
             // want to check.
             for i in 0..3 {
                 let v = state.stack_pop(&mut exec_step)?;
-                if cfg!(feature = "stack-check") {
+                if cfg!(feature = "enable-stack") {
                     assert_eq!(v, geth_step.stack.nth_last(i)?);
                 }
             }

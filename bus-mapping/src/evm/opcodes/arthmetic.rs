@@ -332,13 +332,13 @@ where
             .stack_pops(&mut exec_step, N_POPS)?
             .try_into()
             .unwrap();
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         for (i, input) in stack_inputs.iter().enumerate() {
             assert_eq!(*input, geth_step.stack.nth_last(i)?);
         }
         let output = Self::handle(stack_inputs);
         state.stack_push(&mut exec_step, output)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.nth_last(0)?);
 
         Ok(vec![exec_step])

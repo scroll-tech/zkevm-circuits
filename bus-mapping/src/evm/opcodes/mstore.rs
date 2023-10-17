@@ -20,7 +20,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let mut exec_step = state.new_step(geth_step)?;
         let offset = state.stack_pop(&mut exec_step)?;
         let value = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(offset, geth_step.stack.nth_last(0)?);
             assert_eq!(value, geth_step.stack.nth_last(1)?);

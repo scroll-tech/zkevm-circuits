@@ -75,7 +75,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         let stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
-        if cfg!(feature = "stack-check") {
+        if cfg!(feature = "enable-stack") {
             for (i, value) in stack_inputs.iter().enumerate() {
                 assert_eq!(*value, geth_step.stack.nth_last(i)?);
             }
@@ -205,7 +205,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ),
             (
                 CallContextField::StackPointer,
-                state.caller_ctx()?.stack.stack_pointer().0.into(),
+                state.call_ctx()?.stack.stack_pointer().0.into(),
             ),
             (CallContextField::GasLeft, caller_gas_left.into()),
             (CallContextField::MemorySize, next_memory_word_size.into()),

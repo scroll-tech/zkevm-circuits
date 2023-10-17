@@ -18,7 +18,7 @@ impl Opcode for Address {
         let mut exec_step = state.new_step(geth_step)?;
 
         let address = state.call()?.address.to_word();
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(address, geth_steps[1].stack.last()?);
 
         // Read the callee address in call context.

@@ -60,7 +60,7 @@ impl Opcode for Sstore {
 
         let key = state.stack_pop(&mut exec_step)?;
         let value = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(key, geth_step.stack.nth_last(0)?);
             assert_eq!(value, geth_step.stack.nth_last(1)?);

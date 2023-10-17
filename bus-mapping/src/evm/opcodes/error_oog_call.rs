@@ -48,7 +48,7 @@ impl Opcode for OOGCall {
 
         let stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
         let call_address = stack_inputs[1].to_address();
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             for (i, v) in stack_inputs.iter().enumerate() {
                 assert_eq!(*v, geth_step.stack.nth_last(i)?);

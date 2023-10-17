@@ -21,7 +21,7 @@ impl Opcode for Mload {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         let stack_value_read = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(stack_value_read, geth_step.stack.last()?);
 
         // Read the memory value from the next step of the trace.
@@ -35,7 +35,7 @@ impl Opcode for Mload {
         let slot = offset - shift;
 
         // First stack write
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(mem_read_value, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, mem_read_value)?;
 

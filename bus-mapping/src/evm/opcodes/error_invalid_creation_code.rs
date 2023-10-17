@@ -21,7 +21,7 @@ impl Opcode for ErrorCreationCode {
 
         let offset = state.stack_pop(&mut exec_step)?;
         let length = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(offset, geth_step.stack.nth_last(0)?);
             assert_eq!(length, geth_step.stack.nth_last(1)?);

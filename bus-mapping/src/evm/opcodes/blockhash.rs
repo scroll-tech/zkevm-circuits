@@ -21,7 +21,7 @@ impl Opcode for Blockhash {
         let mut exec_step = state.new_step(geth_step)?;
 
         let block_number = state.stack_pop(&mut exec_step)?;
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(block_number, geth_step.stack.nth_last(0)?);
 
         let current_block_number = state.tx.block_num;
@@ -40,7 +40,7 @@ impl Opcode for Blockhash {
         } else {
             0.into()
         };
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(block_hash, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, block_hash)?;
 

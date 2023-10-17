@@ -31,7 +31,7 @@ impl Opcode for PushN {
                 .copy_from_slice(&code[data_start..]);
         };
         let real_value = Word::from_big_endian(&value_bytes);
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(real_value, geth_steps[1].stack.last()?);
         let missing_bits = data_len.saturating_sub(max_len) * 8;
 

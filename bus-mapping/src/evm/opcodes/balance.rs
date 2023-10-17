@@ -20,7 +20,7 @@ impl Opcode for Balance {
         // Read account address from stack.
         let address_word = state.stack_pop(&mut exec_step)?;
         let address = address_word.to_address();
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(address_word, geth_step.stack.last()?);
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent
@@ -76,7 +76,7 @@ impl Opcode for Balance {
         }
 
         // Write the BALANCE result to stack.
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(geth_steps[1].stack.nth_last(0)?, balance);
         state.stack_push(&mut exec_step, balance)?;
 

@@ -31,7 +31,7 @@ impl Opcode for GasPrice {
         )?;
 
         // Stack write of the gasprice value
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(gasprice, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, gasprice)?;
 

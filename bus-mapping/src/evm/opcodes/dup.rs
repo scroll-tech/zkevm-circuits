@@ -20,7 +20,7 @@ impl<const N: usize> Opcode for Dup<N> {
 
         let stack_value_read = state.call_ctx()?.stack.nth_last(N - 1)?;
         let stack_position = state.call_ctx()?.stack.nth_last_filled(N - 1);
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         {
             assert_eq!(stack_value_read, geth_step.stack.nth_last(N - 1)?);
             assert_eq!(stack_position, geth_step.stack.nth_last_filled(N - 1));

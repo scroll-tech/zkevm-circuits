@@ -29,7 +29,7 @@ impl Opcode for Caller {
         )?;
 
         // Stack write of the caller_address
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(caller_address, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, caller_address)?;
 

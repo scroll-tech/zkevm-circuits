@@ -27,10 +27,13 @@ impl Opcode for ReturnRevert {
         let step = &steps[0];
         let mut exec_step = state.new_step(step)?;
 
-        let offset = step.stack.nth_last(0)?;
-        let length = step.stack.nth_last(1)?;
-        assert_eq!(offset, state.stack_pop(&mut exec_step)?);
-        assert_eq!(length, state.stack_pop(&mut exec_step)?);
+        let offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(offset, step.stack.nth_last(0)?);
+            assert_eq!(length, step.stack.nth_last(1)?);
+        }
 
         if !length.is_zero() {
             state

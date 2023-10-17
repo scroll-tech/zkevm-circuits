@@ -29,7 +29,7 @@ impl Opcode for Callvalue {
         )?;
 
         // Stack write of the call_value
-        #[cfg(feature = "stack-check")]
+        #[cfg(feature = "enable-stack")]
         assert_eq!(value, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, value)?;
 
