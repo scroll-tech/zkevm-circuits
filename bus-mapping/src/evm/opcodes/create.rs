@@ -15,7 +15,6 @@ use eth_types::{
     Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256,
 };
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
-use log::trace;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Create<const IS_CREATE2: bool>;
@@ -28,7 +27,30 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        // Get low Uint64 of offset.
+        let tx_id = state.tx_ctx.id();
+        let callee = state.parse_call(geth_step)?;
+        let caller = state.call()?.clone();
+
+        state.call_context_read(
+            &mut exec_step,
+            caller.call_id,
+            CallContextField::TxId,
+            tx_id.to_word(),
+        )?;
+
+        let depth = caller.depth;
+        state.call_context_read(
+            &mut exec_step,
+            caller.call_id,
+            CallContextField::Depth,
+            depth.to_word(),
+        )?;
+
+        state.reversion_info_read(&mut exec_step, &caller)?;
+
+        // stack operation
+        // Get low Uint64 of offset to generate copy steps. Since offset could
+        // be Uint64 overflow if length is zero.
         let offset = geth_step.stack.nth_last(1)?.low_u64() as usize;
         let length = geth_step.stack.nth_last(2)?.as_usize();
 
@@ -39,8 +61,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 .extend_at_least(offset + length);
         }
         let next_memory_word_size = state.call_ctx()?.memory_word_size();
-
-        let callee = state.parse_call(geth_step)?;
 
         state.call_context_read(
             &mut exec_step,
@@ -81,32 +101,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 Word::zero()
             },
         )?;
+        // stack end
 
-        let (initialization_code, keccak_code_hash, code_hash) = if length > 0 {
-            handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
-        } else {
-            (vec![], H256(keccak256([])), CodeDB::empty_code_hash())
-        };
-
-        let tx_id = state.tx_ctx.id();
-        let caller = state.call()?.clone();
-
-        state.call_context_read(
-            &mut exec_step,
-            caller.call_id,
-            CallContextField::TxId,
-            tx_id.to_word(),
-        )?;
-        state.reversion_info_read(&mut exec_step, &caller)?;
-        state.tx_access_list_write(&mut exec_step, address)?;
-
-        let depth = caller.depth;
-        state.call_context_read(
-            &mut exec_step,
-            caller.call_id,
-            CallContextField::Depth,
-            depth.to_word(),
-        )?;
+        // Get caller's balance and nonce
+        let caller_balance = state.sdb.get_balance(&caller.address);
+        let caller_nonce = state.sdb.get_nonce(&caller.address);
 
         state.call_context_read(
             &mut exec_step,
@@ -115,18 +114,16 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller.address.to_word(),
         )?;
 
-        let caller_balance = state.sdb.get_balance(&callee.caller_address);
         state.account_read(
             &mut exec_step,
-            callee.caller_address,
+            caller.address,
             AccountField::Balance,
             caller_balance,
         )?;
 
-        let caller_nonce = state.sdb.get_nonce(&caller.address);
         state.account_read(
             &mut exec_step,
-            callee.caller_address,
+            caller.address,
             AccountField::Nonce,
             caller_nonce.into(),
         )?;
@@ -135,7 +132,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // ErrNonceUintOverflow occurred.
         let is_precheck_ok =
             depth < 1025 && caller_balance >= callee.value && caller_nonce < u64::MAX;
-
         if is_precheck_ok {
             // Increase caller's nonce
             state.push_op_reversible(
@@ -147,57 +143,40 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     value_prev: caller_nonce.into(),
                 },
             )?;
-        }
 
-        // TODO: look into when this can be pushed. Could it be done in parse call?
-        state.push_call(callee.clone());
+            // add contract address to access list
+            state.tx_access_list_write(&mut exec_step, address)?;
+            // if address created before, nonce is not zero
 
-        for (field, value) in [
-            (
-                CallContextField::RwCounterEndOfReversion,
-                callee.rw_counter_end_of_reversion.to_word(),
-            ),
-            (
-                CallContextField::IsPersistent,
-                callee.is_persistent.to_word(),
-            ),
-        ] {
-            state.call_context_write(&mut exec_step, callee.call_id, field, value)?;
-        }
-
-        // if address created before, nonce is not zero
-
-        // TODO: test create onto non-0 eth address?
-        // this could be good place for checking callee_exists = true, since above
-        // operation happens in evm create() method before checking
-        // ErrContractAddressCollision
-        let code_hash_previous = if callee_exists {
-            if is_precheck_ok && is_address_collision {
-                // CREATE2 may cause address collision error. And for a tricky
-                // case of CREATE, it could also cause this error. e.g. the `to`
-                // field of transaction is set to the calculated contract
-                // address (reference testool case
-                // `RevertDepthCreateAddressCollision_d0_g0_v0` for details).
-                exec_step.error = Some(ExecError::ContractAddressCollision(match geth_step.op {
-                    OpcodeId::CREATE => ContractAddressCollisionError::Create,
-                    OpcodeId::CREATE2 => ContractAddressCollisionError::Create2,
-                    op => unreachable!(
-                        "Contract address collision error is unexpected for opcode: {:?}",
-                        op
-                    ),
-                }));
-            }
-            callee_account.code_hash
-        } else {
-            H256::zero()
-        };
-
-        // If precheck is not ok, we even do not need to read codehash of callee.
-        if is_precheck_ok {
-            // use CodeHash rw not zero to check address already exists
+            // this could be good place for checking callee_exists = true, since above
+            // operation happens in evm create() method before checking
+            // ErrContractAddressCollision
+            let code_hash_previous = if callee_exists {
+                if is_precheck_ok && is_address_collision {
+                    // CREATE2 may cause address collision error. And for a tricky
+                    // case of CREATE, it could also cause this error. e.g. the `to`
+                    // field of transaction is set to the calculated contract
+                    // address (reference testool case
+                    // `RevertDepthCreateAddressCollision_d0_g0_v0` for details).
+                    exec_step.error =
+                        Some(ExecError::ContractAddressCollision(match geth_step.op {
+                            OpcodeId::CREATE => ContractAddressCollisionError::Create,
+                            OpcodeId::CREATE2 => ContractAddressCollisionError::Create2,
+                            op => unreachable!(
+                                "Contract address collision error is unexpected for opcode: {:?}",
+                                op
+                            ),
+                        }));
+                }
+                callee_account.code_hash
+            } else {
+                H256::zero()
+            };
+            // If precheck is not ok, we even do not need to read codehash of callee.
+            // use "CodeHash != 0" to check address already exists
             state.account_read(
                 &mut exec_step,
-                address,
+                callee.address,
                 AccountField::CodeHash,
                 code_hash_previous.to_word(),
             )?;
@@ -206,31 +185,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             if !code_hash_previous.is_zero() {
                 state.account_read(
                     &mut exec_step,
-                    address,
+                    callee.address,
                     AccountField::Nonce,
                     callee_account.nonce,
                 )?;
             }
-        }
-
-        if is_precheck_ok && !is_address_collision {
-            state.transfer(
-                &mut exec_step,
-                callee.caller_address,
-                callee.address,
-                true, // since `must_create` is true, the `receiver_exists` is unused
-                true,
-                callee.value,
-            )?;
-            state.push_op_reversible(
-                &mut exec_step,
-                AccountOp {
-                    address: callee.address,
-                    field: AccountField::Nonce,
-                    value: 1.into(),
-                    value_prev: 0.into(),
-                },
-            )?;
         }
 
         // Per EIP-150, all but one 64th of the caller's gas is sent to the
@@ -256,78 +215,111 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
         }
 
-        // precheck failed
-        if !is_precheck_ok {
-            for (field, value) in [
-                (CallContextField::LastCalleeId, callee.call_id.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-            ] {
-                state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
-            }
-            state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
-            return Ok(vec![exec_step]);
-        }
-
-        for (field, value) in [
-            (CallContextField::CallerId, caller.call_id.into()),
-            (CallContextField::IsSuccess, callee.is_success.to_word()),
-            (
-                CallContextField::IsPersistent,
-                callee.is_persistent.to_word(),
-            ),
-            (CallContextField::TxId, state.tx_ctx.id().into()),
-            (
-                CallContextField::CallerAddress,
-                callee.caller_address.to_word(),
-            ),
-            (CallContextField::CalleeAddress, callee.address.to_word()),
-            (
-                CallContextField::RwCounterEndOfReversion,
-                callee.rw_counter_end_of_reversion.to_word(),
-            ),
-            (CallContextField::Depth, callee.depth.to_word()),
-            (CallContextField::IsRoot, false.to_word()),
-            (CallContextField::IsStatic, false.to_word()),
-            (CallContextField::IsCreate, true.to_word()),
-            (CallContextField::CodeHash, code_hash.to_word()),
-            (CallContextField::Value, callee.value),
-        ] {
-            state.call_context_write(&mut exec_step, callee.call_id, field, value)?;
-        }
-
-        let keccak_input = if IS_CREATE2 {
-            let salt = geth_step.stack.nth_last(3)?;
-            assert_eq!(
-                address,
-                get_create2_address(
-                    caller.address,
-                    salt.to_be_bytes(),
-                    initialization_code.clone(),
-                )
-            );
-            std::iter::once(0xffu8)
-                .chain(caller.address.to_fixed_bytes())
-                .chain(salt.to_be_bytes())
-                .chain(keccak_code_hash.to_fixed_bytes())
-                .collect::<Vec<_>>()
+        let (initialization_code, keccak_code_hash, code_hash) = if is_precheck_ok && length > 0 {
+            handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
         } else {
-            let mut stream = rlp::RlpStream::new();
-            stream.begin_list(2);
-            stream.append(&caller.address);
-            stream.append(&Word::from(caller_nonce));
-            stream.out().to_vec()
+            (vec![], H256(keccak256([])), CodeDB::empty_code_hash())
         };
 
-        assert_eq!(
-            address,
-            H160(keccak256(&keccak_input)[12..].try_into().unwrap())
-        );
+        state.push_call(callee.clone());
+        state.reversion_info_write(&mut exec_step, &callee)?;
 
-        state.block.sha3_inputs.push(keccak_input);
-        state.block.sha3_inputs.push(initialization_code);
+        // successful contract creation
+        if is_precheck_ok {
+            // handle keccak_table_lookup
+            let keccak_input = if IS_CREATE2 {
+                let salt = geth_step.stack.nth_last(3)?;
+                assert_eq!(
+                    address,
+                    get_create2_address(
+                        caller.address,
+                        salt.to_be_bytes(),
+                        initialization_code.clone(),
+                    )
+                );
+                std::iter::once(0xffu8)
+                    .chain(caller.address.to_fixed_bytes())
+                    .chain(salt.to_be_bytes())
+                    .chain(keccak_code_hash.to_fixed_bytes())
+                    .collect::<Vec<_>>()
+            } else {
+                let mut stream = rlp::RlpStream::new();
+                stream.begin_list(2);
+                stream.append(&caller.address);
+                stream.append(&Word::from(caller_nonce));
+                stream.out().to_vec()
+            };
+            assert_eq!(
+                address,
+                H160(keccak256(&keccak_input)[12..].try_into().unwrap())
+            );
 
-        if length == 0 || is_address_collision {
+            state.block.sha3_inputs.push(keccak_input);
+            state.block.sha3_inputs.push(initialization_code);
+        }
+        if is_precheck_ok && !is_address_collision {
+            // Transfer function will skip transfer if the value is zero
+            state.transfer(
+                &mut exec_step,
+                caller.address,
+                callee.address,
+                callee_exists, // since `must_create` is true, the `receiver_exists` is unused
+                true,
+                callee.value,
+            )?;
+            // EIP 161, increase callee's nonce
+            state.push_op_reversible(
+                &mut exec_step,
+                AccountOp {
+                    address: callee.address,
+                    field: AccountField::Nonce,
+                    value: 1.into(),
+                    value_prev: 0.into(),
+                },
+            )?;
+
+            if length > 0 {
+                for (field, value) in [
+                    (CallContextField::CallerId, caller.call_id.into()),
+                    (CallContextField::IsSuccess, callee.is_success.to_word()),
+                    (
+                        CallContextField::IsPersistent,
+                        callee.is_persistent.to_word(),
+                    ),
+                    (CallContextField::TxId, state.tx_ctx.id().into()),
+                    (
+                        CallContextField::CallerAddress,
+                        callee.caller_address.to_word(),
+                    ),
+                    (CallContextField::CalleeAddress, callee.address.to_word()),
+                    (
+                        CallContextField::RwCounterEndOfReversion,
+                        callee.rw_counter_end_of_reversion.to_word(),
+                    ),
+                    (CallContextField::Depth, callee.depth.to_word()),
+                    (CallContextField::IsRoot, false.to_word()),
+                    (CallContextField::IsStatic, false.to_word()),
+                    (CallContextField::IsCreate, true.to_word()),
+                    (CallContextField::CodeHash, code_hash.to_word()),
+                    (CallContextField::Value, callee.value),
+                ] {
+                    state.call_context_write(&mut exec_step, callee.call_id, field, value)?;
+                }
+            }
+            // if it's empty init code
+            else {
+                for (field, value) in [
+                    (CallContextField::LastCalleeId, callee.call_id.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                ] {
+                    state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
+                }
+                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+            }
+        }
+        // failed case: is_precheck_ok is false or is_address_collision is true
+        else {
             for (field, value) in [
                 (CallContextField::LastCalleeId, callee.call_id.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -335,10 +327,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
-            state.caller_ctx_mut()?.return_data.clear();
             state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
         }
-
         Ok(vec![exec_step])
     }
 }
@@ -346,18 +336,15 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 fn handle_copy(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,
-    callee_id: usize,
+    call_id: usize,
     offset: usize,
     length: usize,
 ) -> Result<(Vec<u8>, H256, H256), Error> {
     let rw_counter_start = state.block_ctx.rwc;
     let call_ctx = state.call_ctx_mut()?;
-    //let memory: &mut Memory = &mut call_ctx.memory;
-    let memory: &mut Memory = &mut call_ctx.memory;
-    memory.extend_for_range(Word::from(offset as u64), Word::from(length as u64));
+    let memory: &Memory = &mut call_ctx.memory;
 
     let initialization_bytes = memory.0[offset..offset + length].to_vec();
-    trace!("initialization_bytes bussmapping is {initialization_bytes:?}");
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
     let bytes = Bytecode::from(initialization_bytes.clone()).code;
@@ -391,7 +378,7 @@ fn handle_copy(
         CopyEvent {
             rw_counter_start,
             src_type: CopyDataType::Memory,
-            src_id: NumberOrHash::Number(callee_id),
+            src_id: NumberOrHash::Number(call_id),
             src_addr: offset.try_into().unwrap(),
             src_addr_end: (offset + length).try_into().unwrap(),
             dst_type: CopyDataType::Bytecode,
@@ -480,7 +467,7 @@ mod tests {
         );
 
         let container = builder.block.container.clone();
-        let operation = &container.stack[step.bus_mapping_instance[1].as_usize()];
+        let operation = &container.stack[step.bus_mapping_instance[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
     }
 }

@@ -921,9 +921,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let total_rw_count = block.rws.0.values().flatten().count() + 1;
         (
-            block.rws.0.values().flatten().count() + 1,
-            std::cmp::max(1 << 16, block.circuits_params.max_rws),
+            total_rw_count,
+            std::cmp::max(1 << 16, block.circuits_params.max_rws.max(total_rw_count)),
         )
     }
 
