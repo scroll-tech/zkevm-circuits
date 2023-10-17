@@ -68,7 +68,7 @@ impl MockChallenges {
         Self {
             evm_word: 0x100,
             keccak_input: 0x101,
-            lookup_input: 0x102,
+            lookup_input: 0x100,
         }
     }
     /// ..

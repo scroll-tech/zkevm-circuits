@@ -274,10 +274,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         // Run state circuit test
         if let Some(state_checks) = &self.state_checks {
-            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
-            let k = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
+            let (_, rows_needed) = StateCircuit::<Fr>::min_num_rows_block(&block);
+            let k: u32 = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
             assert!(k <= 20);
-            let state_circuit = StateCircuit::<Fr>::new(block.rws.clone(), params.max_rws);
+            let state_circuit = StateCircuit::<Fr>::new(block.rws.clone(), rows_needed);
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
@@ -286,7 +286,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))
                 .count();
-            let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
+            let rows = (rows_needed - non_start_rows_len..rows_needed).collect();
 
             state_checks(prover, &rows, &rows);
         }
