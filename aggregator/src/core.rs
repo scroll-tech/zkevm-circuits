@@ -81,7 +81,7 @@ pub(crate) fn extract_accumulators_and_proof(
             log::trace!("acc extraction {}-th acc check: right {:?}", i, right);
             if left != right {
                 return Err(snark_verifier::Error::AssertionFailure(format!(
-                    "accumulator check failed {left:?} {right:?}, index {i}",
+                    "old accumulator check failed {left:?} {right:?}, index {i}",
                 )));
             }
             //assert_eq!(left, right, "accumulator check failed");
@@ -134,7 +134,7 @@ pub fn extract_proof_and_instances_with_pairing_check(
 
         if left != right {
             return Err(snark_verifier::Error::AssertionFailure(format!(
-                "accumulator check failed {left:?} {right:?}",
+                "new accumulator check failed {left:?} {right:?}",
             )));
         }
     }
