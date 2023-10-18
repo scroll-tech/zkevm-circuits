@@ -1179,6 +1179,20 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             }
         }
 
+        // a hacking? since the coinbase address is not touch in prestate
+        let coinbase_addr = eth_block.author
+            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
+        let block_num = eth_block.number
+            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
+        assert_ne!(block_num.as_u64(), 0, "is not expected to access genesis block");
+        if !account_set.contains_key(&coinbase_addr) {
+            let coinbase_proof = self
+            .cli
+            .get_proof(coinbase_addr, Vec::new(), (block_num - 1).into())
+            .await?;
+            account_set.insert(coinbase_addr, coinbase_proof);
+        }
+
         Ok((
             account_set.into_iter().map(|(_, v)|v).collect::<Vec<_>>(),
             code_set,
