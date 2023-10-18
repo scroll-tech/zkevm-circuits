@@ -22,6 +22,8 @@ use crate::{
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
+#[cfg(feature = "scroll")]
+use crate::util::{KECCAK_CODE_HASH_EMPTY, hash_code_keccak};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
@@ -1067,28 +1069,6 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         get_state_accesses(eth_block, geth_traces)
     }
 
-    // pub async fn get_state_accesses(&self, eth_block: &EthBlock) -> Result<AccessSet, Error> {
-    //     let mut access_set = AccessSet::default();
-    //     access_set.add_account(
-    //         eth_block
-    //             .author
-    //             .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-    //     );
-    //     let traces = self
-    //         .cli
-    //         .trace_block_prestate_by_hash(
-    //             eth_block
-    //                 .hash
-    //                 .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-    //         )
-    //         .await?;
-    //     for trace in traces.into_iter() {
-    //         access_set.extend_from_traces(&trace);
-    //     }
-
-    //     Ok(access_set)
-    // }
-
     /// Step 3. Query geth for all accounts, storage keys, and codes from
     /// Accesses
     pub async fn get_state(
@@ -1123,6 +1103,86 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             codes.insert(address, code);
         }
         Ok((proofs, codes))
+    }
+
+    /// Yet-another Step 3. Get the account state and codes from pre-state tracing
+    /// the account state is limited since proof is not included, 
+    /// but it is enough to build the sdb/cdb
+    pub async fn get_pre_state(&self, eth_block: &EthBlock) 
+    -> Result<
+        (
+            Vec<eth_types::EIP1186ProofResponse>,
+            HashMap<Address, Vec<u8>>,
+        ),
+        Error,
+    > {
+        let traces = self
+            .cli
+            .trace_block_prestate_by_hash(
+                eth_block
+                    .hash
+                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+            )
+            .await?;
+
+        let mut account_set = HashMap::<Address, eth_types::EIP1186ProofResponse>::new();
+        let mut code_set = HashMap::new();
+
+        for trace in traces.into_iter() {
+            for (addr, prestate) in trace.into_iter()
+            {
+                // notice we have pre state for ALL txs in the block so we should
+                // collect the FIRST state of each account                
+                if account_set.contains_key(&addr) {
+                    continue;
+                }
+
+                let (code_hash, keccak_code_hash) = if let Some(bt) = prestate.code {
+                    let h = CodeDB::hash(&bt);
+                    // only require for L2
+                    let keccak_h = if cfg!(feature = "scroll") {
+                        hash_code_keccak(&bt)
+                    } else {
+                        h
+                    };
+                    code_set.insert(addr, Vec::from(bt.as_ref()));
+                    (h, keccak_h)
+                } else {
+                    (CodeDB::empty_code_hash(), *KECCAK_CODE_HASH_EMPTY)
+                };
+
+                let storage_proof = if let Some(stg) = prestate.storage {
+                    stg.into_iter()
+                    .map(|(key, value)|{
+                        eth_types::StorageProof {
+                            key,
+                            value,
+                            ..Default::default()
+                        }
+                    })
+                    .collect()
+                } else {
+                    Vec::new()
+                };
+
+                let trimmed_resp = eth_types::EIP1186ProofResponse {
+                    address: addr,
+                    balance: prestate.balance.unwrap_or_default(),
+                    nonce: prestate.nonce.unwrap_or_default().into(),
+                    code_hash,
+                    keccak_code_hash,
+                    storage_proof,
+                    ..Default::default()
+                };
+
+                account_set.insert(addr, trimmed_resp);
+            }
+        }
+
+        Ok((
+            account_set.into_iter().map(|(_, v)|v).collect::<Vec<_>>(),
+            code_set,
+        ))
     }
 
     /// Step 4. Build a partial StateDB from step 3
@@ -1191,8 +1251,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     > {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
-        let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
-        let (proofs, codes) = self.get_state(block_num, access_set).await?;
+        //let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
+        let (proofs, codes) = self.get_pre_state(&eth_block).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         if eth_block.transactions.len() > self.circuits_params.max_txs {
             log::error!(
