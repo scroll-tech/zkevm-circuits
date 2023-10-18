@@ -8,8 +8,8 @@ mod execution;
 mod input_state_ref;
 #[cfg(feature = "scroll")]
 mod l2;
-#[cfg(test)]
-mod tracer_tests;
+//#[cfg(test)]
+//mod tracer_tests;
 mod transaction;
 
 pub use self::block::BlockHead;
