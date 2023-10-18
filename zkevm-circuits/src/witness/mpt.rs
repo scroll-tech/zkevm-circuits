@@ -5,12 +5,11 @@ use crate::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-#[cfg(test)]
-use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 use mpt_zktrie::{
     mpt_circuits::{serde::SMTTrace, MPTProofType},
     state,
     state::witness::WitnessGenerator,
+    state::builder::HASH_SCHEME_DONE,
 };
 use serde::{Deserialize, Serialize};
 pub use state::ZktrieState;
@@ -130,12 +129,18 @@ impl MptUpdates {
         })
     }
 
-    #[cfg(test)]
     /// initialize a mock witness generator that is consistent with the old values of self.updates
     pub fn mock_fill_state_roots(&mut self) {
         assert!(*HASH_SCHEME_DONE);
         let mut wit_gen = WitnessGenerator::from(&ZktrieState::default());
+        let mut storage_touched = std::collections::HashSet::<(&Address, &Word)>::new();
         for (key, update) in &mut self.updates {
+            // we should only handle the storage key occur for the first time
+            if let Key::AccountStorage { storage_key, address, ..} = key {
+                if !storage_touched.insert((address, storage_key)){
+                    continue;
+                }
+            }            
             let key = key.set_non_exists(Word::zero(), update.old_value);
             self.old_root = U256::from_little_endian(
                 wit_gen

@@ -160,7 +160,9 @@ async fn test_circuit_all_block() {
             continue;
         }
 
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        block.mpt_updates.mock_fill_state_roots();
+        //block.state_root = Some(block.mpt_updates.old_root());
         let errs = test_witness_block(&block);
         log::info!(
             "test {} circuit, block number: {} err num {:?}",
