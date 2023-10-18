@@ -29,7 +29,7 @@ impl<const N_POP: usize, const IS_ERR: bool> Opcode for StackPopOnlyOpcode<N_POP
             let next_step = geth_steps.get(1);
             let err = state.get_step_err(geth_step, next_step);
             exec_step.error = err.unwrap();
-            state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+            state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         }
 
         Ok(vec![exec_step])

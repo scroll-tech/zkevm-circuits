@@ -73,6 +73,12 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             Word::from(state.call()?.is_static as u8),
         )?;
 
+        let address = if IS_CREATE2 {
+            state.create2_address(&geth_steps[0])?
+        } else {
+            state.create_address()?
+        };
+
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         let stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
         if cfg!(feature = "enable-stack") {
@@ -80,12 +86,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 assert_eq!(*value, geth_step.stack.nth_last(i)?);
             }
         }
-
-        let address = if IS_CREATE2 {
-            state.create2_address(&geth_steps[0])?
-        } else {
-            state.create_address()?
-        };
 
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
@@ -317,7 +317,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 ] {
                     state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
                 }
-                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+                state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
             }
         }
         // failed case: is_precheck_ok is false or is_address_collision is true
@@ -329,7 +329,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
-            state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+            state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
         }
         Ok(vec![exec_step])
     }

@@ -85,7 +85,7 @@ impl Opcode for OOGCall {
             },
         )?;
 
-        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

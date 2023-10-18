@@ -40,7 +40,7 @@ impl Opcode for PrecompileFailed {
         let call = state.parse_call(geth_step)?;
         state.push_call(call.clone());
         state.caller_ctx_mut()?.return_data.clear();
-        state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
 
         let stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
         if cfg!(feature = "enable-stack") {

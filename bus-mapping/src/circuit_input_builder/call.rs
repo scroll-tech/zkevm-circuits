@@ -1,10 +1,9 @@
 use super::CodeSource;
 use crate::{exec_trace::OperationRef, Error};
 use eth_types::{
-    evm_types::{Memory, OpcodeId},
+    evm_types::{Memory, OpcodeId, Stack},
     Address, Hash, Word,
 };
-use eth_types::evm_types::Stack;
 
 /// Type of a *CALL*/CREATE* Function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -55,7 +55,7 @@ impl Opcode for ErrorOOGAccountAccess {
         )?;
 
         // common error handling
-        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

@@ -936,8 +936,8 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Return the contract address of a CREATE2 step.  This is calculated
     /// deterministically from the arguments in the stack.
     pub(crate) fn create2_address(&self, step: &GethExecStep) -> Result<Address, Error> {
-        let salt = step.stack.nth_last(3)?;
         let call_ctx = self.call_ctx()?;
+        let salt = call_ctx.stack.nth_last(3)?;
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
         let address = get_create2_address(self.call()?.address, salt.to_be_bytes(), init_code);
         log::trace!(
@@ -1000,26 +1000,23 @@ impl<'a> CircuitInputStateRef<'a> {
         let kind = CallKind::try_from(step.op)?;
         let caller = self.call()?;
         let caller_ctx = self.call_ctx()?;
+        let stack = &caller_ctx.stack;
 
         let (caller_address, address, value) = match kind {
             CallKind::Call => (
                 caller.address,
-                step.stack.nth_last(1)?.to_address(),
-                step.stack.nth_last(2)?,
+                stack.nth_last(1)?.to_address(),
+                stack.nth_last(2)?,
             ),
-            CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
+            CallKind::CallCode => (caller.address, caller.address, stack.nth_last(2)?),
             CallKind::DelegateCall => (caller.caller_address, caller.address, caller.value),
             CallKind::StaticCall => (
                 caller.address,
-                step.stack.nth_last(1)?.to_address(),
+                stack.nth_last(1)?.to_address(),
                 Word::zero(),
             ),
-            CallKind::Create => (caller.address, self.create_address()?, step.stack.last()?),
-            CallKind::Create2 => (
-                caller.address,
-                self.create2_address(step)?,
-                step.stack.last()?,
-            ),
+            CallKind::Create => (caller.address, self.create_address()?, stack.last()?),
+            CallKind::Create2 => (caller.address, self.create2_address(step)?, stack.last()?),
         };
 
         let (code_source, code_hash) = match kind {
@@ -1030,9 +1027,7 @@ impl<'a> CircuitInputStateRef<'a> {
             }
             _ => {
                 let code_address = match kind {
-                    CallKind::CallCode | CallKind::DelegateCall => {
-                        step.stack.nth_last(1)?.to_address()
-                    }
+                    CallKind::CallCode | CallKind::DelegateCall => stack.nth_last(1)?.to_address(),
                     _ => address,
                 };
                 if is_precompiled(&code_address) {
@@ -1218,6 +1213,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// `caller_ctx.return_data` should be updated **before** this method (except error cases).
     pub fn handle_return(
         &mut self,
+        (offset, length): (Option<Word>, Option<Word>),
         current_exec_steps: &mut [&mut ExecStep],
         geth_steps: &[GethExecStep],
         need_restore: bool,
@@ -1249,6 +1245,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 );
             }
             self.handle_restore_context(
+                (offset, length),
                 current_exec_steps[current_exec_steps.len() - 1],
                 geth_steps,
             )?;
@@ -1261,8 +1258,8 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Store deployed code if it's a successful create
         if call_success_create {
-            let offset = step.stack.nth_last(0)?;
-            let length = step.stack.nth_last(1)?;
+            let offset = offset.ok_or(Error::InternalError("offset not set"))?;
+            let length = length.ok_or(Error::InternalError("length not set"))?;
             let code = callee_memory.read_chunk(MemoryRange::new_with_length(
                 offset.low_u64(),
                 length.low_u64(),
@@ -1301,7 +1298,9 @@ impl<'a> CircuitInputStateRef<'a> {
                 && step.error.is_none()
                 && !call_success_create
             {
-                step.stack.nth_last(0)?.low_u64()
+                offset
+                    .ok_or(Error::InternalError("offset not set"))?
+                    .low_u64()
             } else {
                 // common err, call empty, call precompile
                 0
@@ -1323,6 +1322,7 @@ impl<'a> CircuitInputStateRef<'a> {
     // be non 0 while the call_ctx.return should be empty for this case. EIP-211: CREATE/CREATE2
     // call successful case should set RETURNDATASIZE = 0
     fn get_return_data_offset_and_len(
+        (offset, length): (Option<Word>, Option<Word>),
         exec_step: &ExecStep,
         geth_step: &GethExecStep,
         caller_ctx: &CallContext,
@@ -1347,8 +1347,8 @@ impl<'a> CircuitInputStateRef<'a> {
                     [Word::zero(), return_data_length]
                 }
                 OpcodeId::REVERT | OpcodeId::RETURN => {
-                    let offset = geth_step.stack.nth_last(0)?;
-                    let length = geth_step.stack.nth_last(1)?;
+                    let offset = offset.ok_or(Error::InternalError("offset not set"))?;
+                    let length = length.ok_or(Error::InternalError("length not set"))?;
                     // This is the convention we are using for memory addresses so that there is no
                     // memory expansion cost when the length is 0.
                     // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
@@ -1370,6 +1370,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Bus mapping for the RestoreContextGadget as used in RETURN.
     pub fn handle_restore_context(
         &mut self,
+        (offset, length): (Option<Word>, Option<Word>),
         exec_step: &mut ExecStep,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
@@ -1424,7 +1425,12 @@ impl<'a> CircuitInputStateRef<'a> {
         )?;
 
         let (last_callee_return_data_offset, last_callee_return_data_length) =
-            Self::get_return_data_offset_and_len(exec_step, geth_step, self.caller_ctx()?)?;
+            Self::get_return_data_offset_and_len(
+                (offset, length),
+                exec_step,
+                geth_step,
+                self.caller_ctx()?,
+            )?;
 
         let gas_refund = if is_err {
             0
@@ -1574,8 +1580,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_ctx = self.call_ctx()?;
         // get value first if call/create
         let value = match step.op {
-            OpcodeId::CALL | OpcodeId::CALLCODE => step.stack.nth_last(2)?,
-            OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.nth_last(0)?,
+            OpcodeId::CALL | OpcodeId::CALLCODE => call_ctx.stack.nth_last(2)?,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => call_ctx.stack.nth_last(0)?,
             _ => Word::zero(),
         };
 
@@ -1615,8 +1621,8 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
                 if call.is_create() {
-                    let offset = step.stack.nth_last(0)?;
-                    let length = step.stack.nth_last(1)?;
+                    let offset = call_ctx.stack.nth_last(0)?;
+                    let length = call_ctx.stack.nth_last(1)?;
                     if length > Word::from(MAX_CODE_SIZE) {
                         return Ok(Some(ExecError::MaxCodeSizeExceeded));
                     } else if length > Word::zero()
@@ -1742,7 +1748,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.op,
                 OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
             ) {
-                let code_address = step.stack.nth_last(1)?.to_address();
+                let code_address = call_ctx.stack.nth_last(1)?.to_address();
                 // NOTE: we do not know the amount of gas that precompile got here
                 //   because the callGasTemp might probably be smaller than the gas
                 //   on top of the stack (step.stack.last())

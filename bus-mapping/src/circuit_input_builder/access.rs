@@ -1,5 +1,5 @@
 use crate::operation::RW;
-use eth_types::{geth_types::GethData, Address, GethExecStep, GethPrestateTrace, Word};
+use eth_types::{geth_types::GethData, Address, GethPrestateTrace, Word};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 /// State and Code Access with "keys/index" used in the access operation.
@@ -40,16 +40,6 @@ impl Access {
             value,
         }
     }
-}
-
-/// Given a trace and assuming that the first step is a *CALL*/CREATE* kind
-/// opcode, return the result if found.
-fn get_call_result(trace: &[GethExecStep]) -> Option<Word> {
-    let depth = trace[0].depth;
-    trace[1..]
-        .iter()
-        .find(|s| s.depth == depth)
-        .and_then(|s| s.stack.nth_last(0).ok())
 }
 
 /// State and Code Access set.
