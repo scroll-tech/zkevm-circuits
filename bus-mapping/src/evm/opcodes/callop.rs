@@ -95,10 +95,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         }
 
         let stack_inputs: Vec<Word> = state.stack_pops(&mut exec_step, N_ARGS)?;
-        if cfg!(feature = "enable-stack") {
-            for (i, input) in stack_inputs.iter().enumerate() {
-                assert_eq!(*input, geth_step.stack.nth_last(i)?);
-            }
+        #[cfg(feature = "enable-stack")]
+        for (i, input) in stack_inputs.iter().enumerate() {
+            assert_eq!(*input, geth_step.stack.nth_last(i)?);
         }
         state.stack_push(&mut exec_step, (callee_call.is_success as u64).into())?;
 

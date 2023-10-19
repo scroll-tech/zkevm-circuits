@@ -73,8 +73,9 @@ impl Opcode for Log {
         };
 
         for i in 0..topic_count {
-            let topic = geth_step.stack.nth_last(2 + i)?;
-            assert_eq!(topic, state.stack_pop(&mut exec_step)?);
+            let topic = state.stack_pop(&mut exec_step)?;
+            #[cfg(feature = "enable-stack")]
+            assert_eq!(topic, geth_step.stack.nth_last(2 + i)?);
 
             if state.call()?.is_persistent {
                 state.tx_log_write(

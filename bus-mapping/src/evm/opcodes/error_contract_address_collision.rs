@@ -33,11 +33,10 @@ impl<const IS_CREATE2: bool> Opcode for ContractAddressCollision<IS_CREATE2> {
         }
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
-        let stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
-        if cfg!(feature = "enable-stack") {
-            for (i, value) in stack_inputs.iter().enumerate() {
-                assert_eq!(*value, geth_step.stack.nth_last(i)?);
-            }
+        let _stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
+        #[cfg(feature = "enable-stack")]
+        for (i, value) in _stack_inputs.iter().enumerate() {
+            assert_eq!(*value, geth_step.stack.nth_last(i)?);
         }
 
         let _address = if IS_CREATE2 {

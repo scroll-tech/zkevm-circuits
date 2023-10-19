@@ -78,7 +78,8 @@ impl Opcode for Extcodesize {
         }
 
         // Write the EXTCODESIZE result to stack.
-        debug_assert_eq!(code_size, geth_steps[1].stack.last()?);
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(code_size, geth_steps[1].stack.last()?);
         state.stack_push(&mut exec_step, code_size)?;
 
         Ok(vec![exec_step])

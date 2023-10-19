@@ -59,11 +59,10 @@ impl Opcode for OOGMemoryCopy {
         // Each of CALLDATACOPY, CODECOPY and RETURNDATACOPY has 3 stack read values.
         // But EXTCODECOPY has 4. It has an extra stack pop for external address.
         let stack_read_num = if is_extcodecopy { 4 } else { 3 };
-        let stack_inputs = state.stack_pops(&mut exec_step, stack_read_num)?;
-        if cfg!(feature = "enable-stack") {
-            for (i, v) in stack_inputs.iter().enumerate() {
-                assert_eq!(*v, geth_step.stack.nth_last(i)?);
-            }
+        let _stack_inputs = state.stack_pops(&mut exec_step, stack_read_num)?;
+        #[cfg(feature = "enable-stack")]
+        for (i, v) in _stack_inputs.iter().enumerate() {
+            assert_eq!(*v, geth_step.stack.nth_last(i)?);
         }
 
         state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;

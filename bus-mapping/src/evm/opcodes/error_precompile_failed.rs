@@ -42,11 +42,10 @@ impl Opcode for PrecompileFailed {
         state.caller_ctx_mut()?.return_data.clear();
         state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
 
-        let stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
-        if cfg!(feature = "enable-stack") {
-            for (i, v) in stack_inputs.into_iter().enumerate() {
-                assert_eq!(v, geth_step.stack.nth_last(i)?);
-            }
+        let _stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
+        #[cfg(feature = "enable-stack")]
+        for (i, v) in _stack_inputs.into_iter().enumerate() {
+            assert_eq!(v, geth_step.stack.nth_last(i)?);
         }
 
         // Must fail.
