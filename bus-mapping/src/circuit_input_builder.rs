@@ -21,9 +21,8 @@ use crate::{
     precompile::is_precompiled,
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
+    util::{KECCAK_CODE_HASH_EMPTY, hash_code_keccak},
 };
-#[cfg(feature = "scroll")]
-use crate::util::{KECCAK_CODE_HASH_EMPTY, hash_code_keccak};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
