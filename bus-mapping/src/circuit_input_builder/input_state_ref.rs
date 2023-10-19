@@ -937,6 +937,8 @@ impl<'a> CircuitInputStateRef<'a> {
     /// deterministically from the arguments in the stack.
     pub(crate) fn create2_address(&self, step: &GethExecStep) -> Result<Address, Error> {
         let call_ctx = self.call_ctx()?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(call_ctx.stack, step.stack);
         let salt = call_ctx.stack.nth_last(3)?;
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
         let address = get_create2_address(self.call()?.address, salt.to_be_bytes(), init_code);
@@ -1001,6 +1003,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller = self.call()?;
         let caller_ctx = self.call_ctx()?;
         let stack = &caller_ctx.stack;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(stack, &step.stack);
 
         let (caller_address, address, value) = match kind {
             CallKind::Call => (
@@ -1258,8 +1262,13 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Store deployed code if it's a successful create
         if call_success_create {
-            let offset = offset.ok_or(Error::InternalError("offset not set"))?;
-            let length = length.ok_or(Error::InternalError("length not set"))?;
+            let offset = offset.expect("offset not set");
+            let length = length.expect("length not set");
+            #[cfg(feature = "enable-stack")]
+            {
+                assert_eq!(offset, step.stack.nth_last(0)?);
+                assert_eq!(length, step.stack.nth_last(1)?);
+            }
             let code = callee_memory.read_chunk(MemoryRange::new_with_length(
                 offset.low_u64(),
                 length.low_u64(),
@@ -1298,9 +1307,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 && step.error.is_none()
                 && !call_success_create
             {
-                offset
-                    .ok_or(Error::InternalError("offset not set"))?
-                    .low_u64()
+                let offset = offset.expect("offset not set");
+                #[cfg(feature = "enable-stack")]
+                assert_eq!(offset, step.stack.nth_last(0)?);
+                offset.low_u64()
             } else {
                 // common err, call empty, call precompile
                 0
@@ -1347,8 +1357,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     [Word::zero(), return_data_length]
                 }
                 OpcodeId::REVERT | OpcodeId::RETURN => {
-                    let offset = offset.ok_or(Error::InternalError("offset not set"))?;
-                    let length = length.ok_or(Error::InternalError("length not set"))?;
+                    let offset = offset.expect("offset not set");
+                    let length = length.expect("length not set");
+                    #[cfg(feature = "enable-stack")]
+                    {
+                        assert_eq!(offset, geth_step.stack.nth_last(0)?);
+                        assert_eq!(length, geth_step.stack.nth_last(1)?);
+                    }
                     // This is the convention we are using for memory addresses so that there is no
                     // memory expansion cost when the length is 0.
                     // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
@@ -1578,6 +1593,8 @@ impl<'a> CircuitInputStateRef<'a> {
             .unwrap_or_else(Word::zero);
 
         let call_ctx = self.call_ctx()?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(call_ctx.stack, step.stack);
         // get value first if call/create
         let value = match step.op {
             OpcodeId::CALL | OpcodeId::CALLCODE => call_ctx.stack.nth_last(2)?,

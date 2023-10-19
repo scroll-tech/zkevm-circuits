@@ -7,6 +7,7 @@ use crate::{
         GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
         GETH_ERR_STACK_UNDERFLOW,
     },
+    mock::BlockData,
     operation::RWCounter,
     state_db::Account,
 };
@@ -1807,6 +1808,8 @@ fn create2_address() {
     )
     .unwrap()
     .into();
+
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
 
     // get RETURN
     let (index_return, _) = block.geth_traces[0]
