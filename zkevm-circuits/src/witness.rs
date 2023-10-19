@@ -6,6 +6,7 @@ mod block;
 pub use block::{
     block_apply_mpt_state, block_convert, block_convert_with_l1_queue_index, Block, BlockContext,
     BlockContexts,
+    block_mocking_apply_mpt,
 };
 
 mod bytecode;

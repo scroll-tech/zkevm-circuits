@@ -130,7 +130,7 @@ impl MptUpdates {
     }
 
     /// initialize a mock witness generator that is consistent with the old values of self.updates
-    pub fn mock_fill_state_roots(&mut self) {
+    pub(crate) fn mock_fill_state_roots(&mut self) {
         assert!(*HASH_SCHEME_DONE);
         let mut wit_gen = WitnessGenerator::from(&ZktrieState::default());
         let mut storage_touched = std::collections::HashSet::<(&Address, &Word)>::new();
@@ -164,6 +164,8 @@ impl MptUpdates {
             );
         }
         self.fill_state_roots_from_generator(wit_gen);
+        log::debug!("mocking fill_state_roots done");
+        self.pretty_print();        
     }
 
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
