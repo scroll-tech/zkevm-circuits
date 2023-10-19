@@ -144,6 +144,8 @@
 //!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
 //!     failed: false,
 //!     struct_logs: geth_steps,
+//!     #[cfg(feature = "scroll")]
+//!     prestate: None,
 //! };
 //!
 //! // Get an ordered vector with all of the Stack operations of this trace.
