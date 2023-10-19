@@ -132,7 +132,8 @@ impl MptUpdates {
     /// initialize a mock witness generator that is consistent with the old values of self.updates
     pub(crate) fn mock_fill_state_roots(&mut self) {
         assert!(*HASH_SCHEME_DONE);
-        let mut wit_gen = WitnessGenerator::from(&ZktrieState::default());
+        let temp_trie = ZktrieState::default();
+        let mut wit_gen = WitnessGenerator::from(&temp_trie);
         let mut storage_touched = std::collections::HashSet::<(&Address, &Word)>::new();
         for (key, update) in &mut self.updates {
             // we should only handle the storage key occur for the first time
@@ -142,27 +143,23 @@ impl MptUpdates {
                 }
             }            
             let key = key.set_non_exists(Word::zero(), update.old_value);
-            self.old_root = U256::from_little_endian(
-                wit_gen
-                    .handle_new_state(
-                        update.proof_type(),
-                        match key {
-                            Key::Account { address, .. } | Key::AccountStorage { address, .. } => {
-                                address
-                            }
-                        },
-                        update.old_value,
-                        Word::zero(),
-                        match key {
-                            Key::Account { .. } => None,
-                            Key::AccountStorage { storage_key, .. } => Some(storage_key),
-                        },
-                    )
-                    .account_path[1]
-                    .root
-                    .as_ref(),
-            );
+            wit_gen
+                .handle_new_state(
+                    update.proof_type(),
+                    match key {
+                        Key::Account { address, .. } | Key::AccountStorage { address, .. } => {
+                            address
+                        }
+                    },
+                    update.old_value,
+                    Word::zero(),
+                    match key {
+                        Key::Account { .. } => None,
+                        Key::AccountStorage { storage_key, .. } => Some(storage_key),
+                    },
+                );
         }
+        self.old_root = U256::from_big_endian(temp_trie.root());
         self.fill_state_roots_from_generator(wit_gen);
         log::debug!("mocking fill_state_roots done");
         self.pretty_print();        
