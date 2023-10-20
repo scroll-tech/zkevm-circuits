@@ -159,7 +159,7 @@ impl MptUpdates {
                     },
                 );
         }
-        self.old_root = U256::from_big_endian(temp_trie.root());
+        self.old_root = U256::from_big_endian(wit_gen.root().as_bytes());
         self.fill_state_roots_from_generator(wit_gen);
         log::debug!("mocking fill_state_roots done");
         self.pretty_print();        
