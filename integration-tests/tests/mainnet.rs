@@ -20,6 +20,8 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuit},
     witness,
     witness::Transaction,
+    mpt_circuit::MptCircuit,
+    bytecode_circuit::circuit::BytecodeCircuit,
 };
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
@@ -108,6 +110,10 @@ fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
         test_with::<TxCircuit<Fr>>(block)
     } else if *CIRCUIT == "state" {
         test_with::<StateCircuit<Fr>>(block)
+    } else if *CIRCUIT == "mpt" {
+        test_with::<MptCircuit<Fr>>(block)
+    } else if *CIRCUIT == "bytecode" {
+        test_with::<BytecodeCircuit<Fr>>(block)
     } else if *CIRCUIT == "super" {
         test_with::<SuperCircuit<Fr, 128, 2_000_000, 64, 0x1000>>(block)
     } else {

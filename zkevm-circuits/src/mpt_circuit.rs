@@ -8,17 +8,18 @@ use crate::{
     witness,
 };
 use eth_types::Field;
-#[cfg(test)]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{Layouter, Value, SimpleFloorPlanner},
     halo2curves::bn256::Fr,
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Circuit},
 };
 use itertools::Itertools;
-#[cfg(test)]
-use mpt_zktrie::mpt_circuits::gadgets::mpt_update::hash_traces;
-use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
+use mpt_zktrie::mpt_circuits::{gadgets::{
+    mpt_update::hash_traces, 
+    poseidon::PoseidonLookup},
+    mpt,
+    types::Proof
+};
 
 impl PoseidonLookup for PoseidonTable {
     fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 6]) {
@@ -153,7 +154,6 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
     }
 }
 
-#[cfg(test)]
 impl Circuit<Fr> for MptCircuit<Fr> {
     type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
