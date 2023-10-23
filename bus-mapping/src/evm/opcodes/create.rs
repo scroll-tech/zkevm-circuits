@@ -135,7 +135,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // ErrNonceUintOverflow occurred.
         let is_precheck_ok =
             depth < 1025 && caller_balance >= callee.value && caller_nonce < u64::MAX;
-        if !is_precheck_ok {
+
+        if cfg!(feature = "strict-ccc") && !is_precheck_ok {
             panic!("invalid tx: create is_precheck_ok");
         }
 
