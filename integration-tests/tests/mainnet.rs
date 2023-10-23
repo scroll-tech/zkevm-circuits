@@ -1,6 +1,7 @@
 use bus_mapping::{
     circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams, PrecompileEcParams},
     Error::JSONRpcError,
+    util::read_env_var,
 };
 use halo2_proofs::{
     circuit::Value,
@@ -23,7 +24,7 @@ use zkevm_circuits::{
     mpt_circuit::MptCircuit,
     bytecode_circuit::circuit::BytecodeCircuit,
 };
-use eth_types::H256;
+use eth_types::{Word, H256};
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 30000,
@@ -162,12 +163,19 @@ async fn test_circuit_all_block() {
             log::error!("invalid builder {} {:?}, err num NA", block_num, err_msg);
             continue;
         }
-        let builder = builder.unwrap().0;
+        let mut builder = builder.unwrap().0;
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
             // skip empty block
             continue;
         }
+
+        let default_difficulity = read_env_var("DIFFICULTY", Word::zero());
+        builder.block.headers.iter_mut().for_each(|(_, blk)|{
+            log::info!("rewrite difficuilty of eth block {} -> {}", blk.difficulty, default_difficulity);
+            blk.difficulty = default_difficulity;
+            blk.eth_block.difficulty = default_difficulity;
+        });
 
         let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         witness::block_mocking_apply_mpt(&mut block);
