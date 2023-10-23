@@ -181,13 +181,18 @@ async fn test_circuit_all_block() {
         witness::block_mocking_apply_mpt(&mut block);
         let mut updated_state_root = H256::default();
         block.state_root.unwrap().to_big_endian(&mut updated_state_root.0);
+
+        builder.block.prev_state_root = block.prev_state_root;
+        // update both state_root in eth block (witness block's ctx and builder.block's header)
         if let Some(mut last_eth_block_entry) = block
             .context
             .ctxs
             .last_entry() {
             last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
         }
-        builder.block.prev_state_root = block.prev_state_root;
+        if let Some(mut last_eth_block_entry) = builder.block.headers.last_entry() {
+            last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
+        }
         // we need to re-calculate the keccak inputs since changing of state_root
         block.keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
         let errs = test_witness_block(&block);
