@@ -1136,6 +1136,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
                     continue;
                 }
 
+                let code_size = Word::from(prestate.code.as_ref().map(|bt|bt.len()).unwrap_or(0));
                 let (code_hash, keccak_code_hash) = if let Some(bt) = prestate.code {
                     let h = CodeDB::hash(&bt);
                     // only require for L2
@@ -1171,6 +1172,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
                     code_hash,
                     keccak_code_hash,
                     storage_proof,
+                    code_size,
                     ..Default::default()
                 };
 
