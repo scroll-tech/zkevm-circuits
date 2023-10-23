@@ -23,6 +23,7 @@ use zkevm_circuits::{
     mpt_circuit::MptCircuit,
     bytecode_circuit::circuit::BytecodeCircuit,
 };
+use eth_types::H256;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 30000,
@@ -170,7 +171,14 @@ async fn test_circuit_all_block() {
 
         let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         witness::block_mocking_apply_mpt(&mut block);
-        //block.state_root = Some(block.mpt_updates.old_root());
+        let mut updated_state_root = H256::default();
+        block.state_root.unwrap().to_big_endian(&mut updated_state_root.0);
+        if let Some(mut last_eth_block_entry) = block
+            .context
+            .ctxs
+            .last_entry() {
+            last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
+        }
         let errs = test_witness_block(&block);
         log::info!(
             "test {} circuit, block number: {} err num {:?}",
