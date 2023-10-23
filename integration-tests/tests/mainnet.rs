@@ -187,6 +187,7 @@ async fn test_circuit_all_block() {
             .last_entry() {
             last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
         }
+        builder.block.prev_state_root = block.prev_state_root;
         // we need to re-calculate the keccak inputs since changing of state_root
         block.keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
         let errs = test_witness_block(&block);

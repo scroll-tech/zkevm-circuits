@@ -596,4 +596,5 @@ pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptStat
 pub fn block_mocking_apply_mpt<F: Field>(block: &mut Block<F>) {
     block.mpt_updates.mock_fill_state_roots();
     block.state_root = Some(block.mpt_updates.new_root());
+    block.prev_state_root = block.mpt_updates.old_root();
 }
