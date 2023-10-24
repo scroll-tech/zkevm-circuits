@@ -136,10 +136,11 @@ async fn test_circuit_all_block() {
         let block_num = blk as u64;
         log::info!("test {} circuit, block number: {}", *CIRCUIT, block_num);
         let cli = get_client();
+        let max_txs = read_env_var("MAX_TXS", 128);
         let params = CircuitsParams {
             max_rws: 4_000_000,
             max_copy_rows: 0, // dynamic
-            max_txs: 128,
+            max_txs,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
@@ -163,19 +164,12 @@ async fn test_circuit_all_block() {
             log::error!("invalid builder {} {:?}, err num NA", block_num, err_msg);
             continue;
         }
-        let mut builder = builder.unwrap().0;
+        let mut builder = builder.unwrap().0.enable_relax_mode();
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
             // skip empty block
             continue;
         }
-
-        let default_difficulity = read_env_var("DIFFICULTY", Word::zero());
-        builder.block.headers.iter_mut().for_each(|(_, blk)|{
-            log::info!("rewrite difficuilty of eth block {} -> {}", blk.difficulty, default_difficulity);
-            blk.difficulty = default_difficulity;
-            blk.eth_block.difficulty = default_difficulity;
-        });
 
         let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         witness::block_mocking_apply_mpt(&mut block);

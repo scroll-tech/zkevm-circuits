@@ -81,6 +81,8 @@ pub struct Block<F> {
 pub struct BlockContexts {
     /// Hashmap that maps block number to its block context.
     pub ctxs: BTreeMap<u64, BlockContext>,
+    /// relax mode flag inherited from block builder
+    pub relax_mode: bool,
 }
 
 impl<F: Field> Block<F> {
@@ -448,6 +450,7 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
                     )
                 })
                 .collect::<BTreeMap<_, _>>(),
+            relax_mode: block.is_relaxed(),
         }
     }
 }

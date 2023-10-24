@@ -214,6 +214,9 @@ pub struct Block {
     pub precompile_events: PrecompileEvents,
     /// circuit capacity counter
     copy_counter: usize,
+    /// relax mode indicate builder and circuit would skip
+    /// some sanity check, used by testing and debugging
+    relax_mode: bool,
 }
 
 impl Block {
@@ -311,6 +314,11 @@ impl Block {
         self.chain_id
     }
 
+    /// Return if the relax mode
+    pub fn is_relaxed(&self) -> bool {
+        self.relax_mode
+    }
+
     /// ..
     pub fn end_state_root(&self) -> Word {
         self.headers
@@ -323,6 +331,14 @@ impl Block {
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
     }
+
+    /// ..
+    #[cfg(feature = "test")]
+    pub fn relax(mut self) -> Self {
+        self.relax_mode = true;
+        self
+    }
+
 }
 
 impl Block {

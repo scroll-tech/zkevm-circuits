@@ -299,14 +299,25 @@ impl<'a> CircuitInputBuilder {
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let chunk_tx_idx = self.block.txs.len();
             if self.block.txs.len() >= self.block.circuits_params.max_txs {
-                log::error!(
-                    "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
-                    self.block.circuits_params.max_txs,
-                    chunk_tx_idx,
-                    tx.transaction_index.unwrap_or_default(),
-                    tx.hash
-                );
-                return Err(Error::InternalError("tx num overflow"));
+                if self.block.is_relaxed() {
+                    log::warn!(
+                        "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}, would process for partial block",
+                        self.block.circuits_params.max_txs,
+                        chunk_tx_idx,
+                        tx.transaction_index.unwrap_or_default(),
+                        tx.hash
+                    );
+                    break;
+                }else {
+                    log::error!(
+                        "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
+                        self.block.circuits_params.max_txs,
+                        chunk_tx_idx,
+                        tx.transaction_index.unwrap_or_default(),
+                        tx.hash
+                    );
+                    return Err(Error::InternalError("tx num overflow"));    
+                }
             }
             let geth_trace = &geth_traces[tx_index];
             log::info!(
@@ -709,6 +720,12 @@ impl CircuitInputBuilder {
             .txs
             .iter()
             .any(|tx| tx.has_l2_different_evm_behaviour_step())
+    }
+
+    /// enable relax mode for testing
+    pub fn enable_relax_mode(mut self) -> Self {
+        self.block = self.block.relax();
+        self
     }
 }
 
