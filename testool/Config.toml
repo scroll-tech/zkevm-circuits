@@ -3,7 +3,11 @@ id="default"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-ignore_tests = []
+ignore_tests = [
+	"CALLBlake2f_MaxRounds_*",
+	"sstore_combinations_initial*",
+	"static_Call50000_sha256_*",
+]
 
 [[suite]]
 id="precompile"

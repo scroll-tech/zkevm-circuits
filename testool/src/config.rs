@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
 const CONFIG_FILE: &str = "Config.toml";
@@ -20,8 +20,8 @@ pub struct TestSuite {
     pub max_gas: u64,
     pub max_steps: u64,
 
-    ignore_tests: Option<Vec<String>>,
-    allow_tests: Option<Vec<String>>,
+    ignore_tests: Option<Filter>,
+    allow_tests: Option<Filter>,
 }
 
 impl Default for TestSuite {
@@ -31,7 +31,7 @@ impl Default for TestSuite {
             path: String::default(),
             max_gas: u64::MAX,
             max_steps: u64::MAX,
-            ignore_tests: Some(Vec::new()),
+            ignore_tests: Some(Filter::any()),
             allow_tests: None,
         }
     }
@@ -40,13 +40,9 @@ impl Default for TestSuite {
 impl TestSuite {
     pub fn allowed(&self, test_id: &str) -> bool {
         if let Some(ignore_tests) = &self.ignore_tests {
-            ignore_tests
-                .binary_search_by(|id| id.as_str().cmp(test_id))
-                .is_err()
+            !ignore_tests.matches(test_id)
         } else if let Some(allow_tests) = &self.allow_tests {
-            allow_tests
-                .binary_search_by(|id| id.as_str().cmp(test_id))
-                .is_ok()
+            allow_tests.matches(test_id)
         } else {
             unreachable!()
         }
@@ -57,38 +53,7 @@ impl Config {
     pub fn load() -> Result<Self> {
         let content = std::fs::read_to_string(CONFIG_FILE)
             .context(format!("Unable to open {CONFIG_FILE}"))?;
-        let mut config: Config = toml::from_str(&content).context("parsing toml")?;
-
-        // Append all tests defined in sets into the tests
-        config.suite = config
-            .suite
-            .clone()
-            .into_iter()
-            .map(|mut suite| {
-                let (allow, defined) = match (&suite.allow_tests, &suite.ignore_tests) {
-                    (Some(allow), None) => (true, allow),
-                    (None, Some(ignore)) => (false, ignore),
-                    _ => bail!("ignore_tests or allow_tests should be specified"),
-                };
-                let mut all = Vec::new();
-                for test_name in defined {
-                    if let Some(setname) = test_name.strip_prefix('&') {
-                        let set: Vec<_> = config.set.iter().filter(|ts| ts.id == setname).collect();
-                        ensure!(!set.is_empty(), "no tests sets found for id '{}'", setname);
-                        set.iter().for_each(|ts| all.append(&mut ts.tests.clone()));
-                    } else {
-                        all.push(test_name.clone());
-                    }
-                }
-                all.sort();
-                if allow {
-                    suite.allow_tests = Some(all);
-                } else {
-                    suite.ignore_tests = Some(all);
-                }
-                Ok(suite)
-            })
-            .collect::<Result<_>>()?;
+        let config: Config = toml::from_str(&content).context("parsing toml")?;
         Ok(config)
     }
     pub fn suite(&self, name: &str) -> Result<&TestSuite> {
@@ -116,4 +81,67 @@ pub struct SkipPaths {
 pub struct SkipTests {
     pub desc: Option<String>,
     pub tests: Vec<String>,
+}
+
+#[derive(Debug)]
+struct FilterBuilder {
+    regex: Vec<String>,
+}
+
+impl From<&[&str]> for FilterBuilder {
+    fn from(value: &[&str]) -> Self {
+        let regex = value
+            .iter()
+            .map(|s| {
+                let glob = regex::escape(s)
+                    .replace(r"\*", ".*")
+                    .replace(r"\?", ".")
+                    .replace(r"\[!", "[^")
+                    .replace(r"\[", "[")
+                    .replace(r"\]", "]");
+                format!("(?:{glob})")
+            })
+            .collect();
+        Self { regex }
+    }
+}
+
+impl FilterBuilder {
+    fn build(self) -> Filter {
+        let regex = regex::Regex::new(&format!("^{}$", self.regex.join("|"))).unwrap();
+        Filter(regex)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Filter(regex::Regex);
+
+impl<'de> Deserialize<'de> for Filter {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let strings: Vec<&str> = Deserialize::deserialize(deserializer)?;
+        let builder = FilterBuilder::from(strings.as_slice());
+        Ok(builder.build())
+    }
+}
+
+impl Filter {
+    pub fn any() -> Self {
+        Filter(regex::Regex::new("^.*$").unwrap())
+    }
+    pub fn matches(&self, test_id: &str) -> bool {
+        self.0.is_match(test_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FILTER_TESTS: &[&str] = &["tests/src/GeneralStateTestsFiller/**/*"];
+
+    #[test]
+    fn test_filter() {
+        let builder = FilterBuilder::from(FILTER_TESTS);
+        println!("{builder:?}");
+    }
 }

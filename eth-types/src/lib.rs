@@ -52,7 +52,7 @@ pub trait Field:
     FieldExt
     + Halo2Field
     + PrimeField<Repr = [u8; 32]>
-    + poseidon_circuit::hash::Hashable
+    + hash_circuit::hash::Hashable
     + std::convert::From<Fr>
 {
 }

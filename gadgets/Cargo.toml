@@ -1,17 +1,15 @@
 [package]
 name = "gadgets"
-version = "0.1.0"
-edition = "2021"
-authors = ["The appliedzkp team"]
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
-sha3 = "0.7.2"
+halo2_proofs.workspace = true
+sha3.workspace = true
 eth-types = { path = "../eth-types" }
-digest = "0.7.6"
-strum = "0.24"
+strum.workspace = true
 
 [dev-dependencies]
-rand_xorshift = "0.3"
-rand = "0.8"
+rand_xorshift.workspace = true
+rand.workspace = true

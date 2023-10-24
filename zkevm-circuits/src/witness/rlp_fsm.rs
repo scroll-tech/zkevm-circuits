@@ -208,8 +208,8 @@ use crate::{
     witness::{
         l1_msg,
         Format::{
-            TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignEip1559,
-            TxSignPreEip155,
+            TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
+            TxSignEip1559, TxSignEip2930, TxSignPreEip155,
         },
         Tag::{
             AccessListAddress, AccessListStorageKey, BeginList, BeginVector, ChainId, Data,
@@ -310,6 +310,117 @@ pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         .collect()
 }
 
+pub fn eip2930_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
+    let rows = vec![
+        (TxType, BeginList, 1, vec![1]),
+        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (ChainId, Nonce, N_BYTES_U64, vec![3]),
+        (Nonce, GasPrice, N_BYTES_U64, vec![4]),
+        (GasPrice, Gas, N_BYTES_WORD, vec![5]),
+        (Gas, To, N_BYTES_U64, vec![6]),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![7]),
+        (TxValue, Data, N_BYTES_WORD, vec![8]),
+        (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
+        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
+        (
+            BeginList,
+            AccessListAddress,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![12],
+        ),
+        (
+            AccessListAddress,
+            BeginVector,
+            N_BYTES_ACCOUNT_ADDRESS,
+            vec![13, 14],
+        ),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![17]), /* access_list.storage_keys
+                                                                     * is none */
+        (
+            BeginVector,
+            AccessListStorageKey,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![15, 16],
+        ),
+        (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
+        (
+            AccessListStorageKey,
+            AccessListStorageKey,
+            N_BYTES_WORD,
+            vec![15, 16],
+        ), // keep parsing storage_keys
+        (EndVector, EndList, 0, vec![18, 19]),
+        (EndList, EndVector, 0, vec![20]), // finished parsing access_list
+        (EndList, BeginList, 0, vec![11]), // parse another access_list entry
+        (EndVector, EndList, 0, vec![21]),
+        (EndList, EndList, 0, vec![22]),
+        // used to emit TxGasCostInL1
+        (EndList, BeginList, 0, vec![]),
+    ];
+
+    rows.into_iter()
+        .map(|row| (row.0, row.1, row.2, TxSignEip2930, row.3).into())
+        .collect()
+}
+
+pub fn eip2930_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
+    let rows = vec![
+        (TxType, BeginList, 1, vec![1]),
+        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (ChainId, Nonce, N_BYTES_U64, vec![3]),
+        (Nonce, GasPrice, N_BYTES_U64, vec![4]),
+        (GasPrice, Gas, N_BYTES_WORD, vec![5]),
+        (Gas, To, N_BYTES_U64, vec![6]),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![7]),
+        (TxValue, Data, N_BYTES_WORD, vec![8]),
+        (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
+        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
+        (
+            BeginList,
+            AccessListAddress,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![12],
+        ),
+        (
+            AccessListAddress,
+            BeginVector,
+            N_BYTES_ACCOUNT_ADDRESS,
+            vec![13, 14],
+        ),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![17]), /* access_list.storage_keys
+                                                                     * is none */
+        (
+            BeginVector,
+            AccessListStorageKey,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![15, 16],
+        ),
+        (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
+        (
+            AccessListStorageKey,
+            AccessListStorageKey,
+            N_BYTES_WORD,
+            vec![15, 16],
+        ), // keep parsing storage_keys
+        (EndVector, EndList, 0, vec![18, 19]),
+        (EndList, EndVector, 0, vec![20]), // finished parsing access_list
+        (EndList, BeginList, 0, vec![11]), // parse another access_list entry
+        (EndVector, SigV, 0, vec![21]),
+        (SigV, SigR, N_BYTES_U64, vec![22]),
+        (SigR, SigS, N_BYTES_WORD, vec![23]),
+        (SigS, EndList, N_BYTES_WORD, vec![24]),
+        (EndList, EndList, 0, vec![25]),
+        // used to exit TxGasCostInL1
+        (EndList, BeginList, 0, vec![]),
+    ];
+
+    rows.into_iter()
+        .map(|row| (row.0, row.1, row.2, TxHashEip2930, row.3).into())
+        .collect()
+}
+
 pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
         (TxType, BeginList, 1, vec![1]),
@@ -370,50 +481,50 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![1]),
-        (ChainId, Nonce, N_BYTES_U64, vec![2]),
-        (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![3]),
-        (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![4]),
-        (MaxFeePerGas, Gas, N_BYTES_WORD, vec![5]),
-        (Gas, To, N_BYTES_U64, vec![6]),
-        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![7]),
-        (TxValue, Data, N_BYTES_WORD, vec![8]),
-        (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
-        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
-        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
+        (TxType, BeginList, 1, vec![1]),
+        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (ChainId, Nonce, N_BYTES_U64, vec![3]),
+        (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
+        (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
+        (MaxFeePerGas, Gas, N_BYTES_WORD, vec![6]),
+        (Gas, To, N_BYTES_U64, vec![7]),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
+        (TxValue, Data, N_BYTES_WORD, vec![9]),
+        (Data, BeginVector, N_BYTES_CALLDATA, vec![10, 11]),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![21]), // access_list is none
+        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![12]),
         (
             BeginList,
             AccessListAddress,
             MAX_TAG_LENGTH_OF_LIST,
-            vec![12],
+            vec![13],
         ),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
-            vec![13, 14],
+            vec![14, 15],
         ),
-        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![17]), /* access_list.storage_keys
-                                                                     * is
-                                                                     * none */
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![18]), /* access_list.storage_keys
+                                                                     * is none */
         (
             BeginVector,
             AccessListStorageKey,
             MAX_TAG_LENGTH_OF_LIST,
-            vec![15, 16],
+            vec![16, 17],
         ),
-        (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
+        (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![18]), // finished parsing storage keys
         (
             AccessListStorageKey,
             AccessListStorageKey,
             N_BYTES_WORD,
-            vec![15, 16],
+            vec![16, 17],
         ), // keep parsing storage_keys
-        (EndVector, EndList, 0, vec![18, 19]),
-        (EndList, EndVector, 0, vec![20]), // finished parsing access_list
-        (EndList, BeginList, 0, vec![11]), // parse another access_list entry
-        (EndVector, EndList, 0, vec![21]),
-        (EndList, EndList, 0, vec![22]),
+        (EndVector, EndList, 0, vec![19, 20]),
+        (EndList, EndVector, 0, vec![21]), // finished parsing access_list
+        (EndList, BeginList, 0, vec![12]), // parse another access_list entry
+        (EndVector, EndList, 0, vec![22]),
+        (EndList, EndList, 0, vec![23]),
         // used to emit TxGasCostInL1
         (EndList, BeginList, 0, vec![]),
     ];
@@ -475,6 +586,10 @@ pub enum Format {
     TxSignEip1559,
     /// Hash for EIP1559 tx
     TxHashEip1559,
+    /// Sign for EIP2930 tx
+    TxSignEip2930,
+    /// Hash for EIP2930 tx
+    TxHashEip2930,
     /// L1 Msg
     L1MsgHash,
 }
@@ -495,6 +610,8 @@ impl Format {
             TxHashPreEip155 => pre_eip155_tx_hash_rom_table_rows(),
             TxSignEip1559 => eip1559_tx_sign_rom_table_rows(),
             TxHashEip1559 => eip1559_tx_hash_rom_table_rows(),
+            TxSignEip2930 => eip2930_tx_sign_rom_table_rows(),
+            TxHashEip2930 => eip2930_tx_hash_rom_table_rows(),
             Self::L1MsgHash => l1_msg::rom_table_rows(),
         }
     }

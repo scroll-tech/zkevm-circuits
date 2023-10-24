@@ -204,7 +204,7 @@ fn dump_code_db(cdb: &CodeDB) {
 }
 
 impl CircuitInputBuilder {
-    fn apply_l2_trace(&mut self, block_trace: &BlockTrace, is_last: bool) -> Result<(), Error> {
+    fn apply_l2_trace(&mut self, block_trace: BlockTrace, is_last: bool) -> Result<(), Error> {
         log::trace!(
             "apply_l2_trace start, block num {:?}, is_last {is_last}",
             block_trace.header.number
@@ -214,12 +214,12 @@ impl CircuitInputBuilder {
             dump_code_db(&self.code_db);
         }
 
+        let eth_block = EthBlock::from(&block_trace);
         let geth_trace: Vec<eth_types::GethExecTrace> = block_trace
             .execution_results
-            .iter()
+            .into_iter()
             .map(From::from)
             .collect();
-        let eth_block: EthBlock = block_trace.clone().into();
         assert_eq!(
             self.block.chain_id, block_trace.chain_id,
             "unexpected chain id in new block_trace"
@@ -241,6 +241,16 @@ impl CircuitInputBuilder {
         // note the actions when `handle_rwc_reversion` argument (the 4th one)
         // is true is executing outside this closure
         self.handle_block_inner(&eth_block, &geth_trace, false, is_last)?;
+        // TODO: remove this when GethExecStep don't contains heap data
+        // send to another thread to drop the heap data
+        // here we use a magic number from benchmark to decide whether to
+        // spawn-drop or not
+        if !geth_trace.is_empty() && geth_trace[0].struct_logs.len() > 2000 {
+            std::thread::spawn(move || {
+                std::mem::drop(eth_block);
+                std::mem::drop(geth_trace);
+            });
+        }
         log::debug!("apply_l2_trace done for block {:?}", block_num);
         //self.sdb.list_accounts();
         Ok(())
@@ -286,7 +296,7 @@ impl CircuitInputBuilder {
     /// Create a new CircuitInputBuilder from the given `l2_trace` and `circuits_params`
     pub fn new_from_l2_trace(
         circuits_params: CircuitsParams,
-        l2_trace: &BlockTrace,
+        l2_trace: BlockTrace,
         more: bool,
         light_mode: bool,
     ) -> Result<Self, Error> {
@@ -346,7 +356,7 @@ impl CircuitInputBuilder {
 
         let mut code_db = CodeDB::new();
         code_db.insert(Vec::new());
-        update_codedb(&mut code_db, &sdb, l2_trace)?;
+        update_codedb(&mut code_db, &sdb, &l2_trace)?;
 
         let mut builder_block = circuit_input_builder::Block::from_headers(&[], circuits_params);
         builder_block.chain_id = chain_id;
@@ -365,7 +375,7 @@ impl CircuitInputBuilder {
     }
 
     /// ...
-    pub fn add_more_l2_trace(&mut self, l2_trace: &BlockTrace, more: bool) -> Result<(), Error> {
+    pub fn add_more_l2_trace(&mut self, l2_trace: BlockTrace, more: bool) -> Result<(), Error> {
         // update init state new data from storage
         if let Some(mpt_init_state) = &mut self.mpt_init_state {
             mpt_init_state.update_from_trace(
@@ -419,7 +429,7 @@ impl CircuitInputBuilder {
             *self.sdb.get_storage_mut(&addr, &key).1 = val;
         }
 
-        update_codedb(&mut self.code_db, &self.sdb, l2_trace)?;
+        update_codedb(&mut self.code_db, &self.sdb, &l2_trace)?;
 
         self.apply_l2_trace(l2_trace, !more)?;
         Ok(())

@@ -122,10 +122,6 @@ pub struct CircuitCapacityChecker {
     pub builder_ctx: Option<(CodeDB, StateDB, Option<ZktrieState>)>,
 }
 
-// Currently TxTrace is same as BlockTrace, with "transactions" and "executionResults" should be of
-// len 1, "storageProofs" should contain "slot touched" during when executing this tx.
-pub type TxTrace = BlockTrace;
-
 impl Default for CircuitCapacityChecker {
     fn default() -> Self {
         Self::new()
@@ -162,10 +158,8 @@ impl CircuitCapacityChecker {
     }
     pub fn estimate_circuit_capacity(
         &mut self,
-        txs: &[TxTrace],
+        trace: BlockTrace,
     ) -> Result<RowUsage, anyhow::Error> {
-        log::debug!("estimate_circuit_capacity with txs num {}", txs.len());
-        assert!(!txs.is_empty());
         let (mut estimate_builder, codedb_prev) =
             if let Some((code_db, sdb, mpt_state)) = self.builder_ctx.take() {
                 // here we create a new builder for another (sealed) witness block
@@ -175,13 +169,13 @@ impl CircuitCapacityChecker {
                 // changed but we may not update it in light mode)
                 let mut builder_block =
                     circuit_input_builder::Block::from_headers(&[], get_super_circuit_params());
-                builder_block.chain_id = txs[0].chain_id;
-                builder_block.start_l1_queue_index = txs[0].start_l1_queue_index;
+                builder_block.chain_id = trace.chain_id;
+                builder_block.start_l1_queue_index = trace.start_l1_queue_index;
                 builder_block.prev_state_root = mpt_state
                     .as_ref()
                     .map(|state| state.root())
                     .map(|root| H256(*root))
-                    .unwrap_or(txs[0].header.state_root)
+                    .unwrap_or(trace.header.state_root)
                     .to_word();
                 // notice the trace has included all code required for builidng witness block,
                 // so we do not need to pick them from previous one, but we still keep the
@@ -196,22 +190,21 @@ impl CircuitCapacityChecker {
                 } else {
                     CircuitInputBuilder::new(sdb, CodeDB::new(), &builder_block)
                 };
-                builder.add_more_l2_trace(&txs[0], txs.len() > 1)?;
+                builder.add_more_l2_trace(trace, false)?;
                 (builder, Some(code_db))
             } else {
                 (
                     CircuitInputBuilder::new_from_l2_trace(
                         get_super_circuit_params(),
-                        &txs[0],
-                        txs.len() > 1,
+                        trace,
+                        false,
                         self.light_mode,
                     )?,
                     None,
                 )
             };
-        let traces = &txs[1..];
         let witness_block =
-            block_traces_to_witness_block_with_updated_state(traces, &mut estimate_builder)?;
+            block_traces_to_witness_block_with_updated_state(vec![], &mut estimate_builder)?;
         let mut rows = calculate_row_usage_of_witness_block(&witness_block)?;
 
         let mut code_db = codedb_prev.unwrap_or_else(CodeDB::new);

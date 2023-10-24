@@ -12,8 +12,9 @@ use mpt_zktrie::state::{ZkTrieHash, ZktrieState};
 use once_cell::sync::Lazy;
 use std::time::Instant;
 use zkevm_circuits::{
-    evm_circuit::witness::{block_apply_mpt_state, block_convert_with_l1_queue_index, Block},
+    evm_circuit::witness::{block_apply_mpt_state, Block},
     util::SubCircuit,
+    witness::block_convert,
 };
 
 static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 53077));
@@ -61,9 +62,9 @@ pub fn get_super_circuit_params() -> CircuitsParams {
 
 // TODO: optimize it later
 pub fn calculate_row_usage_of_trace(
-    block_trace: &BlockTrace,
+    block_trace: BlockTrace,
 ) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
-    let witness_block = block_traces_to_witness_block(std::slice::from_ref(block_trace))?;
+    let witness_block = block_traces_to_witness_block(vec![block_trace])?;
     calculate_row_usage_of_witness_block(&witness_block)
 }
 
@@ -136,7 +137,7 @@ pub fn check_batch_capacity(block_traces: &mut Vec<BlockTrace>) -> Result<()> {
     let mut n_txs = 0;
     let mut truncate_idx = block_traces.len();
     for (idx, block) in block_traces.iter().enumerate() {
-        let usage = calculate_row_usage_of_trace(block)?
+        let usage = calculate_row_usage_of_trace(block.clone())?
             .into_iter()
             .map(|x| crate::zkevm::SubCircuitRowUsage {
                 name: x.name,
@@ -227,8 +228,34 @@ pub fn validite_block_traces(block_traces: &[BlockTrace]) -> Result<()> {
     Ok(())
 }
 
-pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Block<Fr>> {
-    validite_block_traces(block_traces)?;
+pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block<Fr>> {
+    let chain_id = block_trace.chain_id;
+    if *CHAIN_ID != chain_id {
+        bail!(
+            "CHAIN_ID env var is wrong. chain id in trace {chain_id}, CHAIN_ID {}",
+            *CHAIN_ID
+        );
+    }
+    let total_tx_num = block_trace.transactions.len();
+    if total_tx_num > MAX_TXS {
+        bail!(
+            "block {}tx num overflow {total_tx_num}",
+            block_trace.header.number.unwrap()
+        );
+    }
+    log::info!("block_trace_to_witness_block, tx num {total_tx_num}");
+    log::debug!("start_l1_queue_index: {}", block_trace.start_l1_queue_index);
+    let mut builder = CircuitInputBuilder::new_from_l2_trace(
+        get_super_circuit_params(),
+        block_trace,
+        false,
+        false,
+    )?;
+    block_traces_to_witness_block_with_updated_state(vec![], &mut builder)
+}
+
+pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block<Fr>> {
+    validite_block_traces(&block_traces)?;
     let block_num = block_traces.len();
     let total_tx_num = block_traces
         .iter()
@@ -247,7 +274,7 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
         block_num,
         total_tx_num,
     );
-    for block_trace in block_traces {
+    for block_trace in block_traces.iter() {
         log::debug!("start_l1_queue_index: {}", block_trace.start_l1_queue_index,);
     }
 
@@ -255,15 +282,23 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
     // etc, so the generated block maybe invalid without any message
     if block_traces.is_empty() {
         let mut builder = prepare_default_builder(eth_types::Hash::zero(), None);
-        block_traces_to_witness_block_with_updated_state(&[], &mut builder)
+        block_traces_to_witness_block_with_updated_state(vec![], &mut builder)
     } else {
+        let block_traces_len = block_traces.len();
+        let mut traces = block_traces.into_iter();
         let mut builder = CircuitInputBuilder::new_from_l2_trace(
             get_super_circuit_params(),
-            &block_traces[0],
-            block_traces.len() > 1,
+            traces.next().unwrap(),
+            block_traces_len > 1,
             false,
         )?;
-        block_traces_to_witness_block_with_updated_state(&block_traces[1..], &mut builder)
+        let witness = block_traces_to_witness_block_with_updated_state(
+            traces.collect(), // this is a cold path
+            &mut builder,
+        );
+        // send to other thread to drop
+        std::thread::spawn(move || drop(builder.block));
+        witness
     }
 }
 
@@ -272,16 +307,12 @@ pub fn block_traces_to_witness_block(block_traces: &[BlockTrace]) -> Result<Bloc
 /// light_mode skip the time consuming calculation on mpt root for each
 /// tx, currently used in row estimation
 pub fn block_traces_to_witness_block_with_updated_state(
-    block_traces: &[BlockTrace],
+    block_traces: Vec<BlockTrace>,
     builder: &mut CircuitInputBuilder,
 ) -> Result<Block<Fr>> {
     let metric = |builder: &CircuitInputBuilder, idx: usize| -> Result<(), bus_mapping::Error> {
         let t = Instant::now();
-        let block = block_convert_with_l1_queue_index::<Fr>(
-            &builder.block,
-            &builder.code_db,
-            builder.block.start_l1_queue_index,
-        )?;
+        let block = block_convert(&builder.block, &builder.code_db)?;
         log::debug!("block convert time {:?}", t.elapsed());
         let rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block(&block);
         log::debug!(
@@ -312,8 +343,9 @@ pub fn block_traces_to_witness_block_with_updated_state(
         1
     };
 
-    for (idx, block_trace) in block_traces.iter().enumerate() {
-        let is_last = idx == block_traces.len() - 1;
+    let block_traces_len = block_traces.len();
+    for (idx, block_trace) in block_traces.into_iter().enumerate() {
+        let is_last = idx == block_traces_len - 1;
         log::debug!(
             "add_more_l2_trace idx {idx}, block num {:?}",
             block_trace.header.number
@@ -325,11 +357,10 @@ pub fn block_traces_to_witness_block_with_updated_state(
     }
 
     builder.finalize_building()?;
-    let start_l1_queue_index = builder.block.start_l1_queue_index;
 
     log::debug!("converting builder.block to witness block");
-    let mut witness_block =
-        block_convert_with_l1_queue_index(&builder.block, &builder.code_db, start_l1_queue_index)?;
+
+    let mut witness_block = block_convert(&builder.block, &builder.code_db)?;
     log::debug!(
         "witness_block built with circuits_params {:?}",
         witness_block.circuits_params
