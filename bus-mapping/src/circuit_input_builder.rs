@@ -1130,14 +1130,6 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         for trace in traces.into_iter() {
             for (addr, prestate) in trace.into_iter()
             {
-
-                let storage_proof = if let Some(stg) = prestate.storage {
-                    stg.into_iter()
-                    .collect()
-                } else {
-                    HashMap::new()
-                };
-
                 let (_, storages) = account_set.entry(addr)
                 .or_insert_with(||{
                     let code_size = Word::from(prestate.code.as_ref().map(|bt|bt.len()).unwrap_or(0));
@@ -1169,8 +1161,10 @@ impl<P: JsonRpcClient> BuilderClient<P> {
                     )
                 });
 
-                for (k, v) in storage_proof {
-                    storages.entry(k).or_insert(v);
+                if let Some(stg) = prestate.storage {
+                    for (k, v) in stg {
+                        storages.entry(k).or_insert(v);
+                    }
                 }
             }
         }
