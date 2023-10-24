@@ -1038,10 +1038,20 @@ impl<F: Field> PiCircuitConfig<F> {
 
         self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
 
+        // pick coinbase and difficulity from block (they have been verified to be equal
+        // to the preset), so things would also work under relaxed mode
+
+        let (blocks_coinbase, blocks_difficulity) = 
+            block_values.ctxs.first_key_value().map(|(_, blk)|{
+                (blk.coinbase, blk.difficulty)
+            }).unwrap_or_else(||{
+                (get_coinbase_constant(), get_difficulty_constant())  
+            });
+
         let cells = self.assign_field_in_pi_ext(
             region,
             &mut offset,
-            &get_coinbase_constant().to_fixed_bytes(),
+            &blocks_coinbase.to_fixed_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
@@ -1055,7 +1065,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let cells = self.assign_field_in_pi_ext(
             region,
             &mut offset,
-            &get_difficulty_constant().to_be_bytes(),
+            &blocks_difficulity.to_be_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
