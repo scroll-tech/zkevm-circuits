@@ -1,5 +1,5 @@
 use eth_types::{
-    sign_types::{biguint_to_32bytes_le, recover_pk, SignData, SECP256K1_Q},
+    sign_types::{biguint_to_32bytes_le, recover_pk2, SignData, SECP256K1_Q},
     Bytes, ToBigEndian, ToLittleEndian,
 };
 use halo2_proofs::halo2curves::{
@@ -35,7 +35,7 @@ pub(crate) fn opt_data(
     }
 
     if let Some(sig_v) = aux_data.recovery_id() {
-        let recovered_pk = recover_pk(
+        let recovered_pk = recover_pk2(
             sig_v,
             &aux_data.sig_r,
             &aux_data.sig_s,

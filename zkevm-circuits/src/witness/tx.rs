@@ -20,7 +20,7 @@ use eth_types::{
     evm_types::gas_utils::tx_data_gas_cost,
     geth_types::{TxType, TxType::PreEip155},
     sign_types::{
-        biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk, SignData, SECP256K1_Q,
+        biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
@@ -126,26 +126,17 @@ impl Transaction {
         }
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();
-        let sig_r = ct_option_ok_or(
-            secp256k1::Fq::from_repr(sig_r_le),
-            Error::Signature(libsecp256k1::Error::InvalidSignature),
-        )?;
-        let sig_s = ct_option_ok_or(
-            secp256k1::Fq::from_repr(sig_s_le),
-            Error::Signature(libsecp256k1::Error::InvalidSignature),
-        )?;
+        let sig_r = ct_option_ok_or(secp256k1::Fq::from_repr(sig_r_le), Error::Signature)?;
+        let sig_s = ct_option_ok_or(secp256k1::Fq::from_repr(sig_s_le), Error::Signature)?;
         let msg = self.rlp_unsigned.clone().into();
         let msg_hash = keccak256(&self.rlp_unsigned);
         let v = self.tx_type.get_recovery_id(self.v);
-        let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
+        let pk = recover_pk2(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
         let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
         let msg_hash_le = biguint_to_32bytes_le(msg_hash);
-        let msg_hash = ct_option_ok_or(
-            secp256k1::Fq::from_repr(msg_hash_le),
-            libsecp256k1::Error::InvalidMessage,
-        )?;
+        let msg_hash = ct_option_ok_or(secp256k1::Fq::from_repr(msg_hash_le), Error::Signature)?;
         Ok(SignData {
             signature: (sig_r, sig_s, v),
             pk,

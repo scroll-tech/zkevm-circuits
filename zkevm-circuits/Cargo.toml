@@ -39,7 +39,6 @@ halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", tag = "v0.1.5", 
 
 maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
 
-libsecp256k1.workspace = true
 num-bigint.workspace = true
 subtle.workspace = true
 rand_chacha.workspace = true

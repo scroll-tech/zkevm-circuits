@@ -17,7 +17,6 @@ serde_json.workspace = true
 serde_with = "1.12"
 uint = "0.9.1"
 itertools.workspace = true
-libsecp256k1.workspace = true
 subtle.workspace = true
 sha3.workspace = true
 num.workspace = true
@@ -25,6 +24,7 @@ num-bigint.workspace = true
 strum_macros.workspace = true
 strum.workspace = true
 hash-circuit.workspace = true
+
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []

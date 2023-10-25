@@ -32,13 +32,7 @@ pub enum Error {
     /// `MemoryAddress`.
     WordToMemAddr,
     /// Signature parsing error.
-    Signature(libsecp256k1::Error),
-}
-
-impl From<libsecp256k1::Error> for Error {
-    fn from(err: libsecp256k1::Error) -> Self {
-        Error::Signature(err)
-    }
+    Signature,
 }
 
 impl Display for Error {
