@@ -1,8 +1,9 @@
 use bus_mapping::{
     circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams, PrecompileEcParams},
-    Error::JSONRpcError,
     util::read_env_var,
+    Error::JSONRpcError,
 };
+use eth_types::H256;
 use halo2_proofs::{
     circuit::Value,
     dev::{MockProver, VerifyFailure},
@@ -11,9 +12,11 @@ use halo2_proofs::{
 };
 use integration_tests::{get_client, log_init, CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
 use zkevm_circuits::{
+    bytecode_circuit::circuit::BytecodeCircuit,
     copy_circuit::CopyCircuit,
     evm_circuit::{witness::block_convert, EvmCircuit},
     keccak_circuit::keccak_packed_multi::multi_keccak,
+    mpt_circuit::MptCircuit,
     rlp_circuit_fsm::RlpCircuit,
     state_circuit::StateCircuit,
     super_circuit::SuperCircuit,
@@ -21,10 +24,7 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuit},
     witness,
     witness::Transaction,
-    mpt_circuit::MptCircuit,
-    bytecode_circuit::circuit::BytecodeCircuit,
 };
-use eth_types::{Word, H256};
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 30000,
@@ -174,14 +174,14 @@ async fn test_circuit_all_block() {
         let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         witness::block_mocking_apply_mpt(&mut block);
         let mut updated_state_root = H256::default();
-        block.state_root.unwrap().to_big_endian(&mut updated_state_root.0);
+        block
+            .state_root
+            .unwrap()
+            .to_big_endian(&mut updated_state_root.0);
 
         builder.block.prev_state_root = block.prev_state_root;
         // update both state_root in eth block (witness block's ctx and builder.block's header)
-        if let Some(mut last_eth_block_entry) = block
-            .context
-            .ctxs
-            .last_entry() {
+        if let Some(mut last_eth_block_entry) = block.context.ctxs.last_entry() {
             last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
         }
         if let Some(mut last_eth_block_entry) = builder.block.headers.last_entry() {

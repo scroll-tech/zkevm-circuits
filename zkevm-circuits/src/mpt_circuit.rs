@@ -9,16 +9,15 @@ use crate::{
 };
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, Value, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Circuit},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
-use mpt_zktrie::mpt_circuits::{gadgets::{
-    mpt_update::hash_traces, 
-    poseidon::PoseidonLookup},
+use mpt_zktrie::mpt_circuits::{
+    gadgets::{mpt_update::hash_traces, poseidon::PoseidonLookup},
     mpt,
-    types::Proof
+    types::Proof,
 };
 
 impl PoseidonLookup for PoseidonTable {

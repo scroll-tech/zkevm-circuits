@@ -485,19 +485,21 @@ pub struct GethExecTrace {
     /// Vector of geth execution steps of the trace.
     #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
-    #[serde(rename = "accountAfter", default, deserialize_with="parse_account_after")]
+    #[serde(
+        rename = "accountAfter",
+        default,
+        deserialize_with = "parse_account_after"
+    )]
     /// List of accounts' (coinbase etc) status AFTER execution
     /// Only viable for scroll mode
     pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
 }
 
-fn parse_account_after<'de, D>(d: D) 
-    -> Result<Vec<crate::l2_types::AccountProofWrapper>, D::Error>
-     where D: Deserializer<'de> {
-    Deserialize::deserialize(d)
-        .map(|x: Option<_>| {
-            x.unwrap_or_else(Vec::new)
-        })
+fn parse_account_after<'de, D>(d: D) -> Result<Vec<crate::l2_types::AccountProofWrapper>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or_default())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -507,7 +509,7 @@ pub struct ResultGethPrestateTraces(pub Vec<ResultGethPrestateTrace>);
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub struct ResultGethPrestateTrace {
-//    pub txHash: H256,
+    //    pub txHash: H256,
     pub result: HashMap<Address, GethPrestateTrace>,
 }
 

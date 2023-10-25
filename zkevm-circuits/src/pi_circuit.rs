@@ -94,9 +94,9 @@ pub struct PublicData {
     /// Max number of supported calldata bytes
     pub max_calldata: usize,
     /// Max number of supported inner blocks in a chunk
-    pub max_inner_blocks: usize,    
+    pub max_inner_blocks: usize,
 }
- 
+
 // impl Default for PublicData {
 //     fn default() -> Self {
 //         PublicData {
@@ -172,7 +172,7 @@ impl PublicData {
                         difficulty, block.difficulty,
                         "[block {}] DIFFICULTY const: {}, block.difficulty: {}",
                         block_num, difficulty, block.difficulty
-                    );    
+                    );
                 }
 
                 let num_all_txs = num_all_txs_in_blocks
@@ -234,15 +234,20 @@ impl PublicData {
     }
 
     fn blocks_difficulity(&self) -> Word {
-        self.block_ctxs.ctxs.first_key_value().map(|(_, blk)|blk.difficulty)
-        .unwrap_or_else(||get_difficulty_constant())
+        self.block_ctxs
+            .ctxs
+            .first_key_value()
+            .map(|(_, blk)| blk.difficulty)
+            .unwrap_or_else(get_difficulty_constant)
     }
 
     fn blocks_coinbase(&self) -> Address {
-        self.block_ctxs.ctxs.first_key_value().map(|(_, blk)|blk.coinbase)
-        .unwrap_or_else(||get_coinbase_constant())        
-    }    
-
+        self.block_ctxs
+            .ctxs
+            .first_key_value()
+            .map(|(_, blk)| blk.coinbase)
+            .unwrap_or_else(get_coinbase_constant)
+    }
 }
 
 impl BlockContext {
@@ -258,7 +263,7 @@ impl BlockContext {
             history_hashes: vec![],
             eth_block: Default::default(),
         }
-    }  
+    }
 }
 
 impl Default for BlockContext {
@@ -700,8 +705,8 @@ impl<F: Field> PiCircuitConfig<F> {
         ///////  assign data bytes ////////
         ///////////////////////////////////
         let data_bytes_start_row = 0;
-        let data_bytes_end_row =
-        public_data.max_inner_blocks * BLOCK_HEADER_BYTES_NUM + public_data.max_txs * KECCAK_DIGEST_SIZE;
+        let data_bytes_end_row = public_data.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+            + public_data.max_txs * KECCAK_DIGEST_SIZE;
         self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
         // assign block contexts
         for (i, block) in block_values
@@ -771,7 +776,10 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        debug_assert_eq!(offset, 1 + BLOCK_HEADER_BYTES_NUM * public_data.max_inner_blocks);
+        debug_assert_eq!(
+            offset,
+            1 + BLOCK_HEADER_BYTES_NUM * public_data.max_inner_blocks
+        );
 
         // assign tx hashes
         let q_tx_hashes_start_row = offset;
@@ -1364,15 +1372,17 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut cum_num_txs = 0usize;
         let mut block_value_cells = vec![];
         let block_ctxs = &public_data.block_ctxs;
-        let num_all_txs_in_blocks = public_data.get_num_all_txs();         
+        let num_all_txs_in_blocks = public_data.get_num_all_txs();
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
             (block_ctxs.ctxs.len()..public_data.max_inner_blocks)
                 .into_iter()
-                .map(|_| BlockContext::padding(
-                    public_data.chain_id, 
-                    public_data.blocks_difficulity(),
-                    public_data.blocks_coinbase()),
-                ),
+                .map(|_| {
+                    BlockContext::padding(
+                        public_data.chain_id,
+                        public_data.blocks_difficulity(),
+                        public_data.blocks_coinbase(),
+                    )
+                }),
         ) {
             let num_txs = public_data
                 .transactions
@@ -1511,7 +1521,7 @@ impl<F: Field> PiCircuit<F> {
         let public_data = PublicData {
             max_txs,
             max_calldata,
-            max_inner_blocks,            
+            max_inner_blocks,
             chain_id,
             start_l1_queue_index: block.start_l1_queue_index,
             transactions: block.txs.clone(),
@@ -1667,11 +1677,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     .borrow()
                     .clone()
                     .expect("tx_value_cells must have been set");
-                let block_value_cells = config.assign_block_table(
-                    &mut region,
-                    &self.public_data,
-                    challenges,
-                )?;
+                let block_value_cells =
+                    config.assign_block_table(&mut region, &self.public_data, challenges)?;
                 // assign pi cols
                 let (inst_byte_cells, conn) = config.assign(
                     &mut region,

@@ -153,9 +153,9 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
     fn new(
         meta: &mut ConstraintSystem<Fr>,
         Self::ConfigArgs {
-            max_txs,
-            max_calldata,
-            max_inner_blocks,
+            max_txs: _,
+            max_calldata: _,
+            max_inner_blocks: _,
             mock_randomness: _mock_randomness,
             challenges,
         }: Self::ConfigArgs,
@@ -707,8 +707,10 @@ impl<
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        let mut dummy_block = Block::<Fr>::default();
-        dummy_block.circuits_params = self.circuit_params;
+        let dummy_block = Block::<Fr> {
+            circuits_params: self.circuit_params,
+            ..Default::default()
+        };
         Self::new_from_block(&dummy_block)
     }
 

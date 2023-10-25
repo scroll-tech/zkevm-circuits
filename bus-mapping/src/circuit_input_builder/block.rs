@@ -338,7 +338,6 @@ impl Block {
         self.relax_mode = true;
         self
     }
-
 }
 
 impl Block {

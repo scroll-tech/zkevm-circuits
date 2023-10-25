@@ -21,7 +21,7 @@ use crate::{
     precompile::is_precompiled,
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
-    util::{KECCAK_CODE_HASH_EMPTY, hash_code_keccak},
+    util::{hash_code_keccak, KECCAK_CODE_HASH_EMPTY},
 };
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
@@ -308,7 +308,7 @@ impl<'a> CircuitInputBuilder {
                         tx.hash
                     );
                     break;
-                }else {
+                } else {
                     log::error!(
                         "tx num overflow, MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
                         self.block.circuits_params.max_txs,
@@ -316,7 +316,7 @@ impl<'a> CircuitInputBuilder {
                         tx.transaction_index.unwrap_or_default(),
                         tx.hash
                     );
-                    return Err(Error::InternalError("tx num overflow"));    
+                    return Err(Error::InternalError("tx num overflow"));
                 }
             }
             let geth_trace = &geth_traces[tx_index];
@@ -1122,10 +1122,12 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     }
 
     /// Yet-another Step 3. Get the account state and codes from pre-state tracing
-    /// the account state is limited since proof is not included, 
+    /// the account state is limited since proof is not included,
     /// but it is enough to build the sdb/cdb
-    pub async fn get_pre_state(&self, eth_block: &EthBlock) 
-    -> Result<
+    pub async fn get_pre_state(
+        &self,
+        eth_block: &EthBlock,
+    ) -> Result<
         (
             Vec<eth_types::EIP1186ProofResponse>,
             HashMap<Address, Vec<u8>>,
@@ -1141,15 +1143,15 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             )
             .await?;
 
-        let mut account_set = HashMap::<Address, (eth_types::EIP1186ProofResponse, HashMap<Word, Word>)>::new();
+        let mut account_set =
+            HashMap::<Address, (eth_types::EIP1186ProofResponse, HashMap<Word, Word>)>::new();
         let mut code_set = HashMap::new();
 
         for trace in traces.into_iter() {
-            for (addr, prestate) in trace.into_iter()
-            {
-                let (_, storages) = account_set.entry(addr)
-                .or_insert_with(||{
-                    let code_size = Word::from(prestate.code.as_ref().map(|bt|bt.len()).unwrap_or(0));
+            for (addr, prestate) in trace.into_iter() {
+                let (_, storages) = account_set.entry(addr).or_insert_with(|| {
+                    let code_size =
+                        Word::from(prestate.code.as_ref().map(|bt| bt.len()).unwrap_or(0));
                     let (code_hash, keccak_code_hash) = if let Some(bt) = prestate.code {
                         let h = CodeDB::hash(&bt);
                         // only require for L2
@@ -1163,18 +1165,18 @@ impl<P: JsonRpcClient> BuilderClient<P> {
                     } else {
                         (CodeDB::empty_code_hash(), *KECCAK_CODE_HASH_EMPTY)
                     };
-    
+
                     (
-                    eth_types::EIP1186ProofResponse {
-                        address: addr,
-                        balance: prestate.balance.unwrap_or_default(),
-                        nonce: prestate.nonce.unwrap_or_default().into(),
-                        code_hash,
-                        keccak_code_hash,
-                        code_size,
-                        ..Default::default()
-                    },
-                    HashMap::new(),
+                        eth_types::EIP1186ProofResponse {
+                            address: addr,
+                            balance: prestate.balance.unwrap_or_default(),
+                            nonce: prestate.nonce.unwrap_or_default().into(),
+                            code_hash,
+                            keccak_code_hash,
+                            code_size,
+                            ..Default::default()
+                        },
+                        HashMap::new(),
                     )
                 });
 
@@ -1187,29 +1189,40 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         }
 
         // a hacking? since the coinbase address is not touch in prestate
-        let coinbase_addr = eth_block.author
+        let coinbase_addr = eth_block
+            .author
             .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
-        let block_num = eth_block.number
+        let block_num = eth_block
+            .number
             .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
-        assert_ne!(block_num.as_u64(), 0, "is not expected to access genesis block");
-        if !account_set.contains_key(&coinbase_addr) {
+        assert_ne!(
+            block_num.as_u64(),
+            0,
+            "is not expected to access genesis block"
+        );
+        if let std::collections::hash_map::Entry::Vacant(e) = account_set.entry(coinbase_addr) {
             let coinbase_proof = self
-            .cli
-            .get_proof(coinbase_addr, Vec::new(), (block_num - 1).into())
-            .await?;
-            account_set.insert(coinbase_addr, (coinbase_proof, HashMap::new()));
+                .cli
+                .get_proof(coinbase_addr, Vec::new(), (block_num - 1).into())
+                .await?;
+            e.insert((coinbase_proof, HashMap::new()));
         }
 
         Ok((
-            account_set.into_iter()
-            .map(|(_, (mut acc_resp, storage_proofs))|{
-                acc_resp.storage_proof = 
-                    storage_proofs.into_iter()
-                    .map(|(key,value)|eth_types::StorageProof{key, value, ..Default::default()})
-                    .collect();
-                acc_resp
-            })
-            .collect::<Vec<_>>(),
+            account_set
+                .into_iter()
+                .map(|(_, (mut acc_resp, storage_proofs))| {
+                    acc_resp.storage_proof = storage_proofs
+                        .into_iter()
+                        .map(|(key, value)| eth_types::StorageProof {
+                            key,
+                            value,
+                            ..Default::default()
+                        })
+                        .collect();
+                    acc_resp
+                })
+                .collect::<Vec<_>>(),
             code_set,
         ))
     }

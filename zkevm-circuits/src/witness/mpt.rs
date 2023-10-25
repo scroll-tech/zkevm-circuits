@@ -8,8 +8,7 @@ use itertools::Itertools;
 use mpt_zktrie::{
     mpt_circuits::{serde::SMTTrace, MPTProofType},
     state,
-    state::witness::WitnessGenerator,
-    state::builder::HASH_SCHEME_DONE,
+    state::{builder::HASH_SCHEME_DONE, witness::WitnessGenerator},
 };
 use serde::{Deserialize, Serialize};
 pub use state::ZktrieState;
@@ -137,32 +136,34 @@ impl MptUpdates {
         let mut storage_touched = std::collections::HashSet::<(&Address, &Word)>::new();
         for (key, update) in &mut self.updates {
             // we should only handle the storage key occur for the first time
-            if let Key::AccountStorage { storage_key, address, ..} = key {
-                if !storage_touched.insert((address, storage_key)){
+            if let Key::AccountStorage {
+                storage_key,
+                address,
+                ..
+            } = key
+            {
+                if !storage_touched.insert((address, storage_key)) {
                     continue;
                 }
-            }            
+            }
             let key = key.set_non_exists(Word::zero(), update.old_value);
-            wit_gen
-                .handle_new_state(
-                    update.proof_type(),
-                    match key {
-                        Key::Account { address, .. } | Key::AccountStorage { address, .. } => {
-                            address
-                        }
-                    },
-                    update.old_value,
-                    Word::zero(),
-                    match key {
-                        Key::Account { .. } => None,
-                        Key::AccountStorage { storage_key, .. } => Some(storage_key),
-                    },
-                );
+            wit_gen.handle_new_state(
+                update.proof_type(),
+                match key {
+                    Key::Account { address, .. } | Key::AccountStorage { address, .. } => address,
+                },
+                update.old_value,
+                Word::zero(),
+                match key {
+                    Key::Account { .. } => None,
+                    Key::AccountStorage { storage_key, .. } => Some(storage_key),
+                },
+            );
         }
         self.old_root = U256::from_big_endian(wit_gen.root().as_bytes());
         self.fill_state_roots_from_generator(wit_gen);
         log::debug!("mocking fill_state_roots done");
-        self.pretty_print();        
+        self.pretty_print();
     }
 
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {

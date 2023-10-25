@@ -15,15 +15,11 @@ pub struct PiTestCircuit<
     const MAX_INNER_BLOCKS: usize,
 >(pub PiCircuit<F>);
 
-
-impl<
-F: Field,
-const MAX_TXS: usize,
-const MAX_CALLDATA: usize,
-const MAX_INNER_BLOCKS: usize,
-> Default for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS> {
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
+    Default for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
+{
     fn default() -> Self {
-        Self (PiCircuit::<F> {
+        Self(PiCircuit::<F> {
             public_data: PublicData {
                 max_txs: MAX_TXS,
                 max_calldata: MAX_CALLDATA,
@@ -42,7 +38,6 @@ const MAX_INNER_BLOCKS: usize,
         })
     }
 }
-
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
     SubCircuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
