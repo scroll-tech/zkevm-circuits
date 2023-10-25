@@ -226,14 +226,25 @@ impl PublicData {
 
         H256(pi_hash)
     }
+
+    fn blocks_difficulity(&self) -> Word {
+        self.block_ctxs.ctxs.first_key_value().map(|(_, blk)|blk.difficulty)
+        .unwrap_or_else(||get_difficulty_constant())
+    }
+
+    fn blocks_coinbase(&self) -> Address {
+        self.block_ctxs.ctxs.first_key_value().map(|(_, blk)|blk.coinbase)
+        .unwrap_or_else(||get_coinbase_constant())        
+    }    
+
 }
 
 impl BlockContext {
-    fn padding(chain_id: u64) -> Self {
+    fn padding(chain_id: u64, difficulty: Word, coinbase: Address) -> Self {
         Self {
             chain_id,
-            coinbase: get_coinbase_constant(),
-            difficulty: get_difficulty_constant(),
+            coinbase,
+            difficulty,
             gas_limit: 0,
             number: Default::default(),
             timestamp: Default::default(),
@@ -241,12 +252,12 @@ impl BlockContext {
             history_hashes: vec![],
             eth_block: Default::default(),
         }
-    }
+    }  
 }
 
 impl Default for BlockContext {
     fn default() -> Self {
-        Self::padding(0)
+        Self::padding(0, get_difficulty_constant(), get_coinbase_constant())
     }
 }
 
@@ -685,6 +696,8 @@ impl<F: Field> PiCircuitConfig<F> {
             .map(|tx| tx.hash)
             .collect::<Vec<H256>>();
         let num_all_txs_in_blocks = public_data.get_num_all_txs();
+        let blocks_coinbase = public_data.blocks_coinbase();
+        let blocks_difficulity = public_data.blocks_difficulity();
 
         let mut offset = 0;
         let mut block_copy_cells = vec![];
@@ -711,7 +724,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .chain(
                 (block_values.ctxs.len()..self.max_inner_blocks)
                     .into_iter()
-                    .map(|_| BlockContext::padding(chain_id)),
+                    .map(|_| BlockContext::padding(chain_id, blocks_difficulity, blocks_coinbase)),
             )
             .enumerate()
         {
@@ -1040,14 +1053,6 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // pick coinbase and difficulity from block (they have been verified to be equal
         // to the preset), so things would also work under relaxed mode
-
-        let (blocks_coinbase, blocks_difficulity) = 
-            block_values.ctxs.first_key_value().map(|(_, blk)|{
-                (blk.coinbase, blk.difficulty)
-            }).unwrap_or_else(||{
-                (get_coinbase_constant(), get_difficulty_constant())  
-            });
-
         let cells = self.assign_field_in_pi_ext(
             region,
             &mut offset,
@@ -1373,11 +1378,15 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut cum_num_txs = 0usize;
         let mut block_value_cells = vec![];
         let block_ctxs = &public_data.block_ctxs;
-        let num_all_txs_in_blocks = public_data.get_num_all_txs();
+        let num_all_txs_in_blocks = public_data.get_num_all_txs();         
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
             (block_ctxs.ctxs.len()..max_inner_blocks)
                 .into_iter()
-                .map(|_| BlockContext::padding(public_data.chain_id)),
+                .map(|_| BlockContext::padding(
+                    public_data.chain_id, 
+                    public_data.blocks_difficulity(),
+                    public_data.blocks_coinbase()),
+                ),
         ) {
             let num_txs = public_data
                 .transactions
