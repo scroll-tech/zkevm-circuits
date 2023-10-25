@@ -23,6 +23,29 @@ use eth_types::l2_types::BlockTrace;
 use eth_types::{address, bytecode, word, Bytecode, ToWord, Word};
 
 #[test]
+fn super_circuit_created_from_dummy_block() {
+    let dummy_block = Block::<Fr> {
+        circuits_params: CircuitsParams {
+            max_rws: 4_000_000,
+            max_copy_rows: 0, // dynamic
+            max_txs: 10,
+            max_calldata: 2_000_000,
+            max_inner_blocks: 8,
+            max_bytecode: 3_000_000,
+            max_mpt_rows: 2_000_000,
+            max_poseidon_rows: 4_000_000,
+            max_keccak_rows: 0,
+            max_exp_steps: 100_000,
+            max_evm_rows: 0,
+            max_rlp_rows: 2_070_000,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let _circuit = SuperCircuit::<Fr, 128, 2_000_000, 64, 0x1000>::new_from_block(&dummy_block);
+}
+
+#[test]
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
     SuperCircuit::<Fr, 1, 32, 64, 0x100>::configure(&mut cs);
