@@ -89,21 +89,27 @@ pub struct PublicData {
     pub next_state_root: Hash,
     /// Withdraw Trie Root
     pub withdraw_trie_root: Hash,
+    /// Max number of supported transactions
+    pub max_txs: usize,
+    /// Max number of supported calldata bytes
+    pub max_calldata: usize,
+    /// Max number of supported inner blocks in a chunk
+    pub max_inner_blocks: usize,    
 }
-
-impl Default for PublicData {
-    fn default() -> Self {
-        PublicData {
-            chain_id: 0,
-            start_l1_queue_index: 0,
-            transactions: vec![],
-            prev_state_root: H256::zero(),
-            next_state_root: H256::zero(),
-            withdraw_trie_root: H256::zero(),
-            block_ctxs: Default::default(),
-        }
-    }
-}
+ 
+// impl Default for PublicData {
+//     fn default() -> Self {
+//         PublicData {
+//             chain_id: 0,
+//             start_l1_queue_index: 0,
+//             transactions: vec![],
+//             prev_state_root: H256::zero(),
+//             next_state_root: H256::zero(),
+//             withdraw_trie_root: H256::zero(),
+//             block_ctxs: Default::default(),
+//         }
+//     }
+// }
 
 impl PublicData {
     // Return num of all txs in each block (taking skipped l1 msgs into account)
@@ -264,13 +270,6 @@ impl Default for BlockContext {
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field> {
-    /// Max number of supported transactions
-    max_txs: usize,
-    /// Max number of supported calldata bytes
-    max_calldata: usize,
-    /// Max number of supported inner blocks in a chunk
-    max_inner_blocks: usize,
-
     /// dedicated column to store the difficulty, coinbase constants
     constant: Column<Fixed>,
 
@@ -312,12 +311,6 @@ pub struct PiCircuitConfig<F: Field> {
 
 /// Circuit configuration arguments
 pub struct PiCircuitConfigArgs<F: Field> {
-    /// Max number of supported transactions
-    pub max_txs: usize,
-    /// Max number of supported calldata bytes
-    pub max_calldata: usize,
-    /// Max number of supported blocks in a chunk
-    pub max_inner_blocks: usize,
     /// TxTable
     pub tx_table: TxTable,
     /// BlockTable
@@ -335,9 +328,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
     fn new(
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
-            max_txs,
-            max_calldata,
-            max_inner_blocks,
             block_table,
             tx_table,
             keccak_table,
@@ -635,9 +625,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         );
 
         Self {
-            max_txs,
-            max_calldata,
-            max_inner_blocks,
             block_table,
             tx_table,
             keccak_table,
@@ -714,7 +701,7 @@ impl<F: Field> PiCircuitConfig<F> {
         ///////////////////////////////////
         let data_bytes_start_row = 0;
         let data_bytes_end_row =
-            self.max_inner_blocks * BLOCK_HEADER_BYTES_NUM + self.max_txs * KECCAK_DIGEST_SIZE;
+        public_data.max_inner_blocks * BLOCK_HEADER_BYTES_NUM + public_data.max_txs * KECCAK_DIGEST_SIZE;
         self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
         // assign block contexts
         for (i, block) in block_values
@@ -722,7 +709,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .values()
             .cloned()
             .chain(
-                (block_values.ctxs.len()..self.max_inner_blocks)
+                (block_values.ctxs.len()..public_data.max_inner_blocks)
                     .into_iter()
                     .map(|_| BlockContext::padding(chain_id, blocks_difficulity, blocks_coinbase)),
             )
@@ -773,7 +760,7 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         let q_block_context_start_row = 1;
-        let q_block_context_end_row = 1 + BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks;
+        let q_block_context_end_row = 1 + BLOCK_HEADER_BYTES_NUM * public_data.max_inner_blocks;
         for i in q_block_context_start_row..q_block_context_end_row {
             // assign q_block_context
             region.assign_fixed(
@@ -784,18 +771,18 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        debug_assert_eq!(offset, 1 + BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks);
+        debug_assert_eq!(offset, 1 + BLOCK_HEADER_BYTES_NUM * public_data.max_inner_blocks);
 
         // assign tx hashes
         let q_tx_hashes_start_row = offset;
-        let q_tx_hashes_end_row = q_tx_hashes_start_row + KECCAK_DIGEST_SIZE * self.max_txs;
+        let q_tx_hashes_end_row = q_tx_hashes_start_row + KECCAK_DIGEST_SIZE * public_data.max_txs;
         let num_txs = tx_hashes.len();
         let mut data_bytes_rlc = None;
         let mut data_bytes_length = None;
         for (i, tx_hash) in tx_hashes
             .into_iter()
             .chain(
-                (0..self.max_txs - num_txs)
+                (0..public_data.max_txs - num_txs)
                     .into_iter()
                     .map(|_| dummy_tx_hash),
             )
@@ -816,7 +803,7 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
             tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
 
-            if i == self.max_txs - 1 {
+            if i == public_data.max_txs - 1 {
                 data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
                 data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
             }
@@ -898,14 +885,14 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         let chain_id_cell = cells[RPI_CELL_IDX].clone();
         // copy chain_id to block table
-        for block_idx in 0..self.max_inner_blocks {
+        for block_idx in 0..public_data.max_inner_blocks {
             region.constrain_equal(
                 chain_id_cell.cell(),
                 block_value_cells[block_idx * BLOCK_LEN + CHAIN_ID_OFFSET].cell(),
             )?;
         }
         // copy chain_id to tx table
-        for tx_id in 0..self.max_txs {
+        for tx_id in 0..public_data.max_txs {
             region.constrain_equal(
                 chain_id_cell.cell(),
                 tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1].cell(),
@@ -1086,7 +1073,7 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // copy to block table
-        for block_idx in 0..self.max_inner_blocks {
+        for block_idx in 0..public_data.max_inner_blocks {
             region.constrain_equal(
                 coinbase_cell.cell(),
                 block_value_cells[BLOCK_LEN * block_idx + COINBASE_OFFSET].cell(),
@@ -1100,8 +1087,8 @@ impl<F: Field> PiCircuitConfig<F> {
         assert_eq!(
             offset,
             // for data bytes start row
-            1 + self.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
-                + self.max_txs * KECCAK_DIGEST_SIZE
+            1 + public_data.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+                + public_data.max_txs * KECCAK_DIGEST_SIZE
                 + 1 // for data hash row
                 + 1 // for pi bytes start row
                 + N_BYTES_U64
@@ -1341,7 +1328,6 @@ impl<F: Field> PiCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         public_data: &PublicData,
-        max_inner_blocks: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         let mut offset = 0;
@@ -1380,7 +1366,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let block_ctxs = &public_data.block_ctxs;
         let num_all_txs_in_blocks = public_data.get_num_all_txs();         
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
-            (block_ctxs.ctxs.len()..max_inner_blocks)
+            (block_ctxs.ctxs.len()..public_data.max_inner_blocks)
                 .into_iter()
                 .map(|_| BlockContext::padding(
                     public_data.chain_id, 
@@ -1444,7 +1430,7 @@ impl<F: Field> PiCircuitConfig<F> {
                     offset,
                     || Value::known(F::from((*tag == NumTxs) as u64)),
                 )?;
-                if offset != max_inner_blocks * BLOCK_LEN {
+                if offset != public_data.max_inner_blocks * BLOCK_LEN {
                     // it's not the last row of block table
                     region.assign_fixed(
                         || "q_block_tag",
@@ -1489,11 +1475,8 @@ impl<F: Field> PiCircuitConfig<F> {
 }
 
 /// Public Inputs Circuit
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct PiCircuit<F: Field> {
-    max_txs: usize,
-    max_calldata: usize,
-    max_inner_blocks: usize,
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
 
@@ -1526,6 +1509,9 @@ impl<F: Field> PiCircuit<F> {
             );
         }
         let public_data = PublicData {
+            max_txs,
+            max_calldata,
+            max_inner_blocks,            
             chain_id,
             start_l1_queue_index: block.start_l1_queue_index,
             transactions: block.txs.clone(),
@@ -1537,9 +1523,6 @@ impl<F: Field> PiCircuit<F> {
 
         Self {
             public_data,
-            max_txs,
-            max_calldata,
-            max_inner_blocks,
             _marker: PhantomData,
             connections: Default::default(),
             tx_value_cells: RefCell::new(None),
@@ -1687,7 +1670,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let block_value_cells = config.assign_block_table(
                     &mut region,
                     &self.public_data,
-                    self.max_inner_blocks,
                     challenges,
                 )?;
                 // assign pi cols

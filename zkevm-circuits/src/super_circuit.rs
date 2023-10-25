@@ -230,9 +230,6 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let pi_circuit = PiCircuitConfig::new(
             meta,
             PiCircuitConfigArgs {
-                max_txs,
-                max_calldata,
-                max_inner_blocks,
                 block_table: block_table.clone(),
                 keccak_table: keccak_table.clone(),
                 tx_table: tx_table.clone(),
@@ -412,7 +409,7 @@ pub struct SubcircuitRowUsage {
 }
 
 /// The Super Circuit contains all the zkEVM circuits
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct SuperCircuit<
     F: Field,
     const MAX_TXS: usize,
@@ -449,6 +446,8 @@ pub struct SuperCircuit<
     /// Mpt Circuit
     #[cfg(feature = "zktrie")]
     pub mpt_circuit: MptCircuit<F>,
+
+    circuit_params: CircuitsParams,
 }
 
 impl<
@@ -590,6 +589,7 @@ impl<
             ecc_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
+            circuit_params: block.circuits_params,
         }
     }
 
@@ -707,7 +707,9 @@ impl<
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        Self::default()
+        let mut dummy_block = Block::<Fr>::default();
+        dummy_block.circuits_params = self.circuit_params;
+        Self::new_from_block(&dummy_block)
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
