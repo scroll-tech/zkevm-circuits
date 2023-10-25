@@ -509,7 +509,8 @@ pub struct ResultGethPrestateTraces(pub Vec<ResultGethPrestateTrace>);
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub struct ResultGethPrestateTrace {
-    //    pub txHash: H256,
+    #[serde(rename = "txHash", default)]
+    pub tx_hash: H256,
     pub result: HashMap<Address, GethPrestateTrace>,
 }
 
