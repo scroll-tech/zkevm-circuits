@@ -1139,14 +1139,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let traces = if let Some(tx_hash) = tx_hash {
             vec![self.cli.trace_tx_prestate_by_hash(tx_hash).await?]
         } else {
-            self
-            .cli
-            .trace_block_prestate_by_hash(
-                eth_block
-                    .hash
-                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-            )
-            .await?
+            self.cli
+                .trace_block_prestate_by_hash(
+                    eth_block
+                        .hash
+                        .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+                )
+                .await?
         };
 
         let mut account_set =

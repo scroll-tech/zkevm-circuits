@@ -179,7 +179,10 @@ impl<P: JsonRpcClient> GethClient<P> {
     }
 
     /// Call `debug_traceTransaction` use prestateTracer to get prestate
-    pub async fn trace_tx_prestate_by_hash(&self, hash: H256) -> Result<HashMap<Address, GethPrestateTrace>, Error> {
+    pub async fn trace_tx_prestate_by_hash(
+        &self,
+        hash: H256,
+    ) -> Result<HashMap<Address, GethPrestateTrace>, Error> {
         let hash = serialize(&hash);
         let cfg = serialize(&serde_json::json! ({
             "tracer": "prestateTracer",
