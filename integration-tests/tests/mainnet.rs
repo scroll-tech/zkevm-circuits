@@ -73,7 +73,7 @@ async fn test_mock_prove_tx() {
     };
 
     let cli = BuilderClient::new(cli, params).await.unwrap();
-    let builder = cli.gen_inputs_tx(tx_id).await.unwrap();
+    let builder = cli.gen_inputs_tx(tx_id).await.unwrap().enable_relax_mode();
 
     if builder.block.txs.is_empty() {
         log::info!("skip empty block");

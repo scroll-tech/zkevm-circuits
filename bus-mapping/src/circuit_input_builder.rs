@@ -1124,9 +1124,11 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     /// Yet-another Step 3. Get the account state and codes from pre-state tracing
     /// the account state is limited since proof is not included,
     /// but it is enough to build the sdb/cdb
+    /// if a hash for tx is provided, would return the prestate for this tx
     pub async fn get_pre_state(
         &self,
         eth_block: &EthBlock,
+        tx_hash: Option<H256>,
     ) -> Result<
         (
             Vec<eth_types::EIP1186ProofResponse>,
@@ -1134,14 +1136,18 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ),
         Error,
     > {
-        let traces = self
+        let traces = if let Some(tx_hash) = tx_hash {
+            vec![self.cli.trace_tx_prestate_by_hash(tx_hash).await?]
+        } else {
+            self
             .cli
             .trace_block_prestate_by_hash(
                 eth_block
                     .hash
                     .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             )
-            .await?;
+            .await?
+        };
 
         let mut account_set =
             HashMap::<Address, (eth_types::EIP1186ProofResponse, HashMap<Word, Word>)>::new();
@@ -1294,7 +1300,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
         //let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
-        let (proofs, codes) = self.get_pre_state(&eth_block).await?;
+        let (proofs, codes) = self.get_pre_state(&eth_block, None).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         if eth_block.transactions.len() > self.circuits_params.max_txs {
             log::error!(
@@ -1352,7 +1358,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         let mut tx: eth_types::Transaction = self.cli.get_tx_by_hash(tx_hash).await?;
         tx.transaction_index = Some(0.into());
-        let geth_traces = self.cli.trace_tx_by_hash(tx_hash).await?;
+        let geth_trace = self.cli.trace_tx_by_hash(tx_hash).await?;
         let mut eth_block = self
             .cli
             .get_block_by_number(tx.block_number.unwrap().into())
@@ -1360,32 +1366,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         eth_block.transactions = vec![tx.clone()];
 
-        let mut block_access_trace = vec![Access::new(
-            None,
-            RW::WRITE,
-            AccessValue::Account {
-                address: eth_block.author.unwrap(),
-            },
-        )];
-        let geth_trace = &geth_traces[0];
-        let tx_access_trace = gen_state_access_trace(
-            &eth_types::Block::<eth_types::Transaction>::default(),
-            &tx,
-            geth_trace,
-        )?;
-        block_access_trace.extend(tx_access_trace);
-
-        let access_set = AccessSet::from(block_access_trace);
-
-        let (proofs, codes) = self
-            .get_state(tx.block_number.unwrap().as_u64(), access_set)
-            .await?;
+        let (proofs, codes) = self.get_pre_state(&eth_block, Some(tx_hash)).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(
             state_db,
             code_db,
             &eth_block,
-            &geth_traces,
+            &[geth_trace],
             Default::default(),
             Default::default(),
         )?;
