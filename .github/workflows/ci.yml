@@ -119,7 +119,7 @@ jobs:
       - name: Run light tests # light tests are run in parallel
         run: cargo test --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
       - name: Run heavy tests
-        run: cargo test --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored
+        run: cargo test --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored --test-threads 1
       - name: Run parallel assignment tests(bytecode)
         run: cargo test --release --package zkevm-circuits --lib bytecode_circuit::test --features scroll,parallel_syn -- --nocapture
       - name: Run parallel assignment tests(state)
