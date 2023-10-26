@@ -57,18 +57,18 @@ async fn test_mock_prove_tx() {
     }
     let cli = get_client();
     let params = CircuitsParams {
-        max_rws: 4_000_000,
-        max_copy_rows: 0, // dynamic
+        max_rws: 100_000,
+        max_copy_rows: 100_000, // dynamic
         max_txs: 10,
-        max_calldata: 2_000_000,
+        max_calldata: 40_000,
         max_inner_blocks: 8,
-        max_bytecode: 3_000_000,
-        max_mpt_rows: 2_000_000,
-        max_poseidon_rows: 4_000_000,
+        max_bytecode: 100_000,
+        max_mpt_rows: 40_000,
+        max_poseidon_rows: 100_000,
         max_keccak_rows: 0,
-        max_exp_steps: 100_000,
+        max_exp_steps: 5_000,
         max_evm_rows: 0,
-        max_rlp_rows: 2_070_000,
+        max_rlp_rows: 42_000,
         ..Default::default()
     };
 
@@ -136,7 +136,7 @@ fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
     } else if *CIRCUIT == "bytecode" {
         test_with::<BytecodeCircuit<Fr>>(block)
     } else if *CIRCUIT == "super" {
-        test_with::<SuperCircuit<Fr, 128, 2_000_000, 64, 0x1000>>(block)
+        test_with::<SuperCircuit<Fr, 350, 2_000_000, 64, 0x1000>>(block)
     } else {
         unimplemented!()
     };
