@@ -37,6 +37,10 @@ pub(crate) struct GethLoggerConfig {
     /// enable return data capture
     #[serde(rename = "EnableReturnData")]
     enable_return_data: bool,
+    /// enable return data capture
+    #[serde(rename = "timeout")]
+    timeout: Option<String>,
+
 }
 
 impl Default for GethLoggerConfig {
@@ -46,6 +50,7 @@ impl Default for GethLoggerConfig {
             disable_stack: false,
             disable_storage: false,
             enable_return_data: true,
+            timeout: None,
         }
     }
 }
@@ -137,7 +142,10 @@ impl<P: JsonRpcClient> GethClient<P> {
         block_num: BlockNumber,
     ) -> Result<Vec<GethExecTrace>, Error> {
         let num = serialize(&block_num);
-        let cfg = serialize(&GethLoggerConfig::default());
+        let cfg = serialize(&GethLoggerConfig{
+            timeout: Some("300s".to_string()),
+            ..Default::default()
+        });
         let resp: ResultGethExecTraces = self
             .0
             .request("debug_traceBlockByNumber", [num, cfg])
@@ -169,6 +177,7 @@ impl<P: JsonRpcClient> GethClient<P> {
         let hash = serialize(&hash);
         let cfg = serialize(&serde_json::json! ({
             "tracer": "prestateTracer",
+            "timeout": "300s",
         }));
         let resp: ResultGethPrestateTraces = self
             .0
