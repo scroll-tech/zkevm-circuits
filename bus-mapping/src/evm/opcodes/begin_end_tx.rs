@@ -236,7 +236,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
             log::warn!(
                 "fix deployment nonce for {:?} silently for the prestate tracer",
                 call.address,
-            );            
+            );
             let mut fixed_account = callee_account.clone();
             fixed_account.nonce = Word::zero();
             state.sdb.set_account(&call.address, fixed_account);

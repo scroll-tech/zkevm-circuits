@@ -40,7 +40,6 @@ pub(crate) struct GethLoggerConfig {
     /// enable return data capture
     #[serde(rename = "timeout")]
     timeout: Option<String>,
-
 }
 
 impl Default for GethLoggerConfig {
@@ -142,7 +141,7 @@ impl<P: JsonRpcClient> GethClient<P> {
         block_num: BlockNumber,
     ) -> Result<Vec<GethExecTrace>, Error> {
         let num = serialize(&block_num);
-        let cfg = serialize(&GethLoggerConfig{
+        let cfg = serialize(&GethLoggerConfig {
             timeout: Some("300s".to_string()),
             ..Default::default()
         });
