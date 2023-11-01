@@ -98,10 +98,16 @@ pub struct Call {
     pub last_callee_return_data_length: u64,
     /// last callee's memory
     pub last_callee_memory: Memory,
-    /// reversion_ops
-    pub reversion_ops: Vec<OperationRef>,
+    /// reversion_ops or callee in time order
+    pub operations: Vec<TimeOrder>,
     /// callee
     pub callee_stack: Vec<Call>,
+}
+
+#[derive(Clone, Debug)]
+pub enum TimeOrder {
+    ReversionOp((usize, OperationRef)),
+    Callee,
 }
 
 impl Call {
@@ -152,6 +158,17 @@ impl Call {
             self.set_is_persistent(true);
         }
         self.is_success = Some(is_success);
+    }
+
+    /// Push reversion op
+    pub fn push_reversion_op(&mut self, op: (usize, OperationRef)) {
+        self.operations.push(TimeOrder::ReversionOp(op));
+    }
+
+    /// Push callee
+    pub fn push_callee(&mut self, callee: Call) {
+        self.operations.push(TimeOrder::Callee);
+        self.callee_stack.push(callee);
     }
 
     /// This call is call with op DELEGATECALL

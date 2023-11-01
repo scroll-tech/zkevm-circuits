@@ -109,7 +109,7 @@ fn mock_internal_create() -> Call {
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
         last_callee_memory: Memory::default(),
-        reversion_ops: vec![],
+        operations: vec![],
         callee_stack: vec![],
     }
 }
@@ -138,7 +138,7 @@ fn mock_root_create() -> Call {
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
         last_callee_memory: Memory::default(),
-        reversion_ops: vec![],
+        operations: vec![],
         callee_stack: vec![],
     }
 }
@@ -1645,7 +1645,7 @@ fn tracer_err_write_protection(is_call: bool) {
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
         last_callee_memory: Memory::default(),
-        reversion_ops: vec![],
+        operations: vec![],
         callee_stack: vec![],
     });
 

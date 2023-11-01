@@ -8,7 +8,10 @@ use super::{
 #[cfg(feature = "scroll")]
 use crate::util::KECCAK_CODE_HASH_EMPTY;
 use crate::{
-    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
+    circuit_input_builder::{
+        call::TimeOrder,
+        execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
+    },
     error::{
         get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
         InsufficientBalanceError, NonceUintOverflowError,
@@ -226,8 +229,9 @@ impl<'a> CircuitInputStateRef<'a> {
         self.call_ctx_mut()?.reversible_write_counter += 1;
         step.reversible_write_counter_delta += 1;
 
-        // Add the operation into reversible_ops\
-        self.call_mut()?.reversion_ops.push(op_ref);
+        // Add the operation into reversible_ops
+        let step_index = self.tx.steps().len();
+        self.call_mut()?.push_reversion_op((step_index, op_ref));
 
         self.check_rw_num_limit()
     }
@@ -1092,7 +1096,7 @@ impl<'a> CircuitInputStateRef<'a> {
             last_callee_return_data_offset: 0,
             last_callee_return_data_length: 0,
             last_callee_memory: Memory::default(),
-            reversion_ops: vec![],
+            operations: vec![],
             callee_stack: vec![],
         };
 
@@ -1185,38 +1189,77 @@ impl<'a> CircuitInputStateRef<'a> {
         // handled differently as the ExecSteps associated with those calls haven't yet been pushed
         // to the tx's steps.
 
-        let reversion_group = self
-            .tx_ctx
-            .reversion_groups
-            .pop()
-            .expect("reversion_groups should not be empty for non-persistent call");
+        // let reversion_group = self
+        //     .tx_ctx
+        //     .reversion_groups
+        //     .pop()
+        //     .expect("reversion_groups should not be empty for non-persistent call");
 
         // Apply reversions
-        for (step_index, op_ref) in reversion_group.op_refs.iter().rev().copied() {
-            if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                self.check_apply_op(&op);
-                let rev_op_ref = self.block.container.insert_op_enum(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    false,
-                    op,
-                );
-                let step: &mut ExecStep = if step_index >= self.tx.steps_mut().len() {
-                    // the `current_exec_steps` will be appended after self.tx.steps
-                    // So here we do an index-mapping.
-                    current_exec_steps[step_index - self.tx.steps_mut().len()]
-                } else {
-                    &mut self.tx.steps_mut()[step_index]
-                };
-                step.bus_mapping_instance.push(rev_op_ref);
-            }
-        }
+        // for (step_index, op_ref) in reversion_group.op_refs.iter().rev().copied() {
+        //     if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
+        //         self.check_apply_op(&op);
+        //         let rev_op_ref = self.block.container.insert_op_enum(
+        //             self.block_ctx.rwc.inc_pre(),
+        //             RW::WRITE,
+        //             false,
+        //             op,
+        //         );
+        //         let step: &mut ExecStep = if step_index >= self.tx.steps_mut().len() {
+        //             // the `current_exec_steps` will be appended after self.tx.steps
+        //             // So here we do an index-mapping.
+        //             current_exec_steps[step_index - self.tx.steps_mut().len()]
+        //         } else {
+        //             &mut self.tx.steps_mut()[step_index]
+        //         };
+        //         step.bus_mapping_instance.push(rev_op_ref);
+        //     }
+        // }
+        //
+        // // Set calls' `rw_counter_end_of_reversion`
+        // let rwc = self.block_ctx.rwc.0 - 1;
+        // for (call_idx, reversible_write_counter_offset) in reversion_group.calls {
+        //     self.tx.calls_mut()[call_idx].rw_counter_end_of_reversion =
+        //         rwc - reversible_write_counter_offset;
+        // }
+        // handle
+        // clone due to self mut
+        // may we can drain the `operations`
+        self.handle_call_reversion(
+            self.call().expect("call stack is empty").clone(),
+            current_exec_steps,
+        );
+    }
 
-        // Set calls' `rw_counter_end_of_reversion`
-        let rwc = self.block_ctx.rwc.0 - 1;
-        for (call_idx, reversible_write_counter_offset) in reversion_group.calls {
-            self.tx.calls_mut()[call_idx].rw_counter_end_of_reversion =
-                rwc - reversible_write_counter_offset;
+    fn handle_call_reversion(&mut self, mut call: Call, current_exec_steps: &mut [&mut ExecStep]) {
+        for op in call.operations.into_iter().rev() {
+            match op {
+                TimeOrder::ReversionOp((step_index, op_ref)) => {
+                    if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
+                        self.check_apply_op(&op);
+                        let rev_op_ref = self.block.container.insert_op_enum(
+                            self.block_ctx.rwc.inc_pre(),
+                            RW::WRITE,
+                            false,
+                            op,
+                        );
+                        let step: &mut ExecStep = if step_index >= self.tx.steps_mut().len() {
+                            // the `current_exec_steps` will be appended after self.tx.steps
+                            // So here we do an index-mapping.
+                            current_exec_steps[step_index - self.tx.steps_mut().len()]
+                        } else {
+                            &mut self.tx.steps_mut()[step_index]
+                        };
+                        step.bus_mapping_instance.push(rev_op_ref);
+                    }
+                }
+                TimeOrder::Callee => {
+                    let callee = call.callee_stack.pop().unwrap();
+                    if callee.is_success() {
+                        self.handle_call_reversion(callee, current_exec_steps);
+                    }
+                }
+            }
         }
     }
 
@@ -1318,6 +1361,8 @@ impl<'a> CircuitInputStateRef<'a> {
             caller.last_callee_return_data_length = return_data_length;
             caller.last_callee_return_data_offset = return_data_offset;
             caller.last_callee_memory = callee_memory;
+
+            caller.push_callee(call.clone());
         }
 
         self.tx_ctx.pop_call_ctx();
