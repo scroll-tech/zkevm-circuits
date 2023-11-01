@@ -4,7 +4,8 @@ use crate::{
     },
     l2_predeployed::l1_gas_price_oracle,
     operation::{
-        AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp,
+        CALL_CONTEXT_FIELD_PLACE_HOLDER, RW,
     },
     precompile::is_precompiled,
     state_db::CodeDB,
@@ -113,9 +114,9 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
         ),
         (
             CallContextField::IsPersistent,
-            (call.is_persistent as usize).into(),
+            CALL_CONTEXT_FIELD_PLACE_HOLDER,
         ),
-        (CallContextField::IsSuccess, call.is_success.to_word()),
+        (CallContextField::IsSuccess, CALL_CONTEXT_FIELD_PLACE_HOLDER),
     ] {
         state.call_context_write(&mut exec_step, call.call_id, field, value)?;
     }
@@ -378,7 +379,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
         }
     }
     log::trace!("begin_tx_step: {:?}", exec_step);
-    if is_precompile && !state.call().unwrap().is_success {
+    if is_precompile && !state.call().unwrap().is_success() {
         state.handle_reversion(&mut [&mut exec_step]);
     }
 
@@ -399,7 +400,7 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         &mut exec_step,
         call.call_id,
         CallContextField::IsPersistent,
-        Word::from(call.is_persistent as u8),
+        Word::from(call.is_persistent() as u8),
     )?;
     state.call_context_read(
         &mut exec_step,
@@ -502,7 +503,7 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::PostStateOrStatus,
-        call.is_persistent as u64,
+        call.is_persistent() as u64,
     )?;
 
     let log_id = exec_step.log_id;

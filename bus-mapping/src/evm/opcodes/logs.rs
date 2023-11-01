@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
-    operation::{CallContextField, TxLogField},
+    operation::{CallContextField, TxLogField, CALL_CONTEXT_FIELD_PLACE_HOLDER},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word};
@@ -18,11 +18,12 @@ impl Opcode for Log {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = gen_log_step(state, geth_step)?;
-        if state.call()?.is_persistent {
-            let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
-            state.push_copy(&mut exec_step, copy_event);
-            state.tx_ctx.log_id += 1;
-        }
+        // FIXME: cannot use is_persistent here, post-process needed
+        //if state.call()?.is_persistent {
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
+        state.push_copy(&mut exec_step, copy_event);
+        state.tx_ctx.log_id += 1;
+        //}
 
         // reconstruction
         let offset = geth_step.stack.nth_last(0)?;
@@ -78,19 +79,20 @@ fn gen_log_step(
         &mut exec_step,
         call_id,
         CallContextField::IsPersistent,
-        Word::from(state.call()?.is_persistent as u8),
+        CALL_CONTEXT_FIELD_PLACE_HOLDER,
     )?;
 
-    if state.call()?.is_persistent {
-        state.tx_log_write(
-            &mut exec_step,
-            state.tx_ctx.id(),
-            state.tx_ctx.log_id + 1,
-            TxLogField::Address,
-            0,
-            state.call()?.address.to_word(),
-        )?;
-    }
+    // FIXME: cannot use is_persistent here, post-process needed
+    //if state.call()?.is_persistent {
+    state.tx_log_write(
+        &mut exec_step,
+        state.tx_ctx.id(),
+        state.tx_ctx.log_id + 1,
+        TxLogField::Address,
+        0,
+        state.call()?.address.to_word(),
+    )?;
+    //}
 
     // generates topic operation dynamically
     let topic_count = match exec_step.exec_state {
@@ -106,16 +108,17 @@ fn gen_log_step(
             topic,
         )?;
 
-        if state.call()?.is_persistent {
-            state.tx_log_write(
-                &mut exec_step,
-                state.tx_ctx.id(),
-                state.tx_ctx.log_id + 1,
-                TxLogField::Topic,
-                i,
-                topic,
-            )?;
-        }
+        // FIXME: cannot use is_persistent here, post-process needed
+        //if state.call()?.is_persistent {
+        state.tx_log_write(
+            &mut exec_step,
+            state.tx_ctx.id(),
+            state.tx_ctx.log_id + 1,
+            TxLogField::Topic,
+            i,
+            topic,
+        )?;
+        //}
     }
 
     Ok(exec_step)
@@ -128,7 +131,7 @@ fn gen_copy_event(
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    assert!(state.call()?.is_persistent, "Error: Call is not persistent");
+    // assert!(state.call()?.is_persistent, "Error: Call is not persistent");
 
     // Get low Uint64 for memory start as below reference. Memory size must be
     // within range of Uint64, otherwise returns ErrGasUintOverflow.
@@ -250,7 +253,8 @@ mod log_tests {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
-        let is_persistent = builder.block.txs()[0].calls()[0].is_persistent;
+        // FIXME: cannot use is_persistent here
+        //let is_persistent = builder.block.txs()[0].calls()[0].is_persistent;
         let callee_address = builder.block.txs()[0].to;
 
         let step = builder.block.txs()[0]
@@ -320,23 +324,23 @@ mod log_tests {
         );
 
         // TODO: handle is_persistent = false conditions
-        if is_persistent {
-            assert_eq!(
-                [6].map(|idx| &builder.block.container.tx_log
-                    [step.bus_mapping_instance[idx].as_usize()])
-                    .map(|operation| (operation.rw(), operation.op())),
-                [(
-                    RW::WRITE,
-                    &TxLogOp {
-                        tx_id: 1,
-                        log_id: step.log_id + 1,
-                        field: TxLogField::Address,
-                        index: 0,
-                        value: callee_address.unwrap().to_word(),
-                    }
-                ),]
-            );
-        }
+        // if is_persistent {
+        //     assert_eq!(
+        //         [6].map(|idx| &builder.block.container.tx_log
+        //             [step.bus_mapping_instance[idx].as_usize()])
+        //             .map(|operation| (operation.rw(), operation.op())),
+        //         [(
+        //             RW::WRITE,
+        //             &TxLogOp {
+        //                 tx_id: 1,
+        //                 log_id: step.log_id + 1,
+        //                 field: TxLogField::Address,
+        //                 index: 0,
+        //                 value: callee_address.unwrap().to_word(),
+        //             }
+        //         ),]
+        //     );
+        // }
 
         // log topic writes
         let mut log_topic_ops = Vec::with_capacity(topic_count);

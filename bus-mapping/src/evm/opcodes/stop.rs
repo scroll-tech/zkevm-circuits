@@ -23,6 +23,7 @@ impl Opcode for Stop {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
+        state.call_mut()?.set_is_success(true);
         let call = state.call()?.clone();
 
         state.call_context_read(

@@ -8,7 +8,7 @@ pub use container::OperationContainer;
 pub use eth_types::evm_types::{MemoryAddress, StackAddress};
 
 use core::{cmp::Ordering, fmt, fmt::Debug};
-use eth_types::{Address, Word};
+use eth_types::{Address, Word, U256};
 use std::mem::swap;
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
@@ -682,6 +682,9 @@ pub enum CallContextField {
     /// L1Fee
     L1Fee,
 }
+
+pub const CALL_CONTEXT_FIELD_PLACE_HOLDER: U256 =
+    U256([0xCA11, 0xC0117E77_F1E1D, 0x91ACE, 0x1101DE9]);
 
 /// Represents an CallContext read/write operation.
 #[derive(Clone, PartialEq, Eq)]

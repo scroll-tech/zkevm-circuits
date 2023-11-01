@@ -93,8 +93,8 @@ fn mock_internal_create() -> Call {
         kind: CallKind::Create,
         is_static: false,
         is_root: false,
-        is_persistent: false,
-        is_success: false,
+        is_persistent: Some(false),
+        is_success: Some(false),
         rw_counter_end_of_reversion: 0,
         caller_address: *ADDR_A,
         address: *ADDR_B,
@@ -109,6 +109,8 @@ fn mock_internal_create() -> Call {
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
         last_callee_memory: Memory::default(),
+        reversion_ops: vec![],
+        callee_stack: vec![],
     }
 }
 
@@ -120,8 +122,8 @@ fn mock_root_create() -> Call {
         kind: CallKind::Create,
         is_static: false,
         is_root: true,
-        is_persistent: false,
-        is_success: false,
+        is_persistent: Some(false),
+        is_success: Some(false),
         rw_counter_end_of_reversion: 0,
         caller_address: *ADDR_A,
         address: *ADDR_B,
@@ -136,6 +138,8 @@ fn mock_root_create() -> Call {
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
         last_callee_memory: Memory::default(),
+        reversion_ops: vec![],
+        callee_stack: vec![],
     }
 }
 
@@ -1625,8 +1629,8 @@ fn tracer_err_write_protection(is_call: bool) {
         kind: CallKind::StaticCall,
         is_static: true,
         is_root: false,
-        is_persistent: false,
-        is_success: false,
+        is_persistent: Some(false),
+        is_success: Some(false),
         rw_counter_end_of_reversion: 0,
         caller_address: *ADDR_A,
         address: *ADDR_B,
@@ -1641,6 +1645,8 @@ fn tracer_err_write_protection(is_call: bool) {
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
         last_callee_memory: Memory::default(),
+        reversion_ops: vec![],
+        callee_stack: vec![],
     });
 
     assert_eq!(

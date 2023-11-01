@@ -576,7 +576,8 @@ fn dummy_gen_selfdestruct_ops(
         )?;
     }
 
-    if state.call()?.is_persistent {
+    // FIXME: is_persistent is unknown
+    if state.call()?.is_persistent.unwrap_or(true) {
         state.sdb.destruct_account(sender);
     }
 

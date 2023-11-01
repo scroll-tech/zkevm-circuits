@@ -63,7 +63,7 @@ fn common_call_ctx_reads(
     for (field, value) in [
         (
             CallContextField::IsSuccess,
-            Word::from(call.is_success as u64),
+            Word::from(call.is_success() as u64),
         ),
         (
             CallContextField::CalleeAddress,

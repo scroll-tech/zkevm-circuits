@@ -4,6 +4,7 @@ use eth_types::{
     evm_types::{Memory, OpcodeId},
     Address, Hash, Word,
 };
+use log::warn;
 
 /// Type of a *CALL*/CREATE* Function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,9 +65,9 @@ pub struct Call {
     /// This call generated implicity by a Transaction.
     pub is_root: bool,
     /// This call is persistent or call stack reverts at some point
-    pub is_persistent: bool,
+    pub is_persistent: Option<bool>,
     /// This call ends successfully or not
-    pub is_success: bool,
+    pub is_success: Option<bool>,
     /// This rw_counter at the end of reversion
     pub rw_counter_end_of_reversion: usize,
     /// Address of caller
@@ -97,6 +98,10 @@ pub struct Call {
     pub last_callee_return_data_length: u64,
     /// last callee's memory
     pub last_callee_memory: Memory,
+    /// reversion_ops
+    pub reversion_ops: Vec<OperationRef>,
+    /// callee
+    pub callee_stack: Vec<Call>,
 }
 
 impl Call {
@@ -106,9 +111,47 @@ impl Call {
         self.kind.is_create()
     }
 
-    /// ..
+    /// Get is_persistent
+    pub fn is_persistent(&self) -> bool {
+        self.is_persistent.expect("is_persistent is not set")
+    }
+
+    /// Set is_persistent
+    /// Update all callees' is_persistent
+    pub fn set_is_persistent(&mut self, is_persistent: bool) {
+        if let Some(old) = self.is_persistent {
+            warn!(
+                "is_persistent is already set for call {call_id}, old: {old}, new: {is_persistent}",
+                call_id = self.call_id
+            )
+        }
+        if !is_persistent {
+            for callee in &mut self.callee_stack {
+                callee.set_is_persistent(false);
+            }
+        }
+        self.is_persistent = Some(is_persistent);
+    }
+
+    /// Get is_success
     pub fn is_success(&self) -> bool {
-        self.is_success
+        self.is_success.expect("is_success is not set")
+    }
+
+    /// Set is_success
+    pub fn set_is_success(&mut self, is_success: bool) {
+        if let Some(old) = self.is_success {
+            warn!(
+                "is_success is already set for call {call_id}, old: {old}, new: {is_success}",
+                call_id = self.call_id
+            )
+        }
+        if !is_success {
+            self.set_is_persistent(false);
+        } else if is_success && self.is_root {
+            self.set_is_persistent(true);
+        }
+        self.is_success = Some(is_success);
     }
 
     /// This call is call with op DELEGATECALL

@@ -33,7 +33,8 @@ impl Opcode for PrecompileFailed {
         // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
-        let call = state.parse_call(geth_step)?;
+        let mut call = state.parse_call(geth_step)?;
+        call.set_is_success(false);
         state.push_call(call.clone());
         state.caller_ctx_mut()?.return_data.clear();
         state.handle_return(&mut [&mut exec_step], geth_steps, false)?;

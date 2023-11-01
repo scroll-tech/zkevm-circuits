@@ -5,7 +5,7 @@ use crate::{
         NumberOrHash,
     },
     evm::opcodes::ExecStep,
-    operation::{AccountField, AccountOp, CallContextField},
+    operation::{AccountField, AccountOp, CallContextField, CALL_CONTEXT_FIELD_PLACE_HOLDER},
     state_db::CodeDB,
     Error,
 };
@@ -38,13 +38,16 @@ impl Opcode for ReturnRevert {
                 .memory
                 .extend_at_least((offset.low_u64() + length.low_u64()).try_into().unwrap());
         }
+        state
+            .call_mut()?
+            .set_is_success(!(matches!(step.op, OpcodeId::REVERT) || exec_step.error.is_some()));
 
         let call = state.call()?.clone();
         state.call_context_read(
             &mut exec_step,
             call.call_id,
             CallContextField::IsSuccess,
-            call.is_success.to_word(),
+            call.is_success().to_word(),
         )?;
 
         // Get low Uint64 of offset.
@@ -52,7 +55,7 @@ impl Opcode for ReturnRevert {
         let length = length.as_usize();
 
         // Case A in the spec.
-        if call.is_create() && call.is_success && length > 0 {
+        if call.is_create() && call.is_success() && length > 0 {
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
             let code_info = handle_create(
@@ -70,9 +73,12 @@ impl Opcode for ReturnRevert {
                 (CallContextField::CalleeAddress, call.address.to_word()),
                 (
                     CallContextField::RwCounterEndOfReversion,
-                    call.rw_counter_end_of_reversion.to_word(),
+                    CALL_CONTEXT_FIELD_PLACE_HOLDER,
                 ),
-                (CallContextField::IsPersistent, call.is_persistent.to_word()),
+                (
+                    CallContextField::IsPersistent,
+                    CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                ),
             ] {
                 state.call_context_read(&mut exec_step, call.call_id, field, value)?;
             }
@@ -143,7 +149,7 @@ impl Opcode for ReturnRevert {
                 &mut exec_step,
                 call.call_id,
                 CallContextField::IsPersistent,
-                call.is_persistent.to_word(),
+                call.is_persistent().to_word(),
             )?;
         }
 

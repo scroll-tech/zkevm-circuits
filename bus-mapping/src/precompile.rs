@@ -17,7 +17,7 @@ pub(crate) fn execute_precompiled(
     address: &Address,
     input: &[u8],
     gas: u64,
-) -> (Vec<u8>, u64, bool) {
+) -> (Vec<u8>, u64, bool, bool) {
     let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
@@ -68,7 +68,7 @@ pub(crate) fn execute_precompiled(
         },
     };
     log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}, return_data {}", return_data.len(), hex::encode(&return_data));
-    (return_data, gas_cost, is_oog)
+    (return_data, gas_cost, is_oog, is_ok)
 }
 
 /// Addresses of the precompiled contracts.

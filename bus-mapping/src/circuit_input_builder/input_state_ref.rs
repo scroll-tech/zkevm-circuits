@@ -17,7 +17,7 @@ use crate::{
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
         StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
-        RW,
+        CALL_CONTEXT_FIELD_PLACE_HOLDER, RW,
     },
     precompile::{is_precompiled, PrecompileCalls},
     state_db::{CodeDB, StateDB},
@@ -226,15 +226,8 @@ impl<'a> CircuitInputStateRef<'a> {
         self.call_ctx_mut()?.reversible_write_counter += 1;
         step.reversible_write_counter_delta += 1;
 
-        // Add the operation into reversible_ops if this call is not persistent
-        if !self.call()?.is_persistent {
-            self.tx_ctx
-                .reversion_groups
-                .last_mut()
-                .expect("reversion_groups should not be empty for non-persistent call")
-                .op_refs
-                .push((self.tx.steps().len(), op_ref));
-        }
+        // Add the operation into reversible_ops\
+        self.call_mut()?.reversion_ops.push(op_ref);
 
         self.check_rw_num_limit()
     }
@@ -927,14 +920,9 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         is_static: Option<bool>,
     ) -> Result<(), Error> {
-        let (tx_id, call_id, rwc_eor, is_persistent) = {
+        let (tx_id, call_id) = {
             let call = self.call()?;
-            (
-                self.tx_ctx.id().to_word(),
-                call.call_id,
-                call.rw_counter_end_of_reversion.to_word(),
-                call.is_persistent.to_word(),
-            )
+            (self.tx_ctx.id().to_word(), call.call_id)
         };
         self.call_context_read(step, call_id, CallContextField::TxId, tx_id)?;
         if let Some(is_static) = is_static {
@@ -946,8 +934,14 @@ impl<'a> CircuitInputStateRef<'a> {
             )?;
         }
         for (field, value) in [
-            (CallContextField::RwCounterEndOfReversion, rwc_eor),
-            (CallContextField::IsPersistent, is_persistent),
+            (
+                CallContextField::RwCounterEndOfReversion,
+                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+            ),
+            (
+                CallContextField::IsPersistent,
+                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+            ),
         ] {
             self.call_context_read(step, call_id, field, value)?;
         }
@@ -963,9 +957,12 @@ impl<'a> CircuitInputStateRef<'a> {
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
-                call.rw_counter_end_of_reversion.to_word(),
+                CALL_CONTEXT_FIELD_PLACE_HOLDER,
             ),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (
+                CallContextField::IsPersistent,
+                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+            ),
         ] {
             self.call_context_read(step, call.call_id, field, value)?;
         }
@@ -981,9 +978,12 @@ impl<'a> CircuitInputStateRef<'a> {
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
-                call.rw_counter_end_of_reversion.to_word(),
+                CALL_CONTEXT_FIELD_PLACE_HOLDER,
             ),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (
+                CallContextField::IsPersistent,
+                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+            ),
         ] {
             self.call_context_write(step, call.call_id, field, value)?;
         }
@@ -997,11 +997,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
-        let is_success = *self
-            .tx_ctx
-            .call_is_success
-            .get(self.tx.calls().len())
-            .unwrap();
+        // let is_success = *self
+        //     .tx_ctx
+        //     .call_is_success
+        //     .get(self.tx.calls().len())
+        //     .unwrap();
         let kind = CallKind::try_from(step.op)?;
         let caller = self.call()?;
         let caller_ctx = self.call_ctx()?;
@@ -1076,8 +1076,8 @@ impl<'a> CircuitInputStateRef<'a> {
             kind,
             is_static: kind == CallKind::StaticCall || caller.is_static,
             is_root: false,
-            is_persistent: caller.is_persistent && is_success,
-            is_success,
+            is_persistent: None,
+            is_success: None,
             rw_counter_end_of_reversion: 0,
             caller_address,
             address,
@@ -1092,6 +1092,8 @@ impl<'a> CircuitInputStateRef<'a> {
             last_callee_return_data_offset: 0,
             last_callee_return_data_length: 0,
             last_callee_memory: Memory::default(),
+            reversion_ops: vec![],
+            callee_stack: vec![],
         };
 
         Ok(call)
@@ -1262,7 +1264,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_ctx = self.call_ctx()?;
         let callee_memory = call_ctx.memory.clone();
         let call_success_create: bool =
-            call.is_create() && call.is_success && step.op == OpcodeId::RETURN;
+            call.is_create() && call.is_success() && step.op == OpcodeId::RETURN;
 
         // Store deployed code if it's a successful create
         if call_success_create {
@@ -1292,7 +1294,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // Handle reversion if this call doesn't end successfully
-        if !call.is_success {
+        if !call.is_success() {
             self.handle_reversion(current_exec_steps);
         }
 
@@ -1390,7 +1392,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // successful revert also makes call.is_success == false
         // but this "successful revert" should not be handled here
         if !is_return_revert_succ
-            && !call.is_success
+            && !call.is_success()
             && !exec_step.is_precompiled()
             && !exec_step.is_precompile_oog_err()
         {
@@ -1449,7 +1451,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
             let memory_expansion_gas_cost =
                 memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-            let code_deposit_cost = if call.is_create() && call.is_success {
+            let code_deposit_cost = if call.is_create() && call.is_success() {
                 GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
             } else {
                 0
@@ -1565,7 +1567,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(None);
             }
             // case 3 Create with successful RETURN
-            if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
+            if call.is_create() && call.is_success() && step.op == OpcodeId::RETURN {
                 return Ok(None);
             }
             // more other case...
