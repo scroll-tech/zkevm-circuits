@@ -101,7 +101,7 @@ pub struct Call {
     /// reversion_ops or callee in time order
     pub operations: Vec<TimeOrder>,
     /// callee
-    pub callee_stack: Vec<Call>,
+    pub callee_stack: Vec<(Call, CallContext)>,
 }
 
 #[derive(Clone, Debug)]
@@ -132,7 +132,7 @@ impl Call {
             )
         }
         if !is_persistent {
-            for callee in &mut self.callee_stack {
+            for (callee, _) in &mut self.callee_stack {
                 callee.set_is_persistent(false);
             }
         }
@@ -166,9 +166,9 @@ impl Call {
     }
 
     /// Push callee
-    pub fn push_callee(&mut self, callee: Call) {
+    pub fn push_callee(&mut self, callee: Call, callee_ctx: CallContext) {
         self.operations.push(TimeOrder::Callee);
-        self.callee_stack.push(callee);
+        self.callee_stack.push((callee, callee_ctx));
     }
 
     /// This call is call with op DELEGATECALL
@@ -190,7 +190,7 @@ impl Call {
 }
 
 /// Context of a [`Call`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CallContext {
     /// Index of call
     pub index: usize,
@@ -198,6 +198,8 @@ pub struct CallContext {
     /// call. It is incremented when a subcall in this call succeeds by the
     /// number of successful writes in the subcall.
     pub reversible_write_counter: usize,
+    /// offset
+    pub reversible_write_counter_offset: usize,
     /// Call data (copy of tx input or caller's
     /// memory[call_data_offset..call_data_offset + call_data_length])
     pub call_data: Vec<u8>,
@@ -214,26 +216,26 @@ impl CallContext {
     }
 }
 
-/// A reversion group is the collection of calls and the operations which are
-/// [`Operation::reversible`](crate::operation::Operation::reversible) that
-/// happened in them, that will be reverted at once when the call that initiated
-/// this reversion group eventually ends with failure (and thus reverts).
-#[derive(Debug, Default)]
-pub struct ReversionGroup {
-    /// List of `index` and `reversible_write_counter_offset` of calls belong to
-    /// this group. `reversible_write_counter_offset` is the number of
-    /// reversible operations that have happened before the call within the
-    /// same reversion group.
-    pub(crate) calls: Vec<(usize, usize)>,
-    /// List of `step_index` and [`OperationRef`] that have been done in this
-    /// group.
-    pub(crate) op_refs: Vec<(usize, OperationRef)>,
-}
-
-impl ReversionGroup {
-    /// Creates a new `ReversionGroup` instance from the calls and operation
-    /// references lists.
-    pub fn new(calls: Vec<(usize, usize)>, op_refs: Vec<(usize, OperationRef)>) -> Self {
-        Self { calls, op_refs }
-    }
-}
+// /// A reversion group is the collection of calls and the operations which are
+// /// [`Operation::reversible`](crate::operation::Operation::reversible) that
+// /// happened in them, that will be reverted at once when the call that initiated
+// /// this reversion group eventually ends with failure (and thus reverts).
+// #[derive(Debug, Default)]
+// pub struct ReversionGroup {
+//     /// List of `index` and `reversible_write_counter_offset` of calls belong to
+//     /// this group. `reversible_write_counter_offset` is the number of
+//     /// reversible operations that have happened before the call within the
+//     /// same reversion group.
+//     pub(crate) calls: Vec<(usize, usize)>,
+//     /// List of `step_index` and [`OperationRef`] that have been done in this
+//     /// group.
+//     pub(crate) op_refs: Vec<(usize, OperationRef)>,
+// }
+//
+// impl ReversionGroup {
+//     /// Creates a new `ReversionGroup` instance from the calls and operation
+//     /// references lists.
+//     pub fn new(calls: Vec<(usize, usize)>, op_refs: Vec<(usize, OperationRef)>) -> Self {
+//         Self { calls, op_refs }
+//     }
+// }

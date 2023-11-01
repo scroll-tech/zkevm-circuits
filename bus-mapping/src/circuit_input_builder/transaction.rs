@@ -16,7 +16,7 @@ use crate::{
     Error,
 };
 
-use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
+use super::{Call, CallContext, CallKind, CodeSource, ExecStep};
 
 /// Precision of transaction L1 fee
 pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
@@ -38,12 +38,12 @@ pub struct TransactionContext {
     pub(crate) calls: Vec<CallContext>,
     /// Call `is_success` indexed by `call_index`.
     pub(crate) call_is_success: Vec<bool>,
-    /// Reversion groups by failure calls. We keep the reversion groups in a
-    /// stack because it's possible to encounter a revert within a revert,
-    /// and in such case, we must only process the reverted operation once:
-    /// in the inner most revert (which we track with the last element in
-    /// the reversion groups stack), and skip it in the outer revert.
-    pub(crate) reversion_groups: Vec<ReversionGroup>,
+    // /// Reversion groups by failure calls. We keep the reversion groups in a
+    // /// stack because it's possible to encounter a revert within a revert,
+    // /// and in such case, we must only process the reverted operation once:
+    // /// in the inner most revert (which we track with the last element in
+    // /// the reversion groups stack), and skip it in the outer revert.
+    // pub(crate) reversion_groups: Vec<ReversionGroup>,
 }
 
 impl TransactionContext {
@@ -90,7 +90,7 @@ impl TransactionContext {
             is_last_tx,
             call_is_success,
             calls: Vec::new(),
-            reversion_groups: Vec::new(),
+            // reversion_groups: Vec::new(),
             l1_fee: geth_trace.l1_fee,
         };
         tx_ctx.push_call_ctx(
@@ -176,9 +176,16 @@ impl TransactionContext {
         //     ));
         // }
 
+        let offset = if let Some(caller_ctx) = self.calls.last() {
+            caller_ctx.reversible_write_counter + caller_ctx.reversible_write_counter_offset
+        } else {
+            0
+        };
+
         self.calls.push(CallContext {
             index: call_idx,
             reversible_write_counter: 0,
+            reversible_write_counter_offset: offset,
             call_data,
             memory: Memory::default(),
             return_data: vec![],

@@ -231,6 +231,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Add the operation into reversible_ops
         let step_index = self.tx.steps().len();
+        // if let Some(reversion_group) = self.tx_ctx.reversion_groups.last_mut() {
+        //     reversion_group
+        //         .op_refs
+        //         .push((self.tx.steps().len(), op_ref));
+        // }
         self.call_mut()?.push_reversion_op((step_index, op_ref));
 
         self.check_rw_num_limit()
@@ -1227,11 +1232,21 @@ impl<'a> CircuitInputStateRef<'a> {
         // may we can drain the `operations`
         self.handle_call_reversion(
             self.call().expect("call stack is empty").clone(),
+            self.call_ctx().expect("call stack is empty").clone(),
             current_exec_steps,
+            self.block_ctx.rwc.0 - 1,
         );
     }
 
-    fn handle_call_reversion(&mut self, mut call: Call, current_exec_steps: &mut [&mut ExecStep]) {
+    fn handle_call_reversion(
+        &mut self,
+        mut call: Call,
+        call_ctx: CallContext,
+        current_exec_steps: &mut [&mut ExecStep],
+        rwc: usize,
+    ) {
+        self.tx.calls_mut()[call_ctx.index].rw_counter_end_of_reversion =
+            rwc - call_ctx.reversible_write_counter_offset;
         for op in call.operations.into_iter().rev() {
             match op {
                 TimeOrder::ReversionOp((step_index, op_ref)) => {
@@ -1254,9 +1269,9 @@ impl<'a> CircuitInputStateRef<'a> {
                     }
                 }
                 TimeOrder::Callee => {
-                    let callee = call.callee_stack.pop().unwrap();
+                    let (callee, callee_ctx) = call.callee_stack.pop().unwrap();
                     if callee.is_success() {
-                        self.handle_call_reversion(callee, current_exec_steps);
+                        self.handle_call_reversion(callee, callee_ctx, current_exec_steps, rwc);
                     }
                 }
             }
@@ -1304,7 +1319,7 @@ impl<'a> CircuitInputStateRef<'a> {
             )?;
         }
         let call = self.call()?.clone();
-        let call_ctx = self.call_ctx()?;
+        let call_ctx = self.call_ctx()?.clone();
         let callee_memory = call_ctx.memory.clone();
         let call_success_create: bool =
             call.is_create() && call.is_success() && step.op == OpcodeId::RETURN;
@@ -1362,7 +1377,7 @@ impl<'a> CircuitInputStateRef<'a> {
             caller.last_callee_return_data_offset = return_data_offset;
             caller.last_callee_memory = callee_memory;
 
-            caller.push_callee(call.clone());
+            caller.push_callee(call.clone(), call_ctx);
         }
 
         self.tx_ctx.pop_call_ctx();
