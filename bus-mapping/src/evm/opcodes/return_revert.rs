@@ -5,7 +5,7 @@ use crate::{
         NumberOrHash,
     },
     evm::opcodes::ExecStep,
-    operation::{AccountField, AccountOp, CallContextField, CALL_CONTEXT_FIELD_PLACE_HOLDER},
+    operation::{AccountField, AccountOp, CallContextField, POST_PROCESS_PLACE_HOLDER_VALUE},
     state_db::CodeDB,
     Error,
 };
@@ -73,11 +73,11 @@ impl Opcode for ReturnRevert {
                 (CallContextField::CalleeAddress, call.address.to_word()),
                 (
                     CallContextField::RwCounterEndOfReversion,
-                    CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                    POST_PROCESS_PLACE_HOLDER_VALUE,
                 ),
                 (
                     CallContextField::IsPersistent,
-                    CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                    POST_PROCESS_PLACE_HOLDER_VALUE,
                 ),
             ] {
                 state.call_context_read(&mut exec_step, call.call_id, field, value)?;

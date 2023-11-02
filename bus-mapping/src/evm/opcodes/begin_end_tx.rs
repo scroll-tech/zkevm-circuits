@@ -5,7 +5,7 @@ use crate::{
     l2_predeployed::l1_gas_price_oracle,
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp,
-        CALL_CONTEXT_FIELD_PLACE_HOLDER, RW,
+        POST_PROCESS_PLACE_HOLDER_VALUE, RW,
     },
     precompile::is_precompiled,
     state_db::CodeDB,
@@ -114,9 +114,9 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
         ),
         (
             CallContextField::IsPersistent,
-            CALL_CONTEXT_FIELD_PLACE_HOLDER,
+            POST_PROCESS_PLACE_HOLDER_VALUE,
         ),
-        (CallContextField::IsSuccess, CALL_CONTEXT_FIELD_PLACE_HOLDER),
+        (CallContextField::IsSuccess, POST_PROCESS_PLACE_HOLDER_VALUE),
     ] {
         state.call_context_write(&mut exec_step, call.call_id, field, value)?;
     }

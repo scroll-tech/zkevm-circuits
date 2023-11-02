@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
-    operation::{CallContextField, TxLogField, CALL_CONTEXT_FIELD_PLACE_HOLDER},
+    operation::{CallContextField, TxLogField, POST_PROCESS_PLACE_HOLDER_VALUE},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word};
@@ -79,7 +79,7 @@ fn gen_log_step(
         &mut exec_step,
         call_id,
         CallContextField::IsPersistent,
-        CALL_CONTEXT_FIELD_PLACE_HOLDER,
+        POST_PROCESS_PLACE_HOLDER_VALUE,
     )?;
 
     // FIXME: cannot use is_persistent here, post-process needed

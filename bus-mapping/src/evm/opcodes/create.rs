@@ -5,7 +5,7 @@ use crate::{
     },
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
-    operation::{AccountField, AccountOp, CallContextField, CALL_CONTEXT_FIELD_PLACE_HOLDER},
+    operation::{AccountField, AccountOp, CallContextField, POST_PROCESS_PLACE_HOLDER_VALUE},
     state_db::CodeDB,
     Error,
 };
@@ -92,7 +92,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.sdb.get_account_mut(&address).1.storage.clear();
         }
 
-        // FIXME: stack write placeholder, rewrite as 0 when failed
+        // stack write placeholder, rewrite as 0 when failed
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
@@ -278,10 +278,10 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             if length > 0 {
                 for (field, value) in [
                     (CallContextField::CallerId, caller.call_id.into()),
-                    (CallContextField::IsSuccess, CALL_CONTEXT_FIELD_PLACE_HOLDER),
+                    (CallContextField::IsSuccess, POST_PROCESS_PLACE_HOLDER_VALUE),
                     (
                         CallContextField::IsPersistent,
-                        CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                        POST_PROCESS_PLACE_HOLDER_VALUE,
                     ),
                     (CallContextField::TxId, state.tx_ctx.id().into()),
                     (

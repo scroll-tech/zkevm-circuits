@@ -49,7 +49,7 @@ use log::warn;
 #[cfg(feature = "scroll")]
 use mpt_zktrie::state::ZktrieState;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     iter,
 };
 pub use transaction::{
@@ -271,6 +271,77 @@ impl<'a> CircuitInputBuilder {
         }
     }
 
+    /// Iterate over all generated Create/Create2 Stack Write operations
+    /// and set the correct value. This is required because when we
+    /// generate the Stack Write operation in
+    /// `gen_associated_ops` we don't know yet if the create will succeed.
+    pub fn set_value_ops_stack_write_create(&mut self) {
+        let create_callers = self
+            .block
+            .txs
+            .iter()
+            .enumerate()
+            .flat_map(|(tx_idx, tx)| {
+                tx.calls().iter().filter_map(move |call| {
+                    if call.is_create() {
+                        Some((tx_idx, call.caller_id))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect::<HashSet<_>>();
+        if create_callers.is_empty() {
+            return;
+        }
+        for oper in self.block.container.stack.iter_mut() {
+            if oper.rw().is_read() {
+                continue;
+            }
+            let op = oper.op_mut();
+            let (tx_idx, call_idx) = self
+                .block_ctx
+                .call_map
+                .get(&op.call_id)
+                .copied()
+                .expect("call_id not found in call_map");
+            if !create_callers.contains(&(tx_idx, call_idx)) {
+                continue;
+            }
+            let call = &self.block.txs[tx_idx].calls()[call_idx];
+            debug_assert!(call.is_create());
+            if !call.is_success() {
+                op.value = 0.into();
+            }
+        }
+    }
+
+    /// Iterate over all generated CallContext IsSuccess and IsPersistent
+    /// operations and set the correct value. This is required because when we
+    /// generate the IsSuccess and IsPersistent operations in
+    /// `gen_associated_ops` we don't know yet which value it will take,
+    /// so we put a placeholder; so we do it here after the values are known.
+    pub fn set_value_ops_call_context_persistent_success(&mut self) {
+        for oper in self.block.container.call_context.iter_mut() {
+            let op = oper.op_mut();
+            let (tx_idx, call_idx) = self
+                .block_ctx
+                .call_map
+                .get(&op.call_id)
+                .expect("call_id not found in call_map");
+            let call = &self.block.txs[*tx_idx].calls()[*call_idx];
+            match op.field {
+                CallContextField::IsSuccess => {
+                    op.value = (call.is_success() as u8).into();
+                }
+                CallContextField::IsPersistent => {
+                    op.value = (call.is_persistent.unwrap_or(true) as u8).into();
+                }
+                _ => continue,
+            }
+        }
+    }
+
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
@@ -377,6 +448,8 @@ impl<'a> CircuitInputBuilder {
             self.set_value_ops_call_context_rwc_eor();
             self.set_end_block()?;
         }
+        self.set_value_ops_stack_write_create();
+        self.set_value_ops_call_context_persistent_success();
         log::info!(
             "handle_block_inner, total gas {:?}",
             self.block_ctx.cumulative_gas_used

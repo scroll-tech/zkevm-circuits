@@ -683,8 +683,8 @@ pub enum CallContextField {
     L1Fee,
 }
 
-pub const CALL_CONTEXT_FIELD_PLACE_HOLDER: U256 =
-    U256([0xCA11, 0xC0117E77_F1E1D, 0x91ACE, 0x1101DE9]);
+/// Magic value used as a placeholder for the post process step.
+pub const POST_PROCESS_PLACE_HOLDER_VALUE: U256 = U256([0x9037, 0x960CE33, 0x91ACE, 0x1101DE9]);
 
 /// Represents an CallContext read/write operation.
 #[derive(Clone, PartialEq, Eq)]

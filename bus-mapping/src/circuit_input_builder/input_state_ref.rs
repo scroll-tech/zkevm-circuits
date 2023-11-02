@@ -20,7 +20,7 @@ use crate::{
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
         StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
-        CALL_CONTEXT_FIELD_PLACE_HOLDER, RW,
+        POST_PROCESS_PLACE_HOLDER_VALUE, RW,
     },
     precompile::{is_precompiled, PrecompileCalls},
     state_db::{CodeDB, StateDB},
@@ -945,11 +945,11 @@ impl<'a> CircuitInputStateRef<'a> {
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
             (
                 CallContextField::IsPersistent,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
         ] {
             self.call_context_read(step, call_id, field, value)?;
@@ -966,11 +966,11 @@ impl<'a> CircuitInputStateRef<'a> {
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
             (
                 CallContextField::IsPersistent,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
         ] {
             self.call_context_read(step, call.call_id, field, value)?;
@@ -987,11 +987,11 @@ impl<'a> CircuitInputStateRef<'a> {
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
             (
                 CallContextField::IsPersistent,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
         ] {
             self.call_context_write(step, call.call_id, field, value)?;

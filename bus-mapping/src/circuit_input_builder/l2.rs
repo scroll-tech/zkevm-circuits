@@ -439,6 +439,8 @@ impl CircuitInputBuilder {
     /// all block trace have been input
     pub fn finalize_building(&mut self) -> Result<(), Error> {
         self.set_value_ops_call_context_rwc_eor();
+        self.set_value_ops_stack_write_create();
+        self.set_value_ops_call_context_persistent_success();
         self.set_end_block()
     }
 }

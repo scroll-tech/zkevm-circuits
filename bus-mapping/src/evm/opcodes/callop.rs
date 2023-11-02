@@ -9,7 +9,7 @@ use crate::{
         precompiles::gen_associated_ops as precompile_associated_ops,
     },
     operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, CALL_CONTEXT_FIELD_PLACE_HOLDER,
+        AccountField, CallContextField, TxAccessListAccountOp, POST_PROCESS_PLACE_HOLDER_VALUE,
     },
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
@@ -67,7 +67,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (CallContextField::RwCounterEndOfReversion, 0.into()),
             (
                 CallContextField::IsPersistent,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
             (
                 CallContextField::IsStatic,
@@ -143,7 +143,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (CallContextField::RwCounterEndOfReversion, 0.into()),
             (
                 CallContextField::IsPersistent,
-                CALL_CONTEXT_FIELD_PLACE_HOLDER,
+                POST_PROCESS_PLACE_HOLDER_VALUE,
             ),
         ] {
             state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
@@ -595,7 +595,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             callee_call.value
                         },
                     ),
-                    (CallContextField::IsSuccess, CALL_CONTEXT_FIELD_PLACE_HOLDER),
+                    (CallContextField::IsSuccess, POST_PROCESS_PLACE_HOLDER_VALUE),
                     (
                         CallContextField::IsStatic,
                         (callee_call.is_static as u64).into(),
