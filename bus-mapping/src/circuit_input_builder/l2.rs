@@ -441,6 +441,7 @@ impl CircuitInputBuilder {
         self.set_value_ops_call_context_rwc_eor();
         self.set_value_ops_stack_write_create();
         self.set_value_ops_call_context_persistent_success();
+        self.remove_failed_tx_log_ops();
         self.set_end_block()
     }
 }

@@ -347,7 +347,7 @@ mod log_tests {
         for (idx, topic) in topics.iter().rev().enumerate() {
             log_topic_ops.push((
                 RW::WRITE,
-                TxLogOp::new(1, step.log_id + 1, TxLogField::Topic, idx, *topic),
+                TxLogOp::new(1, 1, step.log_id + 1, TxLogField::Topic, idx, *topic),
             ));
         }
         assert_eq!(
@@ -382,6 +382,7 @@ mod log_tests {
                     (
                         RW::WRITE,
                         TxLogOp::new(
+                            1,
                             1,
                             step.log_id + 1,
                             TxLogField::Data,

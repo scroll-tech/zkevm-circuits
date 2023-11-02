@@ -514,10 +514,11 @@ impl<'a> CircuitInputStateRef<'a> {
         index: usize,
         value: Word,
     ) -> Result<(), Error> {
+        let call_id = self.call()?.call_id;
         self.push_op(
             step,
             RW::WRITE,
-            TxLogOp::new(tx_id, log_id, field, index, value),
+            TxLogOp::new(tx_id, call_id, log_id, field, index, value),
         )
     }
 

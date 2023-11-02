@@ -353,6 +353,24 @@ pub enum NumberOrHash {
     Hash(H256),
 }
 
+impl NumberOrHash {
+    /// extract the number value, panic if the variant is not Number
+    pub fn unwrap_number(&self) -> usize {
+        match self {
+            NumberOrHash::Number(n) => *n,
+            _ => panic!("unwrap_number called on non-number variant"),
+        }
+    }
+
+    /// extract the hash value, panic if the variant is not Hash
+    pub fn unwrap_hash(&self) -> H256 {
+        match self {
+            NumberOrHash::Hash(h) => *h,
+            _ => panic!("unwrap_hash called on non-hash variant"),
+        }
+    }
+}
+
 /// Represents all bytes related in one copy event.
 ///
 /// - When the source is memory, `bytes` is the memory content, including masked areas. The

@@ -342,6 +342,65 @@ impl<'a> CircuitInputBuilder {
         }
     }
 
+    /// Iterate over TxLogOp and CopyEvent to remove failed tx_log_ops
+    pub fn remove_failed_tx_log_ops(&mut self) {
+        // 1. remove failed TxLogOp
+        self.block.container.tx_log.retain(|oper| {
+            let op = oper.op();
+            let (tx_idx, call_idx) = self
+                .block_ctx
+                .call_map
+                .get(&op.call_id)
+                .expect("call_id not found in call_map");
+            let call = &self.block.txs[*tx_idx].calls()[*call_idx];
+            call.is_success()
+        });
+        // 2. remove failed CopyStep
+        self.block.copy_events.retain(|event| {
+            if event.dst_type != CopyDataType::TxLog {
+                return true;
+            }
+            let call_id = event.src_id.unwrap_number();
+            let (tx_idx, call_idx) = self
+                .block_ctx
+                .call_map
+                .get(&call_id)
+                .expect("call_id not found in call_map");
+            let call = &self.block.txs[*tx_idx].calls()[*call_idx];
+            call.is_success()
+        });
+        // 3. rebuild tx_log_id
+        let mut log_id_acc = HashMap::new();
+        for oper in self.block.container.tx_log.iter_mut() {
+            let op = oper.op_mut();
+            let (tx_idx, _) = self
+                .block_ctx
+                .call_map
+                .get(&op.call_id)
+                .expect("call_id not found in call_map");
+            let log_id = log_id_acc.entry(tx_idx).or_insert(1);
+            op.log_id = *log_id;
+            *log_id += 1;
+        }
+        let mut log_id_acc = HashMap::new();
+        for event in self
+            .block
+            .copy_events
+            .iter_mut()
+            .filter(|event| event.dst_type == CopyDataType::TxLog)
+        {
+            let call_id = event.src_id.unwrap_number();
+            let (tx_idx, _) = self
+                .block_ctx
+                .call_map
+                .get(&call_id)
+                .expect("call_id not found in call_map");
+            let log_id = log_id_acc.entry(tx_idx).or_insert(1);
+            event.log_id = Some(*log_id);
+            *log_id += 1;
+        }
+    }
+
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
@@ -450,6 +509,7 @@ impl<'a> CircuitInputBuilder {
         }
         self.set_value_ops_stack_write_create();
         self.set_value_ops_call_context_persistent_success();
+        self.remove_failed_tx_log_ops();
         log::info!(
             "handle_block_inner, total gas {:?}",
             self.block_ctx.cumulative_gas_used

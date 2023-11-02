@@ -775,6 +775,8 @@ pub enum TxLogField {
 pub struct TxLogOp {
     /// tx_id of TxLog, starts with 1 in rw table, and it's unique per Tx
     pub tx_id: usize,
+    /// call_id that this op happens in, for post process step
+    pub call_id: usize,
     /// id of log entry, starts with 1 in rw table, it's unique within Tx,
     /// currently it is also field of execution step, As field of execution
     /// step, it resets to zero (in begin_tx), and increases with each Log* step
@@ -795,6 +797,7 @@ impl TxLogOp {
     /// Create a new instance of a `TxLogOp` from it's components.
     pub fn new(
         tx_id: usize,
+        call_id: usize,
         log_id: usize,
         field: TxLogField,
         index: usize,
@@ -802,6 +805,7 @@ impl TxLogOp {
     ) -> TxLogOp {
         TxLogOp {
             tx_id,
+            call_id,
             log_id,
             field,
             index,
