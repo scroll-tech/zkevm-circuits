@@ -4,6 +4,7 @@ members = [
     "bus-mapping",
     "geth-utils",
     "keccak256",
+    "sha256",
     "zktrie",
     "gadgets",
     "integration-tests",

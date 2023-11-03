@@ -2425,6 +2425,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2_gadgets"
+version = "0.2.0"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#e3fe25eadd714fd991f35190d17ff0b8fb031188"
+dependencies = [
+ "arrayvec",
+ "bitvec",
+ "ff 0.12.1",
+ "group 0.12.1",
+ "halo2_proofs",
+ "halo2curves",
+ "lazy_static",
+ "plotters",
+ "rand",
+ "subtle",
+ "uint",
+]
+
+[[package]]
 name = "halo2_proofs"
 version = "0.2.0"
 source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#e3fe25eadd714fd991f35190d17ff0b8fb031188"
@@ -4629,6 +4647,25 @@ dependencies = [
  "cfg-if 1.0.0",
  "cpufeatures",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "sha256"
+version = "0.1.0"
+dependencies = [
+ "env_logger 0.10.0",
+ "eth-types",
+ "halo2_gadgets",
+ "halo2_proofs",
+ "halo2curves",
+ "itertools",
+ "lazy_static",
+ "log",
+ "num-bigint",
+ "num-traits",
+ "plotters",
+ "pretty_assertions",
+ "rand",
 ]
 
 [[package]]
