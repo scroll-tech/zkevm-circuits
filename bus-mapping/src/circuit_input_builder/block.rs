@@ -332,7 +332,8 @@ impl Block {
         &mut self.txs
     }
 
-    /// ..
+    /// switch to relax mode (used by testing and debugging,
+    /// see the note in defination of `relax_mode`)
     #[cfg(feature = "test")]
     pub fn relax(mut self) -> Self {
         self.relax_mode = true;
