@@ -1,0 +1,25 @@
+[package]
+name = "sha256"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+dev-graph = ["halo2_proofs/dev-graph", "halo2_gadgets/dev-graph", "plotters"]
+
+[dependencies]
+halo2curves = { git = "https://github.com/scroll-tech/halo2curves.git", branch = "0.3.1-derive-serde" }
+halo2_gadgets = { git = "https://github.com/scroll-tech/halo2.git", branch = "develop", features = ["unstable"] }
+halo2_proofs.workspace = true
+itertools.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+plotters = { version = "0.3.0", optional = true }
+eth-types = { path = "../eth-types" }
+lazy_static.workspace = true
+log.workspace = true
+env_logger.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+rand.workspace = true
