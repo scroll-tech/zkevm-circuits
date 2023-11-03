@@ -1837,6 +1837,9 @@ impl<F: Field> RlpCircuitConfig<F> {
             .flat_map(|input| input.gen_sm_witness(challenges))
             .collect::<Vec<_>>();
 
+        log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows.len(): {:?}", sm_rows.len());
+        log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - last_row: {:?}", last_row);
+
         debug_assert!(sm_rows.len() <= last_row);
 
         self.rom_table.load(layouter)?;

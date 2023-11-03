@@ -51,7 +51,7 @@ fn build_pre_eip155_tx() -> Transaction {
         "9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff"
     );
 
-    let mut tx = Transaction::new_from_rlp_bytes(PreEip155, signed_bytes, unsigned_bytes);
+    let mut tx = Transaction::new_from_rlp_bytes(1, PreEip155, signed_bytes, unsigned_bytes);
 
     tx.hash = H256(eth_tx_hash);
     tx.block_number = 1;

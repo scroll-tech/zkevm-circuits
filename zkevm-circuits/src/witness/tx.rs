@@ -714,12 +714,13 @@ impl Transaction {
 
     #[cfg(test)]
     pub(crate) fn new_from_rlp_bytes(
+        tx_id: usize,
         tx_type: TxType,
         signed_bytes: Vec<u8>,
         unsigned_bytes: Vec<u8>,
     ) -> Self {
         Self {
-            id: 1,
+            id: tx_id,
             tx_type,
             rlp_signed: signed_bytes,
             rlp_unsigned: unsigned_bytes,
@@ -757,12 +758,12 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         };
 
         log::debug!(
-            "{}th tx sign witness rows len = {}",
+            "tx (id: {}) sign witness rows len = {}",
             self.id,
             sign_wit.len()
         );
         log::debug!(
-            "{}th tx hash witness rows len = {}",
+            "tx (id: {}) tx hash witness rows len = {}",
             self.id,
             hash_wit.len()
         );
