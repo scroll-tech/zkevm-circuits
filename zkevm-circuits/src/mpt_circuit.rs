@@ -74,7 +74,7 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let conf = mpt::MptCircuitConfig::configure(meta, challenges.evm_word(), &poseidon_table);
+        let conf = mpt::MptCircuitConfig::configure(meta, &poseidon_table);
         meta.lookup_any("updates in mpt table proven in mpt circuit", |meta| {
             mpt_table
                 .table_exprs(meta)
