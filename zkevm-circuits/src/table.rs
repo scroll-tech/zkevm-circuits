@@ -811,6 +811,46 @@ impl MptTable {
         )
     }
 
+    pub(crate) fn load_par<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        updates: &MptUpdates,
+        max_mpt_rows: usize,
+        randomness: Value<F>,
+    ) -> Result<(), Error> {
+        let num_threads = std::thread::available_parallelism().unwrap().get();
+        let chunk_size = (max_mpt_rows + num_threads - 1) / num_threads;
+        let mpt_update_rows = updates
+            .table_assignments(randomness)
+            .into_iter()
+            .chain(repeat(MptUpdateRow::padding()))
+            .take(max_mpt_rows)
+            .collect_vec();
+        let mut is_first_passes = vec![true; num_threads];
+        let assignments = mpt_update_rows
+            .chunks(chunk_size)
+            .zip(is_first_passes.iter_mut())
+            .map(|(mpt_update_rows, is_first_pass)| {
+                |mut region: Region<'_, F>| -> Result<(), Error> {
+                    if *is_first_pass {
+                        *is_first_pass = false;
+                        let last_off = mpt_update_rows.len() - 1;
+                        self.assign(&mut region, last_off, &mpt_update_rows[last_off])?;
+                        return Ok(());
+                    }
+                    for (offset, row) in mpt_update_rows.iter().enumerate() {
+                        self.assign(&mut region, offset, row)?;
+                    }
+                    Ok(())
+                }
+            })
+            .collect_vec();
+
+        layouter.assign_regions(|| "mpt table zkevm", assignments)?;
+
+        Ok(())
+    }
+
     pub(crate) fn load_with_region<F: Field>(
         &self,
         region: &mut Region<'_, F>,
