@@ -106,7 +106,7 @@ pub struct MptUpdates {
 }
 
 /// The field element encoding of an MPT update, which is used by the MptTable
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct MptUpdateRow<F: Clone> {
     pub(crate) address: F,
     pub(crate) storage_key: word::Word<F>,
@@ -477,16 +477,16 @@ impl Key {
 impl<F: Field> MptUpdateRow<Value<F>> {
     /// Corresponds to the padding row the mpt circuit uses to fill its columns.
     pub fn padding() -> Self {
-        let default_word = word::Word::default();
+        let zero_word = word::Word::new([Value::known(F::zero()); 2]);
         let proof_type = F::from(MPTProofType::AccountDoesNotExist as u64);
         Self {
             address: Value::known(F::zero()),
-            storage_key: default_word,
+            storage_key: zero_word,
             proof_type: Value::known(proof_type),
-            new_root: default_word,
-            old_root: default_word,
-            new_value: default_word,
-            old_value: default_word,
+            new_root: zero_word,
+            old_root: zero_word,
+            new_value: zero_word,
+            old_value: zero_word,
         }
     }
 
