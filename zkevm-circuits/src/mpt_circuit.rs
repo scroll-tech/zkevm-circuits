@@ -157,6 +157,7 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
 impl Circuit<Fr> for MptCircuit<Fr> {
     type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self {

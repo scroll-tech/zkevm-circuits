@@ -38,10 +38,8 @@ use strum_macros::EnumIter;
 
 //  1. limb_difference fits into 16 bits.
 //  2. limb_difference is not zero because its inverse exists.
-//  3. RLC of the pairwise limb differences before the first_different_limb is
-//     zero.
-//  4. limb_difference equals the difference of the limbs at
-//     first_different_limb.
+//  3. RLC of the pairwise limb differences before the first_different_limb is zero.
+//  4. limb_difference equals the difference of the limbs at first_different_limb.
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum LimbIndex {

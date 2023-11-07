@@ -11,6 +11,7 @@ hex.workspace = true
 lazy_static.workspace = true
 once_cell.workspace = true
 halo2_proofs.workspace = true
+halo2-base.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true

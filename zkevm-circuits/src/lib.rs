@@ -5,7 +5,7 @@
 #![allow(incomplete_features)]
 // Needed by DummyGadget in evm circuit
 #![feature(adt_const_params)]
-#![feature(array_zip)]
+// #![feature(array_zip)]
 #![feature(slice_group_by)]
 // Needed by some builder patterns in testing modules.
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -26,7 +26,7 @@ compile_error!("This program requires a 64-bit target architecture.");
 
 pub mod bytecode_circuit;
 pub mod copy_circuit;
-pub mod ecc_circuit;
+// pub mod ecc_circuit;
 pub mod evm_circuit;
 pub mod exp_circuit;
 pub mod keccak_circuit;

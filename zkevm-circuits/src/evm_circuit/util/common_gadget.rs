@@ -284,13 +284,17 @@ impl<F: Field> RestoreContextGadget<F> {
                 [U256::zero(); 9]
             } else {
                 field_tags
+                    .iter()
                     .zip([0, 1, 2, 3, 4, 5, 6, 7, 8])
-                    .map(|(field_tag, i)| {
+                    .map(|(&field_tag, i)| {
                         let idx = step.rw_indices[i + rw_offset];
                         let rw = block.rws[idx];
                         debug_assert_eq!(rw.field_tag(), Some(field_tag as u64));
                         rw.call_context_value()
                     })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
             };
 
         for (cell, value) in [

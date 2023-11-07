@@ -28,6 +28,7 @@ pub type CircuitConfig<F> = super::circuit::BytecodeCircuitConfig<F>;
 impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
     type Config = (CircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

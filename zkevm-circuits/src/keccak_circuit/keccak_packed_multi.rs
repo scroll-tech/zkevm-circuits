@@ -2,7 +2,6 @@ use super::{cell_manager::*, param::*, util::*};
 use crate::{evm_circuit::util::rlc, util::Challenges};
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
@@ -137,7 +136,7 @@ pub(crate) struct KeccakRegion<F> {
     pub(crate) rows: Vec<Vec<F>>,
 }
 
-impl<F: FieldExt> KeccakRegion<F> {
+impl<F: Field> KeccakRegion<F> {
     pub(crate) fn new() -> Self {
         Self { rows: Vec::new() }
     }

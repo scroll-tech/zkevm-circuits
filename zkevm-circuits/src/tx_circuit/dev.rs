@@ -5,7 +5,7 @@ use super::get_sign_data;
 pub use super::TxCircuit;
 
 use crate::{
-    sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
+    // sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     table::{
         BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, U16Table, U8Table,
     },
@@ -43,8 +43,8 @@ pub struct TxCircuitTesterConfigArgs<F: Field> {
 #[derive(Clone, Debug)]
 pub struct TxCircuitTesterConfig<F: Field> {
     tx_config: TxCircuitConfig<F>,
-    // SigTable is assigned inside SigCircuit
-    sig_config: SigCircuitConfig<F>,
+    // // SigTable is assigned inside SigCircuit
+    // sig_config: SigCircuitConfig<F>,
     /// u16 lookup table,
     pub u8_table: U8Table,
     /// u16 lookup table,
@@ -67,14 +67,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let sig_config = SigCircuitConfig::new(
-            meta,
-            SigCircuitConfigArgs {
-                sig_table,
-                challenges: challenges.clone(),
-                keccak_table: keccak_table.clone(),
-            },
-        );
+        // let sig_config = SigCircuitConfig::new(
+        //     meta,
+        //     SigCircuitConfigArgs {
+        //         sig_table,
+        //         challenges: challenges.clone(),
+        //         keccak_table: keccak_table.clone(),
+        //     },
+        // );
         let tx_config = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
@@ -90,7 +90,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
         );
         TxCircuitTesterConfig {
             tx_config,
-            sig_config,
+            // sig_config,
             u8_table,
             u16_table,
         }
@@ -100,7 +100,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
 /// The difference of this tester circuit and TxCircuit is that sig_circuit is included here.
 #[derive(Clone, Debug, Default)]
 pub struct TxCircuitTester<F: Field> {
-    pub(super) sig_circuit: SigCircuit<F>,
+    // pub(super) sig_circuit: SigCircuit<F>,
     pub(super) tx_circuit: TxCircuit<F>,
 }
 
@@ -114,11 +114,11 @@ impl<F: Field> TxCircuitTester<F> {
         txs: Vec<Transaction>,
     ) -> Self {
         TxCircuitTester::<F> {
-            sig_circuit: SigCircuit {
-                max_verif: max_txs,
-                signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
-                _marker: PhantomData,
-            },
+            // sig_circuit: SigCircuit {
+            //     max_verif: max_txs,
+            //     signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+            //     _marker: PhantomData,
+            // },
             tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, start_l1_queue_index, txs),
         }
     }
@@ -146,8 +146,9 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
     }
 
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
+        todo!()
         // TODO
-        SigCircuit::min_num_rows_block(block)
+        // SigCircuit::min_num_rows_block(block)
     }
 }
 
@@ -155,6 +156,7 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
 impl<F: Field> Circuit<F> for TxCircuitTester<F> {
     type Config = (TxCircuitTesterConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -172,14 +174,14 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
 
         let config = {
             let challenges = challenges.exprs(meta);
-            let sig_config = SigCircuitConfig::new(
-                meta,
-                SigCircuitConfigArgs {
-                    sig_table,
-                    challenges: challenges.clone(),
-                    keccak_table: keccak_table.clone(),
-                },
-            );
+            // let sig_config = SigCircuitConfig::new(
+            //     meta,
+            //     SigCircuitConfigArgs {
+            //         sig_table,
+            //         challenges: challenges.clone(),
+            //         keccak_table: keccak_table.clone(),
+            //     },
+            // );
             let tx_config = TxCircuitConfig::new(
                 meta,
                 TxCircuitConfigArgs {
@@ -195,7 +197,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             );
             TxCircuitTesterConfig {
                 tx_config,
-                sig_config,
+                // sig_config,
                 u8_table,
                 u16_table,
             }
@@ -242,8 +244,8 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             .assign_dev_block_table(config.tx_config.clone(), &mut layouter)?;
         self.tx_circuit
             .synthesize_sub(&config.tx_config, &challenges, &mut layouter)?;
-        self.sig_circuit
-            .synthesize_sub(&config.sig_config, &challenges, &mut layouter)?;
+        // self.sig_circuit
+        //     .synthesize_sub(&config.sig_config, &challenges, &mut layouter)?;
         Ok(())
     }
 }

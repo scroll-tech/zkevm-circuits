@@ -546,12 +546,12 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // | lo  |     b0    | b15*2^120+... | b31*r^31+...|
 
         // We use copy constraints to
-        // 1. copy the RLC(data_bytes, keccak_rand) in the `rpi_rlc_acc` column
-        //     to the `rpi` column on the row that q_keccak = 1 for data bytes.
-        // 2. copy the len(data_bytes) in the `rpi_length_acc` column to the
-        //     `rpi_length_acc` column on the row that q_keccak = 1 for data bytes.
-        // 3. copy the RLC(data_hash_bytes, word_rand) in the `rpi_rlc_acc` column
-        //     to the `rpi_rlc_acc` column on the row that q_keccak = 1 for data hash.
+        // 1. copy the RLC(data_bytes, keccak_rand) in the `rpi_rlc_acc` column to the `rpi` column
+        //    on the row that q_keccak = 1 for data bytes.
+        // 2. copy the len(data_bytes) in the `rpi_length_acc` column to the `rpi_length_acc` column
+        //    on the row that q_keccak = 1 for data bytes.
+        // 3. copy the RLC(data_hash_bytes, word_rand) in the `rpi_rlc_acc` column to the
+        //    `rpi_rlc_acc` column on the row that q_keccak = 1 for data hash.
 
         // The layout for entire pi circuit looks like
         // data bytes:      |   rpi   | rpi_bytes | rpi_bytes_acc | rpi_rlc_acc | rpi_length_acc |

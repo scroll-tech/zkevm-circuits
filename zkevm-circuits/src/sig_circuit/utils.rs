@@ -1,14 +1,11 @@
+use std::cell::RefCell;
+
 use eth_types::Field;
-use halo2_base::{AssignedValue, QuantumCell};
-use halo2_ecc::{
-    bigint::CRTInteger,
-    ecc::EcPoint,
-    fields::{fp::FpConfig, FieldChip},
-};
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::secp256k1::{Fp, Fq},
-};
+use halo2_base::{AssignedValue, QuantumCell, gates::circuit::builder::RangeCircuitBuilder};
+use halo2_ecc::{bigint::ProperCrtUint, ecc::EcPoint, fields::FieldChip};
+use halo2_proofs::circuit::{Value, AssignedCell, Layouter};
+
+use super::SigCircuitConfig;
 
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
@@ -60,17 +57,12 @@ pub(super) fn calc_required_lookup_advices(num_verif: usize) -> usize {
     panic!("the required lookup advice columns exceeds {LOOKUP_COLUMN_NUM_LIMIT} for {num_verif} signatures");
 }
 
-/// Chip to handle overflow integers of ECDSA::Fq, the scalar field
-pub(super) type FqChip<F> = FpConfig<F, Fq>;
-/// Chip to handle ECDSA::Fp, the base field
-pub(super) type FpChip<F> = FpConfig<F, Fp>;
-
 pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint>,
     pub(super) pk_is_zero: AssignedValue<F>,
-    pub(super) msg_hash: CRTInteger<F>,
-    pub(super) integer_r: CRTInteger<F>,
-    pub(super) integer_s: CRTInteger<F>,
+    pub(super) msg_hash: ProperCrtUint<F>,
+    pub(super) integer_r: ProperCrtUint<F>,
+    pub(super) integer_s: ProperCrtUint<F>,
     pub(super) v: AssignedValue<F>,
     pub(super) sig_is_valid: AssignedValue<F>,
 }
@@ -87,6 +79,31 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) sig_is_valid: AssignedValue<F>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct TransmutedSignatureVerify<F: Field> {
+    pub(crate) address: AssignedCell<F, F>,
+    pub(crate) msg_len: usize,
+    pub(crate) msg_rlc: Value<F>,
+    pub(crate) msg_hash_rlc: AssignedCell<F,F>,
+    pub(crate) r_rlc: AssignedCell<F,F>,
+    pub(crate) s_rlc: AssignedCell<F,F>,
+    pub(crate) v: AssignedCell<F, F>,
+    pub(crate) sig_is_valid: AssignedCell<F,F>,
+}
+
+
+impl<F:Field> TransmutedSignatureVerify<F> {
+
+    fn trasmute_from(
+        builder:  RefCell<RangeCircuitBuilder<F>>,
+        config: &SigCircuitConfig<F>,
+        layouter: &mut impl Layouter<F>,
+        assigned_sig_verif: &AssignedSignatureVerify<F>,
+    )->Self{
+        todo!()
+    }
+}
+
 pub(super) struct SignDataDecomposed<F: Field> {
     pub(super) pk_hash_cells: Vec<QuantumCell<F>>,
     pub(super) msg_hash_cells: Vec<QuantumCell<F>>,
@@ -95,5 +112,4 @@ pub(super) struct SignDataDecomposed<F: Field> {
     pub(super) is_address_zero: AssignedValue<F>,
     pub(super) r_cells: Vec<QuantumCell<F>>,
     pub(super) s_cells: Vec<QuantumCell<F>>,
-    //v:  AssignedValue<'v, F>, // bool
 }

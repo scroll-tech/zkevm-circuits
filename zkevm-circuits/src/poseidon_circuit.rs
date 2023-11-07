@@ -204,6 +204,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
 impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
     type Config = (PoseidonCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self(Default::default(), self.1)

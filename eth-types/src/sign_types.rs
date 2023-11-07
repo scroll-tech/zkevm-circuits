@@ -15,8 +15,9 @@ use ethers_core::{
     utils::keccak256,
 };
 use halo2_proofs::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::CurveAffine,
     halo2curves::{
+        ff::FromUniformBytes,
         group::{
             ff::{Field as GroupField, PrimeField},
             prime::PrimeCurveAffine,
@@ -45,7 +46,7 @@ pub fn sign(randomness: Fq, sk: Fq, msg_hash: Fq) -> (Fq, Fq, u8) {
     let mut x_bytes = [0u8; 64];
     x_bytes[..32].copy_from_slice(&x.to_bytes());
 
-    let sig_r = Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+    let sig_r = Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
 
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
     (sig_r, sig_s, u8::from(sig_v))

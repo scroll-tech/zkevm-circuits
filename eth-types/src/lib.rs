@@ -11,6 +11,7 @@
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![feature(adt_const_params)]
 
 #[macro_use]
 pub mod macros;
@@ -25,10 +26,7 @@ pub mod sign_types;
 
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_proofs::{
-    arithmetic::{Field as Halo2Field, FieldExt},
-    halo2curves::{bn256::Fr, group::ff::PrimeField},
-};
+use halo2_proofs::halo2curves::{bn256::Fr, ff::FromUniformBytes};
 
 use crate::evm_types::{
     memory::Memory, stack::Stack, storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter,
@@ -41,7 +39,7 @@ pub use ethers_core::{
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
-
+use halo2_base::utils::BigPrimeField;
 use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
@@ -49,21 +47,31 @@ use std::{collections::HashMap, fmt, str::FromStr};
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
 pub trait Field:
-    FieldExt
-    + Halo2Field
-    + PrimeField<Repr = [u8; 32]>
-    + hash_circuit::hash::Hashable
+    hash_circuit::hash::Hashable
     + std::convert::From<Fr>
+    + FromUniformBytes<64>
+    + From<bool>
+    + BigPrimeField
 {
+    /// Re-expose zero element as a function
+    fn zero() -> Self {
+        Self::ZERO
+    }
+
+    /// Re-expose one element as a function
+    fn one() -> Self {
+        Self::ONE
+    }
+
+    /// Expose the lower 128 bits
+    fn get_lower_128(&self) -> u128 {
+        u128::from_le_bytes(self.to_repr().as_ref()[..16].try_into().unwrap())
+    }
 }
 
 // Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
-
-// Impl custom `Field` trait for BN256 Frq to be used and consistent with the
-// rest of the workspace.
-// impl Field for Fq {}
 
 /// Trait used to define types that can be converted to a 256 bit scalar value.
 pub trait ToScalar<F> {

@@ -119,11 +119,11 @@ fn run<F: Field>(
 
     let k = max(20, log2_ceil(active_row_num));
     let circuit = TxCircuitTester::<F> {
-        sig_circuit: SigCircuit {
-            max_verif: max_txs,
-            signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
-            _marker: PhantomData,
-        },
+        // sig_circuit: SigCircuit {
+        //     max_verif: max_txs,
+        //     signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+        //     _marker: PhantomData,
+        // },
         tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, start_l1_queue_index, txs),
     };
     let prover = match MockProver::run(k, &circuit, vec![]) {

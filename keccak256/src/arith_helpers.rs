@@ -199,7 +199,7 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
 pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {
     let base = F::from(base as u64);
     buf.iter()
-        .fold(F::zero(), |acc, &x| acc * base + F::from(x as u64))
+        .fold(F::ZERO, |acc, &x| acc * base + F::from(x as u64))
 }
 
 #[cfg(test)]

@@ -28,7 +28,6 @@ use bus_mapping::util::read_env_var;
 use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
         Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
@@ -223,7 +222,7 @@ use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 
-pub(crate) trait ExecutionGadget<F: FieldExt> {
+pub(crate) trait ExecutionGadget<F: Field> {
     const NAME: &'static str;
 
     const EXECUTION_STATE: ExecutionState;

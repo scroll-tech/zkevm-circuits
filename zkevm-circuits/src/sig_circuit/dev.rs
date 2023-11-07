@@ -1,9 +1,6 @@
 use super::*;
 
-//#[cfg(not(feature = "onephase"))]
 use crate::util::Challenges;
-//#[cfg(feature = "onephase")]
-//use crate::util::MockChallenges as Challenges;
 
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
@@ -40,6 +37,7 @@ impl<F: Field> SigCircuitTesterConfig<F> {
 impl<F: Field> Circuit<F> for SigCircuit<F> {
     type Config = SigCircuitTesterConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -61,13 +59,6 @@ impl<F: Field> Circuit<F> for SigCircuit<F> {
             &keccak_inputs_sign_verify(&self.signatures),
             &challenges,
         )?;
-        /*
-        self.assert_sig_is_valid(
-            &config.sign_verify,
-            &mut layouter,
-            assigned_sig_verifs.as_slice(),
-        )?;
-        */
         Ok(())
     }
 }

@@ -28,7 +28,6 @@ use gadgets::{
     util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Fq, G1Affine},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -602,7 +601,7 @@ impl<F: Field> LookupTable<F> for RwTable {
 }
 impl RwTable {
     /// Construct a new RwTable
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             rw_counter: meta.advice_column(),
@@ -758,7 +757,7 @@ impl<F: Field> LookupTable<F> for MptTable {
 
 impl MptTable {
     /// Construct a new MptTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             address: meta.advice_column(),
@@ -879,7 +878,7 @@ impl PoseidonTable {
     pub(crate) const INPUT_WIDTH: usize = Self::WIDTH - 1;
 
     /// Construct a new PoseidonTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             hash_id: meta.advice_column(),
@@ -2331,15 +2330,14 @@ impl<F: Field> LookupTable<F> for SigTable {
     }
 }
 
-/// 1. if EcAdd(P, Q) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 1. if EcAdd(P, Q) == R then: (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc,
+///    output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = rlc(Q.x), arg4_rlc = rlc(Q.x),
 ///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
 ///
-/// 2. if EcMul(P, s) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 2. if EcMul(P, s) == R then: (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = s
@@ -2595,7 +2593,7 @@ impl ModExpTable {
 
         let mut bytes = [0u8; 64];
         remainder.to_little_endian(&mut bytes[..32]);
-        F::from_bytes_wide(&bytes)
+        F::from_uniform_bytes(&bytes)
     }
 
     /// fill a blank 4-row region start from offset for empty lookup
@@ -2653,6 +2651,7 @@ impl ModExpTable {
 
                     for i in 0..3 {
                         for (limbs, &col) in [base_limbs, exp_limbs, modulus_limbs, result_limbs]
+                            .iter()
                             .zip([&self.base, &self.exp, &self.modulus, &self.result])
                         {
                             region.assign_advice(
@@ -2665,13 +2664,10 @@ impl ModExpTable {
                     }
 
                     // native is not used by lookup (and in fact it can be omitted in dev)
-                    for (word, &col) in [
-                        &event.base,
-                        &event.exponent,
-                        &event.modulus,
-                        &event.result,
-                    ]
-                    .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                    for (word, &col) in
+                        [&event.base, &event.exponent, &event.modulus, &event.result]
+                            .iter()
+                            .zip([&self.base, &self.exp, &self.modulus, &self.result])
                     {
                         region.assign_advice(
                             || format!("modexp table native row {}", offset + 3),

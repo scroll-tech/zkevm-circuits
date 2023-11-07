@@ -419,7 +419,7 @@ impl<F: Field> ModExpInputs<F> {
             input_limbs.assign(region, offset, val_r)?;
         }
 
-        for (val, input_bytes) in values.zip([&self.base, &self.exp, &self.modulus]) {
+        for (&val, input_bytes) in values.iter().zip([&self.base, &self.exp, &self.modulus]) {
             assign_word(region, offset, input_bytes, val)?;
         }
 
@@ -977,6 +977,7 @@ mod test {
         precompile::PrecompileCalls,
     };
     use eth_types::{bytecode, word, ToWord};
+    use ethers_core::k256::elliptic_curve::PrimeField;
     use itertools::Itertools;
     use mock::TestContext;
 
@@ -985,7 +986,7 @@ mod test {
     #[test]
     fn test_limbs() {
         use crate::table::ModExpTable;
-        use halo2_proofs::{arithmetic::FieldExt, halo2curves::bn256::Fr};
+        use halo2_proofs::halo2curves::bn256::Fr;
         use misc_precompiled_circuit::circuits::modexp::Number;
         use num_bigint::BigUint;
 
