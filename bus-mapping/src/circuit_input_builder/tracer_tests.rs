@@ -770,7 +770,7 @@ fn tracer_err_code_store_out_of_gas_tx_deploy() {
 }
 
 fn check_err_invalid_code(step: &GethExecStep, next_step: Option<&GethExecStep>) -> bool {
-    let offset = step.stack.nth_last(0).unwrap();
+    let offset = step.stack.last().unwrap();
     let length = step.stack.nth_last(1).unwrap();
     step.op == OpcodeId::RETURN
         && step.error.is_none()
