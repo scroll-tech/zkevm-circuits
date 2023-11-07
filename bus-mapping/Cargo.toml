@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-keccak256 = { path = "../keccak256" }
 mpt-zktrie = {path = "../zktrie"}
 mock = { path = "../mock", optional = true }
 
