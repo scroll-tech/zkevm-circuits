@@ -33,7 +33,7 @@ ethers-signers = "2.0.7"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "develop" }
 hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0901"}
 hex = "0.4"
-itertools = "0.10"
+itertools = "0.11"
 lazy_static = "1.4"
 libsecp256k1 = "0.7"
 log = "0.4"
@@ -52,8 +52,8 @@ serde_json = "1.0"
 sha3 = "0.10"
 snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.5" }
 snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", tag = "v0.1.5", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
-strum = "0.24"
-strum_macros = "0.24"
+strum = "0.25"
+strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"

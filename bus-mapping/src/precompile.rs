@@ -2,7 +2,7 @@
 
 use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
-use strum::EnumIter;
+use strum_macros::EnumIter;
 
 use crate::circuit_input_builder::{EcMulOp, EcPairingOp, N_BYTES_PER_PAIR, N_PAIRING_PER_OP};
 
