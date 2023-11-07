@@ -281,6 +281,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Ecrecover(aux_data)) = &step.aux_data {
             let recovered = !aux_data.recovered_addr.is_zero();
+            log::error!("ecrecover recovered {recovered}");
             self.recovered
                 .assign(region, offset, Value::known(F::from(recovered as u64)))?;
             self.msg_hash_keccak_rlc.assign(

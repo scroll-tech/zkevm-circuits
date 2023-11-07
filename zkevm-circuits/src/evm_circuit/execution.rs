@@ -1331,7 +1331,7 @@ impl<F: Field> ExecutionConfig<F> {
             region,
             challenges,
             self.advices.to_vec(),
-            MAX_STEP_HEIGHT * 3,
+            height,
             offset,
         );
 
@@ -1339,6 +1339,7 @@ impl<F: Field> ExecutionConfig<F> {
         // These may be used in stored expressions and
         // so their witness values need to be known to be able
         // to correctly calculate the intermediate value.
+        /*
         if let Some((transaction_next, call_next, step_next)) = next {
             self.assign_exec_step_int(
                 region,
@@ -1350,6 +1351,8 @@ impl<F: Field> ExecutionConfig<F> {
                 false,
             )?;
         }
+        */
+
 
         self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
     }

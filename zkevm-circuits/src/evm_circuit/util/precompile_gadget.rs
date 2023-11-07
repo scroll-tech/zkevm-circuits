@@ -99,6 +99,7 @@ impl<F: Field> PrecompileGadget<F> {
             cond.expr() * not::expr(cb.next.execution_state_selector([ErrorOutOfGasPrecompile]))
         })
         .collect::<Vec<_>>();
+    log::info!("conditions[0] {} {} {:?}", conditions[0].degree(), conditions[0].identifier(), conditions[0]);
         let next_states = vec![
             ExecutionState::PrecompileEcrecover,
             ExecutionState::PrecompileSha256,

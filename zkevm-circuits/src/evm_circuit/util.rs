@@ -343,6 +343,7 @@ impl<F: FieldExt> Expr<F> for CellColumn<F> {
 pub(crate) struct CellManager<F> {
     width: usize,
     height: usize,
+    pub(crate) height_offset: usize,
     cells: Vec<Cell<F>>,
     columns: Vec<CellColumn<F>>,
 }
@@ -412,6 +413,7 @@ impl<F: FieldExt> CellManager<F> {
         Self {
             width,
             height,
+            height_offset,
             cells,
             columns,
         }

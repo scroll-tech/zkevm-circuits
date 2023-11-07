@@ -221,18 +221,20 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
+                let rwc_delta =  10.expr() - is_first_tx.expr()
+                + not::expr(tx_is_l1msg.expr())
+                    * (coinbase_transfer.rw_delta() + 1.expr());
+                let next_rw_counter = cb.curr.state.rw_counter.expr() + rwc_delta.expr();
                 cb.call_context_lookup(
                     true.expr(),
-                    Some(cb.next.state.rw_counter.expr()),
+                    Some(next_rw_counter),
                     CallContextFieldTag::TxId,
                     tx_id.expr() + 1.expr(),
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        10.expr() - is_first_tx.expr()
-                            + not::expr(tx_is_l1msg.expr())
-                                * (coinbase_transfer.rw_delta() + 1.expr()),
+                        rwc_delta,
                     ),
                     ..StepStateTransition::any()
                 });

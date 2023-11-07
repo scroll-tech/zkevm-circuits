@@ -2194,6 +2194,7 @@ version = "0.1.0"
 dependencies = [
  "eth-types",
  "halo2_proofs",
+ "log",
  "rand",
  "rand_xorshift",
  "sha3 0.10.8",
