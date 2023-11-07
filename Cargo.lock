@@ -4653,6 +4653,7 @@ dependencies = [
 name = "sha256"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "env_logger 0.10.0",
  "eth-types",
  "halo2_gadgets",

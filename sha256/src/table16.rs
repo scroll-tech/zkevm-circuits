@@ -109,6 +109,7 @@ impl From<u32> for Bits<32> {
     }
 }
 
+/// Assigned bits
 #[derive(Clone, Debug)]
 pub struct AssignedBits<F: Field, const LEN: usize>(AssignedCell<Bits<LEN>, F>);
 
@@ -352,6 +353,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
     ) -> Result<Self::State, Error> {
         let config = <Self as Chip<F>>::config(&self);
         let (_, w_halves) = config.message_schedule.process(layouter, input)?;
+
         config
             .compression
             .compress(layouter, initialized_state.clone(), w_halves)

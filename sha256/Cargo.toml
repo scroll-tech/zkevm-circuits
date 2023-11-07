@@ -23,3 +23,8 @@ env_logger.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 rand.workspace = true
+criterion = "0.3"
+
+[[bench]]
+name = "sha256"
+harness = false
