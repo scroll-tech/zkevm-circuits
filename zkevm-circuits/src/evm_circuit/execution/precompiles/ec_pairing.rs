@@ -90,6 +90,10 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
+        cb.condition(not::expr(is_success.expr()), |cb| {
+            cb.require_zero("output zero in fail case", output.expr());
+        });
+
         // all gas sent to this call will be consumed if `is_success == false`.
         let gas_cost = select::expr(
             is_success.expr(),
@@ -129,6 +133,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                     input_div_192.expr() * 192.expr() + input_mod_192.expr(),
                     call_data_length.expr(),
                 );
+
                 let input_mod_192_is_zero = IsZeroGadget::construct(cb, input_mod_192.expr());
                 (
                     input_mod_192,
@@ -153,6 +158,10 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                 cb.require_zero("pairing check == 0", output.expr());
             },
         );
+        cb.condition(input_is_zero.expr(), |cb| {
+            cb.require_true("pairing check == 1", output.expr());
+        });
+
         //////////////////////////////// INVALID END //////////////////////////////////
 
         ///////////////////////////////// VALID BEGIN /////////////////////////////////
@@ -232,6 +241,13 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                     "ecPairing: n_pairs * N_BYTES_PER_PAIR == call_data_length",
                     n_pairs.expr() * N_BYTES_PER_PAIR.expr(),
                     call_data_length.expr(),
+                );
+                // input_div_192 = n_pairs
+                cb.require_equal(
+                    "input_div_192 = n_pairs",
+                    input_div_192.expr(),
+                    //n_pairs.expr(),
+                    n_pairs_cmp.value(),
                 );
                 cb.require_in_set(
                     "ecPairing: input_len ∈ { 0, 192, 384, 576, 768 }",
@@ -538,7 +554,7 @@ mod test {
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x180.into(),
                     ret_offset: 0x180.into(),
-                    ret_size: 0x20.into(),
+                    ret_size: 0x21.into(),// can be not 32
                     address: PrecompileCalls::Bn128Pairing.address().to_word(),
                     ..Default::default()
                 },
