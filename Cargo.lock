@@ -493,7 +493,6 @@ dependencies = [
  "halo2_proofs",
  "hex",
  "itertools",
- "keccak256",
  "lazy_static",
  "log",
  "mock",
