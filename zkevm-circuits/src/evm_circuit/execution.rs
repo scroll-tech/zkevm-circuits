@@ -453,7 +453,7 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step_last = meta.query_selector(q_step_last);
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
-            let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
+            //let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
             let num_rows_left_inverse = meta.query_advice(num_rows_inv, Rotation::cur());
 
             let mut cb = BaseConstraintBuilder::default();
@@ -480,6 +480,7 @@ impl<F: Field> ExecutionConfig<F> {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
             });
             // Except when step is enabled, the step counter needs to decrease by 1
+            /* 
             cb.condition(1.expr() - q_step.clone(), |cb| {
                 cb.require_equal(
                     "num_rows_left_cur := num_rows_left_next + 1",
@@ -487,6 +488,7 @@ impl<F: Field> ExecutionConfig<F> {
                     num_rows_left_next + 1.expr(),
                 );
             });
+            */
             // Enforce that q_step := num_rows_until_next_step == 0
             let is_zero = 1.expr() - (num_rows_left_cur.clone() * num_rows_left_inverse.clone());
             cb.require_zero(
