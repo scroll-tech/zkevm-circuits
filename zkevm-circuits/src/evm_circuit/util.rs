@@ -64,7 +64,7 @@ impl<F: FieldExt> Cell<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<Option<AssignedCell<F, F>>, Error> {
         region.assign_advice(
             || {
                 format!(
@@ -97,6 +97,7 @@ pub struct CachedRegion<'r, 'b, F: FieldExt> {
     advice_columns: Vec<Column<Advice>>,
     width_start: usize,
     height_start: usize,
+    height_limit: usize,
 }
 
 impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
@@ -106,6 +107,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         challenges: &'r Challenges<Value<F>>,
         advice_columns: Vec<Column<Advice>>,
         height: usize,
+        height_limit: usize,
         height_start: usize,
     ) -> Self {
         Self {
@@ -114,6 +116,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             challenges,
             width_start: advice_columns[0].index(),
             height_start,
+            height_limit,
             advice_columns,
         }
     }
@@ -158,7 +161,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         column: Column<Advice>,
         offset: usize,
         to: V,
-    ) -> Result<AssignedCell<VR, F>, Error>
+    ) -> Result<Option<AssignedCell<VR, F>>, Error>
     where
         V: Fn() -> Value<VR> + 'v,
         for<'vr> Assigned<F>: From<&'vr VR>,
@@ -166,18 +169,27 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         AR: Into<String>,
     {
         // Actually set the value
-        let res = self.region.assign_advice(annotation, column, offset, &to);
-        // Cache the value
-        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
-        // the column has different phase than current one, so we call to `to`
-        // again here to cache the value.
-        if res.is_ok() {
+        log::info!("Cached assign at {offset}");
+        if offset - self.height_start < self.height_limit {
+            let res = self.region.assign_advice(annotation, column, offset, &to);
+            // Cache the value
+            // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+            // the column has different phase than current one, so we call to `to`
+            // again here to cache the value.
+            if res.is_ok() {
+                to().map(|f| {
+                    self.advice[column.index() - self.width_start][offset - self.height_start] =
+                        Assigned::from(&f).evaluate();
+                });
+            }
+            Ok(Some(res?))
+        } else {
             to().map(|f| {
                 self.advice[column.index() - self.width_start][offset - self.height_start] =
                     Assigned::from(&f).evaluate();
             });
+            Ok(None)
         }
-        res
     }
 
     pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
@@ -529,7 +541,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: Option<[u8; N]>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<Vec<Option<AssignedCell<F, F>>>, Error> {
         bytes.map_or(Err(Error::Synthesis), |bytes| {
             self.cells
                 .iter()

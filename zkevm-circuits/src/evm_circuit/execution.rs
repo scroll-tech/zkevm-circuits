@@ -36,6 +36,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use itertools::Itertools;
 use std::{
     collections::{BTreeSet, HashMap},
     iter,
@@ -453,7 +454,8 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step_last = meta.query_selector(q_step_last);
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
-            //let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
+            //let num_rows_left_next = meta.query_advice(num_rows_until_next_step,
+            // Rotation::next());
             let num_rows_left_inverse = meta.query_advice(num_rows_inv, Rotation::cur());
 
             let mut cb = BaseConstraintBuilder::default();
@@ -480,7 +482,7 @@ impl<F: Field> ExecutionConfig<F> {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
             });
             // Except when step is enabled, the step counter needs to decrease by 1
-            /* 
+            /*
             cb.condition(1.expr() - q_step.clone(), |cb| {
                 cb.require_equal(
                     "num_rows_left_cur := num_rows_left_next + 1",
@@ -1070,10 +1072,6 @@ impl<F: Field> ExecutionConfig<F> {
             debug_assert_eq!(total_height, evm_rows);
         }
 
-        let mut region1_is_first_time = true;
-        let mut region2_is_first_time = true;
-        let mut region3_is_first_time = true;
-
         let assign_shape = |region: &mut Region<'_, F>, height| {
             region.assign_advice(
                 || "step selector",
@@ -1081,7 +1079,7 @@ impl<F: Field> ExecutionConfig<F> {
                 height - 1,
                 || Value::known(F::zero()),
             )?;
-            return Ok(());
+            return Ok(height);
         };
 
         let dummy_tx = Transaction::default();
@@ -1095,7 +1093,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         struct StepAssignment {
             tx_idx: usize,
-            step_idx: usize,
+            step_idx_in_tx: usize,
+            height: usize,
             offset: usize,
         }
         let mut step_assignments: Vec<StepAssignment> = Vec::new();
@@ -1107,8 +1106,9 @@ impl<F: Field> ExecutionConfig<F> {
                 let height = step.execution_state.get_step_height();
                 step_assignments.push(StepAssignment {
                     tx_idx,
-                    step_idx,
+                    step_idx_in_tx: step_idx,
                     offset,
+                    height,
                 });
                 offset += height;
             }
@@ -1152,91 +1152,177 @@ impl<F: Field> ExecutionConfig<F> {
             }
         };
 
+        let chunking_fn = |name: &str, rows_len: usize| -> (usize, usize) {
+            let num_threads = std::thread::available_parallelism()
+                .map(|e| e.get())
+                .unwrap_or(1);
+            //let num_threads = 1;
+            let chunk_size = (rows_len + num_threads - 1) / num_threads;
+            let chunk_num = (rows_len + chunk_size - 1) / chunk_size;
+            log::debug!(
+                "{} chunking: len = {}, num_threads = {}, chunk_size = {}, chunk_num = {}",
+                name,
+                rows_len,
+                num_threads,
+                chunk_size,
+                chunk_num
+            );
+            (chunk_size, chunk_num)
+        };
+
         // Step1: assign real steps
-        layouter.assign_region(
-            || "Execution step region1",
-            |mut region| {
-                if region1_is_first_time {
-                    region1_is_first_time = false;
-                    return assign_shape(&mut region, region1_height);
-                }
-                let mut offset = 0;
 
-                // Annotate the EVMCircuit columns within it's single region.
-                self.annotate_circuit(&mut region);
+        let (region1_chunk_size, region1_chunk_num) =
+            chunking_fn("region1", step_assignments.len());
+        //let idxs: Vec<usize> = (0..step_assignments.len()).collect();
+        let mut region1_is_first_time: Vec<(usize, bool)> = (0..region1_chunk_num)
+            .map(|chunk_idx| (chunk_idx, true))
+            .collect();
+        //vec![true; region1_chunk_num];
+        let region1_height_sum = layouter
+            .assign_regions(
+                || "Execution step region1",
+                //   idxs.chunks(region1_chunk_size)
+                //    .zip_eq(region1_is_first_time.iter_mut())
+                // .map(|(step_idxs, is_first_time)| {
+                region1_is_first_time
+                    .iter_mut()
+                    .map(|(chunk_idx, is_first_time)| {
+                        //let step_idxs: Vec<usize> = step_idxs.to_vec();
+                        |mut region: Region<'_, F>| {
+                            let chunk_idx = *chunk_idx;
+                            let begin = chunk_idx * region1_chunk_size;
+                            let end =
+                                ((chunk_idx + 1) * region1_chunk_size).min(step_assignments.len());
+                            let step_idxs: Vec<usize> = (begin..end).collect();
+                            log::trace!("region1 range {} {} {}", chunk_idx, begin, end);
+                            let total_height = step_idxs
+                                .iter()
+                                .map(|idx| step_assignments[*idx].height)
+                                .sum::<usize>();
+                            if *is_first_time {
+                                *is_first_time = false;
+                                return assign_shape(&mut region, total_height);
+                            }
+                            /*
+                                    // TODO: use those outside?
+                                    let inverter = Inverter::new(MAX_STEP_HEIGHT as u64);
+                                    let dummy_tx = Transaction::default();
+                                    let last_call = block
+                                .txs
+                                .last()
+                                .map(|tx| tx.calls[0].clone())
+                                .unwrap_or_else(Call::default);
+                            */
+                            let mut offset = 0;
 
-                self.q_step_first.enable(&mut region, offset)?;
+                            // Annotate the EVMCircuit columns within it's single region.
+                            self.annotate_circuit(&mut region);
 
-                for (idx, step_assignment) in step_assignments.iter().enumerate() {
-                    let transaction = &block.txs[step_assignment.tx_idx];
-                    let step = &transaction.steps[step_assignment.step_idx];
-                    let call = &transaction.calls[step.call_index];
+                            //if step.rw_counter == 1 {
 
-                    let height = step.execution_state.get_step_height();
+                            if chunk_idx == 0 {
+                                self.q_step_first.enable(&mut region, offset)?;
+                            }
+                            for step_idx in step_idxs {
+                                //let step_idx = *step_idx;
+                                let step_assignment = &step_assignments[step_idx];
+                                let transaction = &block.txs[step_assignment.tx_idx];
+                                let step = &transaction.steps[step_assignment.step_idx_in_tx];
+                                let call = &transaction.calls[step.call_index];
 
-                    log_step_fn(&transaction, &step, offset);
+                                let height = step.execution_state.get_step_height();
 
-                    let next = match step_assignments.get(idx + 1) {
-                        None => (&dummy_tx, &last_call, end_block_not_last),
-                        Some(step_assignment) => {
-                            // refactor here
-                            let transaction = &block.txs[step_assignment.tx_idx];
-                            let step = &transaction.steps[step_assignment.step_idx];
-                            let call = &transaction.calls[step.call_index];
-                            (transaction, call, step)
+                                log_step_fn(&transaction, &step, offset);
+
+                                let next = match step_assignments.get(step_idx + 1) {
+                                    None => (&dummy_tx, &last_call, end_block_not_last),
+                                    Some(step_assignment) => {
+                                        // refactor here
+                                        let transaction = &block.txs[step_assignment.tx_idx];
+                                        let step =
+                                            &transaction.steps[step_assignment.step_idx_in_tx];
+                                        let call = &transaction.calls[step.call_index];
+                                        (transaction, call, step)
+                                    }
+                                };
+
+                                self.assign_exec_step(
+                                    &mut region,
+                                    offset,
+                                    block,
+                                    transaction,
+                                    call,
+                                    step,
+                                    height,
+                                    Some(next),
+                                    challenges,
+                                )?;
+
+                                self.assign_q_step(&mut region, &inverter, offset, height)?;
+
+                                offset += height;
+                            }
+                            debug_assert_eq!(offset, total_height);
+                            Ok(total_height)
                         }
-                    };
+                    })
+                    .collect_vec(),
+            )?
+            .into_iter()
+            .sum::<usize>();
 
-                    self.assign_exec_step(
-                        &mut region,
-                        offset,
-                        block,
-                        transaction,
-                        call,
-                        step,
-                        height,
-                        Some(next),
-                        challenges,
-                    )?;
-
-                    self.assign_q_step(&mut region, &inverter, offset, height)?;
-
-                    offset += height;
-                }
-
-                Ok(())
-            },
-        )?;
+        debug_assert_eq!(region1_height, region1_height_sum);
 
         // part2: assign non-last EndBlock steps when padding needed
-        layouter.assign_region(
+
+        let (region2_chunk_size, region2_chunk_num) = chunking_fn("region2", region2_height);
+        let idxs: Vec<usize> = (0..region2_height).collect();
+        let mut region2_is_first_time = vec![true; region2_chunk_num];
+
+        log::trace!(
+            "assign non-last EndBlock in range [{},{})",
+            region1_height,
+            region1_height + region2_height
+        );
+        layouter.assign_regions(
             || "Execution step region2",
-            |mut region| {
-                if region2_is_first_time {
-                    region2_is_first_time = false;
-                    return assign_shape(&mut region, region2_height);
-                }
-                log::trace!(
-                    "assign non-last EndBlock in range [{},{})",
-                    region1_height,
-                    region1_height + region2_height
-                );
-                self.assign_same_exec_step_in_range(
-                    &mut region,
-                    0,
-                    region2_height,
-                    block,
-                    &dummy_tx,
-                    &last_call,
-                    end_block_not_last,
-                    1,
-                    challenges,
-                )?;
-                for row_idx in 0..region2_height {
-                    self.assign_q_step(&mut region, &inverter, row_idx, 1)?;
-                }
-                Ok(())
-            },
+            idxs.chunks(region2_chunk_size)
+                .zip_eq(region2_is_first_time.iter_mut())
+                .map(|(rows, is_first_time)| {
+                    |mut region: Region<'_, F>| {
+                        if *is_first_time {
+                            *is_first_time = false;
+                            return assign_shape(&mut region, rows.len());
+                        }
+                        /*
+                                // TODO: use those outside?
+                                let inverter = Inverter::new(MAX_STEP_HEIGHT as u64);
+                                let dummy_tx = Transaction::default();
+                                let last_call = block
+                            .txs
+                            .last()
+                            .map(|tx| tx.calls[0].clone())
+                            .unwrap_or_else(Call::default);
+                        */
+                        self.assign_same_exec_step_in_range(
+                            &mut region,
+                            0,
+                            rows.len(),
+                            block,
+                            &dummy_tx,
+                            &last_call,
+                            end_block_not_last,
+                            1,
+                            challenges,
+                        )?;
+                        for row_idx in 0..rows.len() {
+                            self.assign_q_step(&mut region, &inverter, row_idx, 1)?;
+                        }
+                        Ok(rows.len())
+                    }
+                })
+                .collect_vec(),
         )?;
 
         // part3: assign the last EndBlock at offset `evm_rows - 1`
@@ -1245,6 +1331,8 @@ impl<F: Field> ExecutionConfig<F> {
             "assign last EndBlock at offset {}",
             region1_height + region2_height
         );
+
+        let mut region3_is_first_time = true;
         layouter.assign_region(
             || "Execution step region3",
             |mut region| {
@@ -1279,7 +1367,7 @@ impl<F: Field> ExecutionConfig<F> {
                     1,
                     || Value::known(F::zero()),
                 )?;
-                Ok(())
+                Ok(2)
             },
         )?;
 
@@ -1288,7 +1376,8 @@ impl<F: Field> ExecutionConfig<F> {
         let final_withdraw_root_cell = self
             .end_block_gadget
             .withdraw_root_assigned
-            .borrow()
+            .lock()
+            .unwrap()
             .expect("withdraw_root cell should has been assigned");
 
         // sanity check
@@ -1369,6 +1458,7 @@ impl<F: Field> ExecutionConfig<F> {
             challenges,
             self.advices.to_vec(),
             1,
+            1,
             offset_begin,
         );
         self.assign_exec_step_int(region, offset_begin, block, transaction, call, step, false)?;
@@ -1403,6 +1493,7 @@ impl<F: Field> ExecutionConfig<F> {
             challenges,
             self.advices.to_vec(),
             MAX_STEP_HEIGHT * 3,
+            height,
             offset,
         );
 
@@ -1622,6 +1713,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        log::info!("assign_stored_expressions begin");
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
