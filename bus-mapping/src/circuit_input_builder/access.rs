@@ -70,7 +70,7 @@ pub struct AccessSet {
 impl AccessSet {
     #[inline(always)]
     pub(crate) fn add_account(&mut self, address: Address) {
-        self.state.entry(address).or_insert_with(HashSet::new);
+        self.state.entry(address).or_default();
     }
 
     #[inline(always)]
@@ -89,7 +89,7 @@ impl AccessSet {
 
     #[inline(always)]
     pub(crate) fn add_code(&mut self, address: Address) {
-        self.state.entry(address).or_insert_with(HashSet::new);
+        self.state.entry(address).or_default();
         self.code.insert(address);
     }
 
