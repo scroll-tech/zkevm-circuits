@@ -260,6 +260,7 @@ impl<F: Field> EvmCircuit<F> {
         num_rows
     }
 
+    #[deprecated]
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
