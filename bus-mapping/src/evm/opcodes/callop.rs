@@ -240,7 +240,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // panic with full info
             let info1 = format!("callee_gas_left {callee_gas_left} gas_specified {gas_specified} gas_cost {gas_cost} is_warm {is_warm} has_value {has_value} current_memory_word_size {curr_memory_word_size} next_memory_word_size {next_memory_word_size}, memory_expansion_gas_cost {memory_expansion_gas_cost}");
             let info2 = format!("args gas:{:?} addr:{:?} value:{:?} cd_pos:{:?} cd_len:{:?} rd_pos:{:?} rd_len:{:?}",
-                        geth_step.stack.nth_last(0),
+                        geth_step.stack.last(),
                         geth_step.stack.nth_last(1),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),

@@ -31,16 +31,12 @@ fn gen_codecopy_step(
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
 
-    let dest_offset = geth_step.stack.nth_last(0)?;
+    let dest_offset = geth_step.stack.last()?;
     let code_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 
     // stack reads
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(0),
-        dest_offset,
-    )?;
+    state.stack_read(&mut exec_step, geth_step.stack.last_filled(), dest_offset)?;
     state.stack_read(
         &mut exec_step,
         geth_step.stack.nth_last_filled(1),
@@ -58,7 +54,7 @@ fn gen_copy_event(
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    let dst_offset = geth_step.stack.nth_last(0)?;
+    let dst_offset = geth_step.stack.last()?;
     let code_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?.as_u64();
 

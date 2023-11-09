@@ -27,9 +27,9 @@ impl Opcode for ReturnRevert {
         let step = &steps[0];
         let mut exec_step = state.new_step(step)?;
 
-        let offset = step.stack.nth_last(0)?;
+        let offset = step.stack.last()?;
         let length = step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, step.stack.nth_last_filled(0), offset)?;
+        state.stack_read(&mut exec_step, step.stack.last_filled(), offset)?;
         state.stack_read(&mut exec_step, step.stack.nth_last_filled(1), length)?;
 
         if !length.is_zero() {

@@ -20,12 +20,8 @@ impl Opcode for Blockhash {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let block_number = geth_step.stack.nth_last(0)?;
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(0),
-            block_number,
-        )?;
+        let block_number = geth_step.stack.last()?;
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), block_number)?;
 
         let block_hash = geth_steps[1].stack.last()?;
         state.stack_write(
