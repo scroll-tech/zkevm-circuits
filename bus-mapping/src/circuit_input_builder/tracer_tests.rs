@@ -25,7 +25,7 @@ use mock::{
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
-// Helper struct that contains a CircuitInputBuilder, a particuar tx and a
+// Helper struct that contains a CircuitInputBuilder, a particular tx and a
 // particular execution step so that we can easily get a
 // CircuitInputStateRef to have a context in order to get the error at a
 // given step.
