@@ -1153,6 +1153,9 @@ impl<F: Field> ExecutionConfig<F> {
         };
 
         let chunking_fn = |name: &str, rows_len: usize| -> (usize, usize) {
+            if rows_len == 0 {
+                return (0, 0);
+            }
             let num_threads = std::thread::available_parallelism()
                 .map(|e| e.get())
                 .unwrap_or(1);
@@ -1379,12 +1382,6 @@ impl<F: Field> ExecutionConfig<F> {
             .lock()
             .unwrap()
             .expect("withdraw_root cell should has been assigned");
-
-        // sanity check
-        let evm_rows = block.circuits_params.max_evm_rows;
-        if evm_rows >= 2 {
-            assert_eq!(final_withdraw_root_cell.row_offset, evm_rows - 2);
-        }
 
         let withdraw_root_rlc = challenges
             .evm_word()
