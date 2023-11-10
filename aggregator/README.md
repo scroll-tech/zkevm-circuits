@@ -36,7 +36,7 @@ c_i.post_state_root == c_{i+1}.prev_state_root
 for $i \in [1, k-1]$.
 
 ## Padded chunk
-A __padded chunk__ is a chunk that repeats last valid chunk. It is used for padding. 
+A __padded chunk__ is a chunk that repeats the last valid chunk. It is used for padding. 
 If $k< n$, $(n-k)$ padded chunks are padded to the list. A padded chunk has the same data fields as the last real chunk, and the parameters are set as
 - state root before this chunk: `c_{k}.prev_state_root`
 - state root after this chunk: `c_{k}.post_state_root`
@@ -97,7 +97,7 @@ for i in 1 ... n
     chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
 ```
 
-This is done by compute the RLCs of chunk[i]'s data_hash for `i=0..k`, and then check the RLC matches the one from the keccak table.
+This is done by computing the RLCs of chunk[i]'s data_hash for `i=0..k`, and then check the RLC matches the one from the keccak table.
 
 4. chunks are continuous when they are not padded: they are linked via the state roots.
 
@@ -106,7 +106,7 @@ for i in 1 ... k-1
     c_i.post_state_root == c_{i+1}.prev_state_root
 ```
 
-5. All the chunks use a same chain id. __Static__.
+5. All the chunks use the same chain id. __Static__.
 ```
 for i in 1 ... n
     batch.chain_id == chunk[i].chain_id
@@ -119,7 +119,7 @@ for i in 1 ... n:
         chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells
 ```
 This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
-7. the hash input length are correct
+7. the hash input length is correct
 - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
 - batch's data_hash length is 32 * number_of_valid_snarks
 8. batch data hash is correct w.r.t. its RLCs
@@ -131,7 +131,7 @@ This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
 ![Dynamic_inputs](./figures/hash_table.jpg)
 
 
-Our keccak table uses $2^{19}$ rows. Each keccak round takes `300` rows. When the number of round is is less than $2^{19}/300$, the cell manager will fill in the rest of the rows with dummy hashes. 
+Our keccak table uses $2^{19}$ rows. Each keccak round takes `300` rows. When the number of round is less than $2^{19}/300$, the cell manager will fill in the rest of the rows with dummy hashes. 
 
 The only hash that uses dynamic number of rounds is the last hash. 
 Suppose we target for `MAX_AGG_SNARK = 10`. Then, the last hash function will take no more than `32 * 10 /136 = 3` rounds. 
