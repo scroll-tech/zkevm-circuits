@@ -65,7 +65,7 @@ Cyclic shift offset constants $r[x,y]$ are picked according to the following tab
 | $y=4$ | 56 | 14 | 18 | 2  | 61 |
 | $y=3$ | 21 | 8  | 41 | 45 | 15 |
 
-Round constants $RC[k]$ are also given, in hexiadecimal notion it looks like:
+Round constants $RC[k]$ are also given, in hexadecimal notion it looks like:
 
 $$\begin{array}{ll}
 RC[ 0] & \verb"0x0000000000000001" 
@@ -226,7 +226,7 @@ The parts splitted from the word is then determined bit-by-bit from `target_size
 - `uniform` is true, then the remaining `rot`-sized bits [63-`rot`+1,...,63] are divided by `part_size` plus a remainder, and first 64-`rot` bits are determined by a section compensating previous remainder, plus divide by `part_size`, and plus the remainder from `target_size` division; 
 - `uniform` is false, then the remaining `rot`-sized bits [63-`rot`+1,...,63] are divided by `part_size` plus remainder, and first 64-`rot` bits determined by `part_size` plus a remainder.
 
-The way we do the above split when `uniform` is true enables an optimization shown below, where after rotation the front and tail remainders combined together becomes an inverval of length `part_size`:
+The way we do the above split when `uniform` is true enables an optimization shown below, where after rotation the front and tail remainders combined together becomes an interval of length `part_size`:
 
 ![split_normalize_true](https://hackmd.io/_uploads/S1V-8qoKn.png)
 
@@ -350,7 +350,7 @@ $$os[i][j]=s[i][j]+bc[(i+4)\mod 5]+\text{rot}(bc[(i+1)\mod 5], 1) $$ and set it 
 
 #### Rationale 
 - <i>Soundness</i>: Use the symbols in the previous section on Keccak-f permutation function, it can be checked that $C[x]$ is the same as the parity of $A[x,0]+A[x,1]+...+A[x,4]$. So this is what $bc[i]$ checks at the `normalize_6` table lookup step. 
-In a same rationale, $os[i][j]$ after normalization stands for the parity of $A[x,y]\oplus D[x]$. This normalization is postponed to $\rho/\pi$-step using `normalize_4` table lookup. 
+In the same rationale, $os[i][j]$ after normalization stands for the parity of $A[x,y]\oplus D[x]$. This normalization is postponed to $\rho/\pi$-step using `normalize_4` table lookup. 
 - <i>Completeness</i>: Since $C[x]$ is the same as the parity of $A[x,0]+A[x,1]+...+A[x,4]$, any selection of witnesses that satisfy original $\theta$-step in the Section on Keccak-f permutation function will pass the constraints.
 
 ### rho/pi-step
