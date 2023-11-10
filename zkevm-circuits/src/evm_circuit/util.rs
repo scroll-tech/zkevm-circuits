@@ -169,7 +169,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         AR: Into<String>,
     {
         // Actually set the value
-        log::info!("Cached assign at {offset}");
+        // log::info!("Cached assign at {offset}");
         if offset - self.height_start < self.height_limit {
             let res = self.region.assign_advice(annotation, column, offset, &to);
             // Cache the value
