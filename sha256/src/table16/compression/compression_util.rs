@@ -2,14 +2,14 @@ use super::{
     AbcdVar, CompressionConfig, EfghVar, RoundWord, RoundWordA, RoundWordDense, RoundWordE,
     RoundWordSpread, State, UpperSigmaVar,
 };
-use crate::table16::{
-    util::*, AssignedBits, SpreadVar, SpreadWord, StateWord, Table16Assignment,
+use crate::{
+    table16::{util::*, AssignedBits, SpreadVar, SpreadWord, StateWord, Table16Assignment},
+    Field,
 };
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, Error},
 };
-use crate::Field;
 use std::convert::TryInto;
 
 // Test vector 'abc'
@@ -199,7 +199,7 @@ pub fn get_digest_efgh_row() -> usize {
 }
 
 impl CompressionConfig {
-    pub(super) fn decompose_abcd<F:Field>(
+    pub(super) fn decompose_abcd<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         row: usize,
@@ -270,7 +270,7 @@ impl CompressionConfig {
         })
     }
 
-    pub(super) fn decompose_efgh<F:Field>(
+    pub(super) fn decompose_efgh<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         row: usize,
@@ -341,7 +341,7 @@ impl CompressionConfig {
         })
     }
 
-    pub(super) fn decompose_a<F:Field>(
+    pub(super) fn decompose_a<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: RoundIdx,
@@ -354,7 +354,7 @@ impl CompressionConfig {
         Ok(RoundWordA::new(a_pieces, dense_halves, spread_halves))
     }
 
-    pub(super) fn decompose_e<F:Field>(
+    pub(super) fn decompose_e<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: RoundIdx,
@@ -367,7 +367,7 @@ impl CompressionConfig {
         Ok(RoundWordE::new(e_pieces, dense_halves, spread_halves))
     }
 
-    pub(super) fn assign_upper_sigma_0<F:Field>(
+    pub(super) fn assign_upper_sigma_0<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -425,7 +425,7 @@ impl CompressionConfig {
         )
     }
 
-    pub(super) fn assign_upper_sigma_1<F:Field>(
+    pub(super) fn assign_upper_sigma_1<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -484,7 +484,7 @@ impl CompressionConfig {
         )
     }
 
-    fn assign_ch_outputs<F:Field>(
+    fn assign_ch_outputs<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         row: usize,
@@ -509,7 +509,7 @@ impl CompressionConfig {
         Ok(odd)
     }
 
-    pub(super) fn assign_ch<F:Field>(
+    pub(super) fn assign_ch<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -555,7 +555,7 @@ impl CompressionConfig {
         self.assign_ch_outputs(region, row, p_0_even, p_0_odd, p_1_even, p_1_odd)
     }
 
-    pub(super) fn assign_ch_neg<F:Field>(
+    pub(super) fn assign_ch_neg<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -634,7 +634,7 @@ impl CompressionConfig {
         self.assign_ch_outputs(region, row, p_0_even, p_0_odd, p_1_even, p_1_odd)
     }
 
-    fn assign_maj_outputs<F:Field>(
+    fn assign_maj_outputs<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         row: usize,
@@ -658,7 +658,7 @@ impl CompressionConfig {
         Ok(odd)
     }
 
-    pub(super) fn assign_maj<F:Field>(
+    pub(super) fn assign_maj<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -716,7 +716,7 @@ impl CompressionConfig {
 
     // s_h_prime to get H' = H + Ch(E, F, G) + s_upper_sigma_1(E) + K + W
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn assign_h_prime<F:Field>(
+    pub(super) fn assign_h_prime<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -750,7 +750,13 @@ impl CompressionConfig {
         let k_lo: [bool; 16] = k[..16].try_into().unwrap();
         let k_hi: [bool; 16] = k[16..].try_into().unwrap();
         {
-            AssignedBits::<F, 16>::assign_bits(region, || "k_lo", a_6, row - 1, Value::known(k_lo))?;
+            AssignedBits::<F, 16>::assign_bits(
+                region,
+                || "k_lo",
+                a_6,
+                row - 1,
+                Value::known(k_lo),
+            )?;
             AssignedBits::<F, 16>::assign_bits(region, || "k_hi", a_6, row, Value::known(k_hi))?;
         }
 
@@ -790,17 +796,27 @@ impl CompressionConfig {
             let h_prime_lo: Value<[bool; 16]> = h_prime.map(|w| w[..16].try_into().unwrap());
             let h_prime_hi: Value<[bool; 16]> = h_prime.map(|w| w[16..].try_into().unwrap());
 
-            let h_prime_lo =
-                AssignedBits::<F, 16>::assign_bits(region, || "h_prime_lo", a_7, row + 1, h_prime_lo)?;
-            let h_prime_hi =
-                AssignedBits::<F, 16>::assign_bits(region, || "h_prime_hi", a_8, row + 1, h_prime_hi)?;
+            let h_prime_lo = AssignedBits::<F, 16>::assign_bits(
+                region,
+                || "h_prime_lo",
+                a_7,
+                row + 1,
+                h_prime_lo,
+            )?;
+            let h_prime_hi = AssignedBits::<F, 16>::assign_bits(
+                region,
+                || "h_prime_hi",
+                a_8,
+                row + 1,
+                h_prime_hi,
+            )?;
 
             Ok((h_prime_lo, h_prime_hi).into())
         }
     }
 
     // s_e_new to get E_new = H' + D
-    pub(super) fn assign_e_new<F:Field>(
+    pub(super) fn assign_e_new<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -826,18 +842,13 @@ impl CompressionConfig {
         ]);
 
         let e_new_dense = self.assign_word_halves_dense(region, row, a_8, row + 1, a_8, e_new)?;
-        region.assign_advice(
-            || "e_new_carry",
-            a_9,
-            row + 1,
-            || e_new_carry.map(F::from),
-        )?;
+        region.assign_advice(|| "e_new_carry", a_9, row + 1, || e_new_carry.map(F::from))?;
 
         Ok(e_new_dense)
     }
 
     // s_a_new to get A_new = H' + Maj(A, B, C) + s_upper_sigma_0(A)
-    pub(super) fn assign_a_new<F:Field>(
+    pub(super) fn assign_a_new<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: MainRoundIdx,
@@ -880,17 +891,12 @@ impl CompressionConfig {
         ]);
 
         let a_new_dense = self.assign_word_halves_dense(region, row, a_8, row + 1, a_8, a_new)?;
-        region.assign_advice(
-            || "a_new_carry",
-            a_9,
-            row,
-            || a_new_carry.map(F::from),
-        )?;
+        region.assign_advice(|| "a_new_carry", a_9, row, || a_new_carry.map(F::from))?;
 
         Ok(a_new_dense)
     }
 
-    pub fn assign_word_halves_dense<F:Field>(
+    pub fn assign_word_halves_dense<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         lo_row: usize,
@@ -916,7 +922,7 @@ impl CompressionConfig {
 
     // Assign hi and lo halves for both dense and spread versions of a word
     #[allow(clippy::type_complexity)]
-    pub fn assign_word_halves<F:Field>(
+    pub fn assign_word_halves<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         row: usize,
@@ -942,7 +948,7 @@ impl CompressionConfig {
 }
 
 #[allow(clippy::many_single_char_names)]
-pub fn match_state<F:Field>(
+pub fn match_state<F: Field>(
     state: State<F>,
 ) -> (
     RoundWordA<F>,

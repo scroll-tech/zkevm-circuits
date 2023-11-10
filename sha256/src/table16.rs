@@ -1,9 +1,9 @@
-use std::convert::TryInto;
+use crate::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter, Region, Value},
     plonk::{Advice, Any, Assigned, Column, ConstraintSystem, Error},
 };
-use crate::Field;
+use std::convert::TryInto;
 
 mod compression;
 mod gates;
@@ -255,15 +255,11 @@ impl<F: Field> Chip<F> for Table16Chip {
 impl Table16Chip {
     /// Reconstructs this chip from the given config.
     pub fn construct<F: Field>(config: <Self as Chip<F>>::Config) -> Self {
-        Self {
-            config,
-        }
+        Self { config }
     }
 
     /// Configures a circuit to include this chip.
-    pub fn configure<F: Field>(
-        meta: &mut ConstraintSystem<F>,
-    ) -> <Self as Chip<F>>::Config {
+    pub fn configure<F: Field>(meta: &mut ConstraintSystem<F>) -> <Self as Chip<F>>::Config {
         // Columns required by this chip:
         let message_schedule = meta.advice_column();
         let extras = [
@@ -326,11 +322,10 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
     type State = State<F>;
     type BlockWord = BlockWord;
 
-    fn initialization_vector(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<Self::State, Error> {
-        <Self as Chip<F>>::config(&self).compression.initialize_with_iv(layouter, IV)
+    fn initialization_vector(&self, layouter: &mut impl Layouter<F>) -> Result<Self::State, Error> {
+        <Self as Chip<F>>::config(&self)
+            .compression
+            .initialize_with_iv(layouter, IV)
     }
 
     fn initialization(
@@ -352,7 +347,8 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         input: [Self::BlockWord; super::BLOCK_SIZE],
     ) -> Result<Self::State, Error> {
         let config = <Self as Chip<F>>::config(&self);
-        let (_, w_halves) = config.message_schedule.process(layouter, input)?;
+        let (wd, w_halves) = config.message_schedule.process(layouter, input)?;
+        //wd[..16].iter().for_each(|b|)
 
         config
             .compression
@@ -366,7 +362,9 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
     ) -> Result<[Self::BlockWord; super::DIGEST_SIZE], Error> {
         // Copy the dense forms of the state variable chunks down to this gate.
         // Reconstruct the 32-bit dense words.
-        <Self as Chip<F>>::config(&self).compression.digest(layouter, state.clone())
+        <Self as Chip<F>>::config(&self)
+            .compression
+            .digest(layouter, state.clone())
     }
 }
 
@@ -449,13 +447,16 @@ trait Table16Assignment<F: Field> {
 #[cfg(test)]
 #[cfg(feature = "dev-graph")]
 mod tests {
-    use super::super::{Sha256, BLOCK_SIZE};
-    use super::{message_schedule::msg_schedule_test_input, Table16Chip, Table16Config};
+    use super::{
+        super::{Sha256, BLOCK_SIZE},
+        message_schedule::msg_schedule_test_input,
+        Table16Chip, Table16Config,
+    };
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, ConstraintSystem, Error},
         dev::MockProver,
-    };    
+        plonk::{Circuit, ConstraintSystem, Error},
+    };
     use halo2curves::pasta::pallas;
     use std::collections::BTreeSet;
 
@@ -476,16 +477,18 @@ mod tests {
                 let cfg = Table16Chip::configure(meta);
 
                 let rotations = meta
-                .advice_queries
-                .iter()
-                .map(|(_, q)| q.0)
-                .collect::<BTreeSet<i32>>();
+                    .advice_queries
+                    .iter()
+                    .map(|(_, q)| q.0)
+                    .collect::<BTreeSet<i32>>();
 
-                println!("constraints: {}", meta
-                .gates()
-                .iter()
-                .map(|g| g.polynomials().len())
-                .sum::<usize>());
+                println!(
+                    "constraints: {}",
+                    meta.gates()
+                        .iter()
+                        .map(|g| g.polynomials().len())
+                        .sum::<usize>()
+                );
 
                 println!("fix col: {}", meta.num_fixed_columns);
                 println!("adv col: {}", meta.num_advice_columns);
@@ -496,13 +499,16 @@ mod tests {
                 println!("permutation cols: {}", meta.permutation.columns.len());
                 println!("degree: {}", meta.degree());
                 println!("rotations: {}", rotations.len());
-                println!("verificatio_ecmul: {}", meta.num_advice_columns
-                + meta.num_instance_columns
-                + meta.permutation.columns.len()
-                + meta.num_selectors
-                + meta.num_fixed_columns
-                + 3 * meta.lookups.len()
-                + rotations.len());
+                println!(
+                    "verificatio_ecmul: {}",
+                    meta.num_advice_columns
+                        + meta.num_instance_columns
+                        + meta.permutation.columns.len()
+                        + meta.num_selectors
+                        + meta.num_fixed_columns
+                        + 3 * meta.lookups.len()
+                        + rotations.len()
+                );
 
                 cfg
             }
@@ -542,11 +548,10 @@ mod tests {
             .render::<pallas::Base, _, _>(17, &circuit, &root)
             .unwrap();
 
-
         let prover = match MockProver::<_>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));        
+        assert_eq!(prover.verify(), Ok(()));
     }
 }

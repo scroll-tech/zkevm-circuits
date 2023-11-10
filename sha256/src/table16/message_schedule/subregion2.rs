@@ -1,10 +1,13 @@
-use super::super::{util::*, AssignedBits, Bits, SpreadVar, SpreadWord, Table16Assignment};
-use super::{schedule_util::*, MessageScheduleConfig, MessageWord};
+use super::{
+    super::{util::*, AssignedBits, Bits, SpreadVar, SpreadWord, Table16Assignment},
+    schedule_util::*,
+    MessageScheduleConfig, MessageWord,
+};
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::Error,
 };
-use crate::Field;
 use std::convert::TryInto;
 
 /// A word in subregion 2
@@ -179,96 +182,97 @@ impl MessageScheduleConfig {
         // sigma_0_v2(W_[14..36]) will be used to get the new W_[29..51]
         // sigma_1_v2(W_[14..49]) will be used to get the W_[16..51]
         // The lowest-index words involved will be W_[0..13]
-        let mut new_word = |idx: usize,
-                            sigma_0_output: &(AssignedBits<_, 16>, AssignedBits<_, 16>)|
-         -> Result<Vec<(AssignedBits<_, 16>, AssignedBits<_, 16>)>, Error> {
-            // Decompose word into (3, 4, 3, 7, 1, 1, 13)-bit chunks
-            let word = self.decompose_word(region, w[idx].value(), idx)?;
+        let mut new_word =
+            |idx: usize,
+             sigma_0_output: &(AssignedBits<_, 16>, AssignedBits<_, 16>)|
+             -> Result<Vec<(AssignedBits<_, 16>, AssignedBits<_, 16>)>, Error> {
+                // Decompose word into (3, 4, 3, 7, 1, 1, 13)-bit chunks
+                let word = self.decompose_word(region, w[idx].value(), idx)?;
 
-            // sigma_0 v2 and sigma_1 v2 on word
-            lower_sigma_0_v2_results.push(self.lower_sigma_0_v2(region, word.clone())?);
-            lower_sigma_1_v2_results.push(self.lower_sigma_1_v2(region, word)?);
+                // sigma_0 v2 and sigma_1 v2 on word
+                lower_sigma_0_v2_results.push(self.lower_sigma_0_v2(region, word.clone())?);
+                lower_sigma_1_v2_results.push(self.lower_sigma_1_v2(region, word)?);
 
-            let new_word_idx = idx + 2;
+                let new_word_idx = idx + 2;
 
-            // Copy sigma_0(W_{i - 15}) output from Subregion 1
-            sigma_0_output.0.copy_advice(
-                || format!("sigma_0(W_{})_lo", new_word_idx - 15),
-                region,
-                a_6,
-                get_word_row(new_word_idx - 16),
-            )?;
-            sigma_0_output.1.copy_advice(
-                || format!("sigma_0(W_{})_hi", new_word_idx - 15),
-                region,
-                a_6,
-                get_word_row(new_word_idx - 16) + 1,
-            )?;
+                // Copy sigma_0(W_{i - 15}) output from Subregion 1
+                sigma_0_output.0.copy_advice(
+                    || format!("sigma_0(W_{})_lo", new_word_idx - 15),
+                    region,
+                    a_6,
+                    get_word_row(new_word_idx - 16),
+                )?;
+                sigma_0_output.1.copy_advice(
+                    || format!("sigma_0(W_{})_hi", new_word_idx - 15),
+                    region,
+                    a_6,
+                    get_word_row(new_word_idx - 16) + 1,
+                )?;
 
-            // Copy sigma_1(W_{i - 2})
-            lower_sigma_1_v2_results[new_word_idx - 16].0.copy_advice(
-                || format!("sigma_1(W_{})_lo", new_word_idx - 2),
-                region,
-                a_7,
-                get_word_row(new_word_idx - 16),
-            )?;
-            lower_sigma_1_v2_results[new_word_idx - 16].1.copy_advice(
-                || format!("sigma_1(W_{})_hi", new_word_idx - 2),
-                region,
-                a_7,
-                get_word_row(new_word_idx - 16) + 1,
-            )?;
+                // Copy sigma_1(W_{i - 2})
+                lower_sigma_1_v2_results[new_word_idx - 16].0.copy_advice(
+                    || format!("sigma_1(W_{})_lo", new_word_idx - 2),
+                    region,
+                    a_7,
+                    get_word_row(new_word_idx - 16),
+                )?;
+                lower_sigma_1_v2_results[new_word_idx - 16].1.copy_advice(
+                    || format!("sigma_1(W_{})_hi", new_word_idx - 2),
+                    region,
+                    a_7,
+                    get_word_row(new_word_idx - 16) + 1,
+                )?;
 
-            // Copy W_{i - 7}
-            w_halves[new_word_idx - 7].0.copy_advice(
-                || format!("W_{}_lo", new_word_idx - 7),
-                region,
-                a_8,
-                get_word_row(new_word_idx - 16),
-            )?;
-            w_halves[new_word_idx - 7].1.copy_advice(
-                || format!("W_{}_hi", new_word_idx - 7),
-                region,
-                a_8,
-                get_word_row(new_word_idx - 16) + 1,
-            )?;
+                // Copy W_{i - 7}
+                w_halves[new_word_idx - 7].0.copy_advice(
+                    || format!("W_{}_lo", new_word_idx - 7),
+                    region,
+                    a_8,
+                    get_word_row(new_word_idx - 16),
+                )?;
+                w_halves[new_word_idx - 7].1.copy_advice(
+                    || format!("W_{}_hi", new_word_idx - 7),
+                    region,
+                    a_8,
+                    get_word_row(new_word_idx - 16) + 1,
+                )?;
 
-            // Calculate W_i, carry_i
-            let (word, carry) = sum_with_carry(vec![
-                (
-                    lower_sigma_1_v2_results[new_word_idx - 16].0.value_u16(),
-                    lower_sigma_1_v2_results[new_word_idx - 16].1.value_u16(),
-                ),
-                (
-                    w_halves[new_word_idx - 7].0.value_u16(),
-                    w_halves[new_word_idx - 7].1.value_u16(),
-                ),
-                (sigma_0_output.0.value_u16(), sigma_0_output.1.value_u16()),
-                (
-                    w_halves[new_word_idx - 16].0.value_u16(),
-                    w_halves[new_word_idx - 16].1.value_u16(),
-                ),
-            ]);
+                // Calculate W_i, carry_i
+                let (word, carry) = sum_with_carry(vec![
+                    (
+                        lower_sigma_1_v2_results[new_word_idx - 16].0.value_u16(),
+                        lower_sigma_1_v2_results[new_word_idx - 16].1.value_u16(),
+                    ),
+                    (
+                        w_halves[new_word_idx - 7].0.value_u16(),
+                        w_halves[new_word_idx - 7].1.value_u16(),
+                    ),
+                    (sigma_0_output.0.value_u16(), sigma_0_output.1.value_u16()),
+                    (
+                        w_halves[new_word_idx - 16].0.value_u16(),
+                        w_halves[new_word_idx - 16].1.value_u16(),
+                    ),
+                ]);
 
-            // Assign W_i, carry_i
-            region.assign_advice(
-                || format!("W_{}", new_word_idx),
-                a_5,
-                get_word_row(new_word_idx - 16) + 1,
-                || word.map(|word| F::from(word as u64)),
-            )?;
-            region.assign_advice(
-                || format!("carry_{}", new_word_idx),
-                a_9,
-                get_word_row(new_word_idx - 16) + 1,
-                || carry.map(|carry| F::from(carry as u64)),
-            )?;
-            let (word, halves) = self.assign_word_and_halves(region, word, new_word_idx)?;
-            w.push(MessageWord(word));
-            w_halves.push(halves);
+                // Assign W_i, carry_i
+                region.assign_advice(
+                    || format!("W_{}", new_word_idx),
+                    a_5,
+                    get_word_row(new_word_idx - 16) + 1,
+                    || word.map(|word| F::from(word as u64)),
+                )?;
+                region.assign_advice(
+                    || format!("carry_{}", new_word_idx),
+                    a_9,
+                    get_word_row(new_word_idx - 16) + 1,
+                    || carry.map(|carry| F::from(carry as u64)),
+                )?;
+                let (word, halves) = self.assign_word_and_halves(region, word, new_word_idx)?;
+                w.push(MessageWord(word));
+                w_halves.push(halves);
 
-            Ok(lower_sigma_0_v2_results.clone())
-        };
+                Ok(lower_sigma_0_v2_results.clone())
+            };
 
         let mut tmp_lower_sigma_0_v2_results: Vec<(AssignedBits<_, 16>, AssignedBits<_, 16>)> =
             Vec::with_capacity(SUBREGION_2_LEN);

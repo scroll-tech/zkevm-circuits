@@ -1,14 +1,17 @@
-use super::super::{super::DIGEST_SIZE, BlockWord, RoundWordDense};
-use super::{compression_util::*, CompressionConfig, State};
+use super::{
+    super::{super::DIGEST_SIZE, BlockWord, RoundWordDense},
+    compression_util::*,
+    CompressionConfig, State,
+};
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, Error},
 };
-use crate::Field;
 
 impl CompressionConfig {
     #[allow(clippy::many_single_char_names)]
-    pub fn assign_digest<F:Field>(
+    pub fn assign_digest<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         state: State<F>,
@@ -35,12 +38,7 @@ impl CompressionConfig {
             .1
             .copy_advice(|| "a_hi", region, a_4, abcd_row)?;
         let a = a.dense_halves.value();
-        region.assign_advice(
-            || "a",
-            a_5,
-            abcd_row,
-            || a.map(|a| F::from(a as u64)),
-        )?;
+        region.assign_advice(|| "a", a_5, abcd_row, || a.map(|a| F::from(a as u64)))?;
 
         let b = self.assign_digest_word(region, abcd_row, a_6, a_7, a_8, b.dense_halves)?;
         let c = self.assign_digest_word(region, abcd_row + 1, a_3, a_4, a_5, c.dense_halves)?;
@@ -54,12 +52,7 @@ impl CompressionConfig {
             .1
             .copy_advice(|| "e_hi", region, a_4, efgh_row)?;
         let e = e.dense_halves.value();
-        region.assign_advice(
-            || "e",
-            a_5,
-            efgh_row,
-            || e.map(|e| F::from(e as u64)),
-        )?;
+        region.assign_advice(|| "e", a_5, efgh_row, || e.map(|e| F::from(e as u64)))?;
 
         let f = self.assign_digest_word(region, efgh_row, a_6, a_7, a_8, f.dense_halves)?;
         let g = self.assign_digest_word(region, efgh_row + 1, a_3, a_4, a_5, g.dense_halves)?;

@@ -1,10 +1,9 @@
-use super::super::AssignedBits;
-use super::MessageScheduleConfig;
+use super::{super::AssignedBits, MessageScheduleConfig};
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::Error,
 };
-use crate::Field;
 
 #[cfg(test)]
 use super::super::{super::BLOCK_SIZE, BlockWord, ROUNDS};
@@ -155,7 +154,13 @@ impl MessageScheduleConfig {
         region: &mut Region<'_, F>,
         word: Value<u32>,
         word_idx: usize,
-    ) -> Result<(AssignedBits<F, 32>, (AssignedBits<F, 16>, AssignedBits<F, 16>)), Error> {
+    ) -> Result<
+        (
+            AssignedBits<F, 32>,
+            (AssignedBits<F, 16>, AssignedBits<F, 16>),
+        ),
+        Error,
+    > {
         // Rename these here for ease of matching the gates to the specification.
         let a_3 = self.extras[0];
         let a_4 = self.extras[1];
@@ -164,11 +169,23 @@ impl MessageScheduleConfig {
 
         let w_lo = {
             let w_lo_val = word.map(|word| word as u16);
-            AssignedBits::<_, 16>::assign(region, || format!("W_{}_lo", word_idx), a_3, row, w_lo_val)?
+            AssignedBits::<_, 16>::assign(
+                region,
+                || format!("W_{}_lo", word_idx),
+                a_3,
+                row,
+                w_lo_val,
+            )?
         };
         let w_hi = {
             let w_hi_val = word.map(|word| (word >> 16) as u16);
-            AssignedBits::<_, 16>::assign(region, || format!("W_{}_hi", word_idx), a_4, row, w_hi_val)?
+            AssignedBits::<_, 16>::assign(
+                region,
+                || format!("W_{}_hi", word_idx),
+                a_4,
+                row,
+                w_hi_val,
+            )?
         };
 
         let word = AssignedBits::<_, 32>::assign(

@@ -1,10 +1,13 @@
-use super::super::{util::*, AssignedBits, BlockWord, SpreadVar, SpreadWord, Table16Assignment};
-use super::{schedule_util::*, MessageScheduleConfig};
+use super::{
+    super::{util::*, AssignedBits, BlockWord, SpreadVar, SpreadWord, Table16Assignment},
+    schedule_util::*,
+    MessageScheduleConfig,
+};
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::Error,
 };
-use crate::Field;
 use std::convert::TryInto;
 
 // A word in subregion 1
@@ -124,11 +127,21 @@ impl MessageScheduleConfig {
         let pieces = pieces.transpose_vec(4);
 
         // Assign `a` (3-bit piece)
-        let a =
-            AssignedBits::<_, 3>::assign_bits(region, || "word_a", a_3, row + 1, pieces[0].clone())?;
+        let a = AssignedBits::<_, 3>::assign_bits(
+            region,
+            || "word_a",
+            a_3,
+            row + 1,
+            pieces[0].clone(),
+        )?;
         // Assign `b` (4-bit piece)
-        let b =
-            AssignedBits::<_, 4>::assign_bits(region, || "word_b", a_4, row + 1, pieces[1].clone())?;
+        let b = AssignedBits::<_, 4>::assign_bits(
+            region,
+            || "word_b",
+            a_4,
+            row + 1,
+            pieces[1].clone(),
+        )?;
 
         // Assign `c` (11-bit piece) lookup
         let spread_c = pieces[2].clone().map(SpreadWord::try_new);

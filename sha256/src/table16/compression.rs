@@ -3,14 +3,13 @@ use super::{
     util::{i2lebsp, lebs2ip},
     AssignedBits, BlockWord, SpreadInputs, SpreadVar, Table16Assignment, ROUNDS, STATE,
 };
+use crate::Field;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
-use std::convert::TryInto;
-use std::ops::Range;
-use crate::Field;
+use std::{convert::TryInto, ops::Range};
 
 mod compression_gates;
 mod compression_util;
@@ -72,13 +71,12 @@ pub trait UpperSigmaVar<
 /// A variable that represents the `[A,B,C,D]` words of the SHA-256 internal state.
 ///
 /// The structure of this variable is influenced by the following factors:
-/// - In `Σ_0(A)` we need `A` to be split into pieces `(a,b,c,d)` of lengths `(2,11,9,10)`
-///   bits respectively (counting from the little end), as well as their spread forms.
-/// - `Maj(A,B,C)` requires having the bits of each input in spread form. For `A` we can
-///   reuse the pieces from `Σ_0(A)`. Since `B` and `C` are assigned from `A` and `B`
-///   respectively in each round, we therefore also have the same pieces in earlier rows.
-///   We align the columns to make it efficient to copy-constrain these forms where they
-///   are needed.
+/// - In `Σ_0(A)` we need `A` to be split into pieces `(a,b,c,d)` of lengths `(2,11,9,10)` bits
+///   respectively (counting from the little end), as well as their spread forms.
+/// - `Maj(A,B,C)` requires having the bits of each input in spread form. For `A` we can reuse the
+///   pieces from `Σ_0(A)`. Since `B` and `C` are assigned from `A` and `B` respectively in each
+///   round, we therefore also have the same pieces in earlier rows. We align the columns to make it
+///   efficient to copy-constrain these forms where they are needed.
 #[derive(Clone, Debug)]
 pub struct AbcdVar<F: Field> {
     a: SpreadVar<F, 2, 4>,
@@ -161,13 +159,12 @@ impl<F: Field> UpperSigmaVar<4, 22, 18, 20> for AbcdVar<F> {
 /// A variable that represents the `[E,F,G,H]` words of the SHA-256 internal state.
 ///
 /// The structure of this variable is influenced by the following factors:
-/// - In `Σ_1(E)` we need `E` to be split into pieces `(a,b,c,d)` of lengths `(6,5,14,7)`
-///   bits respectively (counting from the little end), as well as their spread forms.
-/// - `Ch(E,F,G)` requires having the bits of each input in spread form. For `E` we can
-///   reuse the pieces from `Σ_1(E)`. Since `F` and `G` are assigned from `E` and `F`
-///   respectively in each round, we therefore also have the same pieces in earlier rows.
-///   We align the columns to make it efficient to copy-constrain these forms where they
-///   are needed.
+/// - In `Σ_1(E)` we need `E` to be split into pieces `(a,b,c,d)` of lengths `(6,5,14,7)` bits
+///   respectively (counting from the little end), as well as their spread forms.
+/// - `Ch(E,F,G)` requires having the bits of each input in spread form. For `E` we can reuse the
+///   pieces from `Σ_1(E)`. Since `F` and `G` are assigned from `E` and `F` respectively in each
+///   round, we therefore also have the same pieces in earlier rows. We align the columns to make it
+///   efficient to copy-constrain these forms where they are needed.
 #[derive(Clone, Debug)]
 pub struct EfghVar<F: Field> {
     a_lo: SpreadVar<F, 3, 6>,
@@ -456,7 +453,7 @@ pub(super) struct CompressionConfig {
 impl<F: Field> Table16Assignment<F> for CompressionConfig {}
 
 impl CompressionConfig {
-    pub(super) fn configure<F:Field> (
+    pub(super) fn configure<F: Field>(
         meta: &mut ConstraintSystem<F>,
         lookup: SpreadInputs,
         message_schedule: Column<Advice>,
@@ -861,7 +858,7 @@ impl CompressionConfig {
 
     /// Initialize compression with a constant Initialization Vector of 32-byte words.
     /// Returns an initialized state.
-    pub(super) fn initialize_with_iv<F:Field> (
+    pub(super) fn initialize_with_iv<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         init_state: [u32; STATE],
@@ -879,7 +876,7 @@ impl CompressionConfig {
 
     /// Initialize compression with some initialized state. This could be a state
     /// output from a previous compression round.
-    pub(super) fn initialize_with_state<F:Field>(
+    pub(super) fn initialize_with_state<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         init_state: State<F>,
@@ -896,7 +893,7 @@ impl CompressionConfig {
     }
 
     /// Given an initialized state and a message schedule, perform 64 compression rounds.
-    pub(super) fn compress<F:Field>(
+    pub(super) fn compress<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         initialized_state: State<F>,
@@ -917,7 +914,7 @@ impl CompressionConfig {
     }
 
     /// After the final round, convert the state into the final digest.
-    pub(super) fn digest<F:Field>(
+    pub(super) fn digest<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         state: State<F>,

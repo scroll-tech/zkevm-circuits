@@ -1,10 +1,13 @@
-use super::super::{util::*, AssignedBits, Bits, SpreadVar, SpreadWord, Table16Assignment};
-use super::{schedule_util::*, MessageScheduleConfig, MessageWord};
+use super::{
+    super::{util::*, AssignedBits, Bits, SpreadVar, SpreadWord, Table16Assignment},
+    schedule_util::*,
+    MessageScheduleConfig, MessageWord,
+};
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::Error,
 };
-use crate::Field;
 use std::convert::TryInto;
 
 // A word in subregion 3

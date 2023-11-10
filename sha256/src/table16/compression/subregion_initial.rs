@@ -1,15 +1,18 @@
-use super::super::{RoundWord, StateWord, STATE};
-use super::{compression_util::*, CompressionConfig, State};
+use super::{
+    super::{RoundWord, StateWord, STATE},
+    compression_util::*,
+    CompressionConfig, State,
+};
 
+use crate::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::Error,
 };
-use crate::Field;
 
 impl CompressionConfig {
     #[allow(clippy::many_single_char_names)]
-    pub fn initialize_iv<F:Field>(
+    pub fn initialize_iv<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         iv: [u32; STATE],
@@ -53,7 +56,7 @@ impl CompressionConfig {
     }
 
     #[allow(clippy::many_single_char_names)]
-    pub fn initialize_state<F:Field>(
+    pub fn initialize_state<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         state: State<F>,
@@ -103,7 +106,7 @@ impl CompressionConfig {
         ))
     }
 
-    fn decompose_b<F:Field>(
+    fn decompose_b<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: InitialRound,
@@ -116,7 +119,7 @@ impl CompressionConfig {
         Ok(RoundWord::new(dense_halves, spread_halves))
     }
 
-    fn decompose_c<F:Field>(
+    fn decompose_c<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: InitialRound,
@@ -129,7 +132,7 @@ impl CompressionConfig {
         Ok(RoundWord::new(dense_halves, spread_halves))
     }
 
-    fn decompose_f<F:Field>(
+    fn decompose_f<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: InitialRound,
@@ -142,7 +145,7 @@ impl CompressionConfig {
         Ok(RoundWord::new(dense_halves, spread_halves))
     }
 
-    fn decompose_g<F:Field>(
+    fn decompose_g<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         round_idx: InitialRound,

@@ -1,13 +1,12 @@
 use super::{util::*, AssignedBits};
+use crate::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
     poly::Rotation,
 };
-use crate::Field;
-use std::convert::TryInto;
-use std::marker::PhantomData;
+use std::{convert::TryInto, marker::PhantomData};
 
 const BITS_7: usize = 1 << 7;
 const BITS_10: usize = 1 << 10;
@@ -94,8 +93,13 @@ impl<F: Field, const DENSE: usize, const SPREAD: usize> SpreadVar<F, DENSE, SPRE
         let dense =
             AssignedBits::<_, DENSE>::assign_bits(region, || "dense", cols.dense, row, dense_val)?;
 
-        let spread =
-            AssignedBits::<_, SPREAD>::assign_bits(region, || "spread", cols.spread, row, spread_val)?;
+        let spread = AssignedBits::<_, SPREAD>::assign_bits(
+            region,
+            || "spread",
+            cols.spread,
+            row,
+            spread_val,
+        )?;
 
         Ok(SpreadVar { tag, dense, spread })
     }

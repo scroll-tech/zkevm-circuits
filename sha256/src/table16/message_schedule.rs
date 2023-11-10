@@ -1,12 +1,12 @@
 use std::convert::TryInto;
 
 use super::{super::BLOCK_SIZE, AssignedBits, BlockWord, SpreadInputs, Table16Assignment, ROUNDS};
+use crate::Field;
 use halo2_proofs::{
     circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
-use crate::Field;
 
 mod schedule_gates;
 mod schedule_util;
@@ -393,10 +393,13 @@ impl MessageScheduleConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        super::BLOCK_SIZE, util::lebs2ip, BlockWord, SpreadTableChip, Table16Chip, Table16Config,
+    use super::{
+        super::{
+            super::BLOCK_SIZE, util::lebs2ip, BlockWord, SpreadTableChip, Table16Chip,
+            Table16Config,
+        },
+        schedule_util::*,
     };
-    use super::schedule_util::*;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,

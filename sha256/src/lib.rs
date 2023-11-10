@@ -9,10 +9,9 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
-
 // The size of a SHA-256 digest, in 32-bit words.
 const DIGEST_SIZE: usize = 8;
-pub use halo2_gadgets::sha256::{BLOCK_SIZE, Sha256, Sha256Instructions};
+pub use halo2_gadgets::sha256::{Sha256, Sha256Instructions, BLOCK_SIZE};
 use halo2_proofs::arithmetic::FieldExt as Field;
 
 /// ...
