@@ -167,6 +167,16 @@ impl Tag {
     pub fn is_end(&self) -> bool {
         matches!(self, Self::EndList | Self::EndVector)
     }
+
+    /// If the tag is AccessListAddress
+    pub fn is_access_list_address(&self) -> bool {
+        matches!(self, Self::AccessListAddress)
+    }
+
+    /// If the tag is AccessListStorageKey
+    pub fn is_access_list_storage_key(&self) -> bool {
+        matches!(self, Self::AccessListStorageKey)
+    }
 }
 
 /// RLP tags

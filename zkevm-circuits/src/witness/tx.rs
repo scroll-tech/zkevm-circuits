@@ -406,6 +406,10 @@ impl Transaction {
         let mut is_none;
         let mut rlp_tag;
         let mut lb_len = 0;
+        // These two variables keep track
+        // unique identifier of addresses and storage keys included in access list
+        let mut access_list_idx: u64 = 0;
+        let mut storage_key_idx: u64 = 0;
 
         loop {
             // default behavior
@@ -430,6 +434,18 @@ impl Transaction {
                             assert_eq!(cur.byte_idx, rlp_bytes.len() - 1);
                             is_output = true;
                             rlp_tag = RlpTag::RLC;
+                        } else if cur.depth == 4 {
+                            // end of access list storage keys list
+                            // note: depth alone currently is sufficient to ascertain
+                            // the end of a storage keys list as there's no other nested
+                            // structure at depth 4 specified in EIP standards
+                            storage_key_idx = 0;
+                        } else if cur.depth == 2 {
+                            // end of access list
+                            // note: depth alone currently is sufficient to ascertain
+                            // the end of an access list as there's no other nested
+                            // structure at depth 2 specified in EIP standards
+                            access_list_idx = 0;
                         } else if cur.depth == 0 {
                             // emit GasCost
                             is_output = true;
@@ -473,6 +489,15 @@ impl Transaction {
                         } else if byte_value < 0xb8 {
                             // assertions
                             assert!(!cur.tag.is_list());
+
+                            // detect start of access list address
+                            if cur.tag.is_access_list_address() {
+                                access_list_idx += 1;
+                            }
+                            // detect start of access list storage key
+                            if cur.tag.is_access_list_storage_key() {
+                                storage_key_idx += 1;
+                            }
 
                             // state transitions
                             next.tag_idx = 1;
@@ -676,9 +701,8 @@ impl Transaction {
                     tag_length,
                     is_output,
                     is_none,
-                    // TX1559_DEBUG
-                    access_list_idx: 0,
-                    storage_key_idx: 0,
+                    access_list_idx,
+                    storage_key_idx,
                 },
                 state_machine: StateMachine {
                     state: cur.state,
