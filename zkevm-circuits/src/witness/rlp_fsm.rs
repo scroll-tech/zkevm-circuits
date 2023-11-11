@@ -706,6 +706,14 @@ pub struct RlpTable<F: FieldExt> {
     pub is_output: bool,
     /// If current tag's value is None.
     pub is_none: bool,
+    /// The index of access list address
+    /// Corresponding tag is AccessListAddress
+    pub access_list_idx: u64,
+    /// The index of the storage key
+    /// The combination (access_list_idx, storage_key_idx)
+    /// uniquely identifies a storage key value
+    /// Corresponding tag is AccessListStorageKey
+	pub storage_key_idx: u64,
 }
 
 /// State Machine

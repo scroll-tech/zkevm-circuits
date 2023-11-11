@@ -676,6 +676,9 @@ impl Transaction {
                     tag_length,
                     is_output,
                     is_none,
+                    // TX1559_DEBUG
+                    access_list_idx: 0,
+                    storage_key_idx: 0,
                 },
                 state_machine: StateMachine {
                     state: cur.state,
