@@ -30,15 +30,11 @@ fn gen_returndatacopy_step(
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
-    let memory_offset = geth_step.stack.nth_last(0)?;
+    let memory_offset = geth_step.stack.last()?;
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(0),
-        memory_offset,
-    )?;
+    state.stack_read(&mut exec_step, geth_step.stack.last_filled(), memory_offset)?;
     state.stack_read(
         &mut exec_step,
         geth_step.stack.nth_last_filled(1),
@@ -87,7 +83,7 @@ fn gen_copy_event(
     let rw_counter_start = state.block_ctx.rwc;
 
     // Get low Uint64 of offset.
-    let dst_addr = geth_step.stack.nth_last(0)?;
+    let dst_addr = geth_step.stack.last()?;
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 

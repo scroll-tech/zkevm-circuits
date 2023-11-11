@@ -25,15 +25,11 @@ impl Opcode for ErrorReturnDataOutOfBound {
             Some(ExecError::ReturnDataOutOfBounds)
         );
 
-        let memory_offset = geth_step.stack.nth_last(0)?;
+        let memory_offset = geth_step.stack.last()?;
         let data_offset = geth_step.stack.nth_last(1)?;
         let length = geth_step.stack.nth_last(2)?;
 
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(0),
-            memory_offset,
-        )?;
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), memory_offset)?;
         state.stack_read(
             &mut exec_step,
             geth_step.stack.nth_last_filled(1),

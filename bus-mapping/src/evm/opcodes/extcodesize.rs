@@ -78,11 +78,7 @@ impl Opcode for Extcodesize {
 
         // Write the EXTCODESIZE result to stack.
         debug_assert_eq!(code_size, geth_steps[1].stack.last()?);
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.nth_last_filled(0),
-            code_size,
-        )?;
+        state.stack_write(&mut exec_step, geth_steps[1].stack.last_filled(), code_size)?;
 
         Ok(vec![exec_step])
     }

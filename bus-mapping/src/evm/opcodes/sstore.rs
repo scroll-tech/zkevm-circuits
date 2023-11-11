@@ -58,8 +58,8 @@ impl Opcode for Sstore {
             state.call()?.address.to_word(),
         )?;
 
-        let key = geth_step.stack.nth_last(0)?;
-        let key_stack_position = geth_step.stack.nth_last_filled(0);
+        let key = geth_step.stack.last()?;
+        let key_stack_position = geth_step.stack.last_filled();
         let value = geth_step.stack.nth_last(1)?;
         let value_stack_position = geth_step.stack.nth_last_filled(1);
 
