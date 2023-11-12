@@ -1475,6 +1475,28 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        // Access List Consistency
+        meta.create_gate("access list: no access_list_idx and storage_key_idx change", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "al_idx stays the same when no starting or ending conditions present", 
+                meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
+                meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+            );
+            cb.require_equal(
+                "sk_idx stays the same when no starting or ending conditions present", 
+                meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()),
+                meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                not::expr(is_tag_end_vector(meta)),
+                not::expr(is_decode_tag_start(meta)),
+            ]))
+        });
+
         meta.create_gate("sm ends in End state", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
