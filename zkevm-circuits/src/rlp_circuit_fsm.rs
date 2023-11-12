@@ -275,6 +275,8 @@ pub struct RlpCircuitConfig<F> {
     depth_check: IsEqualConfig<F>,
     /// Check for depth == 1
     depth_eq_one: IsEqualConfig<F>,
+    /// CHeck for depth == 2
+    depth_eq_two: IsEqualConfig<F>,
     /// Check for depth == 4
     depth_eq_four: IsEqualConfig<F>,
     /// Check for byte_value == 0
@@ -768,6 +770,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             cmp_enabled,
             |meta| meta.query_advice(depth, Rotation::cur()),
             |_| 1.expr(),
+        );
+        let depth_eq_two = IsEqualChip::configure(
+            meta,
+            cmp_enabled,
+            |meta| meta.query_advice(depth, Rotation::cur()),
+            |_| 2.expr(),
         );
         let depth_eq_four = IsEqualChip::configure(
             meta,
@@ -1407,6 +1415,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        // Access List Increments
         meta.create_gate("access list: access_list_idx and storage_key_idx increments", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1420,6 +1429,11 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.condition(is_access_list_storage_key(meta), |cb| {
                 cb.require_equal(
+                    "for same storage key list, al_idx stays the same",
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                );
+                cb.require_equal(
                     "sk_idx - sk_idx::prev = 1",
                     meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()) + 1.expr(),
                     meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
@@ -1432,8 +1446,20 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        // Access List Clearing
+        // note: right now no other nested structures are defined at these depth levels
+        // hence using depth alone is sufficient to determine clearing conditions.
+        // however, this might change in the future if more nested structures are introduced at same depth level
         meta.create_gate("access list: clearing access_list_idx and storage_key_idx", |meta| {
             let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(depth_eq_two.is_equal_expression.expr(), |cb| {
+                cb.require_equal(
+                    "al_idx = 0", 
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                    0.expr(),
+                );
+            });
 
             cb.condition(depth_eq_four.is_equal_expression.expr(), |cb| {
                 cb.require_equal(
@@ -1505,6 +1531,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             tlength_lte_mlength,
             depth_check,
             depth_eq_one,
+            depth_eq_two,
             depth_eq_four,
             byte_value_is_zero,
 
@@ -1766,6 +1793,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             Value::known(F::from(witness.state_machine.depth as u64)),
             Value::known(F::one()),
+        )?;
+        let depth_eq_two_chip = IsEqualChip::construct(self.depth_eq_two.clone());
+        depth_eq_two_chip.assign(
+            region,
+            row,
+            Value::known(F::from(witness.state_machine.depth as u64)),
+            Value::known(F::from(2u64)),
         )?;
         let depth_eq_four_chip = IsEqualChip::construct(self.depth_eq_four.clone());
         depth_eq_four_chip.assign(
