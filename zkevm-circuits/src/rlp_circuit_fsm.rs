@@ -1841,8 +1841,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows.len(): {:?}", sm_rows.len());
         log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - last_row: {:?}", last_row);
 
-        log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}", sm_rows);
-        log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}", dt_rows);
+        // log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}", sm_rows);
+        // log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}", dt_rows);
 
         debug_assert!(sm_rows.len() <= last_row);
 

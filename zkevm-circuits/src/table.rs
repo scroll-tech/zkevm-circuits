@@ -2077,6 +2077,10 @@ pub struct RlpFsmRlpTable {
     pub is_output: Column<Advice>,
     /// Whether or not the current tag's value was nil.
     pub is_none: Column<Advice>,
+    /// Index of access list address
+    pub access_list_idx: Column<Advice>,
+    /// Index of storage key in an access list item
+    pub storage_key_idx: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
@@ -2091,6 +2095,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             self.tag_length.into(),
             self.is_output.into(),
             self.is_none.into(),
+            self.access_list_idx.into(),
+            self.storage_key_idx.into(),
         ]
     }
 
@@ -2105,6 +2111,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             String::from("tag_length"),
             String::from("is_output"),
             String::from("is_none"),
+            String::from("access_list_idx"),
+            String::from("storage_key_idx"),
         ]
     }
 }
@@ -2122,6 +2130,8 @@ impl RlpFsmRlpTable {
             tag_length: meta.advice_column(),
             is_output: meta.advice_column(),
             is_none: meta.advice_column(),
+            access_list_idx: meta.advice_column(),
+            storage_key_idx: meta.advice_column(),
         }
     }
 
