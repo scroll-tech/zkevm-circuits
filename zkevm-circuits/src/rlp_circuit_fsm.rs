@@ -275,6 +275,8 @@ pub struct RlpCircuitConfig<F> {
     depth_check: IsEqualConfig<F>,
     /// Check for depth == 1
     depth_eq_one: IsEqualConfig<F>,
+    /// Check for depth == 4
+    depth_eq_four: IsEqualConfig<F>,
     /// Check for byte_value == 0
     byte_value_is_zero: IsZeroConfig<F>,
 
@@ -385,6 +387,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         is_tag!(is_tag_begin_vector, BeginVector);
         is_tag!(is_tag_end_list, EndList);
         is_tag!(is_tag_end_vector, EndVector);
+        is_tag!(is_access_list_address, AccessListAddress);
+        is_tag!(is_access_list_storage_key,AccessListStorageKey);
 
         //////////////////////////////////////////////////////////
         //////////// data table checks. //////////////////////////
@@ -764,6 +768,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             cmp_enabled,
             |meta| meta.query_advice(depth, Rotation::cur()),
             |_| 1.expr(),
+        );
+        let depth_eq_four = IsEqualChip::configure(
+            meta,
+            cmp_enabled,
+            |meta| meta.query_advice(depth, Rotation::cur()),
+            |_| 4.expr(),
         );
         let tx_id_check_in_sm = IsEqualChip::configure(
             meta,
@@ -1397,6 +1407,31 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        meta.create_gate("access list: access_list_idx and storage_key_idx increments", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(is_access_list_address(meta), |cb| {
+                cb.require_equal(
+                    "al_idx - al_idx::prev = 1", 
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::prev()) + 1.expr(),
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                );
+            });
+
+            cb.condition(is_access_list_storage_key(meta), |cb| {
+                cb.require_equal(
+                    "sk_idx - sk_idx::prev = 1",
+                    meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()) + 1.expr(),
+                    meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                );
+            });
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                is_decode_tag_start(meta)
+            ]))
+        });
+
         meta.create_gate("sm ends in End state", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1453,6 +1488,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             tlength_lte_mlength,
             depth_check,
             depth_eq_one,
+            depth_eq_four,
             byte_value_is_zero,
 
             // internal tables
@@ -1714,6 +1750,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             Value::known(F::from(witness.state_machine.depth as u64)),
             Value::known(F::one()),
         )?;
+        let depth_eq_four_chip = IsEqualChip::construct(self.depth_eq_four.clone());
+        depth_eq_four_chip.assign(
+            region,
+            row,
+            Value::known(F::from(witness.state_machine.depth as u64)),
+            Value::known(F::from(4u64)),
+        )?;
 
         let mlength_lte_0x20_chip = ComparatorChip::construct(self.mlength_lte_0x20.clone());
         mlength_lte_0x20_chip.assign(
@@ -1853,8 +1896,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows.len(): {:?}", sm_rows.len());
         log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - last_row: {:?}", last_row);
 
-        // log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}", sm_rows);
-        // log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}", dt_rows);
+        log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}", sm_rows);
+        log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}", dt_rows);
 
         debug_assert!(sm_rows.len() <= last_row);
 
