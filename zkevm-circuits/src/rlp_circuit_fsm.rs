@@ -1529,6 +1529,18 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || Value::known(F::from(witness.rlp_table.is_none as u64)),
         )?;
+        region.assign_advice(
+            || "rlp_table.access_list_idx",
+            self.rlp_table.access_list_idx,
+            row,
+            || Value::known(F::from(witness.rlp_table.access_list_idx as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_table.storage_key_idx",
+            self.rlp_table.storage_key_idx,
+            row,
+            || Value::known(F::from(witness.rlp_table.storage_key_idx as u64)),
+        )?;
 
         // assign to sm
         region.assign_advice(
