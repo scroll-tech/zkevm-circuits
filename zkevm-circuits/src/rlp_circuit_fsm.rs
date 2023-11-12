@@ -1432,6 +1432,23 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        meta.create_gate("access list: clearing access_list_idx and storage_key_idx", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(depth_eq_four.is_equal_expression.expr(), |cb| {
+                cb.require_equal(
+                    "sk_idx = 0", 
+                    meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                    0.expr(),
+                );
+            });
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                is_tag_end_vector(meta)
+            ]))
+        });
+
         meta.create_gate("sm ends in End state", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
