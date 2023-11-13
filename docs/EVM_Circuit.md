@@ -29,7 +29,7 @@ Analogously, in EVM Circuit, we build <i>execution steps</i> according to the st
 
 ## Architecture
 
-We decompose the execution trace into execution steps and impose constraints for each step/step state transition. A `Step` contains two parts: `StepState` carries the execution step and its context information; and `CellManager` helps to fill the step's information as witnesses into the circuit's cells. An API layer `ConstraintBuilder` is built upon the backend proof system (Halo2) to impose constraints. The oveall architecture looks as follows:
+We decompose the execution trace into execution steps and impose constraints for each step/step state transition. A `Step` contains two parts: `StepState` carries the execution step and its context information; and `CellManager` helps to fill the step's information as witnesses into the circuit's cells. An API layer `ConstraintBuilder` is built upon the backend proof system (Halo2) to impose constraints. The overall architecture looks as follows:
 
 ```mermaid
 stateDiagram
