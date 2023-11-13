@@ -390,7 +390,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         is_tag!(is_tag_end_list, EndList);
         is_tag!(is_tag_end_vector, EndVector);
         is_tag!(is_access_list_address, AccessListAddress);
-        is_tag!(is_access_list_storage_key,AccessListStorageKey);
+        is_tag!(is_access_list_storage_key, AccessListStorageKey);
 
         //////////////////////////////////////////////////////////
         //////////// data table checks. //////////////////////////
@@ -1416,86 +1416,96 @@ impl<F: Field> RlpCircuitConfig<F> {
         });
 
         // Access List Increments
-        meta.create_gate("access list: access_list_idx and storage_key_idx increments", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate(
+            "access list: access_list_idx and storage_key_idx increments",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-            cb.condition(is_access_list_address(meta), |cb| {
-                cb.require_equal(
-                    "al_idx - al_idx::prev = 1", 
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::prev()) + 1.expr(),
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                );
-            });
+                cb.condition(is_access_list_address(meta), |cb| {
+                    cb.require_equal(
+                        "al_idx - al_idx::prev = 1",
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::prev()) + 1.expr(),
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                    );
+                });
 
-            cb.condition(is_access_list_storage_key(meta), |cb| {
-                cb.require_equal(
-                    "for same storage key list, al_idx stays the same",
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "sk_idx - sk_idx::prev = 1",
-                    meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()) + 1.expr(),
-                    meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-                );
-            });
+                cb.condition(is_access_list_storage_key(meta), |cb| {
+                    cb.require_equal(
+                        "for same storage key list, al_idx stays the same",
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "sk_idx - sk_idx::prev = 1",
+                        meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()) + 1.expr(),
+                        meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                    );
+                });
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                is_decode_tag_start(meta)
-            ]))
-        });
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enabled, Rotation::cur()),
+                    is_decode_tag_start(meta),
+                ]))
+            },
+        );
 
         // Access List Clearing
         // note: right now no other nested structures are defined at these depth levels
         // hence using depth alone is sufficient to determine clearing conditions.
-        // however, this might change in the future if more nested structures are introduced at same depth level
-        meta.create_gate("access list: clearing access_list_idx and storage_key_idx", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        // however, this might change in the future if more nested structures are introduced at same
+        // depth level
+        meta.create_gate(
+            "access list: clearing access_list_idx and storage_key_idx",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-            cb.condition(depth_eq_two.is_equal_expression.expr(), |cb| {
-                cb.require_equal(
-                    "al_idx = 0", 
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                    0.expr(),
-                );
-            });
+                cb.condition(depth_eq_two.is_equal_expression.expr(), |cb| {
+                    cb.require_equal(
+                        "al_idx = 0",
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                        0.expr(),
+                    );
+                });
 
-            cb.condition(depth_eq_four.is_equal_expression.expr(), |cb| {
-                cb.require_equal(
-                    "sk_idx = 0", 
-                    meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-                    0.expr(),
-                );
-            });
+                cb.condition(depth_eq_four.is_equal_expression.expr(), |cb| {
+                    cb.require_equal(
+                        "sk_idx = 0",
+                        meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                        0.expr(),
+                    );
+                });
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                is_tag_end_vector(meta)
-            ]))
-        });
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enabled, Rotation::cur()),
+                    is_tag_end_vector(meta),
+                ]))
+            },
+        );
 
         // Access List Consistency
-        meta.create_gate("access list: no access_list_idx and storage_key_idx change", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate(
+            "access list: no access_list_idx and storage_key_idx change",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_equal(
-                "al_idx stays the same when no starting or ending conditions present", 
-                meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
-                meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-            );
-            cb.require_equal(
-                "sk_idx stays the same when no starting or ending conditions present", 
-                meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()),
-                meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-            );
+                cb.require_equal(
+                    "al_idx stays the same when no starting or ending conditions present",
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "sk_idx stays the same when no starting or ending conditions present",
+                    meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()),
+                    meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                not::expr(is_tag_end_vector(meta)),
-                not::expr(is_decode_tag_start(meta)),
-            ]))
-        });
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enabled, Rotation::cur()),
+                    not::expr(is_tag_end_vector(meta)),
+                    not::expr(is_decode_tag_start(meta)),
+                ]))
+            },
+        );
 
         meta.create_gate("sm ends in End state", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1966,11 +1976,23 @@ impl<F: Field> RlpCircuitConfig<F> {
             .collect::<Vec<_>>();
 
         // TX1559_DEBUG
-        log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows.len(): {:?}", sm_rows.len());
-        log::trace!("=> [Execution Rlp Circuit FSM] RlpCircuitConfig - last_row: {:?}", last_row);
+        log::trace!(
+            "=> [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows.len(): {:?}",
+            sm_rows.len()
+        );
+        log::trace!(
+            "=> [Execution Rlp Circuit FSM] RlpCircuitConfig - last_row: {:?}",
+            last_row
+        );
 
-        log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}", sm_rows);
-        log::trace!("\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}", dt_rows);
+        log::trace!(
+            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
+            sm_rows
+        );
+        log::trace!(
+            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}",
+            dt_rows
+        );
 
         debug_assert!(sm_rows.len() <= last_row);
 

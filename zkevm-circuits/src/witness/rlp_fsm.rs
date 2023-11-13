@@ -728,7 +728,7 @@ pub struct RlpTable<F: FieldExt> {
     /// The combination (access_list_idx, storage_key_idx)
     /// uniquely identifies a storage key value
     /// Corresponding tag is AccessListStorageKey
-	pub storage_key_idx: u64,
+    pub storage_key_idx: u64,
 }
 
 /// State Machine
@@ -767,9 +767,8 @@ pub struct StateMachine<F: FieldExt> {
 /// Using simulated stack constraints to make sure all bytes are decoded
 #[derive(Clone, Debug)]
 pub struct RlpDecodingTable<F: FieldExt> {
-    // note: a byte-counting idx such as rw_counter is not necessary 
+    // note: a byte-counting idx such as rw_counter is not necessary
     // as byte_idx/byte_rev_idx can be used for the purpose
-
     /// Is Write to decoding stack
     pub is_write: bool,
     /// Key1 (Id), concat of tx_id, format
