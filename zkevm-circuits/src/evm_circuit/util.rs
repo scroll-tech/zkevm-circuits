@@ -97,6 +97,11 @@ pub struct CachedRegion<'r, 'b, F: FieldExt> {
     advice_columns: Vec<Column<Advice>>,
     width_start: usize,
     height_start: usize,
+    // the `CachedRegion` can be seen as a written buffer for real halo2 regions.
+    // All writes beyond `height_limit` will not be written through to halo2 columns.
+    // This is used for the evm step "assign next then assign current" pattern.
+    // When we remove this pattern later, this field can also be removed.
+    // More: <https://github.com/scroll-tech/zkevm-circuits/pull/1014>
     height_limit: usize,
 }
 
@@ -155,6 +160,8 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     /// Assign an advice column value (witness).
+    /// If return value is None, it means the assignment will only happen
+    /// inside the CachedRegion, and is not written into real halo2 columns.
     pub fn assign_advice<'v, V, VR, A, AR>(
         &'v mut self,
         annotation: A,
@@ -169,7 +176,6 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         AR: Into<String>,
     {
         // Actually set the value
-        log::info!("Cached assign at {offset}");
         if offset - self.height_start < self.height_limit {
             let res = self.region.assign_advice(annotation, column, offset, &to);
             // Cache the value

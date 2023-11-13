@@ -39,7 +39,8 @@ pub(crate) struct EndBlockGadget<F> {
 
 impl<F: Clone> Clone for EndBlockGadget<F> {
     fn clone(&self) -> Self {
-        let withdraw_root_assigned = self.withdraw_root_assigned.lock().unwrap().clone();
+        let withdraw_root_assigned: Option<AssignedCell> =
+            *self.withdraw_root_assigned.lock().unwrap();
         Self {
             withdraw_root_assigned: Mutex::new(withdraw_root_assigned),
             total_txs: self.total_txs.clone(),

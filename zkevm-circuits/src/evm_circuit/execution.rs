@@ -247,7 +247,7 @@ pub(crate) struct ExecutionConfig<F> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
-    q_usable: Selector,
+    q_usable: Column<Fixed>,
     // Dynamic selector that is enabled at the rows where each assigned execution step starts (a
     // step has dynamic height).
     q_step: Column<Advice>,
@@ -386,7 +386,7 @@ impl<F: Field> ExecutionConfig<F> {
         pow_of_rand_table: &dyn LookupTable<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
-        let q_usable = meta.complex_selector();
+        let q_usable = meta.fixed_column();
         let q_step = meta.advice_column();
         let constants = meta.fixed_column();
         meta.enable_constant(constants);
@@ -415,7 +415,7 @@ impl<F: Field> ExecutionConfig<F> {
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
-            let q_usable = meta.query_selector(q_usable);
+            let q_usable = meta.query_fixed(q_usable, Rotation::cur());
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
             let q_step_last = meta.query_selector(q_step_last);
@@ -449,13 +449,12 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         meta.create_gate("q_step", |meta| {
-            let q_usable = meta.query_selector(q_usable);
+            let q_usable = meta.query_fixed(q_usable, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
             let q_step_last = meta.query_selector(q_step_last);
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
-            //let num_rows_left_next = meta.query_advice(num_rows_until_next_step,
-            // Rotation::next());
+            let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
             let num_rows_left_inverse = meta.query_advice(num_rows_inv, Rotation::cur());
 
             let mut cb = BaseConstraintBuilder::default();
@@ -482,7 +481,6 @@ impl<F: Field> ExecutionConfig<F> {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
             });
             // Except when step is enabled, the step counter needs to decrease by 1
-            /*
             cb.condition(1.expr() - q_step.clone(), |cb| {
                 cb.require_equal(
                     "num_rows_left_cur := num_rows_left_next + 1",
@@ -490,7 +488,6 @@ impl<F: Field> ExecutionConfig<F> {
                     num_rows_left_next + 1.expr(),
                 );
             });
-            */
             // Enforce that q_step := num_rows_until_next_step == 0
             let is_zero = 1.expr() - (num_rows_left_cur.clone() * num_rows_left_inverse.clone());
             cb.require_zero(
@@ -679,7 +676,7 @@ impl<F: Field> ExecutionConfig<F> {
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
-        q_usable: Selector,
+        q_usable: Column<Fixed>,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
@@ -740,7 +737,7 @@ impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget_impl(
         meta: &mut ConstraintSystem<F>,
-        q_usable: Selector,
+        q_usable: Column<Fixed>,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
@@ -800,7 +797,7 @@ impl<F: Field> ExecutionConfig<F> {
         ] {
             if !constraints.is_empty() {
                 meta.create_gate(name, |meta| {
-                    let q_usable = meta.query_selector(q_usable);
+                    let q_usable = meta.query_fixed(q_usable, Rotation::cur());
                     let selector = selector(meta);
                     constraints.into_iter().map(move |(name, constraint)| {
                         (
@@ -817,7 +814,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Enforce the state transitions for this opcode
         meta.create_gate("Constrain state machine transitions", |meta| {
-            let q_usable = meta.query_selector(q_usable);
+            let q_usable = meta.query_fixed(q_usable, Rotation::cur());
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_last = meta.query_selector(q_step_last);
 
@@ -1007,7 +1004,12 @@ impl<F: Field> ExecutionConfig<F> {
         // Name Advice columns
         for idx in 0..height {
             let offset = offset + idx;
-            self.q_usable.enable(region, offset)?;
+            region.assign_fixed(
+                || "q_usable selector",
+                self.q_usable,
+                offset,
+                || Value::known(F::one()),
+            )?;
             region.assign_advice(
                 || "step selector",
                 self.q_step,
@@ -1040,46 +1042,46 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
+        // If the height is not 1, padding to fixed height will be impossible
         debug_assert_eq!(ExecutionState::EndBlock.get_step_height(), 1);
 
         let inverter = Inverter::new(MAX_STEP_HEIGHT as u64);
         let evm_rows = block.circuits_params.max_evm_rows;
+        // 0 means "dynamic height". If fixed height is used in unittests, CI will be quite slow.
         let no_padding = evm_rows == 0;
 
         // There should be 3 group of regions
         // 1. real steps
-        // 2. padding EndBlocks. Even for `no_padding`, we will still pad 1 end_block_not_last
+        // 2. padding EndBlocks.
+        //    For the ease of implementation, even for `no_padding` case,
+        //     we will still pad 1 end_block_not_last.
         // 3. final EndBlock
         let region1_height = self.get_num_rows_required_no_padding(block);
-        let region3_height = 2; // EndBlock, plus a dummy "next" row
+        let region3_height = 2; // EndBlock, plus a dummy "next" row used for Rotation
         let region2_height = if no_padding {
             1
         } else {
-            evm_rows - region3_height - region1_height
-        };
-        let total_height = region1_height + region2_height + region3_height;
-        if evm_rows != 0 {
-            if total_height > evm_rows {
+            if region1_height + region3_height >= evm_rows {
                 log::error!(
-                    "evm circuit row not enough, offset: {}+{}+{}, max_evm_rows: {}",
+                    "evm circuit row not enough, region1_height:{}, region3_height:{}, max_evm_rows:{}",
                     region1_height,
-                    region2_height,
                     region3_height,
                     evm_rows
                 );
                 return Err(Error::Synthesis);
             }
-            debug_assert_eq!(total_height, evm_rows);
-        }
+            evm_rows - region3_height - region1_height
+        };
 
-        let assign_shape = |region: &mut Region<'_, F>, height| {
+        // A quick path for "reporting" height for the halo2 first pass layouter.
+        let assign_shape_fn = |region: &mut Region<'_, F>, height| {
             region.assign_advice(
                 || "step selector",
                 self.q_step,
                 height - 1,
                 || Value::known(F::zero()),
             )?;
-            return Ok(height);
+            Ok(height)
         };
 
         let dummy_tx = Transaction::default();
@@ -1091,16 +1093,19 @@ impl<F: Field> ExecutionConfig<F> {
         let end_block_not_last = &block.end_block_not_last;
         let end_block_last = &block.end_block_last;
 
+        // A helper struct used for parallel assignment
         struct StepAssignment {
             tx_idx: usize,
             step_idx_in_tx: usize,
             height: usize,
             offset: usize,
         }
-        let mut step_assignments: Vec<StepAssignment> = Vec::new();
         let total_step_num = block.txs.iter().map(|t| t.steps.len()).sum::<usize>();
-        let mut offset = 0;
+        let mut step_assignments: Vec<StepAssignment> = Vec::new();
         step_assignments.reserve(total_step_num);
+
+        // the "global offset"
+        let mut offset = 0;
         for (tx_idx, tx) in block.txs.iter().enumerate() {
             for (step_idx, step) in tx.steps.iter().enumerate() {
                 let height = step.execution_state.get_step_height();
@@ -1116,6 +1121,7 @@ impl<F: Field> ExecutionConfig<F> {
         assert_eq!(offset, region1_height);
         offset = 0;
 
+        // Print some logs after each tx, for debugging
         let log_step_fn = |transaction: &Transaction, step: &ExecStep, offset| {
             if step.execution_state == ExecutionState::EndTx {
                 let mut tx = transaction.clone();
@@ -1152,20 +1158,22 @@ impl<F: Field> ExecutionConfig<F> {
             }
         };
 
-        let chunking_fn = |name: &str, rows_len: usize| -> (usize, usize) {
-            if rows_len == 0 {
+        // Calculate chunk_size and chunk_num
+        // Here a min_chunk_size is provided to reduce threading overhead
+        let chunking_fn = |name: &str, task_len: usize, min_chunk_size: usize| -> (usize, usize) {
+            if task_len == 0 {
                 return (0, 0);
             }
             let num_threads = std::thread::available_parallelism()
                 .map(|e| e.get())
                 .unwrap_or(1);
             //let num_threads = 1;
-            let chunk_size = (rows_len + num_threads - 1) / num_threads;
-            let chunk_num = (rows_len + chunk_size - 1) / chunk_size;
+            let chunk_size = ((task_len + num_threads - 1) / num_threads).max(min_chunk_size);
+            let chunk_num = (task_len + chunk_size - 1) / chunk_size;
             log::debug!(
                 "{} chunking: len = {}, num_threads = {}, chunk_size = {}, chunk_num = {}",
                 name,
-                rows_len,
+                task_len,
                 num_threads,
                 chunk_size,
                 chunk_num
@@ -1174,24 +1182,17 @@ impl<F: Field> ExecutionConfig<F> {
         };
 
         // Step1: assign real steps
-
         let (region1_chunk_size, region1_chunk_num) =
-            chunking_fn("region1", step_assignments.len());
-        //let idxs: Vec<usize> = (0..step_assignments.len()).collect();
+            chunking_fn("region1", step_assignments.len(), 50);
         let mut region1_is_first_time: Vec<(usize, bool)> = (0..region1_chunk_num)
             .map(|chunk_idx| (chunk_idx, true))
             .collect();
-        //vec![true; region1_chunk_num];
         let region1_height_sum = layouter
             .assign_regions(
                 || "Execution step region1",
-                //   idxs.chunks(region1_chunk_size)
-                //    .zip_eq(region1_is_first_time.iter_mut())
-                // .map(|(step_idxs, is_first_time)| {
                 region1_is_first_time
                     .iter_mut()
                     .map(|(chunk_idx, is_first_time)| {
-                        //let step_idxs: Vec<usize> = step_idxs.to_vec();
                         |mut region: Region<'_, F>| {
                             let chunk_idx = *chunk_idx;
                             let begin = chunk_idx * region1_chunk_size;
@@ -1205,30 +1206,17 @@ impl<F: Field> ExecutionConfig<F> {
                                 .sum::<usize>();
                             if *is_first_time {
                                 *is_first_time = false;
-                                return assign_shape(&mut region, total_height);
+                                return assign_shape_fn(&mut region, total_height);
                             }
-                            /*
-                                    // TODO: use those outside?
-                                    let inverter = Inverter::new(MAX_STEP_HEIGHT as u64);
-                                    let dummy_tx = Transaction::default();
-                                    let last_call = block
-                                .txs
-                                .last()
-                                .map(|tx| tx.calls[0].clone())
-                                .unwrap_or_else(Call::default);
-                            */
                             let mut offset = 0;
 
                             // Annotate the EVMCircuit columns within it's single region.
                             self.annotate_circuit(&mut region);
 
-                            //if step.rw_counter == 1 {
-
                             if chunk_idx == 0 {
                                 self.q_step_first.enable(&mut region, offset)?;
                             }
                             for step_idx in step_idxs {
-                                //let step_idx = *step_idx;
                                 let step_assignment = &step_assignments[step_idx];
                                 let transaction = &block.txs[step_assignment.tx_idx];
                                 let step = &transaction.steps[step_assignment.step_idx_in_tx];
@@ -1236,12 +1224,11 @@ impl<F: Field> ExecutionConfig<F> {
 
                                 let height = step.execution_state.get_step_height();
 
-                                log_step_fn(&transaction, &step, offset);
+                                log_step_fn(transaction, step, offset);
 
                                 let next = match step_assignments.get(step_idx + 1) {
                                     None => (&dummy_tx, &last_call, end_block_not_last),
                                     Some(step_assignment) => {
-                                        // refactor here
                                         let transaction = &block.txs[step_assignment.tx_idx];
                                         let step =
                                             &transaction.steps[step_assignment.step_idx_in_tx];
@@ -1279,7 +1266,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // part2: assign non-last EndBlock steps when padding needed
 
-        let (region2_chunk_size, region2_chunk_num) = chunking_fn("region2", region2_height);
+        let (region2_chunk_size, region2_chunk_num) = chunking_fn("region2", region2_height, 300);
         let idxs: Vec<usize> = (0..region2_height).collect();
         let mut region2_is_first_time = vec![true; region2_chunk_num];
 
@@ -1296,18 +1283,8 @@ impl<F: Field> ExecutionConfig<F> {
                     |mut region: Region<'_, F>| {
                         if *is_first_time {
                             *is_first_time = false;
-                            return assign_shape(&mut region, rows.len());
+                            return assign_shape_fn(&mut region, rows.len());
                         }
-                        /*
-                                // TODO: use those outside?
-                                let inverter = Inverter::new(MAX_STEP_HEIGHT as u64);
-                                let dummy_tx = Transaction::default();
-                                let last_call = block
-                            .txs
-                            .last()
-                            .map(|tx| tx.calls[0].clone())
-                            .unwrap_or_else(Call::default);
-                        */
                         self.assign_same_exec_step_in_range(
                             &mut region,
                             0,
@@ -1341,7 +1318,7 @@ impl<F: Field> ExecutionConfig<F> {
             |mut region| {
                 if region3_is_first_time {
                     region3_is_first_time = false;
-                    return assign_shape(&mut region, region3_height);
+                    return assign_shape_fn(&mut region, region3_height);
                 }
                 self.assign_exec_step(
                     &mut region,
@@ -1356,7 +1333,6 @@ impl<F: Field> ExecutionConfig<F> {
                 )?;
                 self.assign_q_step(&mut region, &inverter, offset, 1)?;
                 self.q_step_last.enable(&mut region, offset)?;
-                // part4:
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
@@ -1370,7 +1346,7 @@ impl<F: Field> ExecutionConfig<F> {
                     1,
                     || Value::known(F::zero()),
                 )?;
-                Ok(2)
+                Ok(2) // region height
             },
         )?;
 
@@ -1710,7 +1686,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        log::info!("assign_stored_expressions begin");
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
