@@ -15,9 +15,9 @@ use crate::{
         Tag::{EndList, EndVector},
     },
 };
-use bus_mapping::{circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee}, operation::StackOp};
+use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, stack},
+    evm_types::gas_utils::tx_data_gas_cost,
     geth_types::{TxType, TxType::PreEip155},
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
