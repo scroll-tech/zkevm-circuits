@@ -393,6 +393,15 @@ impl Transaction {
         // Queue up stack operations
         let mut stack_ops: Vec<RlpStackOp<F>> = vec![];
         let mut last_bytes_on_depth: [usize; 4] = [0, 0, 0, 0];
+        let mut stack_acc = Value::known(F::zero());
+
+        let mut stack_acc_pow_of_rand: Vec<Value<F>> = vec![];
+        let mut pow_of_rand = Value::known(F::one());
+        stack_acc_pow_of_rand.push(pow_of_rand.clone());
+        for _ in 0..4 {
+            pow_of_rand = pow_of_rand * keccak_rand;
+            stack_acc_pow_of_rand.push(pow_of_rand.clone());
+        }
         // concat tx_id and format as stack identifier
         let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
         // When we are decoding a vector of element type `t`, at the beginning
@@ -449,6 +458,9 @@ impl Transaction {
 
                         if remaining_bytes.len() > 0 {
                             let prev_depth_bytes = remaining_bytes.last().unwrap().clone();
+                            stack_acc = stack_acc 
+                                    - stack_acc_pow_of_rand[cur.depth - 1] 
+                                    * Value::known(F::from(prev_depth_bytes as u64));
                             stack_ops.push(
                                 RlpStackOp {
                                     is_write: true,
@@ -586,6 +598,10 @@ impl Transaction {
                                 // the number of bytes of the new list.
                                 assert!(*rem >= num_bytes_of_new_list);
                                 last_bytes_on_depth[cur.depth] = rem.clone() + 1;
+                                stack_acc = stack_acc 
+                                    + stack_acc_pow_of_rand[cur.depth] 
+                                    * Value::known(F::from((rem.clone() - num_bytes_of_new_list) as u64));
+
                                 *rem -= num_bytes_of_new_list;
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
@@ -730,6 +746,10 @@ impl Transaction {
                         if let Some(rem) = remaining_bytes.last_mut() {
                             assert!(*rem >= lb_len);
                             last_bytes_on_depth[cur.depth] = rem.clone() + 1;
+                            stack_acc = stack_acc 
+                                    + stack_acc_pow_of_rand[cur.depth] 
+                                    * Value::known(F::from((rem.clone() - lb_len) as u64));
+
                             *rem -= lb_len;
                         }
                         remaining_bytes.push(lb_len);
@@ -850,6 +870,8 @@ impl Transaction {
                     address: stack_op.address,
                     value: stack_op.value,
                     value_prev: stack_op.value_prev,
+                    stack_acc: stack_acc.clone(),
+                    stack_acc_pow_of_rand: stack_acc_pow_of_rand[stack_op.address],
                     note: stack_op.note,
                 }
             });

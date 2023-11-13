@@ -780,6 +780,11 @@ pub struct RlpDecodingTable<F: FieldExt> {
     pub value: usize,
     /// Value Previous
     pub value_prev: usize,
+    /// Stack Accumulator
+    /// accumulates remaining bytes on each depth level (excluding top of stack)
+    pub stack_acc: Value<F>,
+    /// Power of rand for stack accumulator on depth level (address)
+    pub stack_acc_pow_of_rand: Value<F>,
     // TX1559_DEBUG
     pub note: String,
 }
