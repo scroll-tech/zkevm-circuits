@@ -3,7 +3,7 @@ use crate::{
     table::TxContextFieldTag,
     util::{rlc_be_bytes, Challenges},
     witness::{
-        rlp_fsm::SmState,
+        rlp_fsm::{SmState, RlpStackOp, RlpDecodingTable},
         DataTable, Format,
         Format::{
             L1MsgHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
@@ -15,9 +15,9 @@ use crate::{
         Tag::{EndList, EndVector},
     },
 };
-use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
+use bus_mapping::{circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee}, operation::StackOp};
 use eth_types::{
-    evm_types::gas_utils::tx_data_gas_cost,
+    evm_types::{gas_utils::tx_data_gas_cost, stack},
     geth_types::{TxType, TxType::PreEip155},
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
@@ -389,12 +389,29 @@ impl Transaction {
             byte_idx: 0,
             depth: 0,
         };
+
+        // Queue up stack operations
+        let mut stack_ops: Vec<RlpStackOp<F>> = vec![];
+        // concat tx_id and format as stack identifier
+        let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
         // When we are decoding a vector of element type `t`, at the beginning
         // we actually do not know the next tag is `EndVector` or not. After we
         // parsed the current tag, if the remaining bytes to decode in this layer
         // is zero, then the next tag is `EndVector`.
         let mut cur_rom_row = vec![0];
         let mut remaining_bytes = vec![rlp_bytes.len()];
+        // initialize stack
+        stack_ops.push(
+            RlpStackOp {
+                is_write: true, 
+                id, 
+                address: cur.depth, 
+                value: rlp_bytes.len(),
+                value_prev: 0,
+                // TX1559_DEBUG
+                note: String::from("Initialize"),
+            }
+        );
         let mut witness_table_idx = 0;
 
         // This map keeps track
@@ -463,8 +480,25 @@ impl Transaction {
                         if let Some(rem) = remaining_bytes.last_mut() {
                             // read one more byte
                             assert!(*rem >= 1);
+
+                            if byte_value <= 0xc0 || byte_value > 0xf7 {
+                                // add stack op on same depth
+                                stack_ops.push(
+                                    RlpStackOp { 
+                                        is_write: true,
+                                        id,
+                                        address: cur.depth,
+                                        value: rem.clone() - 1,
+                                        value_prev: rem.clone(),
+                                        // TX1559_DEBUG
+                                        note: String::from(format!("Decoding Start byte read, idx: {}, len: {}", cur.tag_idx, cur.tag_length)),
+                                    }
+                                );
+                            }
+                                
                             *rem -= 1;
                         }
+
                         if byte_value < 0x80 {
                             // assertions
                             assert!(!cur.tag.is_list());
@@ -534,9 +568,21 @@ impl Transaction {
                                 // current list should be subtracted by
                                 // the number of bytes of the new list.
                                 assert!(*rem >= num_bytes_of_new_list);
+                                
                                 *rem -= num_bytes_of_new_list;
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
+                            stack_ops.push(
+                                RlpStackOp { 
+                                    is_write: true,
+                                    id,
+                                    address: cur.depth + 1,
+                                    value: num_bytes_of_new_list,
+                                    value_prev: 0,
+                                    // TX1559_DEBUG
+                                    note: String::from("BeginList but byte < 0xf8, next stack state write"),
+                                }
+                            );
                             next.depth = cur.depth + 1;
                             next.state = DecodeTagStart;
                         } else {
@@ -556,6 +602,20 @@ impl Transaction {
                 State::Bytes => {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         assert!(*rem >= 1);
+
+                        // add stack op on same depth
+                        stack_ops.push(
+                            RlpStackOp { 
+                                is_write: true,
+                                id,
+                                address: cur.depth,
+                                value: rem.clone() - 1,
+                                value_prev: rem.clone(),
+                                // TX1559_DEBUG
+                                note: String::from("Bytes, reading regular byte"),
+                            }
+                        );
+
                         *rem -= 1;
                     }
                     if cur.tag_idx < cur.tag_length {
@@ -582,6 +642,20 @@ impl Transaction {
                 State::LongBytes => {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         assert!(*rem >= 1);
+
+                        // add stack op on same depth
+                        stack_ops.push(
+                            RlpStackOp { 
+                                is_write: true,
+                                id,
+                                address: cur.depth,
+                                value: rem.clone() - 1,
+                                value_prev: rem.clone(),
+                                // TX1559_DEBUG
+                                note: String::from("Bytes, reading regular long bytes"),
+                            }
+                        );
+
                         *rem -= 1;
                     }
 
@@ -606,6 +680,22 @@ impl Transaction {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         // read one more byte
                         assert!(*rem >= 1);
+
+                        // add stack op on same depth
+                        if cur.tag_idx < cur.tag_length {
+                            stack_ops.push(
+                                RlpStackOp { 
+                                    is_write: true,
+                                    id,
+                                    address: cur.depth,
+                                    value: rem.clone() - 1,
+                                    value_prev: rem.clone(),
+                                    // TX1559_DEBUG
+                                    note: String::from("LongList tag_idx < tag_length, read byte"),
+                                }
+                            );
+                        }
+
                         *rem -= 1;
                     }
                     if cur.tag_idx < cur.tag_length {
@@ -621,9 +711,21 @@ impl Transaction {
                         }
                         if let Some(rem) = remaining_bytes.last_mut() {
                             assert!(*rem >= lb_len);
+
                             *rem -= lb_len;
                         }
                         remaining_bytes.push(lb_len);
+                        stack_ops.push(
+                            RlpStackOp { 
+                                is_write: true,
+                                id,
+                                address: cur.depth + 1,
+                                value: lb_len,
+                                value_prev: 0,
+                                // TX1559_DEBUG
+                                note: String::from("LongList Last byte, write next stack state"),
+                            }
+                        );
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
                     }
@@ -691,6 +793,12 @@ impl Transaction {
                 RlpTag::Null => unreachable!("Null is not used"),
             };
 
+            // TX1559_DEBUG
+            if stack_ops.len() < 1 {
+                stack_ops.push(RlpStackOp { is_write: false, id: Value::known(F::zero()), address: 0, value: 0, value_prev: 0, note: String::from("pad") });
+            }
+            let stack_op = stack_ops.remove(0);
+
             witness.push(RlpFsmWitnessRow {
                 rlp_table: RlpTable {
                     tx_id,
@@ -718,6 +826,14 @@ impl Transaction {
                     bytes_rlc,
                     gas_cost_acc,
                 },
+                rlp_decoding_table: RlpDecodingTable {
+                    is_write: stack_op.is_write,
+                    id: stack_op.id,
+                    address: stack_op.address,
+                    value: stack_op.value,
+                    value_prev: stack_op.value_prev,
+                    note: stack_op.note,
+                }
             });
             witness_table_idx += 1;
 

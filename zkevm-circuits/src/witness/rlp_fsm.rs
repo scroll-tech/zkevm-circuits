@@ -609,6 +609,11 @@ impl From<Format> for usize {
         value as usize
     }
 }
+impl From<Format> for u64 {
+    fn from(value: Format) -> Self {
+        value as u64
+    }
+}
 
 impl Format {
     /// The ROM table for format
@@ -758,6 +763,27 @@ pub struct StateMachine<F: FieldExt> {
     pub gas_cost_acc: Value<F>,
 }
 
+/// Rlp Decoding Table
+/// Using simulated stack constraints to make sure all bytes are decoded
+#[derive(Clone, Debug)]
+pub struct RlpDecodingTable<F: FieldExt> {
+    // note: a byte-counting idx such as rw_counter is not necessary 
+    // as byte_idx/byte_rev_idx can be used for the purpose
+
+    /// Is Write to decoding stack
+    pub is_write: bool,
+    /// Key1 (Id), concat of tx_id, format
+    pub id: Value<F>,
+    /// Key2 (Address), in this case depth
+    pub address: usize,
+    /// Value
+    pub value: usize,
+    /// Value Previous
+    pub value_prev: usize,
+    // TX1559_DEBUG
+    pub note: String,
+}
+
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
 pub struct RlpFsmWitnessRow<F: FieldExt> {
@@ -765,6 +791,8 @@ pub struct RlpFsmWitnessRow<F: FieldExt> {
     pub rlp_table: RlpTable<F>,
     /// The state machine witness.
     pub state_machine: StateMachine<F>,
+    /// The rlp decoding table witness
+    pub rlp_decoding_table: RlpDecodingTable<F>,
 }
 
 /// The RlpFsmWitnessGen trait is implemented by data types who's RLP encoding can
@@ -789,4 +817,16 @@ pub(crate) struct SmState<F: Field> {
     pub(crate) tag_length: usize,
     pub(crate) tag_value_acc: Value<F>,
     pub(crate) tag_bytes_rlc: Value<F>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RlpStackOp<F: Field> {
+    pub is_write: bool,
+    pub id: Value<F>,
+    pub address: usize,
+    pub value: usize,
+    pub value_prev: usize,
+
+    // TX1559_DEBUG
+    pub note: String,
 }
