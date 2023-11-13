@@ -392,6 +392,7 @@ impl Transaction {
 
         // Queue up stack operations
         let mut stack_ops: Vec<RlpStackOp<F>> = vec![];
+        let mut last_bytes_on_depth: [usize; 4] = [0, 0, 0, 0];
         // concat tx_id and format as stack identifier
         let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
         // When we are decoding a vector of element type `t`, at the beginning
@@ -445,6 +446,22 @@ impl Transaction {
                                 .expect("remaining_bytes shall not be empty"),
                             0
                         );
+
+                        if remaining_bytes.len() > 0 {
+                            let prev_depth_bytes = remaining_bytes.last().unwrap().clone();
+                            stack_ops.push(
+                                RlpStackOp {
+                                    is_write: true,
+                                    id,
+                                    address: cur.depth - 1,
+                                    value: prev_depth_bytes,
+                                    value_prev: last_bytes_on_depth[cur.depth - 1],
+                                    // TX1559_DEBUG
+                                    note: String::from(format!("Restoring depth level {}", cur.depth - 1)),
+                                }
+                            )
+                        }
+                        
                         if cur.depth == 1 {
                             assert_eq!(remaining_bytes.len(), 1);
                             assert_eq!(remaining_bytes[0], 0);
@@ -452,7 +469,7 @@ impl Transaction {
                             is_output = true;
                             rlp_tag = RlpTag::RLC;
                         } else if cur.depth == 4 {
-                            // end of access list storage keys list
+                            // end of storage keys list
                             // note: depth alone currently is sufficient to ascertain
                             // the end of a storage keys list as there's no other nested
                             // structure at depth 4 specified in EIP standards
@@ -568,10 +585,11 @@ impl Transaction {
                                 // current list should be subtracted by
                                 // the number of bytes of the new list.
                                 assert!(*rem >= num_bytes_of_new_list);
-                                
+                                last_bytes_on_depth[cur.depth] = rem.clone() + 1;
                                 *rem -= num_bytes_of_new_list;
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
+                            
                             stack_ops.push(
                                 RlpStackOp { 
                                     is_write: true,
@@ -711,7 +729,7 @@ impl Transaction {
                         }
                         if let Some(rem) = remaining_bytes.last_mut() {
                             assert!(*rem >= lb_len);
-
+                            last_bytes_on_depth[cur.depth] = rem.clone() + 1;
                             *rem -= lb_len;
                         }
                         remaining_bytes.push(lb_len);
