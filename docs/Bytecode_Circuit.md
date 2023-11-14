@@ -15,7 +15,7 @@ The EVM Circuit needs to lookup to the bytecode table that stores the correct by
 |RLC of hash's little-endian bytes using evm_word randomness|BytecodeFieldTag::Header|0|0|len of bytes|
 |RLC of hash's little-endian bytes using evm_word randomness|BytecodeFieldTag::Byte|idx|true when the byte is not an argument to a PUSHx instruction|byte|
 
-Here `Header` is used to seperate bytecodes.
+Here `Header` is used to separate bytecodes.
 
 ## Purpose of the Bytecode Circuit
 
@@ -98,5 +98,5 @@ Here
     - when `tag` is `byte`, then lookup to push_table for `(value, push_data_size)`
 
 - correct propagation of each row within one bytecode
-    - when `tag` transits from `byte` to `byte`, then `length` and `hash` remain the same, `index` increse by 1, `value_rlc` accumulates, and for push data `push_data_left` decay by 1, for code `push_data_left` remains the same as `push_data_size`
+    - when `tag` transits from `byte` to `byte`, then `length` and `hash` remain the same, `index` increases by 1, `value_rlc` accumulates, and for push data `push_data_left` decay by 1, for code `push_data_left` remains the same as `push_data_size`
 

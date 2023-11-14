@@ -1,4 +1,6 @@
-use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT};
+use bus_mapping::precompile::{
+    PrecompileAuxData, PrecompileCalls, MODEXP_INPUT_LIMIT, MODEXP_SIZE_LIMIT,
+};
 use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToScalar, U256};
 use gadgets::util::{self, not, select, Expr};
 use halo2_proofs::{
@@ -9,7 +11,7 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BITS_U8, N_BYTES_U64, N_BYTES_WORD},
+        param::{N_BITS_U8, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -18,6 +20,7 @@ use crate::{
                 BinaryNumberGadget, BitLengthGadget, ByteOrWord, ByteSizeGadget,
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
             },
+            padding_gadget::PaddingGadget,
             rlc, CachedRegion, Cell,
         },
     },
@@ -701,6 +704,13 @@ impl<F: Field> ModExpGasCost<F> {
 
 #[derive(Clone, Debug)]
 pub struct ModExpGadget<F> {
+    input_bytes_rlc: Cell<F>,
+    output_bytes_rlc: Cell<F>,
+    return_bytes_rlc: Cell<F>,
+
+    pad_right: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    padding: PaddingGadget<F>,
+
     is_success: Cell<F>,
     callee_address: Cell<F>,
     caller_id: Cell<F>,
@@ -715,7 +725,6 @@ pub struct ModExpGadget<F> {
     output: ModExpOutputs<F>,
 
     input_bytes_acc: Cell<F>,
-    output_bytes_acc: Cell<F>,
     is_gas_insufficient: LtGadget<F, N_BYTES_U64>,
     gas_cost_gadget: ModExpGasCost<F>,
     garbage_bytes_holder: [Cell<F>; INPUT_LIMIT - 96],
@@ -727,9 +736,13 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
     const NAME: &'static str = "MODEXP";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) = (
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+        );
         // we 'copy' the acc_bytes cell inside call_op step, so it must be the first query cells
         let input_bytes_acc = cb.query_cell_phase2();
-        let output_bytes_acc = cb.query_cell_phase2();
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -802,7 +815,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
         cb.require_equal(
             "output acc bytes must equal",
-            output_bytes_acc.expr(),
+            output_bytes_rlc.expr(),
             output.bytes_rlc(),
         );
 
@@ -812,7 +825,28 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             cb.curr.state.gas_left.expr(),
         );
 
-        let rd_length = select::expr(is_success.expr(), input.modulus_len(), 0.expr());
+        let required_input_len = 192.expr();
+        let pad_right = LtGadget::construct(cb, call_data_length.expr(), required_input_len.expr());
+        let padding = cb.condition(pad_right.expr(), |cb| {
+            PaddingGadget::construct(
+                cb,
+                input_bytes_rlc.expr(),
+                call_data_length.expr(),
+                required_input_len,
+            )
+        });
+        cb.condition(not::expr(pad_right.expr()), |cb| {
+            cb.require_equal(
+                "no padding implies padded bytes == input bytes",
+                padding.padded_rlc(),
+                input_bytes_rlc.expr(),
+            );
+        });
+        cb.require_equal(
+            "copy padded input bytes",
+            padding.padded_rlc(),
+            input_bytes_acc.expr(),
+        );
 
         let restore_context_gadget = RestoreContextGadget::construct2(
             cb,
@@ -820,12 +854,19 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             gas_cost.expr(),
             0.expr(),
             0.expr(),
-            rd_length,
+            select::expr(is_success.expr(), input.modulus_len(), 0.expr()),
             0.expr(),
             0.expr(),
         );
 
         Self {
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+
+            pad_right,
+            padding,
+
             is_success,
             callee_address,
             caller_id,
@@ -838,7 +879,6 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             padding_zero,
             output,
             input_bytes_acc,
-            output_bytes_acc,
             is_gas_insufficient,
             gas_cost_gadget,
             garbage_bytes_holder,
@@ -868,7 +908,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             let garbage_bytes = if call.call_data_length as usize > input_expected_len {
                 let mut bts = Vec::new();
                 bts.resize(input_expected_len - 96, 0); //front prefix zero
-                bts.append(&mut Vec::from(&data.input_memory[input_expected_len..]));
+                bts.append(&mut Vec::from(&data.input_bytes[input_expected_len..]));
                 bts.resize(96, 0); //padding zero
                 bts
             } else {
@@ -888,7 +928,17 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             let input_rlc = region
                 .challenges()
                 .keccak_input()
-                .map(|randomness| rlc::value(data.input_memory.iter().rev(), randomness));
+                .map(|randomness| rlc::value(data.input_bytes.iter().rev(), randomness));
+
+            self.input_bytes_rlc.assign(region, offset, input_rlc)?;
+            self.return_bytes_rlc.assign(
+                region,
+                offset,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(data.return_bytes.iter().rev(), r)),
+            )?;
 
             // if the input to modexp has more than 192 bytes, then we only keep the first 192 bytes
             // and discard the remaining bytes
@@ -906,11 +956,11 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             let output_rlc = region
                 .challenges()
                 .keccak_input()
-                .map(|randomness| rlc::value(data.output_memory.iter().rev(), randomness));
+                .map(|randomness| rlc::value(data.output_bytes.iter().rev(), randomness));
 
             self.input_bytes_acc
                 .assign(region, offset, n_padded_zeroes_pow * input_rlc)?;
-            self.output_bytes_acc.assign(region, offset, output_rlc)?;
+            self.output_bytes_rlc.assign(region, offset, output_rlc)?;
 
             let required_gas_cost = self.gas_cost_gadget.assign(
                 region,
@@ -924,6 +974,19 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 offset,
                 F::from(step.gas_left),
                 F::from(required_gas_cost),
+            )?;
+            self.pad_right
+                .assign(region, offset, call.call_data_length.into(), 192.into())?;
+            self.padding.assign(
+                region,
+                offset,
+                PrecompileCalls::Modexp,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(data.input_bytes.iter().rev(), r)),
+                call.call_data_length,
+                region.challenges().keccak_input(),
             )?;
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);

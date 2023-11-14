@@ -976,13 +976,17 @@ impl EcAddOp {
             })
         };
 
-        assert_eq!(input.len(), 128);
-        assert_eq!(output.len(), 64);
+        let mut resized_input = input.to_vec();
+        resized_input.resize(128, 0u8);
+        let mut resized_output = output.to_vec();
+        resized_output.resize(64, 0u8);
 
         let mut buf = [0u8; 32];
-        let opt_point_p: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x00..0x40]).into();
-        let opt_point_q: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x40..0x80]).into();
-        let point_r_evm = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
+        let opt_point_p: Option<G1Affine> =
+            g1_from_slice(&mut buf, &resized_input[0x00..0x40]).into();
+        let opt_point_q: Option<G1Affine> =
+            g1_from_slice(&mut buf, &resized_input[0x40..0x80]).into();
+        let point_r_evm = g1_from_slice(&mut buf, &resized_output[0x00..0x40]).unwrap();
         let point_r_cal = opt_point_p.zip(opt_point_q).map(|(point_p, point_q)| {
             let point_r: G1Affine = point_p.add(&point_q).into();
             debug_assert_eq!(
@@ -994,12 +998,12 @@ impl EcAddOp {
 
         Self {
             p: (
-                U256::from_big_endian(&input[0x00..0x20]),
-                U256::from_big_endian(&input[0x20..0x40]),
+                U256::from_big_endian(&resized_input[0x00..0x20]),
+                U256::from_big_endian(&resized_input[0x20..0x40]),
             ),
             q: (
-                U256::from_big_endian(&input[0x40..0x60]),
-                U256::from_big_endian(&input[0x60..0x80]),
+                U256::from_big_endian(&resized_input[0x40..0x60]),
+                U256::from_big_endian(&resized_input[0x60..0x80]),
             ),
             r: point_r_cal,
         }
@@ -1078,14 +1082,17 @@ impl EcMulOp {
             })
         };
 
-        assert_eq!(input.len(), 96);
-        assert_eq!(output.len(), 64);
+        let mut resized_input = input.to_vec();
+        resized_input.resize(96, 0u8);
+        let mut resized_output = output.to_vec();
+        resized_output.resize(64, 0u8);
 
         let mut buf = [0u8; 32];
 
-        let opt_point_p: Option<G1Affine> = g1_from_slice(&mut buf, &input[0x00..0x40]).into();
-        let s = Fr::from_raw(Word::from_big_endian(&input[0x40..0x60]).0);
-        let point_r_evm = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
+        let opt_point_p: Option<G1Affine> =
+            g1_from_slice(&mut buf, &resized_input[0x00..0x40]).into();
+        let s = Fr::from_raw(Word::from_big_endian(&resized_input[0x40..0x60]).0);
+        let point_r_evm = g1_from_slice(&mut buf, &resized_output[0x00..0x40]).unwrap();
         let point_r_cal = opt_point_p.map(|point_p| {
             let point_r: G1Affine = point_p.mul(s).into();
             debug_assert_eq!(
@@ -1097,8 +1104,8 @@ impl EcMulOp {
 
         Self {
             p: (
-                U256::from_big_endian(&input[0x00..0x20]),
-                U256::from_big_endian(&input[0x20..0x40]),
+                U256::from_big_endian(&resized_input[0x00..0x20]),
+                U256::from_big_endian(&resized_input[0x20..0x40]),
             ),
             s,
             r: point_r_cal,
@@ -1251,6 +1258,12 @@ pub struct EcPairingOp {
     pub pairs: [EcPairingPair; N_PAIRING_PER_OP],
     /// Result from the pairing check.
     pub output: Word,
+    /// Input bytes to the ecPairing call.
+    pub input_bytes: Vec<u8>,
+    /// Output bytes from the ecPairing call.
+    pub output_bytes: Vec<u8>,
+    /// Bytes returned back to the caller.
+    pub return_bytes: Vec<u8>,
 }
 
 impl Default for EcPairingOp {
@@ -1283,6 +1296,13 @@ impl Default for EcPairingOp {
                 },
             ],
             output: Word::zero(),
+            // It does not matter what the input bytes and return bytes are in this case, as this
+            // operation is a filler op. It is not an op constructed from an EVM call to the
+            // ecPairing precompiled contract. Hence the input/return bytes will not be
+            // constrained.
+            input_bytes: vec![],
+            output_bytes: vec![],
+            return_bytes: vec![],
         }
     }
 }
@@ -1321,6 +1341,7 @@ impl EcPairingOp {
                 EcPairingPair::new(G1Affine::identity(), G2Affine::generator()),
             ],
             output: 1.into(),
+            ..Default::default()
         }
     }
 }

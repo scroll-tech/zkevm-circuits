@@ -465,7 +465,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             precompile_return_data_copy_size.min(),
                             call_gadget.rd_address.offset(),
                             precompile_return_data_copy_size.min(),
-                            0.expr(),
+                            0.expr(), // Memory to Memory copy has no RLC accumulation.
                             precompile_return_rws.expr(), // writes
                         ); // rwc_delta += `return_data_copy_size.min()` for precompile
                         precompile_return_bytes_rlc
@@ -499,14 +499,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
                 let precompile_gadget = PrecompileGadget::construct(
                     cb,
-                    call_gadget.is_success.expr(),
                     call_gadget.callee_address_expr(),
-                    cb.curr.state.call_id.expr(),
-                    call_gadget.cd_address.offset(),
-                    call_gadget.cd_address.length(),
-                    call_gadget.rd_address.offset(),
-                    call_gadget.rd_address.length(),
-                    precompile_return_length.expr(),
                     precompile_input_bytes_rlc.expr(),
                     precompile_output_bytes_rlc.expr(),
                     precompile_return_bytes_rlc.expr(),
@@ -1063,9 +1056,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 .map(|_| rws.next().memory_word_pair().0)
                 .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
-            let return_bytes = (0..return_bytes_word_count * 2)
-                .step_by(2)
-                .map(|_| rws.next().memory_word_pair().0)
+            let return_bytes = (0..return_bytes_word_count)
+                .map(|_| {
+                    let _read_word = rws.next();
+
+                    // write word.
+                    rws.next().memory_word_pair().0
+                })
                 .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
 
@@ -1141,14 +1138,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, return_rws)?;
 
         if is_precompile_call {
-            self.precompile_gadget.assign(
-                region,
-                offset,
-                precompile_addr.0[19].into(),
-                precompile_input_bytes_rlc,
-                cd_length.as_u64(),
-                region.challenges().keccak_input(),
-            )?;
+            self.precompile_gadget
+                .assign(region, offset, precompile_addr.0[19].into())?;
         }
 
         Ok(())
