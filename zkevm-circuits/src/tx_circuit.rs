@@ -1572,6 +1572,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
                 is_none,
+                0.expr(), // access_list_idx
+                0.expr(), // storage_key_idx
             ]
             .into_iter()
             .zip_eq(rlp_table.table_exprs(meta).into_iter())
@@ -1610,6 +1612,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
                 is_none,
+                0.expr(), // access_list_idx
+                0.expr(), // storage_key_idx
             ]
             .into_iter()
             .zip_eq(rlp_table.table_exprs(meta).into_iter())

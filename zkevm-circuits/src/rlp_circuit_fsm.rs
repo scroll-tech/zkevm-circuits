@@ -178,6 +178,41 @@ impl RlpFsmRomTable {
     }
 }
 
+/// Data decoding table simulates a stack-like structure for constraining remaining_bytes
+#[derive(Clone, Copy, Debug)]
+pub struct RlpDecodingTable {
+    /// Is Write to decoding stack
+    pub is_write: Column<Advice>,
+    /// Key1 (Id), concat of tx_id, format
+    pub id: Column<Advice>,
+    /// Key2 (Address), in this case depth
+    pub address: Column<Advice>,
+    /// Value
+    pub value: Column<Advice>,
+    /// Value Previous
+    pub value_prev: Column<Advice>,
+    /// Stack Accumulator
+    /// accumulates remaining bytes on each depth level (excluding top of stack)
+    pub stack_acc: Column<Advice>,
+    /// Power of rand for stack accumulator on depth level (address)
+    pub stack_acc_pow_of_rand: Column<Advice>,
+}
+
+impl RlpDecodingTable {
+    /// Construct the decoding table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            is_write: meta.advice_column(),
+            id: meta.advice_column(),
+            address: meta.advice_column(),
+            value: meta.advice_column(),
+            value_prev: meta.advice_column(),
+            stack_acc: meta.advice_column_in(SecondPhase),
+            stack_acc_pow_of_rand: meta.advice_column_in(SecondPhase),
+        }
+    }
+}
+
 /// The RLP Circuit is implemented as a finite state machine. Refer the
 /// [design doc][doclink] for design decisions and specification details.
 ///

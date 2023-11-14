@@ -764,7 +764,7 @@ pub struct StateMachine<F: FieldExt> {
 }
 
 /// Rlp Decoding Table
-/// Using simulated stack constraints to make sure all bytes are decoded
+/// Using simulated stack constraints to make sure all bytes are correctly decoded
 #[derive(Clone, Debug)]
 pub struct RlpDecodingTable<F: FieldExt> {
     // note: a byte-counting idx such as rw_counter is not necessary
