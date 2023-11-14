@@ -1535,6 +1535,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 tag_length,
                 1.expr(), // is_output = true
                 0.expr(), // is_none = false
+                0.expr(), // access_list_idx
+                0.expr(), // storage_key_idx
             ];
             assert_eq!(input_exprs.len(), rlp_table.table_exprs(meta).len());
 
