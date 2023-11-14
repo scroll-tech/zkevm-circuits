@@ -397,10 +397,10 @@ impl Transaction {
 
         let mut stack_acc_pow_of_rand: Vec<Value<F>> = vec![];
         let mut pow_of_rand = Value::known(F::one());
-        stack_acc_pow_of_rand.push(pow_of_rand.clone());
+        stack_acc_pow_of_rand.push(pow_of_rand);
         for _ in 0..4 {
             pow_of_rand = pow_of_rand * keccak_rand;
-            stack_acc_pow_of_rand.push(pow_of_rand.clone());
+            stack_acc_pow_of_rand.push(pow_of_rand);
         }
         // concat tx_id and format as stack identifier
         let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
@@ -417,8 +417,6 @@ impl Transaction {
             address: cur.depth,
             value: rlp_bytes.len(),
             value_prev: 0,
-            // TX1559_DEBUG
-            note: String::from("Initialize"),
         });
         let mut witness_table_idx = 0;
 
@@ -454,8 +452,8 @@ impl Transaction {
                             0
                         );
 
-                        if remaining_bytes.len() > 0 {
-                            let prev_depth_bytes = remaining_bytes.last().unwrap().clone();
+                        if !remaining_bytes.is_empty() {
+                            let prev_depth_bytes = *remaining_bytes.last().unwrap();
                             stack_acc = stack_acc
                                 - stack_acc_pow_of_rand[cur.depth - 1]
                                     * Value::known(F::from(prev_depth_bytes as u64));
@@ -465,11 +463,6 @@ impl Transaction {
                                 address: cur.depth - 1,
                                 value: prev_depth_bytes,
                                 value_prev: last_bytes_on_depth[cur.depth - 1],
-                                // TX1559_DEBUG
-                                note: String::from(format!(
-                                    "Restoring depth level {}",
-                                    cur.depth - 1
-                                )),
                             })
                         }
 
@@ -509,19 +502,14 @@ impl Transaction {
                             // read one more byte
                             assert!(*rem >= 1);
 
-                            if byte_value < 0xc0 || byte_value > 0xf7 {
+                            if !(0xc0..=0xf7).contains(&byte_value) {
                                 // add stack op on same depth
                                 stack_ops.push(RlpStackOp {
                                     is_write: true,
                                     id,
                                     address: cur.depth,
-                                    value: rem.clone() - 1,
-                                    value_prev: rem.clone(),
-                                    // TX1559_DEBUG
-                                    note: String::from(format!(
-                                        "Decoding Start byte read, idx: {}, len: {}",
-                                        cur.tag_idx, cur.tag_length
-                                    )),
+                                    value: *rem - 1,
+                                    value_prev: *rem,
                                 });
                             }
 
@@ -597,11 +585,11 @@ impl Transaction {
                                 // current list should be subtracted by
                                 // the number of bytes of the new list.
                                 assert!(*rem >= num_bytes_of_new_list);
-                                last_bytes_on_depth[cur.depth] = rem.clone() + 1;
+                                last_bytes_on_depth[cur.depth] = *rem + 1;
                                 stack_acc = stack_acc
                                     + stack_acc_pow_of_rand[cur.depth]
                                         * Value::known(F::from(
-                                            (rem.clone() - num_bytes_of_new_list) as u64,
+                                            (*rem - num_bytes_of_new_list) as u64,
                                         ));
 
                                 *rem -= num_bytes_of_new_list;
@@ -614,10 +602,6 @@ impl Transaction {
                                 address: cur.depth + 1,
                                 value: num_bytes_of_new_list,
                                 value_prev: 0,
-                                // TX1559_DEBUG
-                                note: String::from(
-                                    "BeginList but byte < 0xf8, next stack state write",
-                                ),
                             });
                             next.depth = cur.depth + 1;
                             next.state = DecodeTagStart;
@@ -644,10 +628,8 @@ impl Transaction {
                             is_write: true,
                             id,
                             address: cur.depth,
-                            value: rem.clone() - 1,
-                            value_prev: rem.clone(),
-                            // TX1559_DEBUG
-                            note: String::from("Bytes, reading regular byte"),
+                            value: *rem - 1,
+                            value_prev: *rem,
                         });
 
                         *rem -= 1;
@@ -682,10 +664,8 @@ impl Transaction {
                             is_write: true,
                             id,
                             address: cur.depth,
-                            value: rem.clone() - 1,
-                            value_prev: rem.clone(),
-                            // TX1559_DEBUG
-                            note: String::from("Bytes, reading regular long bytes"),
+                            value: *rem - 1,
+                            value_prev: *rem,
                         });
 
                         *rem -= 1;
@@ -719,10 +699,8 @@ impl Transaction {
                                 is_write: true,
                                 id,
                                 address: cur.depth,
-                                value: rem.clone() - 1,
-                                value_prev: rem.clone(),
-                                // TX1559_DEBUG
-                                note: String::from("LongList tag_idx < tag_length, read byte"),
+                                value: *rem - 1,
+                                value_prev: *rem,
                             });
                         }
 
@@ -741,10 +719,10 @@ impl Transaction {
                         }
                         if let Some(rem) = remaining_bytes.last_mut() {
                             assert!(*rem >= lb_len);
-                            last_bytes_on_depth[cur.depth] = rem.clone() + 1;
+                            last_bytes_on_depth[cur.depth] = *rem + 1;
                             stack_acc = stack_acc
                                 + stack_acc_pow_of_rand[cur.depth]
-                                    * Value::known(F::from((rem.clone() - lb_len) as u64));
+                                    * Value::known(F::from((*rem - lb_len) as u64));
 
                             *rem -= lb_len;
                         }
@@ -755,8 +733,6 @@ impl Transaction {
                             address: cur.depth + 1,
                             value: lb_len,
                             value_prev: 0,
-                            // TX1559_DEBUG
-                            note: String::from("LongList Last byte, write next stack state"),
                         });
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
@@ -825,17 +801,6 @@ impl Transaction {
                 RlpTag::Null => unreachable!("Null is not used"),
             };
 
-            // TX1559_DEBUG
-            if stack_ops.len() < 1 {
-                stack_ops.push(RlpStackOp {
-                    is_write: false,
-                    id: Value::known(F::zero()),
-                    address: 0,
-                    value: 0,
-                    value_prev: 0,
-                    note: String::from("pad"),
-                });
-            }
             let stack_op = stack_ops.remove(0);
 
             witness.push(RlpFsmWitnessRow {
@@ -871,9 +836,8 @@ impl Transaction {
                     address: stack_op.address,
                     value: stack_op.value,
                     value_prev: stack_op.value_prev,
-                    stack_acc: stack_acc.clone(),
+                    stack_acc,
                     stack_acc_pow_of_rand: stack_acc_pow_of_rand[stack_op.address],
-                    note: stack_op.note,
                 },
             });
             witness_table_idx += 1;

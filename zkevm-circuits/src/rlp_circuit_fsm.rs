@@ -1645,13 +1645,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "rlp_table.access_list_idx",
             self.rlp_table.access_list_idx,
             row,
-            || Value::known(F::from(witness.rlp_table.access_list_idx as u64)),
+            || Value::known(F::from(witness.rlp_table.access_list_idx)),
         )?;
         region.assign_advice(
             || "rlp_table.storage_key_idx",
             self.rlp_table.storage_key_idx,
             row,
-            || Value::known(F::from(witness.rlp_table.storage_key_idx as u64)),
+            || Value::known(F::from(witness.rlp_table.storage_key_idx)),
         )?;
 
         // assign to sm
@@ -1985,14 +1985,14 @@ impl<F: Field> RlpCircuitConfig<F> {
             last_row
         );
 
-        log::trace!(
-            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
-            sm_rows
-        );
-        log::trace!(
-            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}",
-            dt_rows
-        );
+        // log::trace!(
+        //     "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
+        //     sm_rows
+        // );
+        // log::trace!(
+        //     "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}",
+        //     dt_rows
+        // );
 
         debug_assert!(sm_rows.len() <= last_row);
 

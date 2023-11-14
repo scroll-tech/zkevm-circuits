@@ -784,8 +784,6 @@ pub struct RlpDecodingTable<F: FieldExt> {
     pub stack_acc: Value<F>,
     /// Power of rand for stack accumulator on depth level (address)
     pub stack_acc_pow_of_rand: Value<F>,
-    // TX1559_DEBUG
-    pub note: String,
 }
 
 /// Represents the witness in a single row of the RLP circuit.
@@ -830,7 +828,4 @@ pub(crate) struct RlpStackOp<F: Field> {
     pub address: usize,
     pub value: usize,
     pub value_prev: usize,
-
-    // TX1559_DEBUG
-    pub note: String,
 }
