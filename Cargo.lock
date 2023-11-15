@@ -4667,7 +4667,7 @@ dependencies = [
  "halo2_gadgets",
  "halo2_proofs",
  "halo2curves",
- "itertools",
+ "itertools 0.11.0",
  "lazy_static",
  "log",
  "num-bigint",
