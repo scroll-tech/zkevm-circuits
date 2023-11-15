@@ -945,7 +945,7 @@ mod test {
                     .enumerate()
                     .filter(|(_, s)| s.op == OpcodeId::RETURN)
                     .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
-                    .flat_map(|s| s.stack.nth_last(0)) // contract addr on stack top
+                    .flat_map(|s| s.stack.last()) // contract addr on stack top
                     .collect_vec();
                 assert!(created_contract_addr.len() == 2); // both contract addr exist
                 created_contract_addr
@@ -959,7 +959,7 @@ mod test {
                     .enumerate()
                     .filter(|(_, s)| s.op == OpcodeId::RETURNDATASIZE)
                     .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
-                    .flat_map(|s| s.stack.nth_last(0)) // returndata size on stack top
+                    .flat_map(|s| s.stack.last()) // returndata size on stack top
                     .collect_vec();
                 assert!(return_data_size.len() == 2);
                 return_data_size

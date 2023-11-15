@@ -11,11 +11,13 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{AddWordsGadget, IsEqualGadget, IsZeroGadget, ModGadget},
+            math_gadget::{AddWordsGadget, IsEqualGadget, IsZeroGadget, LtGadget, ModGadget},
+            padding_gadget::PaddingGadget,
             rlc, CachedRegion, Cell, Word,
         },
     },
@@ -38,6 +40,13 @@ lazy_static::lazy_static! {
 
 #[derive(Clone, Debug)]
 pub struct EcMulGadget<F> {
+    input_bytes_rlc: Cell<F>,
+    output_bytes_rlc: Cell<F>,
+    return_bytes_rlc: Cell<F>,
+
+    pad_right: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    padding: PaddingGadget<F>,
+
     point_p_x_rlc: Cell<F>,
     point_p_y_rlc: Cell<F>,
     scalar_s_raw_rlc: Cell<F>,
@@ -76,7 +85,19 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (point_p_x_rlc, point_p_y_rlc, scalar_s_raw_rlc, point_r_x_rlc, point_r_y_rlc) = (
+        let (
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+            point_p_x_rlc,
+            point_p_y_rlc,
+            scalar_s_raw_rlc,
+            point_r_x_rlc,
+            point_r_y_rlc,
+        ) = (
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -243,6 +264,44 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
+        let required_input_len = 96.expr();
+        let pad_right = LtGadget::construct(cb, call_data_length.expr(), required_input_len.expr());
+        let padding = cb.condition(pad_right.expr(), |cb| {
+            PaddingGadget::construct(
+                cb,
+                input_bytes_rlc.expr(),
+                call_data_length.expr(),
+                required_input_len,
+            )
+        });
+        cb.condition(not::expr(pad_right.expr()), |cb| {
+            cb.require_equal(
+                "no padding implies padded bytes == input bytes",
+                padding.padded_rlc(),
+                input_bytes_rlc.expr(),
+            );
+        });
+        let (r_pow_32, r_pow_64) = {
+            let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+            let r_pow_16 = challenges[15].clone();
+            let r_pow_32 = r_pow_16.square();
+            let r_pow_64 = r_pow_32.expr().square();
+            (r_pow_32, r_pow_64)
+        };
+        cb.require_equal(
+            "input bytes (RLC) = [ p_x | p_y | s ]",
+            padding.padded_rlc(),
+            (point_p_x_rlc.expr() * r_pow_64)
+                + (point_p_y_rlc.expr() * r_pow_32.expr())
+                + scalar_s_raw_rlc.expr(),
+        );
+        // RLC of output bytes always equals RLC of result elliptic curve point R.
+        cb.require_equal(
+            "output bytes (RLC) = [ r_x | r_y ]",
+            output_bytes_rlc.expr(),
+            point_r_x_rlc.expr() * r_pow_32 + point_r_y_rlc.expr(),
+        );
+
         let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
@@ -255,6 +314,13 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         );
 
         Self {
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+
+            pad_right,
+            padding,
+
             point_p_x_rlc,
             point_p_y_rlc,
             scalar_s_raw_rlc,
@@ -296,6 +362,21 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::EcMul(aux_data)) = &step.aux_data {
+            for (col, bytes) in [
+                (&self.input_bytes_rlc, &aux_data.input_bytes),
+                (&self.output_bytes_rlc, &aux_data.output_bytes),
+                (&self.return_bytes_rlc, &aux_data.return_bytes),
+            ] {
+                col.assign(
+                    region,
+                    offset,
+                    region
+                        .challenges()
+                        .keccak_input()
+                        .map(|r| rlc::value(bytes.iter().rev(), r)),
+                )?;
+            }
+
             for (col, is_zero_gadget, word_value) in [
                 (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
                 (&self.point_p_y_rlc, &self.p_y_is_zero, aux_data.p_y),
@@ -354,6 +435,19 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             let (k, _) = aux_data.s_raw.div_mod(*FR_MODULUS);
             self.modword
                 .assign(region, offset, aux_data.s_raw, *FR_MODULUS, aux_data.s, k)?;
+            self.pad_right
+                .assign(region, offset, call.call_data_length.into(), 96.into())?;
+            self.padding.assign(
+                region,
+                offset,
+                PrecompileCalls::Bn128Mul,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(aux_data.input_bytes.iter().rev(), r)),
+                call.call_data_length,
+                region.challenges().keccak_input(),
+            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecMul", step.aux_data);
             return Err(Error::Synthesis);

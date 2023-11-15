@@ -20,8 +20,8 @@ impl Opcode for Calldataload {
 
         // fetch the top of the stack, i.e. offset in calldata to start reading 32-bytes
         // from.
-        let offset = geth_step.stack.nth_last(0)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
+        let offset = geth_step.stack.last()?;
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), offset)?;
 
         // Check if offset is Uint64 overflow.
         let calldata_word = if let Ok(offset) = u64::try_from(offset) {

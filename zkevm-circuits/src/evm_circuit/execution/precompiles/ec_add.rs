@@ -6,10 +6,13 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::LtGadget,
+            padding_gadget::PaddingGadget,
             rlc, CachedRegion, Cell,
         },
     },
@@ -19,6 +22,17 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct EcAddGadget<F> {
+    // input bytes RLC.
+    input_bytes_rlc: Cell<F>,
+    // output bytes RLC.
+    output_bytes_rlc: Cell<F>,
+    // return bytes RLC.
+    return_bytes_rlc: Cell<F>,
+
+    // utility gadgets for right-padding the input bytes.
+    pad_right: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    padding: PaddingGadget<F>,
+
     // EC points: P, Q, R
     point_p_x_rlc: Cell<F>,
     point_p_y_rlc: Cell<F>,
@@ -44,6 +58,9 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let (
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
             point_p_x_rlc,
             point_p_y_rlc,
             point_q_x_rlc,
@@ -51,6 +68,9 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_r_x_rlc,
             point_r_y_rlc,
         ) = (
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -100,6 +120,46 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             cb.require_zero("R_y == 0", point_r_y_rlc.expr());
         });
 
+        let required_input_len = 128.expr();
+        let pad_right = LtGadget::construct(cb, call_data_length.expr(), required_input_len.expr());
+        let padding = cb.condition(pad_right.expr(), |cb| {
+            PaddingGadget::construct(
+                cb,
+                input_bytes_rlc.expr(),
+                call_data_length.expr(),
+                required_input_len,
+            )
+        });
+        cb.condition(not::expr(pad_right.expr()), |cb| {
+            cb.require_equal(
+                "no padding implies padded bytes == input bytes",
+                padding.padded_rlc(),
+                input_bytes_rlc.expr(),
+            );
+        });
+        let (r_pow_32, r_pow_64, r_pow_96) = {
+            let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+            let r_pow_16 = challenges[15].clone();
+            let r_pow_32 = r_pow_16.square();
+            let r_pow_64 = r_pow_32.expr().square();
+            let r_pow_96 = r_pow_64.expr() * r_pow_32.expr();
+            (r_pow_32, r_pow_64, r_pow_96)
+        };
+        cb.require_equal(
+            "input bytes (RLC) = [ p_x | p_y | q_x | q_y ]",
+            padding.padded_rlc(),
+            (point_p_x_rlc.expr() * r_pow_96)
+                + (point_p_y_rlc.expr() * r_pow_64)
+                + (point_q_x_rlc.expr() * r_pow_32.expr())
+                + point_q_y_rlc.expr(),
+        );
+        // RLC of output bytes always equals RLC of result elliptic curve point R.
+        cb.require_equal(
+            "output bytes (RLC) = [ r_x | r_y ]",
+            output_bytes_rlc.expr(),
+            point_r_x_rlc.expr() * r_pow_32 + point_r_y_rlc.expr(),
+        );
+
         let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
@@ -112,6 +172,13 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
         );
 
         Self {
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+
+            pad_right,
+            padding,
+
             point_p_x_rlc,
             point_p_y_rlc,
             point_q_x_rlc,
@@ -141,6 +208,17 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::EcAdd(aux_data)) = &step.aux_data {
             let keccak_rand = region.challenges().keccak_input();
+            for (col, bytes) in [
+                (&self.input_bytes_rlc, &aux_data.input_bytes),
+                (&self.output_bytes_rlc, &aux_data.output_bytes),
+                (&self.return_bytes_rlc, &aux_data.return_bytes),
+            ] {
+                col.assign(
+                    region,
+                    offset,
+                    keccak_rand.map(|r| rlc::value(bytes.iter().rev(), r)),
+                )?;
+            }
             for (col, word_value) in [
                 (&self.point_p_x_rlc, aux_data.p_x),
                 (&self.point_p_y_rlc, aux_data.p_y),
@@ -155,9 +233,19 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
                     keccak_rand.map(|r| rlc::value(&word_value.to_le_bytes(), r)),
                 )?;
             }
-            // FIXME: when we handle invalid inputs (and hence failures in the precompile calls),
-            // this will be assigned either fixed gas cost (in case of success) or the
-            // entire gas passed to the precompile call (in case of failure).
+            self.pad_right
+                .assign(region, offset, call.call_data_length.into(), 128.into())?;
+            self.padding.assign(
+                region,
+                offset,
+                PrecompileCalls::Bn128Add,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(aux_data.input_bytes.iter().rev(), r)),
+                call.call_data_length,
+                region.challenges().keccak_input(),
+            )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecAdd", step.aux_data);
             return Err(Error::Synthesis);
@@ -486,7 +574,6 @@ mod test {
                     address: PrecompileCalls::Bn128Add.address().to_word(),
                     ..Default::default()
                 },
-
             ]
         };
 
@@ -538,9 +625,10 @@ mod test {
         TEST_VECTOR
             .iter()
             .cartesian_product(&call_kinds)
-            .par_bridge()
+            //.par_bridge()
             .for_each(|(test_vector, &call_kind)| {
                 let bytecode = test_vector.with_call_op(call_kind);
+                log::info!("TESTING {}", test_vector.name);
 
                 CircuitTestBuilder::new_from_test_ctx(
                     TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),

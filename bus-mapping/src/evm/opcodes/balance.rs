@@ -64,7 +64,7 @@ impl Opcode for Balance {
         } else {
             H256::zero()
         };
-        debug_assert_eq!(balance, geth_steps[1].stack.nth_last(0)?);
+        debug_assert_eq!(balance, geth_steps[1].stack.last()?);
         state.account_read(
             &mut exec_step,
             address,
@@ -78,8 +78,8 @@ impl Opcode for Balance {
         // Write the BALANCE result to stack.
         state.stack_write(
             &mut exec_step,
-            geth_steps[1].stack.nth_last_filled(0),
-            geth_steps[1].stack.nth_last(0)?,
+            geth_steps[1].stack.last_filled(),
+            geth_steps[1].stack.last()?,
         )?;
 
         Ok(vec![exec_step])

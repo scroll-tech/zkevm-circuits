@@ -1240,7 +1240,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Store deployed code if it's a successful create
         if call_success_create {
-            let offset = step.stack.nth_last(0)?;
+            let offset = step.stack.last()?;
             let length = step.stack.nth_last(1)?;
             let code = callee_memory.read_chunk(MemoryRange::new_with_length(
                 offset.low_u64(),
@@ -1280,7 +1280,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 && step.error.is_none()
                 && !call_success_create
             {
-                step.stack.nth_last(0)?.low_u64()
+                step.stack.last()?.low_u64()
             } else {
                 // common err, call empty, call precompile
                 0
@@ -1326,7 +1326,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     [Word::zero(), return_data_length]
                 }
                 OpcodeId::REVERT | OpcodeId::RETURN => {
-                    let offset = geth_step.stack.nth_last(0)?;
+                    let offset = geth_step.stack.last()?;
                     let length = geth_step.stack.nth_last(1)?;
                     // This is the convention we are using for memory addresses so that there is no
                     // memory expansion cost when the length is 0.
@@ -1554,7 +1554,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // get value first if call/create
         let value = match step.op {
             OpcodeId::CALL | OpcodeId::CALLCODE => step.stack.nth_last(2)?,
-            OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.nth_last(0)?,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.last()?,
             _ => Word::zero(),
         };
 
@@ -1594,7 +1594,7 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
                 if call.is_create() {
-                    let offset = step.stack.nth_last(0)?;
+                    let offset = step.stack.last()?;
                     let length = step.stack.nth_last(1)?;
                     if length > Word::from(MAX_CODE_SIZE) {
                         return Ok(Some(ExecError::MaxCodeSizeExceeded));
@@ -2181,7 +2181,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    // write all chunks to memroy word and add prev bytes
+    // write all chunks to memory word and add prev bytes
     pub(crate) fn write_chunks(
         &mut self,
         exec_step: &mut ExecStep,

@@ -19,8 +19,8 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         // First stack read (offset)
-        let offset = geth_step.stack.nth_last(0)?;
-        let offset_pos = geth_step.stack.nth_last_filled(0);
+        let offset = geth_step.stack.last()?;
+        let offset_pos = geth_step.stack.last_filled();
         state.stack_read(&mut exec_step, offset_pos, offset)?;
 
         // Second stack read (value)

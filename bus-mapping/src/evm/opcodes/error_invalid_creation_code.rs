@@ -19,9 +19,9 @@ impl Opcode for ErrorCreationCode {
 
         exec_step.error = Some(ExecError::InvalidCreationCode);
 
-        let offset = geth_step.stack.nth_last(0)?;
+        let offset = geth_step.stack.last()?;
         let length = geth_step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), offset)?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), length)?;
 
         // in create context

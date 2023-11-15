@@ -1,4 +1,4 @@
-use bus_mapping::precompile::PrecompileAuxData;
+use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
 use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, or, select, sum, Expr};
 use halo2_proofs::{
@@ -9,13 +9,14 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_WORD},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_ADDRESS, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtWordGadget, ModGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget, LtWordGadget, ModGadget},
+            padding_gadget::PaddingGadget,
             rlc, CachedRegion, Cell, RandomLinearCombination, Word,
         },
     },
@@ -31,6 +32,13 @@ lazy_static::lazy_static! {
 
 #[derive(Clone, Debug)]
 pub struct EcrecoverGadget<F> {
+    input_bytes_rlc: Cell<F>,
+    output_bytes_rlc: Cell<F>,
+    return_bytes_rlc: Cell<F>,
+
+    pad_right: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    padding: PaddingGadget<F>,
+
     recovered: Cell<F>,
     msg_hash_keccak_rlc: Cell<F>,
     sig_v_keccak_rlc: Cell<F>,
@@ -69,6 +77,11 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
     const NAME: &'static str = "ECRECOVER";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) = (
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+        );
         let (
             recovered,
             msg_hash_keccak_rlc,
@@ -225,6 +238,50 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
+        let required_input_len = 128.expr();
+        let pad_right = LtGadget::construct(cb, call_data_length.expr(), required_input_len.expr());
+        let padding = cb.condition(pad_right.expr(), |cb| {
+            PaddingGadget::construct(
+                cb,
+                input_bytes_rlc.expr(),
+                call_data_length.expr(),
+                required_input_len,
+            )
+        });
+        cb.condition(not::expr(pad_right.expr()), |cb| {
+            cb.require_equal(
+                "no padding implies padded bytes == input bytes",
+                padding.padded_rlc(),
+                input_bytes_rlc.expr(),
+            );
+        });
+        let (r_pow_32, r_pow_64, r_pow_96) = {
+            let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+            let r_pow_16 = challenges[15].clone();
+            let r_pow_32 = r_pow_16.square();
+            let r_pow_64 = r_pow_32.expr().square();
+            let r_pow_96 = r_pow_64.expr() * r_pow_32.expr();
+            (r_pow_32, r_pow_64, r_pow_96)
+        };
+        cb.require_equal(
+            "input bytes (RLC) = [msg_hash | sig_v_rlc | sig_r | sig_s]",
+            padding.padded_rlc(),
+            (msg_hash_keccak_rlc.expr() * r_pow_96)
+                + (sig_v_keccak_rlc.expr() * r_pow_64)
+                + (sig_r_keccak_rlc.expr() * r_pow_32)
+                + sig_s_keccak_rlc.expr(),
+        );
+        // RLC of output bytes always equals RLC of the recovered address.
+        cb.require_equal(
+            "output bytes (RLC) = recovered address",
+            output_bytes_rlc.expr(),
+            recovered_addr_keccak_rlc.expr(),
+        );
+        // If the address was not recovered, RLC(address) == RLC(output) == 0.
+        cb.condition(not::expr(recovered.expr()), |cb| {
+            cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
+        });
+
         let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
@@ -237,6 +294,13 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         );
 
         Self {
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+
+            pad_right,
+            padding,
+
             recovered,
             msg_hash_keccak_rlc,
             sig_v_keccak_rlc,
@@ -280,6 +344,30 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Ecrecover(aux_data)) = &step.aux_data {
+            self.input_bytes_rlc.assign(
+                region,
+                offset,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(aux_data.input_bytes.iter().rev(), r)),
+            )?;
+            self.output_bytes_rlc.assign(
+                region,
+                offset,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(aux_data.output_bytes.iter().rev(), r)),
+            )?;
+            self.return_bytes_rlc.assign(
+                region,
+                offset,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(aux_data.return_bytes.iter().rev(), r)),
+            )?;
             let recovered = !aux_data.recovered_addr.is_zero();
             self.recovered
                 .assign(region, offset, Value::known(F::from(recovered as u64)))?;
@@ -373,6 +461,19 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     recovered_addr.reverse();
                     recovered_addr
                 }),
+            )?;
+            self.pad_right
+                .assign(region, offset, call.call_data_length.into(), 128.into())?;
+            self.padding.assign(
+                region,
+                offset,
+                PrecompileCalls::Ecrecover,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(aux_data.input_bytes.iter().rev(), r)),
+                call.call_data_length,
+                region.challenges().keccak_input(),
             )?;
         } else {
             log::error!("unexpected aux_data {:?} for ecrecover", step.aux_data);
