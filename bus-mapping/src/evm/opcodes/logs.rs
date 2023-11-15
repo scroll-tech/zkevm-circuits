@@ -25,7 +25,7 @@ impl Opcode for Log {
         }
 
         // reconstruction
-        let offset = geth_step.stack.nth_last(0)?;
+        let offset = geth_step.stack.last()?;
         let length = geth_step.stack.nth_last(1)?.as_u64();
 
         if length != 0 {
@@ -49,11 +49,11 @@ fn gen_log_step(
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
 
-    let mstart = geth_step.stack.nth_last(0)?;
+    let mstart = geth_step.stack.last()?;
     let msize = geth_step.stack.nth_last(1)?;
 
     let call_id = state.call()?.call_id;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), mstart)?;
+    state.stack_read(&mut exec_step, geth_step.stack.last_filled(), mstart)?;
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
 
     state.call_context_read(
@@ -133,7 +133,7 @@ fn gen_copy_event(
     // Get low Uint64 for memory start as below reference. Memory size must be
     // within range of Uint64, otherwise returns ErrGasUintOverflow.
     // https://github.com/ethereum/go-ethereum/blob/b80f05bde2c4e93ae64bb3813b6d67266b5fc0e6/core/vm/instructions.go#L850
-    let memory_start = geth_step.stack.nth_last(0)?.low_u64();
+    let memory_start = geth_step.stack.last()?.low_u64();
     let msize = geth_step.stack.nth_last(1)?.as_u64();
 
     let (src_addr, src_addr_end) = (memory_start, memory_start.checked_add(msize).unwrap());

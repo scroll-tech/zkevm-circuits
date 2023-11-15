@@ -6,13 +6,11 @@ use crate::{
 use eth_types::Word;
 
 pub(crate) fn opt_data(
-    input_bytes: Option<Vec<u8>>,
-    output_bytes: Option<Vec<u8>>,
+    input_bytes: &[u8],
+    output_bytes: &[u8],
+    return_bytes: &[u8],
 ) -> (Option<PrecompileEvent>, Option<PrecompileAuxData>) {
-    let aux_data = ModExpAuxData::new(
-        input_bytes.unwrap_or_default(),
-        output_bytes.unwrap_or_default(),
-    );
+    let aux_data = ModExpAuxData::new(input_bytes, output_bytes, return_bytes);
     if aux_data.valid {
         let event = BigModExp {
             base: Word::from_big_endian(&aux_data.inputs[0]),

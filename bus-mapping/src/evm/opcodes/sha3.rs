@@ -27,8 +27,8 @@ impl Opcode for Sha3 {
         let expected_sha3 = geth_steps[1].stack.last()?;
 
         // byte offset in the memory.
-        let offset = geth_step.stack.nth_last(0)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
+        let offset = geth_step.stack.last()?;
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), offset)?;
 
         // byte size to read in the memory.
         let size = geth_step.stack.nth_last(1)?;

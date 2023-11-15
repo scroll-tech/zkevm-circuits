@@ -28,7 +28,12 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct EcPairingGadget<F> {
     // Random linear combination of input bytes to the precompile ecPairing call.
-    evm_input_rlc: Cell<F>,
+    input_bytes_rlc: Cell<F>,
+    // output bytes from ecpairing call.
+    output_bytes_rlc: Cell<F>,
+    // return bytes
+    return_bytes_rlc: Cell<F>,
+
     // Boolean output from the ecPairing call, denoting whether or not the pairing check was
     // successful.
     output: Cell<F>,
@@ -67,7 +72,12 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256Pairing;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (evm_input_rlc, output) = (cb.query_cell_phase2(), cb.query_bool());
+        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc, output) = (
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+            cb.query_cell_phase2(),
+            cb.query_bool(),
+        );
 
         let n_pairs = cb.query_cell();
         let n_pairs_cmp = BinaryNumberGadget::construct(cb, n_pairs.expr());
@@ -179,14 +189,14 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                     0.expr(),
                     select::expr(
                         n_pairs_cmp.value_equals(1usize),
-                        evm_input_rlc.expr() * rand_pow_576.expr(), /* 576 bytes padded */
+                        input_bytes_rlc.expr() * rand_pow_576.expr(), /* 576 bytes padded */
                         select::expr(
                             n_pairs_cmp.value_equals(2usize),
-                            evm_input_rlc.expr() * rand_pow_384.expr(), /* 384 bytes padded */
+                            input_bytes_rlc.expr() * rand_pow_384.expr(), /* 384 bytes padded */
                             select::expr(
                                 n_pairs_cmp.value_equals(3usize),
-                                evm_input_rlc.expr() * rand_pow_192.expr(), /* 192 bytes padded */
-                                evm_input_rlc.expr(),                       /* 0 bytes padded */
+                                input_bytes_rlc.expr() * rand_pow_192.expr(), /* 192 bytes padded */
+                                input_bytes_rlc.expr(),                       /* 0 bytes padded */
                             ),
                         ),
                     ),
@@ -194,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                 cb.condition(n_pairs_cmp.value_equals(0usize), |cb| {
                     cb.require_zero(
                         "ecPairing: n_pairs == 0 => evm input == 0",
-                        evm_input_rlc.expr(),
+                        input_bytes_rlc.expr(),
                     );
                 });
 
@@ -256,7 +266,10 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
         );
 
         Self {
-            evm_input_rlc,
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+
             output,
 
             input_is_zero,
@@ -330,7 +343,7 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                         "len(input) % 192 != 0"
                     );
                     // Consider only call_data_length bytes for EVM input.
-                    self.evm_input_rlc.assign(
+                    self.input_bytes_rlc.assign(
                         region,
                         offset,
                         keccak_rand.map(|r| {
@@ -344,6 +357,16 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                                 r,
                             )
                         }),
+                    )?;
+                    self.output_bytes_rlc.assign(
+                        region,
+                        offset,
+                        keccak_rand.map(|r| rlc::value(aux_data.0.output_bytes.iter().rev(), r)),
+                    )?;
+                    self.return_bytes_rlc.assign(
+                        region,
+                        offset,
+                        keccak_rand.map(|r| rlc::value(aux_data.0.return_bytes.iter().rev(), r)),
                     )?;
                     // Pairing check output from ecPairing call.
                     self.output.assign(
@@ -380,11 +403,13 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                         "len(input) is expected to be invalid",
                     );
                     // Consider only call_data_length bytes for EVM input.
-                    self.evm_input_rlc.assign(
+                    self.input_bytes_rlc.assign(
                         region,
                         offset,
                         keccak_rand.map(|r| rlc::value(input_bytes.iter().rev(), r)),
                     )?;
+                    self.return_bytes_rlc
+                        .assign(region, offset, Value::known(F::zero()))?;
                     // Pairing check output from ecPairing call.
                     self.output
                         .assign(region, offset, Value::known(F::zero()))?;

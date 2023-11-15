@@ -74,7 +74,7 @@ pub struct BlockHead {
     /// chain id
     pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// coinbase
     pub coinbase: Address,
@@ -204,7 +204,7 @@ pub struct Block {
     pub block_steps: BlockSteps,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
-    /// Circuits Setup Paramteres
+    /// Circuits Setup Parameters
     pub circuits_params: CircuitsParams,
     /// chain id
     pub chain_id: u64,
