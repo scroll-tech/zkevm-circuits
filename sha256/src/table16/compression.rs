@@ -269,6 +269,10 @@ impl<F: Field> RoundWordDense<F> {
             .zip(self.1.value_u16())
             .map(|(lo, hi)| lo as u32 + (1 << 16) * hi as u32)
     }
+
+    pub fn decompose(self) -> (AssignedBits<F, 16>, AssignedBits<F, 16>) {
+        (self.0, self.1)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -316,6 +320,10 @@ impl<F: Field> RoundWordA<F> {
             spread_halves: None,
         }
     }
+
+    pub fn to_dense(self) -> RoundWordDense<F> {
+        self.dense_halves
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -345,6 +353,10 @@ impl<F: Field> RoundWordE<F> {
             spread_halves: None,
         }
     }
+
+    pub fn to_dense(self) -> RoundWordDense<F> {
+        self.dense_halves
+    }    
 }
 
 #[derive(Clone, Debug)]
@@ -360,6 +372,10 @@ impl<F: Field> RoundWord<F> {
             spread_halves,
         }
     }
+
+    pub fn to_dense(self) -> RoundWordDense<F> {
+        self.dense_halves
+    }    
 }
 
 /// The internal state for SHA-256.
@@ -412,6 +428,42 @@ impl<F: Field> State<F> {
             h: None,
         }
     }
+
+    pub fn decompose(self) -> (
+        RoundWordA<F>,
+        RoundWord<F>,
+        RoundWord<F>,
+        RoundWordDense<F>,
+        RoundWordE<F>,
+        RoundWord<F>,
+        RoundWord<F>,
+        RoundWordDense<F>,
+    ) {
+        compression_util::match_state(self)
+    }
+
+    pub fn composite(
+        a: RoundWordA<F>,
+        b: RoundWord<F>,
+        c: RoundWord<F>,
+        d: RoundWordDense<F>,
+        e: RoundWordE<F>,
+        f: RoundWord<F>,
+        g: RoundWord<F>,
+        h: RoundWordDense<F>,
+    ) -> Self {
+        Self::new(
+            StateWord::A(a),
+            StateWord::B(b),
+            StateWord::C(c),
+            StateWord::D(d),
+            StateWord::E(e),
+            StateWord::F(f),
+            StateWord::G(g),
+            StateWord::H(h),
+        )
+    }
+
 }
 
 #[derive(Clone, Debug)]
@@ -885,7 +937,37 @@ impl CompressionConfig {
         layouter.assign_region(
             || "initialize_with_state",
             |mut region| {
-                new_state = self.initialize_state(&mut region, init_state.clone())?;
+                let (a, b, c, d, e, f, g, h) = compression_util::match_state(init_state.clone());
+                new_state = self.initialize_state(
+                    &mut region, 
+                    [
+                        a.dense_halves,
+                        b.dense_halves,
+                        c.dense_halves,
+                        d,
+                        e.dense_halves,
+                        f.dense_halves,
+                        g.dense_halves,
+                        h,    
+                    ]                    
+                )?;
+                Ok(())
+            },
+        )?;
+        Ok(new_state)
+    }
+
+    /// Initialize compression with the minimun assignment of state cell.
+    pub(crate) fn initialize<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        init_state_assigned: [RoundWordDense<F>; STATE],
+    ) -> Result<State<F>, Error> {
+        let mut new_state = State::empty_state();
+        layouter.assign_region(
+            || "initialize_with_state",
+            |mut region| {
+                new_state = self.initialize_state(&mut region, init_state_assigned.clone())?;
                 Ok(())
             },
         )?;

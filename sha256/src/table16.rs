@@ -111,7 +111,7 @@ impl From<u32> for Bits<32> {
 
 /// Assigned bits
 #[derive(Clone, Debug)]
-pub struct AssignedBits<F: Field, const LEN: usize>(AssignedCell<Bits<LEN>, F>);
+pub struct AssignedBits<F: Field, const LEN: usize>(pub AssignedCell<Bits<LEN>, F>);
 
 impl<F: Field, const LEN: usize> std::ops::Deref for AssignedBits<F, LEN> {
     type Target = AssignedCell<Bits<LEN>, F>;
@@ -233,6 +233,39 @@ pub struct Table16Config {
     compression: CompressionConfig,
 }
 
+impl Table16Config {
+    
+    pub(crate) fn initialize<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        init_state_assigned: [RoundWordDense<F>; STATE],
+    ) -> Result<State<F>, Error> {
+        self.compression.initialize(layouter, init_state_assigned)
+    }
+
+    pub(crate) fn compress<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        initialized_state: State<F>,
+        w_halves: [(AssignedBits<F, 16>, AssignedBits<F, 16>); ROUNDS],
+    ) -> Result<State<F>, Error> {
+        self.compression.compress(layouter, initialized_state, w_halves)
+    }    
+
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn message_process<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        input: [BlockWord; crate::BLOCK_SIZE],
+    ) -> Result<        
+        [(AssignedBits<F, 16>, AssignedBits<F, 16>); ROUNDS],
+        Error,
+    > {
+        let (_, w_halves) = self.message_schedule.process(layouter, input)?;
+        Ok(w_halves)
+    }
+}
+
 /// A chip that implements SHA-256 with a maximum lookup table size of $2^16$.
 #[derive(Clone, Debug)]
 pub struct Table16Chip {
@@ -316,6 +349,7 @@ impl Table16Chip {
     ) -> Result<(), Error> {
         SpreadTableChip::load(config.lookup, layouter)
     }
+
 }
 
 impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
@@ -347,8 +381,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         input: [Self::BlockWord; super::BLOCK_SIZE],
     ) -> Result<Self::State, Error> {
         let config = <Self as Chip<F>>::config(&self);
-        let (wd, w_halves) = config.message_schedule.process(layouter, input)?;
-        //wd[..16].iter().for_each(|b|)
+        let (_, w_halves) = config.message_schedule.process(layouter, input)?;
 
         config
             .compression
