@@ -1453,7 +1453,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         // Access List Increments
         meta.create_gate(
             "access list: access_list_idx and storage_key_idx increments",
-            |meta| {
+            |meta: &mut VirtualCells<'_, F>| {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.condition(is_access_list_address(meta), |cb| {
@@ -1477,10 +1477,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 });
 
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enabled, Rotation::cur()),
-                    is_decode_tag_start(meta),
-                ]))
+                cb.gate(is_decode_tag_start(meta))
             },
         );
 
@@ -1510,10 +1507,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 });
 
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enabled, Rotation::cur()),
-                    is_tag_end_vector(meta),
-                ]))
+                cb.gate(is_tag_end_vector(meta))
             },
         );
 
@@ -1535,7 +1529,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 );
 
                 cb.gate(and::expr([
-                    meta.query_fixed(q_enabled, Rotation::cur()),
                     not::expr(is_tag_end_vector(meta)),
                     not::expr(is_decode_tag_start(meta)),
                 ]))
