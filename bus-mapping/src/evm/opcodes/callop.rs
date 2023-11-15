@@ -51,8 +51,40 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
-        let callee_call = state.parse_call(geth_step)?;
+        let callee_kind = CallKind::try_from(geth_step.op)?;
         let caller_call = state.call()?.clone();
+        let caller_address = match callee_kind {
+            CallKind::Call | CallKind::CallCode | CallKind::StaticCall => caller_call.address,
+            CallKind::DelegateCall => caller_call.caller_address,
+            CallKind::Create | CallKind::Create2 => {
+                unreachable!("CREATE opcode handled in create.rs")
+            }
+        };
+        let (found, sender_account) = state.sdb.get_account(&caller_address);
+        debug_assert!(found);
+        let caller_balance = sender_account.balance;
+        let call_value = match callee_kind {
+            CallKind::Call | CallKind::CallCode => geth_step.stack.nth_last(2)?,
+            CallKind::DelegateCall => caller_call.value,
+            CallKind::StaticCall => Word::zero(),
+            CallKind::Create | CallKind::Create2 => {
+                unreachable!("CREATE opcode handled in create.rs")
+            }
+        };
+        // Precheck is OK when depth is in range and caller balance is sufficient.
+        let is_call_or_callcode = matches!(callee_kind, CallKind::Call | CallKind::CallCode);
+        let is_precheck_ok =
+            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call_value);
+
+        let callee_call = if is_precheck_ok {
+            state.parse_call(geth_step)?
+        } else {
+            state.tx_ctx.call_is_success_offset += 1;
+            let mut call = state.parse_call_partial(geth_step)?;
+            call.is_success = false;
+            call.is_persistent = false;
+            call
+        };
 
         // For both CALLCODE and DELEGATECALL opcodes, `call.address` is caller
         // address which is different from callee_address (code address).
@@ -143,14 +175,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
         }
 
-        let (found, sender_account) = state.sdb.get_account(&callee_call.caller_address);
-        debug_assert!(found);
-
-        let caller_balance = sender_account.balance;
-        let is_call_or_callcode =
-            callee_call.kind == CallKind::Call || callee_call.kind == CallKind::CallCode;
-
-        // Precheck is OK when depth is in range and caller balance is sufficient.
         let is_precheck_ok =
             geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= callee_call.value);
 
@@ -627,7 +651,80 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests {
-    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
+
+    use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use eth_types::{
+        address, bytecode, evm_types::OpcodeId, geth_types::GethData, word, Bytecode, ToWord, Word,
+    };
+    use mock::{
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
+        TestContext,
+    };
+
+    #[test]
+    fn tracer_err_insufficient_balance() {
+        let code_a = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH32(Word::from(0x1000)) // value
+            PUSH32(address!("0x0000000000000000000000000000000000000123").to_word()) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+
+            PUSH2(0xaa)
+        };
+        let code_b = bytecode! {
+            PUSH1(0x01) // value
+            PUSH1(0x02) // key
+            SSTORE
+
+            PUSH3(0xbb)
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1]
+                    .address(address!("0x000000000000000000000000000000000cafe001"))
+                    .code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 500,
+                max_txs: 2,
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+    }
 
     /// Precompile call args
     pub struct PrecompileCallArgs {

@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/scroll-tech/go-ethereum/core"
+	"github.com/scroll-tech/go-ethereum/hack"
 	"math/big"
 
 	"github.com/imdario/mergo"
 	"github.com/scroll-tech/go-ethereum/common"
 	"github.com/scroll-tech/go-ethereum/common/hexutil"
-	"github.com/scroll-tech/go-ethereum/core"
 	"github.com/scroll-tech/go-ethereum/core/rawdb"
 	"github.com/scroll-tech/go-ethereum/core/state"
 	"github.com/scroll-tech/go-ethereum/core/types"
@@ -230,7 +231,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		return nil, err
 	}
 
-	traceEnv := core.CreateTraceEnvHelper(
+	traceEnv := hack.CreateTraceEnvHelper(
 		&chainConfig,
 		config.LoggerConfig,
 		blockCtx,

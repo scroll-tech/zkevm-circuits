@@ -28,8 +28,39 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let mut exec_step = state.new_step(geth_step)?;
 
         let tx_id = state.tx_ctx.id();
-        let callee = state.parse_call(geth_step)?;
         let caller = state.call()?.clone();
+
+        let address = if IS_CREATE2 {
+            state.create2_address(&geth_steps[0])?
+        } else {
+            state.create_address()?
+        };
+        let callee_account = &state.sdb.get_account(&address).1.clone();
+        let callee_exists = !callee_account.is_empty();
+        let callee_value = geth_step.stack.last()?;
+        if !callee_exists && callee_value.is_zero() {
+            state.sdb.get_account_mut(&address).1.storage.clear();
+        }
+
+        let is_address_collision = callee_account.code_hash != CodeDB::empty_code_hash()
+            || callee_account.nonce > Word::zero();
+        // Get caller's balance and nonce
+        let caller_balance = state.sdb.get_balance(&caller.address);
+        let caller_nonce = state.sdb.get_nonce(&caller.address);
+        // Check if an error of ErrDepth, ErrInsufficientBalance or
+        // ErrNonceUintOverflow occurred.
+        let depth = caller.depth;
+        let is_precheck_ok =
+            depth < 1025 && caller_balance >= callee_value && caller_nonce < u64::MAX;
+        let callee = if is_precheck_ok && !is_address_collision {
+            state.parse_call(geth_step)?
+        } else {
+            state.tx_ctx.call_is_success_offset += 1;
+            let mut call = state.parse_call_partial(geth_step)?;
+            call.is_success = false;
+            call.is_persistent = false;
+            call
+        };
 
         state.call_context_read(
             &mut exec_step,
@@ -38,7 +69,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             tx_id.to_word(),
         )?;
 
-        let depth = caller.depth;
         state.call_context_read(
             &mut exec_step,
             caller.call_id,
@@ -73,25 +103,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             Word::from(state.call()?.is_static as u8),
         )?;
 
-        let address = if IS_CREATE2 {
-            state.create2_address(&geth_steps[0])?
-        } else {
-            state.create_address()?
-        };
-
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         let stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
         #[cfg(feature = "enable-stack")]
         for (i, value) in stack_inputs.iter().enumerate() {
             assert_eq!(*value, geth_step.stack.nth_last(i)?);
-        }
-
-        let callee_account = &state.sdb.get_account(&address).1.clone();
-        let callee_exists = !callee_account.is_empty();
-        let is_address_collision = callee_account.code_hash != CodeDB::empty_code_hash()
-            || callee_account.nonce > Word::zero();
-        if !callee_exists && callee.value.is_zero() {
-            state.sdb.get_account_mut(&address).1.storage.clear();
         }
 
         state.stack_push(
@@ -103,10 +119,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             },
         )?;
         // stack end
-
-        // Get caller's balance and nonce
-        let caller_balance = state.sdb.get_balance(&caller.address);
-        let caller_nonce = state.sdb.get_nonce(&caller.address);
 
         state.call_context_read(
             &mut exec_step,
@@ -129,10 +141,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller_nonce.into(),
         )?;
 
-        // Check if an error of ErrDepth, ErrInsufficientBalance or
-        // ErrNonceUintOverflow occurred.
-        let is_precheck_ok =
-            depth < 1025 && caller_balance >= callee.value && caller_nonce < u64::MAX;
         if is_precheck_ok {
             // Increase caller's nonce
             state.push_op_reversible(

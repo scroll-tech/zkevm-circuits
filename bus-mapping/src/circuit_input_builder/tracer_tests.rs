@@ -49,6 +49,7 @@ impl CircuitInputBuilderTx {
                 struct_logs: vec![geth_step.clone()],
                 account_after: vec![],
                 prestate: None,
+                call_trace: unimplemented!(),
             },
             false,
         )

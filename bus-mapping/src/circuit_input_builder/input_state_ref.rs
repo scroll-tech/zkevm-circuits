@@ -907,7 +907,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_id = call.call_id;
         let call_idx = self.tx.calls().len();
 
-        self.tx_ctx.push_call_ctx(call_idx, call_data);
+        self.tx_ctx
+            .push_call_ctx(call_idx, call_data, call.is_success);
         self.tx.push_call(call);
 
         self.block_ctx
@@ -992,13 +993,8 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
-    /// Parse [`Call`] from a *CALL*/CREATE* step.
-    pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
-        let is_success = *self
-            .tx_ctx
-            .call_is_success
-            .get(self.tx.calls().len())
-            .unwrap();
+    /// Parse [`Call`] from a *CALL*/CREATE* step. but without the is_success
+    pub fn parse_call_partial(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let kind = CallKind::try_from(step.op)?;
         let caller = self.call()?;
         let caller_ctx = self.call_ctx()?;
@@ -1070,8 +1066,8 @@ impl<'a> CircuitInputStateRef<'a> {
             kind,
             is_static: kind == CallKind::StaticCall || caller.is_static,
             is_root: false,
-            is_persistent: caller.is_persistent && is_success,
-            is_success,
+            is_persistent: caller.is_persistent,
+            is_success: false,
             rw_counter_end_of_reversion: 0,
             caller_address,
             address,
@@ -1087,7 +1083,19 @@ impl<'a> CircuitInputStateRef<'a> {
             last_callee_return_data_length: 0,
             last_callee_memory: Memory::default(),
         };
+        Ok(call)
+    }
 
+    /// Parse [`Call`] from a *CALL*/CREATE* step.
+    pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
+        let is_success = *self
+            .tx_ctx
+            .call_is_success
+            .get(self.tx.calls().len() - self.tx_ctx.call_is_success_offset)
+            .unwrap();
+        let mut call = self.parse_call_partial(step)?;
+        call.is_success = is_success;
+        call.is_persistent = self.call()?.is_persistent && is_success;
         Ok(call)
     }
 
@@ -1322,7 +1330,7 @@ impl<'a> CircuitInputStateRef<'a> {
             caller.last_callee_memory = callee_memory;
         }
 
-        self.tx_ctx.pop_call_ctx();
+        self.tx_ctx.pop_call_ctx(call.is_success);
 
         Ok(())
     }

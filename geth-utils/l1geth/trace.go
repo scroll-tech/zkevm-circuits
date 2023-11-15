@@ -29,6 +29,7 @@ type ExecutionResult struct {
 	ReturnValue string          `json:"returnValue"`
 	StructLogs  []StructLogRes  `json:"structLogs"`
 	Prestate    json.RawMessage `json:"prestate"`
+	CallTrace   json.RawMessage `json:"callTrace"`
 }
 
 // StructLogRes stores a structured log emitted by the EVM while replaying a
@@ -245,10 +246,15 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Failed to create prestateTracer: %w", err)
 		}
+		callTracer, err := tracers.DefaultDirectory.New("callTracer", new(tracers.Context), nil)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to create callTracer: %w", err)
+		}
 		structLogger := logger.NewStructLogger(config.LoggerConfig)
 		tracer := NewMuxTracer(
 			structLogger,
 			prestateTracer,
+			callTracer,
 		)
 		evm := vm.NewEVM(blockCtx, txContext, stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
 
@@ -262,12 +268,19 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Failed to get prestateTracer result: %w", err)
 		}
+
+		callTrace, err := callTracer.GetResult()
+		if err != nil {
+			return nil, fmt.Errorf("Failed to get callTracer result: %w", err)
+		}
+
 		executionResults[i] = &ExecutionResult{
 			Gas:         result.UsedGas,
 			Failed:      result.Failed(),
 			ReturnValue: fmt.Sprintf("%x", result.ReturnData),
 			StructLogs:  FormatLogs(structLogger.StructLogs()),
 			Prestate:    prestate,
+			CallTrace:   callTrace,
 		}
 	}
 

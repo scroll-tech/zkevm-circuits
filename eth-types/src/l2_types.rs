@@ -2,7 +2,7 @@
 
 use crate::{
     evm_types::{Gas, GasCost, Memory, OpcodeId, ProgramCounter, Stack, Storage},
-    Block, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
+    Block, GethCallTrace, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
 };
 use ethers_core::types::{Address, Bytes, U256, U64};
 use serde::{Deserialize, Serialize};
@@ -197,6 +197,9 @@ pub struct ExecutionResult {
     #[serde(rename = "structLogs")]
     /// Exec steps
     pub exec_steps: Vec<ExecStep>,
+    /// callTrace
+    #[serde(rename = "callTrace")]
+    pub call_trace: GethCallTrace,
 }
 
 impl From<ExecutionResult> for GethExecTrace {
@@ -210,6 +213,7 @@ impl From<ExecutionResult> for GethExecTrace {
             struct_logs,
             account_after: e.account_after,
             prestate: None,
+            call_trace: e.call_trace,
         }
     }
 }
