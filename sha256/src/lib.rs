@@ -16,3 +16,5 @@ use halo2_proofs::arithmetic::FieldExt as Field;
 
 /// ...
 pub mod table16;
+/// sha256 circuit can be integrated into zkevm
+pub mod circuit;
