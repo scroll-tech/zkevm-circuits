@@ -22,7 +22,7 @@ impl Opcode for Blockhash {
 
         let block_number = state.stack_pop(&mut exec_step)?;
         #[cfg(feature = "enable-stack")]
-        assert_eq!(block_number, geth_step.stack.nth_last(0)?);
+        assert_eq!(block_number, geth_step.stack.last()?);
 
         let current_block_number = state.tx.block_num;
         let block_hash = if is_valid_block_number(block_number, current_block_number.into()) {

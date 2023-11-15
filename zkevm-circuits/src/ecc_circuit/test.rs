@@ -129,17 +129,26 @@ impl GenRand for EcPairingOp {
                 true => Self {
                     pairs,
                     output: eth_types::U256::one() - output,
+                    ..Default::default()
                 },
                 // change a point in one of the pairs.
                 false => {
                     let altered: G1Affine = point_p_negated.add(&G1Affine::generator()).into();
                     pairs[0].g1_point.0 = U256::from_little_endian(&altered.x.to_bytes());
                     pairs[0].g1_point.1 = U256::from_little_endian(&altered.y.to_bytes());
-                    Self { pairs, output }
+                    Self {
+                        pairs,
+                        output,
+                        ..Default::default()
+                    }
                 }
             }
         } else {
-            Self { pairs, output }
+            Self {
+                pairs,
+                output,
+                ..Default::default()
+            }
         }
     }
 }
@@ -249,6 +258,7 @@ mod valid_invalid_cases {
                     EcPairingOp {
                         pairs,
                         output: U256::one(),
+                        ..Default::default()
                     }
                 },
                 // 2. invalid: field element > Fq::MODULUS, mod p is OK
@@ -279,6 +289,7 @@ mod valid_invalid_cases {
                     EcPairingOp {
                         pairs,
                         output: U256::zero(),
+                        ..Default::default()
                     }
                 },
             ]
@@ -304,6 +315,7 @@ mod valid_invalid_cases {
                     EcPairingOp {
                         pairs,
                         output: U256::zero(),
+                        ..Default::default()
                     }
                 },
                 // 4. invalid: not on curve G1.
@@ -318,6 +330,7 @@ mod valid_invalid_cases {
                         EcPairingPair::padding_pair(),
                     ],
                     output: 0.into(),
+                    ..Default::default()
                 },
             ]
         };
@@ -335,6 +348,7 @@ mod valid_invalid_cases {
                         EcPairingPair::padding_pair(),
                     ],
                     output: 0.into(),
+                    ..Default::default()
                 },
                 // 6. valid: all zero.
                 EcPairingOp {
@@ -345,6 +359,7 @@ mod valid_invalid_cases {
                         EcPairingPair::padding_pair(),
                     ],
                     output: 1.into(),
+                    ..Default::default()
                 },
             ]
         };
@@ -359,6 +374,7 @@ mod valid_invalid_cases {
                         EcPairingPair::padding_pair(),
                     ],
                     output: 1.into(),
+                    ..Default::default()
                 },
                 // 8. valid: [(G1::gen, G2::gen), (-G1::gen, G2::gen); 2]
                 EcPairingOp {
@@ -369,6 +385,7 @@ mod valid_invalid_cases {
                         EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
                     ],
                     output: 1.into(),
+                    ..Default::default()
                 },
             ]
         };

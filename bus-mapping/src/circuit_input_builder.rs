@@ -626,7 +626,7 @@ impl<'a> CircuitInputBuilder {
                 } else if geth_step.op.is_call_without_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
-                        geth_step.stack.nth_last(0),
+                        geth_step.stack.last(),
                         geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
@@ -636,7 +636,7 @@ impl<'a> CircuitInputBuilder {
                 } else if geth_step.op.is_call_with_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
-                        geth_step.stack.nth_last(0),
+                        geth_step.stack.last(),
                         geth_step.stack.nth_last(1).unwrap_or_default(),
                         geth_step.stack.nth_last(2),
                         geth_step.stack.nth_last(3),
@@ -647,7 +647,7 @@ impl<'a> CircuitInputBuilder {
                 } else if geth_step.op.is_create() {
                     format!(
                         "value {:?} offset {:?} size {:?} {}",
-                        geth_step.stack.nth_last(0),
+                        geth_step.stack.last(),
                         geth_step.stack.nth_last(1),
                         geth_step.stack.nth_last(2),
                         if geth_step.op == OpcodeId::CREATE2 {
@@ -660,7 +660,7 @@ impl<'a> CircuitInputBuilder {
                     format!(
                         "{:?} {:?} {:?}",
                         state_ref.call().map(|c| c.address),
-                        geth_step.stack.nth_last(0),
+                        geth_step.stack.last(),
                         geth_step.stack.nth_last(1),
                     )
                 } else {

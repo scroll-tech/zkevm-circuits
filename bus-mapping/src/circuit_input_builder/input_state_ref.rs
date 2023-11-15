@@ -1598,7 +1598,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // get value first if call/create
         let value = match step.op {
             OpcodeId::CALL | OpcodeId::CALLCODE => call_ctx.stack.nth_last(2)?,
-            OpcodeId::CREATE | OpcodeId::CREATE2 => call_ctx.stack.nth_last(0)?,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => call_ctx.stack.last()?,
             _ => Word::zero(),
         };
 
@@ -1638,7 +1638,7 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
                 if call.is_create() {
-                    let offset = call_ctx.stack.nth_last(0)?;
+                    let offset = call_ctx.stack.last()?;
                     let length = call_ctx.stack.nth_last(1)?;
                     if length > Word::from(MAX_CODE_SIZE) {
                         return Ok(Some(ExecError::MaxCodeSizeExceeded));
@@ -2225,7 +2225,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    // write all chunks to memroy word and add prev bytes
+    // write all chunks to memory word and add prev bytes
     pub(crate) fn write_chunks(
         &mut self,
         exec_step: &mut ExecStep,

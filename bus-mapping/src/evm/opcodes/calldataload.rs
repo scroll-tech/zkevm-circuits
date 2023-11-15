@@ -22,7 +22,7 @@ impl Opcode for Calldataload {
         // from.
         let offset = state.stack_pop(&mut exec_step)?;
         #[cfg(feature = "enable-stack")]
-        assert_eq!(offset, geth_step.stack.nth_last(0)?);
+        assert_eq!(offset, geth_step.stack.last()?);
 
         // Check if offset is Uint64 overflow.
         let calldata_word = if let Ok(offset) = u64::try_from(offset) {

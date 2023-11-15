@@ -61,7 +61,7 @@ pub struct Call {
     pub kind: CallKind,
     /// This call is being executed without write access (STATIC)
     pub is_static: bool,
-    /// This call generated implicity by a Transaction.
+    /// This call is generated implicitly by a Transaction
     pub is_root: bool,
     /// This call is persistent or call stack reverts at some point
     pub is_persistent: bool,

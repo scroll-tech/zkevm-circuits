@@ -77,7 +77,7 @@ impl Opcode for Balance {
 
         // Write the BALANCE result to stack.
         #[cfg(feature = "enable-stack")]
-        assert_eq!(geth_steps[1].stack.nth_last(0)?, balance);
+        assert_eq!(geth_steps[1].stack.last()?, balance);
         state.stack_push(&mut exec_step, balance)?;
 
         Ok(vec![exec_step])

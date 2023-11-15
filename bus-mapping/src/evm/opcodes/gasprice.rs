@@ -7,7 +7,7 @@ use crate::{
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
+/// corresponding to the [`OpcodeId::GASPRICE`](crate::evm::OpcodeId::GASPRICE) `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct GasPrice;
 

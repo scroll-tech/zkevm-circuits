@@ -365,7 +365,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .iter()
                         .filter(|(_, _, is_mask)| !*is_mask)
                         .map(|t| t.0)
-                        .collect();
+                        .collect::<Vec<u8>>();
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
@@ -395,7 +395,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .iter()
                         .filter(|(_, _, is_mask)| !*is_mask)
                         .map(|t| t.0)
-                        .collect();
+                        .collect::<Vec<u8>>();
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
@@ -430,7 +430,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .iter()
                         .filter(|(_, _, is_mask)| !*is_mask)
                         .map(|t| t.0)
-                        .collect();
+                        .collect::<Vec<u8>>();
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
@@ -486,7 +486,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps[1].clone(),
                         callee_call.clone(),
                         precompile_call,
-                        (input_bytes, output_bytes, returned_bytes),
+                        &input_bytes.unwrap_or_default(),
+                        &output_bytes.unwrap_or_default(),
+                        &returned_bytes.unwrap_or_default(),
                     )?;
 
                     // Set gas left and gas cost for precompile step.
