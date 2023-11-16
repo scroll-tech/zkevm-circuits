@@ -1704,6 +1704,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 | OpcodeId::CREATE
                 | OpcodeId::CREATE2
         ) && !call.is_success
+            && !call.is_root
             && next_pc != 0
         {
             if step.depth == 1025 {
