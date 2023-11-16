@@ -1595,89 +1595,95 @@ impl<F: Field> RlpCircuitConfig<F> {
             );
             cb.condition(not::expr(is_end(meta)), |cb| {
                 cb.require_equal(
-                    "each row must have a stack operation", 
+                    "each row must have a stack operation",
                     sum::expr([
                         meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
                     ]),
-                    1.expr()
+                    1.expr(),
                 );
             });
-            
+
             cb.require_zero(
-                "is_stack_init is binary", 
+                "is_stack_init is binary",
                 meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur())
-                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()))
+                    * (1.expr()
+                        - meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur())),
             );
             cb.require_zero(
-                "is_stack_push is binary", 
+                "is_stack_push is binary",
                 meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur())
-                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()))
+                    * (1.expr()
+                        - meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur())),
             );
             cb.require_zero(
-                "is_stack_pop is binary", 
+                "is_stack_pop is binary",
                 meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur())
-                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()))
+                    * (1.expr()
+                        - meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur())),
             );
             cb.require_zero(
-                "is_stack_update is binary", 
+                "is_stack_update is binary",
                 meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur())
-                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()))
+                    * (1.expr()
+                        - meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur())),
             );
 
             // Stack Init
             cb.condition(
-                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()), 
+                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
                 |cb| {
-                    cb.require_zero("stack inits at depth 0", meta.query_advice(rlp_decoding_table.address, Rotation::cur()));
+                    cb.require_zero(
+                        "stack inits at depth 0",
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+                    );
                     cb.require_equal(
                         "stack init pushes all remaining_bytes onto depth 0",
-                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()), 
-                        meta.query_advice(byte_rev_idx, Rotation::cur())
+                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                        meta.query_advice(byte_rev_idx, Rotation::cur()),
                     );
-                }
+                },
             );
             // Stack Push
             cb.condition(
-                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()), 
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
                 |cb| {
                     cb.require_equal(
                         "PUSH stack operation increases depth",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()) + 1.expr(), 
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur())
+                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()) + 1.expr(),
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
                     );
-                }
+                },
             );
             // Stack Pop
             cb.condition(
-                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()), 
+                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
                 |cb| {
                     cb.require_equal(
                         "POP stack operation decreases depth",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()), 
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr()
+                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()),
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr(),
                     );
-                }
+                },
             );
             // Stack Update
             cb.condition(
-                meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()), 
+                meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
                 |cb| {
                     cb.require_equal(
                         "UPDATE stack operation doesn't change depth",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()), 
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur())
+                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()),
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
                     );
                     cb.require_equal(
                         "UPDATE stack operation reads 1 byte",
-                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(), 
-                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur())
+                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
                     );
-                }
+                },
             );
-            
 
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
