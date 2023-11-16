@@ -187,7 +187,14 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                         ExecutionState::BLOCKCTXU64
                     }
                     OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
-                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    OpcodeId::DIFFICULTY => {
+                        if cfg!(feature = "scroll") {
+                            ExecutionState::DIFFICULTY
+                        } else {
+                            ExecutionState::BLOCKCTXU256
+                        }
+                    }
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
