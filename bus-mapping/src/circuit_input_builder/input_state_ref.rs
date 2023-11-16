@@ -2173,7 +2173,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    // write all chunks to memroy word and add prev bytes
+    // write all chunks to memory word and add prev bytes
     pub(crate) fn write_chunks(
         &mut self,
         exec_step: &mut ExecStep,

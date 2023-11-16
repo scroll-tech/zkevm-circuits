@@ -3,7 +3,7 @@ use eth_types::{GethExecStep, ToWord, Word};
 use crate::{
     circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
     operation::CallContextField,
-    precompile::PrecompileCalls,
+    precompile::{PrecompileAuxData, PrecompileCalls},
     Error,
 };
 
@@ -19,14 +19,14 @@ use ec_pairing::opt_data as opt_data_ec_pairing;
 use ecrecover::opt_data as opt_data_ecrecover;
 use modexp::opt_data as opt_data_modexp;
 
-type InOutRetData = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
-
 pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_step: GethExecStep,
     call: Call,
     precompile: PrecompileCalls,
-    (input_bytes, output_bytes, _returned_bytes): InOutRetData,
+    input_bytes: &[u8],
+    output_bytes: &[u8],
+    return_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
     assert_eq!(call.code_address(), Some(precompile.into()));
     let mut exec_step = state.new_step(&geth_step)?;
@@ -35,15 +35,31 @@ pub fn gen_associated_ops(
     common_call_ctx_reads(state, &mut exec_step, &call)?;
 
     let (opt_event, aux_data) = match precompile {
-        PrecompileCalls::Ecrecover => opt_data_ecrecover(input_bytes, output_bytes),
-        PrecompileCalls::Bn128Add => opt_data_ec_add(input_bytes, output_bytes),
-        PrecompileCalls::Bn128Mul => opt_data_ec_mul(input_bytes, output_bytes),
-        PrecompileCalls::Bn128Pairing => opt_data_ec_pairing(input_bytes, output_bytes),
-        PrecompileCalls::Modexp => opt_data_modexp(input_bytes, output_bytes),
-        PrecompileCalls::Identity => (None, None),
+        PrecompileCalls::Ecrecover => opt_data_ecrecover(input_bytes, output_bytes, return_bytes),
+        PrecompileCalls::Bn128Add => opt_data_ec_add(input_bytes, output_bytes, return_bytes),
+        PrecompileCalls::Bn128Mul => opt_data_ec_mul(input_bytes, output_bytes, return_bytes),
+        PrecompileCalls::Bn128Pairing => {
+            opt_data_ec_pairing(input_bytes, output_bytes, return_bytes)
+        }
+        PrecompileCalls::Modexp => opt_data_modexp(input_bytes, output_bytes, return_bytes),
+        PrecompileCalls::Identity => (
+            None,
+            Some(PrecompileAuxData::Identity {
+                input_bytes: input_bytes.to_vec(),
+                output_bytes: output_bytes.to_vec(),
+                return_bytes: return_bytes.to_vec(),
+            }),
+        ),
         _ => {
             log::warn!("precompile {:?} unsupported in circuits", precompile);
-            (None, None)
+            (
+                None,
+                Some(PrecompileAuxData::Base {
+                    input_bytes: input_bytes.to_vec(),
+                    output_bytes: output_bytes.to_vec(),
+                    return_bytes: return_bytes.to_vec(),
+                }),
+            )
         }
     };
     log::trace!("precompile event {opt_event:?}, aux data {aux_data:?}");

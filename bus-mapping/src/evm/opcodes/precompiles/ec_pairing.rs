@@ -9,48 +9,51 @@ use crate::{
 };
 
 pub(crate) fn opt_data(
-    input_bytes: Option<Vec<u8>>,
-    output_bytes: Option<Vec<u8>>,
+    input_bytes: &[u8],
+    output_bytes: &[u8],
+    return_bytes: &[u8],
 ) -> (Option<PrecompileEvent>, Option<PrecompileAuxData>) {
     // assertions.
-    let pairing_check = output_bytes.map_or(U256::zero(), |output| {
+    let pairing_check = if output_bytes.is_empty() {
+        U256::zero()
+    } else {
         debug_assert_eq!(
-            output.len(),
+            output_bytes.len(),
             32,
             "len(output)={:?}, expected={:?}",
-            output.len(),
+            output_bytes.len(),
             32
         );
-        U256::from(output[31])
-    });
+        U256::from_big_endian(output_bytes)
+    };
     debug_assert!(
         pairing_check.eq(&U256::one()) || pairing_check.is_zero(),
         "ecPairing returns 1 or 0"
     );
-    if input_bytes.is_none() {
+    if input_bytes.is_empty() {
         debug_assert!(
             pairing_check.eq(&U256::one()),
             "for zero inputs, pairing check == 1"
         );
     }
 
-    let op = if let Some(input) = input_bytes {
-        if (input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR)
-            || (input.len() % N_BYTES_PER_PAIR != 0)
+    let op = if !input_bytes.is_empty() {
+        if (input_bytes.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR)
+            || (input_bytes.len() % N_BYTES_PER_PAIR != 0)
         {
             return (
                 None,
                 Some(PrecompileAuxData::EcPairing(Box::new(Err(
-                    EcPairingError::InvalidInputLen(input),
+                    EcPairingError::InvalidInputLen(input_bytes.to_vec()),
                 )))),
             );
         }
         debug_assert!(
-            input.len() % N_BYTES_PER_PAIR == 0
-                && input.len() <= N_PAIRING_PER_OP * N_BYTES_PER_PAIR
+            input_bytes.len() % N_BYTES_PER_PAIR == 0
+                && input_bytes.len() <= N_PAIRING_PER_OP * N_BYTES_PER_PAIR
         );
         // process input bytes.
-        let mut pairs = input
+        let mut pairs = input_bytes
             .chunks_exact(N_BYTES_PER_PAIR)
             .map(|chunk| {
                 // process <= 192 bytes chunk at a time.
@@ -73,12 +76,18 @@ pub(crate) fn opt_data(
         EcPairingOp {
             pairs: <[_; N_PAIRING_PER_OP]>::try_from(pairs).unwrap(),
             output: pairing_check,
+            input_bytes: input_bytes.to_vec(),
+            output_bytes: output_bytes.to_vec(),
+            return_bytes: return_bytes.to_vec(),
         }
     } else {
         let pairs = [EcPairingPair::padding_pair(); N_PAIRING_PER_OP];
         EcPairingOp {
             pairs,
             output: pairing_check,
+            input_bytes: vec![],
+            output_bytes: output_bytes.to_vec(),
+            return_bytes: return_bytes.to_vec(),
         }
     };
 
