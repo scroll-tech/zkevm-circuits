@@ -324,6 +324,8 @@ pub struct RlpCircuitConfig<F> {
     depth_eq_four: IsEqualConfig<F>,
     /// Check for byte_value == 0
     byte_value_is_zero: IsZeroConfig<F>,
+    /// Check for stack ptr change
+    stack_ptr_comp: ComparatorConfig<F, 3>,
 
     /// Internal tables
     /// Data table
@@ -1581,7 +1583,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             u8_table.into(),
         );
 
-
         meta.create_gate(
             "stack constraints",
             |meta| {
@@ -1667,6 +1668,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             depth_eq_two,
             depth_eq_four,
             byte_value_is_zero,
+            stack_ptr_comp,
 
             // internal tables
             data_table,
@@ -1816,6 +1818,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             || Value::known(F::from(is_new_access_list_storage_key as u64)),
         )?;
 
+        if let Some(witness_nxt) = witness_next {
+            let stack_ptr_comp_chip = ComparatorChip::construct(self.stack_ptr_comp.clone());
+            stack_ptr_comp_chip.assign(
+                region,
+                row,
+                F::from(witness.rlp_decoding_table.address as u64),
+                F::from(witness_nxt.rlp_decoding_table.address as u64),
+            )?;
+        }
+        
         // assign to sm
         region.assign_advice(
             || "sm.state",
@@ -1972,7 +1984,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             F::from(witness.rlp_table.tag_length as u64),
             F::from(witness.state_machine.max_length as u64),
         )?;
-
         let depth_check_chip = IsEqualChip::construct(self.depth_check.clone());
         depth_check_chip.assign(
             region,
