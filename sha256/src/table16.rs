@@ -474,7 +474,6 @@ trait Table16Assignment<F: Field> {
 }
 
 #[cfg(test)]
-#[cfg(feature = "dev-graph")]
 mod tests {
     use super::{
         super::{Sha256, BLOCK_SIZE},
@@ -487,83 +486,63 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
     use halo2curves::pasta::pallas;
-    use std::collections::BTreeSet;
+
+    struct MyCircuit { repeated: usize }
+
+    impl Circuit<pallas::Base> for MyCircuit {
+        type Config = Table16Config;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            unimplemented!()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
+            Table16Chip::configure(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<pallas::Base>,
+        ) -> Result<(), Error> {
+            let table16_chip = Table16Chip::construct::<pallas::Base>(config.clone());
+            Table16Chip::load(config, &mut layouter)?;
+
+            // Test vector: "abc"
+            let test_input = msg_schedule_test_input();
+
+            // Create a message of <repeated> blocks
+            let mut input = Vec::with_capacity(self.repeated * BLOCK_SIZE);
+            for _ in 0..self.repeated {
+                input.extend_from_slice(&test_input);
+            }
+
+            let _digest = Sha256::digest(
+                table16_chip,
+                layouter.namespace(|| format!("'abc' * {}", self.repeated)),
+                &input)?;
+            //println!("{:#x?}", digest);
+
+            Ok(())
+        }
+    }
 
     #[test]
+    fn table16_circuit() {
+
+        let circuit = MyCircuit { repeated: 1};
+        let prover = match MockProver::<_>::run(17, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    #[cfg(feature = "dev-graph")]
     fn print_sha256_circuit() {
         use plotters::prelude::*;
-        struct MyCircuit {}
-
-        impl Circuit<pallas::Base> for MyCircuit {
-            type Config = Table16Config;
-            type FloorPlanner = SimpleFloorPlanner;
-
-            fn without_witnesses(&self) -> Self {
-                MyCircuit {}
-            }
-
-            fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
-                let cfg = Table16Chip::configure(meta);
-
-                let rotations = meta
-                    .advice_queries
-                    .iter()
-                    .map(|(_, q)| q.0)
-                    .collect::<BTreeSet<i32>>();
-
-                println!(
-                    "constraints: {}",
-                    meta.gates()
-                        .iter()
-                        .map(|g| g.polynomials().len())
-                        .sum::<usize>()
-                );
-
-                println!("fix col: {}", meta.num_fixed_columns);
-                println!("adv col: {}", meta.num_advice_columns);
-                println!("inst col: {}", meta.num_instance_columns);
-                println!("sel col: {}", meta.num_selectors);
-                println!("simp sel col: {}", meta.num_simple_selectors);
-                println!("lookups: {}", meta.lookups.len());
-                println!("permutation cols: {}", meta.permutation.columns.len());
-                println!("degree: {}", meta.degree());
-                println!("rotations: {}", rotations.len());
-                println!(
-                    "verificatio_ecmul: {}",
-                    meta.num_advice_columns
-                        + meta.num_instance_columns
-                        + meta.permutation.columns.len()
-                        + meta.num_selectors
-                        + meta.num_fixed_columns
-                        + 3 * meta.lookups.len()
-                        + rotations.len()
-                );
-
-                cfg
-            }
-
-            fn synthesize(
-                &self,
-                config: Self::Config,
-                mut layouter: impl Layouter<pallas::Base>,
-            ) -> Result<(), Error> {
-                let table16_chip = Table16Chip::construct::<pallas::Base>(config.clone());
-                Table16Chip::load(config, &mut layouter)?;
-
-                // Test vector: "abc"
-                let test_input = msg_schedule_test_input();
-
-                // Create a message of length 31 blocks
-                let mut input = Vec::with_capacity(31 * BLOCK_SIZE);
-                for _ in 0..31 {
-                    input.extend_from_slice(&test_input);
-                }
-
-                Sha256::digest(table16_chip, layouter.namespace(|| "'abc' * 31"), &input)?;
-
-                Ok(())
-            }
-        }
 
         let root =
             BitMapBackend::new("sha-256-table16-chip-layout.png", (1024, 3480)).into_drawing_area();
@@ -572,7 +551,7 @@ mod tests {
             .titled("16-bit Table SHA-256 Chip", ("sans-serif", 60))
             .unwrap();
 
-        let circuit = MyCircuit {};
+        let circuit = MyCircuit { repeated: 31};
         halo2_proofs::dev::CircuitLayout::default()
             .render::<pallas::Base, _, _>(17, &circuit, &root)
             .unwrap();

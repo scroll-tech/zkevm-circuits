@@ -253,7 +253,6 @@ impl CircuitConfig {
         sha256_table: impl SHA256Table,
         spec_challenge: Expression<Fr>,
     ) -> Self {
-        let table16 = Table16Chip::configure(meta);
         let helper = meta.advice_column();
         let trans_byte = meta.advice_column();
 
@@ -272,10 +271,12 @@ impl CircuitConfig {
         let s_assigned_u16 = meta.selector();
 
         let byte_range = meta.lookup_table_column();
+        let table16 = Table16Chip::configure(meta);
 
         meta.enable_equality(copied_data);
         meta.enable_equality(bytes_rlc);
         meta.enable_equality(s_final_block);
+        meta.enable_equality(s_padding);
         meta.enable_equality(byte_counter);
 
         let ret = Self {
@@ -712,6 +713,29 @@ impl CircuitConfig {
 
         Ok(output_cells.try_into().unwrap())
     }
+
+    fn initialize_constant_table(
+        &self,
+        layouter: &mut impl Layouter<Fr>,        
+    ) -> Result<(), Error>{
+
+        layouter.assign_table(
+            || "byte range constant",
+            |mut tb| {
+                for i in 0..256 {
+                    tb.assign_cell(
+                        ||"byte range",
+                        self.byte_range,
+                        i,
+                        || Value::known(Fr::from(i as u64)),
+                    )?;
+                }
+
+                Ok(())
+            }
+        )
+    }
+
 }
 
 /// sha256 hasher for byte stream
@@ -961,6 +985,7 @@ mod tests {
                 hashes_rlc: meta.advice_column(),
                 is_effect: meta.advice_column(),
             };
+            meta.enable_constant(dev_table.s_enable);
 
             let chng = Expression::Constant(Fr::from(0x1000u64));
             Self::Config::configure(meta, dev_table, chng)
