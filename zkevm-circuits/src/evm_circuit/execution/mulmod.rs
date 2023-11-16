@@ -167,10 +167,13 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, evm_types::Stack, Word, U256};
+    use eth_types::{bytecode, Word, U256};
     use mock::TestContext;
 
-    fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
+    #[cfg(feature = "enable-stack")]
+    use eth_types::evm_types::Stack;
+
+    fn test(a: Word, b: Word, n: Word, _r: Option<Word>, ok: bool) {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -179,9 +182,10 @@ mod test {
             STOP
         };
 
+        #[cfg_attr(not(feature = "enable-stack"), allow(unused_mut))]
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         #[cfg(feature = "enable-stack")]
-        if let Some(r) = r {
+        if let Some(r) = _r {
             let mut last = ctx
                 .geth_traces
                 .first_mut()

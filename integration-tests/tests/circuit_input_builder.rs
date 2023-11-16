@@ -1,8 +1,6 @@
 #![cfg(feature = "circuit_input_builder")]
 
-use bus_mapping::circuit_input_builder::{
-    build_state_code_db, get_state_accesses, BuilderClient, CircuitsParams,
-};
+use bus_mapping::circuit_input_builder::{build_state_code_db, BuilderClient, CircuitsParams};
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
 use log::trace;

@@ -232,7 +232,7 @@ mod test {
     #[cfg(feature = "enable-stack")]
     use eth_types::evm_types::Stack;
 
-    fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
+    fn test(a: Word, b: Word, n: Word, _r: Option<Word>, ok: bool) {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -241,9 +241,10 @@ mod test {
             STOP
         };
 
+        #[cfg_attr(not(feature = "enable-stack"), allow(unused_mut))]
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         #[cfg(feature = "enable-stack")]
-        if let Some(r) = r {
+        if let Some(r) = _r {
             let mut last = ctx
                 .geth_traces
                 .first_mut()

@@ -491,11 +491,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         callee_gas_left_with_stipend,
                     );
 
-                    let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
-                        state,
-                        &geth_steps[1],
-                        callee_call.clone(),
-                    )?;
+                    let mut oog_step =
+                        ErrorOOGPrecompile::gen_associated_ops(state, &geth_steps[1], callee_call)?;
 
                     oog_step.gas_left = Gas(callee_gas_left_with_stipend);
                     oog_step.gas_cost = GasCost(precompile_call_gas_cost);
@@ -513,7 +510,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     let mut precompile_step = precompile_associated_ops(
                         state,
                         geth_steps[1].clone(),
-                        callee_call.clone(),
+                        callee_call,
                         precompile_call,
                         &input_bytes.unwrap_or_default(),
                         &output_bytes.unwrap_or_default(),
