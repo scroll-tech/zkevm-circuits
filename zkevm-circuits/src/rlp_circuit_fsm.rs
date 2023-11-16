@@ -1694,6 +1694,50 @@ impl<F: Field> RlpCircuitConfig<F> {
             || Value::known(F::from(witness.rlp_table.storage_key_idx)),
         )?;
 
+        // assign to rlp decoding table
+        region.assign_advice(
+            || "rlp_decoding_table.is_write",
+            self.rlp_decoding_table.is_write,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.is_write)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.id",
+            self.rlp_decoding_table.id,
+            row,
+            || witness.rlp_decoding_table.id,
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.address",
+            self.rlp_decoding_table.address,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.address as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.value",
+            self.rlp_decoding_table.value,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.value as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.value_prev",
+            self.rlp_decoding_table.value_prev,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.value_prev as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.stack_acc",
+            self.rlp_decoding_table.stack_acc,
+            row,
+            || witness.rlp_decoding_table.stack_acc,
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.stack_acc_pow_of_rand",
+            self.rlp_decoding_table.stack_acc_pow_of_rand,
+            row,
+            || witness.rlp_decoding_table.stack_acc_pow_of_rand,
+        )?;
+
         // assign to sm
         region.assign_advice(
             || "sm.state",
