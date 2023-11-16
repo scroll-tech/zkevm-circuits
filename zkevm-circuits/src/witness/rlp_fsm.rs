@@ -828,4 +828,8 @@ pub(crate) struct RlpStackOp<F: Field> {
     pub address: usize,
     pub value: usize,
     pub value_prev: usize,
+    pub is_init: bool,
+    pub is_push: bool,
+    pub is_pop: bool,
+    pub is_update: bool,
 }

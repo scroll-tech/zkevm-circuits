@@ -417,6 +417,10 @@ impl Transaction {
             address: cur.depth,
             value: rlp_bytes.len(),
             value_prev: 0,
+            is_init: true,
+            is_push: false,
+            is_pop: false,
+            is_update: false,
         });
         let mut witness_table_idx = 0;
 
@@ -463,6 +467,10 @@ impl Transaction {
                                 address: cur.depth - 1,
                                 value: prev_depth_bytes,
                                 value_prev: last_bytes_on_depth[cur.depth - 1],
+                                is_init: false,
+                                is_push: false,
+                                is_pop: true,
+                                is_update: false,
                             })
                         }
 
@@ -510,6 +518,10 @@ impl Transaction {
                                     address: cur.depth,
                                     value: *rem - 1,
                                     value_prev: *rem,
+                                    is_init: false,
+                                    is_push: false,
+                                    is_pop: false,
+                                    is_update: true,
                                 });
                             }
 
@@ -602,6 +614,10 @@ impl Transaction {
                                 address: cur.depth + 1,
                                 value: num_bytes_of_new_list,
                                 value_prev: 0,
+                                is_init: false,
+                                is_push: true,
+                                is_pop: false,
+                                is_update: false,
                             });
                             next.depth = cur.depth + 1;
                             next.state = DecodeTagStart;
@@ -630,6 +646,10 @@ impl Transaction {
                             address: cur.depth,
                             value: *rem - 1,
                             value_prev: *rem,
+                            is_init: false,
+                            is_push: false,
+                            is_pop: false,
+                            is_update: true,
                         });
 
                         *rem -= 1;
@@ -666,6 +686,10 @@ impl Transaction {
                             address: cur.depth,
                             value: *rem - 1,
                             value_prev: *rem,
+                            is_init: false,
+                            is_push: false,
+                            is_pop: false,
+                            is_update: true,
                         });
 
                         *rem -= 1;
@@ -701,6 +725,10 @@ impl Transaction {
                                 address: cur.depth,
                                 value: *rem - 1,
                                 value_prev: *rem,
+                                is_init: false,
+                                is_push: false,
+                                is_pop: false,
+                                is_update: true,
                             });
                         }
 
@@ -733,6 +761,10 @@ impl Transaction {
                             address: cur.depth + 1,
                             value: lb_len,
                             value_prev: 0,
+                            is_init: false,
+                            is_push: true,
+                            is_pop: false,
+                            is_update: false,
                         });
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
