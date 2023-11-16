@@ -16,7 +16,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::{BeginList, EndList, TxType, AccessListAddress, AccessListStorageKey},
+        Tag::{AccessListAddress, AccessListStorageKey, BeginList, EndList, TxType},
         Transaction,
     },
 };
@@ -916,7 +916,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
-
         meta.create_gate("booleans for reducing degree (part four)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1491,31 +1490,34 @@ impl<F: Field> RlpCircuitConfig<F> {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.condition(
-                    meta.query_advice(is_new_access_list_address, Rotation::cur()), 
+                    meta.query_advice(is_new_access_list_address, Rotation::cur()),
                     |cb| {
-                    cb.require_equal(
-                        "al_idx - al_idx::prev = 1",
-                        meta.query_advice(rlp_table.access_list_idx, Rotation::prev()) + 1.expr(),
-                        meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                    );
-                });
+                        cb.require_equal(
+                            "al_idx - al_idx::prev = 1",
+                            meta.query_advice(rlp_table.access_list_idx, Rotation::prev())
+                                + 1.expr(),
+                            meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                        );
+                    },
+                );
 
                 cb.condition(
                     meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
                     |cb| {
-                    cb.require_equal(
+                        cb.require_equal(
                             "for same storage key list, al_idx stays the same",
                             meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
                             meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
                         );
                         cb.require_equal(
                             "sk_idx - sk_idx::prev = 1",
-                            meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()) + 1.expr(),
+                            meta.query_advice(rlp_table.storage_key_idx, Rotation::prev())
+                                + 1.expr(),
                             meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
                         );
-                    }
+                    },
                 );
-                
+
                 cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
             },
         );
@@ -1548,7 +1550,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enabled, Rotation::cur()),
-                    is_tag_end_vector(meta)
+                    is_tag_end_vector(meta),
                 ]))
             },
         );
@@ -1572,7 +1574,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enabled, Rotation::cur()),
-                    not::expr(is_decode_tag_start(meta))
+                    not::expr(is_decode_tag_start(meta)),
                 ]))
             },
         );
@@ -1594,7 +1596,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enabled, Rotation::cur()),
-                    not::expr(is_tag_end_vector(meta))
+                    not::expr(is_tag_end_vector(meta)),
                 ]))
             },
         );
@@ -1795,16 +1797,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             || witness.rlp_decoding_table.stack_acc_pow_of_rand,
         )?;
 
-        let is_new_access_list_address =
-            witness.state_machine.state == DecodeTagStart && witness.state_machine.tag == AccessListAddress;
+        let is_new_access_list_address = witness.state_machine.state == DecodeTagStart
+            && witness.state_machine.tag == AccessListAddress;
         region.assign_advice(
             || "is_new_access_list_address",
             self.is_new_access_list_address,
             row,
             || Value::known(F::from(is_new_access_list_address as u64)),
         )?;
-        let is_new_access_list_storage_key =
-            witness.state_machine.state == DecodeTagStart && witness.state_machine.tag == AccessListStorageKey;
+        let is_new_access_list_storage_key = witness.state_machine.state == DecodeTagStart
+            && witness.state_machine.tag == AccessListStorageKey;
         region.assign_advice(
             || "is_new_access_list_storage_key",
             self.is_new_access_list_storage_key,
