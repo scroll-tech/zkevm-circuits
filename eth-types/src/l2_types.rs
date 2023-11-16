@@ -1,12 +1,15 @@
 //! L2 types used to deserialize traces for l2geth.
 
 use crate::{
-    evm_types::{Gas, GasCost, Memory, OpcodeId, ProgramCounter, Stack, Storage},
+    evm_types::{Gas, GasCost, Memory, OpcodeId, ProgramCounter, Storage},
     Block, GethCallTrace, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
 };
 use ethers_core::types::{Address, Bytes, U256, U64};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[cfg(feature = "enable-stack")]
+use crate::Stack;
 
 /// l2 block full trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
@@ -240,6 +243,7 @@ pub struct ExecStep {
 
 impl From<ExecStep> for GethExecStep {
     fn from(e: ExecStep) -> Self {
+        #[cfg(feature = "enable-stack")]
         let stack = e.stack.map_or_else(Stack::new, Stack::from);
         let storage = e.storage.map_or_else(Storage::empty, Storage::from);
         let memory = e.memory.map_or_else(Memory::default, Memory::from);
@@ -253,6 +257,7 @@ impl From<ExecStep> for GethExecStep {
             refund: Gas(e.refund),
             depth: e.depth as u16,
             error: e.error,
+            #[cfg(feature = "enable-stack")]
             stack,
             memory,
             storage,

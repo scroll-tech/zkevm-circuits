@@ -438,41 +438,38 @@ pub fn gen_associated_ops(
                 state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
             }
         }
-        #[cfg(feature = "enable-stack")]
-        {
-            let stack_enabled = !geth_steps.iter().all(|s| s.stack.is_empty());
-            if stack_enabled {
-                if state.call_ctx()?.stack != geth_steps[0].stack {
-                    log::error!(
-                        "wrong stack before {:?}. len in state {}, len in step {}",
-                        opcode_id,
-                        &state.call_ctx()?.stack.len(),
-                        &geth_steps[0].stack.len(),
-                    );
-                    log::error!("state stack {:?}", &state.call_ctx()?.stack);
-                    log::error!("step  stack {:?}", &geth_steps[0].stack);
+    }
+    #[cfg(feature = "enable-stack")]
+    {
+        if state.call_ctx()?.stack != geth_steps[0].stack {
+            log::error!(
+                "wrong stack before {:?}. len in state {}, len in step {}",
+                opcode_id,
+                &state.call_ctx()?.stack.len(),
+                &geth_steps[0].stack.len(),
+            );
+            log::error!("state stack {:?}", &state.call_ctx()?.stack);
+            log::error!("step  stack {:?}", &geth_steps[0].stack);
 
-                    for i in 0..std::cmp::min(
-                        state.call_ctx()?.stack.0.len(),
-                        geth_steps[0].stack.0.len(),
-                    ) {
-                        let state_stack = state.call_ctx()?.stack.0[i];
-                        let step_stack = geth_steps[0].stack.0[i];
-                        if state_stack != step_stack {
-                            log::error!(
-                                "diff at {}: state {:?} != step {:?}",
-                                i,
-                                state_stack,
-                                step_stack
-                            );
-                        }
-                    }
-                    if check_level >= 2 {
-                        panic!("stack wrong");
-                    }
-                    state.call_ctx_mut()?.stack = geth_steps[0].stack.clone();
+            for i in 0..std::cmp::min(state.call_ctx()?.stack.0.len(), geth_steps[0].stack.0.len())
+            {
+                let state_stack = state.call_ctx()?.stack.0[i];
+                let step_stack = geth_steps[0].stack.0[i];
+                if state_stack != step_stack {
+                    log::error!(
+                        "diff at {}: state {:?} != step {:?}",
+                        i,
+                        state_stack,
+                        step_stack
+                    );
                 }
             }
+            if check_level >= 2 {
+                panic!("stack wrong");
+            }
+            state.call_ctx_mut()?.stack = geth_steps[0].stack.clone();
+        } else {
+            log::debug!("stack sanity check passed");
         }
     }
 

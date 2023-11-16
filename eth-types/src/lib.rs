@@ -23,16 +23,9 @@ pub mod geth_types;
 pub mod l2_types;
 pub mod sign_types;
 
+use crate::evm_types::{memory::Memory, storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_proofs::{
-    arithmetic::{Field as Halo2Field, FieldExt},
-    halo2curves::{bn256::Fr, group::ff::PrimeField},
-};
-
-use crate::evm_types::{
-    memory::Memory, stack::Stack, storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter,
-};
 use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
@@ -41,10 +34,16 @@ pub use ethers_core::{
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
-
+use halo2_proofs::{
+    arithmetic::{Field as Halo2Field, FieldExt},
+    halo2curves::{bn256::Fr, group::ff::PrimeField},
+};
 use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
+
+#[cfg(feature = "enable-stack")]
+use crate::evm_types::stack::Stack;
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
@@ -375,6 +374,7 @@ pub struct GethExecStep {
     pub depth: u16,
     pub error: Option<String>,
     // stack is in hex 0x prefixed
+    #[cfg(feature = "enable-stack")]
     pub stack: Stack,
     // memory is in chunks of 32 bytes, in hex
     pub memory: Memory,
@@ -403,18 +403,18 @@ impl<'a> fmt::Debug for DebugWord<'a> {
 
 impl fmt::Debug for GethExecStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Step")
-            .field("pc", &format_args!("0x{:04x}", self.pc.0))
+        let mut fmt = f.debug_struct("Step");
+        fmt.field("pc", &format_args!("0x{:04x}", self.pc.0))
             .field("op", &self.op)
             .field("gas", &format_args!("{}", self.gas.0))
             .field("gas_cost", &format_args!("{}", self.gas_cost.0))
             .field("refund", &format_args!("{}", self.refund.0))
             .field("depth", &self.depth)
-            .field("error", &self.error)
-            .field("stack", &self.stack)
-            // .field("memory", &self.memory)
-            .field("storage", &self.storage)
-            .finish()
+            .field("error", &self.error);
+        #[cfg(feature = "enable-stack")]
+        fmt.field("stack", &self.stack);
+        // .field("memory", &self.memory)
+        fmt.field("storage", &self.storage).finish()
     }
 }
 
@@ -432,6 +432,7 @@ impl<'de> Deserialize<'de> for GethExecStep {
             gas_cost: s.gas_cost,
             depth: s.depth,
             error: s.error,
+            #[cfg(feature = "enable-stack")]
             stack: Stack(s.stack.iter().map(|dw| dw.to_word()).collect::<Vec<Word>>()),
             memory: Memory::from(
                 s.memory
@@ -689,6 +690,7 @@ mod tests {
                         gas_cost: GasCost(3),
                         depth: 1,
                         error: None,
+                        #[cfg(feature = "enable-stack")]
                         stack: Stack::new(),
                         storage: Storage(word_map!()),
                         memory: Memory::new(),
@@ -701,6 +703,7 @@ mod tests {
                         gas_cost: GasCost(2100),
                         depth: 1,
                         error: None,
+                        #[cfg(feature = "enable-stack")]
                         stack: Stack(vec![word!("0x1003e2d2"), word!("0x2a"), word!("0x0")]),
                         storage: Storage(word_map!("0x0" => "0x6f")),
                         memory: Memory::from(vec![word!("0x0"), word!("0x0"), word!("0x080")]),
@@ -713,6 +716,7 @@ mod tests {
                         gas_cost: GasCost(42),
                         depth: 1,
                         error: None,
+                        #[cfg(feature = "enable-stack")]
                         stack: Stack(vec![
                             word!("0x3635c9adc5dea00000"),
                             word!("0x40"),

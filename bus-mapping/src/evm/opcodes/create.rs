@@ -37,7 +37,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         };
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
-        let callee_value = geth_step.stack.last()?;
+        let callee_value = state.call_ctx()?.stack.last()?;
         if !callee_exists && callee_value.is_zero() {
             state.sdb.get_account_mut(&address).1.storage.clear();
         }

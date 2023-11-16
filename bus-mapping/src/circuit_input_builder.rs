@@ -621,53 +621,58 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
                 geth_step.refund.0,
-                if geth_step.op.is_push_with_data() {
-                    format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
-                } else if geth_step.op.is_call_without_value() {
-                    format!(
-                        "{:?} {:40x} {:?} {:?} {:?} {:?}",
-                        geth_step.stack.last(),
-                        geth_step.stack.nth_last(1).unwrap_or_default(),
-                        geth_step.stack.nth_last(2),
-                        geth_step.stack.nth_last(3),
-                        geth_step.stack.nth_last(4),
-                        geth_step.stack.nth_last(5)
-                    )
-                } else if geth_step.op.is_call_with_value() {
-                    format!(
-                        "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
-                        geth_step.stack.last(),
-                        geth_step.stack.nth_last(1).unwrap_or_default(),
-                        geth_step.stack.nth_last(2),
-                        geth_step.stack.nth_last(3),
-                        geth_step.stack.nth_last(4),
-                        geth_step.stack.nth_last(5),
-                        geth_step.stack.nth_last(6),
-                    )
-                } else if geth_step.op.is_create() {
-                    format!(
-                        "value {:?} offset {:?} size {:?} {}",
-                        geth_step.stack.last(),
-                        geth_step.stack.nth_last(1),
-                        geth_step.stack.nth_last(2),
-                        if geth_step.op == OpcodeId::CREATE2 {
-                            format!("salt {:?}", geth_step.stack.nth_last(3))
-                        } else {
-                            "".to_string()
-                        }
-                    )
-                } else if matches!(geth_step.op, OpcodeId::SSTORE) {
-                    format!(
-                        "{:?} {:?} {:?}",
-                        state_ref.call().map(|c| c.address),
-                        geth_step.stack.last(),
-                        geth_step.stack.nth_last(1),
-                    )
-                } else {
-                    let stack_input_num = 1024 - geth_step.op.valid_stack_ptr_range().1 as usize;
-                    (0..stack_input_num).into_iter().map(|i|
-                        format!("{:?}",  geth_step.stack.nth_last(i))
-                    ).collect_vec().join(" ")
+                {
+                    #[cfg(feature = "enable-stack")]
+                    if geth_step.op.is_push_with_data() {
+                        format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
+                    } else if geth_step.op.is_call_without_value() {
+                        format!(
+                            "{:?} {:40x} {:?} {:?} {:?} {:?}",
+                            geth_step.stack.last(),
+                            geth_step.stack.nth_last(1).unwrap_or_default(),
+                            geth_step.stack.nth_last(2),
+                            geth_step.stack.nth_last(3),
+                            geth_step.stack.nth_last(4),
+                            geth_step.stack.nth_last(5)
+                        )
+                    } else if geth_step.op.is_call_with_value() {
+                        format!(
+                            "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
+                            geth_step.stack.last(),
+                            geth_step.stack.nth_last(1).unwrap_or_default(),
+                            geth_step.stack.nth_last(2),
+                            geth_step.stack.nth_last(3),
+                            geth_step.stack.nth_last(4),
+                            geth_step.stack.nth_last(5),
+                            geth_step.stack.nth_last(6),
+                        )
+                    } else if geth_step.op.is_create() {
+                        format!(
+                            "value {:?} offset {:?} size {:?} {}",
+                            geth_step.stack.last(),
+                            geth_step.stack.nth_last(1),
+                            geth_step.stack.nth_last(2),
+                            if geth_step.op == OpcodeId::CREATE2 {
+                                format!("salt {:?}", geth_step.stack.nth_last(3))
+                            } else {
+                                "".to_string()
+                            }
+                        )
+                    } else if matches!(geth_step.op, OpcodeId::SSTORE) {
+                        format!(
+                            "{:?} {:?} {:?}",
+                            state_ref.call().map(|c| c.address),
+                            geth_step.stack.last(),
+                            geth_step.stack.nth_last(1),
+                        )
+                    } else {
+                        let stack_input_num = 1024 - geth_step.op.valid_stack_ptr_range().1 as usize;
+                        (0..stack_input_num).into_iter().map(|i|
+                            format!("{:?}",  geth_step.stack.nth_last(i))
+                        ).collect_vec().join(" ")
+                    }
+                    #[cfg(not(feature = "enable-stack"))]
+                    "N/A".to_string()
                 }
             );
             debug_assert_eq!(
@@ -909,9 +914,9 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code(call_ctx: &CallContext, step: &GethExecStep) -> Result<Vec<u8>, Error> {
-    let offset = step.stack.nth_last(1)?.low_u64() as usize;
-    let length = step.stack.nth_last(2)?.as_usize();
+pub fn get_create_init_code(call_ctx: &CallContext) -> Result<Vec<u8>, Error> {
+    let offset = call_ctx.stack.nth_last(1)?.low_u64() as usize;
+    let length = call_ctx.stack.nth_last(2)?.as_usize();
 
     let mem_len = call_ctx.memory.0.len();
     let mut result = vec![0u8; length];
@@ -924,9 +929,12 @@ pub fn get_create_init_code(call_ctx: &CallContext, step: &GethExecStep) -> Resu
 }
 
 /// Retrieve the memory offset and length of call.
-pub fn get_call_memory_offset_length(step: &GethExecStep, nth: usize) -> Result<(u64, u64), Error> {
-    let offset = step.stack.nth_last(nth)?;
-    let length = step.stack.nth_last(nth + 1)?;
+pub fn get_call_memory_offset_length(
+    call_ctx: &CallContext,
+    nth: usize,
+) -> Result<(u64, u64), Error> {
+    let offset = call_ctx.stack.nth_last(nth)?;
+    let length = call_ctx.stack.nth_last(nth + 1)?;
     if length.is_zero() {
         Ok((0, 0))
     } else {

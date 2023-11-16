@@ -936,6 +936,7 @@ mod test {
             let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
                 .unwrap()
                 .into();
+            #[cfg(feature = "enable-stack")]
             if is_return {
                 // collect return opcode, retrieve next step, assure both contract create
                 // successfully

@@ -130,7 +130,7 @@ impl Call {
 }
 
 /// Context of a [`Call`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CallContext {
     /// Index of call
     pub index: usize,

@@ -941,7 +941,7 @@ impl<'a> CircuitInputStateRef<'a> {
         #[cfg(feature = "enable-stack")]
         assert_eq!(call_ctx.stack, step.stack);
         let salt = call_ctx.stack.nth_last(3)?;
-        let init_code = get_create_init_code(call_ctx, step)?.to_vec();
+        let init_code = get_create_init_code(call_ctx)?.to_vec();
         let address = get_create2_address(self.call()?.address, salt.to_be_bytes(), init_code);
         log::trace!(
             "create2_address {:?}, from {:?}, salt {:?}",
@@ -997,7 +997,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn parse_call_partial(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let kind = CallKind::try_from(step.op)?;
         let caller = self.call()?;
-        let caller_ctx = self.call_ctx()?;
+        let caller_ctx = self.call_ctx()?.clone();
         let stack = &caller_ctx.stack;
         #[cfg(feature = "enable-stack")]
         assert_eq!(stack, &step.stack);
@@ -1021,7 +1021,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let (code_source, code_hash) = match kind {
             CallKind::Create | CallKind::Create2 => {
-                let init_code = get_create_init_code(caller_ctx, step)?.to_vec();
+                let init_code = get_create_init_code(&caller_ctx)?.to_vec();
                 let code_hash = self.code_db.insert(init_code);
                 (CodeSource::Memory, code_hash)
             }
@@ -1046,13 +1046,13 @@ impl<'a> CircuitInputStateRef<'a> {
         let (call_data_offset, call_data_length, return_data_offset, return_data_length) =
             match kind {
                 CallKind::Call | CallKind::CallCode => {
-                    let call_data = get_call_memory_offset_length(step, 3)?;
-                    let return_data = get_call_memory_offset_length(step, 5)?;
+                    let call_data = get_call_memory_offset_length(&caller_ctx, 3)?;
+                    let return_data = get_call_memory_offset_length(&caller_ctx, 5)?;
                     (call_data.0, call_data.1, return_data.0, return_data.1)
                 }
                 CallKind::DelegateCall | CallKind::StaticCall => {
-                    let call_data = get_call_memory_offset_length(step, 2)?;
-                    let return_data = get_call_memory_offset_length(step, 4)?;
+                    let call_data = get_call_memory_offset_length(&caller_ctx, 2)?;
+                    let return_data = get_call_memory_offset_length(&caller_ctx, 4)?;
                     (call_data.0, call_data.1, return_data.0, return_data.1)
                 }
                 CallKind::Create | CallKind::Create2 => (0, 0, 0, 0),
@@ -1440,6 +1440,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step_next = steps
             .get(1)
             .ok_or(Error::InternalError("invalid index 1"))?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(self.caller_ctx()?.stack, geth_step_next.stack);
         self.call_context_read(
             exec_step,
             call.call_id,
@@ -1501,7 +1503,7 @@ impl<'a> CircuitInputStateRef<'a> {
             (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
             (
                 CallContextField::StackPointer,
-                geth_step_next.stack.stack_pointer().0.into(),
+                self.caller_ctx()?.stack.stack_pointer().0.into(),
             ),
             (CallContextField::GasLeft, caller_gas_left.into()),
             (
@@ -1596,9 +1598,9 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
-        let next_result = next_step
-            .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
-            .unwrap_or_else(Word::zero);
+        // let next_result = next_step
+        //     .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
+        //     .unwrap_or_else(Word::zero);
 
         let call_ctx = self.call_ctx()?;
         #[cfg(feature = "enable-stack")]
@@ -1611,7 +1613,7 @@ impl<'a> CircuitInputStateRef<'a> {
         };
 
         // Return from a call with a failure
-        if step.depth == next_depth + 1 && next_result.is_zero() {
+        if step.depth == next_depth + 1 && !call.is_success {
             if !matches!(step.op, OpcodeId::RETURN) {
                 // Without calling RETURN
                 return Ok(match step.op {
@@ -1678,7 +1680,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Return from a call without calling RETURN or STOP and having success
         // is unexpected.
         if step.depth == next_depth + 1
-            && next_result != Word::zero()
+            && call.is_success
             && !matches!(
                 step.op,
                 OpcodeId::RETURN | OpcodeId::STOP | OpcodeId::SELFDESTRUCT
@@ -1701,7 +1703,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 | OpcodeId::STATICCALL
                 | OpcodeId::CREATE
                 | OpcodeId::CREATE2
-        ) && next_result.is_zero()
+        ) && !call.is_success
             && next_pc != 0
         {
             if step.depth == 1025 {

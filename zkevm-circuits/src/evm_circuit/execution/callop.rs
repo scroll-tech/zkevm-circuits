@@ -1718,17 +1718,20 @@ mod test_precompiles {
         )
         .unwrap();
 
-        let step = ctx.geth_traces[0]
-            .struct_logs
-            .last()
-            .expect("at least one step");
-        log::debug!("{:?}", step.stack);
-        for (offset, (_, stack_value)) in arg.stack_value.iter().enumerate() {
-            assert_eq!(
-                *stack_value,
-                step.stack.nth_last(offset).expect("stack value not found"),
-                "stack output mismatch"
-            );
+        #[cfg(feature = "enable-stack")]
+        {
+            let step = ctx.geth_traces[0]
+                .struct_logs
+                .last()
+                .expect("at least one step");
+            log::debug!("{:?}", step.stack);
+            for (offset, (_, stack_value)) in arg.stack_value.iter().enumerate() {
+                assert_eq!(
+                    *stack_value,
+                    step.stack.nth_last(offset).expect("stack value not found"),
+                    "stack output mismatch"
+                );
+            }
         }
 
         log::debug!(

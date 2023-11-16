@@ -64,7 +64,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         debug_assert!(found);
         let caller_balance = sender_account.balance;
         let call_value = match callee_kind {
-            CallKind::Call | CallKind::CallCode => geth_step.stack.nth_last(2)?,
+            CallKind::Call | CallKind::CallCode => state.call_ctx()?.stack.nth_last(2)?,
             CallKind::DelegateCall => caller_call.value,
             CallKind::StaticCall => Word::zero(),
             CallKind::Create | CallKind::Create2 => {
@@ -342,6 +342,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
                 }
 
+                #[cfg(feature = "enable-stack")]
+                assert_eq!(
+                    state.caller_ctx()?.stack.stack_pointer().0,
+                    geth_step.stack.stack_pointer().0 + N_ARGS - 1
+                );
                 // return while restoring some of caller's context.
                 for (field, value) in [
                     (
@@ -553,6 +558,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             }
             // 3. Call to account with non-empty code.
             (false, _, false) => {
+                #[cfg(feature = "enable-stack")]
+                assert_eq!(
+                    state.caller_ctx()?.stack.stack_pointer().0,
+                    geth_step.stack.stack_pointer().0 + N_ARGS - 1
+                );
                 for (field, value) in [
                     (
                         CallContextField::ProgramCounter,
@@ -1118,18 +1128,21 @@ pub mod tests {
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
 
-            let step = block.geth_traces[0]
-                .struct_logs
-                .last()
-                .expect("at least one step");
-            log::debug!("{:?}", step.stack);
-            for (offset, (_, stack_value)) in test_call.stack_value.iter().enumerate() {
-                assert_eq!(
-                    *stack_value,
-                    step.stack.nth_last(offset).expect("stack value not found"),
-                    "stack output mismatch {}",
-                    test_call.name
-                );
+            #[cfg(feature = "enable-stack")]
+            {
+                let step = block.geth_traces[0]
+                    .struct_logs
+                    .last()
+                    .expect("at least one step");
+                log::debug!("{:?}", step.stack);
+                for (offset, (_, stack_value)) in test_call.stack_value.iter().enumerate() {
+                    assert_eq!(
+                        *stack_value,
+                        step.stack.nth_last(offset).expect("stack value not found"),
+                        "stack output mismatch {}",
+                        test_call.name
+                    );
+                }
             }
         }
     }

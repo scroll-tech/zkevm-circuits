@@ -226,8 +226,11 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, evm_types::Stack, Word};
+    use eth_types::{bytecode, Word};
     use mock::TestContext;
+
+    #[cfg(feature = "enable-stack")]
+    use eth_types::evm_types::Stack;
 
     fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
         let bytecode = bytecode! {
@@ -239,6 +242,7 @@ mod test {
         };
 
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
+        #[cfg(feature = "enable-stack")]
         if let Some(r) = r {
             let mut last = ctx
                 .geth_traces

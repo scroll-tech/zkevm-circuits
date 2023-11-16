@@ -135,6 +135,11 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
         "PC", "OP", "GAS", "GAS_COST", "DEPTH", "ERR", "STACK", "MEMORY", "STORAGE"
     ]);
     for step in trace.struct_logs {
+        #[cfg(feature = "enable-stack")]
+        let stack = step.stack.0.iter().map(u256_to_str).collect();
+        #[cfg(not(feature = "enable-stack"))]
+        let stack = vec![];
+
         table.add_row(row![
             format!("{}", step.pc.0),
             format!("{:?}", step.op),
@@ -142,7 +147,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             format!("{}", step.gas_cost.0),
             format!("{}", step.depth),
             step.error.unwrap_or_default(),
-            split(step.stack.0.iter().map(u256_to_str).collect(), 30),
+            split(stack, 30),
             split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
             split(kv(step.storage.0), 30)
         ]);

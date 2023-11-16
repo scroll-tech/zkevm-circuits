@@ -180,6 +180,7 @@ mod test {
         };
 
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
+        #[cfg(feature = "enable-stack")]
         if let Some(r) = r {
             let mut last = ctx
                 .geth_traces
