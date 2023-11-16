@@ -336,8 +336,6 @@ pub struct RlpCircuitConfig<F> {
     depth_eq_four: IsEqualConfig<F>,
     /// Check for byte_value == 0
     byte_value_is_zero: IsZeroConfig<F>,
-    /// Check for stack ptr change
-    stack_ptr_comp: ComparatorConfig<F, 3>,
 
     /// Internal tables
     /// Data table
@@ -1586,60 +1584,102 @@ impl<F: Field> RlpCircuitConfig<F> {
         ///////////////////////// (Stack Constraints) /////////////////////
         ///////////////////////////////////////////////////////////////////
 
-        // Booleans for comparing stack ptr (address) in decoding table
-        let stack_ptr_comp: ComparatorConfig<F, 3> = ComparatorChip::configure(
-            meta,
-            cmp_enabled,
-            |meta| meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
-            |meta| meta.query_advice(rlp_decoding_table.address, Rotation::next()),
-            u8_table.into(),
-        );
-
         meta.create_gate("stack constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (ptr_lt, ptr_eq) = stack_ptr_comp.expr(meta, None);
-
-            // Stack PUSH
-            cb.condition(ptr_lt.clone(), |cb| {
-                cb.require_equal(
-                    "PUSH: stack ptr increase can only be 1",
-                    meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(rlp_decoding_table.address, Rotation::next()),
-                )
-            });
-
-            // Stack POP
-            cb.condition(
-                and::expr([not::expr(ptr_lt), not::expr(ptr_eq)]),
-                |cb| {
-                    cb.require_equal(
-                        "POP: stack ptr decrease can only be 1",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
-                        meta.query_advice(rlp_decoding_table.address, Rotation::next()) + 1.expr(),
-                    )
-                },
-            );
-
-            // Stack Update Top
-            // cb.condition(ptr_eq, |cb| {
-            //     cb.require_equal(
-            //         "At the same depth level, must read 1 byte",
-            //         meta.query_advice(rlp_decoding_table.value, Rotation::next()) + 1.expr(),
-            //         meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
-            //     );
-            // });
-
+            // Universal stack constraints
             cb.require_equal(
                 "stack ptr (address) must correspond exactly to depth",
                 meta.query_advice(depth, Rotation::cur()),
                 meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
             );
+            cb.condition(not::expr(is_end(meta)), |cb| {
+                cb.require_equal(
+                    "each row must have a stack operation", 
+                    sum::expr([
+                        meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
+                    ]),
+                    1.expr()
+                );
+            });
+            
+            cb.require_zero(
+                "is_stack_init is binary", 
+                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur())
+                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()))
+            );
+            cb.require_zero(
+                "is_stack_push is binary", 
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur())
+                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()))
+            );
+            cb.require_zero(
+                "is_stack_pop is binary", 
+                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur())
+                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()))
+            );
+            cb.require_zero(
+                "is_stack_update is binary", 
+                meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur())
+                * (1.expr() - meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()))
+            );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                not::expr(is_end(meta)),
-            ]))
+            // Stack Init
+            cb.condition(
+                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()), 
+                |cb| {
+                    cb.require_zero("stack inits at depth 0", meta.query_advice(rlp_decoding_table.address, Rotation::cur()));
+                    cb.require_equal(
+                        "stack init pushes all remaining_bytes onto depth 0",
+                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()), 
+                        meta.query_advice(byte_rev_idx, Rotation::cur())
+                    );
+                }
+            );
+            // Stack Push
+            cb.condition(
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()), 
+                |cb| {
+                    cb.require_equal(
+                        "PUSH stack operation increases depth",
+                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()) + 1.expr(), 
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur())
+                    );
+                }
+            );
+            // Stack Pop
+            cb.condition(
+                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()), 
+                |cb| {
+                    cb.require_equal(
+                        "POP stack operation decreases depth",
+                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()), 
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr()
+                    );
+                }
+            );
+            // Stack Update
+            cb.condition(
+                meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()), 
+                |cb| {
+                    cb.require_equal(
+                        "UPDATE stack operation doesn't change depth",
+                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()), 
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur())
+                    );
+                    cb.require_equal(
+                        "UPDATE stack operation reads 1 byte",
+                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(), 
+                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur())
+                    );
+                }
+            );
+            
+
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
         debug_assert!(meta.degree() <= 9);
@@ -1702,7 +1742,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             depth_eq_two,
             depth_eq_four,
             byte_value_is_zero,
-            stack_ptr_comp,
 
             // internal tables
             data_table,
@@ -1875,16 +1914,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || Value::known(F::from(is_new_access_list_storage_key as u64)),
         )?;
-
-        if let Some(witness_nxt) = witness_next {
-            let stack_ptr_comp_chip = ComparatorChip::construct(self.stack_ptr_comp.clone());
-            stack_ptr_comp_chip.assign(
-                region,
-                row,
-                F::from(witness.rlp_decoding_table.address as u64),
-                F::from(witness_nxt.rlp_decoding_table.address as u64),
-            )?;
-        }
 
         // assign to sm
         region.assign_advice(
@@ -2123,7 +2152,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "q_enable",
             self.rlp_table.q_enable,
             row,
-            || Value::known(F::zero()),
+            || Value::known(F::one()),
         )?;
         region.assign_advice(
             || "sm.state",
@@ -2217,14 +2246,14 @@ impl<F: Field> RlpCircuitConfig<F> {
         );
 
         // TX1559_DEBUG
-        log::trace!(
-            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
-            sm_rows
-        );
-        log::trace!(
-            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}",
-            dt_rows
-        );
+        // log::trace!(
+        //     "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
+        //     sm_rows
+        // );
+        // log::trace!(
+        //     "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}",
+        //     dt_rows
+        // );
 
         debug_assert!(sm_rows.len() <= last_row);
 
