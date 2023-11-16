@@ -11,8 +11,8 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{
-        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent, SHA256,
-        PrecompileEvents,
+        self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
+        PrecompileEvents, SHA256,
     },
     Error,
 };

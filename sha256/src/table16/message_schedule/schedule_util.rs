@@ -43,10 +43,7 @@ pub fn get_word_row(word_idx: usize) -> usize {
     } else if (14..=48).contains(&word_idx) {
         SUBREGION_0_ROWS + SUBREGION_1_ROWS + SUBREGION_2_WORD * (word_idx - 14) + 1
     } else if (49..=61).contains(&word_idx) {
-        SUBREGION_0_ROWS
-            + SUBREGION_1_ROWS
-            + SUBREGION_2_ROWS
-            + SUBREGION_3_WORD * (word_idx - 49)
+        SUBREGION_0_ROWS + SUBREGION_1_ROWS + SUBREGION_2_ROWS + SUBREGION_3_WORD * (word_idx - 49)
     } else {
         SUBREGION_0_ROWS
             + SUBREGION_1_ROWS

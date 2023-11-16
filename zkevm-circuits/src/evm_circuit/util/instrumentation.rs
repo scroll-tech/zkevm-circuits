@@ -102,7 +102,7 @@ impl Instrument {
                     }
                     CellType::Lookup(Table::Sha256) => {
                         report.sha256_table = data_entry;
-                    }                    
+                    }
                     CellType::Lookup(Table::Exp) => {
                         report.exp_table = data_entry;
                     }

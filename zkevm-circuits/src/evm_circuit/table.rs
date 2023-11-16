@@ -311,7 +311,7 @@ pub(crate) enum Lookup<F> {
         /// Output (hash) until this state. This is the RLC representation of
         /// the final output sha256 hash of the input.
         output_rlc: Expression<F>,
-    },    
+    },
     /// Lookup to exponentiation table.
     ExpTable {
         base_limbs: [Expression<F>; 4],
@@ -365,7 +365,7 @@ impl<F: Field> Lookup<F> {
             Self::Block { .. } => Table::Block,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
-            Self::Sha256Table{ .. } => Table::Sha256,
+            Self::Sha256Table { .. } => Table::Sha256,
             Self::ExpTable { .. } => Table::Exp,
             Self::SigTable { .. } => Table::Sig,
             Self::ModExpTable { .. } => Table::ModExp,
@@ -483,7 +483,7 @@ impl<F: Field> Lookup<F> {
                 1.expr(), // is_final
                 input_rlc.clone(),
                 output_rlc.clone(),
-            ],            
+            ],
             Self::ExpTable {
                 base_limbs,
                 exponent_lo_hi,

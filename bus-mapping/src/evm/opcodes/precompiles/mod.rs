@@ -1,7 +1,9 @@
 use eth_types::{GethExecStep, ToWord, Word};
 
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent, SHA256},
+    circuit_input_builder::{
+        Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent, SHA256,
+    },
     operation::CallContextField,
     precompile::{PrecompileAuxData, PrecompileCalls},
     Error,
@@ -54,12 +56,12 @@ pub fn gen_associated_ops(
             if output_bytes.is_empty() {
                 None
             } else {
-                Some(PrecompileEvent::SHA256(
-                    SHA256 {
-                        input: input_bytes.to_vec(),
-                        digest: output_bytes.try_into().expect("output bytes must be 32 bytes"),
-                    }
-                ))    
+                Some(PrecompileEvent::SHA256(SHA256 {
+                    input: input_bytes.to_vec(),
+                    digest: output_bytes
+                        .try_into()
+                        .expect("output bytes must be 32 bytes"),
+                }))
             },
             Some(PrecompileAuxData::Base {
                 input_bytes: input_bytes.to_vec(),

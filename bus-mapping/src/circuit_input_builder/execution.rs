@@ -922,7 +922,6 @@ impl PrecompileEvents {
             .cloned()
             .collect()
     }
-
 }
 
 /// I/O from a precompiled contract call.

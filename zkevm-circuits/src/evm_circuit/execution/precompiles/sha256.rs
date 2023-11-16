@@ -9,10 +9,8 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_WORD},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::EVMConstraintBuilder,
-            math_gadget::ConstantDivisionGadget,
-            rlc, CachedRegion, Cell,
+            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
+            math_gadget::ConstantDivisionGadget, rlc, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -49,8 +47,8 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             [
                 CallContextFieldTag::IsSuccess,
                 CallContextFieldTag::CalleeAddress,
-//                CallContextFieldTag::CallerId,
-//                CallContextFieldTag::CallDataOffset,
+                //                CallContextFieldTag::CallerId,
+                //                CallContextFieldTag::CallDataOffset,
                 CallContextFieldTag::CallDataLength,
                 CallContextFieldTag::ReturnDataOffset,
                 CallContextFieldTag::ReturnDataLength,
@@ -77,16 +75,16 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
         );
 
         // sha256 verify lookup
-        cb.condition(is_success.expr(), |cb|{
+        cb.condition(is_success.expr(), |cb| {
             cb.sha256_table_lookup(input_bytes_rlc.expr(), output_bytes_rlc.expr());
         });
-        
+
         let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
             gas_cost.expr(),
             0.expr(),
-            0x00.expr(),                                              // ReturnDataOffset
+            0x00.expr(),                                               // ReturnDataOffset
             select::expr(is_success.expr(), 0x20.expr(), 0x00.expr()), // ReturnDataLength
             0.expr(),
             0.expr(),

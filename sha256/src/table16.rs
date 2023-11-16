@@ -234,7 +234,6 @@ pub struct Table16Config {
 }
 
 impl Table16Config {
-    
     pub(crate) fn initialize<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -249,18 +248,16 @@ impl Table16Config {
         initialized_state: State<F>,
         w_halves: [(AssignedBits<F, 16>, AssignedBits<F, 16>); ROUNDS],
     ) -> Result<State<F>, Error> {
-        self.compression.compress(layouter, initialized_state, w_halves)
-    }    
+        self.compression
+            .compress(layouter, initialized_state, w_halves)
+    }
 
     #[allow(clippy::type_complexity)]
     pub(crate) fn message_process<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         input: [BlockWord; crate::BLOCK_SIZE],
-    ) -> Result<        
-        [(AssignedBits<F, 16>, AssignedBits<F, 16>); ROUNDS],
-        Error,
-    > {
+    ) -> Result<[(AssignedBits<F, 16>, AssignedBits<F, 16>); ROUNDS], Error> {
         let (_, w_halves) = self.message_schedule.process(layouter, input)?;
         Ok(w_halves)
     }
@@ -349,7 +346,6 @@ impl Table16Chip {
     ) -> Result<(), Error> {
         SpreadTableChip::load(config.lookup, layouter)
     }
-
 }
 
 impl<F: Field> super::Sha256Instructions<F> for Table16Chip {

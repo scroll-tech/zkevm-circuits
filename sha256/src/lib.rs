@@ -12,10 +12,10 @@
 
 // The size of a SHA-256 digest, in 32-bit words.
 const DIGEST_SIZE: usize = 8;
-pub use halo2_gadgets::sha256::{Sha256, Sha256Instructions, Sha256Digest, BLOCK_SIZE};
+pub use halo2_gadgets::sha256::{Sha256, Sha256Digest, Sha256Instructions, BLOCK_SIZE};
 use halo2_proofs::arithmetic::FieldExt as Field;
 
-/// ...
-pub mod table16;
 /// sha256 circuit can be integrated into zkevm
 pub mod circuit;
+/// ...
+pub mod table16;

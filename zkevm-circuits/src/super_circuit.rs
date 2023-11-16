@@ -73,13 +73,16 @@ use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
     rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
+    sha256_circuit::{
+        CircuitConfig as SHA256CircuitConfig, CircuitConfigArgs as SHA256CircuitConfigArgs,
+        SHA256Circuit,
+    },
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
-    sha256_circuit::{SHA256Circuit, CircuitConfig as SHA256CircuitConfig, CircuitConfigArgs as SHA256CircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, SHA256Table, ModExpTable,
-        MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
-        TxTable, U16Table, U8Table,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
+        MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SHA256Table,
+        SigTable, TxTable, U16Table, U8Table,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{circuit_stats, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -505,7 +508,7 @@ impl<
         let keccak = KeccakCircuit::min_num_rows_block(block);
         push("keccak", keccak);
         let sha256 = SHA256Circuit::min_num_rows_block(block);
-        push("sha256", sha256);        
+        push("sha256", sha256);
         let tx = TxCircuit::min_num_rows_block(block);
         push("tx", tx);
         let rlp = RlpCircuit::min_num_rows_block(block);
@@ -663,7 +666,7 @@ impl<
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
         log::debug!("assigning sha256_circuit");
         self.sha256_circuit
-            .synthesize_sub(&config.sha256_circuit, challenges, layouter)?;        
+            .synthesize_sub(&config.sha256_circuit, challenges, layouter)?;
         log::debug!("assigning poseidon_circuit");
         self.poseidon_circuit
             .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;

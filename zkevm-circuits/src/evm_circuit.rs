@@ -22,8 +22,8 @@ pub use crate::witness;
 use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, SHA256Table, LookupTable,
-        ModExpTable, PowOfRandTable, RwTable, SigTable, TxTable,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
+        ModExpTable, PowOfRandTable, RwTable, SHA256Table, SigTable, TxTable,
     },
     util::{SubCircuit, SubCircuitConfig},
 };
@@ -72,7 +72,7 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     /// KeccakTable
     pub keccak_table: KeccakTable,
     /// KeccakTable
-    pub sha256_table: SHA256Table,    
+    pub sha256_table: SHA256Table,
     /// ExpTable
     pub exp_table: ExpTable,
     /// SigTable

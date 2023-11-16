@@ -356,7 +356,7 @@ impl<F: Field> RoundWordE<F> {
 
     pub fn into_dense(self) -> RoundWordDense<F> {
         self.dense_halves
-    }    
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -375,7 +375,7 @@ impl<F: Field> RoundWord<F> {
 
     pub fn into_dense(self) -> RoundWordDense<F> {
         self.dense_halves
-    }    
+    }
 }
 
 /// The internal state for SHA-256.
@@ -429,7 +429,9 @@ impl<F: Field> State<F> {
         }
     }
 
-    pub fn decompose(self) -> (
+    pub fn decompose(
+        self,
+    ) -> (
         RoundWordA<F>,
         RoundWord<F>,
         RoundWord<F>,
@@ -443,7 +445,7 @@ impl<F: Field> State<F> {
     }
 
     #[allow(clippy::many_single_char_names)]
-    #[allow(clippy::too_many_arguments)]    
+    #[allow(clippy::too_many_arguments)]
     pub fn composite(
         a: RoundWordA<F>,
         b: RoundWord<F>,
@@ -465,7 +467,6 @@ impl<F: Field> State<F> {
             StateWord::H(h),
         )
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -941,7 +942,7 @@ impl CompressionConfig {
             |mut region| {
                 let (a, b, c, d, e, f, g, h) = compression_util::match_state(init_state.clone());
                 new_state = self.initialize_state(
-                    &mut region, 
+                    &mut region,
                     [
                         a.dense_halves,
                         b.dense_halves,
@@ -950,8 +951,8 @@ impl CompressionConfig {
                         e.dense_halves,
                         f.dense_halves,
                         g.dense_halves,
-                        h,    
-                    ]                    
+                        h,
+                    ],
                 )?;
                 Ok(())
             },

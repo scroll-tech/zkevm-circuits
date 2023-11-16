@@ -1,7 +1,7 @@
 use super::{
     super::{RoundWord, StateWord, STATE},
     compression_util::*,
-    CompressionConfig, State, RoundWordDense,
+    CompressionConfig, RoundWordDense, State,
 };
 
 use crate::Field;

@@ -1488,7 +1488,6 @@ impl KeccakTable {
     }
 }
 
-
 /// SHA256 Table, used to verify SHA256 hashing from RLC'ed input in precompile.
 #[derive(Clone, Debug)]
 pub struct SHA256Table {
@@ -1539,22 +1538,15 @@ impl SHA256Table {
         entry: (&[u8], &[u8]),
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
-        let (input ,output) = entry;
+        let (input, output) = entry;
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
-        let output_rlc = challenges.evm_word().map(|challenge| {
-            rlc::value(
-                &Word::from_big_endian(output).to_le_bytes(),
-                challenge,
-            )
-        });
+        let output_rlc = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(&Word::from_big_endian(output).to_le_bytes(), challenge));
 
-        vec![[
-            Value::known(F::one()),
-            input_rlc,
-            output_rlc,
-        ]]
+        vec![[Value::known(F::one()), input_rlc, output_rlc]]
     }
 
     /// Provide this function for the case that we want to consume a sha256
@@ -1609,9 +1601,7 @@ impl SHA256Table {
             },
         )
     }
-
 }
-
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
 /// TxLogs and TxCallData.
