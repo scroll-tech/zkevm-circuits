@@ -50,7 +50,7 @@ impl Default for LoggerConfig {
     fn default() -> Self {
         Self {
             enable_memory: false,
-            disable_stack: false,
+            disable_stack: !cfg!(feature = "enable-stack"),
             disable_storage: false,
             enable_return_data: true,
         }
@@ -61,6 +61,13 @@ impl LoggerConfig {
     pub fn enable_memory() -> Self {
         Self {
             enable_memory: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn enable_stack() -> Self {
+        Self {
+            disable_stack: false,
             ..Self::default()
         }
     }
