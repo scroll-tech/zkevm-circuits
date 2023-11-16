@@ -697,6 +697,7 @@ mod tests {
                         #[cfg(feature = "enable-stack")]
                         stack: Stack::new(),
                         storage: Storage(word_map!()),
+                        #[cfg(feature = "enable-memory")]
                         memory: Memory::new(),
                     },
                     GethExecStep {
@@ -710,6 +711,7 @@ mod tests {
                         #[cfg(feature = "enable-stack")]
                         stack: Stack(vec![word!("0x1003e2d2"), word!("0x2a"), word!("0x0")]),
                         storage: Storage(word_map!("0x0" => "0x6f")),
+                        #[cfg(feature = "enable-memory")]
                         memory: Memory::from(vec![word!("0x0"), word!("0x0"), word!("0x080")]),
                     },
                     GethExecStep {
@@ -727,6 +729,7 @@ mod tests {
                             word!("0x0")
                         ]),
                         storage: Storage(word_map!()),
+                        #[cfg(feature = "enable-memory")]
                         memory: Memory::from(vec![
                             word!(
                                 "000000000000000000000000b8f67472dcc25589672a61905f7fd63f09e5d470"
