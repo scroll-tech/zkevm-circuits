@@ -147,7 +147,6 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		DAOForkBlock:        big.NewInt(0),
 		DAOForkSupport:      true,
 		EIP150Block:         big.NewInt(0),
-		EIP150Hash:          common.Hash{},
 		EIP155Block:         big.NewInt(0),
 		EIP158Block:         big.NewInt(0),
 		ByzantiumBlock:      big.NewInt(0),
@@ -256,7 +255,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			prestateTracer,
 			callTracer,
 		)
-		evm := vm.NewEVM(blockCtx, txContext, stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+		evm := vm.NewEVM(blockCtx, txContext, stateDB, &chainConfig, vm.Config{Tracer: tracer, NoBaseFee: true})
 
 		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
 		if err != nil {
