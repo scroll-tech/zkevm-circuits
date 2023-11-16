@@ -60,8 +60,6 @@ pub struct CircuitConfig {
     s_common_bytes: Selector, // mark the s_enable region except for the last 8 bytes
     s_padding_size: Selector, // mark the last 8 bytes for padding size
     s_assigned_u16: Selector,// indicate copied_data cell is a assigned u16 word
-
-    keccak_challenge: Challenge,
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +74,7 @@ impl CircuitConfig {
 
     fn setup_gates(&self, 
         meta: &mut ConstraintSystem<Fr>,
+        rnd: Expression<Fr>,
     ){
         let one = Expression::Constant(Fr::one());
 
@@ -93,7 +92,6 @@ impl CircuitConfig {
             // constraint u16 in table16 with byte
             let byte_from_u16 = s_u16 * (u16 - (byte.clone() * Expression::Constant(Fr::from(256u64)) + byte_next));
 
-            let rnd = meta.query_challenge(self.keccak_challenge);
             let byte_rlc = rlc_byte - (rlc_byte_prev * rnd + byte);
 
             vec![
@@ -244,10 +242,61 @@ impl CircuitConfig {
 
     }
 
+    /// Fully configures with both table and challenge being specified, 
+    /// used for development
+    pub fn configure_dev(meta: &mut ConstraintSystem<Fr>) -> Self {
+
+        struct DevTable {
+            s_enable: Column<Fixed>,
+            input_rlc: Column<Advice>,
+            hashes_rlc: Column<Advice>,
+            is_effect: Column<Advice>,
+        }
+    
+        impl DevTable {
+            fn dev_construct(meta: &mut ConstraintSystem<Fr>) -> Self {
+                Self {
+                    s_enable: meta.fixed_column(),
+                    input_rlc: meta.advice_column_in(SecondPhase),
+                    hashes_rlc: meta.advice_column_in(SecondPhase),
+                    is_effect: meta.advice_column(),
+                }
+            }
+        }
+    
+        impl SHA256Table for DevTable {
+            fn cols(&self) -> [Column<Any>;4]{
+                [
+                    self.s_enable.into(),
+                    self.input_rlc.into(),
+                    self.hashes_rlc.into(),
+                    self.is_effect.into(),
+                ]
+            }
+        }
+
+        let keccak_challenge = meta.challenge_usable_after(SecondPhase);
+        let dev_table = DevTable {
+            s_enable: meta.fixed_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
+            hashes_rlc: meta.advice_column_in(SecondPhase),
+            is_effect: meta.advice_column(),            
+        };
+
+        // here we have to use the same trick in zkevm to obtain the challenge ...
+        let mut chng_exp = None;
+        meta.create_gate("Query expression", |meta| {
+            chng_exp = Some(meta.query_challenge(keccak_challenge));
+            Some(Expression::Constant(Fr::zero()))
+        });
+        Self::configure(meta, dev_table, chng_exp.unwrap())
+    }
+
     /// Configures a circuit to include this chip.
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
         sha256_table: impl SHA256Table,
+        spec_challenge: Expression<Fr>,
     ) -> Self {
         
         let table16 = Table16Chip::configure(meta);
@@ -275,8 +324,6 @@ impl CircuitConfig {
         meta.enable_equality(s_final_block);
         meta.enable_equality(byte_counter);
 
-        let keccak_challenge = meta.challenge_usable_after(SecondPhase);
-
         let ret = Self {
             table16,
             byte_range,
@@ -298,8 +345,6 @@ impl CircuitConfig {
             s_final,
             s_enable,
             s_assigned_u16,
-
-            keccak_challenge,
         };
 
         meta.lookup("byte range checking", |meta|{
@@ -307,7 +352,7 @@ impl CircuitConfig {
             vec![(byte, byte_range)]
         });
 
-        ret.setup_gates(meta);
+        ret.setup_gates(meta, spec_challenge);
 
         ret
     }
@@ -391,6 +436,7 @@ impl CircuitConfig {
     fn assign_input_block(
         &self,
         layouter: &mut impl Layouter<Fr>,
+        chng: Value<Fr>,
         prev_block: BlockInheritments,
         scheduled_msg: &[(AssignedBits<Fr, 16>, AssignedBits<Fr, 16>)],
         padding_pos: Option<i16>,
@@ -404,7 +450,6 @@ impl CircuitConfig {
         };
 
         let padding_pos = padding_pos.unwrap_or(32) as usize;
-        let chng = layouter.get_challenge(self.keccak_challenge);
 
         layouter.assign_region(
             || "sha256 input",
@@ -475,6 +520,7 @@ impl CircuitConfig {
     fn assign_output_region(
         &self,
         layouter: &mut impl Layouter<Fr>,
+        chng: Value<Fr>,
         state: &BlockState,
         input_block: &BlockInheritments,
         is_final: bool,
@@ -490,8 +536,6 @@ impl CircuitConfig {
             0x1f83, 0xd9ab,
             0x5be0, 0xcd19,
         ];
-
-        let chng = layouter.get_challenge(self.keccak_challenge);
 
         let output_cells = layouter.assign_region(
             || "sha256 digest",
@@ -607,6 +651,7 @@ impl Hasher {
     fn update_block(
         &mut self,
         layouter: &mut impl Layouter<Fr>,
+        chng: Value<Fr>,
         input: [BlockWord; BLOCK_SIZE],
         padding: Option<i16>,
         is_final: bool,
@@ -614,14 +659,14 @@ impl Hasher {
 
         let table16_cfg = &self.chip.table16;
         let w_halves = table16_cfg.message_process(layouter, input)?;
-        self.hasher_state = self.chip.assign_input_block(layouter, self.hasher_state.clone(), &w_halves[..16], padding)?;
+        self.hasher_state = self.chip.assign_input_block(layouter, chng, self.hasher_state.clone(), &w_halves[..16], padding)?;
         let init_state = table16_cfg.initialize(layouter, self.state.clone().map(|v|v.into()))?;
         let compress_state = table16_cfg.compress(
             layouter,
             init_state,
             w_halves,
         )?;
-        self.state = self.chip.assign_output_region(layouter, &compress_state, &self.hasher_state, is_final)?;
+        self.state = self.chip.assign_output_region(layouter, chng, &compress_state, &self.hasher_state, is_final)?;
         self.block_usage += 1;
 
         Ok(compress_state)
@@ -640,6 +685,7 @@ impl Hasher {
     pub fn update(
         &mut self,
         layouter: &mut impl Layouter<Fr>,
+        chng: Value<Fr>,
         mut data: &[u8],
     ) -> Result<(), Error> {
 
@@ -662,7 +708,7 @@ impl Hasher {
         let word_block = Self::block_transform(&self.cur_block);
 
         // Process the now-full current block.
-        self.update_block(layouter, word_block.as_slice().try_into().unwrap(), None, false)?;
+        self.update_block(layouter, chng, word_block.as_slice().try_into().unwrap(), None, false)?;
 
         self.cur_block.clear();
 
@@ -670,7 +716,7 @@ impl Hasher {
         let mut chunks_iter = data.chunks_exact(BLOCK_SIZE*4);
         for chunk in &mut chunks_iter {
             let word_block = Self::block_transform(chunk);
-            self.update_block(layouter, word_block.as_slice().try_into().unwrap(), None, false)?;
+            self.update_block(layouter, chng, word_block.as_slice().try_into().unwrap(), None, false)?;
         }
 
         // Cache the remaining partial block, if any.
@@ -684,6 +730,7 @@ impl Hasher {
     pub fn finalize(
         &mut self,
         layouter: &mut impl Layouter<Fr>,
+        chng: Value<Fr>,
     ) -> Result<([BlockWord; crate::DIGEST_SIZE]), Error> {
 
         // check padding requirement
@@ -699,7 +746,7 @@ impl Hasher {
             self.cur_block.resize(BLOCK_SIZE * 4, 0u8);
             let word_block = Self::block_transform(&self.cur_block);
 
-            self.update_block(layouter, 
+            self.update_block(layouter, chng,
                 word_block.as_slice().try_into().unwrap(), 
                 padding_pos, 
                 false
@@ -715,7 +762,8 @@ impl Hasher {
 
         let word_block = Self::block_transform(&self.cur_block);
 
-        let digest_state = self.update_block(layouter, 
+        let digest_state = self.update_block(
+            layouter, chng,
             word_block.as_slice().try_into().unwrap(), 
             padding_pos, 
             true
@@ -780,7 +828,7 @@ mod tests {
     struct MyCircuit (Vec<Vec<u8>>);
 
     impl Circuit<Fr> for MyCircuit {
-        type Config = CircuitConfig;
+        type Config = (CircuitConfig, Challenge);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -788,10 +836,10 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let table = DevTable::dev_construct(meta);
-            Self::Config::configure(
-                meta,
-                table,
+            let chng = meta.challenge_usable_after(SecondPhase);
+            (
+                CircuitConfig::configure_dev(meta),
+                chng,
             )
         }
 
@@ -801,11 +849,13 @@ mod tests {
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
 
+            let (config, chng) = config;
+            let chng_v = layouter.get_challenge(chng);
             let mut hasher = Hasher::new(config, &mut layouter)?;
 
             for input in &self.0 {
-                hasher.update(&mut layouter, input)?;
-                let _ = hasher.finalize(&mut layouter)?;
+                hasher.update(&mut layouter, chng_v, input)?;
+                let _ = hasher.finalize(&mut layouter, chng_v)?;
             }
             Ok(())
         }
