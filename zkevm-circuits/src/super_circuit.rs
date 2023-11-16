@@ -75,8 +75,9 @@ use crate::{
     rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
+    sha256_circuit::{SHA256Circuit, CircuitConfig as SHA256CircuitConfig, CircuitConfigArgs as SHA256CircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, SHA256Table, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
         TxTable, U16Table, U8Table,
     },
@@ -117,6 +118,7 @@ pub struct SuperCircuitConfig<F: Field> {
     sig_circuit: SigCircuitConfig<F>,
     modexp_circuit: ModExpCircuitConfig,
     ecc_circuit: EccCircuitConfig<F>,
+    sha256_circuit: SHA256CircuitConfig,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
     #[cfg(feature = "poseidon-codehash")]
@@ -189,6 +191,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "rlp table");
         let keccak_table = KeccakTable::construct(meta);
         log_circuit_info(meta, "keccak table");
+        let sha256_table = SHA256Table::construct(meta);
+        log_circuit_info(meta, "sha256 table");
         let sig_table = SigTable::construct(meta);
         log_circuit_info(meta, "sig table");
         let modexp_table = ModExpTable::construct(meta);
@@ -212,6 +216,15 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             },
         );
         log_circuit_info(meta, "keccak circuit");
+
+        let sha256_circuit = SHA256CircuitConfig::new(
+            meta,
+            SHA256CircuitConfigArgs {
+                sha256_table: sha256_table.clone(),
+                challenges: challenges_expr.clone(),
+            },
+        );
+        log_circuit_info(meta, "sha256 circuit");
 
         let poseidon_circuit =
             PoseidonCircuitConfig::new(meta, PoseidonCircuitConfigArgs { poseidon_table });
@@ -385,6 +398,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             copy_circuit,
             bytecode_circuit,
             keccak_circuit,
+            sha256_circuit,
             poseidon_circuit,
             pi_circuit,
             rlp_circuit,
@@ -436,6 +450,8 @@ pub struct SuperCircuit<
     pub exp_circuit: ExpCircuit<F>,
     /// Keccak Circuit
     pub keccak_circuit: KeccakCircuit<F>,
+    /// SHA256 Circuit
+    pub sha256_circuit: SHA256Circuit<F>,
     /// Poseidon hash Circuit
     pub poseidon_circuit: PoseidonCircuit<F>,
     /// Sig Circuit
@@ -487,6 +503,8 @@ impl<
         push("copy", copy);
         let keccak = KeccakCircuit::min_num_rows_block(block);
         push("keccak", keccak);
+        let sha256 = SHA256Circuit::min_num_rows_block(block);
+        push("sha256", sha256);        
         let tx = TxCircuit::min_num_rows_block(block);
         push("tx", tx);
         let rlp = RlpCircuit::min_num_rows_block(block);
@@ -568,6 +586,7 @@ impl<
         let exp_circuit = ExpCircuit::new_from_block(block);
         let modexp_circuit = ModExpCircuit::new_from_block(block);
         let keccak_circuit = KeccakCircuit::new_from_block(block);
+        let sha256_circuit = SHA256Circuit::new_from_block(block);
         let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
         let sig_circuit = SigCircuit::new_from_block(block);
@@ -583,6 +602,7 @@ impl<
             copy_circuit,
             exp_circuit,
             keccak_circuit,
+            sha256_circuit,
             poseidon_circuit,
             rlp_circuit,
             sig_circuit,
@@ -640,6 +660,9 @@ impl<
         log::debug!("assigning keccak_circuit");
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
+        log::debug!("assigning sha256_circuit");
+        self.sha256_circuit
+            .synthesize_sub(&config.sha256_circuit, challenges, layouter)?;        
         log::debug!("assigning poseidon_circuit");
         self.poseidon_circuit
             .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;
