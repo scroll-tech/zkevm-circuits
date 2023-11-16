@@ -1476,6 +1476,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // SHA256 Table
+
+    pub(crate) fn sha256_table_lookup(
+        &mut self,
+        input_rlc: Expression<F>,
+        output_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "sha256 lookup",
+            Lookup::Sha256Table {
+                input_rlc,
+                output_rlc,
+            },
+        );
+    }
+
     // ModExp table
     pub(crate) fn modexp_table_lookup(
         &mut self,

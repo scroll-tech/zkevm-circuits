@@ -8,12 +8,12 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
 };
 
-use sha256::{
+use sha256_circuit::{
     BLOCK_SIZE,
     circuit::{SHA256Table as TableTrait, Hasher},
 };
 
-pub use sha256::circuit::CircuitConfig;
+pub use sha256_circuit::circuit::CircuitConfig;
 
 use crate::{
     table::{SHA256Table, LookupTable},

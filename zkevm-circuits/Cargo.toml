@@ -26,7 +26,7 @@ itertools.workspace = true
 lazy_static.workspace = true
 mpt-zktrie = { path = "../zktrie" }
 keccak256 = { path = "../keccak256"}
-sha256 = { path = "../sha256"}
+sha256-circuit = { package = "sha256", path = "../sha256"}
 log.workspace = true
 env_logger.workspace = true
 serde.workspace = true

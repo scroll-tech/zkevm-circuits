@@ -22,7 +22,7 @@ pub use crate::witness;
 use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
+        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, SHA256Table, LookupTable,
         ModExpTable, PowOfRandTable, RwTable, SigTable, TxTable,
     },
     util::{SubCircuit, SubCircuitConfig},
@@ -71,6 +71,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub copy_table: CopyTable,
     /// KeccakTable
     pub keccak_table: KeccakTable,
+    /// KeccakTable
+    pub sha256_table: SHA256Table,    
     /// ExpTable
     pub exp_table: ExpTable,
     /// SigTable
@@ -105,6 +107,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             block_table,
             copy_table,
             keccak_table,
+            sha256_table,
             exp_table,
             sig_table,
             modexp_table,
@@ -124,6 +127,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &bytecode_table,
             &block_table,
             &copy_table,
+            &keccak_table,
             &keccak_table,
             &exp_table,
             &sig_table,
@@ -460,6 +464,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let keccak_table = KeccakTable::construct(meta);
+        let sha256_table = SHA256Table::construct(meta);
         let exp_table = ExpTable::construct(meta);
         let sig_table = SigTable::construct(meta);
         let modexp_table = ModExpTable::construct(meta);
@@ -476,6 +481,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     block_table,
                     copy_table,
                     keccak_table,
+                    sha256_table,
                     exp_table,
                     sig_table,
                     modexp_table,
