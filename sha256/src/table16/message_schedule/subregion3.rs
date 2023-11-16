@@ -171,16 +171,16 @@ impl MessageScheduleConfig {
 
             // Assign W_i, carry_i
             region.assign_advice(
-                || format!("W_{}", new_word_idx),
+                || format!("W_{new_word_idx}"),
                 a_5,
                 get_word_row(new_word_idx - 16) + 1,
                 || word.map(|word| F::from(word as u64)),
             )?;
             region.assign_advice(
-                || format!("carry_{}", new_word_idx),
+                || format!("carry_{new_word_idx}"),
                 a_9,
                 get_word_row(new_word_idx - 16) + 1,
-                || carry.map(|carry| F::from(carry as u64)),
+                || carry.map(|carry| F::from(carry)),
             )?;
             let (word, halves) = self.assign_word_and_halves(region, word, new_word_idx)?;
             w.push(MessageWord(word));

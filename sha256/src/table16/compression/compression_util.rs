@@ -111,7 +111,7 @@ pub fn get_round_row(round_idx: RoundIdx) -> usize {
         RoundIdx::Init => 0,
         RoundIdx::Main(MainRoundIdx(idx)) => {
             assert!(idx < 64);
-            (idx as usize) * SUBREGION_MAIN_WORD
+            idx * SUBREGION_MAIN_WORD
         }
     }
 }
@@ -789,7 +789,7 @@ impl CompressionConfig {
                 || "h_prime_carry",
                 a_9,
                 row + 1,
-                || h_prime_carry.map(|value| F::from(value as u64)),
+                || h_prime_carry.map(|value| F::from(value)),
             )?;
 
             let h_prime: Value<[bool; 32]> = h_prime.map(|w| i2lebsp(w.into()));

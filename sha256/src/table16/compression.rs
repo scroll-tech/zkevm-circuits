@@ -321,7 +321,7 @@ impl<F: Field> RoundWordA<F> {
         }
     }
 
-    pub fn to_dense(self) -> RoundWordDense<F> {
+    pub fn into_dense(self) -> RoundWordDense<F> {
         self.dense_halves
     }
 }
@@ -354,7 +354,7 @@ impl<F: Field> RoundWordE<F> {
         }
     }
 
-    pub fn to_dense(self) -> RoundWordDense<F> {
+    pub fn into_dense(self) -> RoundWordDense<F> {
         self.dense_halves
     }    
 }
@@ -373,7 +373,7 @@ impl<F: Field> RoundWord<F> {
         }
     }
 
-    pub fn to_dense(self) -> RoundWordDense<F> {
+    pub fn into_dense(self) -> RoundWordDense<F> {
         self.dense_halves
     }    
 }
@@ -442,6 +442,8 @@ impl<F: Field> State<F> {
         compression_util::match_state(self)
     }
 
+    #[allow(clippy::many_single_char_names)]
+    #[allow(clippy::too_many_arguments)]    
     pub fn composite(
         a: RoundWordA<F>,
         b: RoundWord<F>,

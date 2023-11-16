@@ -357,7 +357,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
     type BlockWord = BlockWord;
 
     fn initialization_vector(&self, layouter: &mut impl Layouter<F>) -> Result<Self::State, Error> {
-        <Self as Chip<F>>::config(&self)
+        <Self as Chip<F>>::config(self)
             .compression
             .initialize_with_iv(layouter, IV)
     }
@@ -367,7 +367,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         layouter: &mut impl Layouter<F>,
         init_state: &Self::State,
     ) -> Result<Self::State, Error> {
-        <Self as Chip<F>>::config(&self)
+        <Self as Chip<F>>::config(self)
             .compression
             .initialize_with_state(layouter, init_state.clone())
     }
@@ -380,7 +380,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         initialized_state: &Self::State,
         input: [Self::BlockWord; super::BLOCK_SIZE],
     ) -> Result<Self::State, Error> {
-        let config = <Self as Chip<F>>::config(&self);
+        let config = <Self as Chip<F>>::config(self);
         let (_, w_halves) = config.message_schedule.process(layouter, input)?;
 
         config
@@ -395,7 +395,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
     ) -> Result<[Self::BlockWord; super::DIGEST_SIZE], Error> {
         // Copy the dense forms of the state variable chunks down to this gate.
         // Reconstruct the 32-bit dense words.
-        <Self as Chip<F>>::config(&self)
+        <Self as Chip<F>>::config(self)
             .compression
             .digest(layouter, state.clone())
     }

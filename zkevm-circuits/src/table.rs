@@ -1543,7 +1543,6 @@ impl SHA256Table {
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
-        let input_len = F::from(input.len() as u64);
         let output_rlc = challenges.evm_word().map(|challenge| {
             rlc::value(
                 &Word::from_big_endian(output).to_le_bytes(),

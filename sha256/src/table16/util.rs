@@ -110,7 +110,7 @@ pub fn sum_with_carry(words: Vec<(Value<u16>, Value<u16>)>) -> (Value<u32>, Valu
         sum_lo.zip(sum_hi).map(|(lo, hi)| lo + (1 << 16) * hi)
     };
 
-    let carry = sum.map(|sum| (sum >> 32) as u64);
+    let carry = sum.map(|sum| (sum >> 32));
     let sum = sum.map(|sum| sum as u32);
 
     (sum, carry)

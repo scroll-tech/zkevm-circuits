@@ -3,7 +3,7 @@
 use halo2_gadgets::sha256::BLOCK_SIZE;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
-    plonk::{Selector, Advice, Any, Column, ConstraintSystem, Constraints, TableColumn, Error, Fixed, Expression, Challenge, SecondPhase},
+    plonk::{Selector, Advice, Any, Column, ConstraintSystem, Constraints, TableColumn, Error, Fixed, Expression},
     poly::Rotation,
     halo2curves::bn256::Fr,
 };
@@ -115,7 +115,7 @@ impl CircuitConfig {
             let s_not_padding = one.clone() - s_padding.clone();
 
             let byte_counter_continue = s_not_padding *(byte_counter.clone() - (byte_counter_prev.clone() + one.clone()))
-                + s_padding.clone() *(byte_counter.clone() - byte_counter_prev);
+                + s_padding.clone() *(byte_counter - byte_counter_prev);
 
             let padding_change = s_padding - s_padding_prev.clone();
 
@@ -220,7 +220,7 @@ impl CircuitConfig {
             let inherited_s_padding = meta.query_advice(self.s_padding, Rotation::prev());
             let s_padding = meta.query_advice(self.s_padding, Rotation::prev());
 
-            let applied_s_padding = is_not_final.clone() * (s_padding.clone() - inherited_s_padding.clone()) + is_final.clone() * s_padding;
+            let applied_s_padding = is_not_final.clone() * (s_padding.clone() - inherited_s_padding.clone()) + is_final * s_padding;
 
             let is_final = meta.query_advice(self.s_final_block, Rotation::cur());
             let final_is_bool = is_final.clone() * (one.clone() - is_final.clone());
@@ -240,56 +240,6 @@ impl CircuitConfig {
             )
         });
 
-    }
-
-    /// Fully configures with both table and challenge being specified, 
-    /// used for development
-    pub fn configure_dev(meta: &mut ConstraintSystem<Fr>) -> Self {
-
-        struct DevTable {
-            s_enable: Column<Fixed>,
-            input_rlc: Column<Advice>,
-            hashes_rlc: Column<Advice>,
-            is_effect: Column<Advice>,
-        }
-    
-        impl DevTable {
-            fn dev_construct(meta: &mut ConstraintSystem<Fr>) -> Self {
-                Self {
-                    s_enable: meta.fixed_column(),
-                    input_rlc: meta.advice_column_in(SecondPhase),
-                    hashes_rlc: meta.advice_column_in(SecondPhase),
-                    is_effect: meta.advice_column(),
-                }
-            }
-        }
-    
-        impl SHA256Table for DevTable {
-            fn cols(&self) -> [Column<Any>;4]{
-                [
-                    self.s_enable.into(),
-                    self.input_rlc.into(),
-                    self.hashes_rlc.into(),
-                    self.is_effect.into(),
-                ]
-            }
-        }
-
-        let keccak_challenge = meta.challenge_usable_after(SecondPhase);
-        let dev_table = DevTable {
-            s_enable: meta.fixed_column(),
-            input_rlc: meta.advice_column_in(SecondPhase),
-            hashes_rlc: meta.advice_column_in(SecondPhase),
-            is_effect: meta.advice_column(),            
-        };
-
-        // here we have to use the same trick in zkevm to obtain the challenge ...
-        let mut chng_exp = None;
-        meta.create_gate("Query expression", |meta| {
-            chng_exp = Some(meta.query_challenge(keccak_challenge));
-            Some(Expression::Constant(Fr::zero()))
-        });
-        Self::configure(meta, dev_table, chng_exp.unwrap())
     }
 
     /// Configures a circuit to include this chip.
@@ -501,7 +451,7 @@ impl CircuitConfig {
                 // assign message state
                 let (_, out_rlc) = self.assign_message_block(
                     &mut region,
-                    scheduled_msg.into_iter().flat_map(|(hi, lo)|[hi, lo])
+                    scheduled_msg.iter().flat_map(|(hi, lo)|[hi, lo])
                     .zip(std::iter::repeat(0u16))
                     .take(32),
                     output_block.bytes_rlc.clone(),
@@ -543,13 +493,13 @@ impl CircuitConfig {
 
                 let (a,b,c,d,e,f,g,h) = state.clone().decompose();
 
-                let a = a.to_dense().decompose();
-                let b = b.to_dense().decompose();
-                let c = c.to_dense().decompose();
+                let a = a.into_dense().decompose();
+                let b = b.into_dense().decompose();
+                let c = c.into_dense().decompose();
                 let d = d.decompose();
-                let e = e.to_dense().decompose();
-                let f = f.to_dense().decompose();
-                let g = g.to_dense().decompose();
+                let e = e.into_dense().decompose();
+                let f = f.into_dense().decompose();
+                let g = g.into_dense().decompose();
                 let h = h.decompose();
 
                 input_block.s_final.copy_advice(||"inheirt s_final", &mut region, self.s_final_block, 0)?;
@@ -627,13 +577,13 @@ impl Hasher {
         let state = table16_chip.initialization_vector( layouter)?;
         let (a, b, c, d, e, f, g, h) = state.decompose();
         let state = [
-            a.to_dense().decompose(),
-            b.to_dense().decompose(),
-            c.to_dense().decompose(), 
+            a.into_dense().decompose(),
+            b.into_dense().decompose(),
+            c.into_dense().decompose(), 
             d.decompose(), 
-            e.to_dense().decompose(), 
-            f.to_dense().decompose(), 
-            g.to_dense().decompose(), 
+            e.into_dense().decompose(), 
+            f.into_dense().decompose(), 
+            g.into_dense().decompose(), 
             h.decompose(), 
         ];
         let hasher_state = chip.initialize_block_head(layouter)?;
@@ -772,13 +722,13 @@ impl Hasher {
 
         let (a, b, c, d, e, f, g, h) = digest_state.decompose();
         Ok([
-            a.to_dense().value(),
-            b.to_dense().value(),
-            c.to_dense().value(), 
+            a.into_dense().value(),
+            b.into_dense().value(),
+            c.into_dense().value(), 
             d.value(), 
-            e.to_dense().value(), 
-            f.to_dense().value(), 
-            g.to_dense().value(), 
+            e.into_dense().value(), 
+            f.into_dense().value(), 
+            g.into_dense().value(), 
             h.value(), 
         ].map(BlockWord))
 
@@ -794,41 +744,12 @@ mod tests {
         circuit::SimpleFloorPlanner,
         dev::MockProver,
         plonk::Circuit,
-    };    
-
-    struct DevTable {
-        s_enable: Column<Fixed>,
-        input_rlc: Column<Advice>,
-        hashes_rlc: Column<Advice>,
-        is_effect: Column<Advice>,
-    }
-
-    impl DevTable {
-        fn dev_construct(meta: &mut ConstraintSystem<Fr>) -> Self {
-            Self {
-                s_enable: meta.fixed_column(),
-                input_rlc: meta.advice_column_in(SecondPhase),
-                hashes_rlc: meta.advice_column_in(SecondPhase),
-                is_effect: meta.advice_column(),
-            }
-        }
-    }
-
-    impl SHA256Table for DevTable {
-        fn cols(&self) -> [Column<Any>;4]{
-            [
-                self.s_enable.into(),
-                self.input_rlc.into(),
-                self.hashes_rlc.into(),
-                self.is_effect.into(),
-            ]
-        }
-    }
+    };
 
     struct MyCircuit (Vec<Vec<u8>>);
 
     impl Circuit<Fr> for MyCircuit {
-        type Config = (CircuitConfig, Challenge);
+        type Config = CircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -836,11 +757,34 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let chng = meta.challenge_usable_after(SecondPhase);
-            (
-                CircuitConfig::configure_dev(meta),
-                chng,
-            )
+
+            struct DevTable {
+                s_enable: Column<Fixed>,
+                input_rlc: Column<Advice>,
+                hashes_rlc: Column<Advice>,
+                is_effect: Column<Advice>,
+            }
+        
+            impl SHA256Table for DevTable {
+                fn cols(&self) -> [Column<Any>;4]{
+                    [
+                        self.s_enable.into(),
+                        self.input_rlc.into(),
+                        self.hashes_rlc.into(),
+                        self.is_effect.into(),
+                    ]
+                }
+            }
+    
+            let dev_table = DevTable {
+                s_enable: meta.fixed_column(),
+                input_rlc: meta.advice_column(),
+                hashes_rlc: meta.advice_column(),
+                is_effect: meta.advice_column(),            
+            };
+
+            let chng = Expression::Constant(Fr::from(0x1000u64));
+            Self::Config::configure(meta, dev_table, chng)
         }
 
         fn synthesize(
@@ -849,8 +793,7 @@ mod tests {
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
 
-            let (config, chng) = config;
-            let chng_v = layouter.get_challenge(chng);
+            let chng_v = Value::known(Fr::from(0x1000u64));
             let mut hasher = Hasher::new(config, &mut layouter)?;
 
             for input in &self.0 {
