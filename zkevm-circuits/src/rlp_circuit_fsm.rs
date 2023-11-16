@@ -16,7 +16,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::{AccessListAddress, AccessListStorageKey, BeginList, EndList, TxType, EndVector},
+        Tag::{AccessListAddress, AccessListStorageKey, BeginList, EndList, TxType},
         Transaction,
     },
 };
@@ -25,7 +25,7 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    util::{and, or, not, select, sum, Expr},
+    util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -1573,7 +1573,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         /////////////////// Rlp Decoding Table Transitions ////////////////
         ///////////////////////// (Stack Constraints) /////////////////////
         ///////////////////////////////////////////////////////////////////
-        
+
         // Booleans for comparing stack ptr (address) in decoding table
         let stack_ptr_comp: ComparatorConfig<F, 3> = ComparatorChip::configure(
             meta,
@@ -1583,58 +1583,52 @@ impl<F: Field> RlpCircuitConfig<F> {
             u8_table.into(),
         );
 
-        meta.create_gate(
-            "stack constraints",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("stack constraints", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
-                let (ptr_lt, ptr_eq) = stack_ptr_comp.expr(meta, None);
+            let (ptr_lt, ptr_eq) = stack_ptr_comp.expr(meta, None);
 
-                // Stack PUSH
-                cb.condition(ptr_lt.clone(), |cb| {
+            // Stack PUSH
+            cb.condition(ptr_lt.clone(), |cb| {
+                cb.require_equal(
+                    "PUSH: stack ptr increase can only be 1",
+                    meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(rlp_decoding_table.address, Rotation::next()),
+                )
+            });
+
+            // Stack POP
+            cb.condition(
+                and::expr([not::expr(ptr_lt), not::expr(ptr_eq)]),
+                |cb| {
                     cb.require_equal(
-                        "PUSH: stack ptr increase can only be 1", 
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(rlp_decoding_table.address, Rotation::next()),
-                    )
-                });
-
-                // Stack POP
-                cb.condition(
-                    and::expr([
-                        not::expr(ptr_lt), 
-                        not::expr(ptr_eq.clone()),
-                    ]), |cb| {
-                    cb.require_equal(
-                        "POP: stack ptr decrease can only be 1", 
+                        "POP: stack ptr decrease can only be 1",
                         meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.address, Rotation::next()) + 1.expr(),
                     )
-                });
+                },
+            );
 
-                // Stack Update Top
-                // cb.condition(ptr_eq, |cb| {
-                //     cb.require_equal(
-                //         "At the same depth level, must read 1 byte",
-                //         meta.query_advice(rlp_decoding_table.value, Rotation::next()) + 1.expr(),
-                //         meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
-                //     );
-                // });
+            // Stack Update Top
+            // cb.condition(ptr_eq, |cb| {
+            //     cb.require_equal(
+            //         "At the same depth level, must read 1 byte",
+            //         meta.query_advice(rlp_decoding_table.value, Rotation::next()) + 1.expr(),
+            //         meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
+            //     );
+            // });
 
-                cb.require_equal(
-                    "stack ptr (address) must correspond exactly to depth",
-                    meta.query_advice(depth, Rotation::cur()),
-                    meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
-                );
-                
-                cb.gate(
-                    and::expr([
-                        meta.query_fixed(q_enabled, Rotation::cur()),
-                        not::expr(is_end(meta)),
-                    ])
-                )
-            },
-        );
+            cb.require_equal(
+                "stack ptr (address) must correspond exactly to depth",
+                meta.query_advice(depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                not::expr(is_end(meta)),
+            ]))
+        });
 
         debug_assert!(meta.degree() <= 9);
 
@@ -1855,7 +1849,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 F::from(witness_nxt.rlp_decoding_table.address as u64),
             )?;
         }
-        
+
         // assign to sm
         region.assign_advice(
             || "sm.state",
