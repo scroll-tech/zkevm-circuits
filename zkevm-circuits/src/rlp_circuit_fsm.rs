@@ -229,6 +229,9 @@ pub struct RlpCircuitConfig<F> {
     state_bits: BinaryNumberConfig<State, 3>,
     /// The Rlp table which can be accessed by other circuits.
     rlp_table: RlpFsmRlpTable,
+    /// The Rlp decoding table ensuring correct transition of
+    /// stack constraints on remaining_bytes
+    rlp_decoding_table: RlpDecodingTable,
     /// The tag, i.e. what field is being decoded at the current row.
     tag: Column<Advice>,
     /// A utility gadget to compare/query what tag we are at.
@@ -334,6 +337,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         data_table: RlpFsmDataTable,
         u8_table: U8Table,
         rlp_table: RlpFsmRlpTable,
+        rlp_decoding_table: RlpDecodingTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
         let (tx_id, format) = (rlp_table.tx_id, rlp_table.format);
@@ -1477,7 +1481,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 });
 
-                cb.gate(is_decode_tag_start(meta))
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enabled, Rotation::cur()),
+                    is_decode_tag_start(meta)
+                ]))
             },
         );
 
@@ -1507,7 +1514,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 });
 
-                cb.gate(is_tag_end_vector(meta))
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enabled, Rotation::cur()),
+                    is_tag_end_vector(meta)
+                ]))
             },
         );
 
@@ -1529,6 +1539,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 );
 
                 cb.gate(and::expr([
+                    meta.query_fixed(q_enabled, Rotation::cur()),
                     not::expr(is_tag_end_vector(meta)),
                     not::expr(is_decode_tag_start(meta)),
                 ]))
@@ -1549,6 +1560,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             state,
             state_bits,
             rlp_table,
+            rlp_decoding_table,
             tag,
             tag_bits,
             tag_next,
@@ -2090,6 +2102,7 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
     fn new(meta: &mut ConstraintSystem<F>, args: Self::ConfigArgs) -> Self {
         let data_table = RlpFsmDataTable::construct(meta);
         let rom_table = RlpFsmRomTable::construct(meta);
+        let decoding_table = RlpDecodingTable::construct(meta);
 
         Self::configure(
             meta,
@@ -2097,6 +2110,7 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
             data_table,
             args.u8_table,
             args.rlp_table,
+            decoding_table,
             &args.challenges,
         )
     }
