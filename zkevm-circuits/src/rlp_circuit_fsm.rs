@@ -196,6 +196,14 @@ pub struct RlpDecodingTable {
     pub stack_acc: Column<Advice>,
     /// Power of rand for stack accumulator on depth level (address)
     pub stack_acc_pow_of_rand: Column<Advice>,
+    /// Stack Op flag, Init
+    pub is_stack_init: Column<Advice>,
+    /// Stack Op flag, Push
+    pub is_stack_push: Column<Advice>,
+    /// Stack Op flag, Pop
+    pub is_stack_pop: Column<Advice>,
+    /// Stack Op flag, Update
+    pub is_stack_update: Column<Advice>,
 }
 
 impl RlpDecodingTable {
@@ -209,6 +217,10 @@ impl RlpDecodingTable {
             value_prev: meta.advice_column(),
             stack_acc: meta.advice_column_in(SecondPhase),
             stack_acc_pow_of_rand: meta.advice_column_in(SecondPhase),
+            is_stack_init: meta.advice_column(),
+            is_stack_push: meta.advice_column(),
+            is_stack_pop: meta.advice_column(),
+            is_stack_update: meta.advice_column(),
         }
     }
 }
@@ -1822,6 +1834,30 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || witness.rlp_decoding_table.stack_acc_pow_of_rand,
         )?;
+        region.assign_advice(
+            || "rlp_decoding_table.is_stack_init",
+            self.rlp_decoding_table.is_stack_init,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.is_stack_init as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.is_stack_push",
+            self.rlp_decoding_table.is_stack_push,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.is_stack_push as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.is_stack_pop",
+            self.rlp_decoding_table.is_stack_pop,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.is_stack_pop as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.is_stack_update",
+            self.rlp_decoding_table.is_stack_update,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.is_stack_update as u64)),
+        )?;
 
         let is_new_access_list_address = witness.state_machine.state == DecodeTagStart
             && witness.state_machine.tag == AccessListAddress;
@@ -2181,14 +2217,14 @@ impl<F: Field> RlpCircuitConfig<F> {
         );
 
         // TX1559_DEBUG
-        // log::trace!(
-        //     "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
-        //     sm_rows
-        // );
-        // log::trace!(
-        //     "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}",
-        //     dt_rows
-        // );
+        log::trace!(
+            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
+            sm_rows
+        );
+        log::trace!(
+            "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - dt_rows: {:?}",
+            dt_rows
+        );
 
         debug_assert!(sm_rows.len() <= last_row);
 

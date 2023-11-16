@@ -870,6 +870,10 @@ impl Transaction {
                     value_prev: stack_op.value_prev,
                     stack_acc,
                     stack_acc_pow_of_rand: stack_acc_pow_of_rand[stack_op.address],
+                    is_stack_init: stack_op.is_init,
+                    is_stack_push: stack_op.is_push,
+                    is_stack_pop: stack_op.is_pop,
+                    is_stack_update: stack_op.is_update,
                 },
             });
             witness_table_idx += 1;
