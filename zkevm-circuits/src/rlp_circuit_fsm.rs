@@ -1571,10 +1571,31 @@ impl<F: Field> RlpCircuitConfig<F> {
         /////////////////// Rlp Decoding Table Transitions ////////////////
         ///////////////////////// (Stack Constraints) /////////////////////
         ///////////////////////////////////////////////////////////////////
+        
+        // Booleans for comparing stack ptr (address) in decoding table
+        let stack_ptr_comp: ComparatorConfig<F, 3> = ComparatorChip::configure(
+            meta,
+            cmp_enabled,
+            |meta| meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+            |meta| meta.query_advice(rlp_decoding_table.address, Rotation::next()),
+            u8_table.into(),
+        );
+
+
         meta.create_gate(
             "stack constraints",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
+
+                let (ptr_lt, ptr_eq) = stack_ptr_comp.expr(meta, Some(Rotation::cur()));
+
+                cb.condition(ptr_lt, |cb| {
+                    cb.require_equal(
+                        "stack ptr increase", 
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(rlp_decoding_table.address, Rotation::next()),
+                    )
+                });
 
                 cb.require_equal(
                     "stack ptr (address) must correspond exactly to depth",
