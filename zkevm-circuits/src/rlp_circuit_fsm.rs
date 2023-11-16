@@ -1588,15 +1588,38 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
-                let (ptr_lt, ptr_eq) = stack_ptr_comp.expr(meta, Some(Rotation::cur()));
+                let (ptr_lt, ptr_eq) = stack_ptr_comp.expr(meta, None);
 
-                cb.condition(ptr_lt, |cb| {
+                // Stack PUSH
+                cb.condition(ptr_lt.clone(), |cb| {
                     cb.require_equal(
-                        "stack ptr increase", 
+                        "PUSH: stack ptr increase can only be 1", 
                         meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr(),
                         meta.query_advice(rlp_decoding_table.address, Rotation::next()),
                     )
                 });
+
+                // Stack POP
+                cb.condition(
+                    and::expr([
+                        not::expr(ptr_lt), 
+                        not::expr(ptr_eq.clone()),
+                    ]), |cb| {
+                    cb.require_equal(
+                        "POP: stack ptr decrease can only be 1", 
+                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.address, Rotation::next()) + 1.expr(),
+                    )
+                });
+
+                // Stack Update Top
+                // cb.condition(ptr_eq, |cb| {
+                //     cb.require_equal(
+                //         "At the same depth level, must read 1 byte",
+                //         meta.query_advice(rlp_decoding_table.value, Rotation::next()) + 1.expr(),
+                //         meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
+                //     );
+                // });
 
                 cb.require_equal(
                     "stack ptr (address) must correspond exactly to depth",
@@ -1604,7 +1627,12 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
                 );
                 
-                cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+                cb.gate(
+                    and::expr([
+                        meta.query_fixed(q_enabled, Rotation::cur()),
+                        not::expr(is_end(meta)),
+                    ])
+                )
             },
         );
 
@@ -2065,7 +2093,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "q_enable",
             self.rlp_table.q_enable,
             row,
-            || Value::known(F::one()),
+            || Value::known(F::zero()),
         )?;
         region.assign_advice(
             || "sm.state",
@@ -2158,6 +2186,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             last_row
         );
 
+        // TX1559_DEBUG
         // log::trace!(
         //     "\n\n => [Execution Rlp Circuit FSM] RlpCircuitConfig - sm_rows: {:?}",
         //     sm_rows
