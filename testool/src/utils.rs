@@ -140,6 +140,11 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
         #[cfg(not(feature = "enable-stack"))]
         let stack = vec![];
 
+        #[cfg(feature = "enable-memory")]
+        let memory = step.memory.0.iter().map(ToString::to_string).collect();
+        #[cfg(not(feature = "enable-memory"))]
+        let memory = vec![];
+
         table.add_row(row![
             format!("{}", step.pc.0),
             format!("{:?}", step.op),
@@ -148,7 +153,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             format!("{}", step.depth),
             step.error.unwrap_or_default(),
             split(stack, 30),
-            split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
+            split(memory, 30),
             split(kv(step.storage.0), 30)
         ]);
     }

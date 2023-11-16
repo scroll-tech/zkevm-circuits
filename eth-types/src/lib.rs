@@ -23,7 +23,7 @@ pub mod geth_types;
 pub mod l2_types;
 pub mod sign_types;
 
-use crate::evm_types::{memory::Memory, storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter};
+use crate::evm_types::{storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
 pub use error::Error;
 use ethers_core::types;
@@ -42,6 +42,8 @@ use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
 
+#[cfg(feature = "enable-memory")]
+use crate::evm_types::memory::Memory;
 #[cfg(feature = "enable-stack")]
 use crate::evm_types::stack::Stack;
 
@@ -377,6 +379,7 @@ pub struct GethExecStep {
     #[cfg(feature = "enable-stack")]
     pub stack: Stack,
     // memory is in chunks of 32 bytes, in hex
+    #[cfg(feature = "enable-memory")]
     pub memory: Memory,
     // storage is hex -> hex
     pub storage: Storage,
@@ -434,6 +437,7 @@ impl<'de> Deserialize<'de> for GethExecStep {
             error: s.error,
             #[cfg(feature = "enable-stack")]
             stack: Stack(s.stack.iter().map(|dw| dw.to_word()).collect::<Vec<Word>>()),
+            #[cfg(feature = "enable-memory")]
             memory: Memory::from(
                 s.memory
                     .iter()

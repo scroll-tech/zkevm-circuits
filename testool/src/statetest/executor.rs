@@ -204,8 +204,10 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             }],
             accounts,
             logger_config: LoggerConfig {
-                enable_memory: *bus_mapping::util::CHECK_MEM_STACK_STRICT,
-                // TODO: disable_stack: !*bus_mapping::util::CHECK_MEM_STACK_STRICT,
+                enable_memory: !(cfg!(feature = "enable-stack")
+                    && bus_mapping::util::CHECK_MEM_STACK_LEVEL.should_check()),
+                disable_stack: !(cfg!(feature = "enable-stack")
+                    && bus_mapping::util::CHECK_MEM_STACK_LEVEL.should_check()),
                 ..Default::default()
             },
             #[cfg(feature = "shanghai")]

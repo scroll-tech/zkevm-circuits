@@ -1,7 +1,5 @@
 //! Transaction & TransactionContext utility module.
 
-use std::collections::BTreeMap;
-
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
     geth_types,

@@ -12,7 +12,8 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{evm_unimplemented, GethExecStep, ToAddress, ToWord, Word};
 
-use crate::util::CHECK_MEM_STACK_STRICT;
+#[cfg(any(feature = "enable-memory", feature = "enable-stack"))]
+use crate::util::CHECK_MEM_STACK_LEVEL;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
@@ -401,8 +402,8 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let check_level = if *CHECK_MEM_STACK_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
-    if check_level >= 1 {
+    #[cfg(feature = "enable-memory")]
+    if CHECK_MEM_STACK_LEVEL.should_check() {
         let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
         assert!(memory_enabled);
         if memory_enabled {
@@ -432,7 +433,7 @@ pub fn gen_associated_ops(
                         );
                     }
                 }
-                if check_level >= 2 {
+                if CHECK_MEM_STACK_LEVEL.should_panic() {
                     panic!("mem wrong");
                 }
                 state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
@@ -440,7 +441,7 @@ pub fn gen_associated_ops(
         }
     }
     #[cfg(feature = "enable-stack")]
-    {
+    if CHECK_MEM_STACK_LEVEL.should_check() {
         if state.call_ctx()?.stack != geth_steps[0].stack {
             log::error!(
                 "wrong stack before {:?}. len in state {}, len in step {}",
@@ -464,7 +465,7 @@ pub fn gen_associated_ops(
                     );
                 }
             }
-            if check_level >= 2 {
+            if CHECK_MEM_STACK_LEVEL.should_panic() {
                 panic!("stack wrong");
             }
             state.call_ctx_mut()?.stack = geth_steps[0].stack.clone();

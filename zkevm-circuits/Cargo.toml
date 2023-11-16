@@ -74,3 +74,4 @@ parallel_syn = ["hash-circuit/parallel_syn", "halo2_proofs/parallel_syn"]
 
 debug-annotations = []
 enable-stack = ["bus-mapping/enable-stack"]
+enable-memory = ["bus-mapping/enable-memory"]

@@ -936,10 +936,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Return the contract address of a CREATE2 step.  This is calculated
     /// deterministically from the arguments in the stack.
-    pub(crate) fn create2_address(&self, step: &GethExecStep) -> Result<Address, Error> {
+    pub(crate) fn create2_address(&self, _step: &GethExecStep) -> Result<Address, Error> {
         let call_ctx = self.call_ctx()?;
         #[cfg(feature = "enable-stack")]
-        assert_eq!(call_ctx.stack, step.stack);
+        assert_eq!(call_ctx.stack, _step.stack);
         let salt = call_ctx.stack.nth_last(3)?;
         let init_code = get_create_init_code(call_ctx)?.to_vec();
         let address = get_create2_address(self.call()?.address, salt.to_be_bytes(), init_code);

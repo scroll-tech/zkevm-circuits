@@ -27,10 +27,10 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
     self,
-    evm_types::{GasCost, OpcodeId},
+    evm_types::GasCost,
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecTrace, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -54,6 +54,9 @@ use std::{
 pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
 };
+
+#[cfg(feature = "enable-stack")]
+use eth_types::evm_types::OpcodeId;
 
 /// Setup parameters for ECC-related precompile calls.
 #[derive(Debug, Clone, Copy)]
