@@ -16,7 +16,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::{AccessListAddress, AccessListStorageKey, BeginList, EndList, TxType},
+        Tag::{AccessListAddress, AccessListStorageKey, BeginList, EndList, TxType, EndVector},
         Transaction,
     },
 };
@@ -25,7 +25,7 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    util::{and, not, select, sum, Expr},
+    util::{and, or, not, select, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -916,26 +916,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("booleans for reducing degree (part four)", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "is_new_access_list_address",
-                meta.query_advice(is_new_access_list_address, Rotation::cur()),
-                is_access_list_address(meta),
-            );
-            cb.require_equal(
-                "is_new_access_list_storage_key",
-                meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
-                is_access_list_storage_key(meta),
-            );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                is_decode_tag_start(meta),
-            ]))
-        });
-
         debug_assert!(meta.degree() <= 9);
 
         let tag_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag, Rotation::cur());
@@ -1170,7 +1150,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             },
         );
 
-        // debug_assert!(meta.degree() <= 9);
         // DecodeTagStart => Bytes
         meta.create_gate("state transition: DecodeTagStart => Bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1483,6 +1462,37 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        meta.create_gate("sm ends in End state", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            constrain_eq!(meta, cb, state, State::End);
+
+            cb.gate(meta.query_fixed(q_last, Rotation::cur()))
+        });
+
+        ///////////////////////////////////////////////////////////////////
+        /////////////////// Rlp Decoding Table Transitions ////////////////
+        ///////////////////////////////////////////////////////////////////
+        meta.create_gate("booleans for reducing degree (part four)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_new_access_list_address",
+                meta.query_advice(is_new_access_list_address, Rotation::cur()),
+                is_access_list_address(meta),
+            );
+            cb.require_equal(
+                "is_new_access_list_storage_key",
+                meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
+                is_access_list_storage_key(meta),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                is_decode_tag_start(meta),
+            ]))
+        });
+
         // Access List Increments
         meta.create_gate(
             "access list: access_list_idx increments",
@@ -1555,59 +1565,28 @@ impl<F: Field> RlpCircuitConfig<F> {
             },
         );
 
-        // Access List Consistency
+        debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////
+        /////////////////// Rlp Decoding Table Transitions ////////////////
+        ///////////////////////// (Stack Constraints) /////////////////////
+        ///////////////////////////////////////////////////////////////////
         meta.create_gate(
-            "access list: no access_list_idx and storage_key_idx change",
+            "stack constraints",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.require_equal(
-                    "al_idx stays the same when no starting or ending conditions present",
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                    "stack ptr (address) must correspond exactly to depth",
+                    meta.query_advice(depth, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
                 );
-                cb.require_equal(
-                    "sk_idx stays the same when no starting or ending conditions present",
-                    meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()),
-                    meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enabled, Rotation::cur()),
-                    not::expr(is_decode_tag_start(meta)),
-                ]))
-            },
-        );
-        meta.create_gate(
-            "access list: no access_list_idx and storage_key_idx change",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "al_idx stays the same when no starting or ending conditions present",
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
-                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "sk_idx stays the same when no starting or ending conditions present",
-                    meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()),
-                    meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enabled, Rotation::cur()),
-                    not::expr(is_tag_end_vector(meta)),
-                ]))
+                
+                cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
             },
         );
 
-        meta.create_gate("sm ends in End state", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            constrain_eq!(meta, cb, state, State::End);
-
-            cb.gate(meta.query_fixed(q_last, Rotation::cur()))
-        });
+        debug_assert!(meta.degree() <= 9);
 
         Self {
             q_first,
@@ -1644,9 +1623,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             transit_to_new_rlp_instance,
             is_same_rlp_instance,
 
-            // decoding table checks
+            // access list checks
             is_new_access_list_address,
             is_new_access_list_storage_key,
+
+            // decoding table checks
 
             // comparators
             byte_value_lte_0x80,
