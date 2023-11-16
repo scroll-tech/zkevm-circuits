@@ -16,7 +16,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::{BeginList, EndList, TxType, AccessListAddress, AccessListStorageKey, EndVector},
+        Tag::{BeginList, EndList, TxType, AccessListAddress, AccessListStorageKey},
         Transaction,
     },
 };
