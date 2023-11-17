@@ -186,6 +186,7 @@ impl<F: FieldExt> SpreadTableChip<F> {
         let table_dense = meta.lookup_table_column();
         let table_spread = meta.lookup_table_column();
 
+        #[cfg(not(feature = "dev-graph"))]
         meta.lookup("lookup", |meta| {
             let tag_cur = meta.query_advice(input_tag, Rotation::cur());
             let dense_cur = meta.query_advice(input_dense, Rotation::cur());
@@ -216,13 +217,18 @@ impl<F: FieldExt> SpreadTableChip<F> {
         config: SpreadTableConfig,
         layouter: &mut impl Layouter<F>,
     ) -> Result<<Self as Chip<F>>::Loaded, Error> {
+
         layouter.assign_table(
             || "spread table",
             |mut table| {
                 // We generate the row values lazily (we only need them during keygen).
                 let mut rows = SpreadTableConfig::generate::<F>();
 
-                for index in 0..(1 << 16) {
+                // here we use a dummy value for dev-graph feature so the output graph
+                // has better resolution
+                let table_size = if cfg!(feature = "dev-graph") {12} else {16};
+
+                for index in 0..(1 << table_size) {
                     let mut row = None;
                     table.assign_cell(
                         || "tag",
@@ -249,7 +255,9 @@ impl<F: FieldExt> SpreadTableChip<F> {
 
                 Ok(())
             },
-        )
+        )?;
+
+        Ok(())
     }
 }
 

@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "dev-graph")]
-    fn print_sha256_circuit() {
+    fn print_table16_circuit() {
         use plotters::prelude::*;
 
         let root =
@@ -551,15 +551,15 @@ mod tests {
             .titled("16-bit Table SHA-256 Chip", ("sans-serif", 60))
             .unwrap();
 
-        let circuit = MyCircuit { repeated: 31};
+        let circuit = MyCircuit { repeated: 2};
         halo2_proofs::dev::CircuitLayout::default()
-            .render::<pallas::Base, _, _>(17, &circuit, &root)
+            .render::<pallas::Base, _, _>(13, &circuit, &root)
             .unwrap();
 
-        let prover = match MockProver::<_>::run(17, &circuit, vec![]) {
+        let prover = match MockProver::<_>::run(13, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));
+        assert_eq!(prover.verify(), Ok(()));        
     }
 }
