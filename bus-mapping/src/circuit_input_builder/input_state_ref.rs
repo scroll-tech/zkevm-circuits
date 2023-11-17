@@ -1570,7 +1570,7 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(Some(ExecError::InvalidOpcode));
         }
 
-        if let Some(error) = &step.error {
+        if let Some(error) = step.error {
             return Ok(Some(get_step_reported_error(&step.op, error)));
         }
 

@@ -39,8 +39,13 @@ use halo2_proofs::{
     halo2curves::{bn256::Fr, group::ff::PrimeField},
 };
 use once_cell::sync::Lazy;
-use serde::{de, Deserialize, Serialize};
-use std::{collections::HashMap, fmt, str::FromStr};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use std::{
+    collections::HashMap,
+    fmt,
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 #[cfg(feature = "enable-memory")]
 use crate::evm_types::memory::Memory;
@@ -351,7 +356,7 @@ struct GethExecStepInternal {
     #[serde(rename = "gasCost")]
     gas_cost: GasCost,
     depth: u16,
-    error: Option<String>,
+    error: Option<GethExecError>,
     // stack is in hex 0x prefixed
     #[serde(default)]
     stack: Vec<DebugU256>,
@@ -374,7 +379,7 @@ pub struct GethExecStep {
     pub gas_cost: GasCost,
     pub refund: Gas,
     pub depth: u16,
-    pub error: Option<String>,
+    pub error: Option<GethExecError>,
     // stack is in hex 0x prefixed
     #[cfg(feature = "enable-stack")]
     pub stack: Stack,
@@ -383,6 +388,133 @@ pub struct GethExecStep {
     pub memory: Memory,
     // storage is hex -> hex
     pub storage: Storage,
+}
+
+/// Errors of StructLogger Result from Geth
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum GethExecError {
+    /// out of gas
+    OutOfGas,
+    /// contract creation code storage out of gas
+    CodeStoreOutOfGas,
+    /// max call depth exceeded
+    Depth,
+    /// insufficient balance for transfer
+    InsufficientBalance,
+    /// contract address collision
+    ContractAddressCollision,
+    /// execution reverted
+    ExecutionReverted,
+    /// max initcode size exceeded
+    MaxInitCodeSizeExceeded,
+    /// max code size exceeded
+    MaxCodeSizeExceeded,
+    /// invalid jump destination
+    InvalidJump,
+    /// write protection
+    WriteProtection,
+    /// return data out of bounds
+    ReturnDataOutOfBounds,
+    /// gas uint64 overflow
+    GasUintOverflow,
+    /// invalid code: must not begin with 0xef
+    InvalidCode,
+    /// nonce uint64 overflow
+    NonceUintOverflow,
+    /// stack underflow
+    StackUnderflow,
+    /// stack limit reached
+    StackOverflow,
+    /// invalid opcode
+    InvalidOpcode,
+}
+
+impl GethExecError {
+    /// Returns the error as a string constant.
+    pub fn error(self) -> &'static str {
+        match self {
+            GethExecError::OutOfGas => "out of gas",
+            GethExecError::CodeStoreOutOfGas => "contract creation code storage out of gas",
+            GethExecError::Depth => "max call depth exceeded",
+            GethExecError::InsufficientBalance => "insufficient balance for transfer",
+            GethExecError::ContractAddressCollision => "contract address collision",
+            GethExecError::ExecutionReverted => "execution reverted",
+            GethExecError::MaxInitCodeSizeExceeded => "max initcode size exceeded",
+            GethExecError::MaxCodeSizeExceeded => "max code size exceeded",
+            GethExecError::InvalidJump => "invalid jump destination",
+            GethExecError::WriteProtection => "write protection",
+            GethExecError::ReturnDataOutOfBounds => "return data out of bounds",
+            GethExecError::GasUintOverflow => "gas uint64 overflow",
+            GethExecError::InvalidCode => "invalid code: must not begin with 0xef",
+            GethExecError::NonceUintOverflow => "nonce uint64 overflow",
+            GethExecError::StackUnderflow => "stack underflow",
+            GethExecError::StackOverflow => "stack limit reached",
+            GethExecError::InvalidOpcode => "invalid opcode",
+        }
+    }
+}
+
+impl Display for GethExecError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.error())
+    }
+}
+
+impl Serialize for GethExecError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // We serialize the error as a string constant.
+        serializer.serialize_str(self.error())
+    }
+}
+
+impl<'de> Deserialize<'de> for GethExecError {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct GethExecErrorVisitor;
+
+        impl<'de> de::Visitor<'de> for GethExecErrorVisitor {
+            type Value = GethExecError;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                write!(formatter, "a geth struct logger error string constant")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let e = match v {
+                    "out of gas" => GethExecError::OutOfGas,
+                    "contract creation code storage out of gas" => GethExecError::CodeStoreOutOfGas,
+                    "max call depth exceeded" => GethExecError::Depth,
+                    "insufficient balance for transfer" => GethExecError::InsufficientBalance,
+                    "contract address collision" => GethExecError::ContractAddressCollision,
+                    "execution reverted" => GethExecError::ExecutionReverted,
+                    "max initcode size exceeded" => GethExecError::MaxInitCodeSizeExceeded,
+                    "max code size exceeded" => GethExecError::MaxCodeSizeExceeded,
+                    "invalid jump destination" => GethExecError::InvalidJump,
+                    "write protection" => GethExecError::WriteProtection,
+                    "return data out of bounds" => GethExecError::ReturnDataOutOfBounds,
+                    "gas uint64 overflow" => GethExecError::GasUintOverflow,
+                    "invalid code: must not begin with 0xef" => GethExecError::InvalidCode,
+                    "nonce uint64 overflow" => GethExecError::NonceUintOverflow,
+                    _ if v.starts_with("stack underflow") => GethExecError::StackUnderflow,
+                    _ if v.starts_with("stack limit reached") => GethExecError::StackOverflow,
+                    _ if v.starts_with("invalid opcode") => GethExecError::InvalidOpcode,
+                    _ => return Err(E::invalid_value(de::Unexpected::Str(v), &self)),
+                };
+                Ok(e)
+            }
+        }
+
+        deserializer.deserialize_str(GethExecErrorVisitor)
+    }
 }
 
 // Wrapper over u8 that provides formats the byte in hex for [`fmt::Debug`].
