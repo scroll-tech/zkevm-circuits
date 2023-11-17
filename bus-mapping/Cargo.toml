@@ -41,8 +41,12 @@ mock = { path = "../mock" }
 rand.workspace = true
 
 [features]
-default = ["test"]
+default = ["test", "enable-stack", "enable-storage"]
 test = ["mock", "rand"]
 scroll = ["eth-types/scroll", "mock?/scroll"]
 # Enable shanghai feature of mock only if mock is enabled (by test).
 shanghai = ["eth-types/shanghai", "mock?/shanghai"]
+tracer-tests = ["enable-memory"]
+enable-stack = ["eth-types/enable-stack", "mock?/enable-stack"]
+enable-memory = ["eth-types/enable-memory", "mock?/enable-memory"]
+enable-storage = ["eth-types/enable-storage", "mock?/enable-storage"]
