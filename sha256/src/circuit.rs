@@ -85,7 +85,7 @@ impl CircuitConfig {
     fn setup_gates(&self, meta: &mut ConstraintSystem<Fr>, rnd: Expression<Fr>) {
         let one = Expression::Constant(Fr::one());
 
-        meta.create_gate("haves to rlc_byte", |meta| {
+        meta.create_gate("halves to rlc_byte", |meta| {
             let s_u16 = meta.query_selector(self.s_assigned_u16);
             let u16 = meta.query_advice(self.copied_data, Rotation::cur());
             let byte = meta.query_advice(self.trans_byte, Rotation::cur());
@@ -103,7 +103,7 @@ impl CircuitConfig {
 
             vec![byte_from_u16, s_enable * byte_rlc]
         });
-
+ 
         meta.create_gate("sha256 block padding", |meta| {
             let s_padding = meta.query_advice(self.s_padding, Rotation::cur());
             let s_padding_prev = meta.query_advice(self.s_padding, Rotation::prev());
@@ -183,7 +183,7 @@ impl CircuitConfig {
             let is_not_final = one.clone() - is_final.clone();
 
             let select_exported = meta.query_selector(self.s_assigned_u16)
-                * (u16_exported - is_final * u16 - is_not_final * init_iv_u16);
+                * (u16_exported - is_not_final * u16 - is_final * init_iv_u16);
 
             Constraints::with_selector(
                 meta.query_selector(self.s_enable),
@@ -213,14 +213,14 @@ impl CircuitConfig {
                 + is_final.clone() * byte_counter;
 
             let inherited_bytes_rlc = meta.query_advice(self.bytes_rlc, Rotation::prev());
-            let bytes_rlc = meta.query_advice(self.bytes_rlc, Rotation::prev());
+            let bytes_rlc = meta.query_advice(self.bytes_rlc, Rotation::cur());
 
             let applied_bytes_rlc = is_not_final.clone()
                 * (bytes_rlc.clone() - inherited_bytes_rlc)
                 + is_final.clone() * bytes_rlc;
 
             let inherited_s_padding = meta.query_advice(self.s_padding, Rotation::prev());
-            let s_padding = meta.query_advice(self.s_padding, Rotation::prev());
+            let s_padding = meta.query_advice(self.s_padding, Rotation::cur());
 
             let applied_s_padding = is_not_final.clone()
                 * (s_padding.clone() - inherited_s_padding.clone())
@@ -235,7 +235,7 @@ impl CircuitConfig {
             let enforce_final = is_not_final * inherited_s_padding * (one.clone() - is_final);
 
             Constraints::with_selector(
-                meta.query_selector(self.s_enable),
+                meta.query_selector(self.s_begin),
                 vec![
                     final_is_bool,
                     applied_counter,
@@ -245,6 +245,7 @@ impl CircuitConfig {
                 ],
             )
         });
+        
     }
 
     /// Configures a circuit to include this chip.
@@ -253,8 +254,8 @@ impl CircuitConfig {
         sha256_table: impl SHA256Table,
         spec_challenge: Expression<Fr>,
     ) -> Self {
-        let helper = meta.advice_column();
-        let trans_byte = meta.advice_column();
+        let helper = meta.advice_column();      // index 3
+        let trans_byte = meta.advice_column();  // index 4
 
         let bytes_rlc = sha256_table.hashes_rlc();
         let copied_data = sha256_table.input_rlc();
@@ -446,7 +447,7 @@ impl CircuitConfig {
         chng: Value<Fr>,
         prev_block: BlockInheritments,
         scheduled_msg: &[(AssignedBits<Fr, 16>, AssignedBits<Fr, 16>)],
-        padding_pos: Option<i16>,
+        padding_pos: Option<usize>,
     ) -> Result<BlockInheritments, Error> {
         // if no padding or the padding is in padding size pos, this block is not final
         let is_final = if let Some(pos) = padding_pos {
@@ -455,7 +456,7 @@ impl CircuitConfig {
             false
         };
 
-        let padding_pos = padding_pos.unwrap_or(32) as usize;
+        let padding_pos = padding_pos.unwrap_or(64);
 
         layouter.assign_region(
             || "sha256 input",
@@ -486,75 +487,72 @@ impl CircuitConfig {
                 )?;
 
                 self.s_begin.enable(&mut region, 1)?;
-                region.assign_advice(
+                let mut s_final_cell = region.assign_advice(
                     || "header final",
                     self.s_final_block,
                     1,
-                    || Value::known(if is_final { Fr::one() } else { Fr::zero() }),
+                    || Value::known(Bits::from([is_final])),
                 )?;
-                for (anno, col, ref_v) in [
-                    (
-                        "header padding",
-                        self.s_padding,
-                        prev_block
-                            .s_padding
-                            .value()
-                            .map(|v| if v[0] { Fr::one() } else { Fr::zero() }),
-                    ),
-                    (
-                        "header rlc",
-                        self.bytes_rlc,
-                        prev_block.bytes_rlc.value().map(Clone::clone),
-                    ),
-                    (
-                        "header counter",
-                        self.byte_counter,
-                        prev_block.byte_counter.value().map(Clone::clone),
-                    ),
-                ] {
-                    region.assign_advice(
-                        || anno,
-                        col,
-                        1,
-                        || {
-                            prev_block
-                                .s_final
-                                .value()
-                                .zip(ref_v)
-                                .map(|(s_final, ref_v)| if s_final[0] { Fr::zero() } else { ref_v })
-                        },
-                    )?;
-                }
+                
+                let mut s_padding_cell = region.assign_advice(
+                    || "header padding",
+                    self.s_padding,
+                    1,
+                    || prev_block.s_final.value().zip(prev_block.s_padding.value())
+                    .map(|(s_final, ref_v)| if s_final[0] { Bits::from([false]) } else { ref_v.clone() }),
+                )?;
+
+                let mut byte_counter_cell = region.assign_advice(
+                    || "header rlc",
+                    self.byte_counter,
+                    1,
+                    || prev_block.s_final.value().zip(prev_block.byte_counter.value())
+                    .map(|(s_final, ref_v)| if s_final[0] { Fr::zero() } else { ref_v.clone() }),
+                )?;
+
+
+                let mut bytes_rlc_cell = region.assign_advice(
+                    || "header counter",
+                    self.bytes_rlc,
+                    1,
+                    || prev_block.s_final.value().zip(prev_block.bytes_rlc.value())
+                    .map(|(s_final, ref_v)| if s_final[0] { Fr::zero() } else { ref_v.clone() }),
+                )?;
 
                 let header_offset = 2;
-                let mut output_block = prev_block.clone();
 
                 for row in header_offset..(header_offset + 64) {
                     self.s_enable.enable(&mut region, row)?;
+                    let now_padding = row >= padding_pos + header_offset;
+
                     region.assign_fixed(
                         || "flush s_output",
                         self.s_output,
                         row,
                         || Value::known(Fr::zero()),
                     )?;
-                    output_block.s_padding.0 = region.assign_advice(
+                    s_padding_cell = region.assign_advice(
                         || "padding",
                         self.s_padding,
                         row,
-                        || Value::known(Bits::from([row > padding_pos + header_offset])),
+                        || Value::known(Bits::from([now_padding])),
                     )?;
-                    output_block.s_final.0 = region.assign_advice(
+                    s_final_cell = region.assign_advice(
                         || "final",
                         self.s_final_block,
                         row,
-                        || Value::known(Bits::from([is_final])),
+                        || s_final_cell.value().map(Clone::clone),
                     )?;
-                    output_block.byte_counter = region.assign_advice(
+                    byte_counter_cell = region.assign_advice(
                         || "byte counter",
                         self.byte_counter,
                         row,
-                        || output_block.byte_counter.value() + Value::known(Fr::one()),
+                        || byte_counter_cell.value() 
+                        + Value::known(if now_padding {Fr::zero()} else {Fr::one()}),
                     )?;
+
+                    // println!("padding {:#?}, counter {:#?} at row {}", output_block.s_padding.value(), output_block.byte_counter.value(), row);
+                    // println!("final {:#?}, at row {}", output_block.s_final.value(), row);
 
                     if row < 56 + header_offset {
                         self.s_common_bytes.enable(&mut region, row)?;
@@ -562,24 +560,48 @@ impl CircuitConfig {
                         self.s_padding_size.enable(&mut region, row)?;
                     }
                 }
-                self.s_final.enable(&mut region, 32 + header_offset)?;
+                self.s_final.enable(&mut region, 63 + header_offset)?;
 
                 // assign message state
-                let (_, out_rlc) = self.assign_message_block(
+                (_, bytes_rlc_cell) = self.assign_message_block(
                     &mut region,
                     scheduled_msg
                         .iter()
-                        .flat_map(|(hi, lo)| [hi, lo])
+                        .flat_map(|(lo, hi)| [hi, lo])
                         .zip(std::iter::repeat(0u16))
                         .take(32),
-                    output_block.bytes_rlc.clone(),
+                    bytes_rlc_cell,
                     chng,
                     header_offset,
                     is_final,
                 )?;
 
-                output_block.bytes_rlc = out_rlc;
-                Ok(output_block)
+                // flush unused row
+                for col in [
+                    self.trans_byte,
+                    self.copied_data,
+                ] {
+                    region.assign_advice(
+                        || "flush unused row",
+                        col,
+                        64 + header_offset,
+                        || Value::known(Fr::zero()),
+                    )?;    
+                }
+
+                region.assign_advice(
+                    || "flush unused row",
+                    self.helper,
+                    1,
+                    || Value::known(Fr::zero()),
+                )?;
+
+                Ok(BlockInheritments { 
+                    s_final: AssignedBits(s_final_cell), 
+                    s_padding: AssignedBits(s_padding_cell), 
+                    byte_counter: byte_counter_cell,
+                    bytes_rlc: bytes_rlc_cell,
+                })
             },
         )
     }
@@ -672,7 +694,7 @@ impl CircuitConfig {
                     &mut region,
                     [a, b, c, d, e, f, g, h]
                         .iter()
-                        .flat_map(|(hi, lo)| [hi, lo])
+                        .flat_map(|(lo, hi)| [hi, lo])
                         .zip_eq(IV16),
                     begin_rlc,
                     chng,
@@ -706,6 +728,23 @@ impl CircuitConfig {
                     self.s_final_block,
                     final_row,
                 )?;
+
+                for col in [
+                    self.trans_byte,
+                ] {
+                    region.assign_advice(
+                        || "flush unused row",
+                        col,
+                        final_row,
+                        || Value::known(Fr::zero()),
+                    )?;    
+                }
+                region.assign_advice(
+                    || "flush unused row",
+                    self.helper,
+                    0,
+                    || Value::known(Fr::zero()),
+                )?; 
 
                 Ok(export_cells
                     .chunks_exact(2)
@@ -798,7 +837,7 @@ impl Hasher {
         layouter: &mut impl Layouter<Fr>,
         chng: Value<Fr>,
         input: [BlockWord; BLOCK_SIZE],
-        padding: Option<i16>,
+        padding: Option<usize>,
         is_final: bool,
     ) -> Result<BlockState, Error> {
         let table16_cfg = &self.chip.table16;
@@ -901,7 +940,7 @@ impl Hasher {
         chng: Value<Fr>,
     ) -> Result<([BlockWord; crate::DIGEST_SIZE]), Error> {
         // check padding requirement
-        let mut padding_pos = Some(self.cur_block.len() as i16);
+        let mut padding_pos = Some(self.cur_block.len());
 
         // of course we have at least 1 byte left (or cur_block would have been compressed)
         // push the additional 1bit
@@ -921,7 +960,7 @@ impl Hasher {
                 false,
             )?;
 
-            padding_pos = Some(-1i16);
+            padding_pos = Some(0);
             self.cur_block.clear();
         }
 
@@ -939,6 +978,7 @@ impl Hasher {
             true,
         )?;
         self.cur_block.clear();
+        self.length = 0;
 
         let (a, b, c, d, e, f, g, h) = digest_state.decompose();
         Ok([
@@ -1024,9 +1064,85 @@ mod tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        let ret = prover.verify();
-        println!("{:#?}", ret);
-        assert_eq!(ret, Ok(()));
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn sha256_multiple() {
+        let circuit = MyCircuit(
+            vec![
+                vec!['a' as u8, 'b' as u8, 'c' as u8],
+                vec!['a' as u8, 'b' as u8, 'd' as u8],
+            ],
+        );
+        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn sha256_long() {
+        let circuit = MyCircuit(
+            vec![
+                vec!['a' as u8; 65],
+            ],
+        );
+        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn sha256_nil() {
+        let circuit = MyCircuit(
+            vec![
+                vec![],
+                vec![],
+                vec![],
+            ],
+        );
+        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn sha256_padding_continue() {
+        let circuit = MyCircuit(
+            vec![
+                vec!['a' as u8; 62],
+            ],
+        );
+        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn sha256_complex() {
+        let circuit = MyCircuit(
+            vec![
+                vec!['a' as u8; 65],
+                vec!['a' as u8, 'b' as u8, 'c' as u8],
+                vec!['b' as u8; 62],
+                vec!['c' as u8; 128],
+                vec![],
+                vec![],
+            ],
+        );
+        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
     }
 
     #[test]
