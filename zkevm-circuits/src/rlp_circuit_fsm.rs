@@ -1594,7 +1594,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         meta.create_gate("stack constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            
+
             // Universal Stack Constraints
             cb.require_equal(
                 "stack ptr (address) must correspond exactly to depth",
@@ -1654,7 +1654,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                     cb.require_equal(
                         "stack_acc accumulates depth 0 bytes at 1",
-                        meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()), 
+                        meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
                         1.expr()
                     )
                 },
@@ -1677,7 +1677,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cb.require_equal(
                         "stack_acc accumulates remaining bytes from previous depth level",
                         meta.query_advice(rlp_decoding_table.stack_acc, Rotation::prev())
-                                + (meta.query_advice(rlp_decoding_table.value, Rotation::prev()) - meta.query_advice(rlp_decoding_table.value, Rotation::cur()) - 1.expr()) * meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::prev()),
+                                + (meta.query_advice(rlp_decoding_table.value, Rotation::prev())
+                                    - meta.query_advice(rlp_decoding_table.value, Rotation::cur())
+                                    - 1.expr())
+                                * meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::prev()),
                         meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
                     );
                 },
@@ -1704,12 +1707,13 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cb.require_equal(
                         "stack_acc releases remaining bytes from previous depth level",
                         meta.query_advice(rlp_decoding_table.stack_acc, Rotation::prev())
-                                - meta.query_advice(rlp_decoding_table.value, Rotation::cur()) * meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
+                                - meta.query_advice(rlp_decoding_table.value, Rotation::cur())
+                            * meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
                     );
                 },
             );
-            
+
             // Stack Update Top
             cb.condition(
                 meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
@@ -1988,7 +1992,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             || Value::known(F::from(is_new_access_list_storage_key as u64)),
         )?;
         let stack_depth_chip = IsZeroChip::construct(self.is_stack_depth_zero.clone());
-        stack_depth_chip.assign(region, row, Value::known(F::from(witness.rlp_decoding_table.address as u64)))?;
+        stack_depth_chip.assign(
+            region,
+            row,
+            Value::known(F::from(witness.rlp_decoding_table.address as u64)),
+        )?;
 
         // assign to sm
         region.assign_advice(
