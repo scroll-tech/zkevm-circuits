@@ -12,7 +12,7 @@ use crate::{
         RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, State,
         State::DecodeTagStart,
         StateMachine,
-        Tag::{EndList, EndVector},
+        Tag::{EndObject, EndVector},
     },
 };
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
@@ -810,7 +810,7 @@ impl Transaction {
                 cur_rom_row = rom_table[row].tag_next_idx.clone();
 
                 if next.tag.is_end() {
-                    // Since the EndList or EndVector tag does not read any byte from the data
+                    // Since the EndObject or EndVector tag does not read any byte from the data
                     // table.
                     next.byte_idx = cur.byte_idx;
                 } else {
@@ -886,7 +886,7 @@ impl Transaction {
             });
             witness_table_idx += 1;
 
-            if cur.tag == EndList && cur.depth == 0 {
+            if cur.tag == EndObject && cur.depth == 0 {
                 break;
             }
             cur = next;

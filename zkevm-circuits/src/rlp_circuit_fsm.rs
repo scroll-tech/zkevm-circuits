@@ -16,7 +16,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::{AccessListAddress, AccessListStorageKey, BeginList, EndList, TxType},
+        Tag::{AccessListAddress, AccessListStorageKey, BeginObject, EndObject, TxType},
         Transaction,
     },
 };
@@ -447,9 +447,9 @@ impl<F: Field> RlpCircuitConfig<F> {
             };
         }
 
-        is_tag!(is_tag_begin_list, BeginList);
+        is_tag!(is_tag_begin_object, BeginObject);
         is_tag!(is_tag_begin_vector, BeginVector);
-        is_tag!(is_tag_end_list, EndList);
+        is_tag!(is_tag_end_object, EndObject);
         is_tag!(is_tag_end_vector, EndVector);
         is_tag!(is_access_list_address, AccessListAddress);
         is_tag!(is_access_list_storage_key, AccessListStorageKey);
@@ -873,14 +873,14 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             // use sum instead of or because is_tag_* cannot be true at the same time
             cb.require_equal(
-                "is_tag_end = is_tag_end_list || is_tag_end_vector",
+                "is_tag_end = is_tag_end_object || is_tag_end_vector",
                 meta.query_advice(is_tag_end, Rotation::cur()),
-                sum::expr([is_tag_end_list(meta), is_tag_end_vector(meta)]),
+                sum::expr([is_tag_end_object(meta), is_tag_end_vector(meta)]),
             );
             cb.require_equal(
-                "is_tag_begin = is_tag_begin_list || is_tag_begin_vector",
+                "is_tag_begin = is_tag_begin_object || is_tag_begin_vector",
                 meta.query_advice(is_tag_begin, Rotation::cur()),
-                sum::expr([is_tag_begin_list(meta), is_tag_begin_vector(meta)]),
+                sum::expr([is_tag_begin_object(meta), is_tag_begin_vector(meta)]),
             );
             cb.require_equal(
                 "is_case3 = (0xc0 <= byte_value < 0xf8) && (is_tag_end == false)",
@@ -987,8 +987,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             constrain_eq!(meta, cb, tx_id, 1.expr());
             constrain_eq!(meta, cb, byte_idx, 1.expr());
             cb.require_zero(
-                "tag == TxType or tag == BeginList",
-                (tag.expr() - TxType.expr()) * (tag - BeginList.expr()),
+                "tag == TxType or tag == BeginObject",
+                (tag.expr() - TxType.expr()) * (tag - BeginObject.expr()),
             );
 
             cb.gate(meta.query_fixed(q_first, Rotation::cur()))
@@ -1082,7 +1082,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     },
                 );
 
-                // case 4: tag in [EndList, EndVector]
+                // case 4: tag in [EndObject, EndVector]
                 let case_4 = is_tag_end_expr(meta);
                 cb.condition(
                     and::expr([case_4.expr(), depth_eq_one.is_equal_expression.expr()]),
@@ -1114,9 +1114,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                         update_state!(meta, cb, state, DecodeTagStart);
 
                         cb.require_zero(
-                            "tag == TxType or tag == BeginList",
+                            "tag == TxType or tag == BeginObject",
                             (tag_next.expr() - TxType.expr())
-                                * (tag_next.expr() - BeginList.expr()),
+                                * (tag_next.expr() - BeginObject.expr()),
                         );
                     },
                 );
@@ -2247,12 +2247,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "sm.tag",
             self.tag,
             row,
-            || Value::known(F::from(usize::from(EndList) as u64)),
+            || Value::known(F::from(usize::from(EndObject) as u64)),
         )?;
         let state_chip = BinaryNumberChip::construct(self.state_bits);
         state_chip.assign(region, row, &End)?;
         let tag_chip = BinaryNumberChip::construct(self.tag_bits);
-        tag_chip.assign(region, row, &EndList)?;
+        tag_chip.assign(region, row, &EndObject)?;
 
         Ok(())
     }
