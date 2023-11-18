@@ -303,6 +303,8 @@ pub struct RlpCircuitConfig<F> {
     is_new_access_list_address: Column<Advice>,
     /// Boolean to reduce the circuit's degree
     is_new_access_list_storage_key: Column<Advice>,
+    /// Decoding table depth check
+    is_stack_depth_zero: IsZeroConfig<F>,
 
     /// Check for byte_value <= 0x80
     byte_value_lte_0x80: ComparatorConfig<F, 1>,
@@ -1483,7 +1485,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         });
 
         ///////////////////////////////////////////////////////////////////
-        /////////////////// Rlp Decoding Table Transitions ////////////////
+        /////////////////// Access List Constraint Transitions ////////////
         ///////////////////////////////////////////////////////////////////
         meta.create_gate("booleans for reducing degree (part four)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1583,6 +1585,12 @@ impl<F: Field> RlpCircuitConfig<F> {
         /////////////////// Rlp Decoding Table Transitions ////////////////
         ///////////////////////// (Stack Constraints) /////////////////////
         ///////////////////////////////////////////////////////////////////
+        let is_stack_depth_zero = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enabled, Rotation::cur()),
+            rlp_decoding_table.address,
+            |meta| meta.advice_column(),
+        );
 
         meta.create_gate("stack constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1674,6 +1682,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 },
             );
+
             // Stack Pop
             cb.condition(
                 meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
@@ -1700,6 +1709,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 },
             );
+            
             // Stack Update Top
             cb.condition(
                 meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
@@ -1725,6 +1735,20 @@ impl<F: Field> RlpCircuitConfig<F> {
                         meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
                     );
                 },
+            );
+
+            // End condition. Last step of decoding.
+            cb.condition(
+                and::expr([
+                    is_stack_depth_zero.expr(Rotation::cur())(meta),
+                    meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
+                ]),
+                |cb| {
+                    cb.require_zero(
+                        "at the end of decoding, remaining bytes on depth level 0 should be 0.", 
+                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                    );
+                }
             );
 
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
@@ -1771,7 +1795,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_new_access_list_address,
             is_new_access_list_storage_key,
 
-            // decoding table checks
+            // decoding table
+            is_stack_depth_zero,
 
             // comparators
             byte_value_lte_0x80,
@@ -1962,6 +1987,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || Value::known(F::from(is_new_access_list_storage_key as u64)),
         )?;
+        let stack_depth_chip = IsZeroChip::construct(self.is_stack_depth_zero.clone());
+        stack_depth_chip.assign(region, row, Value::known(F::from(witness.rlp_decoding_table.address as u64)))?;
 
         // assign to sm
         region.assign_advice(
