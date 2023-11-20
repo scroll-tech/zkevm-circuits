@@ -414,7 +414,7 @@ impl Transaction {
         stack_ops.push(RlpStackOp {
             is_write: true,
             id,
-            address: cur.depth,
+            depth: cur.depth,
             value: rlp_bytes.len(),
             value_prev: 0,
             stack_acc: Value::known(F::zero()),
@@ -465,7 +465,7 @@ impl Transaction {
                             stack_ops.push(RlpStackOp {
                                 is_write: true,
                                 id,
-                                address: cur.depth - 1,
+                                depth: cur.depth - 1,
                                 value: prev_depth_bytes,
                                 value_prev: last_bytes_on_depth[cur.depth - 1],
                                 stack_acc,
@@ -517,7 +517,7 @@ impl Transaction {
                                 stack_ops.push(RlpStackOp {
                                     is_write: true,
                                     id,
-                                    address: cur.depth,
+                                    depth: cur.depth,
                                     value: *rem - 1,
                                     value_prev: *rem,
                                     stack_acc,
@@ -614,7 +614,7 @@ impl Transaction {
                             stack_ops.push(RlpStackOp {
                                 is_write: true,
                                 id,
-                                address: cur.depth + 1,
+                                depth: cur.depth + 1,
                                 value: num_bytes_of_new_list,
                                 value_prev: 0,
                                 stack_acc,
@@ -647,7 +647,7 @@ impl Transaction {
                         stack_ops.push(RlpStackOp {
                             is_write: true,
                             id,
-                            address: cur.depth,
+                            depth: cur.depth,
                             value: *rem - 1,
                             value_prev: *rem,
                             stack_acc,
@@ -688,7 +688,7 @@ impl Transaction {
                         stack_ops.push(RlpStackOp {
                             is_write: true,
                             id,
-                            address: cur.depth,
+                            depth: cur.depth,
                             value: *rem - 1,
                             value_prev: *rem,
                             stack_acc,
@@ -728,7 +728,7 @@ impl Transaction {
                             stack_ops.push(RlpStackOp {
                                 is_write: true,
                                 id,
-                                address: cur.depth,
+                                depth: cur.depth,
                                 value: *rem - 1,
                                 value_prev: *rem,
                                 stack_acc,
@@ -765,7 +765,7 @@ impl Transaction {
                         stack_ops.push(RlpStackOp {
                             is_write: true,
                             id,
-                            address: cur.depth + 1,
+                            depth: cur.depth + 1,
                             value: lb_len,
                             value_prev: 0,
                             stack_acc,
@@ -873,11 +873,11 @@ impl Transaction {
                 rlp_decoding_table: RlpDecodingTable {
                     is_write: stack_op.is_write,
                     id: stack_op.id,
-                    address: stack_op.address,
+                    depth: stack_op.depth,
                     value: stack_op.value,
                     value_prev: stack_op.value_prev,
                     stack_acc: stack_op.stack_acc,
-                    stack_acc_pow_of_rand: stack_acc_pow_of_rand[stack_op.address],
+                    stack_acc_pow_of_rand: stack_acc_pow_of_rand[stack_op.depth],
                     is_stack_init: stack_op.is_init,
                     is_stack_push: stack_op.is_push,
                     is_stack_pop: stack_op.is_pop,

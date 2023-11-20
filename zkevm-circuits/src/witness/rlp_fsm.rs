@@ -774,7 +774,7 @@ pub struct RlpDecodingTable<F: FieldExt> {
     /// Key1 (Id), concat of tx_id, format
     pub id: Value<F>,
     /// Key2 (Address), in this case depth
-    pub address: usize,
+    pub depth: usize,
     /// Value
     pub value: usize,
     /// Value Previous
@@ -833,7 +833,7 @@ pub(crate) struct SmState<F: Field> {
 pub(crate) struct RlpStackOp<F: Field> {
     pub is_write: bool,
     pub id: Value<F>,
-    pub address: usize,
+    pub depth: usize,
     pub value: usize,
     pub value_prev: usize,
     pub stack_acc: Value<F>,

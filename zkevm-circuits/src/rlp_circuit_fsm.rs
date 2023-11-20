@@ -186,7 +186,7 @@ pub struct RlpDecodingTable {
     /// Key1 (Id), concat of tx_id, format
     pub id: Column<Advice>,
     /// Key2 (Address), in this case depth
-    pub address: Column<Advice>,
+    pub depth: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
     /// Value Previous
@@ -212,7 +212,7 @@ impl RlpDecodingTable {
         Self {
             is_write: meta.advice_column(),
             id: meta.advice_column(),
-            address: meta.advice_column(),
+            depth: meta.advice_column(),
             value: meta.advice_column(),
             value_prev: meta.advice_column(),
             stack_acc: meta.advice_column_in(SecondPhase),
@@ -1588,7 +1588,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         let is_stack_depth_zero = IsZeroChip::configure(
             meta,
             |meta| meta.query_fixed(q_enabled, Rotation::cur()),
-            rlp_decoding_table.address,
+            rlp_decoding_table.depth,
             |meta| meta.advice_column(),
         );
 
@@ -1599,7 +1599,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.require_equal(
                 "stack ptr (address) must correspond exactly to depth",
                 meta.query_advice(depth, Rotation::cur()),
-                meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
             );
             cb.condition(not::expr(is_end(meta)), |cb| {
                 cb.require_equal(
@@ -1645,7 +1645,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 |cb| {
                     cb.require_zero(
                         "stack inits at depth 0",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
                     );
                     cb.require_equal(
                         "stack init pushes all remaining_bytes onto depth 0",
@@ -1666,8 +1666,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 |cb| {
                     cb.require_equal(
                         "PUSH stack operation increases depth",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()) + 1.expr(),
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.depth, Rotation::prev()) + 1.expr(),
+                        meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
                     );
                     cb.require_equal(
                         "stack_acc accumulates next depth level at exponent +1 of challenge",
@@ -1692,8 +1692,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 |cb| {
                     cb.require_equal(
                         "POP stack operation decreases depth",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()),
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(rlp_decoding_table.depth, Rotation::prev()),
+                        meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) + 1.expr(),
                     );
                     cb.require_zero(
                         "POP can only happen if there's no more bytes to decode on the higher depth",
@@ -1720,8 +1720,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 |cb| {
                     cb.require_equal(
                         "UPDATE stack operation doesn't change depth",
-                        meta.query_advice(rlp_decoding_table.address, Rotation::prev()),
-                        meta.query_advice(rlp_decoding_table.address, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.depth, Rotation::prev()),
+                        meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
                     );
                     cb.require_equal(
                         "UPDATE stack operation reads 1 byte",
@@ -1922,9 +1922,9 @@ impl<F: Field> RlpCircuitConfig<F> {
         )?;
         region.assign_advice(
             || "rlp_decoding_table.address",
-            self.rlp_decoding_table.address,
+            self.rlp_decoding_table.depth,
             row,
-            || Value::known(F::from(witness.rlp_decoding_table.address as u64)),
+            || Value::known(F::from(witness.rlp_decoding_table.depth as u64)),
         )?;
         region.assign_advice(
             || "rlp_decoding_table.value",
@@ -1995,7 +1995,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         stack_depth_chip.assign(
             region,
             row,
-            Value::known(F::from(witness.rlp_decoding_table.address as u64)),
+            Value::known(F::from(witness.rlp_decoding_table.depth as u64)),
         )?;
 
         // assign to sm
