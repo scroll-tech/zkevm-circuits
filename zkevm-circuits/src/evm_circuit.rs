@@ -48,6 +48,7 @@ pub struct EvmCircuitConfig<F> {
     block_table: BlockTable,
     copy_table: CopyTable,
     keccak_table: KeccakTable,
+    sha256_table: SHA256Table,
     exp_table: ExpTable,
     sig_table: SigTable,
     modexp_table: ModExpTable,
@@ -71,7 +72,7 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub copy_table: CopyTable,
     /// KeccakTable
     pub keccak_table: KeccakTable,
-    /// KeccakTable
+    /// SHA256Table
     pub sha256_table: SHA256Table,
     /// ExpTable
     pub exp_table: ExpTable,
@@ -162,6 +163,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             block_table,
             copy_table,
             keccak_table,
+            sha256_table,
             exp_table,
             sig_table,
             modexp_table,
@@ -530,6 +532,12 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
+        config
+            .sha256_table.dev_load(
+            &mut layouter,
+            block.get_sha256().iter().map(|evt|(&evt.input, &evt.digest)),
+            &challenges,
+        )?;
         config.exp_table.dev_load(&mut layouter, block)?;
         config
             .sig_table

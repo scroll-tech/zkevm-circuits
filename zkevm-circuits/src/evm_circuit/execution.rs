@@ -3,7 +3,7 @@ use super::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, ECC_TABLE_LOOKUPS,
         EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, MODEXP_TABLE_LOOKUPS,
         N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS,
-        RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS, SHA256_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, Inverter, StoredExpression},
     EvmCircuitExports,
@@ -206,7 +206,7 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use precompiles::{
-    EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget, ModExpGadget,
+    EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget, ModExpGadget, SHA256Gadget,
 };
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
@@ -354,7 +354,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     // precompile calls
     precompile_ecrecover_gadget: Box<EcrecoverGadget<F>>,
-    precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
+    precompile_sha2_gadget: Box<SHA256Gadget<F>>,
     precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
     precompile_modexp_gadget: Box<ModExpGadget<F>>,
@@ -1248,6 +1248,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
+            ("EVM_lookup_sha256", SHA256_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
             ("EVM_lookup_modexp", MODEXP_TABLE_LOOKUPS),

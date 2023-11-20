@@ -196,7 +196,7 @@ mod test {
         evm::{OpcodeId, PrecompileCallArgs},
         precompile::PrecompileCalls,
     };
-    use eth_types::{bytecode, word, ToWord};
+    use eth_types::{bytecode, ToWord};
     use itertools::Itertools;
     use mock::TestContext;
 

@@ -1535,7 +1535,7 @@ impl SHA256Table {
     /// Generate the sha256 table assignments from a byte array pair of input/output.
     /// Used only for dev_load
     pub fn assignments<F: Field>(
-        entry: (&[u8], &[u8]),
+        entry: (&[u8], &[u8;32]),
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
         let (input, output) = entry;
@@ -1543,7 +1543,7 @@ impl SHA256Table {
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let output_rlc = challenges
-            .evm_word()
+            .keccak_input()
             .map(|challenge| rlc::value(&Word::from_big_endian(output).to_le_bytes(), challenge));
 
         vec![[Value::known(F::one()), input_rlc, output_rlc]]
@@ -1554,7 +1554,7 @@ impl SHA256Table {
     pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        entries: impl IntoIterator<Item = (&'a Vec<u8>, &'a Vec<u8>)> + Clone,
+        entries: impl IntoIterator<Item = (&'a Vec<u8>, &'a [u8;32])> + Clone,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
