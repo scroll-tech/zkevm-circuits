@@ -26,6 +26,8 @@ pub struct SHA256Gadget<F> {
     input_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     is_success: Cell<F>,
     callee_address: Cell<F>,
+    caller_id: Cell<F>,
+    call_data_offset: Cell<F>,    
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
@@ -43,12 +45,12 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
         );
-        let [is_success, callee_address, call_data_length, return_data_offset, return_data_length] =
+        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
                 CallContextFieldTag::CalleeAddress,
-                //                CallContextFieldTag::CallerId,
-                //                CallContextFieldTag::CallDataOffset,
+                CallContextFieldTag::CallerId,
+                CallContextFieldTag::CallDataOffset,
                 CallContextFieldTag::CallDataLength,
                 CallContextFieldTag::ReturnDataOffset,
                 CallContextFieldTag::ReturnDataLength,
@@ -98,6 +100,8 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             input_word_size,
             is_success,
             callee_address,
+            caller_id,
+            call_data_offset,            
             call_data_length,
             return_data_offset,
             return_data_length,
@@ -120,6 +124,16 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             return_bytes,
         }) = &step.aux_data
         {
+            let in_rlc = region
+            .challenges()
+            .keccak_input()
+            .map(|r| rlc::value(input_bytes.iter().rev(), r));
+
+            let out_rlc = region
+            .challenges()
+            .keccak_input()
+            .map(|r| rlc::value(output_bytes.iter().rev(), r));
+
             self.input_bytes_rlc.assign(
                 region,
                 offset,
@@ -163,13 +177,13 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             offset,
             Value::known(call.code_address.unwrap().to_scalar().unwrap()),
         )?;
-        // self.caller_id
-        //     .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
-        // self.call_data_offset.assign(
-        //     region,
-        //     offset,
-        //     Value::known(F::from(call.call_data_offset)),
-        // )?;
+        self.caller_id
+            .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
+        self.call_data_offset.assign(
+            region,
+            offset,
+            Value::known(F::from(call.call_data_offset)),
+        )?;
         self.call_data_length.assign(
             region,
             offset,
