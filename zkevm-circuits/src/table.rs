@@ -891,7 +891,6 @@ impl PoseidonTable {
         }
     }
 
-    #[cfg(test)]
     /// Load mpt hashes (without the poseidon circuit) for testing purposes.
     pub fn load<F: Field>(
         &self,

@@ -1,7 +1,9 @@
 use bus_mapping::{
     circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams, PrecompileEcParams},
+    util::read_env_var,
     Error::JSONRpcError,
 };
+use eth_types::H256;
 use halo2_proofs::{
     circuit::Value,
     dev::{MockProver, VerifyFailure},
@@ -10,9 +12,11 @@ use halo2_proofs::{
 };
 use integration_tests::{get_client, log_init, CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
 use zkevm_circuits::{
+    bytecode_circuit::circuit::BytecodeCircuit,
     copy_circuit::CopyCircuit,
     evm_circuit::{witness::block_convert, EvmCircuit},
     keccak_circuit::keccak_packed_multi::multi_keccak,
+    mpt_circuit::MptCircuit,
     rlp_circuit_fsm::RlpCircuit,
     state_circuit::StateCircuit,
     super_circuit::SuperCircuit,
@@ -53,29 +57,48 @@ async fn test_mock_prove_tx() {
     }
     let cli = get_client();
     let params = CircuitsParams {
-        max_rws: 100000,
-        max_copy_rows: 100000,
+        max_rws: 100_000,
+        max_copy_rows: 100_000, // dynamic
         max_txs: 10,
-        max_calldata: 40000,
-        max_mpt_rows: 40000,
-        max_inner_blocks: 64,
-        max_bytecode: 40000,
+        max_calldata: 40_000,
+        max_inner_blocks: 8,
+        max_bytecode: 100_000,
+        max_mpt_rows: 40_000,
+        max_poseidon_rows: 100_000,
         max_keccak_rows: 0,
-        max_exp_steps: 5000,
+        max_exp_steps: 5_000,
         max_evm_rows: 0,
-        max_rlp_rows: 42000,
+        max_rlp_rows: 42_000,
         ..Default::default()
     };
 
     let cli = BuilderClient::new(cli, params).await.unwrap();
-    let builder = cli.gen_inputs_tx(tx_id).await.unwrap();
+    let mut builder = cli.gen_inputs_tx(tx_id).await.unwrap().enable_relax_mode();
 
     if builder.block.txs.is_empty() {
         log::info!("skip empty block");
         return;
     }
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    witness::block_mocking_apply_mpt(&mut block);
+    let mut updated_state_root = H256::default();
+    block
+        .state_root
+        .unwrap()
+        .to_big_endian(&mut updated_state_root.0);
+
+    builder.block.prev_state_root = block.prev_state_root;
+    // update both state_root in eth block (witness block's ctx and builder.block's header)
+    if let Some(mut last_eth_block_entry) = block.context.ctxs.last_entry() {
+        last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
+    }
+    if let Some(mut last_eth_block_entry) = builder.block.headers.last_entry() {
+        last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
+    }
+    // we need to re-calculate the keccak inputs since changing of state_root
+    block.keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
+
     let errs = test_witness_block(&block);
     for err in &errs {
         log::error!("ERR: {}", err);
@@ -108,6 +131,10 @@ fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
         test_with::<TxCircuit<Fr>>(block)
     } else if *CIRCUIT == "state" {
         test_with::<StateCircuit<Fr>>(block)
+    } else if *CIRCUIT == "mpt" {
+        test_with::<MptCircuit<Fr>>(block)
+    } else if *CIRCUIT == "bytecode" {
+        test_with::<BytecodeCircuit<Fr>>(block)
     } else if *CIRCUIT == "super" {
         test_with::<SuperCircuit<Fr, 350, 2_000_000, 64, 0x1000>>(block)
     } else {
@@ -127,14 +154,16 @@ async fn test_circuit_all_block() {
         let block_num = blk as u64;
         log::info!("test {} circuit, block number: {}", *CIRCUIT, block_num);
         let cli = get_client();
+        let max_txs = read_env_var("MAX_TXS", 128);
         let params = CircuitsParams {
             max_rws: 4_000_000,
             max_copy_rows: 0, // dynamic
-            max_txs: 350,
+            max_txs,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
             max_mpt_rows: 2_000_000,
+            max_poseidon_rows: 4_000_000,
             max_keccak_rows: 0,
             max_exp_steps: 100_000,
             max_evm_rows: 0,
@@ -145,6 +174,7 @@ async fn test_circuit_all_block() {
         let builder = cli.gen_inputs(block_num).await;
         if builder.is_err() {
             let err = builder.err().unwrap();
+            println!("{err:?}");
             let err_msg = match err {
                 JSONRpcError(_json_rpc_err) => "JSONRpcError".to_string(), // too long...
                 _ => format!("{err:?}"),
@@ -152,14 +182,31 @@ async fn test_circuit_all_block() {
             log::error!("invalid builder {} {:?}, err num NA", block_num, err_msg);
             continue;
         }
-        let builder = builder.unwrap().0;
+        let mut builder = builder.unwrap().0.enable_relax_mode();
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
             // skip empty block
             continue;
         }
 
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        witness::block_mocking_apply_mpt(&mut block);
+        let mut updated_state_root = H256::default();
+        block
+            .state_root
+            .unwrap()
+            .to_big_endian(&mut updated_state_root.0);
+
+        builder.block.prev_state_root = block.prev_state_root;
+        // update both state_root in eth block (witness block's ctx and builder.block's header)
+        if let Some(mut last_eth_block_entry) = block.context.ctxs.last_entry() {
+            last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
+        }
+        if let Some(mut last_eth_block_entry) = builder.block.headers.last_entry() {
+            last_eth_block_entry.get_mut().eth_block.state_root = updated_state_root;
+        }
+        // we need to re-calculate the keccak inputs since changing of state_root
+        block.keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
         let errs = test_witness_block(&block);
         log::info!(
             "test {} circuit, block number: {} err num {:?}",
