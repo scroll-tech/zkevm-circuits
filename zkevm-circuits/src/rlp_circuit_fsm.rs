@@ -1555,11 +1555,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.condition(
                     meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
                     |cb| {
-                        cb.require_equal(
-                            "for same storage key list, al_idx stays the same",
-                            meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
-                            meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                        );
+                        // cb.require_equal(
+                        //     "for same storage key list, al_idx stays the same",
+                        //     meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
+                        //     meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                        // );
                         cb.require_equal(
                             "sk_idx - sk_idx::prev = 1",
                             meta.query_advice(rlp_table.storage_key_idx, Rotation::prev())
@@ -1632,6 +1632,46 @@ impl<F: Field> RlpCircuitConfig<F> {
                 });
 
                 cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+            },
+        );
+
+        // Access List Consistency
+        // When no conditions for access list address or storage key changes are present, these idxs stay the same
+        meta.create_gate(
+            "access list: access_list_idx and storage_key_idx don't change when no conditions present",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+
+                cb.condition(
+                    and::expr([
+                        not::expr(meta.query_advice(is_new_access_list_address, Rotation::cur())),
+                        not::expr(meta.query_advice(is_access_list_address_clear, Rotation::cur())),
+                    ]),
+                    |cb| {
+                    cb.require_equal(
+                        "al_idx stays the same",
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                    );
+                });
+
+                cb.condition(
+                    and::expr([
+                        not::expr(meta.query_advice(is_new_access_list_storage_key, Rotation::cur())),
+                        not::expr(meta.query_advice(is_access_list_storage_key_clear, Rotation::cur())),
+                    ]),
+                    |cb| {
+                    cb.require_equal(
+                        "storage_key_idx stays the same",
+                        meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()),
+                        meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                    );
+                });
+
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enabled, Rotation::cur()),
+                    not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                ]))
             },
         );
 
