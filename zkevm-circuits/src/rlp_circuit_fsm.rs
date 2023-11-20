@@ -16,7 +16,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::{AccessListAddress, AccessListStorageKey, BeginObject, EndObject, TxType, EndVector},
+        Tag::{AccessListAddress, AccessListStorageKey, BeginObject, EndObject, EndVector, TxType},
         Transaction,
     },
 };
@@ -1584,31 +1584,34 @@ impl<F: Field> RlpCircuitConfig<F> {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.condition(
-                    meta.query_advice(is_access_list_address_clear, Rotation::cur()), 
+                    meta.query_advice(is_access_list_address_clear, Rotation::cur()),
                     |cb| {
-                    cb.require_equal(
-                        "al_idx = 0",
-                        meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                        0.expr(),
-                    );
-                });
+                        cb.require_equal(
+                            "al_idx = 0",
+                            meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                            0.expr(),
+                        );
+                    },
+                );
 
                 cb.condition(
-                    meta.query_advice(is_access_list_storage_key_clear, Rotation::cur()), 
+                    meta.query_advice(is_access_list_storage_key_clear, Rotation::cur()),
                     |cb| {
-                    cb.require_equal(
-                        "sk_idx = 0",
-                        meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-                        0.expr(),
-                    );
-                });
+                        cb.require_equal(
+                            "sk_idx = 0",
+                            meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                            0.expr(),
+                        );
+                    },
+                );
 
                 cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
             },
         );
 
         // Access List Consistency
-        // When no conditions for access list address or storage key changes are present, these idxs stay the same
+        // When no conditions for access list address or storage key changes are present, these idxs
+        // stay the same
         meta.create_gate(
             "access list: access_list_idx and storage_key_idx don't change when no conditions present",
             |meta| {
@@ -2061,16 +2064,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || Value::known(F::from(is_new_access_list_storage_key as u64)),
         )?;
-        let is_access_list_address_clear = witness.state_machine.tag == EndVector
-            && witness.state_machine.depth == 2;
+        let is_access_list_address_clear =
+            witness.state_machine.tag == EndVector && witness.state_machine.depth == 2;
         region.assign_advice(
             || "is_access_list_address_clear",
             self.is_access_list_address_clear,
             row,
             || Value::known(F::from(is_access_list_address_clear as u64)),
         )?;
-        let is_access_list_storage_key_clear = witness.state_machine.tag == EndVector
-            && witness.state_machine.depth == 4;
+        let is_access_list_storage_key_clear =
+            witness.state_machine.tag == EndVector && witness.state_machine.depth == 4;
         region.assign_advice(
             || "is_access_list_storage_key_clear",
             self.is_access_list_storage_key_clear,
