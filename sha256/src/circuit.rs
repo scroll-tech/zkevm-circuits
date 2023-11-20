@@ -103,7 +103,7 @@ impl CircuitConfig {
 
             vec![byte_from_u16, s_enable * byte_rlc]
         });
- 
+
         meta.create_gate("sha256 block padding", |meta| {
             let s_padding = meta.query_advice(self.s_padding, Rotation::cur());
             let s_padding_prev = meta.query_advice(self.s_padding, Rotation::prev());
@@ -245,7 +245,6 @@ impl CircuitConfig {
                 ],
             )
         });
-        
     }
 
     /// Configures a circuit to include this chip.
@@ -254,8 +253,8 @@ impl CircuitConfig {
         sha256_table: impl SHA256Table,
         spec_challenge: Expression<Fr>,
     ) -> Self {
-        let helper = meta.advice_column();      // index 3
-        let trans_byte = meta.advice_column();  // index 4
+        let helper = meta.advice_column(); // index 3
+        let trans_byte = meta.advice_column(); // index 4
 
         let bytes_rlc = sha256_table.hashes_rlc();
         let copied_data = sha256_table.input_rlc();
@@ -326,17 +325,12 @@ impl CircuitConfig {
         let mut size_calc = Value::known(Fr::zero());
 
         for (i, (msg, ref_iv)) in msgs.enumerate() {
-            let row = offset + i*2;
+            let row = offset + i * 2;
             let next_row = row + 1;
 
             self.s_assigned_u16.enable(region, row)?;
 
-            msg.copy_advice(
-                || "copied message input",
-                region,
-                self.copied_data,
-                row,
-            )?;
+            msg.copy_advice(|| "copied message input", region, self.copied_data, row)?;
             let assigned = region.assign_advice(
                 || "dummy message cell",
                 self.copied_data,
@@ -493,30 +487,50 @@ impl CircuitConfig {
                     1,
                     || Value::known(Bits::from([is_final])),
                 )?;
-                
+
                 let mut s_padding_cell = region.assign_advice(
                     || "header padding",
                     self.s_padding,
                     1,
-                    || prev_block.s_final.value().zip(prev_block.s_padding.value())
-                    .map(|(s_final, ref_v)| if s_final[0] { Bits::from([false]) } else { ref_v.clone() }),
+                    || {
+                        prev_block
+                            .s_final
+                            .value()
+                            .zip(prev_block.s_padding.value())
+                            .map(|(s_final, ref_v)| {
+                                if s_final[0] {
+                                    Bits::from([false])
+                                } else {
+                                    ref_v.clone()
+                                }
+                            })
+                    },
                 )?;
 
                 let mut byte_counter_cell = region.assign_advice(
                     || "header rlc",
                     self.byte_counter,
                     1,
-                    || prev_block.s_final.value().zip(prev_block.byte_counter.value())
-                    .map(|(s_final, ref_v)| if s_final[0] { Fr::zero() } else { ref_v.clone() }),
+                    || {
+                        prev_block
+                            .s_final
+                            .value()
+                            .zip(prev_block.byte_counter.value())
+                            .map(|(s_final, ref_v)| if s_final[0] { Fr::zero() } else { *ref_v })
+                    },
                 )?;
-
 
                 let mut bytes_rlc_cell = region.assign_advice(
                     || "header counter",
                     self.bytes_rlc,
                     1,
-                    || prev_block.s_final.value().zip(prev_block.bytes_rlc.value())
-                    .map(|(s_final, ref_v)| if s_final[0] { Fr::zero() } else { ref_v.clone() }),
+                    || {
+                        prev_block
+                            .s_final
+                            .value()
+                            .zip(prev_block.bytes_rlc.value())
+                            .map(|(s_final, ref_v)| if s_final[0] { Fr::zero() } else { *ref_v })
+                    },
                 )?;
 
                 let header_offset = 2;
@@ -547,11 +561,14 @@ impl CircuitConfig {
                         || "byte counter",
                         self.byte_counter,
                         row,
-                        || byte_counter_cell.value() 
-                        + Value::known(if now_padding {Fr::zero()} else {Fr::one()}),
+                        || {
+                            byte_counter_cell.value()
+                                + Value::known(if now_padding { Fr::zero() } else { Fr::one() })
+                        },
                     )?;
 
-                    // println!("padding {:#?}, counter {:#?} at row {}", output_block.s_padding.value(), output_block.byte_counter.value(), row);
+                    // println!("padding {:#?}, counter {:#?} at row {}",
+                    // output_block.s_padding.value(), output_block.byte_counter.value(), row);
                     // println!("final {:#?}, at row {}", output_block.s_final.value(), row);
 
                     if row < 56 + header_offset {
@@ -577,16 +594,13 @@ impl CircuitConfig {
                 )?;
 
                 // flush unused row
-                for col in [
-                    self.trans_byte,
-                    self.copied_data,
-                ] {
+                for col in [self.trans_byte, self.copied_data] {
                     region.assign_advice(
                         || "flush unused row",
                         col,
                         64 + header_offset,
                         || Value::known(Fr::zero()),
-                    )?;    
+                    )?;
                 }
 
                 region.assign_advice(
@@ -596,9 +610,9 @@ impl CircuitConfig {
                     || Value::known(Fr::zero()),
                 )?;
 
-                Ok(BlockInheritments { 
-                    s_final: AssignedBits(s_final_cell), 
-                    s_padding: AssignedBits(s_padding_cell), 
+                Ok(BlockInheritments {
+                    s_final: AssignedBits(s_final_cell),
+                    s_padding: AssignedBits(s_padding_cell),
                     byte_counter: byte_counter_cell,
                     bytes_rlc: bytes_rlc_cell,
                 })
@@ -622,7 +636,6 @@ impl CircuitConfig {
         let output_cells = layouter.assign_region(
             || "sha256 digest",
             |mut region| {
-
                 input_block.s_final.copy_advice(
                     || "inheirt s_final",
                     &mut region,
@@ -682,9 +695,7 @@ impl CircuitConfig {
                 // assign message state
                 let (export_cells, digest_rlc) = self.assign_message_block(
                     &mut region,
-                    state.iter()
-                        .flat_map(|(lo, hi)| [hi, lo])
-                        .zip_eq(IV16),
+                    state.iter().flat_map(|(lo, hi)| [hi, lo]).zip_eq(IV16),
                     begin_rlc,
                     chng,
                     header_offset,
@@ -718,26 +729,23 @@ impl CircuitConfig {
                     final_row,
                 )?;
 
-                for col in [
+                region.assign_advice(
+                    || "flush unused row",
                     self.trans_byte,
-                ] {
-                    region.assign_advice(
-                        || "flush unused row",
-                        col,
-                        final_row,
-                        || Value::known(Fr::zero()),
-                    )?;    
-                }
+                    final_row,
+                    || Value::known(Fr::zero()),
+                )?;
+
                 region.assign_advice(
                     || "flush unused row",
                     self.helper,
                     0,
                     || Value::known(Fr::zero()),
-                )?; 
+                )?;
 
                 Ok(export_cells
                     .chunks_exact(2)
-                    .map(|ck_pair| (ck_pair[0].clone(), ck_pair[1].clone()))
+                    .map(|ck_pair| (ck_pair[1].clone(), ck_pair[0].clone()))
                     .collect::<Vec<_>>())
             },
         )?;
@@ -745,17 +753,13 @@ impl CircuitConfig {
         Ok(output_cells.try_into().unwrap())
     }
 
-    fn initialize_constant_table(
-        &self,
-        layouter: &mut impl Layouter<Fr>,        
-    ) -> Result<(), Error>{
-
+    fn initialize_constant_table(&self, layouter: &mut impl Layouter<Fr>) -> Result<(), Error> {
         layouter.assign_table(
             || "byte range constant",
             |mut tb| {
                 for i in 0..256 {
                     tb.assign_cell(
-                        ||"byte range",
+                        || "byte range",
                         self.byte_range,
                         i,
                         || Value::known(Fr::from(i as u64)),
@@ -763,10 +767,9 @@ impl CircuitConfig {
                 }
 
                 Ok(())
-            }
+            },
         )
     }
-
 }
 
 /// sha256 hasher for byte stream
@@ -793,7 +796,6 @@ impl Hasher {
 
     /// create a hasher, the circuit would be identify when block_usage is the same
     pub fn new(chip: CircuitConfig, layouter: &mut impl Layouter<Fr>) -> Result<Self, Error> {
-
         // constant part
         chip.initialize_constant_table(layouter)?;
         Table16Chip::load(chip.table16.clone(), layouter)?;
@@ -832,21 +834,25 @@ impl Hasher {
         )?;
 
         let init_working_state = match &self.state {
-            Table16State::Compress(s) => s.clone(),
+            Table16State::Compress(s) => s.as_ref().clone(),
             Table16State::Dense(s) => table16_cfg.initialize(layouter, s.clone())?,
         };
 
-        let compress_state = table16_cfg.compress(layouter, init_working_state.clone(), w_halves)?;
+        let compress_state =
+            table16_cfg.compress(layouter, init_working_state.clone(), w_halves)?;
         let digest_state = table16_cfg.digest(layouter, compress_state, init_working_state)?;
 
-        self.state = self.chip.assign_output_region(
-            layouter,
-            chng,
-            &digest_state.clone().map(|v|v.decompose()),
-            &self.hasher_state,
-            is_final,
-        ).map(|s|s.map(|v|v.into()))
-        .map(Table16State::Dense)?;
+        self.state = self
+            .chip
+            .assign_output_region(
+                layouter,
+                chng,
+                &digest_state.clone().map(|v| v.decompose()),
+                &self.hasher_state,
+                is_final,
+            )
+            .map(|s| s.map(|v| v.into()))
+            .map(Table16State::Dense)?;
         self.block_usage += 1;
 
         Ok(Table16State::Dense(digest_state))
@@ -950,7 +956,8 @@ impl Hasher {
         }
 
         self.cur_block.resize(BLOCK_SIZE * 4 - 8, 0u8);
-        self.cur_block.extend(((self.length * 8) as u64).to_be_bytes());
+        self.cur_block
+            .extend(((self.length * 8) as u64).to_be_bytes());
         assert_eq!(self.cur_block.len(), BLOCK_SIZE * 4);
 
         let word_block = Self::block_transform(&self.cur_block);
@@ -966,11 +973,11 @@ impl Hasher {
         self.length = 0;
 
         let digest_state = match digest_state {
-            Table16State::Dense(s) => s.clone(),
+            Table16State::Dense(s) => s,
             _ => panic!("unexpected state type"),
         };
 
-        Ok(digest_state.map(|s|s.value()).map(BlockWord))
+        Ok(digest_state.map(|s| s.value()).map(BlockWord))
     }
 }
 
@@ -979,7 +986,7 @@ mod tests {
     use super::*;
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
-    struct MyCircuit(Vec<(Vec<u8>, Option<[u32;8]>)>);
+    struct MyCircuit(Vec<(Vec<u8>, Option<[u32; 8]>)>);
 
     impl Circuit<Fr> for MyCircuit {
         type Config = CircuitConfig;
@@ -1031,7 +1038,7 @@ mod tests {
             for (input, digest) in &self.0 {
                 hasher.update(&mut layouter, chng_v, input)?;
                 let ret_digest = hasher.finalize(&mut layouter, chng_v)?;
-                println!("{:#x?}", ret_digest);
+                //println!("{:#x?}", ret_digest);
                 if let Some(check_digest) = digest {
                     for (w, check) in ret_digest.into_iter().zip(*check_digest) {
                         w.0.assert_if_known(|digest_word| *digest_word == check);
@@ -1042,7 +1049,7 @@ mod tests {
         }
     }
 
-    const DIGEST_ABC : [u32;8] = [
+    const DIGEST_ABC: [u32; 8] = [
         0b10111010011110000001011010111111,
         0b10001111000000011100111111101010,
         0b01000001010000010100000011011110,
@@ -1053,33 +1060,27 @@ mod tests {
         0b11110010000000000001010110101101,
     ];
 
-    const DIGEST_AX65 : [u32;8] = [
-        0x635361c4,
-        0x8bb9eab1,
-        0x4198e76e,
-        0xa8ab7f1a,
-        0x41685d6a,
-        0xd62aa914,
-        0x6d301d4f,
+    const DIGEST_ABD: [u32; 8] = [
+        0xa52d159f, 0x262b2c6d, 0xdb724a61, 0x840befc3, 0x6eb30c88, 0x877a4030, 0xb65cbe86,
+        0x298449c9,
+    ];
+
+    const DIGEST_AX65: [u32; 8] = [
+        0x635361c4, 0x8bb9eab1, 0x4198e76e, 0xa8ab7f1a, 0x41685d6a, 0xd62aa914, 0x6d301d4f,
         0x17eb0ae0,
     ];
 
-    const DIGEST_NIL : [u32;8] = [
-        0xe3b0c442,
-        0x98fc1c14,
-        0x9afbf4c8,
-        0x996fb924,
-        0x27ae41e4,
-        0x649b934c,
-        0xa495991b,
+    const DIGEST_NIL: [u32; 8] = [
+        0xe3b0c442, 0x98fc1c14, 0x9afbf4c8, 0x996fb924, 0x27ae41e4, 0x649b934c, 0xa495991b,
         0x7852b855,
     ];
 
     #[test]
     fn sha256_simple() {
-        let circuit = MyCircuit(vec![
-                (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC))
-            ]);
+        let circuit = MyCircuit(vec![(
+            vec!['a' as u8, 'b' as u8, 'c' as u8],
+            Some(DIGEST_ABC),
+        )]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -1089,12 +1090,10 @@ mod tests {
 
     #[test]
     fn sha256_multiple() {
-        let circuit = MyCircuit(
-            vec![
-                (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
-                (vec!['a' as u8, 'b' as u8, 'd' as u8], Some(DIGEST_ABC))
-            ],
-        );
+        let circuit = MyCircuit(vec![
+            (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
+            (vec!['a' as u8, 'b' as u8, 'd' as u8], Some(DIGEST_ABD)),
+        ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -1104,11 +1103,7 @@ mod tests {
 
     #[test]
     fn sha256_long() {
-        let circuit = MyCircuit(
-            vec![
-                (vec!['a' as u8; 65], Some(DIGEST_AX65)),
-            ],
-        );
+        let circuit = MyCircuit(vec![(vec!['a' as u8; 65], Some(DIGEST_AX65))]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -1118,13 +1113,11 @@ mod tests {
 
     #[test]
     fn sha256_nil() {
-        let circuit = MyCircuit(
-            vec![
-                (vec![], Some(DIGEST_NIL)),
-                (vec![], Some(DIGEST_NIL)),
-                (vec![], Some(DIGEST_NIL)),
-            ],
-        );
+        let circuit = MyCircuit(vec![
+            (vec![], Some(DIGEST_NIL)),
+            (vec![], Some(DIGEST_NIL)),
+            (vec![], Some(DIGEST_NIL)),
+        ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -1134,11 +1127,7 @@ mod tests {
 
     #[test]
     fn sha256_padding_continue() {
-        let circuit = MyCircuit(
-            vec![
-                (vec!['a' as u8; 62], None),
-            ],
-        );
+        let circuit = MyCircuit(vec![(vec!['a' as u8; 62], None)]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -1148,16 +1137,14 @@ mod tests {
 
     #[test]
     fn sha256_complex() {
-        let circuit = MyCircuit(
-            vec![
-                (vec!['a' as u8; 65], Some(DIGEST_AX65)),
-                (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
-                (vec!['b' as u8; 62], None),
-                (vec!['c' as u8; 128], None),
-                (vec![], Some(DIGEST_NIL)),
-                (vec![], Some(DIGEST_NIL)),
-            ],
-        );
+        let circuit = MyCircuit(vec![
+            (vec!['a' as u8; 65], Some(DIGEST_AX65)),
+            (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
+            (vec!['b' as u8; 62], None),
+            (vec!['c' as u8; 128], None),
+            (vec![], Some(DIGEST_NIL)),
+            (vec![], Some(DIGEST_NIL)),
+        ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -1174,12 +1161,15 @@ mod tests {
             BitMapBackend::new("sha-256-circuit-layout.png", (1024, 3480)).into_drawing_area();
         root.fill(&WHITE).unwrap();
         let root = root
-            .titled("16-bit Table SHA-256 Chip with SHA256 table", ("sans-serif", 60))
+            .titled(
+                "16-bit Table SHA-256 Chip with SHA256 table",
+                ("sans-serif", 60),
+            )
             .unwrap();
 
         let circuit = MyCircuit(vec![
-            vec!['a' as u8, 'b' as u8, 'c' as u8],
-            vec!['a' as u8, 'b' as u8, 'c' as u8],
+            (vec!['a' as u8, 'b' as u8, 'c' as u8], None),
+            (vec!['a' as u8, 'b' as u8, 'c' as u8], None),
         ]);
         halo2_proofs::dev::CircuitLayout::default()
             .render::<Fr, _, _>(13, &circuit, &root)
@@ -1191,5 +1181,4 @@ mod tests {
         };
         assert_eq!(prover.verify(), Ok(()));
     }
-
 }

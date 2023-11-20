@@ -883,8 +883,15 @@ impl CompressionConfig {
             let digest_carry = meta.query_advice(a_8, Rotation::cur());
 
             CompressionGate::s_digest(
-                s_digest, digest_lo, digest_hi, digest_word, final_lo, final_hi,
-                initial_lo, initial_hi, digest_carry,
+                s_digest,
+                digest_lo,
+                digest_hi,
+                digest_word,
+                final_lo,
+                final_hi,
+                initial_lo,
+                initial_hi,
+                digest_carry,
             )
         });
 
@@ -972,7 +979,11 @@ impl CompressionConfig {
         layouter.assign_region(
             || "digest",
             |mut region| {
-                self.complete_digest(&mut region, last_compress_state.clone(), initial_state.clone())
+                self.complete_digest(
+                    &mut region,
+                    last_compress_state.clone(),
+                    initial_state.clone(),
+                )
             },
         )
     }
@@ -1021,11 +1032,14 @@ mod tests {
                 let compression = config.compression.clone();
                 let initial_state = compression.initialize_with_iv(&mut layouter, IV)?;
 
-                let state = config
-                    .compression
-                    .compress(&mut layouter, initial_state.clone(), w_halves)?;
+                let state =
+                    config
+                        .compression
+                        .compress(&mut layouter, initial_state.clone(), w_halves)?;
 
-                let digest = config.compression.digest(&mut layouter, state, initial_state)?;
+                let digest = config
+                    .compression
+                    .digest(&mut layouter, state, initial_state)?;
                 for (idx, digest_word) in digest.iter().enumerate() {
                     digest_word.value().assert_if_known(|digest_word| {
                         *digest_word == super::compression_util::COMPRESSION_OUTPUT[idx]

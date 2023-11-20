@@ -217,7 +217,6 @@ impl<F: FieldExt> SpreadTableChip<F> {
         config: SpreadTableConfig,
         layouter: &mut impl Layouter<F>,
     ) -> Result<<Self as Chip<F>>::Loaded, Error> {
-
         layouter.assign_table(
             || "spread table",
             |mut table| {
@@ -226,7 +225,7 @@ impl<F: FieldExt> SpreadTableChip<F> {
 
                 // here we use a dummy value for dev-graph feature so the output graph
                 // has better resolution
-                let table_size = if cfg!(feature = "dev-graph") {12} else {16};
+                let table_size = if cfg!(feature = "dev-graph") { 12 } else { 16 };
 
                 for index in 0..(1 << table_size) {
                     let mut row = None;

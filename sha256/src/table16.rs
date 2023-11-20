@@ -271,7 +271,6 @@ impl Table16Config {
         let (_, w_halves) = self.message_schedule.process(layouter, input)?;
         Ok(w_halves)
     }
-    
 }
 
 /// A chip that implements SHA-256 with a maximum lookup table size of $2^16$.
@@ -360,12 +359,13 @@ impl Table16Chip {
 }
 
 /// composite of states in table16
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum Table16State<F: Field> {
     /// working state (with spread assignment) for compression rounds
-    Compress(State<F>),
+    Compress(Box<State<F>>),
     /// the dense state only carry hi-lo 16bit assigned cell used in digest and next block
-    Dense([RoundWordDense<F>;STATE]),
+    Dense([RoundWordDense<F>; STATE]),
 }
 
 impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
@@ -376,6 +376,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         <Self as Chip<F>>::config(self)
             .compression
             .initialize_with_iv(layouter, IV)
+            .map(Box::new)
             .map(Table16State::Compress)
     }
 
@@ -384,9 +385,8 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         layouter: &mut impl Layouter<F>,
         init_state: &Self::State,
     ) -> Result<Self::State, Error> {
-
         let dense_state = match init_state.clone() {
-            Table16State::Compress(s) =>{
+            Table16State::Compress(s) => {
                 let (a, b, c, d, e, f, g, h) = s.decompose();
                 [
                     a.into_dense(),
@@ -397,14 +397,15 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
                     f.into_dense(),
                     g.into_dense(),
                     h,
-                ]        
-            },
+                ]
+            }
             Table16State::Dense(s) => s,
         };
 
         <Self as Chip<F>>::config(self)
             .compression
             .initialize(layouter, dense_state)
+            .map(Box::new)
             .map(Table16State::Compress)
     }
 
@@ -420,18 +421,19 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         let (_, w_halves) = config.message_schedule.process(layouter, input)?;
 
         let init_working_state = match initialized_state {
-            Table16State::Compress(s) => s.clone(),
+            Table16State::Compress(s) => s.as_ref().clone(),
             _ => panic!("unexpected state type"),
         };
 
-        let final_state = config
-            .compression
-            .compress(layouter, init_working_state.clone(), w_halves)?;
+        let final_state =
+            config
+                .compression
+                .compress(layouter, init_working_state.clone(), w_halves)?;
 
-        config.compression
+        config
+            .compression
             .digest(layouter, final_state, init_working_state)
             .map(Table16State::Dense)
-            
     }
 
     fn digest(
@@ -444,7 +446,7 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
             _ => panic!("unexpected state type"),
         };
 
-        Ok(digest_state.map(|s|s.value()).map(BlockWord))
+        Ok(digest_state.map(|s| s.value()).map(BlockWord))
     }
 }
 
@@ -538,7 +540,9 @@ mod tests {
     };
     use halo2curves::pasta::pallas;
 
-    struct MyCircuit { repeated: usize }
+    struct MyCircuit {
+        repeated: usize,
+    }
 
     impl Circuit<pallas::Base> for MyCircuit {
         type Config = Table16Config;
@@ -572,7 +576,8 @@ mod tests {
             let _digest = Sha256::digest(
                 table16_chip,
                 layouter.namespace(|| format!("'abc' * {}", self.repeated)),
-                &input)?;
+                &input,
+            )?;
             //println!("{:#x?}", digest);
 
             Ok(())
@@ -581,8 +586,7 @@ mod tests {
 
     #[test]
     fn table16_circuit() {
-
-        let circuit = MyCircuit { repeated: 31};
+        let circuit = MyCircuit { repeated: 31 };
         let prover = match MockProver::<_>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:?}", e),
@@ -602,7 +606,7 @@ mod tests {
             .titled("16-bit Table SHA-256 Chip", ("sans-serif", 60))
             .unwrap();
 
-        let circuit = MyCircuit { repeated: 2};
+        let circuit = MyCircuit { repeated: 2 };
         halo2_proofs::dev::CircuitLayout::default()
             .render::<pallas::Base, _, _>(13, &circuit, &root)
             .unwrap();
@@ -611,6 +615,6 @@ mod tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));        
+        assert_eq!(prover.verify(), Ok(()));
     }
 }

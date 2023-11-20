@@ -424,11 +424,12 @@ impl<F: FieldExt> CompressionGate<F> {
         initial_hi: Expression<F>,
         digest_carry: Expression<F>,
     ) -> impl IntoIterator<Item = Constraint<F>> {
-
         let check_lo_hi = digest_lo.clone() + digest_hi.clone() * F::from(1 << 16) - digest_word;
 
-        let check = digest_carry.clone() *F::from(1 << 32) + digest_hi * F::from(1<<16) + digest_lo
-            - (final_hi + initial_hi) * F::from(1<<16) - (final_lo + initial_lo);
+        let check =
+            digest_carry.clone() * F::from(1 << 32) + digest_hi * F::from(1 << 16) + digest_lo
+                - (final_hi + initial_hi) * F::from(1 << 16)
+                - (final_lo + initial_lo);
 
         Constraints::with_selector(
             s_digest,
@@ -439,5 +440,4 @@ impl<F: FieldExt> CompressionGate<F> {
             ],
         )
     }
-
 }
