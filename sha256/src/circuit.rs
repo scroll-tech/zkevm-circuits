@@ -610,7 +610,7 @@ impl CircuitConfig {
         &self,
         layouter: &mut impl Layouter<Fr>,
         chng: Value<Fr>,
-        state: &BlockState,
+        state: &[(AssignedBits<Fr, 16>, AssignedBits<Fr, 16>)],
         input_block: &BlockInheritments,
         is_final: bool,
     ) -> Result<[(AssignedBits<Fr, 16>, AssignedBits<Fr, 16>); 8], Error> {
@@ -622,16 +622,6 @@ impl CircuitConfig {
         let output_cells = layouter.assign_region(
             || "sha256 digest",
             |mut region| {
-                let (a, b, c, d, e, f, g, h) = state.clone().decompose();
-
-                let a = a.into_dense().decompose();
-                let b = b.into_dense().decompose();
-                let c = c.into_dense().decompose();
-                let d = d.decompose();
-                let e = e.into_dense().decompose();
-                let f = f.into_dense().decompose();
-                let g = g.into_dense().decompose();
-                let h = h.decompose();
 
                 input_block.s_final.copy_advice(
                     || "inheirt s_final",
@@ -692,8 +682,7 @@ impl CircuitConfig {
                 // assign message state
                 let (export_cells, digest_rlc) = self.assign_message_block(
                     &mut region,
-                    [a, b, c, d, e, f, g, h]
-                        .iter()
+                    state.iter()
                         .flat_map(|(lo, hi)| [hi, lo])
                         .zip_eq(IV16),
                     begin_rlc,
@@ -780,20 +769,11 @@ impl CircuitConfig {
 
 }
 
-/// the two state for hashing
-#[derive(Debug, Clone)]
-pub enum HashState {
-    /// derived from table16's initialize used for compress
-    Begin(BlockState),
-    /// derived from digest region
-    Finish([(AssignedBits<Fr, 16>, AssignedBits<Fr, 16>); 8]),
-}
-
 /// sha256 hasher for byte stream
 #[derive(Debug)]
 pub struct Hasher {
     chip: CircuitConfig,
-    state: HashState,
+    state: BlockState,
     hasher_state: BlockInheritments,
     cur_block: Vec<u8>,
     length: usize,
@@ -819,7 +799,7 @@ impl Hasher {
         Table16Chip::load(chip.table16.clone(), layouter)?;
 
         let table16_chip = Table16Chip::construct::<Fr>(chip.table16.clone());
-        let state = HashState::Begin(table16_chip.initialization_vector(layouter)?);
+        let state = table16_chip.initialization_vector(layouter)?;
         let hasher_state = chip.initialize_block_head(layouter)?;
         Ok(Self {
             chip,
@@ -842,10 +822,6 @@ impl Hasher {
     ) -> Result<BlockState, Error> {
         let table16_cfg = &self.chip.table16;
 
-        let init_state = match self.state.clone() {
-            HashState::Finish(s) => table16_cfg.initialize(layouter, s.map(|v| v.into()))?,
-            HashState::Begin(s) => s
-        };
         let w_halves = table16_cfg.message_process(layouter, input)?;
         self.hasher_state = self.chip.assign_input_block(
             layouter,
@@ -854,17 +830,26 @@ impl Hasher {
             &w_halves[..16],
             padding,
         )?;
-        let compress_state = table16_cfg.compress(layouter, init_state, w_halves)?;
-        self.state = HashState::Finish(self.chip.assign_output_region(
+
+        let init_working_state = match &self.state {
+            Table16State::Compress(s) => s.clone(),
+            Table16State::Dense(s) => table16_cfg.initialize(layouter, s.clone())?,
+        };
+
+        let compress_state = table16_cfg.compress(layouter, init_working_state.clone(), w_halves)?;
+        let digest_state = table16_cfg.digest(layouter, compress_state, init_working_state)?;
+
+        self.state = self.chip.assign_output_region(
             layouter,
             chng,
-            &compress_state,
+            &digest_state.clone().map(|v|v.decompose()),
             &self.hasher_state,
             is_final,
-        )?);
+        ).map(|s|s.map(|v|v.into()))
+        .map(Table16State::Dense)?;
         self.block_usage += 1;
 
-        Ok(compress_state)
+        Ok(Table16State::Dense(digest_state))
     }
 
     fn block_transform(bytes: &[u8]) -> Vec<BlockWord> {
@@ -980,18 +965,12 @@ impl Hasher {
         self.cur_block.clear();
         self.length = 0;
 
-        let (a, b, c, d, e, f, g, h) = digest_state.decompose();
-        Ok([
-            a.into_dense().value(),
-            b.into_dense().value(),
-            c.into_dense().value(),
-            d.value(),
-            e.into_dense().value(),
-            f.into_dense().value(),
-            g.into_dense().value(),
-            h.value(),
-        ]
-        .map(BlockWord))
+        let digest_state = match digest_state {
+            Table16State::Dense(s) => s.clone(),
+            _ => panic!("unexpected state type"),
+        };
+
+        Ok(digest_state.map(|s|s.value()).map(BlockWord))
     }
 }
 
@@ -1000,7 +979,7 @@ mod tests {
     use super::*;
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 
-    struct MyCircuit(Vec<Vec<u8>>);
+    struct MyCircuit(Vec<(Vec<u8>, Option<[u32;8]>)>);
 
     impl Circuit<Fr> for MyCircuit {
         type Config = CircuitConfig;
@@ -1049,17 +1028,58 @@ mod tests {
             let chng_v = Value::known(Fr::from(0x1000u64));
             let mut hasher = Hasher::new(config, &mut layouter)?;
 
-            for input in &self.0 {
+            for (input, digest) in &self.0 {
                 hasher.update(&mut layouter, chng_v, input)?;
-                let _ = hasher.finalize(&mut layouter, chng_v)?;
+                let ret_digest = hasher.finalize(&mut layouter, chng_v)?;
+                println!("{:#x?}", ret_digest);
+                if let Some(check_digest) = digest {
+                    for (w, check) in ret_digest.into_iter().zip(*check_digest) {
+                        w.0.assert_if_known(|digest_word| *digest_word == check);
+                    }
+                }
             }
             Ok(())
         }
     }
 
+    const DIGEST_ABC : [u32;8] = [
+        0b10111010011110000001011010111111,
+        0b10001111000000011100111111101010,
+        0b01000001010000010100000011011110,
+        0b01011101101011100010001000100011,
+        0b10110000000000110110000110100011,
+        0b10010110000101110111101010011100,
+        0b10110100000100001111111101100001,
+        0b11110010000000000001010110101101,
+    ];
+
+    const DIGEST_AX65 : [u32;8] = [
+        0x635361c4,
+        0x8bb9eab1,
+        0x4198e76e,
+        0xa8ab7f1a,
+        0x41685d6a,
+        0xd62aa914,
+        0x6d301d4f,
+        0x17eb0ae0,
+    ];
+
+    const DIGEST_NIL : [u32;8] = [
+        0xe3b0c442,
+        0x98fc1c14,
+        0x9afbf4c8,
+        0x996fb924,
+        0x27ae41e4,
+        0x649b934c,
+        0xa495991b,
+        0x7852b855,
+    ];
+
     #[test]
     fn sha256_simple() {
-        let circuit = MyCircuit(vec![vec!['a' as u8, 'b' as u8, 'c' as u8]]);
+        let circuit = MyCircuit(vec![
+                (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC))
+            ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
@@ -1071,8 +1091,8 @@ mod tests {
     fn sha256_multiple() {
         let circuit = MyCircuit(
             vec![
-                vec!['a' as u8, 'b' as u8, 'c' as u8],
-                vec!['a' as u8, 'b' as u8, 'd' as u8],
+                (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
+                (vec!['a' as u8, 'b' as u8, 'd' as u8], Some(DIGEST_ABC))
             ],
         );
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
@@ -1086,7 +1106,7 @@ mod tests {
     fn sha256_long() {
         let circuit = MyCircuit(
             vec![
-                vec!['a' as u8; 65],
+                (vec!['a' as u8; 65], Some(DIGEST_AX65)),
             ],
         );
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
@@ -1100,9 +1120,9 @@ mod tests {
     fn sha256_nil() {
         let circuit = MyCircuit(
             vec![
-                vec![],
-                vec![],
-                vec![],
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
             ],
         );
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
@@ -1116,7 +1136,7 @@ mod tests {
     fn sha256_padding_continue() {
         let circuit = MyCircuit(
             vec![
-                vec!['a' as u8; 62],
+                (vec!['a' as u8; 62], None),
             ],
         );
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
@@ -1130,12 +1150,12 @@ mod tests {
     fn sha256_complex() {
         let circuit = MyCircuit(
             vec![
-                vec!['a' as u8; 65],
-                vec!['a' as u8, 'b' as u8, 'c' as u8],
-                vec!['b' as u8; 62],
-                vec!['c' as u8; 128],
-                vec![],
-                vec![],
+                (vec!['a' as u8; 65], Some(DIGEST_AX65)),
+                (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
+                (vec!['b' as u8; 62], None),
+                (vec!['c' as u8; 128], None),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
             ],
         );
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {

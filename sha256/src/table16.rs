@@ -252,6 +252,16 @@ impl Table16Config {
             .compress(layouter, initialized_state, w_halves)
     }
 
+    pub(crate) fn digest<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        final_state: State<F>,
+        initialized_state: State<F>,
+    ) -> Result<[RoundWordDense<F>; STATE], Error> {
+        self.compression
+            .digest(layouter, final_state, initialized_state)
+    }
+
     #[allow(clippy::type_complexity)]
     pub(crate) fn message_process<F: Field>(
         &self,
@@ -261,6 +271,7 @@ impl Table16Config {
         let (_, w_halves) = self.message_schedule.process(layouter, input)?;
         Ok(w_halves)
     }
+    
 }
 
 /// A chip that implements SHA-256 with a maximum lookup table size of $2^16$.
@@ -348,14 +359,24 @@ impl Table16Chip {
     }
 }
 
+/// composite of states in table16
+#[derive(Clone, Debug)]
+pub enum Table16State<F: Field> {
+    /// working state (with spread assignment) for compression rounds
+    Compress(State<F>),
+    /// the dense state only carry hi-lo 16bit assigned cell used in digest and next block
+    Dense([RoundWordDense<F>;STATE]),
+}
+
 impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
-    type State = State<F>;
+    type State = Table16State<F>;
     type BlockWord = BlockWord;
 
     fn initialization_vector(&self, layouter: &mut impl Layouter<F>) -> Result<Self::State, Error> {
         <Self as Chip<F>>::config(self)
             .compression
             .initialize_with_iv(layouter, IV)
+            .map(Table16State::Compress)
     }
 
     fn initialization(
@@ -363,9 +384,28 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         layouter: &mut impl Layouter<F>,
         init_state: &Self::State,
     ) -> Result<Self::State, Error> {
+
+        let dense_state = match init_state.clone() {
+            Table16State::Compress(s) =>{
+                let (a, b, c, d, e, f, g, h) = s.decompose();
+                [
+                    a.into_dense(),
+                    b.into_dense(),
+                    c.into_dense(),
+                    d,
+                    e.into_dense(),
+                    f.into_dense(),
+                    g.into_dense(),
+                    h,
+                ]        
+            },
+            Table16State::Dense(s) => s,
+        };
+
         <Self as Chip<F>>::config(self)
             .compression
-            .initialize_with_state(layouter, init_state.clone())
+            .initialize(layouter, dense_state)
+            .map(Table16State::Compress)
     }
 
     // Given an initialized state and an input message block, compress the
@@ -379,21 +419,32 @@ impl<F: Field> super::Sha256Instructions<F> for Table16Chip {
         let config = <Self as Chip<F>>::config(self);
         let (_, w_halves) = config.message_schedule.process(layouter, input)?;
 
-        config
+        let init_working_state = match initialized_state {
+            Table16State::Compress(s) => s.clone(),
+            _ => panic!("unexpected state type"),
+        };
+
+        let final_state = config
             .compression
-            .compress(layouter, initialized_state.clone(), w_halves)
+            .compress(layouter, init_working_state.clone(), w_halves)?;
+
+        config.compression
+            .digest(layouter, final_state, init_working_state)
+            .map(Table16State::Dense)
+            
     }
 
     fn digest(
         &self,
-        layouter: &mut impl Layouter<F>,
+        _layouter: &mut impl Layouter<F>,
         state: &Self::State,
     ) -> Result<[Self::BlockWord; super::DIGEST_SIZE], Error> {
-        // Copy the dense forms of the state variable chunks down to this gate.
-        // Reconstruct the 32-bit dense words.
-        <Self as Chip<F>>::config(self)
-            .compression
-            .digest(layouter, state.clone())
+        let digest_state = match state {
+            Table16State::Dense(s) => s.clone(),
+            _ => panic!("unexpected state type"),
+        };
+
+        Ok(digest_state.map(|s|s.value()).map(BlockWord))
     }
 }
 
@@ -531,7 +582,7 @@ mod tests {
     #[test]
     fn table16_circuit() {
 
-        let circuit = MyCircuit { repeated: 1};
+        let circuit = MyCircuit { repeated: 31};
         let prover = match MockProver::<_>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:?}", e),

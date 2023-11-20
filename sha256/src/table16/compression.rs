@@ -1,7 +1,6 @@
 use super::{
-    super::DIGEST_SIZE,
     util::{i2lebsp, lebs2ip},
-    AssignedBits, BlockWord, SpreadInputs, SpreadVar, Table16Assignment, ROUNDS, STATE,
+    AssignedBits, SpreadInputs, SpreadVar, Table16Assignment, ROUNDS, STATE,
 };
 use crate::Field;
 use halo2_proofs::{
@@ -874,22 +873,18 @@ impl CompressionConfig {
         // s_digest for final round
         meta.create_gate("s_digest", |meta| {
             let s_digest = meta.query_selector(s_digest);
-            let lo_0 = meta.query_advice(a_3, Rotation::cur());
-            let hi_0 = meta.query_advice(a_4, Rotation::cur());
-            let word_0 = meta.query_advice(a_5, Rotation::cur());
-            let lo_1 = meta.query_advice(a_6, Rotation::cur());
-            let hi_1 = meta.query_advice(a_7, Rotation::cur());
-            let word_1 = meta.query_advice(a_8, Rotation::cur());
-            let lo_2 = meta.query_advice(a_3, Rotation::next());
-            let hi_2 = meta.query_advice(a_4, Rotation::next());
-            let word_2 = meta.query_advice(a_5, Rotation::next());
-            let lo_3 = meta.query_advice(a_6, Rotation::next());
-            let hi_3 = meta.query_advice(a_7, Rotation::next());
-            let word_3 = meta.query_advice(a_8, Rotation::next());
+            let digest_lo = meta.query_advice(a_1, Rotation::cur());
+            let digest_hi = meta.query_advice(a_1, Rotation::next());
+            let digest_word = meta.query_advice(a_5, Rotation::cur());
+            let final_lo = meta.query_advice(a_3, Rotation::cur());
+            let final_hi = meta.query_advice(a_3, Rotation::next());
+            let initial_lo = meta.query_advice(a_6, Rotation::cur());
+            let initial_hi = meta.query_advice(a_6, Rotation::next());
+            let digest_carry = meta.query_advice(a_8, Rotation::cur());
 
             CompressionGate::s_digest(
-                s_digest, lo_0, hi_0, word_0, lo_1, hi_1, word_1, lo_2, hi_2, word_2, lo_3, hi_3,
-                word_3,
+                s_digest, digest_lo, digest_hi, digest_word, final_lo, final_hi,
+                initial_lo, initial_hi, digest_carry,
             )
         });
 
@@ -923,37 +918,6 @@ impl CompressionConfig {
             || "initialize_with_iv",
             |mut region| {
                 new_state = self.initialize_iv(&mut region, init_state)?;
-                Ok(())
-            },
-        )?;
-        Ok(new_state)
-    }
-
-    /// Initialize compression with some initialized state. This could be a state
-    /// output from a previous compression round.
-    pub(super) fn initialize_with_state<F: Field>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        init_state: State<F>,
-    ) -> Result<State<F>, Error> {
-        let mut new_state = State::empty_state();
-        layouter.assign_region(
-            || "initialize_with_state",
-            |mut region| {
-                let (a, b, c, d, e, f, g, h) = compression_util::match_state(init_state.clone());
-                new_state = self.initialize_state(
-                    &mut region,
-                    [
-                        a.dense_halves,
-                        b.dense_halves,
-                        c.dense_halves,
-                        d,
-                        e.dense_halves,
-                        f.dense_halves,
-                        g.dense_halves,
-                        h,
-                    ],
-                )?;
                 Ok(())
             },
         )?;
@@ -1002,18 +966,15 @@ impl CompressionConfig {
     pub(super) fn digest<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        state: State<F>,
-    ) -> Result<[BlockWord; DIGEST_SIZE], Error> {
-        let mut digest = [BlockWord(Value::known(0)); DIGEST_SIZE];
+        last_compress_state: State<F>,
+        initial_state: State<F>,
+    ) -> Result<[RoundWordDense<F>; STATE], Error> {
         layouter.assign_region(
             || "digest",
             |mut region| {
-                digest = self.assign_digest(&mut region, state.clone())?;
-
-                Ok(())
+                self.complete_digest(&mut region, last_compress_state.clone(), initial_state.clone())
             },
-        )?;
-        Ok(digest)
+        )
     }
 }
 
@@ -1062,13 +1023,12 @@ mod tests {
 
                 let state = config
                     .compression
-                    .compress(&mut layouter, initial_state, w_halves)?;
+                    .compress(&mut layouter, initial_state.clone(), w_halves)?;
 
-                let digest = config.compression.digest(&mut layouter, state)?;
+                let digest = config.compression.digest(&mut layouter, state, initial_state)?;
                 for (idx, digest_word) in digest.iter().enumerate() {
-                    digest_word.0.assert_if_known(|digest_word| {
-                        (*digest_word as u64 + IV[idx] as u64) as u32
-                            == super::compression_util::COMPRESSION_OUTPUT[idx]
+                    digest_word.value().assert_if_known(|digest_word| {
+                        *digest_word == super::compression_util::COMPRESSION_OUTPUT[idx]
                     });
                 }
 

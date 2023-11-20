@@ -1,4 +1,5 @@
 use super::super::{util::*, Gate};
+use halo2_gadgets::utilities::range_check;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Constraint, Constraints, Expression},
@@ -414,31 +415,29 @@ impl<F: FieldExt> CompressionGate<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn s_digest(
         s_digest: Expression<F>,
-        lo_0: Expression<F>,
-        hi_0: Expression<F>,
-        word_0: Expression<F>,
-        lo_1: Expression<F>,
-        hi_1: Expression<F>,
-        word_1: Expression<F>,
-        lo_2: Expression<F>,
-        hi_2: Expression<F>,
-        word_2: Expression<F>,
-        lo_3: Expression<F>,
-        hi_3: Expression<F>,
-        word_3: Expression<F>,
+        digest_lo: Expression<F>,
+        digest_hi: Expression<F>,
+        digest_word: Expression<F>,
+        final_lo: Expression<F>,
+        final_hi: Expression<F>,
+        initial_lo: Expression<F>,
+        initial_hi: Expression<F>,
+        digest_carry: Expression<F>,
     ) -> impl IntoIterator<Item = Constraint<F>> {
-        let check_lo_hi = |lo: Expression<F>, hi: Expression<F>, word: Expression<F>| {
-            lo + hi * F::from(1 << 16) - word
-        };
+
+        let check_lo_hi = digest_lo.clone() + digest_hi.clone() * F::from(1 << 16) - digest_word;
+
+        let check = digest_carry.clone() *F::from(1 << 32) + digest_hi * F::from(1<<16) + digest_lo
+            - (final_hi + initial_hi) * F::from(1<<16) - (final_lo + initial_lo);
 
         Constraints::with_selector(
             s_digest,
             [
-                ("check_lo_hi_0", check_lo_hi(lo_0, hi_0, word_0)),
-                ("check_lo_hi_1", check_lo_hi(lo_1, hi_1, word_1)),
-                ("check_lo_hi_2", check_lo_hi(lo_2, hi_2, word_2)),
-                ("check_lo_hi_3", check_lo_hi(lo_3, hi_3, word_3)),
+                ("check digest lo_hi", check_lo_hi),
+                ("digest check", check),
+                ("check carry bit", range_check(digest_carry, 2)),
             ],
         )
     }
+
 }

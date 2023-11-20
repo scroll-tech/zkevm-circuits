@@ -190,12 +190,8 @@ pub fn get_a_new_row(round_idx: MainRoundIdx) -> usize {
     get_maj_row(round_idx)
 }
 
-pub fn get_digest_abcd_row() -> usize {
+pub fn get_digest_first_row() -> usize {
     SUBREGION_MAIN_ROWS
-}
-
-pub fn get_digest_efgh_row() -> usize {
-    get_digest_abcd_row() + 2
 }
 
 impl CompressionConfig {
