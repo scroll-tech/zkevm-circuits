@@ -22,8 +22,6 @@ use std::env::set_var;
 use crate::witness::block_apply_mpt_state;
 
 #[cfg(feature = "scroll")]
-use crate::witness::block_apply_l1_block_hashes;
-#[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
 #[cfg(feature = "scroll")]
 use ethers_core::types::U64;
