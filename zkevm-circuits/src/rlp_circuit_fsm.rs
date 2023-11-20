@@ -16,7 +16,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::{AccessListAddress, AccessListStorageKey, BeginObject, EndObject, TxType},
+        Tag::{AccessListAddress, AccessListStorageKey, BeginObject, EndObject, TxType, EndVector},
         Transaction,
     },
 };
@@ -303,6 +303,10 @@ pub struct RlpCircuitConfig<F> {
     is_new_access_list_address: Column<Advice>,
     /// Boolean to reduce the circuit's degree
     is_new_access_list_storage_key: Column<Advice>,
+    /// Boolean to reduce the circuit's degree
+    is_access_list_address_clear: Column<Advice>,
+    /// Boolean to reduce the circuit's degree
+    is_access_list_storage_key_clear: Column<Advice>,
     /// Decoding table depth check
     is_stack_depth_zero: IsZeroConfig<F>,
 
@@ -383,9 +387,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_same_rlp_instance,
             is_new_access_list_address,
             is_new_access_list_storage_key,
+            is_access_list_address_clear,
+            is_access_list_storage_key_clear,
         ) = (
             meta.fixed_column(),
             meta.fixed_column(),
+            meta.advice_column(),
+            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -1506,6 +1514,25 @@ impl<F: Field> RlpCircuitConfig<F> {
                 is_decode_tag_start(meta),
             ]))
         });
+        meta.create_gate("boolean for reducing degree (part five)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_access_list_address_clear",
+                meta.query_advice(is_access_list_address_clear, Rotation::cur()),
+                depth_eq_two.is_equal_expression.expr(),
+            );
+            cb.require_equal(
+                "is_access_list_storage_key_clear",
+                meta.query_advice(is_access_list_storage_key_clear, Rotation::cur()),
+                depth_eq_four.is_equal_expression.expr(),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                is_tag_end_vector(meta),
+            ]))
+        });
 
         // Access List Increments
         meta.create_gate(
@@ -1551,12 +1578,42 @@ impl<F: Field> RlpCircuitConfig<F> {
         // hence using depth alone is sufficient to determine clearing conditions.
         // however, this might change in the future if more nested structures are introduced at same
         // depth level
+        // 1030_debug
+        // meta.create_gate(
+        //     "access list: clearing access_list_idx and storage_key_idx",
+        //     |meta| {
+        //         let mut cb = BaseConstraintBuilder::default();
+
+        //         cb.condition(depth_eq_two.is_equal_expression.expr(), |cb| {
+        //             cb.require_equal(
+        //                 "al_idx = 0",
+        //                 meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+        //                 0.expr(),
+        //             );
+        //         });
+
+        //         cb.condition(depth_eq_four.is_equal_expression.expr(), |cb| {
+        //             cb.require_equal(
+        //                 "sk_idx = 0",
+        //                 meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+        //                 0.expr(),
+        //             );
+        //         });
+
+        //         cb.gate(and::expr([
+        //             meta.query_fixed(q_enabled, Rotation::cur()),
+        //             is_tag_end_vector(meta),
+        //         ]))
+        //     },
+        // );
         meta.create_gate(
             "access list: clearing access_list_idx and storage_key_idx",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
-                cb.condition(depth_eq_two.is_equal_expression.expr(), |cb| {
+                cb.condition(
+                    meta.query_advice(is_access_list_address_clear, Rotation::cur()), 
+                    |cb| {
                     cb.require_equal(
                         "al_idx = 0",
                         meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
@@ -1564,7 +1621,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 });
 
-                cb.condition(depth_eq_four.is_equal_expression.expr(), |cb| {
+                cb.condition(
+                    meta.query_advice(is_access_list_storage_key_clear, Rotation::cur()), 
+                    |cb| {
                     cb.require_equal(
                         "sk_idx = 0",
                         meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
@@ -1572,10 +1631,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 });
 
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enabled, Rotation::cur()),
-                    is_tag_end_vector(meta),
-                ]))
+                cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
             },
         );
 
@@ -1798,6 +1854,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             // access list checks
             is_new_access_list_address,
             is_new_access_list_storage_key,
+            is_access_list_address_clear,
+            is_access_list_storage_key_clear,
 
             // decoding table
             is_stack_depth_zero,
@@ -1990,6 +2048,22 @@ impl<F: Field> RlpCircuitConfig<F> {
             self.is_new_access_list_storage_key,
             row,
             || Value::known(F::from(is_new_access_list_storage_key as u64)),
+        )?;
+        let is_access_list_address_clear = witness.state_machine.tag == EndVector
+            && witness.state_machine.depth == 2;
+        region.assign_advice(
+            || "is_access_list_address_clear",
+            self.is_access_list_address_clear,
+            row,
+            || Value::known(F::from(is_access_list_address_clear as u64)),
+        )?;
+        let is_access_list_storage_key_clear = witness.state_machine.tag == EndVector
+            && witness.state_machine.depth == 4;
+        region.assign_advice(
+            || "is_access_list_storage_key_clear",
+            self.is_access_list_storage_key_clear,
+            row,
+            || Value::known(F::from(is_access_list_storage_key_clear as u64)),
         )?;
         let stack_depth_chip = IsZeroChip::construct(self.is_stack_depth_zero.clone());
         stack_depth_chip.assign(
