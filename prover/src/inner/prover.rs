@@ -7,7 +7,7 @@ use crate::{
     Proof,
 };
 use anyhow::Result;
-use eth_types::l2_types::BlockTrace;
+use eth_types::l2_types::ChunkTrace;
 use std::marker::PhantomData;
 
 mod mock;
@@ -37,17 +37,17 @@ impl<C: TargetCircuit> Prover<C> {
         &mut self,
         name: &str,
         id: &str,
-        block_traces: Vec<BlockTrace>,
+        chunk_trace: ChunkTrace,
         output_dir: Option<&str>,
     ) -> Result<Proof> {
         let filename = format!("{id}_{name}");
         match output_dir.and_then(|output_dir| Proof::from_json_file(output_dir, &filename).ok()) {
             Some(proof) => Ok(proof),
             None => {
-                assert!(!block_traces.is_empty());
+                assert!(!chunk_trace.block_traces.is_empty());
 
                 let rng = gen_rng();
-                let witness_block = chunk_trace_to_witness_block(block_traces)?;
+                let witness_block = chunk_trace_to_witness_block(chunk_trace)?;
                 let result = self
                     .inner
                     .gen_inner_snark::<C>(id, rng, &witness_block)

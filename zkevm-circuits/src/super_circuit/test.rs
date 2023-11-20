@@ -12,15 +12,24 @@ use log::error;
 use mock::MOCK_DIFFICULTY;
 #[cfg(feature = "scroll")]
 use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
+#[cfg(feature = "scroll")]
+use mock::MOCK_LAST_APPLIED_L1_BLOCK;
 use mock::{eth, TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::env::set_var;
 
 use crate::witness::block_apply_mpt_state;
+
+#[cfg(feature = "scroll")]
+use crate::witness::block_apply_l1_block_hashes;
 #[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
-use eth_types::{address, bytecode, word, Bytecode, ToWord, Word};
+#[cfg(feature = "scroll")]
+use ethers_core::types::U64;
+#[cfg(feature = "scroll")]
+use std::str::FromStr;
+use eth_types::{address, bytecode, word, Bytecode, ToWord, Word, Hash};
 
 #[test]
 fn super_circuit_created_from_dummy_block() {
@@ -61,7 +70,7 @@ fn test_super_circuit<
     const MAX_INNER_BLOCKS: usize,
     const MOCK_RANDOMNESS: u64,
 >(
-    l2_trace: BlockTrace,
+    mut l2_trace: BlockTrace,
     circuits_params: CircuitsParams,
 ) {
     set_var("COINBASE", "0x0000000000000000000000000000000000000000");
@@ -70,6 +79,9 @@ fn test_super_circuit<
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
+    l2_trace.header.last_applied_l1_block = Some(U64([*MOCK_LAST_APPLIED_L1_BLOCK]));
+    l2_trace.l1_block_hashes = Some(vec![Hash::from_str("5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap()]);
+
     let mut builder =
         CircuitInputBuilder::new_from_l2_trace(circuits_params, l2_trace, false, false)
             .expect("could not handle block tx");
@@ -77,8 +89,16 @@ fn test_super_circuit<
     builder
         .finalize_building()
         .expect("could not finalize building block");
+    
+    // TODO: move inside block_convert
+    let mut cum_l1_block_hashes = Vec::new();
+    cum_l1_block_hashes.push(Hash::from_str("5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap());
+    builder.block.prev_last_applied_l1_block = Some(90);
+    builder.block.l1_block_range_hash = Some(Hash::from_str("2ad93677390840a070c85971a6737477e113895f52fb853a66295ef5655e1af4").unwrap());
+    builder.block.cum_l1_block_hashes = cum_l1_block_hashes; 
 
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+    
     block_apply_mpt_state(
         &mut block,
         &builder.mpt_init_state.expect("used non-light mode"),

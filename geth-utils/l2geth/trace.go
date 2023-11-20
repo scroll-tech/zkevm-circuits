@@ -190,6 +190,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		//		Random:      &randao,
 		BaseFee:  toBigInt(config.Block.BaseFee),
 		GasLimit: blockGasLimit,
+		// TODO: add last_applied_l1_block and l1_block_hashes
 	}
 
 	//FIXME: if no history, use random hash instead?

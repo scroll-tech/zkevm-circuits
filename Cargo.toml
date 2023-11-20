@@ -28,7 +28,7 @@ ark-std = "0.3"
 ctor = "0.1"
 env_logger = "0.10"
 ethers = { version = "=2.0.7", features = ["ethers-solc"] }
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7", features = ["scroll"] }
+ethers-core = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/block-hashes-poc", features = ["scroll"] }
 ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"
 ff = "0.13"
@@ -61,7 +61,7 @@ tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
 
 [patch.crates-io]
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-core = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/block-hashes-poc" }
 ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }

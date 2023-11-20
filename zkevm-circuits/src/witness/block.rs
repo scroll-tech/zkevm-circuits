@@ -16,7 +16,7 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256, Hash};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
@@ -74,6 +74,12 @@ pub struct Block<F> {
     pub start_l1_queue_index: u64,
     /// IO to/from precompile calls.
     pub precompile_events: PrecompileEvents,
+    /// Previous last applied l1 block
+    pub prev_last_applied_l1_block: Option<u64>,
+    /// L1 block hashes
+    pub cum_l1_block_hashes: Vec<Hash>,
+    /// L1 block range hash
+    pub l1_block_range_hash: Option<Hash>,
 }
 
 /// ...
@@ -328,6 +334,8 @@ pub struct BlockContext {
     pub chain_id: u64,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// L1 block hashes
+    pub l1_block_hashes: Option<Vec<Hash>>,
 }
 
 impl BlockContext {
@@ -451,6 +459,7 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
                             history_hashes: block.history_hashes.clone(),
                             chain_id: block.chain_id,
                             eth_block: block.eth_block.clone(),
+                            l1_block_hashes: block.l1_block_hashes.clone(),
                         },
                     )
                 })
@@ -575,6 +584,9 @@ pub fn block_convert<F: Field>(
         chain_id,
         start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
+        prev_last_applied_l1_block: block.prev_last_applied_l1_block,
+        l1_block_range_hash: block.l1_block_range_hash,
+        cum_l1_block_hashes: block.cum_l1_block_hashes.clone(),
     })
 }
 

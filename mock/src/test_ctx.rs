@@ -190,7 +190,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         )?;
 
         #[cfg(feature = "scroll")]
-        let block_trace = l2trace(&trace_config)?;
+        let mut block_trace = l2trace(&trace_config)?;
 
         #[cfg(feature = "scroll")]
         let geth_traces = block_trace

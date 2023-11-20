@@ -84,7 +84,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             // For scroll, the block hash is calculated by Keccak256. The input
             // is a 16-bytes array, the first 8-bytes are set to the big-endian
             // of chain ID and the last 8-bytes are set to block number.
-            #[cfg(feature = "scroll")]
+            // #[cfg(feature = "scroll")]
             cb.keccak_table_lookup(
                 cb.keccak_rlc::<{ 2 * N_BYTES_U64 }>(
                     chain_id

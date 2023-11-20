@@ -250,6 +250,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 keccak_table: keccak_table.clone(),
                 tx_table: tx_table.clone(),
                 challenges: challenges_expr.clone(),
+                max_l1_block_hashes: 10,
             },
         );
         log_circuit_info(meta, "pi circuit");

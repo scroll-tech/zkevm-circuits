@@ -4,7 +4,7 @@
 use crate::MOCK_DIFFICULTY;
 #[cfg(feature = "scroll")]
 use crate::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
-use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_GASLIMIT};
+use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_GASLIMIT, MOCK_LAST_APPLIED_L1_BLOCK};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
 use ethers_core::types::{Bloom, OtherFields};
 
@@ -39,6 +39,7 @@ pub struct MockBlock {
     // Also, the field is stored in the block_table since we don't have a chain_config
     // structure/table.
     pub(crate) chain_id: u64,
+    last_applied_l1_block: U64,
 }
 
 impl Default for MockBlock {
@@ -67,6 +68,7 @@ impl Default for MockBlock {
             mix_hash: Hash::zero(),
             nonce: H64::zero(),
             chain_id: MOCK_CHAIN_ID,
+            last_applied_l1_block: U64([*MOCK_LAST_APPLIED_L1_BLOCK]),
         }
     }
 }
@@ -109,6 +111,7 @@ impl From<MockBlock> for Block<Transaction> {
             other: OtherFields::default(),
             withdrawals: None,
             withdrawals_root: None,
+            last_applied_l1_block: Some(mock.last_applied_l1_block),
         }
     }
 }
@@ -141,6 +144,7 @@ impl From<MockBlock> for Block<()> {
             other: OtherFields::default(),
             withdrawals: None,
             withdrawals_root: None,
+            last_applied_l1_block: Some(mock.last_applied_l1_block),
         }
     }
 }
@@ -285,6 +289,12 @@ impl MockBlock {
     /// Set chain_id field for the MockBlock.
     pub fn chain_id(&mut self, chain_id: u64) -> &mut Self {
         self.chain_id = chain_id;
+        self
+    }
+
+    /// Set number field for the MockBlock.
+    pub fn last_applied_l1_block(&mut self, last_applied_l1_block: u64) -> &mut Self {
+        self.last_applied_l1_block = U64::from(last_applied_l1_block);
         self
     }
 

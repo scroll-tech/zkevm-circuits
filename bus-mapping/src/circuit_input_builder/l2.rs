@@ -231,6 +231,7 @@ impl CircuitInputBuilder {
             Vec::new(),
             &eth_block,
         )?;
+        header.l1_block_hashes = block_trace.l1_block_hashes.clone();
         // override zeroed minder field with additional "coinbase" field in blocktrace
         if let Some(address) = block_trace.coinbase.address {
             header.coinbase = address;
@@ -253,6 +254,9 @@ impl CircuitInputBuilder {
         }
         log::debug!("apply_l2_trace done for block {:?}", block_num);
         //self.sdb.list_accounts();
+        if let Some(l1_block_hashes) = block_trace.l1_block_hashes {
+          self.block.cum_l1_block_hashes.append(&mut l1_block_hashes.clone());
+        }
         Ok(())
     }
 
@@ -362,6 +366,7 @@ impl CircuitInputBuilder {
         builder_block.chain_id = chain_id;
         builder_block.prev_state_root = old_root.to_word();
         builder_block.start_l1_queue_index = l2_trace.start_l1_queue_index;
+
         let mut builder = Self {
             sdb,
             code_db,

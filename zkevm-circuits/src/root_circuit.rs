@@ -142,4 +142,4 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
         Ok(())
     }
 }
-                max_inner_blocks: 64,
+                
