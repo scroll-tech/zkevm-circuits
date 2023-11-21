@@ -228,11 +228,25 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     if state.tx.is_create()
         && ((!account_code_hash_is_empty_or_zero) || !callee_account.nonce.is_zero())
     {
-        unimplemented!(
-            "deployment collision at {:?}, account {:?}",
-            call.address,
-            callee_account
-        );
+        // since there is a bug in the prestate
+        // tracer: https://github.com/ethereum/go-ethereum/issues/28439
+        // which may also act as the data source for our statedb,
+        // we have to relax the constarint a bit and fix it silently
+        if account_code_hash_is_empty_or_zero && callee_account.nonce == 1.into() {
+            log::warn!(
+                "fix deployment nonce for {:?} silently for the prestate tracer",
+                call.address,
+            );
+            let mut fixed_account = callee_account.clone();
+            fixed_account.nonce = Word::zero();
+            state.sdb.set_account(&call.address, fixed_account);
+        } else {
+            unimplemented!(
+                "deployment collision at {:?}, account {:?}",
+                call.address,
+                callee_account
+            );
+        }
     }
 
     // Transfer with fee
