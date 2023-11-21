@@ -1094,6 +1094,11 @@ mod tests {
         0x298449c9,
     ];
 
+    const DIGEST_BLOCK: [u32; 8] = [
+        0xffe054fe, 0x7ae0cb6d, 0xc65c3af9, 0xb61d5209, 0xf439851d, 0xb43d0ba5, 0x997337df,
+        0x154668eb,
+    ];
+
     const DIGEST_AX65: [u32; 8] = [
         0x635361c4, 0x8bb9eab1, 0x4198e76e, 0xa8ab7f1a, 0x41685d6a, 0xd62aa914, 0x6d301d4f,
         0x17eb0ae0,
@@ -1130,6 +1135,21 @@ mod tests {
     #[test]
     fn sha256_long() {
         let circuit = MyCircuit(vec![(vec![b'a'; 65], Some(DIGEST_AX65))]);
+        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{e:#?}"),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn sha256_long_block() {
+        let circuit = MyCircuit(vec![
+            (vec![b'a'; 64], Some(DIGEST_BLOCK)),
+            (vec![b'a'; 65], Some(DIGEST_AX65)),
+            (vec![b'a'; 64], Some(DIGEST_BLOCK)),
+            (vec![b'a', b'b', b'c'], Some(DIGEST_ABC)),
+        ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{e:#?}"),
