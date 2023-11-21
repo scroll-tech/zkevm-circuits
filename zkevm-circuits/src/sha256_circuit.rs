@@ -59,7 +59,7 @@ impl SubCircuitConfig<Fr> for CircuitConfig {
 #[derive(Clone, Debug, Default)]
 pub struct SHA256Circuit<F: Field>(Vec<SHA256>, std::marker::PhantomData<F>);
 
-const TABLE16_BLOCK_ROWS: usize = 2101;
+const TABLE16_BLOCK_ROWS: usize = 2114;
 const BLOCK_SIZE_IN_BYTES: usize = BLOCK_SIZE * 4;
 
 impl<F: Field> SHA256Circuit<F> {
