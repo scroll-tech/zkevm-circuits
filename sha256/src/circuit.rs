@@ -94,12 +94,16 @@ impl CircuitConfig {
             let rlc_byte = meta.query_advice(self.bytes_rlc, Rotation::cur());
 
             let s_enable = meta.query_selector(self.s_enable);
+            let s_padding = meta.query_advice(self.s_padding, Rotation::cur());
+            let s_not_padding = one.clone() - s_padding.clone();
 
             // constraint u16 in table16 with byte
             let byte_from_u16 =
                 s_u16 * (u16 - (byte.clone() * Expression::Constant(Fr::from(256u64)) + byte_next));
 
-            let byte_rlc = rlc_byte - (rlc_byte_prev * rnd + byte);
+            let byte_rlc = rlc_byte
+                - s_not_padding * (rlc_byte_prev.clone() * rnd + byte)
+                - s_padding * rlc_byte_prev;
 
             vec![byte_from_u16, s_enable * byte_rlc]
         });
@@ -316,12 +320,11 @@ impl CircuitConfig {
         &self,
         region: &mut Region<'_, Fr>,
         msgs: impl Iterator<Item = (&'vr AssignedBits<Fr, 16>, u16)>,
-        mut bytes_rlc: AssignedCell<Fr, Fr>,
-        chng: Value<Fr>,
         offset: usize,
         is_final: bool,
-    ) -> Result<(Vec<AssignedBits<Fr, 16>>, AssignedCell<Fr, Fr>), Error> {
+    ) -> Result<(Vec<AssignedBits<Fr, 16>>, Vec<AssignedCell<Fr, Fr>>), Error> {
         let mut out_ret = Vec::new();
+        let mut out_bytes = Vec::new();
         let mut size_calc = Value::known(Fr::zero());
 
         for (i, (msg, ref_iv)) in msgs.enumerate() {
@@ -361,13 +364,13 @@ impl CircuitConfig {
                 },
             )?;
 
-            for (j, byte_v) in [bytes_hi, bytes_lo].into_iter().enumerate() {
-                bytes_rlc = region.assign_advice(
-                    || "bytes rlc",
-                    self.bytes_rlc,
-                    row + j,
-                    || chng * bytes_rlc.value() + byte_v.value(),
-                )?;
+            for (j, byte_v) in [&bytes_hi, &bytes_lo].into_iter().enumerate() {
+                // bytes_rlc = region.assign_advice(
+                //     || "bytes rlc",
+                //     self.bytes_rlc,
+                //     row + j,
+                //     || chng * bytes_rlc.value() + byte_v.value(),
+                // )?;
 
                 // here we have a trick, since digest region has only 16 messages instead 32
                 size_calc = region
@@ -387,10 +390,12 @@ impl CircuitConfig {
                     .map(Clone::clone);
             }
 
+            out_bytes.push(bytes_hi);
+            out_bytes.push(bytes_lo);
             out_ret.push(AssignedBits(assigned));
         }
 
-        Ok((out_ret, bytes_rlc))
+        Ok((out_ret, out_bytes))
     }
 
     fn initialize_block_head(
@@ -534,8 +539,19 @@ impl CircuitConfig {
                 )?;
 
                 let header_offset = 2;
+                // assign message state
+                let (_, byte_cells) = self.assign_message_block(
+                    &mut region,
+                    scheduled_msg
+                        .iter()
+                        .flat_map(|(lo, hi)| [hi, lo])
+                        .zip(std::iter::repeat(0u16))
+                        .take(32),
+                    header_offset,
+                    is_final,
+                )?;
 
-                for row in header_offset..(header_offset + 64) {
+                for (row, byte) in (header_offset..(header_offset + 64)).zip(byte_cells) {
                     self.s_enable.enable(&mut region, row)?;
                     let now_padding = row >= padding_pos + header_offset;
 
@@ -566,6 +582,18 @@ impl CircuitConfig {
                                 + Value::known(if now_padding { Fr::zero() } else { Fr::one() })
                         },
                     )?;
+                    bytes_rlc_cell = region.assign_advice(
+                        || "bytes rlc",
+                        self.bytes_rlc,
+                        row,
+                        || {
+                            if now_padding {
+                                bytes_rlc_cell.value().map(Clone::clone)
+                            } else {
+                                chng * bytes_rlc_cell.value() + byte.value()
+                            }
+                        },
+                    )?;
 
                     // println!("padding {:#?}, counter {:#?} at row {}",
                     // output_block.s_padding.value(), output_block.byte_counter.value(), row);
@@ -578,20 +606,6 @@ impl CircuitConfig {
                     }
                 }
                 self.s_final.enable(&mut region, 63 + header_offset)?;
-
-                // assign message state
-                (_, bytes_rlc_cell) = self.assign_message_block(
-                    &mut region,
-                    scheduled_msg
-                        .iter()
-                        .flat_map(|(lo, hi)| [hi, lo])
-                        .zip(std::iter::repeat(0u16))
-                        .take(32),
-                    bytes_rlc_cell,
-                    chng,
-                    header_offset,
-                    is_final,
-                )?;
 
                 // flush unused row
                 for col in [self.trans_byte, self.copied_data] {
@@ -646,7 +660,7 @@ impl CircuitConfig {
                     || "header padding",
                     self.s_padding,
                     0,
-                    Fr::one(),
+                    Fr::zero(),
                 )?;
                 region.assign_advice_from_constant(
                     || "header counter",
@@ -654,7 +668,7 @@ impl CircuitConfig {
                     0,
                     Fr::zero(),
                 )?;
-                let begin_rlc = region.assign_advice_from_constant(
+                let mut digest_rlc = region.assign_advice_from_constant(
                     || "header rlc",
                     self.bytes_rlc,
                     0,
@@ -662,6 +676,13 @@ impl CircuitConfig {
                 )?;
 
                 let header_offset = 1;
+                // assign message state
+                let (export_cells, byte_cells) = self.assign_message_block(
+                    &mut region,
+                    state.iter().flat_map(|(lo, hi)| [hi, lo]).zip_eq(IV16),
+                    header_offset,
+                    is_final,
+                )?;
 
                 for i in 0..32 {
                     let row = i + header_offset;
@@ -673,16 +694,10 @@ impl CircuitConfig {
                         || Value::known(Fr::from(IV16[i / 2] as u64)),
                     )?;
                     region.assign_advice(
-                        || "dummy padding",
-                        self.s_padding,
-                        row,
-                        || Value::known(Fr::one()),
-                    )?;
-                    region.assign_advice(
                         || "byte counter",
                         self.byte_counter,
                         row,
-                        || Value::known(Fr::zero()),
+                        || Value::known(Fr::from(i as u64 + 1)),
                     )?;
                     region.assign_advice(
                         || "final",
@@ -690,17 +705,30 @@ impl CircuitConfig {
                         row,
                         || Value::known(Bits::from([is_final])),
                     )?;
+                    digest_rlc = region.assign_advice(
+                        || "bytes rlc",
+                        self.bytes_rlc,
+                        row,
+                        || chng * digest_rlc.value() + byte_cells[i].value(),
+                    )?;
+                    // with gate for padding continue, it
+                    // is enough to constraint the last padding as 0
+                    if i == 31 {
+                        region.assign_advice_from_constant(
+                            || "dummy padding last",
+                            self.s_padding,
+                            row,
+                            Fr::zero(),
+                        )?;
+                    } else {
+                        region.assign_advice(
+                            || "dummy padding",
+                            self.s_padding,
+                            row,
+                            || Value::known(Fr::zero()),
+                        )?;
+                    }
                 }
-
-                // assign message state
-                let (export_cells, digest_rlc) = self.assign_message_block(
-                    &mut region,
-                    state.iter().flat_map(|(lo, hi)| [hi, lo]).zip_eq(IV16),
-                    begin_rlc,
-                    chng,
-                    header_offset,
-                    is_final,
-                )?;
 
                 // build output row
                 let final_row = header_offset + 32;
@@ -722,6 +750,7 @@ impl CircuitConfig {
                     self.copied_data,
                     final_row,
                 )?;
+
                 input_block.s_final.copy_advice(
                     || "copy final",
                     &mut region,
