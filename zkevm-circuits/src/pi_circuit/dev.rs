@@ -7,13 +7,37 @@ use super::*;
 // that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
 // during the configuration.
 /// Test Circuit for PiCircuit
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct PiTestCircuit<
     F: Field,
     const MAX_TXS: usize,
     const MAX_CALLDATA: usize,
     const MAX_INNER_BLOCKS: usize,
 >(pub PiCircuit<F>);
+
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
+    Default for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
+{
+    fn default() -> Self {
+        Self(PiCircuit::<F> {
+            public_data: PublicData {
+                max_txs: MAX_TXS,
+                max_calldata: MAX_CALLDATA,
+                max_inner_blocks: MAX_INNER_BLOCKS,
+                chain_id: 0,
+                start_l1_queue_index: 0,
+                transactions: vec![],
+                prev_state_root: H256::zero(),
+                next_state_root: H256::zero(),
+                withdraw_trie_root: H256::zero(),
+                block_ctxs: Default::default(),
+            },
+            connections: Default::default(),
+            tx_value_cells: Default::default(),
+            _marker: PhantomData,
+        })
+    }
+}
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
     SubCircuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
@@ -69,9 +93,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
             PiCircuitConfig::new(
                 meta,
                 PiCircuitConfigArgs {
-                    max_txs: MAX_TXS,
-                    max_calldata: MAX_CALLDATA,
-                    max_inner_blocks: MAX_INNER_BLOCKS,
                     block_table,
                     keccak_table,
                     tx_table,
@@ -93,8 +114,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
         let tx_value_cells = config.tx_table.load(
             &mut layouter,
             &self.0.public_data.transactions,
-            self.0.max_txs,
-            self.0.max_calldata,
+            self.0.public_data.max_txs,
+            self.0.public_data.max_calldata,
             self.0.public_data.chain_id,
             &challenges,
         )?;
