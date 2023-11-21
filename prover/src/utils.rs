@@ -164,6 +164,7 @@ pub fn chunk_trace_to_witness_block(mut chunk_trace: ChunkTrace) -> Result<Block
 
     let mut witness_block = block_traces_to_witness_block(chunk_trace.block_traces)?;
     witness_block.prev_last_applied_l1_block = chunk_trace.prev_last_applied_l1_block;
+    witness_block.last_applied_l1_block = chunk_trace.last_applied_l1_block;
     witness_block.l1_block_range_hash = chunk_trace.l1_block_range_hash;
 
     Ok(witness_block)

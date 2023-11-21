@@ -76,6 +76,8 @@ pub struct Block<F> {
     pub precompile_events: PrecompileEvents,
     /// Previous last applied l1 block
     pub prev_last_applied_l1_block: Option<u64>,
+    /// Last applied l1 block
+    pub last_applied_l1_block: Option<u64>,
     /// L1 block hashes
     pub cum_l1_block_hashes: Vec<Hash>,
     /// L1 block range hash
@@ -585,6 +587,7 @@ pub fn block_convert<F: Field>(
         start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
         prev_last_applied_l1_block: block.prev_last_applied_l1_block,
+        last_applied_l1_block: block.last_applied_l1_block,
         l1_block_range_hash: block.l1_block_range_hash,
         cum_l1_block_hashes: block.cum_l1_block_hashes.clone(),
     })

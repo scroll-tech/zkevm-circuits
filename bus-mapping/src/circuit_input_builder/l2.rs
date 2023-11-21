@@ -438,6 +438,19 @@ impl CircuitInputBuilder {
         Ok(())
     }
 
+    /// Apply l1 block hashes to the builder
+    pub fn apply_l1_block_hashes(
+      &mut self,
+      prev_last_applied_l1_block: Option<u64>,
+      last_applied_l1_block: Option<u64>,
+      l1_block_range_hash: Option<H256>,
+    ) -> Result<(), Error> {
+    self.block.prev_last_applied_l1_block = prev_last_applied_l1_block;
+    self.block.last_applied_l1_block = last_applied_l1_block;
+    self.block.l1_block_range_hash = l1_block_range_hash;
+    Ok(())
+}
+
     /// make finalize actions on building, must called after
     /// all block trace have been input
     pub fn finalize_building(&mut self) -> Result<(), Error> {

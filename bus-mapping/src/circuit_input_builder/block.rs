@@ -227,6 +227,8 @@ pub struct Block {
     relax_mode: bool,
     /// Previous last applied l1 block
     pub prev_last_applied_l1_block: Option<u64>,
+    /// Last applied l1 block
+    pub last_applied_l1_block: Option<u64>,
     /// L1 block hashes
     pub cum_l1_block_hashes: Vec<Hash>,
     /// L1 block range hash

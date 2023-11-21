@@ -45,7 +45,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
         ec_mul: 10,
         ec_pairing: 4,
     },
-    max_l1_block_hashes: 10000,
+    max_l1_block_hashes: 1000,
 };
 
 #[tokio::test]

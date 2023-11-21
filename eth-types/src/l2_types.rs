@@ -51,6 +51,8 @@ pub struct ChunkTrace {
   pub block_traces: Vec<BlockTrace>,
   /// Previous last applied block number
   pub prev_last_applied_l1_block: Option<u64>,
+  /// Last applied block number
+  pub last_applied_l1_block: Option<u64>,
   /// L1 block range hash
   pub l1_block_range_hash: Option<Hash>,
 }

@@ -149,7 +149,7 @@ impl Default for CircuitsParams {
             max_vertical_circuit_rows: 0,
             max_rlp_rows: 1000,
             max_ec_ops: PrecompileEcParams::default(),
-            max_l1_block_hashes: 2000,
+            max_l1_block_hashes: 512,
         }
     }
 }
@@ -760,6 +760,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         block.withdraw_root,
         &block.headers,
         block.txs(),
+        block.last_applied_l1_block.unwrap_or(0),
         block.l1_block_range_hash,
         &block.cum_l1_block_hashes,
     ));
@@ -831,6 +832,7 @@ fn keccak_inputs_pi_circuit(
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
+    last_applied_l1_block: u64,
     l1_block_range_hash: Option<H256>,
     cum_l1_block_hashes: &Vec<H256>,
 ) -> Vec<Vec<u8>> {
@@ -891,6 +893,7 @@ fn keccak_inputs_pi_circuit(
         .chain(withdraw_trie_root.to_be_bytes())
         .chain(data_hash.to_fixed_bytes())
         .chain(l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))).to_fixed_bytes())
+        .chain(last_applied_l1_block.to_be_bytes())
         .collect::<Vec<u8>>();
 
     let l1_block_hashes = &cum_l1_block_hashes.iter().map(|h| h.as_ref().to_vec()).collect_vec();
