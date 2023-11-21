@@ -80,8 +80,9 @@ pub enum ExecutionState {
     BLOCKHASH,
     BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
     BLOCKCTXU160, // COINBASE
-    BLOCKCTXU256, // BASEFEE
-    DIFFICULTY,   // DIFFICULTY
+    BLOCKCTXU256, // BASEFEE, DIFFICULTY (for non-scroll)
+    #[cfg(feature = "scroll")]
+    DIFFICULTY, // DIFFICULTY
     CHAINID,
     SELFBALANCE,
     POP,
