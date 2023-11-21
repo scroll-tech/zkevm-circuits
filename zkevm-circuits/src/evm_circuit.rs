@@ -532,10 +532,12 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-        config
-            .sha256_table.dev_load(
+        config.sha256_table.dev_load(
             &mut layouter,
-            block.get_sha256().iter().map(|evt|(&evt.input, &evt.digest)),
+            block
+                .get_sha256()
+                .iter()
+                .map(|evt| (&evt.input, &evt.digest)),
             &challenges,
         )?;
         config.exp_table.dev_load(&mut layouter, block)?;

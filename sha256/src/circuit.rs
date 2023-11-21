@@ -1106,13 +1106,10 @@ mod tests {
 
     #[test]
     fn sha256_simple() {
-        let circuit = MyCircuit(vec![(
-            vec!['a' as u8, 'b' as u8, 'c' as u8],
-            Some(DIGEST_ABC),
-        )]);
+        let circuit = MyCircuit(vec![(vec![b'a', b'b', b'c'], Some(DIGEST_ABC))]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => panic!("{e:#?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -1120,22 +1117,22 @@ mod tests {
     #[test]
     fn sha256_multiple() {
         let circuit = MyCircuit(vec![
-            (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
-            (vec!['a' as u8, 'b' as u8, 'd' as u8], Some(DIGEST_ABD)),
+            (vec![b'a', b'b', b'c'], Some(DIGEST_ABC)),
+            (vec![b'a', b'b', b'd'], Some(DIGEST_ABD)),
         ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => panic!("{e:#?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
 
     #[test]
     fn sha256_long() {
-        let circuit = MyCircuit(vec![(vec!['a' as u8; 65], Some(DIGEST_AX65))]);
+        let circuit = MyCircuit(vec![(vec![b'a'; 65], Some(DIGEST_AX65))]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => panic!("{e:#?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -1149,17 +1146,17 @@ mod tests {
         ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => panic!("{e:#?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
 
     #[test]
     fn sha256_padding_continue() {
-        let circuit = MyCircuit(vec![(vec!['a' as u8; 62], None)]);
+        let circuit = MyCircuit(vec![(vec![b'a'; 62], None)]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => panic!("{e:#?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -1167,16 +1164,16 @@ mod tests {
     #[test]
     fn sha256_complex() {
         let circuit = MyCircuit(vec![
-            (vec!['a' as u8; 65], Some(DIGEST_AX65)),
-            (vec!['a' as u8, 'b' as u8, 'c' as u8], Some(DIGEST_ABC)),
-            (vec!['b' as u8; 62], None),
-            (vec!['c' as u8; 128], None),
+            (vec![b'a'; 65], Some(DIGEST_AX65)),
+            (vec![b'a', b'b', b'c'], Some(DIGEST_ABC)),
+            (vec![b'b'; 62], None),
+            (vec![b'c'; 128], None),
             (vec![], Some(DIGEST_NIL)),
             (vec![], Some(DIGEST_NIL)),
         ]);
         let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => panic!("{e:#?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -1197,8 +1194,8 @@ mod tests {
             .unwrap();
 
         let circuit = MyCircuit(vec![
-            (vec!['a' as u8, 'b' as u8, 'c' as u8], None),
-            (vec!['a' as u8, 'b' as u8, 'c' as u8], None),
+            (vec![b'a', b'b', b'c'], None),
+            (vec![b'a', b'b', b'c'], None),
         ]);
         halo2_proofs::dev::CircuitLayout::default()
             .render::<Fr, _, _>(13, &circuit, &root)
@@ -1206,7 +1203,7 @@ mod tests {
 
         let prover = match MockProver::<_>::run(13, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }

@@ -349,7 +349,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 block_table: block_table.clone(),
                 copy_table,
                 keccak_table: keccak_table.clone(),
-                sha256_table: sha256_table,
+                sha256_table,
                 exp_table,
                 sig_table,
                 modexp_table,

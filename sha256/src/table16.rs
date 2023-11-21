@@ -589,7 +589,7 @@ mod tests {
         let circuit = MyCircuit { repeated: 31 };
         let prover = match MockProver::<_>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -613,7 +613,7 @@ mod tests {
 
         let prover = match MockProver::<_>::run(13, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }

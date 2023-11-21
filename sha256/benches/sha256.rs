@@ -93,9 +93,9 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
     }
 
     // Initialize the polynomial commitment parameters
-    let path_str = format!("./benches/sha256_assets/sha256_params_{}", k);
+    let path_str = format!("./benches/sha256_assets/sha256_params_{k}");
     let params_path = Path::new(&path_str);
-    if File::open(&params_path).is_err() {
+    if File::open(params_path).is_err() {
         let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
         let mut buf = Vec::new();
 
@@ -103,13 +103,13 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
 
         create_dir("./benches/sha256_assets")
             .unwrap_or_else(|_| println!("Params dir already exists"));
-        let mut file = File::create(&params_path).expect("Failed to create sha256_params");
+        let mut file = File::create(params_path).expect("Failed to create sha256_params");
 
         file.write_all(&buf[..])
             .expect("Failed to write params to file");
     }
 
-    let params_fs = File::open(&params_path).expect("couldn't load sha256_params");
+    let params_fs = File::open(params_path).expect("couldn't load sha256_params");
     let params: ParamsKZG<Bn256> =
         ParamsKZG::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
 
@@ -121,8 +121,8 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
 
     let circuit: MyCircuit = MyCircuit {};
 
-    let prover_name = format!("{}-{}-bytes-prover", name.to_string(), CAP_BLK * 64);
-    let verifier_name = format!("{}-{}-bytes-verifier", name.to_string(), CAP_BLK * 64);
+    let prover_name = format!("{}-{}-bytes-prover", name, CAP_BLK * 64);
+    let verifier_name = format!("{}-{}-bytes-verifier", name, CAP_BLK * 64);
 
     // Benchmark proof creation
     c.bench_function(&prover_name, |b| {
@@ -142,9 +142,9 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
     });
 
     // Create a proof
-    let path_str = format!("./benches/sha256_assets/sha256_proof_{}", k);
+    let path_str = format!("./benches/sha256_assets/sha256_proof_{k}");
     let proof_path = Path::new(&path_str);
-    if File::open(&proof_path).is_err() {
+    if File::open(proof_path).is_err() {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<_>, _, _, _, _>(
             &params,
@@ -156,11 +156,11 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
         )
         .expect("proof generation should not fail");
         let proof: Vec<u8> = transcript.finalize();
-        let mut file = File::create(&proof_path).expect("Failed to create sha256_proof");
+        let mut file = File::create(proof_path).expect("Failed to create sha256_proof");
         file.write_all(&proof[..]).expect("Failed to write proof");
     }
 
-    let mut proof_fs = File::open(&proof_path).expect("couldn't load sha256_proof");
+    let mut proof_fs = File::open(proof_path).expect("couldn't load sha256_proof");
     let mut proof = Vec::<u8>::new();
     proof_fs
         .read_to_end(&mut proof)
@@ -170,15 +170,14 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
         b.iter(|| {
             let strategy = SingleStrategy::new(&params);
             let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-            let _strategy =
-                verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<_>, _, _, _>(
-                    &params,
-                    pk.get_vk(),
-                    strategy,
-                    &[],
-                    &mut transcript,
-                )
-                .unwrap();
+            verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<_>, _, _, _>(
+                &params,
+                pk.get_vk(),
+                strategy,
+                &[],
+                &mut transcript,
+            )
+            .unwrap();
         });
     });
 }

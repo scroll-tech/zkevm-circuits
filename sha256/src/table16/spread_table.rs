@@ -4,7 +4,6 @@ use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Chip, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
-    poly::Rotation,
 };
 use std::{convert::TryInto, marker::PhantomData};
 
@@ -188,6 +187,7 @@ impl<F: FieldExt> SpreadTableChip<F> {
 
         #[cfg(not(feature = "dev-graph"))]
         meta.lookup("lookup", |meta| {
+            use halo2_proofs::poly::Rotation;
             let tag_cur = meta.query_advice(input_tag, Rotation::cur());
             let dense_cur = meta.query_advice(input_dense, Rotation::cur());
             let spread_cur = meta.query_advice(input_spread, Rotation::cur());
@@ -452,7 +452,7 @@ mod tests {
 
         let prover = match MockProver::<Fp>::run(17, &circuit, vec![]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         };
         assert_eq!(prover.verify(), Ok(()));
     }

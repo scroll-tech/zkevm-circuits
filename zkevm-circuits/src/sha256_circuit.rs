@@ -89,9 +89,7 @@ impl SubCircuit<Fr> for SHA256Circuit<Fr> {
             let expected_rows = ret.expected_rows();
             assert!(
                 expected_rows <= row_limit,
-                "no enough rows for sha256 circuit, expected {}, limit {}",
-                expected_rows,
-                row_limit,
+                "no enough rows for sha256 circuit, expected {expected_rows}, limit {row_limit}",
             );
             log::info!("sha256 circuit work with maxium {} rows", row_limit);
         }

@@ -1534,7 +1534,7 @@ impl SHA256Table {
     /// Generate the sha256 table assignments from a byte array pair of input/output.
     /// Used only for dev_load
     pub fn assignments<F: Field>(
-        entry: (&[u8], &[u8;32]),
+        entry: (&[u8], &[u8; 32]),
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
         let (input, output) = entry;
@@ -1553,7 +1553,7 @@ impl SHA256Table {
     pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        entries: impl IntoIterator<Item = (&'a Vec<u8>, &'a [u8;32])> + Clone,
+        entries: impl IntoIterator<Item = (&'a Vec<u8>, &'a [u8; 32])> + Clone,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(

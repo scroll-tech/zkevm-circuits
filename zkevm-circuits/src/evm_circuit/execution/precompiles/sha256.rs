@@ -27,7 +27,7 @@ pub struct SHA256Gadget<F> {
     is_success: Cell<F>,
     callee_address: Cell<F>,
     caller_id: Cell<F>,
-    call_data_offset: Cell<F>,    
+    call_data_offset: Cell<F>,
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
@@ -101,7 +101,7 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             is_success,
             callee_address,
             caller_id,
-            call_data_offset,            
+            call_data_offset,
             call_data_length,
             return_data_offset,
             return_data_length,
@@ -124,15 +124,15 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             return_bytes,
         }) = &step.aux_data
         {
-            let in_rlc = region
-            .challenges()
-            .keccak_input()
-            .map(|r| rlc::value(input_bytes.iter().rev(), r));
+            region
+                .challenges()
+                .keccak_input()
+                .map(|r| rlc::value(input_bytes.iter().rev(), r));
 
-            let out_rlc = region
-            .challenges()
-            .keccak_input()
-            .map(|r| rlc::value(output_bytes.iter().rev(), r));
+            region
+                .challenges()
+                .keccak_input()
+                .map(|r| rlc::value(output_bytes.iter().rev(), r));
 
             self.input_bytes_rlc.assign(
                 region,

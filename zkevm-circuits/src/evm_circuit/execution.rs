@@ -3,7 +3,7 @@ use super::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, ECC_TABLE_LOOKUPS,
         EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, MODEXP_TABLE_LOOKUPS,
         N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS,
-        RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS, SHA256_TABLE_LOOKUPS,
+        RW_TABLE_LOOKUPS, SHA256_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, Inverter, StoredExpression},
     EvmCircuitExports,
@@ -206,7 +206,8 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use precompiles::{
-    EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget, ModExpGadget, SHA256Gadget,
+    EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget, ModExpGadget,
+    SHA256Gadget,
 };
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
