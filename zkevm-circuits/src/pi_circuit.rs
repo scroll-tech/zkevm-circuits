@@ -737,49 +737,49 @@ impl<F: Field> PiCircuitConfig<F> {
     ///
     /// The layout of the PI circuit is as follows:
     ///
-    /// |----------|----------------------|--------------------------|
-    /// |          | rpi initialise       |                          |
-    /// |          | block[0].number      |                          |
-    /// |          | block[0].timestamp   |                          |
-    /// |          | block[0].base_fee    |                          |
-    /// |          | block[0].gas_limit   |                          |
-    /// |          | block[0].num_all_txs |                          |
-    /// |          | block[1].number      | <- q_block_context == 1  |
-    /// | *PART 1* | ...                  |                          |
-    /// |          | block[n].num_all_txs |                          |
-    /// | ASSIGN   | PADDING              |                          |
-    /// | DATA     | ...                  |                          |
-    /// | BYTES    | PADDING              |                          |
-    /// |          |----------------------|--------------------------|
-    /// |          | tx_hash[0]           |                          |
-    /// |          | tx_hash[1]           |                          |
-    /// |          | ...                  |                          |
-    /// |          | tx_hash[n]           | <- q_tx_hashes == 1      |
-    /// |          | DUMMY_TX_HASH        |                          |
-    /// |          | ...                  |                          |
-    /// |          | DUMMY_TX_HASH        |                          |
-    /// |          |----------------------|--------------------------|
-    /// |          | rlc(data_bytes)      | <- q_keccak == 1         |
-    /// |----------|----------------------|--------------------------|
-    /// |          | rpi initialise       |                          |
-    /// |          | chain_id             |                          |
-    /// | *PART 2* | prev_state_root      |                          |
-    /// |          | next_state_root      |                          |
-    /// | ASSIGN   | withdraw_trie_root   |                          |
-    /// | PI       | data_hash            |                          |
-    /// | BYTES    |----------------------|--------------------------|
-    /// |          | rlc(pi_bytes)        | <- q_keccak == 1         |
-    /// |----------|----------------------|--------------------------|
-    /// | *PART 3* | rpi initialise       |                          |
-    /// | ASSIGN   | pi_hash_hi           |                          |
-    /// | PI HASH  | pi_hash_lo           |                          |
-    /// |----------|----------------------|--------------------------|
-    /// | *PART 4* | rpi initialise       |                          |
-    /// | ASSIGN   | coinbase             |                          |
-    /// | CONSTS   | difficulty           |                          |
-    /// |----------|----------------------|--------------------------|
+    /// |----------|------------------------|--------------------------|
+    /// |          | rpi initialise         |                          |
+    /// |          | block\[0\].number      |                          |
+    /// |          | block\[0\].timestamp   |                          |
+    /// |          | block\[0\].base_fee    |                          |
+    /// |          | block\[0\].gas_limit   |                          |
+    /// |          | block\[0\].num_all_txs |                          |
+    /// |          | block\[1\].number      | <- q_block_context == 1  |
+    /// | *PART 1* | ...                    |                          |
+    /// |          | block\[n\].num_all_txs |                          |
+    /// | ASSIGN   | PADDING                |                          |
+    /// | DATA     | ...                    |                          |
+    /// | BYTES    | PADDING                |                          |
+    /// |          |------------------------|--------------------------|
+    /// |          | tx_hash\[0\]           |                          |
+    /// |          | tx_hash\[1\]           |                          |
+    /// |          | ...                    |                          |
+    /// |          | tx_hash\[n\]           | <- q_tx_hashes == 1      |
+    /// |          | DUMMY_TX_HASH          |                          |
+    /// |          | ...                    |                          |
+    /// |          | DUMMY_TX_HASH          |                          |
+    /// |          |------------------------|--------------------------|
+    /// |          | rlc(data_bytes)        | <- q_keccak == 1         |
+    /// |----------|------------------------|--------------------------|
+    /// |          | rpi initialise         |                          |
+    /// |          | chain_id               |                          |
+    /// | *PART 2* | prev_state_root        |                          |
+    /// |          | next_state_root        |                          |
+    /// | ASSIGN   | withdraw_trie_root     |                          |
+    /// | PI       | data_hash              |                          |
+    /// | BYTES    |------------------------|--------------------------|
+    /// |          | rlc(pi_bytes)          | <- q_keccak == 1         |
+    /// |----------|------------------------|--------------------------|
+    /// | *PART 3* | rpi initialise         |                          |
+    /// | ASSIGN   | pi_hash_hi             |                          |
+    /// | PI HASH  | pi_hash_lo             |                          |
+    /// |----------|------------------------|--------------------------|
+    /// | *PART 4* | rpi initialise         |                          |
+    /// | ASSIGN   | coinbase               |                          |
+    /// | CONSTS   | difficulty             |                          |
+    /// |----------|------------------------|--------------------------|
     ///
-    /// Where each one of the rows above, i.e. block[0].number, block[0].timestamp, ...,
+    /// Where each one of the rows above, i.e. block\[0\].number, block\[0\].timestamp, ...,
     /// pi_hash_lo, coinbase, difficulty are assigned using the assign_field method.
     ///
     /// Each `field` takes multiple rows in the actual circuit layout depending on how many bytes
