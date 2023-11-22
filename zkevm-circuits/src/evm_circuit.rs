@@ -283,11 +283,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
-// the diff is from the num of valid opcodes: self-destruct?
-#[cfg(not(feature = "scroll"))]
 const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3647;
-#[cfg(feature = "scroll")]
-const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3646;
 const FIXED_TABLE_ROWS: usize = FIXED_TABLE_ROWS_NO_BITWISE + 3 * 65536;
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
