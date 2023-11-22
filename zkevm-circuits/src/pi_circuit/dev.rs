@@ -35,7 +35,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
                 prev_last_applied_l1_block: 0,
                 last_applied_l1_block: 0,
                 l1_block_range_hash: H256::zero(),
-                cum_l1_block_hashes: vec![],
+                l1_block_hashes: vec![],
                 max_l1_block_hashes: MAX_L1_BLOCK_HASHES,
             },
             connections: Default::default(),

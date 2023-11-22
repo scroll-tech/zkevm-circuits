@@ -51,7 +51,6 @@ pub fn trace(config: &str) -> Result<String, Error> {
     // Convert the returned string to something we can use in Rust again.
     // Also make sure the returned data is copied to rust managed memory.
     let c_result = unsafe { CStr::from_ptr(result) };
-    
     let result = c_result
         .to_str()
         .expect("Error translating EVM trace from library")

@@ -40,6 +40,7 @@ pub struct MockBlock {
     // structure/table.
     pub(crate) chain_id: u64,
     last_applied_l1_block: U64,
+    l1_block_hashes: Option<Vec<Hash>>,
 }
 
 impl Default for MockBlock {
@@ -69,6 +70,7 @@ impl Default for MockBlock {
             nonce: H64::zero(),
             chain_id: MOCK_CHAIN_ID,
             last_applied_l1_block: U64([*MOCK_LAST_APPLIED_L1_BLOCK]),
+            l1_block_hashes: None,
         }
     }
 }
@@ -112,6 +114,7 @@ impl From<MockBlock> for Block<Transaction> {
             withdrawals: None,
             withdrawals_root: None,
             last_applied_l1_block: Some(mock.last_applied_l1_block),
+            l1_block_hashes: None,
         }
     }
 }
@@ -145,6 +148,7 @@ impl From<MockBlock> for Block<()> {
             withdrawals: None,
             withdrawals_root: None,
             last_applied_l1_block: Some(mock.last_applied_l1_block),
+            l1_block_hashes: None,
         }
     }
 }

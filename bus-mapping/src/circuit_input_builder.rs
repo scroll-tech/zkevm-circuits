@@ -12,6 +12,7 @@ mod l2;
 mod tracer_tests;
 mod transaction;
 
+use once_cell::sync::Lazy;
 use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
 use crate::{
@@ -760,9 +761,9 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         block.withdraw_root,
         &block.headers,
         block.txs(),
-        block.last_applied_l1_block.unwrap_or(0),
+        block.last_applied_l1_block,
         block.l1_block_range_hash,
-        &block.cum_l1_block_hashes,
+        &block.l1_block_hashes,
     ));
     // Bytecode Circuit
     for _bytecode in code_db.0.values() {
@@ -821,9 +822,10 @@ pub fn get_dummy_tx_hash() -> H256 {
 }
 
 /// Get the dummy hash
-pub fn get_dummy_l1_block_hash() -> H256 {
-    Hash::from_str("5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap()
-}
+pub static DUMMY_L1_BLOCK_HASH: Lazy<Hash> = Lazy::new(|| {
+    Hash::from_str("0x5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap()
+});
+
 
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
@@ -832,9 +834,9 @@ fn keccak_inputs_pi_circuit(
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
-    last_applied_l1_block: u64,
+    last_applied_l1_block: Option<u64>,
     l1_block_range_hash: Option<H256>,
-    cum_l1_block_hashes: &Vec<H256>,
+    l1_block_hashes: &Vec<H256>,
 ) -> Vec<Vec<u8>> {
     let mut total_l1_popped = start_l1_queue_index;
     log::debug!(
@@ -893,10 +895,10 @@ fn keccak_inputs_pi_circuit(
         .chain(withdraw_trie_root.to_be_bytes())
         .chain(data_hash.to_fixed_bytes())
         .chain(l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))).to_fixed_bytes())
-        .chain(last_applied_l1_block.to_be_bytes())
+        .chain(last_applied_l1_block.unwrap_or(0).to_be_bytes())
         .collect::<Vec<u8>>();
 
-    let l1_block_hashes = &cum_l1_block_hashes.iter().map(|h| h.as_ref().to_vec()).collect_vec();
+    let l1_block_hashes = &l1_block_hashes.iter().map(|h| h.as_ref().to_vec()).collect_vec();
     let l1_block_hashes_bytes = l1_block_hashes.iter().flatten().cloned().collect_vec();
 
     assert_eq!(

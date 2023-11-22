@@ -78,8 +78,8 @@ pub struct Block<F> {
     pub prev_last_applied_l1_block: Option<u64>,
     /// Last applied l1 block
     pub last_applied_l1_block: Option<u64>,
-    /// L1 block hashes
-    pub cum_l1_block_hashes: Vec<Hash>,
+    /// Cumulative l1 block hashes array in this chunk
+    pub l1_block_hashes: Vec<Hash>,
     /// L1 block range hash
     pub l1_block_range_hash: Option<Hash>,
 }
@@ -589,7 +589,7 @@ pub fn block_convert<F: Field>(
         prev_last_applied_l1_block: block.prev_last_applied_l1_block,
         last_applied_l1_block: block.last_applied_l1_block,
         l1_block_range_hash: block.l1_block_range_hash,
-        cum_l1_block_hashes: block.cum_l1_block_hashes.clone(),
+        l1_block_hashes: block.l1_block_hashes.clone(),
     })
 }
 

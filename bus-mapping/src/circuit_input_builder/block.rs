@@ -181,7 +181,7 @@ impl BlockHead {
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             eth_block: eth_block.clone(),
             last_applied_l1_block: eth_block.last_applied_l1_block.map(|b| b.as_u64()),
-            l1_block_hashes: None,
+            l1_block_hashes: eth_block.l1_block_hashes.clone(),
         })
     }
 }
@@ -229,8 +229,8 @@ pub struct Block {
     pub prev_last_applied_l1_block: Option<u64>,
     /// Last applied l1 block
     pub last_applied_l1_block: Option<u64>,
-    /// L1 block hashes
-    pub cum_l1_block_hashes: Vec<Hash>,
+    /// Cumulative l1 block hashes array in this chunk
+    pub l1_block_hashes: Vec<Hash>,
     /// L1 block range hash
     pub l1_block_range_hash: Option<Hash>,
 }

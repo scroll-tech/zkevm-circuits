@@ -14,8 +14,8 @@ use zkevm_circuits::witness::Block;
 /// - state root after this chunk
 /// - the withdraw root after this chunk
 /// - the data hash of this chunk
-/// - the l1 block range hash of this chunk
 /// - the last applied l1 block number of this chunk
+/// - the l1 block range hash of this chunk
 /// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
 pub struct ChunkHash {
     /// Chain identifier
@@ -28,10 +28,10 @@ pub struct ChunkHash {
     pub withdraw_root: H256,
     /// the data hash of this chunk
     pub data_hash: H256,
-    /// the l1 block range hash of this chunk
-    pub l1_block_range_hash: H256,
     /// the last applied l1 block number of this chunk
     pub last_applied_l1_block: u64,
+    /// the l1 block range hash of this chunk
+    pub l1_block_range_hash: H256,
     /// if the chunk is a padded chunk
     pub is_padding: bool,
 }
@@ -102,8 +102,8 @@ impl ChunkHash {
             post_state_root,
             withdraw_root: H256(block.withdraw_root.to_be_bytes()),
             data_hash,
-            l1_block_range_hash: block.l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))),
             last_applied_l1_block: block.last_applied_l1_block.unwrap_or(0),
+            l1_block_range_hash: block.l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))),
             is_padding,
         }
     }
@@ -127,8 +127,8 @@ impl ChunkHash {
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
-            l1_block_range_hash: l1_block_range_hash.into(),
             last_applied_l1_block: 0,
+            l1_block_range_hash: l1_block_range_hash.into(),
             is_padding: false,
         }
     }
@@ -146,8 +146,8 @@ impl ChunkHash {
             post_state_root: previous_chunk.post_state_root,
             withdraw_root: previous_chunk.withdraw_root,
             data_hash: previous_chunk.data_hash,
-            l1_block_range_hash: previous_chunk.l1_block_range_hash,
             last_applied_l1_block: previous_chunk.last_applied_l1_block,
+            l1_block_range_hash: previous_chunk.l1_block_range_hash,
             is_padding: true,
         }
     }
@@ -168,8 +168,8 @@ impl ChunkHash {
             self.post_state_root.as_bytes(),
             self.withdraw_root.as_bytes(),
             self.data_hash.as_bytes(),
-            self.l1_block_range_hash.as_bytes(),
             self.last_applied_l1_block.to_be_bytes().as_ref(),
+            self.l1_block_range_hash.as_bytes(),
         ]
         .concat()
     }

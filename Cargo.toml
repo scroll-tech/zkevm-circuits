@@ -64,7 +64,7 @@ url = "2.2"
 ethers-core = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/block-hashes-poc" }
 ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-etherscan = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc" }
 ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]

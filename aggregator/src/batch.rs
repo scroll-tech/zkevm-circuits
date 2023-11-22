@@ -14,9 +14,9 @@ use super::chunk::ChunkHash;
 /// - the last (#MAX_AGG_SNARKS-k) chunks are from empty traces
 /// A BatchHash consists of 3 hashes.
 /// - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
-///   chunk_k-1.withdraw_root || batch_data_hash)
+///   chunk_k-1.withdraw_root || batch_data_hash || chunk_k-1.last_applied_l1_block || batch_l1_block_range_hash)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
-/// - batch_l1_block_range_hash := keccak(chunk_0.l1_block_range_hash || ... ||
+/// - batch_l1_block_range_hash := keccak(chunk_0.l1_block_range_hash || ... || chunk_k-1.l1_block_range_hash)
 pub struct BatchHash {
     pub(crate) chain_id: u64,
     // chunks with padding.
@@ -86,12 +86,12 @@ impl BatchHash {
                     chunks_with_padding[i].withdraw_root
                 );
                 assert_eq!(
-                    chunks_with_padding[i + 1].l1_block_range_hash,
-                    chunks_with_padding[i].l1_block_range_hash
-                );
-                assert_eq!(
                     chunks_with_padding[i + 1].last_applied_l1_block,
                     chunks_with_padding[i].last_applied_l1_block
+                );
+                assert_eq!(
+                    chunks_with_padding[i + 1].l1_block_range_hash,
+                    chunks_with_padding[i].l1_block_range_hash
                 );
             } else {
                 assert_eq!(
@@ -140,8 +140,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             batch_data_hash.as_slice(),
-            batch_l1_block_range_hash.as_slice(),
             chunks_with_padding[MAX_AGG_SNARKS - 1].last_applied_l1_block.to_be_bytes().as_ref(),
+            batch_l1_block_range_hash.as_slice(),
         ]
         .concat();
         let public_input_hash = keccak256(preimage);
@@ -173,9 +173,9 @@ impl BatchHash {
         //      chunk[0].prev_state_root ||
         //      chunk[k-1].post_state_root ||
         //      chunk[k-1].withdraw_root ||
-        //      batch_data_hash 
-        //      batch_l1_block_range_hash ||
-        //      chunk[k-1].last_applied_l1_block)
+        //      batch_data_hash ||
+        //      chunk[k-1].last_applied_l1_block ||
+        //      batch_l1_block_range_hash)
         let batch_public_input_hash_preimage = [
             self.chain_id.to_be_bytes().as_ref(),
             self.chunks_with_padding[0].prev_state_root.as_bytes(),
@@ -186,8 +186,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             self.data_hash.as_bytes(),
-            self.l1_block_range_hash.as_bytes(),
             self.chunks_with_padding[MAX_AGG_SNARKS - 1].last_applied_l1_block.to_be_bytes().as_ref(),
+            self.l1_block_range_hash.as_bytes(),
         ]
         .concat();
         res.push(batch_public_input_hash_preimage);
@@ -197,7 +197,7 @@ impl BatchHash {
         // keccak(
         //        chain id ||
         //        chunk[i].prevStateRoot || chunk[i].postStateRoot || chunk[i].withdrawRoot ||
-        //        chunk[i].datahash || chunk[i].l1BlockRangeHash || chunk[i].lastAppliedL1Block)
+        //        chunk[i].datahash || chunk[i].lastAppliedL1Block || chunk[i].l1BlockRangeHash)
         for chunk in self.chunks_with_padding.iter() {
             let chunk_public_input_hash_preimage = [
                 self.chain_id.to_be_bytes().as_ref(),
@@ -205,8 +205,8 @@ impl BatchHash {
                 chunk.post_state_root.as_bytes(),
                 chunk.withdraw_root.as_bytes(),
                 chunk.data_hash.as_bytes(),
-                chunk.l1_block_range_hash.as_bytes(),
                 chunk.last_applied_l1_block.to_be_bytes().as_ref(),
+                chunk.l1_block_range_hash.as_bytes(),
             ]
             .concat();
             res.push(chunk_public_input_hash_preimage)
