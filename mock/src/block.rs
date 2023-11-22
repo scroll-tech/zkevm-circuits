@@ -114,7 +114,7 @@ impl From<MockBlock> for Block<Transaction> {
             withdrawals: None,
             withdrawals_root: None,
             last_applied_l1_block: Some(mock.last_applied_l1_block),
-            l1_block_hashes: None,
+            l1_block_hashes: mock.l1_block_hashes,
         }
     }
 }
@@ -148,7 +148,7 @@ impl From<MockBlock> for Block<()> {
             withdrawals: None,
             withdrawals_root: None,
             last_applied_l1_block: Some(mock.last_applied_l1_block),
-            l1_block_hashes: None,
+            l1_block_hashes: mock.l1_block_hashes,
         }
     }
 }

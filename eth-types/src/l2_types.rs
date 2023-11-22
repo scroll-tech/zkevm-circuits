@@ -85,6 +85,7 @@ impl From<&BlockTrace> for EthBlock {
         EthBlock {
             transactions: txs,
             difficulty: 0.into(),
+            l1_block_hashes: b.l1_block_hashes.clone(),
             ..b.header.clone()
         }
     }

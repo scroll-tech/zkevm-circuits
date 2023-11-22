@@ -137,7 +137,7 @@ impl BlockHead {
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             eth_block: eth_block.clone(),
             last_applied_l1_block: eth_block.last_applied_l1_block.map(|b| b.as_u64()),
-            l1_block_hashes: None,
+            l1_block_hashes: eth_block.l1_block_hashes.clone(),
         })
     }
 
