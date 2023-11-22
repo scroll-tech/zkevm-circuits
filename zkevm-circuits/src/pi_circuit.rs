@@ -781,7 +781,7 @@ impl<F: Field> PiCircuitConfig<F> {
     ///
     /// Where each one of the rows above, i.e. block[0].number, block[0].timestamp, ...,
     /// pi_hash_lo, coinbase, difficulty are assigned using the assign_field method.
-    /// 
+    ///
     /// Each `field` takes multiple rows in the actual circuit layout depending on how many bytes
     /// it takes to represent the said field. For instance, pi_hash_lo represent the lower 16 bytes
     /// of the public input hash, hence we need 16 rows to assign the pi_hash_lo field. In
