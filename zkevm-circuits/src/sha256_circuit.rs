@@ -23,11 +23,15 @@ use bus_mapping::circuit_input_builder::SHA256;
 use eth_types::Field;
 
 impl TableTrait for SHA256Table {
-    fn cols(&self) -> [Column<Any>; 4] {
-        <Self as LookupTable<Fr>>::columns(self)
-            .as_slice()
-            .try_into()
-            .expect("return 4 cols")
+    fn cols(&self) -> [Column<Any>; 5] {
+        let tbl_cols = <Self as LookupTable<Fr>>::columns(self);
+        [
+            tbl_cols[0],
+            tbl_cols[2],
+            tbl_cols[3],
+            tbl_cols[4],
+            tbl_cols[1],
+        ]
     }
 }
 

@@ -308,6 +308,8 @@ pub(crate) enum Lookup<F> {
     Sha256Table {
         /// Accumulator to the input.
         input_rlc: Expression<F>,
+        /// Length of input that is being hashed.
+        input_len: Expression<F>,
         /// Output (hash) until this state. This is the RLC representation of
         /// the final output sha256 hash of the input.
         output_rlc: Expression<F>,
@@ -477,11 +479,13 @@ impl<F: Field> Lookup<F> {
             ],
             Self::Sha256Table {
                 input_rlc,
+                input_len,
                 output_rlc,
             } => vec![
                 1.expr(), // q_enable
                 1.expr(), // is_final
                 input_rlc.clone(),
+                input_len.clone(),
                 output_rlc.clone(),
             ],
             Self::ExpTable {

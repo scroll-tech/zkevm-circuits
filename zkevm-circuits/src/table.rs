@@ -1496,6 +1496,8 @@ pub struct SHA256Table {
     pub is_final: Column<Advice>,
     /// Byte array input as `RLC(reversed(input))`
     pub input_rlc: Column<Advice>, // RLC of input bytes
+    /// Byte array input length
+    pub input_len: Column<Advice>,
     /// RLC of the hash result
     pub output_rlc: Column<Advice>, // RLC of hash of input bytes
 }
@@ -1504,18 +1506,20 @@ impl<F: Field> LookupTable<F> for SHA256Table {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
-            self.input_rlc.into(),
-            self.output_rlc.into(),
             self.is_final.into(),
+            self.input_rlc.into(),
+            self.input_len.into(),
+            self.output_rlc.into(),
         ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("q_enable"),
-            String::from("input_rlc"),
-            String::from("output_rlc"),
             String::from("is_final"),
+            String::from("input_rlc"),
+            String::from("input_len"),
+            String::from("output_rlc"),
         ]
     }
 }
@@ -1526,6 +1530,7 @@ impl SHA256Table {
         Self {
             q_enable: meta.fixed_column(),
             is_final: meta.advice_column(),
+            input_len: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             output_rlc: meta.advice_column_in(SecondPhase),
         }
@@ -1536,8 +1541,9 @@ impl SHA256Table {
     pub fn assignments<F: Field>(
         entry: (&[u8], &[u8; 32]),
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 3]> {
+    ) -> Vec<[Value<F>; 4]> {
         let (input, output) = entry;
+        let input_len = Value::known(F::from(input.len() as u64));
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
@@ -1545,7 +1551,7 @@ impl SHA256Table {
             .keccak_input()
             .map(|challenge| rlc::value(&Word::from_big_endian(output).to_le_bytes(), challenge));
 
-        vec![[Value::known(F::one()), input_rlc, output_rlc]]
+        vec![[Value::known(F::one()), input_rlc, input_len, output_rlc]]
     }
 
     /// Provide this function for the case that we want to consume a sha256

@@ -78,7 +78,11 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
 
         // sha256 verify lookup
         cb.condition(is_success.expr(), |cb| {
-            cb.sha256_table_lookup(input_bytes_rlc.expr(), output_bytes_rlc.expr());
+            cb.sha256_table_lookup(
+                input_bytes_rlc.expr(),
+                call_data_length.expr(),
+                output_bytes_rlc.expr(),
+            );
         });
 
         let restore_context = RestoreContextGadget::construct2(

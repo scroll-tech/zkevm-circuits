@@ -15,8 +15,8 @@ type BlockState = <Table16Chip as Sha256Instructions<Fr>>::State;
 
 /// the defination for a sha256 table
 pub trait SHA256Table {
-    /// the cols has layout [s_enable, input_bytes, hashes, effect]
-    fn cols(&self) -> [Column<Any>; 4];
+    /// the cols has layout [s_enable, input_bytes, input_len, hashes, effect]
+    fn cols(&self) -> [Column<Any>; 5];
 
     /// ...
     fn s_enable(&self) -> Column<Fixed> {
@@ -31,14 +31,20 @@ pub trait SHA256Table {
             .expect("must provide cols as expected layout")
     }
     /// ...
-    fn hashes_rlc(&self) -> Column<Advice> {
+    fn input_len(&self) -> Column<Advice> {
         self.cols()[2]
+            .try_into()
+            .expect("must provide cols as expected layout")
+    }
+    /// ...
+    fn hashes_rlc(&self) -> Column<Advice> {
+        self.cols()[3]
             .try_into()
             .expect("must provide cols as expected layout")
     }
     /// a phase 0 col indicate this row is effect (corresponding to a final block)
     fn is_effect(&self) -> Column<Advice> {
-        self.cols()[3]
+        self.cols()[4]
             .try_into()
             .expect("must provide cols as expected layout")
     }
@@ -261,13 +267,13 @@ impl CircuitConfig {
         let trans_byte = meta.advice_column(); // index 4
 
         let bytes_rlc = sha256_table.hashes_rlc();
+        let byte_counter = sha256_table.input_len();
         let copied_data = sha256_table.input_rlc();
         let s_output = sha256_table.s_enable();
         let s_final_block = sha256_table.is_effect();
 
         let s_padding_size = meta.selector();
         let s_padding = meta.advice_column();
-        let byte_counter = meta.advice_column();
         let s_begin = meta.selector();
         let s_common_bytes = meta.selector();
         let s_final = meta.selector();
@@ -750,7 +756,12 @@ impl CircuitConfig {
                     self.copied_data,
                     final_row,
                 )?;
-
+                input_block.byte_counter.copy_advice(
+                    || "copy bytes",
+                    &mut region,
+                    self.byte_counter,
+                    final_row,
+                )?;
                 input_block.s_final.copy_advice(
                     || "copy final",
                     &mut region,
@@ -1029,15 +1040,17 @@ mod tests {
             struct DevTable {
                 s_enable: Column<Fixed>,
                 input_rlc: Column<Advice>,
+                input_len: Column<Advice>,
                 hashes_rlc: Column<Advice>,
                 is_effect: Column<Advice>,
             }
 
             impl SHA256Table for DevTable {
-                fn cols(&self) -> [Column<Any>; 4] {
+                fn cols(&self) -> [Column<Any>; 5] {
                     [
                         self.s_enable.into(),
                         self.input_rlc.into(),
+                        self.input_len.into(),
                         self.hashes_rlc.into(),
                         self.is_effect.into(),
                     ]
@@ -1047,6 +1060,7 @@ mod tests {
             let dev_table = DevTable {
                 s_enable: meta.fixed_column(),
                 input_rlc: meta.advice_column(),
+                input_len: meta.advice_column(),
                 hashes_rlc: meta.advice_column(),
                 is_effect: meta.advice_column(),
             };

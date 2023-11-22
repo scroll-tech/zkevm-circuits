@@ -1481,12 +1481,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn sha256_table_lookup(
         &mut self,
         input_rlc: Expression<F>,
+        input_len: Expression<F>,
         output_rlc: Expression<F>,
     ) {
         self.add_lookup(
             "sha256 lookup",
             Lookup::Sha256Table {
                 input_rlc,
+                input_len,
                 output_rlc,
             },
         );
