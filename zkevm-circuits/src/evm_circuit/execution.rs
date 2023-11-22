@@ -146,6 +146,8 @@ use address::AddressGadget;
 use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
+#[cfg(feature = "scroll")]
+use block_ctx::DifficultyGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use blockhash::BlockHashGadget;
 use byte::ByteGadget;
@@ -328,6 +330,8 @@ pub(crate) struct ExecutionConfig<F> {
     block_ctx_u64_gadget: Box<BlockCtxU64Gadget<F>>,
     block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
+    #[cfg(feature = "scroll")]
+    difficulty_gadget: Box<DifficultyGadget<F>>,
     // error gadgets
     error_oog_call: Box<ErrorOOGCallGadget<F>>,
     error_oog_precompile: Box<ErrorOOGPrecompileGadget<F>>,
@@ -606,6 +610,8 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u64_gadget: configure_gadget!(),
             block_ctx_u160_gadget: configure_gadget!(),
             block_ctx_u256_gadget: configure_gadget!(),
+            #[cfg(feature = "scroll")]
+            difficulty_gadget: configure_gadget!(),
             // error gadgets
             error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
@@ -1439,6 +1445,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
+            #[cfg(feature = "scroll")]
+            ExecutionState::DIFFICULTY => assign_exec_step!(self.difficulty_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),

@@ -17,7 +17,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
-    evm_types::gas_utils::tx_data_gas_cost,
+    evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
     geth_types::{TxType, TxType::PreEip155},
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
@@ -67,6 +67,8 @@ pub struct Transaction {
     pub call_data_length: usize,
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
+    /// The gas cost for access list (EIP 2930)
+    pub access_list_gas_cost: u64,
     /// The gas cost for rlp-encoded bytes of unsigned tx
     pub tx_data_gas_cost: u64,
     /// Chain ID as per EIP-155.
@@ -225,6 +227,12 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.call_data_gas_cost)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.access_list_gas_cost)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -858,6 +866,7 @@ impl From<MockTransaction> for Transaction {
             call_data: mock_tx.input.to_vec(),
             call_data_length: mock_tx.input.len(),
             call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
+            access_list_gas_cost: tx_access_list_gas_cost(&Some(mock_tx.access_list)),
             tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
             chain_id: mock_tx.chain_id,
             rlp_unsigned,
@@ -909,6 +918,7 @@ pub(super) fn tx_convert(
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
         call_data_gas_cost: tx_data_gas_cost(&tx.input),
+        access_list_gas_cost: tx_access_list_gas_cost(&tx.access_list),
         tx_data_gas_cost: tx_gas_cost,
         chain_id,
         rlp_unsigned: tx.rlp_unsigned_bytes.clone(),
