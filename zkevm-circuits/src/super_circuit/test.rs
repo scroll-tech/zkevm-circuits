@@ -473,7 +473,6 @@ fn serial_test_super_circuit_precompile_invalid_ec_pairing_fq_overflow() {
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
-
 #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
