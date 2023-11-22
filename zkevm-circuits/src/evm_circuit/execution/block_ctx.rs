@@ -147,13 +147,16 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
     }
 }
 
-#[cfg(not(feature = "scroll"))]
+// TODO:
+// This gadget is used for `BASEFEE` opcode. With current `scroll` feature, it's
+// disabled by l2geth and converted to an invalid opcode.
+// <https://github.com/scroll-tech/zkevm-circuits/blob/develop/eth-types/src/evm_types/opcode_ids.rs#L1062>
+// So need to test it after `BASEFEE` opcode is enabled in scroll l2geth.
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxU256Gadget<F> {
     value_u256: BlockCtxGadget<F, N_BYTES_WORD>,
 }
 
-#[cfg(not(feature = "scroll"))]
 impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
     const NAME: &'static str = "BLOCKCTXU256";
 
@@ -174,6 +177,11 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        if cfg!(feature = "scroll") {
+            panic!("BASEFEE is disabled by scroll for now");
+        }
+        log::debug!("BlockCtxU256Gadget assign for {:?}", step.opcode);
+
         self.value_u256
             .same_context
             .assign_exec_step(region, offset, step)?;
@@ -188,17 +196,20 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
     }
 }
 
+#[cfg(feature = "scroll")]
 #[derive(Clone, Debug)]
-pub(crate) struct DifficulityGadget<F> {
+pub(crate) struct DifficultyGadget<F> {
     same_context: SameContextGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for DifficulityGadget<F> {
-    const NAME: &'static str = "DIFFICULITY";
+#[cfg(feature = "scroll")]
+impl<F: Field> ExecutionGadget<F> for DifficultyGadget<F> {
+    const NAME: &'static str = "DIFFICULTY";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU256;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::DIFFICULTY;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        // Always returns 0 for scroll.
         cb.stack_push(0.expr());
         let opcode = cb.query_cell();
         // State transition
@@ -223,16 +234,9 @@ impl<F: Field> ExecutionGadget<F> for DifficulityGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
-
-        Ok(())
+        self.same_context.assign_exec_step(region, offset, step)
     }
 }
-
-// notice in scroll ,the BASEFEE is invalid and difficulity has been
-// changed
-#[cfg(feature = "scroll")]
-pub(crate) use DifficulityGadget as BlockCtxU256Gadget;
 
 #[cfg(test)]
 mod test {

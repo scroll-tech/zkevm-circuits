@@ -80,7 +80,9 @@ pub enum ExecutionState {
     BLOCKHASH,
     BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
     BLOCKCTXU160, // COINBASE
-    BLOCKCTXU256, // DIFFICULTY, BASEFEE
+    BLOCKCTXU256, // BASEFEE, DIFFICULTY (for non-scroll)
+    #[cfg(feature = "scroll")]
+    DIFFICULTY, // DIFFICULTY
     CHAINID,
     SELFBALANCE,
     POP,
@@ -270,11 +272,13 @@ impl ExecutionState {
             Self::BLOCKCTXU160 => vec![OpcodeId::COINBASE],
             Self::BLOCKCTXU256 => {
                 if cfg!(feature = "scroll") {
-                    vec![OpcodeId::DIFFICULTY]
+                    vec![OpcodeId::BASEFEE]
                 } else {
                     vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE]
                 }
             }
+            #[cfg(feature = "scroll")]
+            Self::DIFFICULTY => vec![OpcodeId::DIFFICULTY],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::POP => vec![OpcodeId::POP],
