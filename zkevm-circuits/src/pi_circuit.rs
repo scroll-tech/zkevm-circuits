@@ -262,45 +262,40 @@ impl PublicData {
     }
 
     fn data_bytes_end_offset(&self) -> usize {
-        1 // the first row is reserved for rlc init.
+        self.data_bytes_start_offset()
             + self.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
             + self.max_txs * KECCAK_DIGEST_SIZE
     }
 
     fn pi_bytes_start_offset(&self) -> usize {
-        self.data_bytes_end_offset() + 1 // a row is reserved for the keccak256(rlc(data_bytes)) ==
-                                         // data_hash lookup.
+        self.data_bytes_end_offset()
+            + 1 // a row is reserved for the keccak256(rlc(data_bytes)) == data_hash lookup.
+            + 1 // new row.
     }
 
     fn pi_bytes_end_offset(&self) -> usize {
-        self.pi_bytes_start_offset()
-            + 1 // the first row after pi_bytes_start_offset is reserved for rlc init.
-            + N_BYTES_U64
-            + N_BYTES_WORD * 4
+        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 4
     }
 
     fn pi_hash_start_offset(&self) -> usize {
-        self.pi_bytes_end_offset() + 1 // a row is reserved for the keccak256(rlc(pi_bytes)) ==
-                                       // pi_hash lookup.
+        self.pi_bytes_end_offset()
+            + 1 // a row is reserved for the keccak256(rlc(pi_bytes)) == pi_hash lookup.
+            + 1 // new row.
     }
 
     fn pi_hash_end_offset(&self) -> usize {
-        self.pi_hash_start_offset()
-            + 1 // the first row after pi_hash_start_offset is reserved for rlc init.
-            + KECCAK_DIGEST_SIZE
+        self.pi_hash_start_offset() + KECCAK_DIGEST_SIZE
     }
 
     fn constants_start_offset(&self) -> usize {
         // there is no keccak lookup after the region where pi_hash is assigned. Hence we start
         // assigning constants (coinbase and difficulty) from where we ended the previous
         // assignment.
-        self.pi_hash_end_offset()
+        self.pi_hash_end_offset() + 1 // new row.
     }
 
     fn constants_end_offset(&self) -> usize {
-        self.constants_start_offset()
-            + 1 // the first row after constants_start_offset is reserved for rlc init.
-            + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD
+        self.constants_start_offset() + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD
     }
 }
 
@@ -807,7 +802,7 @@ impl<F: Field> PiCircuitConfig<F> {
             tx_value_cells,
             challenges,
         )?;
-        debug_assert_eq!(offset, public_data.data_bytes_end_offset());
+        debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
         // 2. Assign public input bytes.
         let (offset, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
@@ -819,17 +814,17 @@ impl<F: Field> PiCircuitConfig<F> {
             &data_hash_rlc_cell,
             challenges,
         )?;
-        debug_assert_eq!(offset, public_data.pi_bytes_end_offset());
+        debug_assert_eq!(offset, public_data.pi_hash_start_offset());
 
         // 3. Assign public input hash (hi, lo) decomposition.
         let (offset, pi_hash_cells) =
             self.assign_pi_hash(region, offset, public_data, &pi_hash_rlc_cell, challenges)?;
-        debug_assert_eq!(offset, public_data.pi_hash_end_offset());
+        debug_assert_eq!(offset, public_data.constants_start_offset());
 
         // 4. Assign block coinbase and difficulty.
         let offset =
             self.assign_constants(region, offset, public_data, block_value_cells, challenges)?;
-        debug_assert_eq!(offset, public_data.constants_end_offset());
+        debug_assert_eq!(offset, public_data.constants_end_offset() + 1);
 
         Ok((pi_hash_cells, connections))
     }
@@ -991,7 +986,6 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // Assign row for validating lookup to check:
         // data_hash == keccak256(rlc(data_bytes))
-        offset += 1;
         data_bytes_rlc.unwrap().copy_advice(
             || "data_bytes_rlc in the rpi col",
             region,
@@ -1018,7 +1012,7 @@ impl<F: Field> PiCircuitConfig<F> {
         };
         self.q_keccak.enable(region, offset)?;
 
-        Ok((offset, data_hash_rlc_cell))
+        Ok((offset + 1, data_hash_rlc_cell))
     }
 
     /// Assign public input bytes, that represent the pre-image to pi_hash.
@@ -1107,7 +1101,6 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // Assign row for validating lookup to check:
         // pi_hash == keccak256(rlc(pi_bytes))
-        offset += 1;
         pi_bytes_rlc.copy_advice(
             || "pi_bytes_rlc in the rpi col",
             region,
@@ -1129,7 +1122,7 @@ impl<F: Field> PiCircuitConfig<F> {
         };
         self.q_keccak.enable(region, offset)?;
 
-        Ok((offset, pi_hash_rlc_cell, connections))
+        Ok((offset + 1, pi_hash_rlc_cell, connections))
     }
 
     /// Assign the (hi, lo) decomposition of pi_hash.
@@ -1292,8 +1285,8 @@ impl<F: Field> PiCircuitConfig<F> {
         //
         // However for other cases, we use the keccak randomness from the challenge API.
         let (is_rlc_keccak, rlc_rand) = match field_type {
-            RpiFieldType::KeccakHiLo | RpiFieldType::Constant => (F::one(), challenges.evm_word()),
-            _ => (F::zero(), challenges.keccak_input()),
+            RpiFieldType::KeccakHiLo | RpiFieldType::Constant => (F::zero(), challenges.evm_word()),
+            _ => (F::one(), challenges.keccak_input()),
         };
 
         // The RLC of the big-endian bytes representing this field's value.
@@ -1446,7 +1439,7 @@ impl<F: Field> PiCircuitConfig<F> {
         //      byte_cell[n_bytes - 1]
         // ]
         Ok((
-            offset,
+            offset + n_bytes,
             rpi_rlc_acc,
             rpi_length,
             [
