@@ -214,7 +214,7 @@ mod test {
         evm::{OpcodeId, PrecompileCallArgs},
         precompile::PrecompileCalls,
     };
-    use eth_types::{bytecode, ToWord};
+    use eth_types::{bytecode, word, ToWord};
     use itertools::Itertools;
     use mock::TestContext;
 
@@ -238,12 +238,70 @@ mod test {
                     address: PrecompileCalls::Sha256.address().to_word(),
                     ..Default::default()
                 },
+                PrecompileCallArgs {
+                    name: "nil success",
+                    setup_code: bytecode! {},
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x00.into(),
+                    ret_offset: 0x20.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Sha256.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "block edge",
+                    setup_code: bytecode! {
+                        // place params in memory
+                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                        PUSH1(0x00)
+                        MSTORE
+                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                        PUSH1(0x20)
+                        MSTORE                        
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x40.into(),
+                    ret_offset: 0x20.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Sha256.address().to_word(),
+                    ..Default::default()
+                },                
+                PrecompileCallArgs {
+                    name: "simple truncated return",
+                    setup_code: bytecode! {
+                        // place params in memory
+                        PUSH3(0x616263)
+                        PUSH1(0x00)
+                        MSTORE
+                    },
+                    call_data_offset: 0x1d.into(),
+                    call_data_length: 0x03.into(),
+                    ret_offset: 0x20.into(),
+                    ret_size: 0x10.into(),
+                    address: PrecompileCalls::Sha256.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "overlapped return",
+                    setup_code: bytecode! {
+                        // place params in memory
+                        PUSH3(0x616263)
+                        PUSH1(0x00)
+                        MSTORE
+                    },
+                    call_data_offset: 0x1d.into(),
+                    call_data_length: 0x03.into(),
+                    ret_offset: 0x00.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Sha256.address().to_word(),
+                    ..Default::default()
+                },                                             
             ]
         };
     }
 
     #[test]
-    fn precompile_sha256_test() {
+    fn precompile_sha256_common_test() {
         let call_kinds = vec![
             OpcodeId::CALL,
             OpcodeId::STATICCALL,
@@ -260,4 +318,58 @@ mod test {
             .run();
         }
     }
+
+    // verify nil case is corrected handled in SHA256 event
+    #[test]
+    fn precompile_sha256_nil_test() {
+
+        let nil_vector = &TEST_VECTOR[1];
+        let bytecode = nil_vector.with_call_op(OpcodeId::STATICCALL);
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .block_modifier(Box::new(|blk|{
+            let evts = blk.get_sha256();
+            assert_eq!(evts.len(), 1);
+            assert_eq!(evts[0].input.len(), 0);
+        }))
+        .run();
+        
+    }
+
+    // verify nil case is corrected handled in SHA256 event
+    #[test]
+    fn precompile_sha256_oog_test() {
+
+        let oog_vector = PrecompileCallArgs {
+            name: "oog",
+            setup_code: bytecode! {
+                PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                PUSH1(0x00)
+                MSTORE
+                PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                PUSH1(0x20)
+                MSTORE                        
+            },
+            call_data_offset: 0x00.into(),
+            call_data_length: 0x40.into(),
+            ret_offset: 0x20.into(),
+            ret_size: 0x20.into(),
+            address: PrecompileCalls::Sha256.address().to_word(),
+            gas: 20.into(),
+            ..Default::default()
+        };  
+
+        let bytecode = oog_vector.with_call_op(OpcodeId::STATICCALL);
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        ).block_modifier(Box::new(|blk|{
+            assert_eq!(blk.get_sha256().len(), 0);
+        }))
+        .run();
+        
+    }
+
 }
