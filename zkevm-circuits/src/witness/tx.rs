@@ -3,7 +3,7 @@ use crate::{
     table::TxContextFieldTag,
     util::{rlc_be_bytes, Challenges},
     witness::{
-        rlp_fsm::{RlpStackOp, SmState, StackOp},
+        rlp_fsm::{RlpStackOp, SmState},
         DataTable, Format,
         Format::{
             L1MsgHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
