@@ -146,6 +146,8 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
+    /// Gas cost for access list (EIP 2930)
+    AccessListGasCost,
     /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID

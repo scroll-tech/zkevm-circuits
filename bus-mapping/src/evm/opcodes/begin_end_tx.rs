@@ -12,7 +12,10 @@ use crate::{
 };
 use core::fmt::Debug;
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{
+        gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
+        GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
+    },
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -186,13 +189,15 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
 
     // Calculate intrinsic gas cost
     let call_data_gas_cost = tx_data_gas_cost(&state.tx.input);
+    let access_list_gas_cost = tx_access_list_gas_cost(&state.tx.access_list);
     let intrinsic_gas_cost = if state.tx.is_create() {
         GasCost::CREATION_TX.as_u64()
     } else {
         GasCost::TX.as_u64()
     } + call_data_gas_cost
+        + access_list_gas_cost
         + init_code_gas_cost;
-    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
+    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, access_list_gas_cost {access_list_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee account

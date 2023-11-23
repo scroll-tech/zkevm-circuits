@@ -60,6 +60,8 @@ pub(crate) struct BeginTxGadget<F> {
     is_call_data_empty: IsZeroGadget<F>,
     tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
     tx_call_data_gas_cost: Cell<F>,
+    // The gas cost for access list (EIP 2930)
+    access_list_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -104,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_id = cb.query_cell();
 
         let sender_nonce = cb.query_cell();
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, access_list_gas_cost, tx_data_gas_cost] =
             [
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
@@ -113,6 +115,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::IsCreate,
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
+                TxContextFieldTag::AccessListGasCost,
                 TxContextFieldTag::TxDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
@@ -255,6 +258,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     eth_types::evm_types::GasCost::CREATION_TX.expr(),
                     eth_types::evm_types::GasCost::TX.expr(),
                 ) + tx_call_data_gas_cost.expr()
+                    + access_list_gas_cost.expr()
                     + init_code_gas_cost,
             )
         });
@@ -689,6 +693,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_call_data_empty,
             tx_call_data_word_length,
             tx_call_data_gas_cost,
+            access_list_gas_cost,
             tx_data_gas_cost,
             reversion_info,
             sufficient_gas_left,
@@ -915,6 +920,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             Value::known(F::from(tx.call_data_gas_cost)),
+        )?;
+        self.access_list_gas_cost.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.access_list_gas_cost)),
         )?;
         self.tx_data_gas_cost
             .assign(region, offset, Value::known(F::from(tx.tx_data_gas_cost)))?;

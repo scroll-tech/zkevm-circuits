@@ -81,11 +81,12 @@ async fn test_mock_prove_tx() {
     }
 
     let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    #[cfg(feature = "scroll")]
     witness::block_mocking_apply_mpt(&mut block);
     let mut updated_state_root = H256::default();
     block
         .state_root
-        .unwrap()
+        .unwrap_or_default()
         .to_big_endian(&mut updated_state_root.0);
 
     builder.block.prev_state_root = block.prev_state_root;
@@ -190,11 +191,12 @@ async fn test_circuit_all_block() {
         }
 
         let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        #[cfg(feature = "scroll")]
         witness::block_mocking_apply_mpt(&mut block);
         let mut updated_state_root = H256::default();
         block
             .state_root
-            .unwrap()
+            .unwrap_or_default()
             .to_big_endian(&mut updated_state_root.0);
 
         builder.block.prev_state_root = block.prev_state_root;
