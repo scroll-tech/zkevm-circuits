@@ -1607,10 +1607,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.condition(
                     meta.query_advice(is_access_list_end, Rotation::cur()),
                     |cb| {
-                        cb.require_equal(
+                        cb.require_zero(
                             "al_idx = 0",
                             meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                            0.expr(),
                         );
                     },
                 );
@@ -1618,10 +1617,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.condition(
                     meta.query_advice(is_storage_key_list_end, Rotation::cur()),
                     |cb| {
-                        cb.require_equal(
+                        cb.require_zero(
                             "sk_idx = 0",
                             meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-                            0.expr(),
                         );
                     },
                 );
