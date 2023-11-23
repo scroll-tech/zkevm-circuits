@@ -878,7 +878,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_id = call.call_id;
         let call_idx = self.tx.calls().len();
 
-        self.tx_ctx.push_call_ctx(call_idx, call_data);
+        self.tx_ctx
+            .push_call_ctx(call_idx, call_data, call.is_success);
         self.tx.push_call(call);
 
         self.block_ctx
@@ -966,7 +967,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let is_success = *self
             .tx_ctx
             .call_is_success
-            .get(self.tx.calls().len())
+            .get(self.tx.calls().len() - self.tx_ctx.call_is_success_offset)
             .unwrap();
         let kind = CallKind::try_from(step.op)?;
         let caller = self.call()?;

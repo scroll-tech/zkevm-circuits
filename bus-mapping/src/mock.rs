@@ -1,9 +1,7 @@
 //! Mock types and functions to generate mock data useful for tests
 
 use crate::{
-    circuit_input_builder::{
-        get_state_accesses, AccessSet, Block, BlockHead, CircuitInputBuilder, CircuitsParams,
-    },
+    circuit_input_builder::{AccessSet, Block, BlockHead, CircuitInputBuilder, CircuitsParams},
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{geth_types::GethData, ToWord, Word, H256};
@@ -57,9 +55,7 @@ impl BlockData {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
-        let access_set: AccessSet =
-            get_state_accesses(&geth_data.eth_block, &geth_data.geth_traces)
-                .expect("state accesses");
+        let access_set: AccessSet = AccessSet::from_geth_data(&geth_data);
         // Initialize all accesses accounts to zero
         for addr in access_set.state.keys() {
             sdb.set_account(addr, state_db::Account::zero());
