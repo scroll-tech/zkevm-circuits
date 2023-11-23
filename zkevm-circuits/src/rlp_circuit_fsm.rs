@@ -1558,7 +1558,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         // Access List Increments
         meta.create_gate(
             "access list: access_list_idx increments",
-            |meta: &mut VirtualCells<'_, F>| {
+            |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.condition(
