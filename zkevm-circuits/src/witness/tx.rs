@@ -507,15 +507,13 @@ impl Transaction {
 
                             if !(0xc0..=0xf7).contains(&byte_value) {
                                 // add stack op on same depth
-                                stack_ops.push(RlpStackOp {
+                                stack_ops.push(RlpStackOp::update(
                                     id,
-                                    depth: cur.depth,
-                                    value: *rem - 1,
-                                    value_prev: *rem,
+                                    cur.depth,
+                                    *rem - 1,
                                     stack_acc,
-                                    stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
-                                    stack_op: StackOp::Update,
-                                });
+                                    stack_acc_pow_of_rand[cur.depth],
+                                ));
                             }
 
                             *rem -= 1;
@@ -630,15 +628,13 @@ impl Transaction {
                         assert!(*rem >= 1);
 
                         // add stack op on same depth
-                        stack_ops.push(RlpStackOp {
+                        stack_ops.push(RlpStackOp::update(
                             id,
-                            depth: cur.depth,
-                            value: *rem - 1,
-                            value_prev: *rem,
+                            cur.depth,
+                            *rem - 1,
                             stack_acc,
-                            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
-                            stack_op: StackOp::Update,
-                        });
+                            stack_acc_pow_of_rand[cur.depth],
+                        ));
 
                         *rem -= 1;
                     }
@@ -668,15 +664,13 @@ impl Transaction {
                         assert!(*rem >= 1);
 
                         // add stack op on same depth
-                        stack_ops.push(RlpStackOp {
+                        stack_ops.push(RlpStackOp::update(
                             id,
-                            depth: cur.depth,
-                            value: *rem - 1,
-                            value_prev: *rem,
+                            cur.depth,
+                            *rem - 1,
                             stack_acc,
-                            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
-                            stack_op: StackOp::Update,
-                        });
+                            stack_acc_pow_of_rand[cur.depth],
+                        ));
 
                         *rem -= 1;
                     }
@@ -705,15 +699,13 @@ impl Transaction {
 
                         // add stack op on same depth
                         if cur.tag_idx < cur.tag_length {
-                            stack_ops.push(RlpStackOp {
+                            stack_ops.push(RlpStackOp::update(
                                 id,
-                                depth: cur.depth,
-                                value: *rem - 1,
-                                value_prev: *rem,
+                                cur.depth,
+                                *rem - 1,
                                 stack_acc,
-                                stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
-                                stack_op: StackOp::Update,
-                            });
+                                stack_acc_pow_of_rand[cur.depth],
+                            ));
                         }
 
                         *rem -= 1;
