@@ -601,15 +601,14 @@ impl Transaction {
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
 
-                            stack_ops.push(RlpStackOp {
+                            stack_ops.push(RlpStackOp::push(
                                 id,
-                                depth: cur.depth + 1,
-                                value: num_bytes_of_new_list,
-                                value_prev: 0,
+                                cur.depth + 1,
+                                num_bytes_of_new_list,
                                 stack_acc,
-                                stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth + 1],
-                                stack_op: StackOp::Push,
-                            });
+                                stack_acc_pow_of_rand[cur.depth + 1]
+                            ));
+
                             next.depth = cur.depth + 1;
                             next.state = DecodeTagStart;
                         } else {
@@ -740,15 +739,13 @@ impl Transaction {
                             *rem -= lb_len;
                         }
                         remaining_bytes.push(lb_len);
-                        stack_ops.push(RlpStackOp {
+                        stack_ops.push(RlpStackOp::push(
                             id,
-                            depth: cur.depth + 1,
-                            value: lb_len,
-                            value_prev: 0,
+                            cur.depth + 1,
+                            lb_len,
                             stack_acc,
-                            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth + 1],
-                            stack_op: StackOp::Push,
-                        });
+                            stack_acc_pow_of_rand[cur.depth + 1]
+                        ));
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
                     }
