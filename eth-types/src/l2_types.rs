@@ -2,7 +2,7 @@
 
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    Block, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
+    Block, GethExecError, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
 };
 use ethers_core::types::{Address, Bytes, U256, U64};
 use serde::{Deserialize, Serialize};
