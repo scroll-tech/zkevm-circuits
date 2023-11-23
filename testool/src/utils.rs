@@ -161,7 +161,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             format!("{}", step.gas.0),
             format!("{}", step.gas_cost.0),
             format!("{}", step.depth),
-            step.error.unwrap_or_default(),
+            step.error.map(|e| e.error()).unwrap_or(""),
             split(stack, 30),
             split(memory, 30),
             split(storage, 30)

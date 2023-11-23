@@ -232,7 +232,7 @@ pub struct ExecStep {
     #[serde(default)]
     pub refund: u64,
     pub depth: isize,
-    pub error: Option<String>,
+    pub error: Option<GethExecError>,
     #[cfg(feature = "enable-stack")]
     pub stack: Option<Vec<Word>>,
     #[cfg(feature = "enable-memory")]
