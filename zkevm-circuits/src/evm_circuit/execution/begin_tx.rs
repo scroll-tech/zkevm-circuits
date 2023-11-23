@@ -6,7 +6,8 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                TransferGadgetInfo, TransferWithGasFeeGadget, TxL1FeeGadget, TxL1MsgGadget,
+                TransferGadgetInfo, TransferWithGasFeeGadget, TxEip2930Gadget, TxL1FeeGadget,
+                TxL1MsgGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -43,6 +44,7 @@ const PRECOMPILE_COUNT: usize = 9;
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
     tx_id: Cell<F>,
+    tx_type: Cell<F>,
     sender_nonce: Cell<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
@@ -60,8 +62,6 @@ pub(crate) struct BeginTxGadget<F> {
     is_call_data_empty: IsZeroGadget<F>,
     tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
     tx_call_data_gas_cost: Cell<F>,
-    // The gas cost for access list (EIP 2930)
-    access_list_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -92,6 +92,7 @@ pub(crate) struct BeginTxGadget<F> {
     is_coinbase_warm: Cell<F>,
     tx_l1_fee: TxL1FeeGadget<F>,
     tx_l1_msg: TxL1MsgGadget<F>,
+    tx_eip2930: TxEip2930Gadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -104,10 +105,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.query_cell();
-
         let sender_nonce = cb.query_cell();
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, access_list_gas_cost, tx_data_gas_cost] =
+
+        let [tx_type, tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
             [
+                TxContextFieldTag::TxType,
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
                 TxContextFieldTag::CallerAddress,
@@ -115,14 +117,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::IsCreate,
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
-                TxContextFieldTag::AccessListGasCost,
                 TxContextFieldTag::TxDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
+        let tx_eip2930 = TxEip2930Gadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
-        let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_id.expr(), tx_caller_address.expr());
+        let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
             cb.require_equal(
                 "tx.nonce == sender.nonce",
@@ -258,7 +260,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     eth_types::evm_types::GasCost::CREATION_TX.expr(),
                     eth_types::evm_types::GasCost::TX.expr(),
                 ) + tx_call_data_gas_cost.expr()
-                    + access_list_gas_cost.expr()
+                    + tx_eip2930.gas_cost()
                     + init_code_gas_cost,
             )
         });
@@ -676,6 +678,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         Self {
             tx_id,
+            tx_type,
             tx_nonce,
             sender_nonce,
             tx_gas,
@@ -693,7 +696,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_call_data_empty,
             tx_call_data_word_length,
             tx_call_data_gas_cost,
-            access_list_gas_cost,
             tx_data_gas_cost,
             reversion_info,
             sufficient_gas_left,
@@ -717,6 +719,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_coinbase_warm,
             tx_l1_fee,
             tx_l1_msg,
+            tx_eip2930,
         }
     }
 
@@ -737,7 +740,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let mut rws = StepRws::new(block, step);
 
-        let caller_code_hash = if tx.tx_type.is_l1_msg() {
+        let tx_type = tx.tx_type;
+        let caller_code_hash = if tx_type.is_l1_msg() {
             let caller_code_hash_pair = rws.next().account_codehash_pair();
             assert_eq!(
                 caller_code_hash_pair.0, caller_code_hash_pair.1,
@@ -748,7 +752,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             U256::zero()
         };
         self.tx_l1_msg
-            .assign(region, offset, tx.tx_type, caller_code_hash)?;
+            .assign(region, offset, tx_type, caller_code_hash)?;
 
         ////////////// RWS ////////////////
         // if L1:
@@ -768,7 +772,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // caller addr
         // callee addr
         // coinbase
-        rws.offset_add(if tx.tx_type.is_l1_msg() {
+        rws.offset_add(if tx_type.is_l1_msg() {
             if caller_code_hash.is_zero() {
                 assert_eq!(
                     tx.nonce, 0,
@@ -851,6 +855,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+        self.tx_type
+            .assign(region, offset, Value::known(F::from(tx_type as u64)))?;
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.nonce)))?;
         self.sender_nonce
@@ -920,11 +926,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             Value::known(F::from(tx.call_data_gas_cost)),
-        )?;
-        self.access_list_gas_cost.assign(
-            region,
-            offset,
-            Value::known(F::from(tx.access_list_gas_cost)),
         )?;
         self.tx_data_gas_cost
             .assign(region, offset, Value::known(F::from(tx.tx_data_gas_cost)))?;
@@ -1054,7 +1055,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.l1_fee,
             tx.l1_fee_committed,
             tx.tx_data_gas_cost,
-        )
+        )?;
+
+        self.tx_eip2930.assign(region, offset, tx)
     }
 }
 

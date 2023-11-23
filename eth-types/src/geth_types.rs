@@ -49,12 +49,22 @@ impl From<TxType> for u64 {
 impl TxType {
     /// If this type is L1Msg or not
     pub fn is_l1_msg(&self) -> bool {
-        matches!(*self, TxType::L1Msg)
+        matches!(*self, Self::L1Msg)
     }
 
-    /// If this type is Eip155 or not
+    /// If this type is EIP-155 or not
     pub fn is_eip155_tx(&self) -> bool {
-        matches!(*self, TxType::Eip155)
+        matches!(*self, Self::Eip155)
+    }
+
+    /// If this type is EIP-1559 or not
+    pub fn is_eip1559_tx(&self) -> bool {
+        matches!(*self, Self::Eip1559)
+    }
+
+    /// If this type is EIP-2930 or not
+    pub fn is_eip2930_tx(&self) -> bool {
+        matches!(*self, Self::Eip2930)
     }
 
     /// Get the type of transaction
@@ -402,3 +412,18 @@ impl GethData {
     }
 }
 */
+
+/// Return access list address size and all storage key size.
+pub fn access_list_address_and_storage_key_sizes(access_list: &Option<AccessList>) -> (u64, u64) {
+    access_list.as_ref().map_or_else(
+        || (0, 0),
+        |list| {
+            (
+                list.0.len() as u64,
+                list.0
+                    .iter()
+                    .fold(0, |acc, item| acc + item.storage_keys.len()) as u64,
+            )
+        },
+    )
+}

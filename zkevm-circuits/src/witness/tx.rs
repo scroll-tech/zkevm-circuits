@@ -18,11 +18,12 @@ use crate::{
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
-    geth_types::{TxType, TxType::PreEip155},
+    geth_types::{access_list_address_and_storage_key_sizes, TxType, TxType::PreEip155},
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
-    Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
+    AccessList, Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord,
+    Word, H256,
 };
 use ethers_core::{types::TransactionRequest, utils::keccak256};
 use halo2_proofs::{
@@ -87,6 +88,8 @@ pub struct Transaction {
     pub l1_fee: TxL1Fee,
     /// Committed values of L1 fee
     pub l1_fee_committed: TxL1Fee,
+    /// Optional access list for EIP-2930
+    pub access_list: Option<AccessList>,
     /// The calls made in the transaction
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
@@ -157,6 +160,8 @@ impl Transaction {
     ) -> Vec<[Value<F>; 4]> {
         let tx_hash_be_bytes = keccak256(&self.rlp_signed);
         let tx_sign_hash_be_bytes = keccak256(&self.rlp_unsigned);
+        let (access_list_address_size, access_list_storage_key_size) =
+            access_list_address_and_storage_key_sizes(&self.access_list);
 
         let ret = vec![
             [
@@ -227,12 +232,6 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.call_data_gas_cost)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.access_list_gas_cost)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -311,6 +310,24 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.block_number)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::AccessListAddressesLen as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(access_list_address_size)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::AccessListStorageKeysLen as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(access_list_storage_key_size)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.access_list_gas_cost)),
             ],
         ];
 
@@ -851,6 +868,7 @@ impl From<MockTransaction> for Transaction {
 
             (unsigned, signed)
         };
+        let access_list = Some(mock_tx.access_list);
         Self {
             block_number: 1,
             id: mock_tx.transaction_index.as_usize(),
@@ -866,7 +884,7 @@ impl From<MockTransaction> for Transaction {
             call_data: mock_tx.input.to_vec(),
             call_data_length: mock_tx.input.len(),
             call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
-            access_list_gas_cost: tx_access_list_gas_cost(&Some(mock_tx.access_list)),
+            access_list_gas_cost: tx_access_list_gas_cost(&access_list),
             tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
             chain_id: mock_tx.chain_id,
             rlp_unsigned,
@@ -876,6 +894,7 @@ impl From<MockTransaction> for Transaction {
             s: sig.s,
             l1_fee: Default::default(),
             l1_fee_committed: Default::default(),
+            access_list,
             calls: vec![],
             steps: vec![],
         }
@@ -928,6 +947,7 @@ pub(super) fn tx_convert(
         s: tx.signature.s,
         l1_fee: tx.l1_fee,
         l1_fee_committed: tx.l1_fee_committed,
+        access_list: tx.access_list.clone(),
         calls: tx
             .calls()
             .iter()
