@@ -1741,7 +1741,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                         "stack_acc accumulates depth 0 bytes at 1",
                         meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
                         1.expr()
-                    )
+                    );
+                    cb.require_zero(
+                        "stack accumulator starts at 0",
+                        meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
+                    );
                 },
             );
 
@@ -1749,6 +1753,10 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.condition(
                 meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
                 |cb| {
+                    cb.require_zero(
+                        "The higher depth must have 0 bytes.",
+                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
+                    );
                     cb.require_equal(
                         "PUSH stack operation increases depth",
                         meta.query_advice(rlp_decoding_table.depth, Rotation::prev()) + 1.expr(),
@@ -1813,6 +1821,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cb.require_equal(
                         "UPDATE stack operation reads 1 byte",
                         meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "UPDATE stack operation doesn't skip bytes",
+                        meta.query_advice(rlp_decoding_table.value, Rotation::prev()),
                         meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
                     );
                     cb.require_equal(
