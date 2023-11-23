@@ -162,10 +162,10 @@ impl TransactionContext {
     }
 
     /// Pop the last entry in the call stack.
-    pub(crate) fn pop_call_ctx(&mut self) {
+    pub(crate) fn pop_call_ctx(&mut self, is_success: bool) {
         let call = self.calls.pop().expect("calls should not be empty");
         // Accumulate reversible_write_counter if call is success
-        if self.call_is_success[call.index] {
+        if is_success {
             if let Some(caller) = self.calls.last_mut() {
                 caller.reversible_write_counter += call.reversible_write_counter;
             }
