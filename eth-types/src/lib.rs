@@ -44,7 +44,12 @@ pub use ethers_core::{
 
 use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Deserializer, Serialize};
-use std::{collections::HashMap, fmt, str::FromStr};
+use std::{
+    collections::HashMap,
+    fmt,
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
@@ -350,7 +355,7 @@ struct GethExecStepInternal {
     #[serde(rename = "gasCost")]
     gas_cost: GasCost,
     depth: u16,
-    error: Option<String>,
+    error: Option<GethExecError>,
     // stack is in hex 0x prefixed
     #[serde(default)]
     stack: Vec<DebugU256>,
@@ -373,13 +378,185 @@ pub struct GethExecStep {
     pub gas_cost: GasCost,
     pub refund: Gas,
     pub depth: u16,
-    pub error: Option<String>,
+    pub error: Option<GethExecError>,
     // stack is in hex 0x prefixed
     pub stack: Stack,
     // memory is in chunks of 32 bytes, in hex
     pub memory: Memory,
     // storage is hex -> hex
     pub storage: Storage,
+}
+
+/// Errors of StructLogger Result from Geth
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum GethExecError {
+    /// out of gas
+    OutOfGas,
+    /// contract creation code storage out of gas
+    CodeStoreOutOfGas,
+    /// max call depth exceeded
+    Depth,
+    /// insufficient balance for transfer
+    InsufficientBalance,
+    /// contract address collision
+    ContractAddressCollision,
+    /// execution reverted
+    ExecutionReverted,
+    /// max initcode size exceeded
+    MaxInitCodeSizeExceeded,
+    /// max code size exceeded
+    MaxCodeSizeExceeded,
+    /// invalid jump destination
+    InvalidJump,
+    /// write protection
+    WriteProtection,
+    /// return data out of bounds
+    ReturnDataOutOfBounds,
+    /// gas uint64 overflow
+    GasUintOverflow,
+    /// invalid code: must not begin with 0xef
+    InvalidCode,
+    /// nonce uint64 overflow
+    NonceUintOverflow,
+    /// stack underflow
+    StackUnderflow {
+        /// stack length
+        stack_len: u64,
+        /// required length
+        required: u64,
+    },
+    /// stack limit reached
+    StackOverflow {
+        /// stack length
+        stack_len: u64,
+        /// stack limit
+        limit: u64,
+    },
+    /// invalid opcode
+    InvalidOpcode(OpcodeId),
+}
+
+impl GethExecError {
+    /// Returns the error as a string constant.
+    pub fn error(self) -> &'static str {
+        match self {
+            GethExecError::OutOfGas => "out of gas",
+            GethExecError::CodeStoreOutOfGas => "contract creation code storage out of gas",
+            GethExecError::Depth => "max call depth exceeded",
+            GethExecError::InsufficientBalance => "insufficient balance for transfer",
+            GethExecError::ContractAddressCollision => "contract address collision",
+            GethExecError::ExecutionReverted => "execution reverted",
+            GethExecError::MaxInitCodeSizeExceeded => "max initcode size exceeded",
+            GethExecError::MaxCodeSizeExceeded => "max code size exceeded",
+            GethExecError::InvalidJump => "invalid jump destination",
+            GethExecError::WriteProtection => "write protection",
+            GethExecError::ReturnDataOutOfBounds => "return data out of bounds",
+            GethExecError::GasUintOverflow => "gas uint64 overflow",
+            GethExecError::InvalidCode => "invalid code: must not begin with 0xef",
+            GethExecError::NonceUintOverflow => "nonce uint64 overflow",
+            GethExecError::StackUnderflow { .. } => "stack underflow",
+            GethExecError::StackOverflow { .. } => "stack limit reached",
+            GethExecError::InvalidOpcode(_) => "invalid opcode",
+        }
+    }
+}
+
+impl Display for GethExecError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            GethExecError::StackUnderflow {
+                stack_len,
+                required,
+            } => {
+                write!(f, "stack underflow ({stack_len} <=> {required})")
+            }
+            GethExecError::StackOverflow { stack_len, limit } => {
+                write!(f, "stack limit reached {stack_len} ({limit})")
+            }
+            GethExecError::InvalidOpcode(op) => {
+                write!(f, "invalid opcode: {op}")
+            }
+            _ => f.write_str(self.error()),
+        }
+    }
+}
+
+impl Serialize for GethExecError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // We serialize the error as a string constant.
+        serializer.serialize_str(self.error())
+    }
+}
+
+impl<'de> Deserialize<'de> for GethExecError {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct GethExecErrorVisitor;
+
+        static STACK_UNDERFLOW_RE: Lazy<regex::Regex> =
+            Lazy::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
+        static STACK_OVERFLOW_RE: Lazy<regex::Regex> =
+            Lazy::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
+
+        impl<'de> de::Visitor<'de> for GethExecErrorVisitor {
+            type Value = GethExecError;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                write!(formatter, "a geth struct logger error string constant")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let e = match v {
+                    "out of gas" => GethExecError::OutOfGas,
+                    "contract creation code storage out of gas" => GethExecError::CodeStoreOutOfGas,
+                    "max call depth exceeded" => GethExecError::Depth,
+                    "insufficient balance for transfer" => GethExecError::InsufficientBalance,
+                    "contract address collision" => GethExecError::ContractAddressCollision,
+                    "execution reverted" => GethExecError::ExecutionReverted,
+                    "max initcode size exceeded" => GethExecError::MaxInitCodeSizeExceeded,
+                    "max code size exceeded" => GethExecError::MaxCodeSizeExceeded,
+                    "invalid jump destination" => GethExecError::InvalidJump,
+                    "write protection" => GethExecError::WriteProtection,
+                    "return data out of bounds" => GethExecError::ReturnDataOutOfBounds,
+                    "gas uint64 overflow" => GethExecError::GasUintOverflow,
+                    "invalid code: must not begin with 0xef" => GethExecError::InvalidCode,
+                    "nonce uint64 overflow" => GethExecError::NonceUintOverflow,
+                    _ if v.starts_with("stack underflow") => {
+                        let caps = STACK_UNDERFLOW_RE.captures(v).unwrap();
+                        let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
+                        let required = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
+                        GethExecError::StackUnderflow {
+                            stack_len,
+                            required,
+                        }
+                    }
+                    _ if v.starts_with("stack limit reached") => {
+                        let caps = STACK_OVERFLOW_RE.captures(v).unwrap();
+                        let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
+                        let limit = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
+                        GethExecError::StackOverflow { stack_len, limit }
+                    }
+                    _ if v.starts_with("invalid opcode") => v
+                        .strip_prefix("invalid opcode: ")
+                        .map(|s| OpcodeId::from_str(s).unwrap())
+                        .map(GethExecError::InvalidOpcode)
+                        .unwrap(),
+                    _ => return Err(E::invalid_value(de::Unexpected::Str(v), &self)),
+                };
+                Ok(e)
+            }
+        }
+
+        deserializer.deserialize_str(GethExecErrorVisitor)
+    }
 }
 
 // Wrapper over u8 that provides formats the byte in hex for [`fmt::Debug`].
