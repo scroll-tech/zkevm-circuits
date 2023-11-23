@@ -766,33 +766,6 @@ pub struct StateMachine<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub enum StackOp { Init, Push, Pop, Update }
 
-
-// tx1559_debug
-// /// Rlp Decoding Table
-// /// Using simulated stack constraints to make sure all bytes are correctly decoded
-// #[derive(Clone, Debug)]
-// pub struct RlpDecodingTable<F: FieldExt> {
-//     // note: a byte-counting idx such as rw_counter is not necessary
-//     // as byte_idx/byte_rev_idx can be used for the purpose
-//     /// Is Write to decoding stack
-//     pub is_write: bool,
-//     /// Key1 (Id), concat of tx_id, format
-//     pub id: Value<F>,
-//     /// Key2 (Address), in this case depth
-//     pub depth: usize,
-//     /// Value
-//     pub value: usize,
-//     /// Value Previous
-//     pub value_prev: usize,
-//     /// Stack Accumulator
-//     /// accumulates remaining bytes on each depth level (excluding top of stack)
-//     pub stack_acc: Value<F>,
-//     /// Power of rand for stack accumulator on depth level (address)
-//     pub stack_acc_pow_of_rand: Value<F>,
-//     /// The stack operation performed at step.
-//     pub stack_op: StackOp,
-// }
-
 /// Rlp Decoding Witness
 /// Using simulated stack constraints to make sure all bytes in nested structure are correctly decoded
 #[derive(Clone, Debug)]
