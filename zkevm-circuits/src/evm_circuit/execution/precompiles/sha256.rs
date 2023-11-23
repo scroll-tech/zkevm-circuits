@@ -257,7 +257,7 @@ mod test {
                         MSTORE
                         PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
                         PUSH1(0x20)
-                        MSTORE                        
+                        MSTORE
                     },
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x40.into(),
@@ -265,7 +265,7 @@ mod test {
                     ret_size: 0x20.into(),
                     address: PrecompileCalls::Sha256.address().to_word(),
                     ..Default::default()
-                },                
+                },
                 PrecompileCallArgs {
                     name: "simple truncated return",
                     setup_code: bytecode! {
@@ -295,7 +295,7 @@ mod test {
                     ret_size: 0x20.into(),
                     address: PrecompileCalls::Sha256.address().to_word(),
                     ..Default::default()
-                },                                             
+                },
             ]
         };
 
@@ -309,7 +309,7 @@ mod test {
                         MSTORE
                         PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
                         PUSH1(0x20)
-                        MSTORE                        
+                        MSTORE
                     },
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x40.into(),
@@ -318,8 +318,8 @@ mod test {
                     address: PrecompileCalls::Sha256.address().to_word(),
                     gas: 20.into(),
                     ..Default::default()
-                },                
-            ]            
+                },
+            ]
         };
     }
 
@@ -345,20 +345,18 @@ mod test {
     // verify nil case is corrected handled in SHA256 event
     #[test]
     fn precompile_sha256_nil_test() {
-
         let nil_vector = &TEST_VECTOR[1];
         let bytecode = nil_vector.with_call_op(OpcodeId::STATICCALL);
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .block_modifier(Box::new(|blk|{
+        .block_modifier(Box::new(|blk| {
             let evts = blk.get_sha256();
             assert_eq!(evts.len(), 1);
             assert_eq!(evts[0].input.len(), 0);
         }))
         .run();
-        
     }
 
     // verify nil case is corrected handled in SHA256 event
@@ -375,12 +373,11 @@ mod test {
             let bytecode = test_vector.with_call_op(call_kind);
             CircuitTestBuilder::new_from_test_ctx(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-            ).block_modifier(Box::new(|blk|{
+            )
+            .block_modifier(Box::new(|blk| {
                 assert_eq!(blk.get_sha256().len(), 0);
             }))
-            .run();            
+            .run();
         }
-        
     }
-
 }
