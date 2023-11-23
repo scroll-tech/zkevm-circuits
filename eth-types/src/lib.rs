@@ -389,7 +389,6 @@ pub struct GethExecStep {
 
 /// Errors of StructLogger Result from Geth
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum GethExecError {
     /// out of gas
     OutOfGas,
