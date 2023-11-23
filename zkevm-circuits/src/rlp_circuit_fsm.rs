@@ -1764,6 +1764,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                         meta.query_advice(rlp_decoding_table.stack_acc, Rotation::prev())
                                 + (meta.query_advice(rlp_decoding_table.value, Rotation::prev())
                                     - meta.query_advice(rlp_decoding_table.value, Rotation::cur())
+                                    // 1 byte needs to be subtracted here as the step preceding the PUSH reads one byte from the lower depth
+                                    // This byte is already consumed and won't be added to the accumulator
                                     - 1.expr())
                                 * meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::prev()),
                         meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
