@@ -403,13 +403,12 @@ impl Transaction {
         let mut last_bytes_on_depth: [usize; 4] = [0, 0, 0, 0];
         let mut stack_acc = Value::known(F::zero());
 
-        let mut stack_acc_pow_of_rand: Vec<Value<F>> = vec![];
-        let mut pow_of_rand = Value::known(F::one());
-        stack_acc_pow_of_rand.push(pow_of_rand);
-        for _ in 0..4 {
-            pow_of_rand = pow_of_rand * keccak_rand;
-            stack_acc_pow_of_rand.push(pow_of_rand);
-        }
+        let stack_acc_pow_of_rand = std::iter::successors(Some(Value::known(F::one())), |coeff| {
+            Some(keccak_rand * coeff)
+        })
+        .take(5)
+        .collect::<Vec<Value<F>>>();
+
         // concat tx_id and format as stack identifier
         let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
         // When we are decoding a vector of element type `t`, at the beginning
