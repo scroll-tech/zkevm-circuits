@@ -1699,29 +1699,21 @@ impl<F: Field> RlpCircuitConfig<F> {
                 );
             });
 
-            cb.require_zero(
+            cb.require_boolean(
                 "is_stack_init is binary",
-                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur())
-                    * (1.expr()
-                        - meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur())),
+                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
             );
-            cb.require_zero(
+            cb.require_boolean(
                 "is_stack_push is binary",
-                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur())
-                    * (1.expr()
-                        - meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur())),
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
             );
-            cb.require_zero(
+            cb.require_boolean(
                 "is_stack_pop is binary",
-                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur())
-                    * (1.expr()
-                        - meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur())),
+                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
             );
-            cb.require_zero(
+            cb.require_boolean(
                 "is_stack_update is binary",
-                meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur())
-                    * (1.expr()
-                        - meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur())),
+                meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
             );
 
             // Stack Init
