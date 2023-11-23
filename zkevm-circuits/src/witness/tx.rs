@@ -458,15 +458,15 @@ impl Transaction {
                             stack_acc = stack_acc
                                 - stack_acc_pow_of_rand[cur.depth - 1]
                                     * Value::known(F::from(prev_depth_bytes as u64));
-                            stack_ops.push(RlpStackOp {
+                            
+                            stack_ops.push(RlpStackOp::pop(
                                 id,
-                                depth: cur.depth - 1,
-                                value: prev_depth_bytes,
-                                value_prev: last_bytes_on_depth[cur.depth - 1],
+                                cur.depth - 1,
+                                prev_depth_bytes,
+                                last_bytes_on_depth[cur.depth - 1],
                                 stack_acc,
-                                stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth - 1],
-                                stack_op: StackOp::Pop,
-                            })
+                                stack_acc_pow_of_rand[cur.depth - 1],
+                            ));
                         }
 
                         if cur.depth == 1 {

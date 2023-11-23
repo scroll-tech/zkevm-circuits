@@ -819,6 +819,24 @@ impl<F: FieldExt> RlpStackOp<F> {
             stack_op: StackOp::Push,
         }
     }
+    pub fn pop(
+        id: Value<F>,
+        depth: usize,
+        value: usize,
+        value_prev: usize,
+        stack_acc: Value<F>,
+        stack_acc_pow_of_rand: Value<F>,
+    ) -> Self {
+        Self {
+            id,
+            depth,
+            value,
+            value_prev,
+            stack_acc,
+            stack_acc_pow_of_rand,
+            stack_op: StackOp::Pop,
+        }
+    }
 }
 
 /// Represents the witness in a single row of the RLP circuit.
