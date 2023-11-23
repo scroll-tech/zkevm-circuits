@@ -787,6 +787,23 @@ pub struct RlpStackOp<F: FieldExt> {
     pub stack_op: StackOp,
 }
 
+impl<F: FieldExt> RlpStackOp<F> {
+    pub fn init(
+        id: Value<F>,
+        value: usize,
+    ) -> Self {
+        Self {
+            id,
+            depth: 0,
+            value,
+            value_prev: 0,
+            stack_acc: Value::known(F::zero()),
+            stack_acc_pow_of_rand: Value::known(F::one()),
+            stack_op: StackOp::Init,
+        }
+    }
+}
+
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
 pub struct RlpFsmWitnessRow<F: FieldExt> {

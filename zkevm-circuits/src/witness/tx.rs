@@ -418,15 +418,7 @@ impl Transaction {
         let mut cur_rom_row = vec![0];
         let mut remaining_bytes = vec![rlp_bytes.len()];
         // initialize stack
-        stack_ops.push(RlpStackOp {
-            id,
-            depth: cur.depth,
-            value: rlp_bytes.len(),
-            value_prev: 0,
-            stack_acc: Value::known(F::zero()),
-            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
-            stack_op: StackOp::Init,
-        });
+        stack_ops.push(RlpStackOp::init(id, rlp_bytes.len()));
         let mut witness_table_idx = 0;
 
         // This map keeps track
