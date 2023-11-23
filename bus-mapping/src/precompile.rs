@@ -455,6 +455,15 @@ pub enum PrecompileAuxData {
         /// bytes returned back to the caller from the identity call.
         return_bytes: Vec<u8>,
     },
+    /// SHA256
+    SHA256 {
+        /// input bytes to the sha256 call.
+        input_bytes: Vec<u8>,
+        /// output bytes from the sha256 call.
+        output_bytes: Vec<u8>,
+        /// bytes returned back to the caller from the sha256 call.
+        return_bytes: Vec<u8>,
+    },    
     /// Ecrecover.
     Ecrecover(EcrecoverAuxData),
     /// Modexp.

@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        if let Some(PrecompileAuxData::Base {
+        if let Some(PrecompileAuxData::SHA256 {
             input_bytes,
             output_bytes,
             return_bytes,
@@ -298,6 +298,29 @@ mod test {
                 },                                             
             ]
         };
+
+        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "oog",
+                    setup_code: bytecode! {
+                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                        PUSH1(0x00)
+                        MSTORE
+                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                        PUSH1(0x20)
+                        MSTORE                        
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x40.into(),
+                    ret_offset: 0x20.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Sha256.address().to_word(),
+                    gas: 20.into(),
+                    ..Default::default()
+                },                
+            ]            
+        };
     }
 
     #[test]
@@ -341,34 +364,22 @@ mod test {
     // verify nil case is corrected handled in SHA256 event
     #[test]
     fn precompile_sha256_oog_test() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
 
-        let oog_vector = PrecompileCallArgs {
-            name: "oog",
-            setup_code: bytecode! {
-                PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
-                PUSH1(0x00)
-                MSTORE
-                PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
-                PUSH1(0x20)
-                MSTORE                        
-            },
-            call_data_offset: 0x00.into(),
-            call_data_length: 0x40.into(),
-            ret_offset: 0x20.into(),
-            ret_size: 0x20.into(),
-            address: PrecompileCalls::Sha256.address().to_word(),
-            gas: 20.into(),
-            ..Default::default()
-        };  
-
-        let bytecode = oog_vector.with_call_op(OpcodeId::STATICCALL);
-
-        CircuitTestBuilder::new_from_test_ctx(
-            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-        ).block_modifier(Box::new(|blk|{
-            assert_eq!(blk.get_sha256().len(), 0);
-        }))
-        .run();
+        for (test_vector, &call_kind) in OOG_TEST_VECTOR.iter().cartesian_product(&call_kinds) {
+            let bytecode = test_vector.with_call_op(call_kind);
+            CircuitTestBuilder::new_from_test_ctx(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+            ).block_modifier(Box::new(|blk|{
+                assert_eq!(blk.get_sha256().len(), 0);
+            }))
+            .run();            
+        }
         
     }
 

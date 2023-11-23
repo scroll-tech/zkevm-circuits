@@ -63,7 +63,7 @@ pub fn gen_associated_ops(
                         .expect("output bytes must be 32 bytes"),
                 }))
             },
-            Some(PrecompileAuxData::Base {
+            Some(PrecompileAuxData::SHA256 {
                 input_bytes: input_bytes.to_vec(),
                 output_bytes: output_bytes.to_vec(),
                 return_bytes: return_bytes.to_vec(),
