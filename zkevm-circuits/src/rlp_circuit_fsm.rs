@@ -1576,11 +1576,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.condition(
                     meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
                     |cb| {
-                        // cb.require_equal(
-                        //     "for same storage key list, al_idx stays the same",
-                        //     meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
-                        //     meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                        // );
                         cb.require_equal(
                             "sk_idx - sk_idx::prev = 1",
                             meta.query_advice(rlp_table.storage_key_idx, Rotation::prev())
