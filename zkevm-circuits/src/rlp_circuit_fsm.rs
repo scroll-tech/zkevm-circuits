@@ -2429,8 +2429,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         log::debug!("num_sm_rows: {}", sm_rows.len());
         log::debug!("num_dt_rows: {}", dt_rows.len());
 
-        log::debug!("=> [Execution RlpCircuitConfig] assign - sm_rows: {:?}", sm_rows);
-
         layouter.assign_region(
             || "RLP data table region",
             |mut region| {
