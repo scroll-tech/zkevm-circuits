@@ -1514,12 +1514,12 @@ impl<F: Field> RlpCircuitConfig<F> {
                 is_access_list_storage_key(meta),
             );
             cb.require_boolean(
-                "is_new_access_list_address is boolean", 
-                meta.query_advice(is_new_access_list_address, Rotation::cur())
+                "is_new_access_list_address is boolean",
+                meta.query_advice(is_new_access_list_address, Rotation::cur()),
             );
             cb.require_boolean(
-                "is_new_access_list_storage_key is boolean", 
-                meta.query_advice(is_new_access_list_storage_key, Rotation::cur())
+                "is_new_access_list_storage_key is boolean",
+                meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -1541,12 +1541,12 @@ impl<F: Field> RlpCircuitConfig<F> {
                 depth_eq_four.is_equal_expression.expr(),
             );
             cb.require_boolean(
-                "is_access_list_end is boolean", 
-                meta.query_advice(is_access_list_end, Rotation::cur())
+                "is_access_list_end is boolean",
+                meta.query_advice(is_access_list_end, Rotation::cur()),
             );
             cb.require_boolean(
-                "is_storage_key_list_end is boolean", 
-                meta.query_advice(is_storage_key_list_end, Rotation::cur())
+                "is_storage_key_list_end is boolean",
+                meta.query_advice(is_storage_key_list_end, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -1556,38 +1556,33 @@ impl<F: Field> RlpCircuitConfig<F> {
         });
 
         // Access List Increments
-        meta.create_gate(
-            "access list: access_list_idx increments",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("access list: access_list_idx increments", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
-                cb.condition(
-                    meta.query_advice(is_new_access_list_address, Rotation::cur()),
-                    |cb| {
-                        cb.require_equal(
-                            "al_idx - al_idx::prev = 1",
-                            meta.query_advice(rlp_table.access_list_idx, Rotation::prev())
-                                + 1.expr(),
-                            meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-                        );
-                    },
-                );
+            cb.condition(
+                meta.query_advice(is_new_access_list_address, Rotation::cur()),
+                |cb| {
+                    cb.require_equal(
+                        "al_idx - al_idx::prev = 1",
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::prev()) + 1.expr(),
+                        meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                    );
+                },
+            );
 
-                cb.condition(
-                    meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
-                    |cb| {
-                        cb.require_equal(
-                            "sk_idx - sk_idx::prev = 1",
-                            meta.query_advice(rlp_table.storage_key_idx, Rotation::prev())
-                                + 1.expr(),
-                            meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
-                        );
-                    },
-                );
+            cb.condition(
+                meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
+                |cb| {
+                    cb.require_equal(
+                        "sk_idx - sk_idx::prev = 1",
+                        meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()) + 1.expr(),
+                        meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                    );
+                },
+            );
 
-                cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
-            },
-        );
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+        });
 
         // Access List Clearing
         // note: right now no other nested structures are defined at these depth levels
@@ -2042,25 +2037,41 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "rlp_decoding_table.is_stack_init",
             self.rlp_decoding_table.is_stack_init,
             row,
-            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Init) as u64)),
+            || {
+                Value::known(F::from(
+                    matches!(witness.rlp_decoding_table.stack_op, StackOp::Init) as u64,
+                ))
+            },
         )?;
         region.assign_advice(
             || "rlp_decoding_table.is_stack_push",
             self.rlp_decoding_table.is_stack_push,
             row,
-            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Push) as u64)),
+            || {
+                Value::known(F::from(
+                    matches!(witness.rlp_decoding_table.stack_op, StackOp::Push) as u64,
+                ))
+            },
         )?;
         region.assign_advice(
             || "rlp_decoding_table.is_stack_pop",
             self.rlp_decoding_table.is_stack_pop,
             row,
-            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Pop) as u64)),
+            || {
+                Value::known(F::from(
+                    matches!(witness.rlp_decoding_table.stack_op, StackOp::Pop) as u64,
+                ))
+            },
         )?;
         region.assign_advice(
             || "rlp_decoding_table.is_stack_update",
             self.rlp_decoding_table.is_stack_update,
             row,
-            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Update) as u64)),
+            || {
+                Value::known(F::from(
+                    matches!(witness.rlp_decoding_table.stack_op, StackOp::Update) as u64,
+                ))
+            },
         )?;
 
         let is_new_access_list_address = witness.state_machine.state == DecodeTagStart

@@ -764,10 +764,16 @@ pub struct StateMachine<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub enum StackOp { Init, Push, Pop, Update }
+pub enum StackOp {
+    Init,
+    Push,
+    Pop,
+    Update,
+}
 
 /// Rlp Decoding Witness
-/// Using simulated stack constraints to make sure all bytes in nested structure are correctly decoded
+/// Using simulated stack constraints to make sure all bytes in nested structure are correctly
+/// decoded
 #[derive(Clone, Debug)]
 pub struct RlpStackOp<F: FieldExt> {
     /// Key1 (Id), concat of tx_id, format
@@ -776,7 +782,7 @@ pub struct RlpStackOp<F: FieldExt> {
     pub depth: usize,
     /// Value
     pub value: usize,
-     /// Value Previous
+    /// Value Previous
     pub value_prev: usize,
     /// Stack Accumulator
     /// accumulates remaining bytes on each depth level (excluding top of stack)
@@ -788,10 +794,7 @@ pub struct RlpStackOp<F: FieldExt> {
 }
 
 impl<F: FieldExt> RlpStackOp<F> {
-    pub fn init(
-        id: Value<F>,
-        value: usize,
-    ) -> Self {
+    pub fn init(id: Value<F>, value: usize) -> Self {
         Self {
             id,
             depth: 0,
@@ -890,5 +893,3 @@ pub(crate) struct SmState<F: Field> {
     pub(crate) tag_value_acc: Value<F>,
     pub(crate) tag_bytes_rlc: Value<F>,
 }
-
-

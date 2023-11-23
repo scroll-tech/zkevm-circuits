@@ -3,7 +3,7 @@ use crate::{
     table::TxContextFieldTag,
     util::{rlc_be_bytes, Challenges},
     witness::{
-        rlp_fsm::{RlpStackOp, StackOp, SmState},
+        rlp_fsm::{RlpStackOp, SmState, StackOp},
         DataTable, Format,
         Format::{
             L1MsgHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
@@ -458,7 +458,7 @@ impl Transaction {
                             stack_acc = stack_acc
                                 - stack_acc_pow_of_rand[cur.depth - 1]
                                     * Value::known(F::from(prev_depth_bytes as u64));
-                            
+
                             stack_ops.push(RlpStackOp::pop(
                                 id,
                                 cur.depth - 1,
@@ -604,7 +604,7 @@ impl Transaction {
                                 cur.depth + 1,
                                 num_bytes_of_new_list,
                                 stack_acc,
-                                stack_acc_pow_of_rand[cur.depth + 1]
+                                stack_acc_pow_of_rand[cur.depth + 1],
                             ));
 
                             next.depth = cur.depth + 1;
@@ -736,7 +736,7 @@ impl Transaction {
                             cur.depth + 1,
                             lb_len,
                             stack_acc,
-                            stack_acc_pow_of_rand[cur.depth + 1]
+                            stack_acc_pow_of_rand[cur.depth + 1],
                         ));
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
@@ -834,7 +834,7 @@ impl Transaction {
                     bytes_rlc,
                     gas_cost_acc,
                 },
-                rlp_decoding_table:  stack_op,
+                rlp_decoding_table: stack_op,
             });
             witness_table_idx += 1;
 
