@@ -766,21 +766,44 @@ pub struct StateMachine<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub enum StackOp { Init, Push, Pop, Update }
 
-/// Rlp Decoding Table
-/// Using simulated stack constraints to make sure all bytes are correctly decoded
+
+// tx1559_debug
+// /// Rlp Decoding Table
+// /// Using simulated stack constraints to make sure all bytes are correctly decoded
+// #[derive(Clone, Debug)]
+// pub struct RlpDecodingTable<F: FieldExt> {
+//     // note: a byte-counting idx such as rw_counter is not necessary
+//     // as byte_idx/byte_rev_idx can be used for the purpose
+//     /// Is Write to decoding stack
+//     pub is_write: bool,
+//     /// Key1 (Id), concat of tx_id, format
+//     pub id: Value<F>,
+//     /// Key2 (Address), in this case depth
+//     pub depth: usize,
+//     /// Value
+//     pub value: usize,
+//     /// Value Previous
+//     pub value_prev: usize,
+//     /// Stack Accumulator
+//     /// accumulates remaining bytes on each depth level (excluding top of stack)
+//     pub stack_acc: Value<F>,
+//     /// Power of rand for stack accumulator on depth level (address)
+//     pub stack_acc_pow_of_rand: Value<F>,
+//     /// The stack operation performed at step.
+//     pub stack_op: StackOp,
+// }
+
+/// Rlp Decoding Witness
+/// Using simulated stack constraints to make sure all bytes in nested structure are correctly decoded
 #[derive(Clone, Debug)]
-pub struct RlpDecodingTable<F: FieldExt> {
-    // note: a byte-counting idx such as rw_counter is not necessary
-    // as byte_idx/byte_rev_idx can be used for the purpose
-    /// Is Write to decoding stack
-    pub is_write: bool,
+pub struct RlpStackOp<F: FieldExt> {
     /// Key1 (Id), concat of tx_id, format
     pub id: Value<F>,
     /// Key2 (Address), in this case depth
     pub depth: usize,
     /// Value
     pub value: usize,
-    /// Value Previous
+     /// Value Previous
     pub value_prev: usize,
     /// Stack Accumulator
     /// accumulates remaining bytes on each depth level (excluding top of stack)
@@ -799,7 +822,7 @@ pub struct RlpFsmWitnessRow<F: FieldExt> {
     /// The state machine witness.
     pub state_machine: StateMachine<F>,
     /// The rlp decoding table witness
-    pub rlp_decoding_table: RlpDecodingTable<F>,
+    pub rlp_decoding_table: RlpStackOp<F>,
 }
 
 /// The RlpFsmWitnessGen trait is implemented by data types who's RLP encoding can
@@ -826,13 +849,4 @@ pub(crate) struct SmState<F: Field> {
     pub(crate) tag_bytes_rlc: Value<F>,
 }
 
-#[derive(Clone)]
-pub(crate) struct RlpStackOp<F: Field> {
-    pub is_write: bool,
-    pub id: Value<F>,
-    pub depth: usize,
-    pub value: usize,
-    pub value_prev: usize,
-    pub stack_acc: Value<F>,
-    pub stack_op: StackOp,
-}
+

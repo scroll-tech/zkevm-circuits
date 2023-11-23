@@ -3,7 +3,7 @@ use crate::{
     table::TxContextFieldTag,
     util::{rlc_be_bytes, Challenges},
     witness::{
-        rlp_fsm::{RlpDecodingTable, RlpStackOp, StackOp, SmState},
+        rlp_fsm::{RlpStackOp, StackOp, SmState},
         DataTable, Format,
         Format::{
             L1MsgHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
@@ -419,12 +419,12 @@ impl Transaction {
         let mut remaining_bytes = vec![rlp_bytes.len()];
         // initialize stack
         stack_ops.push(RlpStackOp {
-            is_write: true,
             id,
             depth: cur.depth,
             value: rlp_bytes.len(),
             value_prev: 0,
             stack_acc: Value::known(F::zero()),
+            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
             stack_op: StackOp::Init,
         });
         let mut witness_table_idx = 0;
@@ -467,12 +467,12 @@ impl Transaction {
                                 - stack_acc_pow_of_rand[cur.depth - 1]
                                     * Value::known(F::from(prev_depth_bytes as u64));
                             stack_ops.push(RlpStackOp {
-                                is_write: true,
                                 id,
                                 depth: cur.depth - 1,
                                 value: prev_depth_bytes,
                                 value_prev: last_bytes_on_depth[cur.depth - 1],
                                 stack_acc,
+                                stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth - 1],
                                 stack_op: StackOp::Pop,
                             })
                         }
@@ -516,12 +516,12 @@ impl Transaction {
                             if !(0xc0..=0xf7).contains(&byte_value) {
                                 // add stack op on same depth
                                 stack_ops.push(RlpStackOp {
-                                    is_write: true,
                                     id,
                                     depth: cur.depth,
                                     value: *rem - 1,
                                     value_prev: *rem,
                                     stack_acc,
+                                    stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
                                     stack_op: StackOp::Update,
                                 });
                             }
@@ -610,12 +610,12 @@ impl Transaction {
                             remaining_bytes.push(num_bytes_of_new_list);
 
                             stack_ops.push(RlpStackOp {
-                                is_write: true,
                                 id,
                                 depth: cur.depth + 1,
                                 value: num_bytes_of_new_list,
                                 value_prev: 0,
                                 stack_acc,
+                                stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth + 1],
                                 stack_op: StackOp::Push,
                             });
                             next.depth = cur.depth + 1;
@@ -640,12 +640,12 @@ impl Transaction {
 
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp {
-                            is_write: true,
                             id,
                             depth: cur.depth,
                             value: *rem - 1,
                             value_prev: *rem,
                             stack_acc,
+                            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
                             stack_op: StackOp::Update,
                         });
 
@@ -678,12 +678,12 @@ impl Transaction {
 
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp {
-                            is_write: true,
                             id,
                             depth: cur.depth,
                             value: *rem - 1,
                             value_prev: *rem,
                             stack_acc,
+                            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
                             stack_op: StackOp::Update,
                         });
 
@@ -715,12 +715,12 @@ impl Transaction {
                         // add stack op on same depth
                         if cur.tag_idx < cur.tag_length {
                             stack_ops.push(RlpStackOp {
-                                is_write: true,
                                 id,
                                 depth: cur.depth,
                                 value: *rem - 1,
                                 value_prev: *rem,
                                 stack_acc,
+                                stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth],
                                 stack_op: StackOp::Update,
                             });
                         }
@@ -749,12 +749,12 @@ impl Transaction {
                         }
                         remaining_bytes.push(lb_len);
                         stack_ops.push(RlpStackOp {
-                            is_write: true,
                             id,
                             depth: cur.depth + 1,
                             value: lb_len,
                             value_prev: 0,
                             stack_acc,
+                            stack_acc_pow_of_rand: stack_acc_pow_of_rand[cur.depth + 1],
                             stack_op: StackOp::Push,
                         });
                         next.depth = cur.depth + 1;
@@ -853,16 +853,7 @@ impl Transaction {
                     bytes_rlc,
                     gas_cost_acc,
                 },
-                rlp_decoding_table: RlpDecodingTable {
-                    is_write: stack_op.is_write,
-                    id: stack_op.id,
-                    depth: stack_op.depth,
-                    value: stack_op.value,
-                    value_prev: stack_op.value_prev,
-                    stack_acc: stack_op.stack_acc,
-                    stack_acc_pow_of_rand: stack_acc_pow_of_rand[stack_op.depth],
-                    stack_op: stack_op.stack_op,
-                },
+                rlp_decoding_table:  stack_op,
             });
             witness_table_idx += 1;
 

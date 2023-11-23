@@ -1983,12 +1983,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // assign to rlp decoding table
         region.assign_advice(
-            || "rlp_decoding_table.is_write",
-            self.rlp_decoding_table.is_write,
-            row,
-            || Value::known(F::from(witness.rlp_decoding_table.is_write)),
-        )?;
-        region.assign_advice(
             || "rlp_decoding_table.id",
             self.rlp_decoding_table.id,
             row,
