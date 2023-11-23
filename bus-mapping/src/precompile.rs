@@ -34,7 +34,7 @@ pub(crate) fn execute_precompiled(
                 // so we need to override the behavior of invalid input
                 match PrecompileCalls::from(address.0[19]) {
                     PrecompileCalls::Blake2F
-                    | PrecompileCalls::Sha256
+                    // | PrecompileCalls::Sha256
                     | PrecompileCalls::Ripemd160 => (vec![], gas, false, false),
                     PrecompileCalls::Bn128Pairing => {
                         if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
