@@ -13,6 +13,7 @@ use crate::{
         Challenges, SubCircuit, SubCircuitConfig,
     },
     witness::{
+        rlp_fsm::StackOp,
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
@@ -2027,25 +2028,25 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "rlp_decoding_table.is_stack_init",
             self.rlp_decoding_table.is_stack_init,
             row,
-            || Value::known(F::from(witness.rlp_decoding_table.is_stack_init as u64)),
+            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Init) as u64)),
         )?;
         region.assign_advice(
             || "rlp_decoding_table.is_stack_push",
             self.rlp_decoding_table.is_stack_push,
             row,
-            || Value::known(F::from(witness.rlp_decoding_table.is_stack_push as u64)),
+            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Push) as u64)),
         )?;
         region.assign_advice(
             || "rlp_decoding_table.is_stack_pop",
             self.rlp_decoding_table.is_stack_pop,
             row,
-            || Value::known(F::from(witness.rlp_decoding_table.is_stack_pop as u64)),
+            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Pop) as u64)),
         )?;
         region.assign_advice(
             || "rlp_decoding_table.is_stack_update",
             self.rlp_decoding_table.is_stack_update,
             row,
-            || Value::known(F::from(witness.rlp_decoding_table.is_stack_update as u64)),
+            || Value::known(F::from(matches!(witness.rlp_decoding_table.stack_op, StackOp::Update) as u64)),
         )?;
 
         let is_new_access_list_address = witness.state_machine.state == DecodeTagStart

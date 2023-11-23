@@ -763,6 +763,9 @@ pub struct StateMachine<F: FieldExt> {
     pub gas_cost_acc: Value<F>,
 }
 
+#[derive(Clone, Debug)]
+pub enum StackOp { Init, Push, Pop, Update }
+
 /// Rlp Decoding Table
 /// Using simulated stack constraints to make sure all bytes are correctly decoded
 #[derive(Clone, Debug)]
@@ -784,14 +787,8 @@ pub struct RlpDecodingTable<F: FieldExt> {
     pub stack_acc: Value<F>,
     /// Power of rand for stack accumulator on depth level (address)
     pub stack_acc_pow_of_rand: Value<F>,
-    /// Stack Operation Flag, Init
-    pub is_stack_init: bool,
-    /// Stack Operation Flag, Push
-    pub is_stack_push: bool,
-    /// Stack Operation Flag, Pop
-    pub is_stack_pop: bool,
-    /// Stack Operation Flag, Update
-    pub is_stack_update: bool,
+    /// The stack operation performed at step.
+    pub stack_op: StackOp,
 }
 
 /// Represents the witness in a single row of the RLP circuit.
@@ -837,8 +834,5 @@ pub(crate) struct RlpStackOp<F: Field> {
     pub value: usize,
     pub value_prev: usize,
     pub stack_acc: Value<F>,
-    pub is_init: bool,
-    pub is_push: bool,
-    pub is_pop: bool,
-    pub is_update: bool,
+    pub stack_op: StackOp,
 }

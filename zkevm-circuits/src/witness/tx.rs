@@ -3,7 +3,7 @@ use crate::{
     table::TxContextFieldTag,
     util::{rlc_be_bytes, Challenges},
     witness::{
-        rlp_fsm::{RlpDecodingTable, RlpStackOp, SmState},
+        rlp_fsm::{RlpDecodingTable, RlpStackOp, StackOp, SmState},
         DataTable, Format,
         Format::{
             L1MsgHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
@@ -425,10 +425,7 @@ impl Transaction {
             value: rlp_bytes.len(),
             value_prev: 0,
             stack_acc: Value::known(F::zero()),
-            is_init: true,
-            is_push: false,
-            is_pop: false,
-            is_update: false,
+            stack_op: StackOp::Init,
         });
         let mut witness_table_idx = 0;
 
@@ -476,10 +473,7 @@ impl Transaction {
                                 value: prev_depth_bytes,
                                 value_prev: last_bytes_on_depth[cur.depth - 1],
                                 stack_acc,
-                                is_init: false,
-                                is_push: false,
-                                is_pop: true,
-                                is_update: false,
+                                stack_op: StackOp::Pop,
                             })
                         }
 
@@ -528,10 +522,7 @@ impl Transaction {
                                     value: *rem - 1,
                                     value_prev: *rem,
                                     stack_acc,
-                                    is_init: false,
-                                    is_push: false,
-                                    is_pop: false,
-                                    is_update: true,
+                                    stack_op: StackOp::Update,
                                 });
                             }
 
@@ -625,10 +616,7 @@ impl Transaction {
                                 value: num_bytes_of_new_list,
                                 value_prev: 0,
                                 stack_acc,
-                                is_init: false,
-                                is_push: true,
-                                is_pop: false,
-                                is_update: false,
+                                stack_op: StackOp::Push,
                             });
                             next.depth = cur.depth + 1;
                             next.state = DecodeTagStart;
@@ -658,10 +646,7 @@ impl Transaction {
                             value: *rem - 1,
                             value_prev: *rem,
                             stack_acc,
-                            is_init: false,
-                            is_push: false,
-                            is_pop: false,
-                            is_update: true,
+                            stack_op: StackOp::Update,
                         });
 
                         *rem -= 1;
@@ -699,10 +684,7 @@ impl Transaction {
                             value: *rem - 1,
                             value_prev: *rem,
                             stack_acc,
-                            is_init: false,
-                            is_push: false,
-                            is_pop: false,
-                            is_update: true,
+                            stack_op: StackOp::Update,
                         });
 
                         *rem -= 1;
@@ -739,10 +721,7 @@ impl Transaction {
                                 value: *rem - 1,
                                 value_prev: *rem,
                                 stack_acc,
-                                is_init: false,
-                                is_push: false,
-                                is_pop: false,
-                                is_update: true,
+                                stack_op: StackOp::Update,
                             });
                         }
 
@@ -776,10 +755,7 @@ impl Transaction {
                             value: lb_len,
                             value_prev: 0,
                             stack_acc,
-                            is_init: false,
-                            is_push: true,
-                            is_pop: false,
-                            is_update: false,
+                            stack_op: StackOp::Push,
                         });
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
@@ -885,10 +861,7 @@ impl Transaction {
                     value_prev: stack_op.value_prev,
                     stack_acc: stack_op.stack_acc,
                     stack_acc_pow_of_rand: stack_acc_pow_of_rand[stack_op.depth],
-                    is_stack_init: stack_op.is_init,
-                    is_stack_push: stack_op.is_push,
-                    is_stack_pop: stack_op.is_pop,
-                    is_stack_update: stack_op.is_update,
+                    stack_op: stack_op.stack_op,
                 },
             });
             witness_table_idx += 1;
