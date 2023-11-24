@@ -13,6 +13,7 @@
 
 pub mod batched_is_zero;
 pub mod binary_number;
+pub mod bus;
 pub mod comparator;
 pub mod evm_word;
 pub mod is_equal;

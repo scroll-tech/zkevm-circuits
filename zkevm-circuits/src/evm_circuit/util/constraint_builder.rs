@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{FixedTableTag, Lookup, RwValues},
+        table::{FixedTableTag, Lookup, MsgExpr, RwValues, Table},
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
@@ -16,7 +16,10 @@ use bus_mapping::{
     util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY},
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
-use gadgets::util::{and, not};
+use gadgets::{
+    bus::bus_port::{BusOpExpr, Port},
+    util::{and, not},
+};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -26,7 +29,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use super::{rlc, CachedRegion, CellType, StoredExpression};
+use super::{rlc, CachedRegion, CellType, StepBusOp, StoredExpression};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -312,6 +315,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
+    bus_ops: Vec<StepBusOp<F>>,
     pub(crate) max_inner_degree: (&'static str, usize),
     #[cfg(feature = "debug-annotations")]
     annotations: Vec<String>,
@@ -360,6 +364,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
+            bus_ops: Vec::new(),
             max_inner_degree: ("", 0),
             annotations: Vec::new(),
         }
@@ -374,6 +379,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         Expression<F>,
         Constraints<F>,
         Vec<StoredExpression<F>>,
+        Vec<StepBusOp<F>>,
         usize,
     ) {
         let exec_state_sel = self.curr.execution_state_selector([self.execution_state]);
@@ -381,6 +387,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             exec_state_sel,
             self.constraints,
             self.stored_expressions,
+            self.bus_ops,
             self.curr.cell_manager.get_height(),
         )
     }
@@ -463,6 +470,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         assert_eq!(
             cell.column.column_type(),
             &halo2_proofs::plonk::Advice::new(halo2_proofs::plonk::SecondPhase)
+        );
+        cell
+    }
+
+    #[allow(clippy::let_and_return)]
+    fn query_cell_phase3(&mut self) -> Cell<F> {
+        let cell = self.query_cell_with_type(CellType::StoragePhase3);
+        #[cfg(not(feature = "onephase"))]
+        assert_eq!(
+            cell.column.column_type(),
+            &halo2_proofs::plonk::Advice::new(halo2_proofs::plonk::ThirdPhase)
         );
         cell
     }
@@ -1617,12 +1635,52 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Some(condition) => lookup.conditional(condition),
             None => lookup,
         };
+
+        // TODO: support all types.
+        if [Table::Fixed, Table::Rw, Table::Tx].contains(&lookup.table()) {
+            self.add_bus_lookup(lookup);
+            return;
+        }
+
         let compressed_expr = self.split_expression(
             "Lookup compression",
             rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
+    }
+
+    fn add_bus_lookup(&mut self, lookup: Lookup<F>) {
+        let (lookup, condition) = lookup.unconditional();
+
+        // Reduce the degree of the inputs and condition.
+        let (msg_degree, count_degree) = Port::max_degrees(MAX_DEGREE, IMPLICIT_DEGREE);
+
+        let message = MsgExpr::lookup(lookup)
+            .map_exprs(|expr| self.store_any_expression("Bus message", expr, msg_degree));
+
+        let condition = self.store_any_expression("Bus count", condition, count_degree);
+
+        // Allocate an operation to an helper cell.
+        let op = BusOpExpr::receive(message).conditional(condition);
+        let helper = self.query_cell_phase3();
+        self.bus_ops.push(StepBusOp { op, helper });
+    }
+
+    /// Reduce the degree of `expr` to `target_degree`. Split and store the expression if needed.
+    fn store_any_expression(
+        &mut self,
+        name: &'static str,
+        expr: Expression<F>,
+        target_degree: usize,
+    ) -> Expression<F> {
+        let expr = self.split_expression(name, expr, MAX_DEGREE - IMPLICIT_DEGREE);
+        if expr.degree() <= target_degree {
+            expr
+        } else {
+            let cell_type = CellType::storage_for_expr(&expr);
+            self.store_expression(name, expr, cell_type)
+        }
     }
 
     pub(crate) fn store_expression(

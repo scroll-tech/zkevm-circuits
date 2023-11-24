@@ -113,6 +113,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
         // assign tx table
         let tx_value_cells = config.tx_table.load(
             &mut layouter,
+            |_, _| {},
             &self.0.public_data.transactions,
             self.0.public_data.max_txs,
             self.0.public_data.max_calldata,

@@ -59,6 +59,7 @@ pub trait Field:
     + PrimeField<Repr = [u8; 32]>
     + hash_circuit::hash::Hashable
     + std::convert::From<Fr>
+    + std::hash::Hash
 {
 }
 

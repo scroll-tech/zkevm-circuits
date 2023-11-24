@@ -70,6 +70,9 @@ impl Instrument {
                     CellType::StoragePhase2 => {
                         report.storage_2 = data_entry;
                     }
+                    CellType::StoragePhase3 => {
+                        report.storage_3 = data_entry;
+                    }
                     CellType::StoragePermutation => {
                         report.storage_perm = data_entry;
                     }
@@ -130,6 +133,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) state: ExecutionState,
     pub(crate) storage_1: StateReportRow,
     pub(crate) storage_2: StateReportRow,
+    pub(crate) storage_3: StateReportRow,
     pub(crate) storage_perm: StateReportRow,
     pub(crate) storage_perm_2: StateReportRow,
     pub(crate) byte_lookup: StateReportRow,

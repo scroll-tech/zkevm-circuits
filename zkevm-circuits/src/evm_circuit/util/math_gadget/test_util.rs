@@ -4,7 +4,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::{FixedTableTag, Table},
         util::{
@@ -123,9 +123,9 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < lookup_column_count {
+                if n < lookup_column_count + N_PHASE3_COLUMNS {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < lookup_column_count + N_PHASE3_COLUMNS + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -144,7 +144,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
-        let (state_selector, constraints, stored_expressions, _) = cb.build();
+        let (state_selector, constraints, stored_expressions, _bus_ops, _) = cb.build();
 
         if !constraints.step.is_empty() {
             let step_constraints = constraints.step;

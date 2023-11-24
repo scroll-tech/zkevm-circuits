@@ -63,6 +63,7 @@ use crate::{
     bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs},
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
     ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
+    evm_bus::EVMBusLookups,
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitArgs, ExpCircuitConfig},
     keccak_circuit::{
@@ -78,7 +79,7 @@ use crate::{
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SigTable,
-        TxTable, U16Table, U8Table,
+        TxTable, U16Table, U8Table, LookupTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{circuit_stats, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -93,6 +94,11 @@ use bus_mapping::{
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};
+use gadgets::bus::{
+    bus_builder::{BusAssigner, BusBuilder},
+    bus_chip::BusConfig,
+    bus_codec::{BusCodecExpr, BusCodecVal},
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
@@ -104,6 +110,8 @@ use snark_verifier_sdk::CircuitExt;
 /// Configuration of the Super Circuit
 #[derive(Clone)]
 pub struct SuperCircuitConfig<F: Field> {
+    bus: BusConfig,
+    evm_lookups: EVMBusLookups<F>,
     block_table: BlockTable,
     mpt_table: MptTable,
     rlp_table: RlpTable,
@@ -165,9 +173,13 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         };
         let challenges_expr = challenges.exprs(meta);
 
+        let mut bus_builder = BusBuilder::new(BusCodecExpr::new(challenges_expr.lookup_input()));
+
         let tx_table = TxTable::construct(meta);
+        tx_table.annotate_columns(meta);
         log_circuit_info(meta, "tx table");
         let rw_table = RwTable::construct(meta);
+        rw_table.annotate_columns(meta);
         log_circuit_info(meta, "rw table");
 
         let mpt_table = MptTable::construct(meta);
@@ -325,10 +337,9 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
 
         let evm_circuit = EvmCircuitConfig::new(
             meta,
+            &mut bus_builder,
             EvmCircuitConfigArgs {
                 challenges: challenges_expr.clone(),
-                tx_table: tx_table.clone(),
-                rw_table,
                 bytecode_table,
                 block_table: block_table.clone(),
                 copy_table,
@@ -364,12 +375,18 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         );
         log_circuit_info(meta, "ecc circuit");
 
+        let evm_lookups = EVMBusLookups::configure(meta, &mut bus_builder, &rw_table, &tx_table);
+
+        let bus = BusConfig::new(meta, &bus_builder.build());
+
         #[cfg(feature = "onephase")]
         if meta.max_phase() != 0 {
             log::warn!("max_phase: {}", meta.max_phase());
         }
 
         SuperCircuitConfig {
+            bus,
+            evm_lookups,
             block_table,
             mpt_table,
             tx_table,
@@ -417,6 +434,8 @@ pub struct SuperCircuit<
     const MAX_INNER_BLOCKS: usize,
     const MOCK_RANDOMNESS: u64,
 > {
+    /// Number of rows required by the SuperCircuit
+    num_rows: usize,
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
     /// State Circuit
@@ -558,6 +577,7 @@ impl<
     }
 
     fn new_from_block(block: &Block<Fr>) -> Self {
+        let num_rows = Self::get_num_rows_required(block);
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
         let tx_circuit = TxCircuit::new_from_block(block);
@@ -574,6 +594,7 @@ impl<
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(block);
         SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS> {
+            num_rows,
             evm_circuit,
             state_circuit,
             tx_circuit,
@@ -624,9 +645,34 @@ impl<
         challenges: &crate::util::Challenges<Value<Fr>>,
         layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        let mut bus_assigner =
+            BusAssigner::new(BusCodecVal::new(challenges.lookup_input()), self.num_rows);
+
+        log::debug!("assigning state_circuit");
+        let mut rw_messages = vec![];
+        self.state_circuit.synthesize_sub2(
+            &config.state_circuit,
+            challenges,
+            layouter,
+            |offset, message| rw_messages.push((offset, message)),
+        )?;
+
+        log::debug!("assigning tx_circuit");
+        let mut tx_messages = vec![];
+        self.tx_circuit.synthesize_sub2(
+            &config.tx_circuit,
+            challenges,
+            layouter,
+            |offset, message| tx_messages.push((offset, message)),
+        )?;
+
         log::debug!("assigning evm_circuit");
-        self.evm_circuit
-            .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+        self.evm_circuit.synthesize_sub2(
+            &config.evm_circuit,
+            challenges,
+            layouter,
+            &mut bus_assigner,
+        )?;
 
         if !challenges.lookup_input().is_none() {
             let is_mock_prover = format!("{:?}", challenges.lookup_input()) == *"Value { inner: Some(0x207a52ba34e1ed068be1e33b0bc39c8ede030835f549fe5c0dbe91dce97d17d2) }";
@@ -646,9 +692,6 @@ impl<
         log::debug!("assigning bytecode_circuit");
         self.bytecode_circuit
             .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
-        log::debug!("assigning tx_circuit");
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
         log::debug!("assigning sig_circuit");
         self.sig_circuit
             .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
@@ -658,9 +701,6 @@ impl<
         log::debug!("assigning modexp_circuit");
         self.modexp_circuit
             .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
-        log::debug!("assigning state_circuit");
-        self.state_circuit
-            .synthesize_sub(&config.state_circuit, challenges, layouter)?;
         log::debug!("assigning copy_circuit");
         self.copy_circuit
             .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
@@ -690,6 +730,16 @@ impl<
             self.mpt_circuit
                 .synthesize_sub(&config.mpt_circuit, challenges, layouter)?;
         }
+
+        config
+            .evm_lookups
+            .assign(layouter, &mut bus_assigner, rw_messages, tx_messages)?;
+
+        if !bus_assigner.op_counter().is_complete() {
+            log::warn!("Incomplete bus assignment.");
+            log::debug!("Missing bus ops: {:?}", bus_assigner.op_counter());
+        }
+        config.bus.finish_assigner(layouter, bus_assigner)?;
 
         log::debug!("super circuit synthesize_sub done");
         Ok(())

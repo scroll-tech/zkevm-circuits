@@ -41,6 +41,7 @@ pub mod modexp_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
+mod evm_bus;
 
 #[cfg(any(feature = "test", test))]
 pub mod test_util;

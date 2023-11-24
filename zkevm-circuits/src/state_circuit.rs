@@ -19,7 +19,7 @@ use self::{
     lexicographic_ordering::LimbIndex,
 };
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, util::rlc},
+    evm_circuit::{param::N_BYTES_WORD, table::MsgF, util::rlc},
     table::{AccountFieldTag, LookupTable, MptTable, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
@@ -662,6 +662,7 @@ impl<F: Field> StateCircuitConfig<F> {
     fn assign_par(
         &self,
         layouter: &mut impl Layouter<F>,
+        mut provide_msg: impl FnMut(usize, MsgF<F>) -> (),
         rows: &[Rw],
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         updates: &MptUpdates,
@@ -693,6 +694,13 @@ impl<F: Field> StateCircuitConfig<F> {
             n_rows,
             padding_length
         );
+
+        randomness.map(|challenge| {
+            // Only in second phase.
+            for (offset, row) in rows.iter().enumerate() {
+                provide_msg(offset, MsgF::rw(row.table_assignment_aux(challenge)));
+            }
+        });
 
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
@@ -928,12 +936,30 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         )
     }
 
+    /// powers of randomness for instance columns
+    fn instance(&self) -> Vec<Vec<F>> {
+        vec![]
+    }
+
     /// Make the assignments to the StateCircuit
     fn synthesize_sub(
         &self,
         config: &Self::Config,
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        self.synthesize_sub2(config, challenges, layouter, |_, _| {})
+    }
+}
+
+impl<F: Field> StateCircuit<F> {
+    /// Make the assignments to the StateCircuit
+    pub fn synthesize_sub2(
+        &self,
+        config: &StateCircuitConfig<F>,
+        challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+        mut provide_msg: impl FnMut(usize, MsgF<F>) -> (),
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
 
@@ -959,6 +985,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             if is_parallel_assignment {
                 return config.assign_par(
                     layouter,
+                    provide_msg,
                     &self.rows,
                     self.n_rows,
                     &self.updates,
@@ -990,6 +1017,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                 }
                 config.rw_table.load_with_region(
                     &mut region,
+                    &mut provide_msg,
                     &self.rows,
                     self.n_rows,
                     randomness,
@@ -1026,11 +1054,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                 Ok(())
             },
         )
-    }
-
-    /// powers of randomness for instance columns
-    fn instance(&self) -> Vec<Vec<F>> {
-        vec![]
     }
 }
 

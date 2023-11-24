@@ -13,7 +13,10 @@ mod test;
 pub use dev::TxCircuitTester as TestTxCircuit;
 
 use crate::{
-    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    evm_circuit::{
+        table::MsgF,
+        util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    },
     sig_circuit::SigCircuit,
     table::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
@@ -1698,9 +1701,15 @@ impl<F: Field> TxCircuitConfig<F> {
     }
 
     /// Assign 1st empty row with tag = Null
-    fn assign_null_row(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error> {
+    fn assign_null_row(
+        &self,
+        region: &mut Region<'_, F>,
+        provide_msg: &mut impl FnMut(usize, MsgF<F>) -> (),
+        offset: &mut usize,
+    ) -> Result<(), Error> {
         self.assign_common_part(
             region,
+            provide_msg,
             *offset,
             None,
             1,
@@ -1720,6 +1729,7 @@ impl<F: Field> TxCircuitConfig<F> {
     fn assign_fixed_rows(
         &self,
         region: &mut Region<'_, F>,
+        provide_msg: &mut impl FnMut(usize, MsgF<F>) -> (),
         offset: &mut usize,
         tx: &Transaction,
         sign_data: &SignData,
@@ -1961,6 +1971,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             tx_value_cells.push(self.assign_common_part(
                 region,
+                provide_msg,
                 *offset,
                 Some(tx),
                 tx_id_next,
@@ -2154,6 +2165,7 @@ impl<F: Field> TxCircuitConfig<F> {
     fn assign_calldata_rows(
         &self,
         region: &mut Region<'_, F>,
+        provide_msg: &mut impl FnMut(usize, MsgF<F>) -> (),
         offset: &mut usize,
         tx: &Transaction,
         next_tx: Option<&Transaction>,
@@ -2177,6 +2189,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             self.assign_common_part(
                 region,
+                provide_msg,
                 *offset,
                 Some(tx),
                 tx_id_next,
@@ -2218,6 +2231,7 @@ impl<F: Field> TxCircuitConfig<F> {
     fn assign_common_part(
         &self,
         region: &mut Region<'_, F>,
+        provide_msg: &mut impl FnMut(usize, MsgF<F>) -> (),
         offset: usize,
         tx: Option<&Transaction>,
         tx_id_next: usize,
@@ -2253,18 +2267,21 @@ impl<F: Field> TxCircuitConfig<F> {
         )?;
 
         // fixed columns
+        let tag_f = F::from(usize::from(tag) as u64);
         for (col_anno, col, col_val) in [
             ("q_enable", self.tx_table.q_enable, F::one()),
-            ("tag", self.tx_table.tag, F::from(usize::from(tag) as u64)),
+            ("tag", self.tx_table.tag, tag_f),
         ] {
             region.assign_fixed(|| col_anno, col, offset, || Value::known(col_val))?;
         }
 
         // 1st phase columns
+        let tx_id_f = F::from(tx_id as u64);
+        let index_f = F::from(index);
         for (col_anno, col, col_val) in [
             // note that tx_table.index is not assigned in this function
-            ("tx_id", self.tx_table.tx_id, F::from(tx_id as u64)),
-            ("tx_index", self.tx_table.index, F::from(index)),
+            ("tx_id", self.tx_table.tx_id, tx_id_f),
+            ("tx_index", self.tx_table.index, index_f),
             ("tx_type", self.tx_type, F::from(u64::from(tx_type))),
             (
                 "is_l1_msg",
@@ -2277,6 +2294,8 @@ impl<F: Field> TxCircuitConfig<F> {
         // 2nd phase columns
         let tx_value_cell =
             region.assign_advice(|| "tx_value", self.tx_table.value, offset, || value)?;
+
+        value.map(|value| provide_msg(offset, MsgF::tx(tx_id_f, tag_f, index_f, value)));
 
         Ok(tx_value_cell)
     }
@@ -2554,6 +2573,7 @@ impl<F: Field> TxCircuit<F> {
         config: &TxCircuitConfig<F>,
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
+        mut provide_msg: impl FnMut(usize, MsgF<F>) -> (),
         start_l1_queue_index: u64,
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
@@ -2575,7 +2595,7 @@ impl<F: Field> TxCircuit<F> {
 
                 // 1. Empty entry
                 region.assign_fixed(|| "q_first", config.q_first, 0, || Value::known(F::one()))?;
-                config.assign_null_row(&mut region, &mut offset)?;
+                config.assign_null_row(&mut region, &mut provide_msg, &mut offset)?;
 
                 // 2. Assign all tx fields except for call data
                 let get_tx = |i: usize| {
@@ -2650,6 +2670,7 @@ impl<F: Field> TxCircuit<F> {
                     tx_value_cells.extend_from_slice(
                         config.assign_fixed_rows(
                             &mut region,
+                            &mut provide_msg,
                             &mut offset,
                             tx,
                             sign_data,
@@ -2678,6 +2699,7 @@ impl<F: Field> TxCircuit<F> {
                         .find(|tx| !tx.call_data.is_empty());
                     config.assign_calldata_rows(
                         &mut region,
+                        &mut provide_msg,
                         &mut offset,
                         tx,
                         next_tx,
@@ -2754,6 +2776,19 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
+        self.synthesize_sub2(config, challenges, layouter, |_, _| {})
+    }
+}
+
+impl<F: Field> TxCircuit<F> {
+    /// Make the assignments to the TxCircuit
+    pub fn synthesize_sub2(
+        &self,
+        config: &TxCircuitConfig<F>,
+        challenges: &crate::util::Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+        provide_msg: impl FnMut(usize, MsgF<F>) -> (),
+    ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
 
         let padding_txs = (self.txs.len()..self.max_txs)
@@ -2809,6 +2844,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             config,
             challenges,
             layouter,
+            provide_msg,
             self.start_l1_queue_index,
             sign_datas,
             &padding_txs,

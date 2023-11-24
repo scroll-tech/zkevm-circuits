@@ -2,9 +2,12 @@
 
 use crate::{
     copy_circuit::util::number_or_hash_to_field,
-    evm_circuit::util::{
-        constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-        rlc,
+    evm_circuit::{
+        table::MsgF,
+        util::{
+            constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+            rlc,
+        },
     },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
@@ -25,7 +28,7 @@ use core::iter::once;
 use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{and, not, split_u256, split_u256_limb64, Expr},
+    util::{and, assign_global, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -225,6 +228,7 @@ impl TxTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
+        mut provide_msg: impl FnMut(usize, MsgF<F>) -> (), // TODO: use.
         txs: &[Transaction],
         max_txs: usize,
         max_calldata: usize,
@@ -247,42 +251,47 @@ impl TxTable {
             );
         }
 
-        fn assign_row<F: Field>(
-            region: &mut Region<'_, F>,
-            offset: usize,
-            q_enable: Column<Fixed>,
-            advice_columns: &[Column<Advice>],
-            tag: &Column<Fixed>,
-            row: &[Value<F>; 4],
-            msg: &str,
-        ) -> Result<AssignedCell<F, F>, Error> {
-            let mut value_cell = None;
-            for (index, column) in advice_columns.iter().enumerate() {
-                let cell = region.assign_advice(
-                    || format!("tx table {msg} row {offset}"),
-                    *column,
-                    offset,
-                    || row[if index > 0 { index + 1 } else { index }],
-                )?;
-                // tx_id, index, value
-                if index == 2 {
-                    value_cell = Some(cell);
+        let mut assign_row =
+            |region: &mut Region<'_, F>,
+             offset: usize,
+             q_enable: Column<Fixed>,
+             advice_columns: &[Column<Advice>],
+             tag: &Column<Fixed>,
+             row: &[Value<F>; 4],
+             msg: &str|
+             -> Result<AssignedCell<F, F>, Error> {
+                let mut value_cell = None;
+                for (index, column) in advice_columns.iter().enumerate() {
+                    let cell = region.assign_advice(
+                        || format!("tx table {msg} row {offset}"),
+                        *column,
+                        offset,
+                        || row[if index > 0 { index + 1 } else { index }],
+                    )?;
+                    // tx_id, index, value
+                    if index == 2 {
+                        value_cell = Some(cell);
+                    }
                 }
-            }
-            region.assign_fixed(
-                || format!("tx table q_enable row {offset}"),
-                q_enable,
-                offset,
-                || Value::known(F::one()),
-            )?;
-            region.assign_fixed(
-                || format!("tx table {msg} row {offset}"),
-                *tag,
-                offset,
-                || row[1],
-            )?;
-            Ok(value_cell.unwrap())
-        }
+                region.assign_fixed(
+                    || format!("tx table q_enable row {offset}"),
+                    q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
+                region.assign_fixed(
+                    || format!("tx table {msg} row {offset}"),
+                    *tag,
+                    offset,
+                    || row[1],
+                )?;
+                row[0].zip(row[1]).zip(row[2]).zip(row[3]).map(
+                    |(((id, field_tag), index), value)| {
+                        provide_msg(offset, MsgF::tx(id, field_tag, index, value));
+                    },
+                );
+                Ok(value_cell.unwrap())
+            };
 
         layouter.assign_region(
             || "tx table",
@@ -649,6 +658,7 @@ impl RwTable {
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
+
         Ok(())
     }
 
@@ -657,24 +667,37 @@ impl RwTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
+        mut provide_msg: impl FnMut(usize, MsgF<F>) -> (),
         rws: &[Rw],
         n_rows: usize,
         challenges: Value<F>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        assign_global(
+            layouter,
             || "rw table",
-            |mut region| self.load_with_region(&mut region, rws, n_rows, challenges),
+            |mut region| {
+                self.load_with_region(&mut region, &mut provide_msg, rws, n_rows, challenges)
+            },
         )
     }
 
     pub(crate) fn load_with_region<F: Field>(
         &self,
         region: &mut Region<'_, F>,
+        provide_msg: &mut impl FnMut(usize, MsgF<F>) -> (),
         rws: &[Rw],
         n_rows: usize,
         challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
+
+        challenges.map(|challenge| {
+            // Only in second phase.
+            for (offset, row) in rows.iter().enumerate() {
+                provide_msg(offset, MsgF::rw(row.table_assignment_aux(challenge)));
+            }
+        });
+
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment(challenges))?;
         }
