@@ -1,14 +1,9 @@
 //! Error module for the bus-mapping crate
 
 use core::fmt::{Display, Formatter, Result as FmtResult};
-use eth_types::{evm_types::OpcodeId, Address, GethExecStep, Word, H256};
+use eth_types::{evm_types::OpcodeId, Address, GethExecError, GethExecStep, Word, H256};
 use ethers_providers::ProviderError;
 use std::error::Error as StdError;
-
-use crate::geth_errors::{
-    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
-    GETH_ERR_STACK_UNDERFLOW, GETH_ERR_WRITE_PROTECTION,
-};
 
 /// Error type for any BusMapping related failure.
 #[derive(Debug)]
@@ -185,42 +180,43 @@ pub enum ExecError {
 }
 
 // TODO: Move to impl block.
-pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if [GETH_ERR_OUT_OF_GAS, GETH_ERR_GAS_UINT_OVERFLOW].contains(&error) {
-        // NOTE: We report a GasUintOverflow error as an OutOfGas error
-        let oog_err = match op {
-            OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
-                OogError::StaticMemoryExpansion
-            }
-            OpcodeId::RETURN | OpcodeId::REVERT => OogError::DynamicMemoryExpansion,
-            OpcodeId::CALLDATACOPY
-            | OpcodeId::CODECOPY
-            | OpcodeId::EXTCODECOPY
-            | OpcodeId::RETURNDATACOPY => OogError::MemoryCopy,
-            OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
-                OogError::AccountAccess
-            }
-            OpcodeId::LOG0 | OpcodeId::LOG1 | OpcodeId::LOG2 | OpcodeId::LOG3 | OpcodeId::LOG4 => {
-                OogError::Log
-            }
-            OpcodeId::EXP => OogError::Exp,
-            OpcodeId::SHA3 => OogError::Sha3,
-            OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
-                OogError::Call
-            }
-            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
-            OpcodeId::CREATE | OpcodeId::CREATE2 => OogError::Create,
-            OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
-            _ => OogError::Constant,
-        };
-        ExecError::OutOfGas(oog_err)
-    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
-        ExecError::StackOverflow
-    } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
-        ExecError::StackUnderflow
-    } else if error.starts_with(GETH_ERR_WRITE_PROTECTION) {
-        ExecError::WriteProtection
-    } else {
-        panic!("Unknown GethExecStep.error: {error}");
+pub(crate) fn get_step_reported_error(op: &OpcodeId, error: GethExecError) -> ExecError {
+    match error {
+        GethExecError::OutOfGas | GethExecError::GasUintOverflow => {
+            // NOTE: We report a GasUintOverflow error as an OutOfGas error
+            let oog_err = match op {
+                OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
+                    OogError::StaticMemoryExpansion
+                }
+                OpcodeId::RETURN | OpcodeId::REVERT => OogError::DynamicMemoryExpansion,
+                OpcodeId::CALLDATACOPY
+                | OpcodeId::CODECOPY
+                | OpcodeId::EXTCODECOPY
+                | OpcodeId::RETURNDATACOPY => OogError::MemoryCopy,
+                OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
+                    OogError::AccountAccess
+                }
+                OpcodeId::LOG0
+                | OpcodeId::LOG1
+                | OpcodeId::LOG2
+                | OpcodeId::LOG3
+                | OpcodeId::LOG4 => OogError::Log,
+                OpcodeId::EXP => OogError::Exp,
+                OpcodeId::SHA3 => OogError::Sha3,
+                OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL => OogError::Call,
+                OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
+                OpcodeId::CREATE | OpcodeId::CREATE2 => OogError::Create,
+                OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
+                _ => OogError::Constant,
+            };
+            ExecError::OutOfGas(oog_err)
+        }
+        GethExecError::StackOverflow { .. } => ExecError::StackOverflow,
+        GethExecError::StackUnderflow { .. } => ExecError::StackUnderflow,
+        GethExecError::WriteProtection => ExecError::WriteProtection,
+        _ => panic!("Unknown GethExecStep.error: {error}"),
     }
 }

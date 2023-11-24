@@ -2,7 +2,8 @@
 
 use crate::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    Block, GethCallTrace, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
+    Block, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, Hash, Transaction, Word,
+    H256,
 };
 use ethers_core::types::{Address, Bytes, U256, U64};
 use serde::{Deserialize, Serialize};
@@ -237,7 +238,7 @@ pub struct ExecStep {
     #[serde(default)]
     pub refund: u64,
     pub depth: isize,
-    pub error: Option<String>,
+    pub error: Option<GethExecError>,
     #[cfg(feature = "enable-stack")]
     pub stack: Option<Vec<Word>>,
     #[cfg(feature = "enable-memory")]
