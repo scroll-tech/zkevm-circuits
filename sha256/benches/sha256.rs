@@ -15,13 +15,11 @@ use std::{
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use sha256::{
-    table16::{BlockWord, Table16Chip, Table16Config},
-    Sha256, BLOCK_SIZE,
-};
+use sha256::{circuit::*, BLOCK_SIZE};
 
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr},
+    plonk::{Advice, Any, Column, Expression, Fixed},
     poly::{
         commitment::ParamsProver,
         kzg::{
@@ -33,7 +31,7 @@ use halo2_proofs::{
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 
-const CAP_BLK: usize = 64;
+const CAP_BLK: usize = 16;
 
 #[allow(dead_code)]
 fn bench(name: &str, k: u32, c: &mut Criterion) {
@@ -41,7 +39,7 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
     struct MyCircuit {}
 
     impl Circuit<Fr> for MyCircuit {
-        type Config = Table16Config;
+        type Config = CircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -49,7 +47,37 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            Table16Chip::configure(meta)
+            struct DevTable {
+                s_enable: Column<Fixed>,
+                input_rlc: Column<Advice>,
+                input_len: Column<Advice>,
+                hashes_rlc: Column<Advice>,
+                is_effect: Column<Advice>,
+            }
+
+            impl SHA256Table for DevTable {
+                fn cols(&self) -> [Column<Any>; 5] {
+                    [
+                        self.s_enable.into(),
+                        self.input_rlc.into(),
+                        self.input_len.into(),
+                        self.hashes_rlc.into(),
+                        self.is_effect.into(),
+                    ]
+                }
+            }
+
+            let dev_table = DevTable {
+                s_enable: meta.fixed_column(),
+                input_rlc: meta.advice_column(),
+                input_len: meta.advice_column(),
+                hashes_rlc: meta.advice_column(),
+                is_effect: meta.advice_column(),
+            };
+            meta.enable_constant(dev_table.s_enable);
+
+            let chng = Expression::Constant(Fr::from(0x100u64));
+            Self::Config::configure(meta, dev_table, chng)
         }
 
         fn synthesize(
@@ -57,36 +85,14 @@ fn bench(name: &str, k: u32, c: &mut Criterion) {
             config: Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            Table16Chip::load(config.clone(), &mut layouter)?;
-            let table16_chip = Table16Chip::construct::<Fr>(config);
+            let chng_v = Value::known(Fr::from(0x100u64));
+            let mut hasher = Hasher::new(config, &mut layouter)?;
 
-            // Test vector: "abc"
-            let test_input = [
-                BlockWord(Value::known(0b01100001011000100110001110000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000000000)),
-                BlockWord(Value::known(0b00000000000000000000000000011000)),
-            ];
-
-            // Create a message of length 31 blocks
-            let mut input = Vec::with_capacity(CAP_BLK * BLOCK_SIZE);
+            let input = [b'a'; BLOCK_SIZE];
             for _ in 0..CAP_BLK {
-                input.extend_from_slice(&test_input);
+                hasher.update(&mut layouter, chng_v, &input)?;
+                hasher.finalize(&mut layouter, chng_v)?;
             }
-
-            Sha256::digest(table16_chip, layouter.namespace(|| "'abc' * 2"), &input)?;
 
             Ok(())
         }
