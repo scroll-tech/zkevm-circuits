@@ -1,12 +1,19 @@
 //! L2 types used to deserialize traces for l2geth.
 
 use crate::{
-    evm_types::{Gas, GasCost, Memory, OpcodeId, ProgramCounter, Stack, Storage},
+    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     Block, GethExecError, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
 };
 use ethers_core::types::{Address, Bytes, U256, U64};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[cfg(feature = "enable-memory")]
+use crate::evm_types::Memory;
+#[cfg(feature = "enable-stack")]
+use crate::evm_types::Stack;
+#[cfg(feature = "enable-storage")]
+use crate::evm_types::Storage;
 
 /// l2 block full trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
@@ -226,8 +233,11 @@ pub struct ExecStep {
     pub refund: u64,
     pub depth: isize,
     pub error: Option<GethExecError>,
+    #[cfg(feature = "enable-stack")]
     pub stack: Option<Vec<Word>>,
+    #[cfg(feature = "enable-memory")]
     pub memory: Option<Vec<Word>>,
+    #[cfg(feature = "enable-storage")]
     pub storage: Option<HashMap<Word, Word>>,
     #[serde(rename = "extraData")]
     pub extra_data: Option<ExtraData>,
@@ -235,10 +245,6 @@ pub struct ExecStep {
 
 impl From<ExecStep> for GethExecStep {
     fn from(e: ExecStep) -> Self {
-        let stack = e.stack.map_or_else(Stack::new, Stack::from);
-        let storage = e.storage.map_or_else(Storage::empty, Storage::from);
-        let memory = e.memory.map_or_else(Memory::default, Memory::from);
-
         GethExecStep {
             pc: ProgramCounter(e.pc as usize),
             // FIXME
@@ -248,9 +254,12 @@ impl From<ExecStep> for GethExecStep {
             refund: Gas(e.refund),
             depth: e.depth as u16,
             error: e.error,
-            stack,
-            memory,
-            storage,
+            #[cfg(feature = "enable-stack")]
+            stack: e.stack.map_or_else(Stack::new, Stack::from),
+            #[cfg(feature = "enable-memory")]
+            memory: e.memory.map_or_else(Memory::default, Memory::from),
+            #[cfg(feature = "enable-storage")]
+            storage: e.storage.map_or_else(Storage::empty, Storage::from),
         }
     }
 }

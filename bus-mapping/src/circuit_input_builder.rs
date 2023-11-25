@@ -8,7 +8,7 @@ mod execution;
 mod input_state_ref;
 #[cfg(feature = "scroll")]
 mod l2;
-#[cfg(test)]
+#[cfg(all(feature = "tracer-tests", feature = "enable-memory", test))]
 mod tracer_tests;
 mod transaction;
 
