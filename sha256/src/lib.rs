@@ -19,3 +19,6 @@ use halo2_proofs::arithmetic::FieldExt as Field;
 pub mod circuit;
 /// ...
 pub mod table16;
+
+#[cfg(test)]
+mod test;

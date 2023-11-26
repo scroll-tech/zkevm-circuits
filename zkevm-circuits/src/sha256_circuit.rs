@@ -61,7 +61,7 @@ impl SubCircuitConfig<Fr> for CircuitConfig {
 
 /// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
-pub struct SHA256Circuit<F: Field>(Vec<SHA256>, std::marker::PhantomData<F>);
+pub struct SHA256Circuit<F: Field>(Vec<SHA256>, usize, std::marker::PhantomData<F>);
 
 const TABLE16_BLOCK_ROWS: usize = 2114;
 const BLOCK_SIZE_IN_BYTES: usize = BLOCK_SIZE * 4;
@@ -75,6 +75,21 @@ impl<F: Field> SHA256Circuit<F> {
             .unwrap_or_default()
             * TABLE16_BLOCK_ROWS
     }
+
+    fn with_row_limit(self, row_limit: usize) -> Self {
+        if row_limit != 0 {
+            let expected_rows = self.expected_rows();
+            assert!(
+                expected_rows <= row_limit,
+                "no enough rows for sha256 circuit, expected {expected_rows}, limit {row_limit}",
+            );
+            log::info!("sha256 circuit work with maxium {} rows", row_limit);
+        }
+        let inp = self.0;
+        let block_limit = row_limit / TABLE16_BLOCK_ROWS;
+
+        Self(inp, block_limit, Default::default())
+    }
 }
 
 impl SubCircuit<Fr> for SHA256Circuit<Fr> {
@@ -85,24 +100,12 @@ impl SubCircuit<Fr> for SHA256Circuit<Fr> {
     }
 
     fn new_from_block(block: &witness::Block<Fr>) -> Self {
-        let row_limit = block.circuits_params.max_keccak_rows;
-
-        let ret = Self(block.get_sha256(), Default::default());
-
-        if row_limit != 0 {
-            let expected_rows = ret.expected_rows();
-            assert!(
-                expected_rows <= row_limit,
-                "no enough rows for sha256 circuit, expected {expected_rows}, limit {row_limit}",
-            );
-            log::info!("sha256 circuit work with maxium {} rows", row_limit);
-        }
-
-        ret
+        Self(block.get_sha256(), 0, Default::default())
+            .with_row_limit(block.circuits_params.max_keccak_rows)
     }
 
     fn min_num_rows_block(block: &witness::Block<Fr>) -> (usize, usize) {
-        let real_row = Self(block.get_sha256(), Default::default()).expected_rows();
+        let real_row = Self(block.get_sha256(), 0, Default::default()).expected_rows();
 
         (
             real_row,
@@ -123,8 +126,27 @@ impl SubCircuit<Fr> for SHA256Circuit<Fr> {
 
         for hash_event in &self.0 {
             hasher.update(layouter, chng, &hash_event.input)?;
-            // TODO: verify output and digest in event
-            let _ = hasher.finalize(layouter, chng)?;
+
+            let digest = hasher.finalize(layouter, chng)?;
+            let ref_digest = hash_event
+                .digest
+                .chunks_exact(4)
+                .map(|bt| bt.iter().fold(0u32, |sum, v| sum * 256 + *v as u32))
+                .collect::<Vec<_>>();
+            for (w, check) in digest.into_iter().zip(ref_digest) {
+                w.0.assert_if_known(|digest_word| *digest_word == check);
+            }
+
+            if hasher.blocks() > self.1 {
+                log::error!("handled 512-bit block exceed limit ({})", self.1);
+                return Err(Error::Synthesis);
+            }
+        }
+
+        // paddings
+        for _i in hasher.blocks()..self.1 {
+            hasher.update(layouter, chng, &[])?;
+            hasher.finalize(layouter, chng)?;
         }
 
         Ok(())
