@@ -12,7 +12,8 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{evm_unimplemented, GethExecStep, ToAddress, ToWord, Word};
 
-use crate::util::CHECK_MEM_STRICT;
+#[cfg(feature = "enable-memory")]
+use crate::util::GETH_TRACE_CHECK_LEVEL;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
@@ -70,7 +71,7 @@ mod error_precompile_failed;
 mod error_return_data_outofbound;
 mod error_write_protection;
 
-#[cfg(test)]
+#[cfg(all(feature = "enable-memory", test))]
 mod memory_expansion_test;
 #[cfg(feature = "test")]
 pub use callop::tests::PrecompileCallArgs;
@@ -383,8 +384,8 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
-    if check_level >= 1 {
+    #[cfg(feature = "enable-memory")]
+    if GETH_TRACE_CHECK_LEVEL.should_check() {
         let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
         assert!(memory_enabled);
         if memory_enabled {
@@ -414,7 +415,7 @@ pub fn gen_associated_ops(
                         );
                     }
                 }
-                if check_level >= 2 {
+                if GETH_TRACE_CHECK_LEVEL.should_panic() {
                     panic!("mem wrong");
                 }
                 state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();

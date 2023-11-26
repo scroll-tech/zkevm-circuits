@@ -30,3 +30,8 @@ default = ["warn-unimplemented"]
 warn-unimplemented = []
 shanghai = []
 scroll = []
+
+# trace heap allocation related feature switches
+enable-stack = []
+enable-memory = []
+enable-storage = []
