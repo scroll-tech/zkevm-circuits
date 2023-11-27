@@ -18,9 +18,10 @@ impl Opcode for Extcodesize {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Read account address from stack.
-        let address_word = geth_step.stack.last()?;
+        let address_word = state.stack_pop(&mut exec_step)?;
         let address = address_word.to_address();
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(address_word, geth_step.stack.last()?);
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent from call
         // context.
@@ -77,8 +78,9 @@ impl Opcode for Extcodesize {
         }
 
         // Write the EXTCODESIZE result to stack.
-        debug_assert_eq!(code_size, geth_steps[1].stack.last()?);
-        state.stack_write(&mut exec_step, geth_steps[1].stack.last_filled(), code_size)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(code_size, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, code_size)?;
 
         Ok(vec![exec_step])
     }

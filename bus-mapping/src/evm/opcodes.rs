@@ -483,7 +483,12 @@ pub fn gen_associated_ops(
                 need_restore = false;
             }
 
-            state.handle_return(&mut [&mut exec_step], geth_steps, need_restore)?;
+            state.handle_return(
+                (None, None),
+                &mut [&mut exec_step],
+                geth_steps,
+                need_restore,
+            )?;
             return Ok(vec![exec_step]);
         }
     }
@@ -524,7 +529,9 @@ fn dummy_gen_selfdestruct_ops(
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
     let sender = state.call()?.address;
-    let receiver = geth_step.stack.last()?.to_address();
+    let receiver = state.call_ctx_mut()?.stack.pop()?.to_address();
+    #[cfg(feature = "enable-stack")]
+    assert_eq!(receiver, geth_step.stack.last()?.to_address());
 
     let is_warm = state.sdb.check_account_in_access_list(&receiver);
     state.push_op_reversible(
@@ -602,6 +609,11 @@ fn dummy_gen_selfdestruct_ops(
     if let Ok(caller) = state.caller_ctx_mut() {
         caller.return_data.clear();
     }
-    state.handle_return(&mut [&mut exec_step], geth_steps, !state.call()?.is_root)?;
+    state.handle_return(
+        (None, None),
+        &mut [&mut exec_step],
+        geth_steps,
+        !state.call()?.is_root,
+    )?;
     Ok(vec![exec_step])
 }

@@ -81,7 +81,7 @@ impl ExecStep {
         ExecStep {
             exec_state: ExecState::Op(step.op),
             pc: step.pc,
-            stack_size: step.stack.0.len(),
+            stack_size: call_ctx.stack.0.len(),
             memory_size: call_ctx.memory.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,

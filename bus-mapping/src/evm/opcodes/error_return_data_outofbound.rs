@@ -25,17 +25,15 @@ impl Opcode for ErrorReturnDataOutOfBound {
             Some(ExecError::ReturnDataOutOfBounds)
         );
 
-        let memory_offset = geth_step.stack.last()?;
-        let data_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), memory_offset)?;
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(1),
-            data_offset,
-        )?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
+        let _memory_offset = state.stack_pop(&mut exec_step)?;
+        let data_offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(_memory_offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(data_offset, geth_step.stack.nth_last(1)?);
+            assert_eq!(length, geth_step.stack.nth_last(2)?);
+        }
 
         let call_id = state.call()?.call_id;
         let call_ctx = state.call_ctx()?;
@@ -65,7 +63,7 @@ impl Opcode for ErrorReturnDataOutOfBound {
         )?;
 
         // `IsSuccess` call context operation is added in handle_return
-        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

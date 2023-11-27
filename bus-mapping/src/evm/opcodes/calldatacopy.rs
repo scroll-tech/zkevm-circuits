@@ -6,7 +6,7 @@ use crate::{
     operation::CallContextField,
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, Word};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatacopy;
@@ -17,77 +17,65 @@ impl Opcode for Calldatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
-        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
-        state.push_copy(&mut exec_steps[0], copy_event);
-        Ok(exec_steps)
+
+        let mut exec_step = state.new_step(geth_step)?;
+        let memory_offset = state.stack_pop(&mut exec_step)?;
+        let data_offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(memory_offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(data_offset, geth_step.stack.nth_last(1)?);
+            assert_eq!(length, geth_step.stack.nth_last(2)?);
+        }
+        if state.call()?.is_root {
+            state.call_context_read(
+                &mut exec_step,
+                state.call()?.call_id,
+                CallContextField::TxId,
+                state.tx_ctx.id().into(),
+            )?;
+            state.call_context_read(
+                &mut exec_step,
+                state.call()?.call_id,
+                CallContextField::CallDataLength,
+                state.call()?.call_data_length.into(),
+            )?;
+        } else {
+            state.call_context_read(
+                &mut exec_step,
+                state.call()?.call_id,
+                CallContextField::CallerId,
+                state.call()?.caller_id.into(),
+            )?;
+            state.call_context_read(
+                &mut exec_step,
+                state.call()?.call_id,
+                CallContextField::CallDataLength,
+                state.call()?.call_data_length.into(),
+            )?;
+            state.call_context_read(
+                &mut exec_step,
+                state.call()?.call_id,
+                CallContextField::CallDataOffset,
+                state.call()?.call_data_offset.into(),
+            )?;
+        };
+
+        let copy_event = gen_copy_event(state, memory_offset, data_offset, length, &mut exec_step)?;
+        state.push_copy(&mut exec_step, copy_event);
+        Ok(vec![exec_step])
     }
-}
-
-fn gen_calldatacopy_step(
-    state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
-) -> Result<ExecStep, Error> {
-    let mut exec_step = state.new_step(geth_step)?;
-    let memory_offset = geth_step.stack.last()?;
-    let data_offset = geth_step.stack.nth_last(1)?;
-    let length = geth_step.stack.nth_last(2)?;
-
-    state.stack_read(&mut exec_step, geth_step.stack.last_filled(), memory_offset)?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(1),
-        data_offset,
-    )?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
-
-    if state.call()?.is_root {
-        state.call_context_read(
-            &mut exec_step,
-            state.call()?.call_id,
-            CallContextField::TxId,
-            state.tx_ctx.id().into(),
-        )?;
-        state.call_context_read(
-            &mut exec_step,
-            state.call()?.call_id,
-            CallContextField::CallDataLength,
-            state.call()?.call_data_length.into(),
-        )?;
-    } else {
-        state.call_context_read(
-            &mut exec_step,
-            state.call()?.call_id,
-            CallContextField::CallerId,
-            state.call()?.caller_id.into(),
-        )?;
-        state.call_context_read(
-            &mut exec_step,
-            state.call()?.call_id,
-            CallContextField::CallDataLength,
-            state.call()?.call_data_length.into(),
-        )?;
-        state.call_context_read(
-            &mut exec_step,
-            state.call()?.call_id,
-            CallContextField::CallDataOffset,
-            state.call()?.call_data_offset.into(),
-        )?;
-    };
-
-    Ok(exec_step)
 }
 
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
+    memory_offset: Word,
+    data_offset: Word,
+    length: Word,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
-
-    let memory_offset = geth_step.stack.last()?;
-    let data_offset = geth_step.stack.nth_last(1)?;
-    let length = geth_step.stack.nth_last(2)?;
 
     let (memory_offset, length) = (memory_offset.low_u64(), length.as_u64());
 

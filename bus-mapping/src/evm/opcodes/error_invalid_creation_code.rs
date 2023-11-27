@@ -19,10 +19,13 @@ impl Opcode for ErrorCreationCode {
 
         exec_step.error = Some(ExecError::InvalidCreationCode);
 
-        let offset = geth_step.stack.last()?;
-        let length = geth_step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), offset)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), length)?;
+        let offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(length, geth_step.stack.nth_last(1)?);
+        }
 
         // in create context
         let call = state.call()?;
@@ -44,7 +47,7 @@ impl Opcode for ErrorCreationCode {
         state.memory_read_word(&mut exec_step, slot.into())?;
 
         // refer to return_revert Case C
-        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

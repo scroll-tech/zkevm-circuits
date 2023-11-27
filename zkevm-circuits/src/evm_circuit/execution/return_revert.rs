@@ -503,13 +503,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode,
-        evm_types::OpcodeId,
-        geth_types::{Account, GethData},
-        Address, Bytecode, ToWord, Word, U256,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
+        Word,
     };
     use itertools::Itertools;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
+
+    #[cfg(feature = "enable-stack")]
+    use eth_types::{geth_types::GethData, U256};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
@@ -933,10 +934,12 @@ mod test {
                 RETURNDATACOPY
             });
 
-            let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
-                .unwrap()
-                .into();
+            #[cfg(feature = "enable-stack")]
             if is_return {
+                let block: GethData =
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
+                        .unwrap()
+                        .into();
                 // collect return opcode, retrieve next step, assure both contract create
                 // successfully
                 let created_contract_addr = block.geth_traces[0]

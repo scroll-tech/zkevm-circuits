@@ -29,6 +29,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let tx_id = state.tx_ctx.id();
         let caller = state.call()?.clone();
+
         let address = if IS_CREATE2 {
             state.create2_address(&geth_steps[0])?
         } else {
@@ -36,7 +37,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         };
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
-        let callee_value = geth_step.stack.last()?;
+        let callee_value = state.call_ctx()?.stack.last()?;
         if !callee_exists && callee_value.is_zero() {
             state.sdb.get_account_mut(&address).1.storage.clear();
         }
@@ -54,8 +55,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let callee = if is_precheck_ok && !is_address_collision {
             state.parse_call(geth_step)?
         } else {
-            // if precheck not ok, the call won't appear in call trace since it never happens
-            // we need to increase the offset and mannually set the is_success
             state.tx_ctx.call_is_success_offset += 1;
             let mut call = state.parse_call_partial(geth_step)?;
             call.is_success = false;
@@ -70,7 +69,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             tx_id.to_word(),
         )?;
 
-        let depth = caller.depth;
         state.call_context_read(
             &mut exec_step,
             caller.call_id,
@@ -83,8 +81,12 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // stack operation
         // Get low Uint64 of offset to generate copy steps. Since offset could
         // be Uint64 overflow if length is zero.
-        let offset = geth_step.stack.nth_last(1)?.low_u64() as usize;
-        let length = geth_step.stack.nth_last(2)?.as_usize();
+        let [offset, length] = {
+            let stack = &state.call_ctx()?.stack;
+            let offset = stack.nth_last(1)?.low_u64() as usize;
+            let length = stack.nth_last(2)?.as_usize();
+            [offset, length]
+        };
 
         if length != 0 {
             state
@@ -102,23 +104,14 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         )?;
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
-        for i in 0..n_pop {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
-                geth_step.stack.nth_last(i)?,
-            )?;
+        let stack_inputs = state.stack_pops(&mut exec_step, n_pop)?;
+        #[cfg(feature = "enable-stack")]
+        for (i, value) in stack_inputs.iter().enumerate() {
+            assert_eq!(*value, geth_step.stack.nth_last(i)?);
         }
 
-        let address = if IS_CREATE2 {
-            state.create2_address(&geth_steps[0])?
-        } else {
-            state.create_address()?
-        };
-
-        state.stack_write(
+        state.stack_push(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(n_pop - 1),
             if callee.is_success {
                 address.to_word()
             } else {
@@ -219,7 +212,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ),
             (
                 CallContextField::StackPointer,
-                geth_step.stack.nth_last_filled(n_pop - 1).0.into(),
+                state.call_ctx()?.stack.stack_pointer().0.into(),
             ),
             (CallContextField::GasLeft, caller_gas_left.into()),
             (CallContextField::MemorySize, next_memory_word_size.into()),
@@ -244,7 +237,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         if is_precheck_ok {
             // handle keccak_table_lookup
             let keccak_input = if IS_CREATE2 {
-                let salt = geth_step.stack.nth_last(3)?;
+                let salt = stack_inputs[3];
                 assert_eq!(
                     address,
                     get_create2_address(
@@ -331,7 +324,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 ] {
                     state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
                 }
-                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+                state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
             }
         }
         // failed case: is_precheck_ok is false or is_address_collision is true
@@ -343,7 +336,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
-            state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+            state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
         }
         Ok(vec![exec_step])
     }

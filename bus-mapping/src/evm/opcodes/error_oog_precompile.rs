@@ -16,6 +16,7 @@ impl ErrorOOGPrecompile {
         call: Call,
     ) -> Result<ExecStep, Error> {
         let mut exec_step = state.new_step(geth_step)?;
+        exec_step.stack_size += 1; // since the return value is pushed on the stack
         exec_step.error = Some(ExecError::OutOfGas(OogError::Precompile));
 
         // callee_address

@@ -52,20 +52,21 @@ impl Opcode for Sload {
         )?;
 
         // First stack read
-        let key = geth_step.stack.last()?;
-        let stack_position = geth_step.stack.last_filled();
-
-        // Manage first stack read at latest stack position
-        state.stack_read(&mut exec_step, stack_position, key)?;
+        let key = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(key, geth_step.stack.last()?);
 
         // Storage read
         let value_from_statedb = *state.sdb.get_storage(&contract_addr, &key).1;
         {
             let value_from_step = geth_step.storage.get_or_err(&key)?;
-            let value_from_stack = geth_steps[1].stack.last().unwrap();
-            if !(value_from_step == value_from_statedb && value_from_step == value_from_stack) {
-                panic!("inconsistent sload: step proof {value_from_step:?}, local statedb {value_from_statedb:?}, result {value_from_stack:?} in contract {contract_addr:?}, key {key:?}", );
-            }
+
+            // 1. value_from_step == value_from_statedb
+            assert_eq!(value_from_step, value_from_statedb, "inconsistent sload: step proof {value_from_step:?}, local statedb {value_from_statedb:?} in contract {contract_addr:?}, key {key:?}",);
+
+            // 2. value_from_step == value_from_stack
+            #[cfg(feature = "enable-stack")]
+            assert_eq!(value_from_step, geth_steps[1].stack.last()?, "inconsistent sload: step proof {value_from_step:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?);
         }
         let value = value_from_statedb;
 
@@ -89,7 +90,7 @@ impl Opcode for Sload {
         )?;
 
         // First stack write
-        state.stack_write(&mut exec_step, stack_position, value)?;
+        state.stack_push(&mut exec_step, value)?;
         state.push_op(
             &mut exec_step,
             RW::READ,

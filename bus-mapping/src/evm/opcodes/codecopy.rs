@@ -4,7 +4,7 @@ use crate::{
     },
     Error,
 };
-use eth_types::{Bytecode, GethExecStep};
+use eth_types::{Bytecode, GethExecStep, Word};
 
 use super::Opcode;
 
@@ -17,53 +17,46 @@ impl Opcode for Codecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
+        let mut exec_step = state.new_step(geth_step)?;
 
-        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
-        state.push_copy(&mut exec_steps[0], copy_event);
-        Ok(exec_steps)
+        let dest_offset = state.stack_pop(&mut exec_step)?;
+        let code_offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(dest_offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(code_offset, geth_step.stack.nth_last(1)?);
+            assert_eq!(length, geth_step.stack.nth_last(2)?);
+        }
+
+        let copy_event = gen_copy_event(
+            state,
+            dest_offset,
+            code_offset,
+            length.as_u64(),
+            &mut exec_step,
+        )?;
+        state.push_copy(&mut exec_step, copy_event);
+        Ok(vec![exec_step])
     }
-}
-
-fn gen_codecopy_step(
-    state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
-) -> Result<ExecStep, Error> {
-    let mut exec_step = state.new_step(geth_step)?;
-
-    let dest_offset = geth_step.stack.last()?;
-    let code_offset = geth_step.stack.nth_last(1)?;
-    let length = geth_step.stack.nth_last(2)?;
-
-    // stack reads
-    state.stack_read(&mut exec_step, geth_step.stack.last_filled(), dest_offset)?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(1),
-        code_offset,
-    )?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
-
-    Ok(exec_step)
 }
 
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
+    dest_offset: Word,
+    code_offset: Word,
+    length: u64,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
-
-    let dst_offset = geth_step.stack.last()?;
-    let code_offset = geth_step.stack.nth_last(1)?;
-    let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let code_hash = state.call()?.code_hash;
     let bytecode: Bytecode = state.code(code_hash)?.into();
     let code_size = bytecode.code.len() as u64;
 
     // Get low Uint64 of offset.
-    let dst_addr = dst_offset.low_u64();
+    let dst_addr = dest_offset.low_u64();
     let src_addr_end = code_size;
 
     // Reset offset to Uint64 maximum value if overflow, and set source start to the

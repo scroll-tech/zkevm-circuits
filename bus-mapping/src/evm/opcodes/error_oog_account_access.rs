@@ -27,9 +27,10 @@ impl Opcode for ErrorOOGAccountAccess {
         ]
         .contains(&geth_step.op));
         // Read account address from stack.
-        let address_word = geth_step.stack.last()?;
+        let address_word = state.stack_pop(&mut exec_step)?;
         let address = address_word.to_address();
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(address_word, geth_step.stack.last()?);
 
         // Read transaction ID from call context.
         state.call_context_read(
@@ -54,7 +55,7 @@ impl Opcode for ErrorOOGAccountAccess {
         )?;
 
         // common error handling
-        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

@@ -31,11 +31,14 @@ impl Opcode for ErrorOOGLog {
             OpcodeId::LOG4
         ]
         .contains(&geth_step.op));
-        let mstart = geth_step.stack.last()?;
-        let msize = geth_step.stack.nth_last(1)?;
+        let _mstart = state.stack_pop(&mut exec_step)?;
+        let _msize = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(_mstart, geth_step.stack.nth_last(0)?);
+            assert_eq!(_msize, geth_step.stack.nth_last(1)?);
+        }
 
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), mstart)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
         // read static call property
         state.call_context_read(
             &mut exec_step,
@@ -44,7 +47,7 @@ impl Opcode for ErrorOOGLog {
             Word::from(state.call()?.is_static as u8),
         )?;
 
-        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

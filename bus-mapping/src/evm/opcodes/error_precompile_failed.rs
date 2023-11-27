@@ -25,10 +25,14 @@ impl Opcode for PrecompileFailed {
         let mut exec_step = state.new_step(geth_step)?;
         exec_step.error = Some(ExecError::PrecompileFailed);
 
-        let args_offset = geth_step.stack.nth_last(stack_input_num - 4)?.as_usize();
-        let args_length = geth_step.stack.nth_last(stack_input_num - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(stack_input_num - 2)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(stack_input_num - 1)?.as_usize();
+        let [args_offset, args_length, ret_offset, ret_length] = {
+            let stack = &state.call_ctx()?.stack;
+            let args_offset = stack.nth_last(stack_input_num - 4)?.low_u64() as usize;
+            let args_length = stack.nth_last(stack_input_num - 3)?.as_usize();
+            let ret_offset = stack.nth_last(stack_input_num - 2)?.low_u64() as usize;
+            let ret_length = stack.nth_last(stack_input_num - 1)?.as_usize();
+            [args_offset, args_length, ret_offset, ret_length]
+        };
 
         // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
@@ -36,22 +40,16 @@ impl Opcode for PrecompileFailed {
         let call = state.parse_call(geth_step)?;
         state.push_call(call.clone());
         state.caller_ctx_mut()?.return_data.clear();
-        state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
 
-        for i in 0..stack_input_num {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
-                geth_step.stack.nth_last(i)?,
-            )?;
+        let _stack_inputs = state.stack_pops(&mut exec_step, stack_input_num)?;
+        #[cfg(feature = "enable-stack")]
+        for (i, v) in _stack_inputs.into_iter().enumerate() {
+            assert_eq!(v, geth_step.stack.nth_last(i)?);
         }
 
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(stack_input_num - 1),
-            // Must fail.
-            (0_u64).into(),
-        )?;
+        // Must fail.
+        state.stack_push(&mut exec_step, (0_u64).into())?;
 
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),

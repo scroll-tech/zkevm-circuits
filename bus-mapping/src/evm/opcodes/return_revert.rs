@@ -27,10 +27,13 @@ impl Opcode for ReturnRevert {
         let step = &steps[0];
         let mut exec_step = state.new_step(step)?;
 
-        let offset = step.stack.last()?;
-        let length = step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, step.stack.last_filled(), offset)?;
-        state.stack_read(&mut exec_step, step.stack.nth_last_filled(1), length)?;
+        let offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(offset, step.stack.nth_last(0)?);
+            assert_eq!(length, step.stack.nth_last(1)?);
+        }
 
         if !length.is_zero() {
             state
@@ -149,7 +152,11 @@ impl Opcode for ReturnRevert {
 
         // Case C in the specs.
         if !call.is_root {
-            state.handle_restore_context(&mut exec_step, steps)?;
+            state.handle_restore_context(
+                (Some(offset.into()), Some(length.into())),
+                &mut exec_step,
+                steps,
+            )?;
         }
 
         // Case D in the specs.
@@ -203,7 +210,12 @@ impl Opcode for ReturnRevert {
             }
         }
 
-        state.handle_return(&mut [&mut exec_step], steps, false)?;
+        state.handle_return(
+            (Some(offset.into()), Some(length.into())),
+            &mut [&mut exec_step],
+            steps,
+            false,
+        )?;
         Ok(vec![exec_step])
     }
 }

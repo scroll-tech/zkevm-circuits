@@ -16,8 +16,10 @@ impl Opcode for Selfbalance {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        let self_balance = geth_steps[1].stack.last()?;
         let callee_address = state.call()?.address;
+        let self_balance = state.sdb.get_balance(&callee_address);
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(self_balance, geth_steps[1].stack.last()?);
 
         // CallContext read of the callee_address
         state.call_context_read(
@@ -36,11 +38,7 @@ impl Opcode for Selfbalance {
         )?;
 
         // Stack write of self_balance
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            self_balance,
-        )?;
+        state.stack_push(&mut exec_step, self_balance)?;
 
         Ok(vec![exec_step])
     }

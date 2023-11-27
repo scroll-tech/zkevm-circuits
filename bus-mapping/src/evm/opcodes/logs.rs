@@ -17,22 +17,94 @@ impl Opcode for Log {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_step = gen_log_step(state, geth_step)?;
+
+        let mut exec_step = state.new_step(geth_step)?;
+
+        let mstart = state.stack_pop(&mut exec_step)?;
+        let msize = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(mstart, geth_step.stack.nth_last(0)?);
+            assert_eq!(msize, geth_step.stack.nth_last(1)?);
+        }
+
+        let call_id = state.call()?.call_id;
+
+        state.call_context_read(
+            &mut exec_step,
+            call_id,
+            CallContextField::TxId,
+            state.tx_ctx.id().into(),
+        )?;
+        state.call_context_read(
+            &mut exec_step,
+            call_id,
+            CallContextField::IsStatic,
+            Word::from(state.call()?.is_static as u8),
+        )?;
+        state.call_context_read(
+            &mut exec_step,
+            call_id,
+            CallContextField::CalleeAddress,
+            state.call()?.address.to_word(),
+        )?;
+        state.call_context_read(
+            &mut exec_step,
+            call_id,
+            CallContextField::IsPersistent,
+            Word::from(state.call()?.is_persistent as u8),
+        )?;
+
         if state.call()?.is_persistent {
-            let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
+            state.tx_log_write(
+                &mut exec_step,
+                state.tx_ctx.id(),
+                state.tx_ctx.log_id + 1,
+                TxLogField::Address,
+                0,
+                state.call()?.address.to_word(),
+            )?;
+        }
+
+        // generates topic operation dynamically
+        let topic_count = match exec_step.exec_state {
+            ExecState::Op(op_id) => op_id.postfix().expect("opcode with postfix") as usize,
+            _ => panic!("currently only handle successful log state"),
+        };
+
+        for i in 0..topic_count {
+            let topic = state.stack_pop(&mut exec_step)?;
+            #[cfg(feature = "enable-stack")]
+            assert_eq!(topic, geth_step.stack.nth_last(2 + i)?);
+
+            if state.call()?.is_persistent {
+                state.tx_log_write(
+                    &mut exec_step,
+                    state.tx_ctx.id(),
+                    state.tx_ctx.log_id + 1,
+                    TxLogField::Topic,
+                    i,
+                    topic,
+                )?;
+            }
+        }
+
+        if state.call()?.is_persistent {
+            // Get low Uint64 for memory start as below reference. Memory size must be
+            // within range of Uint64, otherwise returns ErrGasUintOverflow.
+            // https://github.com/ethereum/go-ethereum/blob/b80f05bde2c4e93ae64bb3813b6d67266b5fc0e6/core/vm/instructions.go#L850
+            let copy_event =
+                gen_copy_event(state, mstart.low_u64(), msize.low_u64(), &mut exec_step)?;
             state.push_copy(&mut exec_step, copy_event);
             state.tx_ctx.log_id += 1;
         }
 
         // reconstruction
-        let offset = geth_step.stack.last()?;
-        let length = geth_step.stack.nth_last(1)?.as_u64();
-
-        if length != 0 {
+        if msize.as_u64() != 0 {
             // Offset should be within range of Uint64 if length is non-zero.
-            let memory_length = offset
+            let memory_length = mstart
                 .as_u64()
-                .checked_add(length)
+                .checked_add(msize.as_u64())
                 .and_then(|val| usize::try_from(val).ok())
                 .unwrap();
 
@@ -43,98 +115,15 @@ impl Opcode for Log {
     }
 }
 
-fn gen_log_step(
-    state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
-) -> Result<ExecStep, Error> {
-    let mut exec_step = state.new_step(geth_step)?;
-
-    let mstart = geth_step.stack.last()?;
-    let msize = geth_step.stack.nth_last(1)?;
-
-    let call_id = state.call()?.call_id;
-    state.stack_read(&mut exec_step, geth_step.stack.last_filled(), mstart)?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
-
-    state.call_context_read(
-        &mut exec_step,
-        call_id,
-        CallContextField::TxId,
-        state.tx_ctx.id().into(),
-    )?;
-    state.call_context_read(
-        &mut exec_step,
-        call_id,
-        CallContextField::IsStatic,
-        Word::from(state.call()?.is_static as u8),
-    )?;
-    state.call_context_read(
-        &mut exec_step,
-        call_id,
-        CallContextField::CalleeAddress,
-        state.call()?.address.to_word(),
-    )?;
-    state.call_context_read(
-        &mut exec_step,
-        call_id,
-        CallContextField::IsPersistent,
-        Word::from(state.call()?.is_persistent as u8),
-    )?;
-
-    if state.call()?.is_persistent {
-        state.tx_log_write(
-            &mut exec_step,
-            state.tx_ctx.id(),
-            state.tx_ctx.log_id + 1,
-            TxLogField::Address,
-            0,
-            state.call()?.address.to_word(),
-        )?;
-    }
-
-    // generates topic operation dynamically
-    let topic_count = match exec_step.exec_state {
-        ExecState::Op(op_id) => op_id.postfix().expect("opcode with postfix") as usize,
-        _ => panic!("currently only handle successful log state"),
-    };
-
-    for i in 0..topic_count {
-        let topic = geth_step.stack.nth_last(2 + i)?;
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(2 + i),
-            topic,
-        )?;
-
-        if state.call()?.is_persistent {
-            state.tx_log_write(
-                &mut exec_step,
-                state.tx_ctx.id(),
-                state.tx_ctx.log_id + 1,
-                TxLogField::Topic,
-                i,
-                topic,
-            )?;
-        }
-    }
-
-    Ok(exec_step)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
+    memory_start: u64,
+    msize: u64,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
     assert!(state.call()?.is_persistent, "Error: Call is not persistent");
-
-    // Get low Uint64 for memory start as below reference. Memory size must be
-    // within range of Uint64, otherwise returns ErrGasUintOverflow.
-    // https://github.com/ethereum/go-ethereum/blob/b80f05bde2c4e93ae64bb3813b6d67266b5fc0e6/core/vm/instructions.go#L850
-    let memory_start = geth_step.stack.last()?.low_u64();
-    let msize = geth_step.stack.nth_last(1)?.as_u64();
 
     let (src_addr, src_addr_end) = (memory_start, memory_start.checked_add(msize).unwrap());
     let (read_steps, write_steps) = state.gen_copy_steps_for_log(exec_step, src_addr, msize)?;

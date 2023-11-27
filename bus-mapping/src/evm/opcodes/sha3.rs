@@ -24,15 +24,13 @@ impl Opcode for Sha3 {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let expected_sha3 = geth_steps[1].stack.last()?;
-
-        // byte offset in the memory.
-        let offset = geth_step.stack.last()?;
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), offset)?;
-
-        // byte size to read in the memory.
-        let size = geth_step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), size)?;
+        let offset = state.stack_pop(&mut exec_step)?;
+        let size = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(offset, geth_step.stack.nth_last(0)?);
+            assert_eq!(size, geth_step.stack.nth_last(1)?);
+        }
 
         if size.gt(&U256::zero()) {
             state
@@ -51,12 +49,10 @@ impl Opcode for Sha3 {
 
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&sha3_input);
-        debug_assert_eq!(Word::from_big_endian(&sha3), expected_sha3);
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.last_filled(),
-            sha3.into(),
-        )?;
+        let _output = Word::from_big_endian(&sha3);
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(_output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, sha3.into())?;
 
         // Memory read operations
         let rw_counter_start = state.block_ctx.rwc;

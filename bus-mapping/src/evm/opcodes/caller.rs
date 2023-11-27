@@ -4,7 +4,7 @@ use crate::{
     operation::CallContextField,
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToWord};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::CALLER`](crate::evm::OpcodeId::CALLER) `OpcodeId`.
@@ -19,21 +19,19 @@ impl Opcode for Caller {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         // Get caller_address result from next step
-        let value = geth_steps[1].stack.last()?;
+        let caller_address = state.call()?.caller_address.to_word();
         // CallContext read of the caller_address
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CallerAddress,
-            value,
+            caller_address,
         )?;
 
         // Stack write of the caller_address
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            value,
-        )?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(caller_address, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, caller_address)?;
 
         Ok(vec![exec_step])
     }

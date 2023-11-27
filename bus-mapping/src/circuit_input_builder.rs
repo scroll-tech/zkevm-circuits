@@ -26,13 +26,16 @@ pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
+#[cfg(feature = "enable-stack")]
+use eth_types::evm_types::OpcodeId;
 use eth_types::{
     self,
-    evm_types::{GasCost, OpcodeId},
+    evm_types::GasCost,
     geth_types,
-    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256,
+    sign_types::{get_dummy_tx, pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    Address, GethExecTrace, ToBigEndian, ToWord, Word, H256,
 };
+use ethers_core::utils::keccak256;
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     BigModExp, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp,
@@ -40,9 +43,6 @@ pub use execution::{
     PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 use hex::decode_to_slice;
-
-use eth_types::sign_types::get_dummy_tx;
-use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
@@ -633,7 +633,9 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
                 geth_step.refund.0,
-                if geth_step.op.is_push_with_data() {
+                {
+                    #[cfg(feature = "enable-stack")]
+                    if geth_step.op.is_push_with_data() {
                     format!("{:?}", geth_trace.struct_logs.get(index + 1).map(|step| step.stack.last()))
                 } else if geth_step.op.is_call_without_value() {
                     format!(
@@ -680,6 +682,9 @@ impl<'a> CircuitInputBuilder {
                     (0..stack_input_num).into_iter().map(|i|
                         format!("{:?}",  geth_step.stack.nth_last(i))
                     ).collect_vec().join(" ")
+                }
+                    #[cfg(not(feature = "enable-stack"))]
+                    "N/A"
                 }
             );
             debug_assert_eq!(
@@ -927,9 +932,9 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code(call_ctx: &CallContext, step: &GethExecStep) -> Result<Vec<u8>, Error> {
-    let offset = step.stack.nth_last(1)?.low_u64() as usize;
-    let length = step.stack.nth_last(2)?.as_usize();
+pub fn get_create_init_code(call_ctx: &CallContext) -> Result<Vec<u8>, Error> {
+    let offset = call_ctx.stack.nth_last(1)?.low_u64() as usize;
+    let length = call_ctx.stack.nth_last(2)?.as_usize();
 
     let mem_len = call_ctx.memory.0.len();
     let mut result = vec![0u8; length];
@@ -942,9 +947,12 @@ pub fn get_create_init_code(call_ctx: &CallContext, step: &GethExecStep) -> Resu
 }
 
 /// Retrieve the memory offset and length of call.
-pub fn get_call_memory_offset_length(step: &GethExecStep, nth: usize) -> Result<(u64, u64), Error> {
-    let offset = step.stack.nth_last(nth)?;
-    let length = step.stack.nth_last(nth + 1)?;
+pub fn get_call_memory_offset_length(
+    call_ctx: &CallContext,
+    nth: usize,
+) -> Result<(u64, u64), Error> {
+    let offset = call_ctx.stack.nth_last(nth)?;
+    let length = call_ctx.stack.nth_last(nth + 1)?;
     if length.is_zero() {
         Ok((0, 0))
     } else {

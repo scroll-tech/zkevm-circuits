@@ -3,7 +3,7 @@ use crate::{
     evm::{Opcode, OpcodeId},
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, Word};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct InvalidJump;
@@ -23,21 +23,23 @@ impl Opcode for InvalidJump {
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
         // assert op code can only be JUMP or JUMPI
         assert!(geth_step.op == OpcodeId::JUMP || geth_step.op == OpcodeId::JUMPI);
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.last_filled(),
-            geth_step.stack.last()?,
-        )?;
-        if geth_step.op == OpcodeId::JUMPI {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(1),
-                geth_step.stack.nth_last(1)?,
-            )?;
+        let _counter = state.stack_pop(&mut exec_step)?;
+        let is_jumpi = geth_step.op == OpcodeId::JUMPI;
+        let _condition: Word = if is_jumpi {
+            state.stack_pop(&mut exec_step)?
+        } else {
+            Word::zero()
+        };
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(_counter, geth_step.stack.last()?);
+            if is_jumpi {
+                assert_eq!(_condition, geth_step.stack.nth_last(1)?);
+            }
         }
 
         // `IsSuccess` call context operation is added in handle_return
-        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

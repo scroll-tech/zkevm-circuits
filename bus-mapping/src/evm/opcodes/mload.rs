@@ -20,23 +20,24 @@ impl Opcode for Mload {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        // First stack read
-        //
-        let stack_value_read = geth_step.stack.last()?;
-        let stack_position = geth_step.stack.last_filled();
-
-        // Manage first stack read at latest stack position
-        state.stack_read(&mut exec_step, stack_position, stack_value_read)?;
+        let stack_value_read = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(stack_value_read, geth_step.stack.last()?);
 
         // Read the memory value from the next step of the trace.
-        let mem_read_value = geth_steps[1].stack.last()?;
+        let mem_read_value = state
+            .call_ctx()?
+            .memory
+            .read_word(stack_value_read.as_usize().into());
 
         let offset = stack_value_read.as_u64();
         let shift = offset % 32;
         let slot = offset - shift;
 
         // First stack write
-        state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(mem_read_value, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, mem_read_value)?;
 
         state.memory_read_word(&mut exec_step, slot.into())?;
         state.memory_read_word(&mut exec_step, (slot + 32).into())?;

@@ -226,10 +226,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, evm_types::Stack, Word};
+    use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
+    fn test(a: Word, b: Word, n: Word) {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -238,74 +238,50 @@ mod test {
             STOP
         };
 
-        let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
-        if let Some(r) = r {
-            let mut last = ctx
-                .geth_traces
-                .first_mut()
-                .unwrap()
-                .struct_logs
-                .last_mut()
-                .unwrap();
-            last.stack = Stack::from_vec(vec![r]);
-        }
+        let ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
-        if !ok {
-            ctb = ctb.evm_checks(Some(Box::new(|prover, gate_rows, lookup_rows| {
-                assert!(prover
-                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
-                    .is_err())
-            })));
-        };
         ctb.run()
     }
 
-    fn test_ok_u32(a: u32, b: u32, c: u32, r: Option<u32>) {
-        test(a.into(), b.into(), c.into(), r.map(Word::from), true)
+    fn test_ok_u32(a: u32, b: u32, c: u32) {
+        test(a.into(), b.into(), c.into())
     }
-
-    // fn test_ko_u32(a: u32, b: u32, c: u32, r: Option<u32>) {
-    //     test(a.into(), b.into(), c.into(), r.map(Word::from), false)
-    // }
 
     #[test]
     fn addmod_simple() {
-        test_ok_u32(1, 1, 10, None);
-        test_ok_u32(1, 1, 11, None);
+        test_ok_u32(1, 1, 10);
+        test_ok_u32(1, 1, 11);
     }
 
     #[test]
     fn addmod_limits() {
-        test(Word::MAX, Word::MAX, 0.into(), None, true);
-        test(Word::MAX, Word::MAX, 1.into(), None, true);
-        test(Word::MAX - 1, Word::MAX, Word::MAX, None, true);
-        test(Word::MAX, Word::MAX, Word::MAX, None, true);
-        test(Word::MAX, 1.into(), 0.into(), None, true);
-        test(Word::MAX, 1.into(), 1.into(), None, true);
-        test(Word::MAX, 1.into(), Word::MAX, None, true);
-        test(Word::MAX, 0.into(), 0.into(), None, true);
-        test(Word::MAX, 0.into(), 1.into(), None, true);
-        test(Word::MAX, 0.into(), Word::MAX, None, true);
-        test(0.into(), 0.into(), 0.into(), None, true);
-        test(0.into(), 0.into(), 1.into(), None, true);
-        test(0.into(), 0.into(), Word::MAX, None, true);
+        test(Word::MAX, Word::MAX, 0.into());
+        test(Word::MAX, Word::MAX, 1.into());
+        test(Word::MAX - 1, Word::MAX, Word::MAX);
+        test(Word::MAX, Word::MAX, Word::MAX);
+        test(Word::MAX, 1.into(), 0.into());
+        test(Word::MAX, 1.into(), 1.into());
+        test(Word::MAX, 1.into(), Word::MAX);
+        test(Word::MAX, 0.into(), 0.into());
+        test(Word::MAX, 0.into(), 1.into());
+        test(Word::MAX, 0.into(), Word::MAX);
+        test(0.into(), 0.into(), 0.into());
+        test(0.into(), 0.into(), 1.into());
+        test(0.into(), 0.into(), Word::MAX);
     }
 
     #[test]
     fn addmod_bad_r_on_nonzero_n() {
-        test_ok_u32(7, 18, 10, Some(5));
-        // test_ko_u32(7, 18, 10, Some(6))
+        test_ok_u32(7, 18, 10);
     }
 
     #[test]
     fn addmod_bad_r_on_zero_n() {
-        test_ok_u32(2, 3, 0, Some(0));
-        // test_ko_u32(2, 3, 0, Some(1))
+        test_ok_u32(2, 3, 0);
     }
 
     #[test]
     fn addmod_bad_r_bigger_n() {
-        test_ok_u32(2, 3, 4, Some(1));
-        // test_ko_u32(2, 3, 4, Some(5))
+        test_ok_u32(2, 3, 4);
     }
 }

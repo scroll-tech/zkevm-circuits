@@ -328,24 +328,19 @@ where
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let stack_inputs: [Word; N_POPS] = (0..N_POPS)
-            .map(|i| geth_step.stack.nth_last(i))
-            .collect::<Result<Vec<_>, _>>()?
+        let stack_inputs: [Word; N_POPS] = state
+            .stack_pops(&mut exec_step, N_POPS)?
             .try_into()
             .unwrap();
-
-        for (i, value) in stack_inputs.iter().enumerate() {
-            state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(i), *value)?;
+        #[cfg(feature = "enable-stack")]
+        for (i, input) in stack_inputs.iter().enumerate() {
+            assert_eq!(*input, geth_step.stack.nth_last(i)?);
         }
 
         let output = Self::handle(stack_inputs);
-
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.nth_last_filled(0),
-            output,
-        )?;
-        assert_eq!(output, geth_steps[1].stack.nth_last(0)?);
+        state.stack_push(&mut exec_step, output)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(output, geth_steps[1].stack.last()?);
 
         Ok(vec![exec_step])
     }

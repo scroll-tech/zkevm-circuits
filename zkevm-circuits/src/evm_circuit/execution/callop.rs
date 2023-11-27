@@ -1149,26 +1149,27 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        mpt_circuit::MptCircuit, test_util::CircuitTestBuilder, util::SubCircuit,
-        witness::block_convert,
-    };
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        address, bytecode,
-        evm_types::OpcodeId,
-        geth_types::{Account, GethData},
-        word, Address, ToWord, Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
     };
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use itertools::Itertools;
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
         TestContext,
     };
-
     use rayon::prelude::{ParallelBridge, ParallelIterator};
     use std::default::Default;
+
+    #[cfg(feature = "scroll")]
+    use crate::{mpt_circuit::MptCircuit, util::SubCircuit, witness::block_convert};
+    #[cfg(feature = "scroll")]
+    use bus_mapping::mock::BlockData;
+    #[cfg(feature = "scroll")]
+    use eth_types::geth_types::GethData;
+    #[cfg(feature = "scroll")]
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALL,
@@ -1722,13 +1723,20 @@ mod test_precompiles {
             .struct_logs
             .last()
             .expect("at least one step");
-        log::debug!("{:?}", step.stack);
-        for (offset, (_, stack_value)) in arg.stack_value.iter().enumerate() {
-            assert_eq!(
-                *stack_value,
-                step.stack.nth_last(offset).expect("stack value not found"),
-                "stack output mismatch"
-            );
+        #[cfg(feature = "enable-stack")]
+        {
+            let step = ctx.geth_traces[0]
+                .struct_logs
+                .last()
+                .expect("at least one step");
+            log::debug!("{:?}", step.stack);
+            for (offset, (_, stack_value)) in arg.stack_value.iter().enumerate() {
+                assert_eq!(
+                    *stack_value,
+                    step.stack.nth_last(offset).expect("stack value not found"),
+                    "stack output mismatch"
+                );
+            }
         }
 
         log::debug!(

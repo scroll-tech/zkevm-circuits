@@ -41,17 +41,16 @@ impl Opcode for Exponentiation {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let base = geth_step.stack.last()?;
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), base)?;
-        let exponent = geth_step.stack.nth_last(1)?;
-        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), exponent)?;
+        let base = state.stack_pop(&mut exec_step)?;
+        let exponent = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(base, geth_step.stack.nth_last(0)?);
+            assert_eq!(exponent, geth_step.stack.nth_last(1)?);
+        }
 
         let (exponentiation, _) = base.overflowing_pow(exponent);
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.last_filled(),
-            exponentiation,
-        )?;
+        state.stack_push(&mut exec_step, exponentiation)?;
 
         let mut steps = Vec::new();
         let exponentiation_calc = exp_by_squaring(base, exponent, &mut steps);

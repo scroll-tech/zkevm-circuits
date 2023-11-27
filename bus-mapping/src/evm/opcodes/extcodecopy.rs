@@ -6,7 +6,7 @@ use crate::{
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
+use eth_types::{Address, Bytecode, GethExecStep, ToAddress, ToWord, Word, H256};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
@@ -17,93 +17,85 @@ impl Opcode for Extcodecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let mut exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
+        let mut exec_step = state.new_step(geth_step)?;
 
-        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
-        state.push_copy(&mut exec_steps[0], copy_event);
-        Ok(exec_steps)
+        let external_address_word = state.stack_pop(&mut exec_step)?;
+        let external_address = external_address_word.to_address();
+        let dest_offset = state.stack_pop(&mut exec_step)?;
+        let offset = state.stack_pop(&mut exec_step)?;
+        let length = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(external_address_word, geth_step.stack.nth_last(0)?);
+            assert_eq!(dest_offset, geth_step.stack.nth_last(1)?);
+            assert_eq!(offset, geth_step.stack.nth_last(2)?);
+            assert_eq!(length, geth_step.stack.nth_last(3)?);
+        }
+
+        for (field, value) in [
+            (CallContextField::TxId, Word::from(state.tx_ctx.id())),
+            (
+                CallContextField::RwCounterEndOfReversion,
+                Word::from(state.call()?.rw_counter_end_of_reversion as u64),
+            ),
+            (
+                CallContextField::IsPersistent,
+                Word::from(state.call()?.is_persistent as u64),
+            ),
+        ] {
+            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
+        }
+
+        let is_warm = state.sdb.check_account_in_access_list(&external_address);
+        state.push_op_reversible(
+            &mut exec_step,
+            TxAccessListAccountOp {
+                tx_id: state.tx_ctx.id(),
+                address: external_address,
+                is_warm: true,
+                is_warm_prev: is_warm,
+            },
+        )?;
+
+        let account = state.sdb.get_account(&external_address).1;
+        let exists = !account.is_empty();
+        let code_hash = if exists {
+            account.code_hash
+        } else {
+            H256::zero()
+        };
+
+        state.account_read(
+            &mut exec_step,
+            external_address,
+            AccountField::CodeHash,
+            code_hash.to_word(),
+        )?;
+
+        let copy_event = gen_copy_event(
+            state,
+            external_address,
+            dest_offset,
+            offset,
+            length,
+            &mut exec_step,
+        )?;
+        state.push_copy(&mut exec_step, copy_event);
+        Ok(vec![exec_step])
     }
-}
-
-fn gen_extcodecopy_step(
-    state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
-) -> Result<ExecStep, Error> {
-    let mut exec_step = state.new_step(geth_step)?;
-
-    let external_address_word = geth_step.stack.last()?;
-    let external_address = external_address_word.to_address();
-    let dest_offset = geth_step.stack.nth_last(1)?;
-    let offset = geth_step.stack.nth_last(2)?;
-    let length = geth_step.stack.nth_last(3)?;
-
-    // stack reads
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.last_filled(),
-        external_address_word,
-    )?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(1),
-        dest_offset,
-    )?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), offset)?;
-    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(3), length)?;
-
-    for (field, value) in [
-        (CallContextField::TxId, U256::from(state.tx_ctx.id())),
-        (
-            CallContextField::RwCounterEndOfReversion,
-            U256::from(state.call()?.rw_counter_end_of_reversion as u64),
-        ),
-        (
-            CallContextField::IsPersistent,
-            U256::from(state.call()?.is_persistent as u64),
-        ),
-    ] {
-        state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
-    }
-
-    let is_warm = state.sdb.check_account_in_access_list(&external_address);
-    state.push_op_reversible(
-        &mut exec_step,
-        TxAccessListAccountOp {
-            tx_id: state.tx_ctx.id(),
-            address: external_address,
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
-    )?;
-
-    let account = state.sdb.get_account(&external_address).1;
-    let exists = !account.is_empty();
-    let code_hash = if exists {
-        account.code_hash
-    } else {
-        H256::zero()
-    };
-
-    state.account_read(
-        &mut exec_step,
-        external_address,
-        AccountField::CodeHash,
-        code_hash.to_word(),
-    )?;
-    Ok(exec_step)
 }
 
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
-    geth_step: &GethExecStep,
+    external_address: Address,
+    dest_offset: Word,
+    offset: Word,
+    length: Word,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    let external_address = geth_step.stack.last()?.to_address();
-    let dst_offset = geth_step.stack.nth_last(1)?;
-    let code_offset = geth_step.stack.nth_last(2)?;
-    let length = geth_step.stack.nth_last(3)?.as_u64();
+    let length = length.as_u64();
 
     let account = state.sdb.get_account(&external_address).1;
     let exists = !account.is_empty();
@@ -121,14 +113,12 @@ fn gen_copy_event(
     let code_size = bytecode.code.len() as u64;
 
     // Get low Uint64 of offset.
-    let dst_addr = dst_offset.low_u64();
+    let dst_addr = dest_offset.low_u64();
     let src_addr_end = code_size;
 
     // Reset offset to Uint64 maximum value if overflow, and set source start to the
     // minimum value of offset and code size.
-    let src_addr = u64::try_from(code_offset)
-        .unwrap_or(u64::MAX)
-        .min(src_addr_end);
+    let src_addr = u64::try_from(offset).unwrap_or(u64::MAX).min(src_addr_end);
 
     let (copy_steps, prev_bytes) =
         state.gen_copy_steps_for_bytecode(exec_step, &bytecode, src_addr, dst_addr, length)?;

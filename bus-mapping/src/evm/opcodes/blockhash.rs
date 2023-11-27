@@ -20,27 +20,29 @@ impl Opcode for Blockhash {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let block_number = geth_step.stack.last()?;
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), block_number)?;
-
-        let block_hash = geth_steps[1].stack.last()?;
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.last_filled(),
-            block_hash,
-        )?;
+        let block_number = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(block_number, geth_step.stack.last()?);
 
         let current_block_number = state.tx.block_num;
-        if is_valid_block_number(block_number, current_block_number.into()) {
-            let (sha3_input, _sha3_output) =
-                calculate_block_hash(state.block.chain_id, block_number);
-            state.block.sha3_inputs.push(sha3_input);
-
-            #[cfg(feature = "scroll")]
-            assert_eq!(block_hash, _sha3_output);
+        let block_hash = if is_valid_block_number(block_number, current_block_number.into()) {
+            if cfg!(feature = "scroll") {
+                let (sha3_input, sha3_output) =
+                    calculate_block_hash(state.block.chain_id, block_number);
+                state.block.sha3_inputs.push(sha3_input);
+                sha3_output
+            } else {
+                let block_head = state.block.headers.get(&current_block_number).unwrap();
+                let offset = (current_block_number - block_number.as_u64()) as usize;
+                let total_history_hashes = block_head.history_hashes.len();
+                block_head.history_hashes[total_history_hashes - offset]
+            }
         } else {
-            assert_eq!(block_hash, 0.into());
-        }
+            0.into()
+        };
+        state.stack_push(&mut exec_step, block_hash)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(block_hash, geth_steps[1].stack.last()?);
 
         Ok(vec![exec_step])
     }

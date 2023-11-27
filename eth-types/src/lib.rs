@@ -792,10 +792,12 @@ macro_rules! word_map {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm_types::{opcode_ids::OpcodeId, stack::Stack};
+    use crate::evm_types::opcode_ids::OpcodeId;
 
     #[cfg(feature = "enable-memory")]
     use crate::evm_types::memory::Memory;
+    #[cfg(feature = "enable-stack")]
+    use crate::evm_types::stack::Stack;
 
     #[test]
     fn test_to_u16_array() {
