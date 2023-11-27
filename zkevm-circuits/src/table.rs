@@ -175,14 +175,14 @@ pub enum TxFieldTag {
     TxHash,
     /// TxType: Type of the transaction
     TxType,
-    /// The block number in which this tx is included.
-    BlockNumber,
     /// Access list address count (EIP 2930)
     AccessListAddressesLen,
     /// Access list all storage key count (EIP 2930)
     AccessListStorageKeysLen,
     /// Gas cost for access list (EIP 2930)
     AccessListGasCost,
+    /// The block number in which this tx is included.
+    BlockNumber,
 }
 impl_expr!(TxFieldTag);
 

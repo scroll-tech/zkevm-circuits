@@ -1944,7 +1944,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 None,
                 Value::known(F::from(tx.tx_type as u64)),
             ),
-            (BlockNumber, None, Value::known(F::from(tx.block_number))),
             (
                 AccessListAddressesLen,
                 None,
@@ -1960,6 +1959,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 None,
                 Value::known(F::from(tx.access_list_gas_cost)),
             ),
+            (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];
 
         for (tx_tag, rlp_input, tx_value) in fixed_rows {

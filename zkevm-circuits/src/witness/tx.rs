@@ -307,12 +307,6 @@ impl Transaction {
             ],
             [
                 Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.block_number)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::AccessListAddressesLen as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(access_list_address_size)),
@@ -328,6 +322,12 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.access_list_gas_cost)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.block_number)),
             ],
         ];
 
