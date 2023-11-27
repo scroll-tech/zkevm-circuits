@@ -58,10 +58,14 @@ Note:
 
   Like input region, digest region calculated the RLC of digest bytes. The final row in digest copied `s_final` and `counter` value inheirted from input region into the corresponding cols; `bytes_rlc` of the cell in previous cell (i.e. the RLC of digest); and the RLC of input into `copied_data` col. This row represents a row in SHA256 table used for looking up from evm circuit.
 
-  ## Performance
+## Performance
 
   Currently the SHA256 circuit can calculate SHA256 for 1k bytes within 4.891s (`k=17`), ~26% overhead to its `table16` core (3.854s), and verfication is 6.601ms, 6% overhead to `table16` (6.207ms).
 
   We have a [detailed performance for table16 and Brecht's sha256](https://www.notion.so/scrollzkp/Precompile-SHA256-7a0f519d5bbe4f52a9fa08ebff9a8118) (accessing priviledge required).
 
   With `k=21`, SHA256-circuit can calculate the hashes for as much as 16KB bytes, which should be enough for the txs in mainnet.
+
+## Known issue in table16
+
++ Initialize state is not constrainted in table16
