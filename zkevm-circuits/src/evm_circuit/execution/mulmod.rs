@@ -180,7 +180,7 @@ mod test {
         };
 
         let ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
-        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
+        let ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
         ctb.run()
     }
 

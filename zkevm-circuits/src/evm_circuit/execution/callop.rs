@@ -1719,10 +1719,6 @@ mod test_precompiles {
         )
         .unwrap();
 
-        let step = ctx.geth_traces[0]
-            .struct_logs
-            .last()
-            .expect("at least one step");
         #[cfg(feature = "enable-stack")]
         {
             let step = ctx.geth_traces[0]

@@ -46,75 +46,75 @@ fn decode_bytecode(bytecode: &str) -> Result<Vec<u8>, Error> {
     hex::decode(stripped).map_err(Error::HexError)
 }
 
-fn trace_code(
-    cdb: &mut CodeDB,
-    code_hash: Option<H256>,
-    code: Bytes,
-    step: &ExecStep,
-    sdb: &StateDB,
-    stack_pos: usize,
-) {
-    // first, try to read from sdb
-    let stack = match step.stack.as_ref() {
-        Some(stack) => stack,
-        None => {
-            log::error!("stack underflow, step {step:?}");
-            return;
-        }
-    };
-    if stack_pos >= stack.len() {
-        log::error!("stack underflow, step {step:?}");
-        return;
-    }
-    let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
-
-    let code_hash = code_hash.or_else(|| {
-        let (_existed, acc_data) = sdb.get_account(&addr);
-        if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
-            // they must be same
-            Some(acc_data.code_hash)
-        } else {
-            // let us re-calculate it
-            None
-        }
-    });
-    let code_hash = match code_hash {
-        Some(code_hash) => {
-            if code_hash.is_zero() {
-                CodeDB::hash(&code)
-            } else {
-                if log::log_enabled!(log::Level::Trace) {
-                    assert_eq!(
-                        code_hash,
-                        CodeDB::hash(&code),
-                        "bytecode len {:?}, step {:?}",
-                        code.len(),
-                        step
-                    );
-                }
-                code_hash
-            }
-        }
-        None => {
-            let hash = CodeDB::hash(&code);
-            log::debug!(
-                "hash_code done: addr {addr:?}, size {}, hash {hash:?}",
-                &code.len()
-            );
-            hash
-        }
-    };
-
-    cdb.0.entry(code_hash).or_insert_with(|| {
-        log::trace!(
-            "trace code addr {:?}, size {} hash {:?}",
-            addr,
-            &code.len(),
-            code_hash
-        );
-        code.to_vec()
-    });
-}
+// fn trace_code(
+//     cdb: &mut CodeDB,
+//     code_hash: Option<H256>,
+//     code: Bytes,
+//     step: &ExecStep,
+//     sdb: &StateDB,
+//     stack_pos: usize,
+// ) {
+//     // first, try to read from sdb
+//     let stack = match step.stack.as_ref() {
+//         Some(stack) => stack,
+//         None => {
+//             log::error!("stack underflow, step {step:?}");
+//             return;
+//         }
+//     };
+//     if stack_pos >= stack.len() {
+//         log::error!("stack underflow, step {step:?}");
+//         return;
+//     }
+//     let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
+//
+//     let code_hash = code_hash.or_else(|| {
+//         let (_existed, acc_data) = sdb.get_account(&addr);
+//         if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
+//             // they must be same
+//             Some(acc_data.code_hash)
+//         } else {
+//             // let us re-calculate it
+//             None
+//         }
+//     });
+//     let code_hash = match code_hash {
+//         Some(code_hash) => {
+//             if code_hash.is_zero() {
+//                 CodeDB::hash(&code)
+//             } else {
+//                 if log::log_enabled!(log::Level::Trace) {
+//                     assert_eq!(
+//                         code_hash,
+//                         CodeDB::hash(&code),
+//                         "bytecode len {:?}, step {:?}",
+//                         code.len(),
+//                         step
+//                     );
+//                 }
+//                 code_hash
+//             }
+//         }
+//         None => {
+//             let hash = CodeDB::hash(&code);
+//             log::debug!(
+//                 "hash_code done: addr {addr:?}, size {}, hash {hash:?}",
+//                 &code.len()
+//             );
+//             hash
+//         }
+//     };
+//
+//     cdb.0.entry(code_hash).or_insert_with(|| {
+//         log::trace!(
+//             "trace code addr {:?}, size {} hash {:?}",
+//             addr,
+//             &code.len(),
+//             code_hash
+//         );
+//         code.to_vec()
+//     });
+// }
 
 fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<(), Error> {
     log::debug!("build_codedb for block {:?}", block.header.number);
@@ -141,55 +141,72 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
-        for step in execution_result.exec_steps.iter().rev() {
-            if let Some(data) = &step.extra_data {
-                match step.op {
-                    OpcodeId::CALL
-                    | OpcodeId::CALLCODE
-                    | OpcodeId::DELEGATECALL
-                    | OpcodeId::STATICCALL => {
-                        let code_idx = if block.transactions[er_idx].to.is_none() {
-                            0
-                        } else {
-                            1
-                        };
-                        let callee_code = data.get_code_at(code_idx);
-                        // TODO: make nil code ("0x") is not None and assert None case
-                        // assert!(
-                        //     callee_code.is_none(),
-                        //     "invalid trace: cannot get code of call: {step:?}"
-                        // );
-                        let code_hash = match step.op {
-                            OpcodeId::CALL | OpcodeId::CALLCODE => data.get_code_hash_at(1),
-                            OpcodeId::STATICCALL => data.get_code_hash_at(0),
-                            _ => None,
-                        };
-                        trace_code(
-                            cdb,
-                            code_hash,
-                            callee_code.unwrap_or_default(),
-                            step,
-                            sdb,
-                            1,
-                        );
-                    }
-                    OpcodeId::CREATE | OpcodeId::CREATE2 => {
-                        // notice we do not need to insert code for CREATE,
-                        // bustmapping do this job
-                    }
-                    OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
-                        let code = data.get_code_at(0);
-                        if code.is_none() {
-                            log::warn!("unable to fetch code from step. {step:?}");
-                            continue;
-                        }
-                        trace_code(cdb, None, code.unwrap(), step, sdb, 0);
-                    }
-
-                    _ => {}
-                }
-            }
+        for (addr, prestate) in execution_result
+            .prestate
+            .iter()
+            .filter(|(_, pre)| pre.code.is_some())
+        {
+            let code = prestate.code.as_ref().unwrap();
+            let code_hash = CodeDB::hash(&code);
+            cdb.0.entry(code_hash).or_insert_with(|| {
+                log::trace!(
+                    "trace code addr {:?}, size {} hash {:?}",
+                    addr,
+                    &code.len(),
+                    code_hash
+                );
+                code.to_vec()
+            });
         }
+        // for step in execution_result.exec_steps.iter().rev() {
+        //     if let Some(data) = &step.extra_data {
+        //         match step.op {
+        //             OpcodeId::CALL
+        //             | OpcodeId::CALLCODE
+        //             | OpcodeId::DELEGATECALL
+        //             | OpcodeId::STATICCALL => {
+        //                 let code_idx = if block.transactions[er_idx].to.is_none() {
+        //                     0
+        //                 } else {
+        //                     1
+        //                 };
+        //                 let callee_code = data.get_code_at(code_idx);
+        //                 // TODO: make nil code ("0x") is not None and assert None case
+        //                 // assert!(
+        //                 //     callee_code.is_none(),
+        //                 //     "invalid trace: cannot get code of call: {step:?}"
+        //                 // );
+        //                 let code_hash = match step.op {
+        //                     OpcodeId::CALL | OpcodeId::CALLCODE => data.get_code_hash_at(1),
+        //                     OpcodeId::STATICCALL => data.get_code_hash_at(0),
+        //                     _ => None,
+        //                 };
+        //                 trace_code(
+        //                     cdb,
+        //                     code_hash,
+        //                     callee_code.unwrap_or_default(),
+        //                     step,
+        //                     sdb,
+        //                     1,
+        //                 );
+        //             }
+        //             OpcodeId::CREATE | OpcodeId::CREATE2 => {
+        //                 // notice we do not need to insert code for CREATE,
+        //                 // bustmapping do this job
+        //             }
+        //             OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
+        //                 let code = data.get_code_at(0);
+        //                 if code.is_none() {
+        //                     log::warn!("unable to fetch code from step. {step:?}");
+        //                     continue;
+        //                 }
+        //                 trace_code(cdb, None, code.unwrap(), step, sdb, 0);
+        //             }
+        //
+        //             _ => {}
+        //         }
+        //     }
+        // }
     }
 
     log::debug!("updating codedb done");
