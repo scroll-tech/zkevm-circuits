@@ -1,7 +1,5 @@
 //! Types needed for generating Ethereum traces
 
-#[cfg(feature = "scroll")]
-use crate::l2_types::BlockTrace;
 use crate::{
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk2, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
@@ -383,9 +381,6 @@ pub struct GethData {
     pub geth_traces: Vec<GethExecTrace>,
     /// Accounts
     pub accounts: Vec<Account>,
-    /// block trace
-    #[cfg(feature = "scroll")]
-    pub block_trace: BlockTrace,
 }
 /*
 impl GethData {

@@ -687,7 +687,7 @@ pub struct GethExecTrace {
     /// Only viable for scroll mode
     pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
     /// prestate trace
-    pub prestate: Option<HashMap<Address, GethPrestateTrace>>,
+    pub prestate: HashMap<Address, GethPrestateTrace>,
     /// call trace
     #[serde(rename = "callTrace")]
     pub call_trace: GethCallTrace,
@@ -872,6 +872,7 @@ mod tests {
         ]
       }
     ],
+    "prestate": {},
     "callTrace": {
       "calls": [],
       "error": null,
@@ -959,7 +960,7 @@ mod tests {
                         ]),
                     }
                 ],
-                prestate: None,
+                prestate: HashMap::new(),
                 call_trace: GethCallTrace {
                     calls: Vec::new(),
                     error: None,

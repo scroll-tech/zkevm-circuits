@@ -108,8 +108,6 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
             accounts: ctx.accounts.into(),
-            #[cfg(feature = "scroll")]
-            block_trace: ctx.block_trace,
         }
     }
 }
