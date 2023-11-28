@@ -749,24 +749,27 @@ pub struct MptTable {
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            //self.q_enable,
-            self.address,
-            self.storage_key.lo(),
-            self.storage_key.hi(),
-            self.proof_type,
-            self.new_root.lo(),
-            self.new_root.hi(),
-            self.old_root.lo(),
-            self.old_root.hi(),
-            self.new_value.lo(),
-            self.new_value.hi(),
-            self.old_value.lo(),
-            self.old_value.hi(),
-        ]
-        .into_iter()
-        .map(|col| col.into())
-        .collect::<Vec<Column<Any>>>()
+        let mut columns: Vec<Column<Any>> = vec![self.q_enable.into()];
+        columns.extend(
+            vec![
+                self.address,
+                self.storage_key.lo(),
+                self.storage_key.hi(),
+                self.proof_type,
+                self.new_root.lo(),
+                self.new_root.hi(),
+                self.old_root.lo(),
+                self.old_root.hi(),
+                self.new_value.lo(),
+                self.new_value.hi(),
+                self.old_value.lo(),
+                self.old_value.hi(),
+            ]
+            .into_iter()
+            .map(|col| col.into())
+            .collect::<Vec<Column<Any>>>(),
+        );
+        columns
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -786,6 +789,30 @@ impl<F: Field> LookupTable<F> for MptTable {
             String::from("old_value_hi"),
         ]
     }
+
+    // fn table_exprs(&self) -> Vec<Column<Any>> {
+    //     let mut columns: Vec<Column<Any>> = vec![self.q_enable.into()];
+    //     columns.extend(
+    //         vec![
+    //             self.address,
+    //             self.storage_key.lo(),
+    //             self.storage_key.hi(),
+    //             self.proof_type,
+    //             self.new_root.lo(),
+    //             self.new_root.hi(),
+    //             self.old_root.lo(),
+    //             self.old_root.hi(),
+    //             self.new_value.lo(),
+    //             self.new_value.hi(),
+    //             self.old_value.lo(),
+    //             self.old_value.hi(),
+    //         ]
+    //         .into_iter()
+    //         .map(|col| col.into())
+    //         .collect::<Vec<Column<Any>>>(),
+    //     );
+    //     columns
+    // }
 }
 
 impl MptTable {
@@ -809,6 +836,10 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
+        if offset == 4 || offset == 5 || offset == 7 || offset == 8 {
+            dbg!(row);
+        }
+
         region.assign_fixed(
             || "assign mpt table row value",
             self.q_enable,
