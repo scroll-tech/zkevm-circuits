@@ -8,17 +8,17 @@ use crate::{
     witness,
 };
 use eth_types::Field;
-#[cfg(test)]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
 use itertools::Itertools;
-#[cfg(test)]
-use mpt_zktrie::mpt_circuits::gadgets::mpt_update::hash_traces;
-use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
+use mpt_zktrie::mpt_circuits::{
+    gadgets::{mpt_update::hash_traces, poseidon::PoseidonLookup},
+    mpt,
+    types::Proof,
+};
 
 impl PoseidonLookup for PoseidonTable {
     fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 6]) {
@@ -76,11 +76,24 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
     ) -> Self {
         let conf = mpt::MptCircuitConfig::configure(meta, &poseidon_table);
         meta.lookup_any("updates in mpt table proven in mpt circuit", |meta| {
-            mpt_table
-                .table_exprs(meta)
-                .into_iter()
-                .zip_eq(conf.lookup_exprs(meta))
-                .collect()
+            let table_expressions = mpt_table.table_exprs(meta);
+            let circuit_expressions = conf.lookup_exprs(meta);
+
+            let mut lookup = vec![];
+            for i in 0..5 {
+                lookup.push((table_expressions[i].clone(), circuit_expressions[i].clone()));
+            }
+            for i in 0..4 {
+                lookup.push((
+                    table_expressions[5 + 2 * i].clone(),
+                    circuit_expressions[5 + 2 * i + 1].clone(),
+                ));
+                lookup.push((
+                    table_expressions[5 + 2 * i + 1].clone(),
+                    circuit_expressions[5 + 2 * i].clone(),
+                ));
+            }
+            lookup
         });
 
         Self(conf, mpt_table, Default::default())
@@ -153,7 +166,6 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
     }
 }
 
-#[cfg(test)]
 impl Circuit<Fr> for MptCircuit<Fr> {
     type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;

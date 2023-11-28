@@ -32,6 +32,7 @@ pub(crate) mod constraint_builder;
 pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
+pub(crate) mod padding_gadget;
 pub(crate) mod precompile_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
@@ -416,12 +417,6 @@ impl<F: FieldExt> CellManager<F> {
             height,
             cells,
             columns,
-        }
-    }
-
-    pub(crate) fn reset_heights_to(&mut self, heights: &[usize]) {
-        for (column, &height) in self.columns.iter_mut().zip_eq(heights.iter()) {
-            column.height = height;
         }
     }
 

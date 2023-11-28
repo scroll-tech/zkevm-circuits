@@ -81,6 +81,8 @@ pub struct Block<F> {
 pub struct BlockContexts {
     /// Hashmap that maps block number to its block context.
     pub ctxs: BTreeMap<u64, BlockContext>,
+    /// relax mode flag inherited from block builder
+    pub relax_mode: bool,
 }
 
 impl<F: Field> Block<F> {
@@ -448,6 +450,7 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
                     )
                 })
                 .collect::<BTreeMap<_, _>>(),
+            relax_mode: block.is_relaxed(),
         }
     }
 }
@@ -590,4 +593,11 @@ pub fn block_convert_with_l1_queue_index<F: Field>(
 pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) {
     block.mpt_updates.fill_state_roots(mpt_state);
     block.state_root = Some(block.mpt_updates.new_root());
+}
+
+/// Mocking generate mpt witness from mpt states
+pub fn block_mocking_apply_mpt<F: Field>(block: &mut Block<F>) {
+    block.mpt_updates.mock_fill_state_roots();
+    block.state_root = Some(block.mpt_updates.new_root());
+    block.prev_state_root = block.mpt_updates.old_root();
 }

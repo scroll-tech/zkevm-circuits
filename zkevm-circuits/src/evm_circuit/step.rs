@@ -292,6 +292,8 @@ impl ExecutionState {
                     ]
                 }
             }
+            // #[cfg(feature = "scroll")]
+            // Self::DIFFICULTY => vec![OpcodeId::DIFFICULTY],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::POP => vec![OpcodeId::POP],

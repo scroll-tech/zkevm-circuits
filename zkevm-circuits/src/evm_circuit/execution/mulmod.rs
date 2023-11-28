@@ -3,7 +3,6 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            self,
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,

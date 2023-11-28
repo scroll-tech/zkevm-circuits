@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select,
-        CachedRegion,
+        constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select, CachedRegion,
     },
     util::{
         word::{Word32Cell, WordExpr},

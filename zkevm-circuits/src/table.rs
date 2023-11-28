@@ -146,6 +146,8 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
+    /// Gas cost for access list (EIP 2930)
+    AccessListGasCost,
     /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID
@@ -839,7 +841,6 @@ impl MptTable {
         if offset == 4 || offset == 5 || offset == 7 || offset == 8 {
             dbg!(row);
         }
-
         region.assign_fixed(
             || "assign mpt table row value",
             self.q_enable,
@@ -954,7 +955,6 @@ impl PoseidonTable {
         }
     }
 
-    #[cfg(test)]
     /// Load mpt hashes (without the poseidon circuit) for testing purposes.
     pub fn load<F: Field>(
         &self,

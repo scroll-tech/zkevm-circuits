@@ -55,7 +55,7 @@ fn get_call_result(trace: &[GethExecStep]) -> Option<Word> {
     trace[1..]
         .iter()
         .find(|s| s.depth == depth)
-        .and_then(|s| s.stack.nth_last(0).ok())
+        .and_then(|s| s.stack.last().ok())
 }
 
 /// State and Code Access set.
@@ -70,7 +70,7 @@ pub struct AccessSet {
 impl AccessSet {
     #[inline(always)]
     pub(crate) fn add_account(&mut self, address: Address) {
-        self.state.entry(address).or_insert_with(HashSet::new);
+        self.state.entry(address).or_default();
     }
 
     #[inline(always)]
@@ -89,7 +89,7 @@ impl AccessSet {
 
     #[inline(always)]
     pub(crate) fn add_code(&mut self, address: Address) {
-        self.state.entry(address).or_insert_with(HashSet::new);
+        self.state.entry(address).or_default();
         self.code.insert(address);
     }
 
@@ -184,12 +184,12 @@ pub fn gen_state_access_trace<TX>(
             match step.op {
                 OpcodeId::SSTORE => {
                     let address = contract_address;
-                    let key = step.stack.nth_last(0)?;
+                    let key = step.stack.last()?;
                     accs.push(Access::new(i, WRITE, Storage { address, key }));
                 }
                 OpcodeId::SLOAD => {
                     let address = contract_address;
-                    let key = step.stack.nth_last(0)?;
+                    let key = step.stack.last()?;
                     accs.push(Access::new(i, READ, Storage { address, key }));
                 }
                 OpcodeId::SELFBALANCE => {
@@ -207,25 +207,25 @@ pub fn gen_state_access_trace<TX>(
                     }
                 }
                 OpcodeId::BALANCE => {
-                    let address = step.stack.nth_last(0)?.to_address();
+                    let address = step.stack.last()?.to_address();
                     accs.push(Access::new(i, READ, Account { address }));
                 }
                 OpcodeId::EXTCODEHASH => {
-                    let address = step.stack.nth_last(0)?.to_address();
+                    let address = step.stack.last()?.to_address();
                     accs.push(Access::new(i, READ, Account { address }));
                 }
                 OpcodeId::EXTCODESIZE => {
-                    let address = step.stack.nth_last(0)?.to_address();
+                    let address = step.stack.last()?.to_address();
                     accs.push(Access::new(i, READ, Code { address }));
                 }
                 OpcodeId::EXTCODECOPY => {
-                    let address = step.stack.nth_last(0)?.to_address();
+                    let address = step.stack.last()?.to_address();
                     accs.push(Access::new(i, READ, Code { address }));
                 }
                 OpcodeId::SELFDESTRUCT => {
                     let address = contract_address;
                     accs.push(Access::new(i, WRITE, Account { address }));
-                    let address = step.stack.nth_last(0)?.to_address();
+                    let address = step.stack.last()?.to_address();
                     accs.push(Access::new(i, WRITE, Account { address }));
                 }
                 OpcodeId::CREATE => {

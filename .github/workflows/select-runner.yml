@@ -38,13 +38,3 @@ jobs:
     outputs:
       matrix1: ${{ toJSON( fromJSON(inputs.matrices)[1] ) }}
       matrix2: ${{ toJSON( fromJSON(inputs.matrices)[2] ) }}
-
-  wakeup:
-    name: Wake up self-hosted runner
-    if: ${{ inputs.enabled }}
-    needs: [select]
-    runs-on: ${{ inputs.bastion-host }}
-    concurrency: ${{ needs.select.outputs.matrix1 }}
-    steps:
-      - uses: actions/checkout@v4
-      - run: .github/ciChecksScripts/wakeUpRunner.sh

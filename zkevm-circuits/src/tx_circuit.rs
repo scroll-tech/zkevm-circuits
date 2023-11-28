@@ -19,9 +19,9 @@ use crate::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
-            BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
-            CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV,
-            TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+            AccessListGasCost, BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC,
+            CalleeAddress, CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS,
+            SigV, TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
         TxTable, U16Table, U8Table, UXTable,
     },
@@ -79,11 +79,11 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 23;
+pub const TX_LEN: usize = 24;
 /// Offset of TxHash tag in the tx table
-pub const TX_HASH_OFFSET: usize = 21;
+pub const TX_HASH_OFFSET: usize = 22;
 /// Offset of ChainID tag in the tx table
-pub const CHAIN_ID_OFFSET: usize = 12;
+pub const CHAIN_ID_OFFSET: usize = 13;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -332,6 +332,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_data, CallData);
         is_tx_tag!(is_data_length, CallDataLength);
         is_tx_tag!(is_data_gas_cost, CallDataGasCost);
+        is_tx_tag!(is_access_list_gas_cost, AccessListGasCost);
         is_tx_tag!(is_tx_gas_cost, TxDataGasCost);
         is_tx_tag!(is_data_rlc, CallDataRLC);
         is_tx_tag!(is_chain_id_expr, ChainID);
@@ -467,6 +468,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_create(meta), Null),
                 (is_data_length(meta), Null),
                 (is_data_gas_cost(meta), Null),
+                (is_access_list_gas_cost(meta), Null),
                 (is_sign_hash(meta), Null),
                 (is_hash(meta), Null),
                 (is_data(meta), Null),
@@ -557,6 +559,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
+
+        // TODO: add constraints for AccessListGasCost.
 
         //////////////////////////////////////////////////////////
         ///// Constraints for booleans that reducing degree  /////
@@ -1835,6 +1839,11 @@ impl<F: Field> TxCircuitConfig<F> {
                 CallDataGasCost,
                 None,
                 Value::known(F::from(tx.call_data_gas_cost)),
+            ),
+            (
+                AccessListGasCost,
+                None,
+                Value::known(F::from(tx.access_list_gas_cost)),
             ),
             (
                 TxDataGasCost,

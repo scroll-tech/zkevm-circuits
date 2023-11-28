@@ -8,7 +8,7 @@ use crate::{
         },
     },
     util::{
-        word::{Word, Word32, Word32Cell, WordCell, WordExpr},
+        word::{Word, Word32, Word32Cell, WordExpr},
         Expr,
     },
 };

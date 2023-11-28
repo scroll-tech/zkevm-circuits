@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,

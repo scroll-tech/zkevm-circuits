@@ -174,8 +174,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             F::from(opcode.as_u64()) - F::from(OpcodeId::STATICCALL.as_u64()),
         )?;
         self.gas.assign_u256(region, offset, gas)?;
-        self.callee_address
-            .assign(region, offset, Value::known(F::from(callee_address.as_u64())))?;
+        self.callee_address.assign(
+            region,
+            offset,
+            Value::known(F::from(callee_address.as_u64())),
+        )?;
         self.value.assign_u256(region, offset, value)?;
         self.cd_address
             .assign(region, offset, cd_offset, cd_length)?;

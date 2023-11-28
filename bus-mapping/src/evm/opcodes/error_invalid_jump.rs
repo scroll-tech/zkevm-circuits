@@ -3,7 +3,7 @@ use crate::{
     evm::{Opcode, OpcodeId},
     Error,
 };
-use eth_types::{GethExecStep, Word};
+use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct InvalidJump;
@@ -23,21 +23,16 @@ impl Opcode for InvalidJump {
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
         // assert op code can only be JUMP or JUMPI
         assert!(geth_step.op == OpcodeId::JUMP || geth_step.op == OpcodeId::JUMPI);
-        let is_jumpi = geth_step.op == OpcodeId::JUMPI;
-        let mut condition: Word = Word::zero();
-        if is_jumpi {
-            condition = geth_step.stack.nth_last(1)?;
-        }
         state.stack_read(
             &mut exec_step,
             geth_step.stack.last_filled(),
             geth_step.stack.last()?,
         )?;
-        if is_jumpi {
+        if geth_step.op == OpcodeId::JUMPI {
             state.stack_read(
                 &mut exec_step,
                 geth_step.stack.nth_last_filled(1),
-                condition,
+                geth_step.stack.nth_last(1)?,
             )?;
         }
 

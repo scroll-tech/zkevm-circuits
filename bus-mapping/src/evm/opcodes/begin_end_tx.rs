@@ -12,7 +12,10 @@ use crate::{
 };
 use core::fmt::Debug;
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{
+        gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
+        GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
+    },
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -186,13 +189,15 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
 
     // Calculate intrinsic gas cost
     let call_data_gas_cost = tx_data_gas_cost(&state.tx.input);
+    let access_list_gas_cost = tx_access_list_gas_cost(&state.tx.access_list);
     let intrinsic_gas_cost = if state.tx.is_create() {
         GasCost::CREATION_TX.as_u64()
     } else {
         GasCost::TX.as_u64()
     } + call_data_gas_cost
+        + access_list_gas_cost
         + init_code_gas_cost;
-    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
+    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, access_list_gas_cost {access_list_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee account
@@ -228,11 +233,25 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     if state.tx.is_create()
         && ((!account_code_hash_is_empty_or_zero) || !callee_account.nonce.is_zero())
     {
-        unimplemented!(
-            "deployment collision at {:?}, account {:?}",
-            call.address,
-            callee_account
-        );
+        // since there is a bug in the prestate
+        // tracer: https://github.com/ethereum/go-ethereum/issues/28439
+        // which may also act as the data source for our statedb,
+        // we have to relax the constarint a bit and fix it silently
+        if account_code_hash_is_empty_or_zero && callee_account.nonce == 1.into() {
+            log::warn!(
+                "fix deployment nonce for {:?} silently for the prestate tracer",
+                call.address,
+            );
+            let mut fixed_account = callee_account.clone();
+            fixed_account.nonce = Word::zero();
+            state.sdb.set_account(&call.address, fixed_account);
+        } else {
+            unimplemented!(
+                "deployment collision at {:?}, account {:?}",
+                call.address,
+                callee_account
+            );
+        }
     }
 
     // Transfer with fee

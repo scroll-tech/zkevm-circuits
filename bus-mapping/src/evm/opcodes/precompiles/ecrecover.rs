@@ -1,5 +1,5 @@
 use eth_types::{
-    sign_types::{biguint_to_32bytes_le, recover_pk, SignData, SECP256K1_Q},
+    sign_types::{biguint_to_32bytes_le, recover_pk2, SignData, SECP256K1_Q},
     Bytes, ToBigEndian, ToLittleEndian,
 };
 use halo2_proofs::halo2curves::{
@@ -14,18 +14,11 @@ use crate::{
 };
 
 pub(crate) fn opt_data(
-    input_bytes: Option<Vec<u8>>,
-    output_bytes: Option<Vec<u8>>,
+    input_bytes: &[u8],
+    output_bytes: &[u8],
+    return_bytes: &[u8],
 ) -> (Option<PrecompileEvent>, Option<PrecompileAuxData>) {
-    let input_bytes = input_bytes.map_or(vec![0u8; 128], |mut bytes| {
-        bytes.resize(128, 0u8);
-        bytes
-    });
-    let output_bytes = output_bytes.map_or(vec![0u8; 32], |mut bytes| {
-        bytes.resize(32, 0u8);
-        bytes
-    });
-    let aux_data = EcrecoverAuxData::new(input_bytes, output_bytes);
+    let aux_data = EcrecoverAuxData::new(input_bytes, output_bytes, return_bytes);
 
     // We skip the validation through sig circuit if r or s was not in canonical form.
     let opt_sig_r: Option<Fq> = Fq::from_bytes(&aux_data.sig_r.to_le_bytes()).into();
@@ -35,7 +28,7 @@ pub(crate) fn opt_data(
     }
 
     if let Some(sig_v) = aux_data.recovery_id() {
-        let recovered_pk = recover_pk(
+        let recovered_pk = recover_pk2(
             sig_v,
             &aux_data.sig_r,
             &aux_data.sig_s,

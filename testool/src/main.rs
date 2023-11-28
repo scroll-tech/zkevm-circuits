@@ -22,7 +22,7 @@ use std::{
     path::PathBuf,
     time::SystemTime,
 };
-use strum::EnumString;
+use strum_macros::EnumString;
 
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";

@@ -234,7 +234,6 @@ pub mod circuit_input_builder;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;
-pub(crate) mod geth_errors;
 pub mod l2_predeployed;
 pub mod mock;
 pub mod operation;

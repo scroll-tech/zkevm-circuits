@@ -36,12 +36,7 @@ use itertools::Itertools;
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {
-    use crate::evm_circuit::{
-        param::N_BYTES_MEMORY_ADDRESS,
-        util::{from_bytes, Word},
-    };
-    // use eth_types::Field;
-    // use halo2_proofs::plonk::Expression;
+    use crate::evm_circuit::param::N_BYTES_MEMORY_ADDRESS;
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
         let mut bytes = [0; 8];

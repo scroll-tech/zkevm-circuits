@@ -17,10 +17,10 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
-    evm_types::gas_utils::tx_data_gas_cost,
+    evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
     geth_types::{TxType, TxType::PreEip155},
     sign_types::{
-        biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk, SignData, SECP256K1_Q,
+        biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
@@ -67,6 +67,8 @@ pub struct Transaction {
     pub call_data_length: usize,
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
+    /// The gas cost for access list (EIP 2930)
+    pub access_list_gas_cost: u64,
     /// The gas cost for rlp-encoded bytes of unsigned tx
     pub tx_data_gas_cost: u64,
     /// Chain ID as per EIP-155.
@@ -126,26 +128,17 @@ impl Transaction {
         }
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();
-        let sig_r = ct_option_ok_or(
-            secp256k1::Fq::from_repr(sig_r_le),
-            Error::Signature(libsecp256k1::Error::InvalidSignature),
-        )?;
-        let sig_s = ct_option_ok_or(
-            secp256k1::Fq::from_repr(sig_s_le),
-            Error::Signature(libsecp256k1::Error::InvalidSignature),
-        )?;
+        let sig_r = ct_option_ok_or(secp256k1::Fq::from_repr(sig_r_le), Error::Signature)?;
+        let sig_s = ct_option_ok_or(secp256k1::Fq::from_repr(sig_s_le), Error::Signature)?;
         let msg = self.rlp_unsigned.clone().into();
         let msg_hash = keccak256(&self.rlp_unsigned);
         let v = self.tx_type.get_recovery_id(self.v);
-        let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
+        let pk = recover_pk2(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
         let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
         let msg_hash_le = biguint_to_32bytes_le(msg_hash);
-        let msg_hash = ct_option_ok_or(
-            secp256k1::Fq::from_repr(msg_hash_le),
-            libsecp256k1::Error::InvalidMessage,
-        )?;
+        let msg_hash = ct_option_ok_or(secp256k1::Fq::from_repr(msg_hash_le), Error::Signature)?;
         Ok(SignData {
             signature: (sig_r, sig_s, v),
             pk,
@@ -234,6 +227,12 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.call_data_gas_cost)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.access_list_gas_cost)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -867,6 +866,7 @@ impl From<MockTransaction> for Transaction {
             call_data: mock_tx.input.to_vec(),
             call_data_length: mock_tx.input.len(),
             call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
+            access_list_gas_cost: tx_access_list_gas_cost(&Some(mock_tx.access_list)),
             tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
             chain_id: mock_tx.chain_id,
             rlp_unsigned,
@@ -918,6 +918,7 @@ pub(super) fn tx_convert(
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
         call_data_gas_cost: tx_data_gas_cost(&tx.input),
+        access_list_gas_cost: tx_access_list_gas_cost(&tx.access_list),
         tx_data_gas_cost: tx_gas_cost,
         chain_id,
         rlp_unsigned: tx.rlp_unsigned_bytes.clone(),

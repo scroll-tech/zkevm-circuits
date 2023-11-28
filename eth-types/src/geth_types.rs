@@ -1,7 +1,7 @@
 //! Types needed for generating Ethereum traces
 
 use crate::{
-    sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
+    sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk2, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
@@ -9,7 +9,7 @@ use ethers_core::types::{
     transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, Eip2930TransactionRequest,
     NameOrAddress, TransactionRequest, H256,
 };
-use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
+use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1::Fq};
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
@@ -110,9 +110,14 @@ impl TxType {
 
 /// Get the RLP bytes for signing
 pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
+    let sig_v = tx.v;
     match TxType::get_tx_type(tx) {
         TxType::Eip155 => {
-            let tx: TransactionRequest = tx.into();
+            let mut tx: TransactionRequest = tx.into();
+            tx.chain_id = Some(tx.chain_id.unwrap_or_else(|| {
+                let recv_v = TxType::Eip155.get_recovery_id(sig_v.as_u64()) as u64;
+                (sig_v - recv_v - 35) / 2
+            }));
             tx.rlp().to_vec()
         }
         TxType::PreEip155 => {
@@ -338,14 +343,8 @@ impl Transaction {
     pub fn sign_data(&self) -> Result<SignData, Error> {
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();
-        let sig_r = ct_option_ok_or(
-            secp256k1::Fq::from_repr(sig_r_le),
-            Error::Signature(libsecp256k1::Error::InvalidSignature),
-        )?;
-        let sig_s = ct_option_ok_or(
-            secp256k1::Fq::from_repr(sig_s_le),
-            Error::Signature(libsecp256k1::Error::InvalidSignature),
-        )?;
+        let sig_r = ct_option_ok_or(Fq::from_repr(sig_r_le), Error::Signature)?;
+        let sig_s = ct_option_ok_or(Fq::from_repr(sig_s_le), Error::Signature)?;
         let msg = self.rlp_unsigned_bytes.clone().into();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
@@ -353,15 +352,12 @@ impl Transaction {
             .try_into()
             .expect("hash length isn't 32 bytes");
         let v = self.tx_type.get_recovery_id(self.v);
-        let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
+        let pk = recover_pk2(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
         let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
         let msg_hash_le = biguint_to_32bytes_le(msg_hash);
-        let msg_hash = ct_option_ok_or(
-            secp256k1::Fq::from_repr(msg_hash_le),
-            libsecp256k1::Error::InvalidMessage,
-        )?;
+        let msg_hash = ct_option_ok_or(Fq::from_repr(msg_hash_le), Error::Signature)?;
         Ok(SignData {
             signature: (sig_r, sig_s, v),
             pk,

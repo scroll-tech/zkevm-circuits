@@ -1108,7 +1108,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
 
     let mpt_update_table_expressions = c.mpt_table.table_exprs(meta);
-    assert_eq!(mpt_update_table_expressions.len(), 12);
+    assert_eq!(mpt_update_table_expressions.len(), 13);
 
     let meta_query_word =
         |metap: &mut VirtualCells<'_, F>, word_column: word::Word<Column<Advice>>, at: Rotation| {

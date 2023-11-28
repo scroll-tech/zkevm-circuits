@@ -4,7 +4,6 @@ use crate::{
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
-            self,
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,

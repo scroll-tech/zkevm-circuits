@@ -74,7 +74,7 @@ pub struct BlockHead {
     /// chain id
     pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// coinbase
     pub coinbase: Address,
@@ -204,7 +204,7 @@ pub struct Block {
     pub block_steps: BlockSteps,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
-    /// Circuits Setup Paramteres
+    /// Circuits Setup Parameters
     pub circuits_params: CircuitsParams,
     /// chain id
     pub chain_id: u64,
@@ -214,6 +214,9 @@ pub struct Block {
     pub precompile_events: PrecompileEvents,
     /// circuit capacity counter
     copy_counter: usize,
+    /// relax mode indicate builder and circuit would skip
+    /// some sanity check, used by testing and debugging
+    relax_mode: bool,
 }
 
 impl Block {
@@ -311,6 +314,11 @@ impl Block {
         self.chain_id
     }
 
+    /// Return if the relax mode
+    pub fn is_relaxed(&self) -> bool {
+        self.relax_mode
+    }
+
     /// ..
     pub fn end_state_root(&self) -> Word {
         self.headers
@@ -322,6 +330,14 @@ impl Block {
     #[cfg(test)]
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
+    }
+
+    /// switch to relax mode (used by testing and debugging,
+    /// see the note in defination of `relax_mode`)
+    #[cfg(feature = "test")]
+    pub fn relax(mut self) -> Self {
+        self.relax_mode = true;
+        self
     }
 }
 
