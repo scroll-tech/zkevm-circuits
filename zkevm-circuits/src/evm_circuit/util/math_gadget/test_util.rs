@@ -203,6 +203,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                     &challenge_values,
                     config.advices.to_vec(),
                     MAX_STEP_HEIGHT * 3,
+                    MAX_STEP_HEIGHT * 3,
                     offset,
                 );
                 config.step.state.execution_state.assign(
