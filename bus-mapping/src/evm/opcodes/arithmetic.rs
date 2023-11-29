@@ -358,7 +358,7 @@ where
             geth_steps[1].stack.nth_last(0)?,
             "stack mismatch, opcode: {}, inputs: {}, actual: {:x}, expected: {:x}",
             OpcodeId::from(OP),
-            stack_inputs.iter().map(|w| format!("{:x}", w)).join(", "),
+            stack_inputs.iter().map(|w| format!("{w:x}")).join(", "),
             output,
             geth_steps[1].stack.nth_last(0)?
         );
