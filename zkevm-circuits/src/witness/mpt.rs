@@ -1,9 +1,5 @@
-use crate::{
-    evm_circuit::{util::rlc, witness::Rw},
-    table::AccountFieldTag,
-    util::word,
-};
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use crate::{evm_circuit::witness::Rw, table::AccountFieldTag, util::word};
+use eth_types::{Address, Field, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 use mpt_zktrie::{
@@ -499,10 +495,10 @@ impl<F: Field> MptUpdateRow<Value<F>> {
     /// MptTable
     pub fn values(&self) -> [Value<F>; 12] {
         [
-            self.address.clone(),
+            self.address,
             self.storage_key.lo(),
             self.storage_key.hi(),
-            self.proof_type.clone(),
+            self.proof_type,
             self.new_root.lo(),
             self.new_root.hi(),
             self.old_root.lo(),

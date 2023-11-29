@@ -39,14 +39,14 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 
         let addends_lo = &addends
             .iter()
-            .map(|addend| addend.to_word().lo().clone())
+            .map(|addend| addend.to_word().lo())
             .collect::<Vec<_>>();
         let addends_hi = &addends
             .iter()
-            .map(|addend| addend.to_word().hi().clone())
+            .map(|addend| addend.to_word().hi())
             .collect::<Vec<_>>();
-        let sum_lo = sum.to_word().lo().clone();
-        let sum_hi = sum.to_word().hi().clone();
+        let sum_lo = sum.to_word().lo();
+        let sum_hi = sum.to_word().hi();
 
         cb.require_equal(
             "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",

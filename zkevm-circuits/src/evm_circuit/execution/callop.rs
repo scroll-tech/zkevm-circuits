@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64},
         step::ExecutionState,
         util::{
             and,
@@ -23,7 +23,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word, WordCell, WordExpr},
         Expr,
     },
 };

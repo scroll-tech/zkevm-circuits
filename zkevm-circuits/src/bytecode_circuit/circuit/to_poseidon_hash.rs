@@ -8,7 +8,7 @@ use crate::{
     util::{word, Challenges, Expr, SubCircuitConfig},
 };
 use bus_mapping::util::POSEIDON_CODE_HASH_EMPTY;
-use eth_types::{Field, ToScalar, ToWord};
+use eth_types::{Field, ToWord};
 use gadgets::is_zero::IsZeroChip;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -301,7 +301,6 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         {
             use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
             use itertools::Itertools;
-            let code_hash = bytecode_table.code_hash;
             let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
                 debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
                 [

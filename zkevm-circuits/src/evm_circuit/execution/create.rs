@@ -13,8 +13,8 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, IsZeroWordGadget,
-                LtGadget, LtWordGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsZeroWordGadget, LtGadget,
+                LtWordGadget,
             },
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
@@ -32,16 +32,16 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
 use eth_types::{
     evm_types::{GasCost, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE},
-    Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, H256, KECCAK_CODE_HASH_EMPTY, U256,
+    Field, ToBigEndian, ToScalar, ToWord, H256, KECCAK_CODE_HASH_EMPTY, U256,
 };
 use ethers_core::utils::keccak256;
-use gadgets::util::{and, expr_from_bytes};
+use gadgets::util::and;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
 use log::trace;
-use std::{clone, iter::once};
+use std::iter::once;
 
 /// Gadget for CREATE and CREATE2 opcodes
 #[derive(Clone, Debug)]
@@ -147,7 +147,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         // init_code_memory_offset
         let offset = cb.query_word_unchecked();
 
-        let init_code = MemoryAddressGadget::construct(cb, offset.clone(), length.clone());
+        let init_code = MemoryAddressGadget::construct(cb, offset, length);
         let init_code_size_not_overflow =
             LtGadget::construct(cb, init_code.length(), MAX_INIT_CODE_SIZE.expr() + 1.expr());
 
@@ -780,7 +780,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             self.callee_nonce
                 .assign(region, offset, Value::known(F::from(callee_nonce)))?;
         }
-        let (code_hash, keccak_code_hash) = if is_precheck_ok {
+        let (_code_hash, keccak_code_hash) = if is_precheck_ok {
             if !is_address_collision {
                 let _transfer_assign_result = self
                     .transfer

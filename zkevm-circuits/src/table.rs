@@ -1,7 +1,7 @@
 //! Table definitions used cross-circuits
 
 use crate::{
-    copy_circuit::util::{number_or_hash_to_field, number_or_hash_to_word},
+    copy_circuit::util::number_or_hash_to_word,
     evm_circuit::util::{
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         rlc,
@@ -36,7 +36,7 @@ use halo2_proofs::{
 };
 use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
-use std::{iter::repeat, ops::DerefMut};
+use std::iter::repeat;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -691,7 +691,7 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        challenges: Value<F>,
+        _challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
@@ -704,7 +704,7 @@ impl RwTable {
         &self,
         region: &mut Region<'_, F>,
         rws: &[Rw],
-        challenges: Value<F>,
+        _challenges: Value<F>,
     ) -> Result<(), Error> {
         for (offset, row) in rws.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment())?;
@@ -832,7 +832,7 @@ impl MptTable {
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
         max_mpt_rows: usize,
-        randomness: Value<F>,
+        _randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table zkevm",

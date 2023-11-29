@@ -23,7 +23,7 @@ use crate::{
 };
 
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256, U512};
+use eth_types::{Field, U256, U512};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

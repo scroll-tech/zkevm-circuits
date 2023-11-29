@@ -69,11 +69,8 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        self.value.assign(
-            region,
-            offset,
-            Value::known(F::from(step.memory_size as u64)),
-        )?;
+        self.value
+            .assign(region, offset, Value::known(F::from(step.memory_size)))?;
 
         Ok(())
     }

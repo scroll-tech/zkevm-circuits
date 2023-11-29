@@ -17,7 +17,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
-    util::word::{Word, Word32Cell, WordCell, WordExpr},
+    util::word::{Word32Cell, WordExpr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{

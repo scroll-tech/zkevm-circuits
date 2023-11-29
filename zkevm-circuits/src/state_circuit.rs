@@ -19,13 +19,13 @@ use self::{
     lexicographic_ordering::LimbIndex,
 };
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, util::rlc},
+    evm_circuit::param::N_BYTES_WORD,
     table::{AccountFieldTag, LookupTable, MptTable, RwTable, RwTableTag, UXTable},
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field, ToLittleEndian, Word};
+use eth_types::{Address, Field, Word};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
@@ -482,7 +482,7 @@ impl<F: Field> StateCircuitConfig<F> {
         rows: &[Rw],
         indices: &[usize],
         updates: &MptUpdates,
-        randomness: Value<F>,
+        _randomness: Value<F>,
     ) -> Result<Vec<bool>, Error> {
         let mut is_first_access_vec = Vec::with_capacity(indices.len());
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
@@ -630,7 +630,7 @@ impl<F: Field> StateCircuitConfig<F> {
         padding_length: usize,
         is_first_access_vec: &[bool],
         updates: &MptUpdates,
-        randomness: Value<F>,
+        _randomness: Value<F>,
     ) -> Result<StateCircuitExports<Assigned<F>>, Error> {
         let rows_len = rows.len();
 

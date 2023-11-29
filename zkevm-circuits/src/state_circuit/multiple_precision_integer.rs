@@ -2,7 +2,7 @@ use super::{lookups, param::*};
 use crate::util::Expr;
 use eth_types::{Address, Field, ToLittleEndian, Word};
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };

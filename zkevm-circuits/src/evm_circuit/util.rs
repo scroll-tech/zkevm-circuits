@@ -625,8 +625,8 @@ pub(crate) mod rlc {
     use std::ops::{Add, Mul};
 
     use crate::{
-        evm_circuit::util::Cell,
-        util::{word::WordLimbs, Expr},
+        // evm_circuit::util::Cell,
+        util::Expr,
     };
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 

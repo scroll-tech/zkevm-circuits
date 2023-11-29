@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64, N_BYTES_WORD},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64},
         step::ExecutionState,
         util::{
             and,
@@ -14,9 +14,8 @@ use crate::{
             },
             from_bytes,
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsEqualWordGadget,
-                IsZeroGadget, IsZeroWordGadget, LtGadget, LtWordGadget, MulWordByU64Gadget,
-                RangeCheckGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsEqualWordGadget, IsZeroGadget,
+                IsZeroWordGadget, LtWordGadget, MulWordByU64Gadget, RangeCheckGadget,
             },
             AccountAddress, CachedRegion, Cell, StepRws,
         },
@@ -32,9 +31,9 @@ use crate::{
     },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, U256};
+use eth_types::{Address, Field, ToScalar, ToWord, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
-use gadgets::util::{expr_from_bytes, not, select};
+use gadgets::util::{not, select};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -1019,7 +1018,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             stream.append(&tx.caller_address);
             stream.append(&eth_types::U256::from(tx.nonce));
             let rlp_encoding = stream.out().to_vec();
-            keccak256(&rlp_encoding)
+            keccak256(rlp_encoding)
         };
         // for (c, v) in self
         //     .caller_nonce_hash_bytes
@@ -1062,14 +1061,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.code_hash,
         )?;
 
-        let untrimmed_contract_addr = {
-            let mut stream = ethers_core::utils::rlp::RlpStream::new();
-            stream.begin_list(2);
-            stream.append(&tx.caller_address);
-            stream.append(&eth_types::U256::from(tx.nonce));
-            let rlp_encoding = stream.out().to_vec();
-            keccak256(&rlp_encoding)
-        };
+        // let untrimmed_contract_addr = {
+        //     let mut stream = ethers_core::utils::rlp::RlpStream::new();
+        //     stream.begin_list(2);
+        //     stream.append(&tx.caller_address);
+        //     stream.append(&eth_types::U256::from(tx.nonce));
+        //     let rlp_encoding = stream.out().to_vec();
+        //     keccak256(&rlp_encoding)
+        // };
 
         let (init_code_rlc, keccak_code_hash) = if tx.is_create {
             let init_code_rlc =

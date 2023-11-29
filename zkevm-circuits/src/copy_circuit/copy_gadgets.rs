@@ -486,7 +486,7 @@ pub fn constrain_address<F: Field>(
 pub fn constrain_id<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
-    is_bytecode: Column<Advice>,
+    _is_bytecode: Column<Advice>,
     is_tx_log: Column<Advice>,
     is_tx_calldata: Column<Advice>,
     is_memory: Column<Advice>,

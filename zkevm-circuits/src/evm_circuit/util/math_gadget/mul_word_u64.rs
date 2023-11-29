@@ -9,7 +9,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -94,7 +94,7 @@ impl<F: Field> MulWordByU64Gadget<F> {
 mod tests {
     use super::{super::test_util::*, *};
     use crate::evm_circuit::util::Cell;
-    use eth_types::Word;
+    use eth_types::{ToLittleEndian, Word};
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]

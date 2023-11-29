@@ -33,7 +33,7 @@ use crate::{
     },
     state_circuit::StateCircuitExports,
     tx_circuit::{CHAIN_ID_OFFSET as CHAIN_ID_OFFSET_IN_TX, TX_HASH_OFFSET, TX_LEN},
-    util::word,
+    //util::word,
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
 use bus_mapping::util::read_env_var;

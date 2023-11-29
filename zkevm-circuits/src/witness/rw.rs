@@ -5,14 +5,14 @@ use bus_mapping::{
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, Field, ToScalar, Word, U256};
 
-use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
+use halo2_proofs::{circuit::Value};
 use itertools::Itertools;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 use crate::{
-    evm_circuit::util::rlc,
+    // evm_circuit::util::rlc,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     util::{build_tx_log_address, word},
 };

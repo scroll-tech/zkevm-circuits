@@ -176,7 +176,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("offset {}", offset);
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [dest_offset, data_offset, size] =

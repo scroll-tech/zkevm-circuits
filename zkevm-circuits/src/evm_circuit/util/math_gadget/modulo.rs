@@ -1,9 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        sum, CachedRegion,
+        CachedRegion,
     },
     util::{
         word::{self, Word, Word32Cell, WordExpr},

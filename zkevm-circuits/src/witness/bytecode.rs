@@ -1,9 +1,9 @@
 use crate::util::word;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word};
 use halo2_proofs::circuit::Value;
 
-use crate::{evm_circuit::util::rlc, table::BytecodeFieldTag, util::Challenges};
+use crate::{table::BytecodeFieldTag, util::Challenges};
 
 /// Bytecode
 #[derive(Clone, Debug)]
@@ -22,16 +22,16 @@ impl Bytecode {
     ) -> Vec<[Value<F>; 7]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        let hash = if cfg!(feature = "poseidon-codehash") {
-            challenges
-                .evm_word()
-                .map(|_challenge| rlc::value(&self.hash.to_le_bytes(), F::from(256u64)))
-            //Value::known(rlc::value(&self.hash.to_le_bytes(), F::from(256u64)))
-        } else {
-            challenges
-                .evm_word()
-                .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge))
-        };
+        // no need rlc for hash now
+        // let hash = if cfg!(feature = "poseidon-codehash") {
+        //     challenges
+        //         .evm_word()
+        //         .map(|_challenge| rlc::value(&self.hash.to_le_bytes(), F::from(256u64)))
+        // } else {
+        //     challenges
+        //         .evm_word()
+        //         .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge))
+        // };
 
         let hash_word: word::Word<Value<F>> = word::Word::<F>::from(self.hash).map(Value::known);
 

@@ -1,11 +1,8 @@
 use crate::{
     table::BytecodeFieldTag,
-    util::{
-        get_push_size,
-        word::{empty_code_hash_word_value, Word, Word32},
-    },
+    util::{get_push_size, word::Word},
 };
-use halo2_proofs::circuit::{Layouter, Region, Value};
+use halo2_proofs::circuit::Value;
 
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Field, ToWord, U256};

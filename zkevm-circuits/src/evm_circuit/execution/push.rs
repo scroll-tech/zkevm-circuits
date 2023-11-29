@@ -81,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         )?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
-        let value_rlc = if opcode.is_push_with_data() {
+        let _value_rlc = if opcode.is_push_with_data() {
             region
                 .challenges()
                 .evm_word()

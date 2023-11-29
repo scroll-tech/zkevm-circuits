@@ -2,22 +2,22 @@ use crate::{
     evm_circuit::util::{
         and,
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-        not, or, rlc, select,
+        not, or, select,
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{
         get_push_size,
-        word::{empty_code_hash_word_value, Word, Word32, WordCell, WordExpr},
+        word::{Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
     witness,
 };
 use bus_mapping::{state_db::EMPTY_CODE_HASH_LE, util::POSEIDON_CODE_HASH_EMPTY};
-use eth_types::{bytecode, Field, ToLittleEndian, ToScalar, ToWord, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, U256};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Assignment, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::vec;

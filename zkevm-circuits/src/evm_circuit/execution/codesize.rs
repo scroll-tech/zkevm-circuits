@@ -10,7 +10,7 @@ use crate::{
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
-            from_bytes, CachedRegion, Cell, U64Cell,
+            CachedRegion, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

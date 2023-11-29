@@ -27,9 +27,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{
-    evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, Field, ToLittleEndian, ToScalar,
-};
+use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, Field, ToScalar};
 use gadgets::util::{not, select};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;

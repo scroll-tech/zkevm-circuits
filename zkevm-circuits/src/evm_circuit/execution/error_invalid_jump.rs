@@ -119,10 +119,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("invalud jump rws count {:?}", step.rw_indices);
         let opcode = step.opcode.unwrap();
         let is_jumpi = opcode == OpcodeId::JUMPI;
-        println!("invalud opcode is_jumpi {}", is_jumpi);
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -132,7 +130,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         } else {
             U256::zero()
         };
-        let condition_rlc = region.word_rlc(condition);
 
         let code = block
             .bytecodes

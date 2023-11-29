@@ -8,8 +8,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition,
             },
-            from_bytes,
-            math_gadget::{IsZeroGadget, IsZeroWordGadget},
+            math_gadget::IsZeroWordGadget,
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,

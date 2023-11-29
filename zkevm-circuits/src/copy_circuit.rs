@@ -18,7 +18,7 @@ use crate::util::word;
 use gadgets::{
     binary_number::BinaryNumberChip,
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    util::{not, or, Expr},
+    util::{not, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -49,7 +49,6 @@ use self::copy_gadgets::{
     constrain_forward_parameters, constrain_id, constrain_is_pad, constrain_mask,
     constrain_masked_value, constrain_must_terminate, constrain_non_pad_non_mask,
     constrain_rw_counter, constrain_tag, constrain_value_rlc, constrain_word_index,
-    constrain_word_rlc,
 };
 
 /// The current row.

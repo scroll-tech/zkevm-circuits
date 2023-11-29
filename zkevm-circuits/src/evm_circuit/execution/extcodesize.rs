@@ -10,7 +10,7 @@ use crate::{
                 Transition::Delta,
             },
             from_bytes,
-            math_gadget::{IsZeroGadget, IsZeroWordGadget},
+            math_gadget::IsZeroWordGadget,
             not, select, AccountAddress, CachedRegion, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -21,7 +21,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use eth_types::{evm_types::GasCost, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

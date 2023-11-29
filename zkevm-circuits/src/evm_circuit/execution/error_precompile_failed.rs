@@ -11,7 +11,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word, WordCell, WordExpr},
         Expr,
     },
     witness::{Block, Call, ExecStep, Transaction},

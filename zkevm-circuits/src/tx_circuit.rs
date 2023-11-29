@@ -23,7 +23,7 @@ use crate::{
             CalleeAddress, CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS,
             SigV, TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
-        TxTable, U16Table, U8Table, UXTable,
+        TxTable, U16Table, U8Table,
     },
     util::{
         is_zero::{IsZeroChip, IsZeroConfig},

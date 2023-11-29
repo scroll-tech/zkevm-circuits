@@ -153,7 +153,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         self.words[3].assign_u256(region, offset, d)?;
         self.mul_add_words.assign(region, offset, [a, b, c, d])?;
         self.lt_word.assign(region, offset, c, b)?;
-        let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);
+        // let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);
         self.divisor_is_zero.assign(region, offset, Word::from(b))?;
 
         Ok(())

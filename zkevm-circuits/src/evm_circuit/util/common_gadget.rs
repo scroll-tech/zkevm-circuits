@@ -765,7 +765,6 @@ impl<F: Field> TransferToGadget<F> {
                     cb.account_write(
                         receiver_address.clone(),
                         AccountFieldTag::KeccakCodeHash,
-                        ///cb.empty_keccak_hash_rlc(),
                         cb.empty_keccak_hash(),
                         prev_keccak_code_hash,
                         reversion_info.as_deref_mut(),

@@ -8,14 +8,13 @@ use crate::{
             constraint_builder::{
                 ConstrainBuilderCommon,
                 EVMConstraintBuilder,
-                StepStateTransition,
                 //Transition::{Delta, Same},
             },
             math_gadget::{IsEqualGadget, LtGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
-            not, or, select, CachedRegion, Cell,
+            or, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -142,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         let memory_address =
             self.memory_address
-                .assign(region, offset, memory_offset, memory_length.into())?;
+                .assign(region, offset, memory_offset, memory_length)?;
 
         let memory_expansion_cost = self
             .memory_expansion

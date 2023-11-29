@@ -230,7 +230,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
-        let calldata_word_limbs = Word32::new(calldata_word.clone());
+        let calldata_word_limbs = Word32::new(calldata_word);
         cb.stack_push(calldata_word_limbs.to_word());
 
         cb.require_zero_word(

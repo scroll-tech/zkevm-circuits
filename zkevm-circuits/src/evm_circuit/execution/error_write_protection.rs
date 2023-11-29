@@ -16,7 +16,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToAddress, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
