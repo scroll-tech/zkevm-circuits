@@ -97,20 +97,6 @@ pub struct PublicData {
     pub max_inner_blocks: usize,
 }
 
-// impl Default for PublicData {
-//     fn default() -> Self {
-//         PublicData {
-//             chain_id: 0,
-//             start_l1_queue_index: 0,
-//             transactions: vec![],
-//             prev_state_root: H256::zero(),
-//             next_state_root: H256::zero(),
-//             withdraw_trie_root: H256::zero(),
-//             block_ctxs: Default::default(),
-//         }
-//     }
-// }
-
 impl PublicData {
     // Return num of all txs in each block (taking skipped l1 msgs into account)
     fn get_num_all_txs(&self) -> BTreeMap<u64, u64> {
@@ -233,7 +219,7 @@ impl PublicData {
         H256(pi_hash)
     }
 
-    fn blocks_difficulity(&self) -> Word {
+    fn difficulty(&self) -> Word {
         self.block_ctxs
             .ctxs
             .first_key_value()
@@ -241,12 +227,75 @@ impl PublicData {
             .unwrap_or_else(get_difficulty_constant)
     }
 
-    fn blocks_coinbase(&self) -> Address {
+    fn coinbase(&self) -> Address {
         self.block_ctxs
             .ctxs
             .first_key_value()
             .map(|(_, blk)| blk.coinbase)
             .unwrap_or_else(get_coinbase_constant)
+    }
+
+    fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
+    fn q_block_context_start_offset(&self) -> usize {
+        // we start assigning block context values at offset == 1.
+        1
+    }
+
+    fn q_block_context_end_offset(&self) -> usize {
+        self.q_block_context_start_offset() + self.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+    }
+
+    fn q_tx_hashes_start_offset(&self) -> usize {
+        self.q_block_context_end_offset()
+    }
+
+    fn q_tx_hashes_end_offset(&self) -> usize {
+        self.q_tx_hashes_start_offset() + KECCAK_DIGEST_SIZE * self.max_txs
+    }
+
+    fn data_bytes_start_offset(&self) -> usize {
+        // we start assigning data bytes at offset == 0.
+        0
+    }
+
+    fn data_bytes_end_offset(&self) -> usize {
+        self.data_bytes_start_offset()
+            + self.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+            + self.max_txs * KECCAK_DIGEST_SIZE
+    }
+
+    fn pi_bytes_start_offset(&self) -> usize {
+        self.data_bytes_end_offset()
+            + 1 // a row is reserved for the keccak256(rlc(data_bytes)) == data_hash lookup.
+            + 1 // new row.
+    }
+
+    fn pi_bytes_end_offset(&self) -> usize {
+        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 4
+    }
+
+    fn pi_hash_start_offset(&self) -> usize {
+        self.pi_bytes_end_offset()
+            + 1 // a row is reserved for the keccak256(rlc(pi_bytes)) == pi_hash lookup.
+            + 1 // new row.
+    }
+
+    fn pi_hash_end_offset(&self) -> usize {
+        self.pi_hash_start_offset() + KECCAK_DIGEST_SIZE
+    }
+
+    fn constants_start_offset(&self) -> usize {
+        // there is no keccak lookup after the region where pi_hash is assigned. Hence we start
+        // assigning constants (coinbase and difficulty) from where we ended the previous
+        // assignment.
+        self.pi_hash_end_offset() + 1 // new row.
+    }
+
+    fn constants_end_offset(&self) -> usize {
+        self.constants_start_offset() + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD
     }
 }
 
@@ -270,6 +319,17 @@ impl Default for BlockContext {
     fn default() -> Self {
         Self::padding(0, get_difficulty_constant(), get_coinbase_constant())
     }
+}
+
+enum RpiFieldType {
+    /// Default mode where no special behaviour is observed.
+    DefaultType,
+    /// Whether the assigned field represents a block context field.
+    BlockCtx,
+    /// Whether the assigned field represents the Keccak hi-lo decomposition.
+    KeccakHiLo,
+    /// Whether the assigned field represents the block's coinbase/difficulty constants.
+    Constant,
 }
 
 /// Config for PiCircuit
@@ -668,7 +728,63 @@ struct Connections<F: Field> {
 }
 
 impl<F: Field> PiCircuitConfig<F> {
-    #[allow(clippy::type_complexity)]
+    /// Assign witness data to the PI circuit's layout.
+    ///
+    /// The layout of the PI circuit is as follows:
+    ///
+    /// |----------|------------------------|--------------------------|
+    /// |          | rpi initialise         |                          |
+    /// |          | block\[0\].number      |                          |
+    /// |          | block\[0\].timestamp   |                          |
+    /// |          | block\[0\].base_fee    |                          |
+    /// |          | block\[0\].gas_limit   |                          |
+    /// |          | block\[0\].num_all_txs |                          |
+    /// |          | block\[1\].number      | <- q_block_context == 1  |
+    /// | *PART 1* | ...                    |                          |
+    /// |          | block\[n\].num_all_txs |                          |
+    /// | ASSIGN   | PADDING                |                          |
+    /// | DATA     | ...                    |                          |
+    /// | BYTES    | PADDING                |                          |
+    /// |          |------------------------|--------------------------|
+    /// |          | tx_hash\[0\]           |                          |
+    /// |          | tx_hash\[1\]           |                          |
+    /// |          | ...                    |                          |
+    /// |          | tx_hash\[n\]           | <- q_tx_hashes == 1      |
+    /// |          | DUMMY_TX_HASH          |                          |
+    /// |          | ...                    |                          |
+    /// |          | DUMMY_TX_HASH          |                          |
+    /// |          |------------------------|--------------------------|
+    /// |          | rlc(data_bytes)        | <- q_keccak == 1         |
+    /// |----------|------------------------|--------------------------|
+    /// |          | rpi initialise         |                          |
+    /// |          | chain_id               |                          |
+    /// | *PART 2* | prev_state_root        |                          |
+    /// |          | next_state_root        |                          |
+    /// | ASSIGN   | withdraw_trie_root     |                          |
+    /// | PI       | data_hash              |                          |
+    /// | BYTES    |------------------------|--------------------------|
+    /// |          | rlc(pi_bytes)          | <- q_keccak == 1         |
+    /// |----------|------------------------|--------------------------|
+    /// | *PART 3* | rpi initialise         |                          |
+    /// | ASSIGN   | pi_hash_hi             |                          |
+    /// | PI HASH  | pi_hash_lo             |                          |
+    /// |----------|------------------------|--------------------------|
+    /// | *PART 4* | rpi initialise         |                          |
+    /// | ASSIGN   | coinbase               |                          |
+    /// | CONSTS   | difficulty             |                          |
+    /// |----------|------------------------|--------------------------|
+    ///
+    /// Where each one of the rows above, i.e. block\[0\].number, block\[0\].timestamp, ...,
+    /// pi_hash_lo, coinbase, difficulty are assigned using the assign_field method.
+    ///
+    /// Each `field` takes multiple rows in the actual circuit layout depending on how many bytes
+    /// it takes to represent the said field. For instance, pi_hash_lo represent the lower 16 bytes
+    /// of the public input hash, hence we need 16 rows to assign the pi_hash_lo field. In
+    /// addition, for those rows represent the field, the `q_field_step` fixed column is enabled.
+    ///
+    /// Since we already know the maximum number of blocks and txs that we will assign in this
+    /// layout, all the `q_*` columns are fixed. For blocks and txs, we pad the remaining layout
+    /// with a padded field and mark it by the `is_rpi_padding` identifier.
     fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -677,162 +793,147 @@ impl<F: Field> PiCircuitConfig<F> {
         tx_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(PiHashExport<F>, Connections<F>), Error> {
-        let block_values = &public_data.block_ctxs;
-        let chain_id = block_values
-            .ctxs
-            .first_key_value()
-            .map_or(0, |(_, context)| context.chain_id);
-        let tx_hashes = public_data
-            .transactions
-            .iter()
-            .map(|tx| tx.hash)
-            .collect::<Vec<H256>>();
-        let num_all_txs_in_blocks = public_data.get_num_all_txs();
-        let blocks_coinbase = public_data.blocks_coinbase();
-        let blocks_difficulity = public_data.blocks_difficulity();
+        // 1. Assign data bytes.
+        let (offset, data_hash_rlc_cell) = self.assign_data_bytes(
+            region,
+            0, /* offset == 0 */
+            public_data,
+            block_value_cells,
+            tx_value_cells,
+            challenges,
+        )?;
+        debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
-        let mut offset = 0;
+        // 2. Assign public input bytes.
+        let (offset, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
+            region,
+            offset,
+            public_data,
+            block_value_cells,
+            tx_value_cells,
+            &data_hash_rlc_cell,
+            challenges,
+        )?;
+        debug_assert_eq!(offset, public_data.pi_hash_start_offset());
+
+        // 3. Assign public input hash (hi, lo) decomposition.
+        let (offset, pi_hash_cells) =
+            self.assign_pi_hash(region, offset, public_data, &pi_hash_rlc_cell, challenges)?;
+        debug_assert_eq!(offset, public_data.constants_start_offset());
+
+        // 4. Assign block coinbase and difficulty.
+        let offset =
+            self.assign_constants(region, offset, public_data, block_value_cells, challenges)?;
+        debug_assert_eq!(offset, public_data.constants_end_offset() + 1);
+
+        Ok((pi_hash_cells, connections))
+    }
+
+    /// Assign data bytes, that represent the pre-image to data_hash.
+    /// i.e. keccak256(rlc(data_bytes)) == data_hash.
+    fn assign_data_bytes(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        public_data: &PublicData,
+        block_value_cells: &[AssignedCell<F, F>],
+        tx_value_cells: &[AssignedCell<F, F>],
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(usize, AssignedCell<F, F>), Error> {
+        // Initialise the RLC accumulator and length values.
+        let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
+
+        // Enable fixed columns for block context.
+        for q_offset in
+            public_data.q_block_context_start_offset()..public_data.q_block_context_end_offset()
+        {
+            region.assign_fixed(
+                || "q_block_context",
+                self.q_block_context,
+                q_offset,
+                || Value::known(F::one()),
+            )?;
+        }
+        // Enable fixed columns for tx hashes.
+        for q_offset in public_data.q_tx_hashes_start_offset()..public_data.q_tx_hashes_end_offset()
+        {
+            region.assign_fixed(
+                || "q_tx_hashes",
+                self.q_tx_hashes,
+                q_offset,
+                || Value::known(F::one()),
+            )?;
+        }
+        // Enable RLC accumulator consistency check throughout the above rows.
+        for q_offset in public_data.data_bytes_start_offset()..public_data.data_bytes_end_offset() {
+            self.q_not_end.enable(region, q_offset)?;
+        }
+
+        // Assign block context values.
+        let n_block_ctxs = public_data.block_ctxs.ctxs.len();
+        let num_txs_by_block = public_data.get_num_all_txs();
+        let mut block_table_offset = 1;
         let mut block_copy_cells = vec![];
-        let mut tx_copy_cells = vec![];
-        let mut block_table_offset = 1; // first row of block is all-zeros.
-
-        let mut rpi_length_acc = 0u64;
-        let mut rpi_rlc_acc = Value::known(F::zero());
-
-        let dummy_tx_hash = get_dummy_tx_hash();
-
-        ///////////////////////////////////
-        ///////  assign data bytes ////////
-        ///////////////////////////////////
-        let data_bytes_start_row = 0;
-        let data_bytes_end_row = public_data.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
-            + public_data.max_txs * KECCAK_DIGEST_SIZE;
-        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
-        // assign block contexts
-        for (i, block) in block_values
+        for (i, block) in public_data
+            .block_ctxs
             .ctxs
             .values()
             .cloned()
-            .chain(
-                (block_values.ctxs.len()..public_data.max_inner_blocks)
-                    .into_iter()
-                    .map(|_| BlockContext::padding(chain_id, blocks_difficulity, blocks_coinbase)),
-            )
+            .chain(std::iter::repeat(BlockContext::padding(
+                public_data.chain_id(),
+                public_data.difficulty(),
+                public_data.coinbase(),
+            )))
+            .take(public_data.max_inner_blocks)
             .enumerate()
         {
-            let is_rpi_padding = i >= block_values.ctxs.len();
-            let block_num = block.number.as_u64();
-            let num_all_txs = num_all_txs_in_blocks.get(&block_num).cloned().unwrap_or(0) as u16;
-            log::debug!(
-                "[pi assign] num_all_txs in block {}: {}",
-                block_num,
-                num_all_txs
-            );
+            let is_rpi_padding = i >= n_block_ctxs;
+            let num_all_txs = num_txs_by_block
+                .get(&block.number.as_u64())
+                .cloned()
+                .unwrap_or(0) as u16;
 
             // Assign fields in pi columns and connect them to block table
-            let fields = vec![
+            for (field_value_be_bytes, field_offset) in [
+                // block number
                 (
                     block.number.as_u64().to_be_bytes().to_vec(),
                     BLOCK_NUM_OFFSET,
-                ), // number
+                ),
+                // block timestamp
                 (
                     block.timestamp.as_u64().to_be_bytes().to_vec(),
                     TIMESTAMP_OFFSET,
-                ), // timestamp
-                (block.base_fee.to_be_bytes().to_vec(), BASE_FEE_OFFSET), // base_fee
-                (block.gas_limit.to_be_bytes().to_vec(), GAS_LIMIT_OFFSET), // gas_limit
-                (num_all_txs.to_be_bytes().to_vec(), NUM_ALL_TXS_OFFSET), // num_all_txs
-            ];
-            for (bytes, block_offset) in fields {
-                let cells = self.assign_field_in_pi(
+                ),
+                // base fee
+                (block.base_fee.to_be_bytes().to_vec(), BASE_FEE_OFFSET),
+                // gas limit
+                (block.gas_limit.to_be_bytes().to_vec(), GAS_LIMIT_OFFSET),
+                // num txs in block
+                (num_all_txs.to_be_bytes().to_vec(), NUM_ALL_TXS_OFFSET),
+            ] {
+                let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
                     region,
-                    &mut offset,
-                    bytes.as_slice(),
-                    &mut rpi_rlc_acc,
-                    &mut rpi_length_acc,
-                    true,
+                    offset,
+                    field_value_be_bytes.as_slice(),
+                    RpiFieldType::BlockCtx,
                     is_rpi_padding,
-                    false,
+                    rpi_rlc_acc,
+                    rpi_length,
                     challenges,
                 )?;
+                offset = tmp_offset;
+                rpi_rlc_acc = tmp_rpi_rlc_acc;
+                rpi_length = tmp_rpi_length;
                 block_copy_cells.push((
                     cells[RPI_CELL_IDX].clone(),
-                    block_table_offset + block_offset,
+                    block_table_offset + field_offset,
                 ));
             }
 
             block_table_offset += BLOCK_LEN;
         }
-
-        let q_block_context_start_row = 1;
-        let q_block_context_end_row = 1 + BLOCK_HEADER_BYTES_NUM * public_data.max_inner_blocks;
-        for i in q_block_context_start_row..q_block_context_end_row {
-            // assign q_block_context
-            region.assign_fixed(
-                || "q_block_context",
-                self.q_block_context,
-                i,
-                || Value::known(F::one()),
-            )?;
-        }
-
-        debug_assert_eq!(
-            offset,
-            1 + BLOCK_HEADER_BYTES_NUM * public_data.max_inner_blocks
-        );
-
-        // assign tx hashes
-        let q_tx_hashes_start_row = offset;
-        let q_tx_hashes_end_row = q_tx_hashes_start_row + KECCAK_DIGEST_SIZE * public_data.max_txs;
-        let num_txs = tx_hashes.len();
-        let mut data_bytes_rlc = None;
-        let mut data_bytes_length = None;
-        for (i, tx_hash) in tx_hashes
-            .into_iter()
-            .chain(
-                (0..public_data.max_txs - num_txs)
-                    .into_iter()
-                    .map(|_| dummy_tx_hash),
-            )
-            .enumerate()
-        {
-            let is_rpi_padding = i >= num_txs;
-
-            let cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &tx_hash.to_fixed_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                false,
-                is_rpi_padding,
-                false,
-                challenges,
-            )?;
-            tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            if i == public_data.max_txs - 1 {
-                data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
-                data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
-            }
-        }
-        for i in q_tx_hashes_start_row..q_tx_hashes_end_row {
-            region.assign_fixed(
-                || "q_tx_hashes",
-                self.q_tx_hashes,
-                i,
-                || Value::known(F::one()),
-            )?;
-        }
-
-        assert_eq!(offset, data_bytes_end_row + 1);
-
-        // the last row of data bytes part is disabled
-        for i in data_bytes_start_row..data_bytes_end_row {
-            self.q_not_end.enable(region, i)?;
-        }
-
-        // copy block context fields to block table
+        // Copy block context fields to block table
         for (block_cell, row_offset) in block_copy_cells.into_iter() {
             region.constrain_equal(
                 block_cell.cell(),
@@ -840,7 +941,42 @@ impl<F: Field> PiCircuitConfig<F> {
                                                            * all-zeros */
             )?;
         }
-        // copy tx_hashes to tx table
+
+        // Assign tx hash values.
+        let n_txs = public_data.transactions.len();
+        let mut tx_copy_cells = vec![];
+        let mut data_bytes_rlc = None;
+        let mut data_bytes_length = None;
+        for (i, tx_hash) in public_data
+            .transactions
+            .iter()
+            .map(|tx| tx.hash)
+            .chain(std::iter::repeat(get_dummy_tx_hash()))
+            .take(public_data.max_txs)
+            .enumerate()
+        {
+            let is_rpi_padding = i >= n_txs;
+
+            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
+                region,
+                offset,
+                &tx_hash.to_fixed_bytes(),
+                RpiFieldType::DefaultType,
+                is_rpi_padding,
+                rpi_rlc_acc,
+                rpi_length,
+                challenges,
+            )?;
+            offset = tmp_offset;
+            rpi_rlc_acc = tmp_rpi_rlc_acc;
+            rpi_length = tmp_rpi_length;
+            tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
+            if i == public_data.max_txs - 1 {
+                data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
+                data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
+            }
+        }
+        // Copy tx_hashes to tx table
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
             region.constrain_equal(
                 tx_hash_cell.cell(),
@@ -848,488 +984,474 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        // assign keccak row for computing data_hash = keccak256(data bytes)
-        let data_hash_row = offset;
+        // Assign row for validating lookup to check:
+        // data_hash == keccak256(rlc(data_bytes))
         data_bytes_rlc.unwrap().copy_advice(
             || "data_bytes_rlc in the rpi col",
             region,
             self.raw_public_inputs,
-            data_hash_row,
+            offset,
         )?;
-        let data_hash = public_data.get_data_hash();
-        let data_hash_rlc = rlc_be_bytes(&data_hash.to_fixed_bytes(), challenges.evm_word());
         data_bytes_length.unwrap().copy_advice(
             || "data_bytes_length in the rpi_length_acc col",
             region,
             self.rpi_length_acc,
-            data_hash_row,
+            offset,
         )?;
-        let data_hash_rlc_cell = region.assign_advice(
-            || "data_hash_rlc",
-            self.rpi_rlc_acc,
-            data_hash_row,
-            || data_hash_rlc,
-        )?;
-        self.q_keccak.enable(region, data_hash_row)?;
-        offset += 1;
+        let data_hash_rlc_cell = {
+            let data_hash_rlc = rlc_be_bytes(
+                &public_data.get_data_hash().to_fixed_bytes(),
+                challenges.evm_word(),
+            );
+            region.assign_advice(
+                || "data_hash_rlc",
+                self.rpi_rlc_acc,
+                offset,
+                || data_hash_rlc,
+            )?
+        };
+        self.q_keccak.enable(region, offset)?;
 
-        /////////////////////////////////
-        ///////// assign pi bytes ///////
-        /////////////////////////////////
-        let pi_bytes_start_row = offset;
-        let pi_bytes_end_row = pi_bytes_start_row + N_BYTES_U64 + N_BYTES_WORD * 4;
-        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
-        // assign chain_id
-        let cells = self.assign_field_in_pi(
-            region,
-            &mut offset,
-            &public_data.chain_id.to_be_bytes(),
-            &mut rpi_rlc_acc,
-            &mut rpi_length_acc,
-            false,
-            false,
-            false,
-            challenges,
-        )?;
-        let chain_id_cell = cells[RPI_CELL_IDX].clone();
+        Ok((offset + 1, data_hash_rlc_cell))
+    }
+
+    /// Assign public input bytes, that represent the pre-image to pi_hash.
+    /// i.e. keccak256(rlc(pi_bytes)) == pi_hash.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    fn assign_pi_bytes(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        public_data: &PublicData,
+        block_value_cells: &[AssignedCell<F, F>],
+        tx_value_cells: &[AssignedCell<F, F>],
+        data_hash_rlc_cell: &AssignedCell<F, F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(usize, AssignedCell<F, F>, Connections<F>), Error> {
+        let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
+
+        // Enable RLC accumulator consistency check throughout the above rows.
+        for q_offset in public_data.pi_bytes_start_offset()..public_data.pi_bytes_end_offset() {
+            self.q_not_end.enable(region, q_offset)?;
+        }
+
+        // Assign [chain_id, prev_state_root, state_root, withdraw_trie_root].
+        let mut cells = vec![];
+        let rpi_cells = [
+            public_data.chain_id.to_be_bytes().to_vec(),
+            public_data.prev_state_root.to_fixed_bytes().to_vec(),
+            public_data.next_state_root.to_fixed_bytes().to_vec(),
+            public_data.withdraw_trie_root.to_fixed_bytes().to_vec(),
+        ]
+        .iter()
+        .map(|value_be_bytes| {
+            (offset, rpi_rlc_acc, rpi_length, cells) = self.assign_field(
+                region,
+                offset,
+                value_be_bytes,
+                RpiFieldType::DefaultType,
+                false, // no padding in this case.
+                rpi_rlc_acc,
+                rpi_length,
+                challenges,
+            )?;
+            Ok(cells[RPI_CELL_IDX].clone())
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+
         // copy chain_id to block table
         for block_idx in 0..public_data.max_inner_blocks {
             region.constrain_equal(
-                chain_id_cell.cell(),
+                rpi_cells[0].cell(),
                 block_value_cells[block_idx * BLOCK_LEN + CHAIN_ID_OFFSET].cell(),
             )?;
         }
         // copy chain_id to tx table
         for tx_id in 0..public_data.max_txs {
             region.constrain_equal(
-                chain_id_cell.cell(),
+                rpi_cells[0].cell(),
                 tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1].cell(),
             )?;
         }
-
-        // assign roots
-        //  1. prev_state_root
-        //  2. after_state_root
-        //  3. withdraw_trie_root
-        let roots = vec![
-            public_data.prev_state_root.to_fixed_bytes(),
-            public_data.next_state_root.to_fixed_bytes(),
-            public_data.withdraw_trie_root.to_fixed_bytes(),
-        ];
-        let root_cells = roots
-            .into_iter()
-            .map(|root_be_bytes| -> Result<AssignedCell<F, F>, Error> {
-                let cells = self.assign_field_in_pi(
-                    region,
-                    &mut offset,
-                    root_be_bytes.as_slice(),
-                    &mut rpi_rlc_acc,
-                    &mut rpi_length_acc,
-                    false,
-                    false,
-                    false,
-                    challenges,
-                )?;
-                Ok(cells[RPI_CELL_IDX].clone())
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+        // connections to be done with other sub-circuits.
         let connections = Connections {
-            start_state_root: root_cells[0].clone(),
-            end_state_root: root_cells[1].clone(),
-            withdraw_root: root_cells[2].clone(),
+            start_state_root: rpi_cells[1].clone(),
+            end_state_root: rpi_cells[2].clone(),
+            withdraw_root: rpi_cells[3].clone(),
         };
 
-        // assign data_hash
-        let cells = self.assign_field_in_pi(
+        // Assign data_hash
+        (offset, _, _, cells) = self.assign_field(
             region,
-            &mut offset,
-            &data_hash.to_fixed_bytes(),
-            &mut rpi_rlc_acc,
-            &mut rpi_length_acc,
-            false,
-            false,
-            false,
+            offset,
+            &public_data.get_data_hash().to_fixed_bytes(),
+            RpiFieldType::DefaultType,
+            false, // no padding in this case
+            rpi_rlc_acc,
+            rpi_length,
             challenges,
         )?;
         let data_hash_cell = cells[RPI_CELL_IDX].clone();
         let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
         let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
 
-        // copy data_hash down here
+        // Copy data_hash value we collected from assigning data bytes.
         region.constrain_equal(data_hash_rlc_cell.cell(), data_hash_cell.cell())?;
 
-        for i in pi_bytes_start_row..pi_bytes_end_row {
-            self.q_not_end.enable(region, i)?;
-        }
-
-        // +1 for the rlc_start row
-        assert_eq!(offset, pi_bytes_end_row + 1);
-
-        // assign keccak row for computing pi_hash = keccak256(pi_bytes)
-        let pi_hash_row = offset;
+        // Assign row for validating lookup to check:
+        // pi_hash == keccak256(rlc(pi_bytes))
         pi_bytes_rlc.copy_advice(
             || "pi_bytes_rlc in the rpi col",
             region,
             self.raw_public_inputs,
-            pi_hash_row,
+            offset,
         )?;
-        let pi_hash = public_data.get_pi();
-        let pi_hash_rlc = rlc_be_bytes(&pi_hash.to_fixed_bytes(), challenges.evm_word());
         pi_bytes_length.copy_advice(
             || "pi_bytes_length in the rpi_length_acc col",
             region,
             self.rpi_length_acc,
-            pi_hash_row,
+            offset,
         )?;
-        let pi_hash_rlc_cell = region.assign_advice(
-            || "pi_hash_rlc",
-            self.rpi_rlc_acc,
-            pi_hash_row,
-            || pi_hash_rlc,
-        )?;
-        self.q_keccak.enable(region, pi_hash_row)?;
-        offset += 1;
+        let pi_hash_rlc_cell = {
+            let pi_hash_rlc = rlc_be_bytes(
+                &public_data.get_pi().to_fixed_bytes(),
+                challenges.evm_word(),
+            );
+            region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
+        };
+        self.q_keccak.enable(region, offset)?;
 
-        //////////////////////////////////////////////////
-        //// assign pi_hash (high, low)-decomposition ////
-        //////////////////////////////////////////////////
-        let pi_hash_bytes_start_row = offset;
-        let pi_hash_bytes_end_row = pi_hash_bytes_start_row + KECCAK_DIGEST_SIZE;
-        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
+        Ok((offset + 1, pi_hash_rlc_cell, connections))
+    }
 
-        for i in pi_hash_bytes_start_row..pi_hash_bytes_end_row {
-            self.q_not_end.enable(region, i)?;
+    /// Assign the (hi, lo) decomposition of pi_hash.
+    fn assign_pi_hash(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        public_data: &PublicData,
+        pi_hash_rlc_cell: &AssignedCell<F, F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(usize, PiHashExport<F>), Error> {
+        let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
+
+        // Enable RLC accumulator consistency check throughout the above rows.
+        for q_offset in public_data.pi_hash_start_offset()..public_data.pi_hash_end_offset() {
+            self.q_not_end.enable(region, q_offset)?;
         }
 
         // the high 16 bytes of keccak output
-        let cells = self.assign_field_in_pi(
+        let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
             region,
-            &mut offset,
-            &pi_hash.to_fixed_bytes()[..16],
-            &mut rpi_rlc_acc,
-            &mut rpi_length_acc,
-            false,
-            false,
-            true,
+            offset,
+            &public_data.get_pi().to_fixed_bytes()[..16],
+            RpiFieldType::KeccakHiLo,
+            false, // no padding in this case
+            rpi_rlc_acc,
+            rpi_length,
             challenges,
         )?;
-        let pi_hash_hi_byte_cells = cells[3..].to_vec();
-        // let pi_hash_hi_cell = cells[RPI_CELL_IDX].clone();
+        (offset, rpi_rlc_acc, rpi_length) = (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length);
+        let pi_hash_hi_cells = cells[3..].to_vec();
 
         // the low 16 bytes of keccak output
-        let cells = self.assign_field_in_pi(
+        let (tmp_offset, _, _, cells) = self.assign_field(
             region,
-            &mut offset,
-            &pi_hash.to_fixed_bytes()[16..],
-            &mut rpi_rlc_acc,
-            &mut rpi_length_acc,
-            false,
-            false,
-            true,
+            offset,
+            &public_data.get_pi().to_fixed_bytes()[16..],
+            RpiFieldType::KeccakHiLo,
+            false, // no padding in this case
+            rpi_rlc_acc,
+            rpi_length,
             challenges,
         )?;
-        let pi_hash_lo_byte_cells = cells[3..].to_vec();
-        // let pi_hash_lo_cell = cells[RPI_CELL_IDX].clone();
+        offset = tmp_offset;
+        let pi_hash_lo_cells = cells[3..].to_vec();
 
-        // +1 for the rlc_start row
-        assert_eq!(offset, pi_hash_bytes_end_row + 1);
-
-        // copy pi hash down here
+        // Copy pi_hash value we collected from assigning pi bytes.
         region.constrain_equal(pi_hash_rlc_cell.cell(), cells[RPI_RLC_ACC_CELL_IDX].cell())?;
 
-        //////////////////////////////////////////////////
-        ////////// assign COINBASE, DIFFICULTY  //////////
-        //////////////////////////////////////////////////
-        let coinbase_diff_start_row = offset;
-        let coinbase_diff_end_row =
-            coinbase_diff_start_row + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD;
+        Ok((offset, [pi_hash_hi_cells, pi_hash_lo_cells].concat()))
+    }
 
-        self.assign_rlc_start(region, &mut offset, &mut rpi_rlc_acc, &mut rpi_length_acc)?;
+    /// Assign constants such as the block's coinbase and difficulty.
+    fn assign_constants(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        public_data: &PublicData,
+        block_value_cells: &[AssignedCell<F, F>],
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<usize, Error> {
+        let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
 
-        // pick coinbase and difficulity from block (they have been verified to be equal
-        // to the preset), so things would also work under relaxed mode
-        let cells = self.assign_field_in_pi_ext(
-            region,
-            &mut offset,
-            &blocks_coinbase.to_fixed_bytes(),
-            &mut rpi_rlc_acc,
-            &mut rpi_length_acc,
-            false,
-            false,
-            true,
-            true,
-            challenges,
-        )?;
-        let coinbase_cell = cells[RPI_CELL_IDX].clone();
-
-        let cells = self.assign_field_in_pi_ext(
-            region,
-            &mut offset,
-            &blocks_difficulity.to_be_bytes(),
-            &mut rpi_rlc_acc,
-            &mut rpi_length_acc,
-            false,
-            false,
-            true,
-            true,
-            challenges,
-        )?;
-        let difficulty_cell = cells[RPI_CELL_IDX].clone();
-
-        for i in coinbase_diff_start_row..coinbase_diff_end_row {
-            self.q_not_end.enable(region, i)?;
+        // Enable RLC accumulator consistency check throughout the above rows.
+        for q_offset in public_data.constants_start_offset()..public_data.constants_end_offset() {
+            self.q_not_end.enable(region, q_offset)?;
         }
 
-        // copy to block table
+        // Assign [coinbase, difficulty] as constants.
+        let mut cells = vec![];
+        let rpi_cells = [
+            public_data.coinbase().to_fixed_bytes().to_vec(),
+            public_data.difficulty().to_be_bytes().to_vec(),
+        ]
+        .iter()
+        .map(|value_be_bytes| {
+            (offset, rpi_rlc_acc, rpi_length, cells) = self.assign_field(
+                region,
+                offset,
+                value_be_bytes,
+                RpiFieldType::Constant,
+                false, // no padding in this case
+                rpi_rlc_acc,
+                rpi_length,
+                challenges,
+            )?;
+            Ok(cells[RPI_CELL_IDX].clone())
+        })
+        .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
+
+        // Copy coinbase and difficulty cells to block table
         for block_idx in 0..public_data.max_inner_blocks {
             region.constrain_equal(
-                coinbase_cell.cell(),
+                rpi_cells[0].cell(),
                 block_value_cells[BLOCK_LEN * block_idx + COINBASE_OFFSET].cell(),
             )?;
             region.constrain_equal(
-                difficulty_cell.cell(),
+                rpi_cells[1].cell(),
                 block_value_cells[BLOCK_LEN * block_idx + DIFFICULTY_OFFSET].cell(),
             )?;
         }
 
-        assert_eq!(
-            offset,
-            // for data bytes start row
-            1 + public_data.max_inner_blocks * BLOCK_HEADER_BYTES_NUM
-                + public_data.max_txs * KECCAK_DIGEST_SIZE
-                + 1 // for data hash row
-                + 1 // for pi bytes start row
-                + N_BYTES_U64
-                + 4 * KECCAK_DIGEST_SIZE
-                + 1 // for pi hash row
-                + 1 // for pi hash bytes start row
-                + KECCAK_DIGEST_SIZE
-                + 1 // for coinbase & difficulty start row
-                + N_BYTES_ACCOUNT_ADDRESS
-                + N_BYTES_WORD,
-        );
-
-        let instance_byte_cells = [pi_hash_hi_byte_cells, pi_hash_lo_byte_cells].concat();
-
-        Ok((instance_byte_cells, connections))
+        Ok(offset)
     }
 
-    fn assign_rlc_start(
+    /// Initialise the RLC computation at the row with the given offset. Returns the offset at the
+    /// next row.
+    fn assign_rlc_init(
         &self,
         region: &mut Region<'_, F>,
-        offset: &mut usize,
-        rpi_rlc_acc: &mut Value<F>,
-        rpi_length_acc: &mut u64,
-    ) -> Result<(), Error> {
-        *rpi_rlc_acc = Value::known(F::zero());
-        *rpi_length_acc = 0;
-
+        offset: usize,
+    ) -> Result<(usize, Value<F>, Value<F>), Error> {
         region.assign_advice_from_constant(
             || "rpi_rlc_acc[0]",
             self.rpi_rlc_acc,
-            *offset,
+            offset,
             F::zero(),
         )?;
         region.assign_advice_from_constant(
             || "rpi_length_acc[0]",
             self.rpi_length_acc,
-            *offset,
+            offset,
             F::zero(),
         )?;
-        *offset += 1;
-
-        Ok(())
+        Ok((offset + 1, Value::known(F::zero()), Value::known(F::zero())))
     }
 
+    /// Assign a variable length field (in its big-endian byte representation to the PI circuit.
     #[allow(clippy::too_many_arguments)]
-    fn assign_field_in_pi(
+    #[allow(clippy::type_complexity)]
+    fn assign_field(
         &self,
         region: &mut Region<'_, F>,
-        offset: &mut usize,
+        offset: usize,
         value_be_bytes: &[u8],
-        rpi_rlc_acc: &mut Value<F>,
-        rpi_length_acc: &mut u64,
-        is_block_context: bool, // if this field related to block context
-        is_rpi_padding: bool,   // if this field is not included in the data bytes
-        keccak_hi_lo: bool,     // if this field is related to keccak decomposition
+        field_type: RpiFieldType,
+        is_rpi_padding: bool,
+        mut rpi_rlc_acc: Value<F>, // rlc accumulator over rpi.
+        mut rpi_length: Value<F>,  // no. of bytes accumulated since rlc was last initialised.
         challenges: &Challenges<Value<F>>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        self.assign_field_in_pi_ext(
-            region,
-            offset,
-            value_be_bytes,
-            rpi_rlc_acc,
-            rpi_length_acc,
-            is_block_context,
-            is_rpi_padding,
-            keccak_hi_lo,
-            false,
-            challenges,
-        )
-    }
+    ) -> Result<(usize, Value<F>, Value<F>, Vec<AssignedCell<F, F>>), Error> {
+        // The number of bytes to represent this field's value.
+        let n_bytes = value_be_bytes.len();
 
-    #[allow(clippy::too_many_arguments)]
-    fn assign_field_in_pi_ext(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: &mut usize,
-        value_be_bytes: &[u8],
-        rpi_rlc_acc: &mut Value<F>,
-        rpi_length_acc: &mut u64,
-        is_block_context: bool, // if this field related to block context
-        is_rpi_padding: bool,   // if this field is not included in the data bytes
-        keccak_hi_lo: bool,     // if this field is related to keccak decomposition
-        is_constant: bool,
-        challenges: &Challenges<Value<F>>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        let len = value_be_bytes.len();
-
-        let (is_field_rlc, t) = if len * 8 > F::CAPACITY as usize {
+        // Some fields hold 32-byte values and hence do not fit within the scalar field. In such
+        // cases, we mark the field as an RLC field, i.e. `is_field_rlc == true` and use the
+        // randomness challenge to compute a random linear combination of its be-bytes. For fields
+        // that do fit within the scalar field, we simply compute the linear combination with 2^8.
+        let (is_field_rlc, field_rand) = if n_bytes * 8 > F::CAPACITY as usize {
             (F::one(), challenges.evm_word())
         } else {
             (F::zero(), Value::known(F::from(BYTE_POW_BASE)))
         };
-        // keccak_hi_lo = true if we are re-using rpi layout for keccak bytes
-        let r = if keccak_hi_lo {
-            challenges.evm_word()
-        } else {
-            challenges.keccak_input()
+
+        // Some random linear combination of bytes are then hashed to check if:
+        // keccak256(rlc(bytes)) == hash.
+        //
+        // The above lookup to the keccak table requires us to use the EVM randomness from the
+        // challenge API.
+        //
+        // However for other cases, we use the keccak randomness from the challenge API.
+        let (is_rlc_keccak, rlc_rand) = match field_type {
+            RpiFieldType::KeccakHiLo | RpiFieldType::Constant => (F::zero(), challenges.evm_word()),
+            _ => (F::one(), challenges.keccak_input()),
         };
-        let value = rlc_be_bytes(value_be_bytes, t);
-        let mut value_bytes_acc = Value::known(F::zero());
 
-        // +3 for rpi, rpi_rlc_acc, rpi_length_acc
-        let mut cells = vec![None; 3 + value_be_bytes.len()];
+        // The RLC of the big-endian bytes representing this field's value.
+        let rpi_value = rlc_be_bytes(value_be_bytes, field_rand);
 
-        // use copy constraints to make sure that
-        // 1. rpi_cells are equal.
-        // 2. rpi_cell equals to the last rpi_bytes_acc
-        // 3. the first rpi_bytes_acc equals to the first byte_cell
-        let mut rpi_cells = vec![];
-        let mut rpi_bytes_acc_cells = vec![];
-        let mut byte_cells = vec![];
-        for (i, byte) in value_be_bytes.iter().enumerate() {
-            let row_offset = *offset + i;
+        // The linear combination accumulator for this specific field.
+        let rpi_bytes_acc = value_be_bytes
+            .iter()
+            .scan(Value::known(F::zero()), |acc, &byte| {
+                *acc = *acc * field_rand + Value::known(F::from(byte as u64));
+                Some(*acc)
+            })
+            .collect::<Vec<Value<F>>>();
 
-            let real_value = if is_rpi_padding {
-                Value::known(F::zero())
-            } else {
-                value
-            };
-
-            value_bytes_acc = value_bytes_acc
-                .zip(t)
-                .and_then(|(acc, t)| Value::known(acc * t + F::from(*byte as u64)));
-
-            // this field is not padding then we absorb the byte into rpi_rlc_acc
-            if !is_rpi_padding {
-                *rpi_rlc_acc = rpi_rlc_acc
-                    .zip(r)
-                    .and_then(|(acc, rand)| Value::known(acc * rand + F::from(*byte as u64)));
-                *rpi_length_acc += 1;
-            }
-
-            // set field-related selectors
-            if i < len - 1 {
-                self.q_field_step.enable(region, row_offset)?;
-            }
-
-            region.assign_fixed(
-                || "is_field_rlc",
-                self.is_field_rlc,
-                row_offset,
-                || Value::known(is_field_rlc),
-            )?;
-            region.assign_fixed(
-                || "is_rlc_keccak",
-                self.is_rlc_keccak,
-                row_offset,
-                || Value::known(F::from(!keccak_hi_lo as u64)),
-            )?;
-
-            let byte_cell = if is_constant {
-                region.assign_advice_from_constant(
-                    || "field byte",
-                    self.rpi_field_bytes,
-                    row_offset,
-                    F::from(*byte as u64),
-                )?
-            } else {
-                region.assign_advice(
-                    || "field byte",
-                    self.rpi_field_bytes,
-                    row_offset,
-                    || Value::known(F::from(*byte as u64)),
-                )?
-            };
-
-            let rpi_bytes_acc_cell = region.assign_advice(
-                || "field byte acc",
-                self.rpi_field_bytes_acc,
-                row_offset,
-                || value_bytes_acc,
-            )?;
-            let rpi_cell = region.assign_advice(
-                || "field value",
-                self.raw_public_inputs,
-                row_offset,
-                || value,
-            )?;
-            let rpi_rlc_cell = region.assign_advice(
-                || "rpi_rlc_acc",
-                self.rpi_rlc_acc,
-                row_offset,
-                || *rpi_rlc_acc,
-            )?;
-            let rpi_length_cell = {
-                region.assign_advice(
-                    || "rpi_length_acc",
-                    self.rpi_length_acc,
-                    row_offset,
-                    || Value::known(F::from(*rpi_length_acc)),
-                )?
-            };
-
-            region.assign_advice(
-                || "is_rpi_padding",
-                self.is_rpi_padding,
-                row_offset,
-                || Value::known(F::from(is_rpi_padding as u64)),
-            )?;
-            // For block context fields,
-            //  If it's padding, then the rpi cell does not matter any more
-            //  as it's not included in the data bytes. This means the rpi cell is not
-            //  constrained. Then we cannot use that to connect to block table.
-            //  Therefore we use the `real_rpi_cell` instead.
-            let real_rpi_cell =
-                region.assign_advice(|| "real_rpi", self.real_rpi, row_offset, || real_value)?;
-
-            rpi_cells.push(rpi_cell.clone());
-            rpi_bytes_acc_cells.push(rpi_bytes_acc_cell);
-            byte_cells.push(byte_cell.clone());
-
-            if i == len - 1 {
-                cells[RPI_CELL_IDX] = if is_block_context {
-                    Some(real_rpi_cell)
-                } else {
-                    Some(rpi_cell)
-                };
-                cells[RPI_RLC_ACC_CELL_IDX] = Some(rpi_rlc_cell);
-                cells[RPI_LENGTH_ACC_CELL_IDX] = Some(rpi_length_cell);
-            }
-            cells[i + 3] = Some(byte_cell);
+        // Enable the field step until the penultimate offset.
+        for q_offset in offset..offset + n_bytes - 1 {
+            self.q_field_step.enable(region, q_offset)?;
         }
 
-        // copy constraints
+        let (mut final_rpi_cell, mut final_rpi_rlc_cell, mut final_rpi_length_cell) =
+            (None, None, None);
+        let cells =
+            value_be_bytes
+                .iter()
+                .zip(rpi_bytes_acc.iter())
+                .enumerate()
+                .map(|(idx, (&byte, &bytes_acc))| {
+                    let row_offset = offset + idx;
+
+                    // Update rpi_rlc and rpi_length if this field is not meant for padding.
+                    if !is_rpi_padding {
+                        rpi_rlc_acc = rpi_rlc_acc * rlc_rand + Value::known(F::from(byte as u64));
+                        rpi_length = rpi_length.map(|v| v + F::one());
+                    }
+
+                    region.assign_fixed(
+                        || "is_field_rlc",
+                        self.is_field_rlc,
+                        row_offset,
+                        || Value::known(is_field_rlc),
+                    )?;
+                    region.assign_fixed(
+                        || "is_rlc_keccak",
+                        self.is_rlc_keccak,
+                        row_offset,
+                        || Value::known(is_rlc_keccak),
+                    )?;
+                    region.assign_advice(
+                        || "is_rpi_padding",
+                        self.is_rpi_padding,
+                        row_offset,
+                        || Value::known(F::from(is_rpi_padding as u64)),
+                    )?;
+                    let byte_cell = match field_type {
+                        RpiFieldType::Constant => region.assign_advice_from_constant(
+                            || "field byte",
+                            self.rpi_field_bytes,
+                            row_offset,
+                            F::from(byte as u64),
+                        )?,
+                        _ => region.assign_advice(
+                            || "field byte",
+                            self.rpi_field_bytes,
+                            row_offset,
+                            || Value::known(F::from(byte as u64)),
+                        )?,
+                    };
+                    let rpi_bytes_acc_cell = region.assign_advice(
+                        || "field byte acc",
+                        self.rpi_field_bytes_acc,
+                        row_offset,
+                        || bytes_acc,
+                    )?;
+                    let rpi_cell = region.assign_advice(
+                        || "field value",
+                        self.raw_public_inputs,
+                        row_offset,
+                        || rpi_value,
+                    )?;
+                    let rpi_rlc_cell = region.assign_advice(
+                        || "rpi_rlc_acc",
+                        self.rpi_rlc_acc,
+                        row_offset,
+                        || rpi_rlc_acc,
+                    )?;
+                    let rpi_length_cell = region.assign_advice(
+                        || "rpi_length_acc",
+                        self.rpi_length_acc,
+                        row_offset,
+                        || rpi_length,
+                    )?;
+                    let real_rpi_cell = region.assign_advice(
+                        || "real_rpi",
+                        self.real_rpi,
+                        row_offset,
+                        || {
+                            if is_rpi_padding {
+                                Value::known(F::zero())
+                            } else {
+                                rpi_value
+                            }
+                        },
+                    )?;
+
+                    // Update the RPI related cells for the final row.
+                    if idx == n_bytes - 1 {
+                        final_rpi_cell = match field_type {
+                            RpiFieldType::BlockCtx => Some(real_rpi_cell),
+                            _ => Some(rpi_cell.clone()),
+                        };
+                        final_rpi_rlc_cell = Some(rpi_rlc_cell);
+                        final_rpi_length_cell = Some(rpi_length_cell);
+                    }
+
+                    Ok((byte_cell, (rpi_cell, rpi_bytes_acc_cell)))
+                })
+                .collect::<Result<
+                    Vec<(AssignedCell<F, F>, (AssignedCell<F, F>, AssignedCell<F, F>))>,
+                    Error,
+                >>()?;
+
+        let (byte_cells, cells): (
+            Vec<AssignedCell<F, F>>,
+            Vec<(AssignedCell<F, F>, AssignedCell<F, F>)>,
+        ) = cells.into_iter().unzip();
+        let (rpi_cells, rpi_bytes_acc_cells): (Vec<AssignedCell<F, F>>, Vec<AssignedCell<F, F>>) =
+            cells.into_iter().unzip();
+
+        // Copy constraints:
+        // byte[0] == rpi_bytes_acc[0]
         region.constrain_equal(byte_cells[0].cell(), rpi_bytes_acc_cells[0].cell())?;
-        region.constrain_equal(rpi_cells[0].cell(), rpi_bytes_acc_cells[len - 1].cell())?;
-        for i in 1..len {
+
+        // Copy constraints:
+        // rpi[0] == rpi_cells[1] == ... == rpi_cells[n_bytes - 1]
+        for i in 1..n_bytes {
             region.constrain_equal(rpi_cells[0].cell(), rpi_cells[i].cell())?;
         }
 
-        *offset += len;
+        // Copy constraints:
+        // rpi[0] == rpi_bytes_acc[n - 1]
+        region.constrain_equal(rpi_cells[0].cell(), rpi_bytes_acc_cells[n_bytes - 1].cell())?;
 
-        Ok(cells.into_iter().map(|cell| cell.unwrap()).collect())
+        // We return cells in the following order:
+        // [
+        //      rpi_cell
+        //      rpi_rlc_cell
+        //      rpi_length_cell
+        //      byte_cell[0]
+        //      ...
+        //      byte_cell[n_bytes - 1]
+        // ]
+        Ok((
+            offset + n_bytes,
+            rpi_rlc_acc,
+            rpi_length,
+            [
+                vec![
+                    final_rpi_cell.unwrap(),
+                    final_rpi_rlc_cell.unwrap(),
+                    final_rpi_length_cell.unwrap(),
+                ],
+                byte_cells,
+            ]
+            .concat(),
+        ))
     }
 
     fn assign_block_table(
@@ -1379,8 +1501,8 @@ impl<F: Field> PiCircuitConfig<F> {
                 .map(|_| {
                     BlockContext::padding(
                         public_data.chain_id,
-                        public_data.blocks_difficulity(),
-                        public_data.blocks_coinbase(),
+                        public_data.difficulty(),
+                        public_data.coinbase(),
                     )
                 }),
         ) {

@@ -2216,7 +2216,7 @@ name = "geth-utils"
 version = "0.1.0"
 dependencies = [
  "env_logger 0.10.0",
- "gobuild 0.1.0-alpha.2 (git+https://github.com/scroll-tech/gobuild.git)",
+ "gobuild",
  "log",
 ]
 
@@ -2290,16 +2290,7 @@ dependencies = [
 [[package]]
 name = "gobuild"
 version = "0.1.0-alpha.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e156a4ddbf3deb5e8116946c111413bd9a5679bdc1536c78a60618a7a9ac9e"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "gobuild"
-version = "0.1.0-alpha.2"
-source = "git+https://github.com/scroll-tech/gobuild.git#8b84111fc3b58e2134e4794a06d1f199412cf2b0"
+source = "git+https://github.com/scroll-tech/gobuild.git#24935c2b8f677841f22acd6710957621bb294e0e"
 dependencies = [
  "cc",
 ]
@@ -5862,9 +5853,9 @@ dependencies = [
 [[package]]
 name = "zktrie"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.7#a130ea543d291d4b71724f91cb8a49745c593a0c"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=v0.7#e5071cbd7097c7b65916654d581a510fff9d285c"
 dependencies = [
- "gobuild 0.1.0-alpha.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gobuild",
 ]
 
 [[package]]
