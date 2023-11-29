@@ -173,7 +173,14 @@ impl Arithmetic<3> for ArithmeticOpcode<{ OpcodeId::ADDMOD.as_u8() }, 3> {
         if modulus == Word::zero() {
             Word::zero()
         } else {
-            (lhs % modulus).overflowing_add(rhs % modulus).0 % modulus
+            let lhs = lhs % modulus;
+            let rhs = rhs % modulus;
+            if let Some(sum) = lhs.checked_add(rhs) {
+                sum % modulus
+            } else {
+                // TODO: optimize speed
+                Word::try_from((U512::from(lhs) + U512::from(rhs)) % U512::from(modulus)).unwrap()
+            }
         }
     }
 }
@@ -345,8 +352,55 @@ where
             geth_steps[1].stack.nth_last_filled(0),
             output,
         )?;
-        assert_eq!(output, geth_steps[1].stack.nth_last(0)?);
+        assert_eq!(
+            output,
+            geth_steps[1].stack.nth_last(0)?,
+            "stack mismatch, inputs: {:x?}, actual: {:x}, expected: {:x}",
+            stack_inputs,
+            output,
+            geth_steps[1].stack.nth_last(0)?
+        );
 
         Ok(vec![exec_step])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::mock::BlockData;
+    use eth_types::{bytecode, geth_types::GethData, word, Word};
+    use mock::TestContext;
+
+    fn test_addmod_inner(a: Word, b: Word, n: Word) {
+        let code = bytecode! {
+            PUSH32(n)
+            PUSH32(b)
+            PUSH32(a)
+            ADDMOD
+        };
+        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(code)
+            .unwrap()
+            .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_addmod() {
+        // testool: randomStatetest382_d0_g0_v0, randomStatetest242_d0_g0_v0
+        test_addmod_inner(
+            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+            word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+        );
+        // testool: randomStatetest605_d0_g0_v0
+        test_addmod_inner(
+            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+            word!("0xffffffffffffffffffffffff00000000000000000000000000000000000000ea"),
+            word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+        )
     }
 }
