@@ -206,6 +206,7 @@ mod test {
         test(a.into(), b.into(), n.into(), r.map(Word::from), true)
     }
 
+    // TODO: re-enable when we have a way to check for errors
     // fn test_ko_u32(a: u32, b: u32, n: u32, r: Option<u32>) {
     //     test(a.into(), b.into(), n.into(), r.map(Word::from), false)
     // }
