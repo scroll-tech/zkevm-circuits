@@ -1137,29 +1137,28 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             value_prev_column: meta_query_word(meta, c.rw_table.value_prev, Rotation::cur()),
         },
         mpt_update_table: MptUpdateTableQueries {
-            q_enable: meta.query_fixed(c.mpt_table.q_enable, Rotation::cur()),
-            address: meta.query_advice(c.mpt_table.address, Rotation::cur()),
-            //address:mpt_update_table_expressions[0].clone(),
+            q_enable: mpt_update_table_expressions[0].clone(),
+            address: mpt_update_table_expressions[1].clone(),
             storage_key: word::Word::new([
-                mpt_update_table_expressions[1].clone(),
                 mpt_update_table_expressions[2].clone(),
+                mpt_update_table_expressions[3].clone(),
             ]),
-            proof_type: meta.query_advice(c.mpt_table.proof_type, Rotation::cur()),
+            proof_type: mpt_update_table_expressions[4].clone(),
             new_root: word::Word::new([
-                mpt_update_table_expressions[4].clone(),
                 mpt_update_table_expressions[5].clone(),
+                mpt_update_table_expressions[6].clone(),
             ]),
             old_root: word::Word::new([
-                mpt_update_table_expressions[6].clone(),
                 mpt_update_table_expressions[7].clone(),
+                mpt_update_table_expressions[8].clone(),
             ]),
             new_value: word::Word::new([
-                mpt_update_table_expressions[8].clone(),
                 mpt_update_table_expressions[9].clone(),
+                mpt_update_table_expressions[10].clone(),
             ]),
             old_value: word::Word::new([
-                mpt_update_table_expressions[10].clone(),
                 mpt_update_table_expressions[11].clone(),
+                mpt_update_table_expressions[12].clone(),
             ]),
         },
         lexicographic_ordering_selector: meta

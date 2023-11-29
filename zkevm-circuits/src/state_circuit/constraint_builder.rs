@@ -471,7 +471,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // last_access degree = 1
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
-                "mpt_update exists in mpt circuit for AccountStorage last access",
+                "mpt_update exists in mpt circuit for Account last access",
                 LookupBuilder::new()
                     .add(&1.expr(), &q.mpt_update_table.q_enable)
                     .add(&q.rw_table.address, &q.mpt_update_table.address)
