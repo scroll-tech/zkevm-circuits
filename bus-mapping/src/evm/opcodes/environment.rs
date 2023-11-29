@@ -127,3 +127,46 @@ impl Opcode for Gas {
         Ok(vec![exec_step])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::mock::BlockData;
+    use eth_types::{bytecode, geth_types::GethData, Bytecode};
+    use mock::TestContext;
+
+    fn test_trace(code: Bytecode) {
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(code)
+            .unwrap()
+            .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_difficulty() {
+        test_trace(bytecode! {
+            DIFFICULTY
+            STOP
+        });
+    }
+
+    #[test]
+    fn gas_limit_opcode_impl() {
+        test_trace(bytecode! {
+            GASLIMIT
+            STOP
+        });
+    }
+
+    #[test]
+    fn basefee_opcode_impl() {
+        test_trace(bytecode! {
+            BASEFEE
+            STOP
+        });
+    }
+}

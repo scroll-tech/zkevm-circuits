@@ -4,6 +4,7 @@ use crate::{
     Error,
 };
 use eth_types::{evm_types::OpcodeId, GethExecStep, ToBigEndian, ToLittleEndian, Word, U256, U512};
+use itertools::Itertools;
 use std::{
     cmp::Ordering,
     ops::{Neg, Rem},
@@ -355,8 +356,9 @@ where
         assert_eq!(
             output,
             geth_steps[1].stack.nth_last(0)?,
-            "stack mismatch, inputs: {:x?}, actual: {:x}, expected: {:x}",
-            stack_inputs,
+            "stack mismatch, opcode: {}, inputs: {}, actual: {:x}, expected: {:x}",
+            OpcodeId::from(OP),
+            stack_inputs.iter().map(|w| format!("{:x}", w)).join(", "),
             output,
             geth_steps[1].stack.nth_last(0)?
         );
@@ -367,17 +369,35 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::mock::BlockData;
-    use eth_types::{bytecode, geth_types::GethData, word, Word};
+    use eth_types::{evm_types::OpcodeId, geth_types::GethData, word, Bytecode, Word};
     use mock::TestContext;
+    use rand::{thread_rng, Rng};
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-    fn test_addmod_inner(a: Word, b: Word, n: Word) {
-        let code = bytecode! {
-            PUSH32(n)
-            PUSH32(b)
-            PUSH32(a)
-            ADDMOD
-        };
+    fn test_handle<const N_POPS: usize, const OP: u8>(inputs: [Word; N_POPS], expected: Word)
+    where
+        ArithmeticOpcode<OP, N_POPS>: Arithmetic<N_POPS>,
+    {
+        let actual = ArithmeticOpcode::<OP, N_POPS>::handle(inputs);
+        assert_eq!(
+            actual,
+            expected,
+            "{} handle produce incrroect outputs:\ninputs: {:x?}, actual: {:x}, expected: {:x}",
+            OpcodeId::from(OP),
+            inputs,
+            actual,
+            expected
+        );
+    }
+
+    fn test_trace<const N_POPS: usize>(opcode: OpcodeId, inputs: [Word; N_POPS]) {
+        let mut code = Bytecode::default();
+        for input in inputs.into_iter().rev() {
+            code.push(32, input);
+        }
+        code.write_op(opcode);
         let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(code)
             .unwrap()
             .into();
@@ -388,19 +408,153 @@ mod tests {
             .unwrap();
     }
 
+    fn test_both<const N_POPS: usize, const OP: u8>(inputs: [Word; N_POPS], expected: Word)
+    where
+        ArithmeticOpcode<OP, N_POPS>: Arithmetic<N_POPS>,
+    {
+        test_handle::<N_POPS, OP>(inputs, expected);
+        test_trace::<N_POPS>(OpcodeId::from(OP), inputs);
+    }
+
+    fn test_random<const N_POPS: usize, const OP: u8>()
+    where
+        ArithmeticOpcode<OP, N_POPS>: Arithmetic<N_POPS>,
+    {
+        // takes about 13s in release mode
+        (0..10000).into_par_iter().for_each(|_| {
+            let inputs: [Word; N_POPS] = (0..N_POPS)
+                .map(|_| U256(thread_rng().gen::<[u64; 4]>()))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            test_trace(OpcodeId::from(OP), inputs);
+        });
+    }
+
+    #[test]
+    fn random() {
+        test_random::<2, { OpcodeId::ADD.as_u8() }>();
+        test_random::<2, { OpcodeId::SDIV.as_u8() }>();
+        test_random::<2, { OpcodeId::MUL.as_u8() }>();
+        test_random::<2, { OpcodeId::DIV.as_u8() }>();
+        test_random::<2, { OpcodeId::SDIV.as_u8() }>();
+        test_random::<2, { OpcodeId::MOD.as_u8() }>();
+        test_random::<2, { OpcodeId::SMOD.as_u8() }>();
+        test_random::<3, { OpcodeId::ADDMOD.as_u8() }>();
+        test_random::<3, { OpcodeId::MULMOD.as_u8() }>();
+        test_random::<2, { OpcodeId::SIGNEXTEND.as_u8() }>();
+        test_random::<2, { OpcodeId::LT.as_u8() }>();
+        test_random::<2, { OpcodeId::GT.as_u8() }>();
+        test_random::<2, { OpcodeId::SLT.as_u8() }>();
+        test_random::<2, { OpcodeId::SGT.as_u8() }>();
+        test_random::<2, { OpcodeId::EQ.as_u8() }>();
+        test_random::<1, { OpcodeId::ISZERO.as_u8() }>();
+        test_random::<2, { OpcodeId::AND.as_u8() }>();
+        test_random::<2, { OpcodeId::OR.as_u8() }>();
+        test_random::<2, { OpcodeId::XOR.as_u8() }>();
+        test_random::<1, { OpcodeId::NOT.as_u8() }>();
+        test_random::<2, { OpcodeId::BYTE.as_u8() }>();
+        test_random::<2, { OpcodeId::SHL.as_u8() }>();
+        test_random::<2, { OpcodeId::SHR.as_u8() }>();
+        test_random::<2, { OpcodeId::SAR.as_u8() }>();
+    }
+
+    #[test]
+    fn test_sdiv() {
+        test_both::<2, { OpcodeId::SDIV.as_u8() }>([0x60u64.into(), 0x80u64.into()], 0u64.into());
+    }
+
+    #[test]
+    fn test_mod() {
+        test_both::<2, { OpcodeId::MOD.as_u8() }>([0x60u64.into(), 0x80u64.into()], 0x60u64.into());
+    }
+
+    #[test]
+    fn test_smod() {
+        test_both::<2, { OpcodeId::SMOD.as_u8() }>(
+            [0x60u64.into(), 0x80u64.into()],
+            0x60u64.into(),
+        );
+    }
+
     #[test]
     fn test_addmod() {
         // testool: randomStatetest382_d0_g0_v0, randomStatetest242_d0_g0_v0
-        test_addmod_inner(
-            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
-            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
-            word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+        test_both::<3, { OpcodeId::ADDMOD.as_u8() }>(
+            [
+                word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+                word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+                word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+            ],
+            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd"),
         );
         // testool: randomStatetest605_d0_g0_v0
-        test_addmod_inner(
-            word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
-            word!("0xffffffffffffffffffffffff00000000000000000000000000000000000000ea"),
-            word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+        test_both::<3, { OpcodeId::ADDMOD.as_u8() }>(
+            [
+                word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
+                word!("0xffffffffffffffffffffffff00000000000000000000000000000000000000ea"),
+                word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+            ],
+            word!("0xffffffffffffffffffffffff00000000000000000000000000000000000000e9"),
         )
+    }
+
+    #[test]
+    fn test_lt() {
+        test_both::<2, { OpcodeId::LT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::LT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::LT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
+    }
+
+    #[test]
+    fn test_gt() {
+        test_both::<2, { OpcodeId::GT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::GT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::GT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x01u64.into());
+    }
+
+    #[test]
+    fn test_slt() {
+        test_both::<2, { OpcodeId::SLT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::SLT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::SLT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
+    }
+
+    #[test]
+    fn test_sgt() {
+        test_both::<2, { OpcodeId::SGT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::SGT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::SGT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x01u64.into());
+    }
+
+    #[test]
+    fn test_and() {
+        test_both::<2, { OpcodeId::AND.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::AND.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::AND.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
+    }
+
+    #[test]
+    fn test_or() {
+        test_both::<2, { OpcodeId::OR.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x03u64.into());
+        test_both::<2, { OpcodeId::OR.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::OR.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x03u64.into());
+    }
+
+    #[test]
+    fn test_xor() {
+        test_both::<2, { OpcodeId::XOR.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::XOR.as_u8() }>([0x01u64.into(), 0x00u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::XOR.as_u8() }>([0x00u64.into(), 0x00u64.into()], 0x00u64.into());
+    }
+
+    #[test]
+    fn test_not() {
+        test_both::<1, { OpcodeId::NOT.as_u8() }>(
+            [word!(
+                "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            )],
+            word!("0xfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0"),
+        );
     }
 }
