@@ -814,9 +814,6 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
-        if offset == 4 || offset == 5 || offset == 7 || offset == 8 {
-            dbg!(row);
-        }
         region.assign_fixed(
             || "assign mpt table row value",
             self.q_enable,
