@@ -134,6 +134,21 @@ fn run<F: Field>(
     prover.verify_at_rows_par(0..active_row_num, 0..active_row_num)
 }
 
+// tx1559_debug
+#[test]
+// #[cfg(feature = "scroll")]
+fn tx_circuit_1tx_2max_debug() {
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 320;
+
+    let tx = build_pre_eip155_tx();
+
+    assert_eq!(
+        run::<Fr>(vec![tx], *mock::MOCK_CHAIN_ID, MAX_TXS, MAX_CALLDATA, 0),
+        Ok(())
+    );
+}
+
 #[test]
 #[cfg(feature = "scroll")]
 fn tx_circuit_2tx_2max_tx() {
