@@ -62,6 +62,7 @@ url = "2.2"
 [patch.crates-io]
 ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "develop" }
 [patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
