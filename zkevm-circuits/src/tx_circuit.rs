@@ -19,10 +19,10 @@ use crate::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
-            AccessListAddressesLen, AccessListGasCost, AccessListRLC, AccessListStorageKeysLen,
-            BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
-            CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV,
-            TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+            AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
+            CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress, CallerAddress, ChainID,
+            Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength,
+            TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
         TxTable, U16Table, U8Table,
     },
@@ -80,7 +80,7 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 27;
+pub const TX_LEN: usize = 26;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
@@ -348,7 +348,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_tx_type, TxType);
         is_tx_tag!(is_access_list_addresses_len, AccessListAddressesLen);
         is_tx_tag!(is_access_list_storage_keys_len, AccessListStorageKeysLen);
-        is_tx_tag!(is_access_list_gas_cost, AccessListGasCost);
         is_tx_tag!(is_access_list_rlc, AccessListRLC);
 
         let tx_id_unchanged = IsEqualChip::configure(
@@ -479,7 +478,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_tx_type(meta), Null),
                 (is_access_list_addresses_len(meta), Null),
                 (is_access_list_storage_keys_len(meta), Null),
-                (is_access_list_gas_cost(meta), Null),
                 (is_access_list_rlc(meta), RLC),
             ];
 
@@ -566,8 +564,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        // TODO: add constraints for AccessListAddressesLen, AccessListStorageKeysLen,
-        // AccessListGasCost and AccessListRLC.
+        // TODO: add constraints for AccessListAddressesLen, AccessListStorageKeysLen
+        // and AccessListRLC.
 
         //////////////////////////////////////////////////////////
         ///// Constraints for booleans that reducing degree  /////
@@ -1955,11 +1953,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 AccessListStorageKeysLen,
                 None,
                 Value::known(F::from(access_list_storage_key_size)),
-            ),
-            (
-                AccessListGasCost,
-                None,
-                Value::known(F::from(tx.access_list_gas_cost)),
             ),
             (
                 AccessListRLC,

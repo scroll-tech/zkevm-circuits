@@ -9,6 +9,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
+    evm_types::GasCost,
     geth_types::{access_list_size, TxType},
     Field,
 };
@@ -23,7 +24,6 @@ pub(crate) struct TxEip2930Gadget<F> {
     is_eip2930_tx: IsEqualGadget<F>,
     access_list_address_len: Cell<F>,
     access_list_storage_key_len: Cell<F>,
-    access_list_gas_cost: Cell<F>,
 }
 
 impl<F: Field> TxEip2930Gadget<F> {
@@ -34,12 +34,11 @@ impl<F: Field> TxEip2930Gadget<F> {
     ) -> Self {
         let is_eip2930_tx = IsEqualGadget::construct(cb, tx_type, (TxType::Eip2930 as u64).expr());
 
-        let [access_list_address_len, access_list_storage_key_len, access_list_gas_cost] = cb
-            .condition(is_eip2930_tx.expr(), |cb| {
-                let [address_len, storage_key_len, gas_cost] = [
+        let [access_list_address_len, access_list_storage_key_len] =
+            cb.condition(is_eip2930_tx.expr(), |cb| {
+                let [address_len, storage_key_len] = [
                     TxFieldTag::AccessListAddressesLen,
                     TxFieldTag::AccessListStorageKeysLen,
-                    TxFieldTag::AccessListGasCost,
                 ]
                 .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
@@ -73,14 +72,13 @@ impl<F: Field> TxEip2930Gadget<F> {
                     0.expr(),
                 );
 
-                [address_len, storage_key_len, gas_cost]
+                [address_len, storage_key_len]
             });
 
         Self {
             is_eip2930_tx,
             access_list_address_len,
             access_list_storage_key_len,
-            access_list_gas_cost,
         }
     }
 
@@ -110,11 +108,6 @@ impl<F: Field> TxEip2930Gadget<F> {
             offset,
             Value::known(F::from(access_list_storage_key_len)),
         )?;
-        self.access_list_gas_cost.assign(
-            region,
-            offset,
-            Value::known(F::from(tx.access_list_gas_cost)),
-        )?;
 
         Ok(())
     }
@@ -122,7 +115,9 @@ impl<F: Field> TxEip2930Gadget<F> {
     pub(crate) fn gas_cost(&self) -> Expression<F> {
         select::expr(
             self.is_eip2930_tx.expr(),
-            self.access_list_gas_cost.expr(),
+            self.access_list_address_len.expr() * GasCost::ACCESS_LIST_PER_ADDRESS.expr()
+                + self.access_list_storage_key_len.expr()
+                    * GasCost::ACCESS_LIST_PER_STORAGE_KEY.expr(),
             0.expr(),
         )
     }

@@ -179,8 +179,6 @@ pub enum TxFieldTag {
     AccessListAddressesLen,
     /// Access list all storage key count (EIP-2930)
     AccessListStorageKeysLen,
-    /// Gas cost for access list (EIP-2930)
-    AccessListGasCost,
     /// RLC of access list (EIP-2930)
     AccessListRLC,
     /// The block number in which this tx is included.
