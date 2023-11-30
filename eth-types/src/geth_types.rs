@@ -49,7 +49,7 @@ impl From<TxType> for u64 {
 impl TxType {
     /// If this type is L1Msg or not
     pub fn is_l1_msg(&self) -> bool {
-        matches!(*self, TxType::L1Msg)
+        matches!(*self, Self::L1Msg)
     }
 
     /// If this type is PreEip155
@@ -57,19 +57,19 @@ impl TxType {
         matches!(*self, TxType::PreEip155)
     }
 
-    /// If this type is Eip155 or not
+    /// If this type is EIP155 or not
     pub fn is_eip155_tx(&self) -> bool {
         matches!(*self, TxType::Eip155)
-    }
-
-    /// If this type is Eip2930 or not
-    pub fn is_eip2930(&self) -> bool {
-        matches!(*self, TxType::Eip2930)
     }
 
     /// If this type is Eip1559 or not
     pub fn is_eip1559(&self) -> bool {
         matches!(*self, TxType::Eip1559)
+    }
+
+    /// If this type is Eip2930 or not
+    pub fn is_eip2930(&self) -> bool {
+        matches!(*self, TxType::Eip2930)
     }
 
     /// Get the type of transaction
@@ -417,3 +417,19 @@ impl GethData {
     }
 }
 */
+
+/// Returns the number of addresses and the cumulative number of storage keys in
+/// the entire access list.
+pub fn access_list_size(access_list: &Option<AccessList>) -> (u64, u64) {
+    access_list.as_ref().map_or_else(
+        || (0, 0),
+        |list| {
+            (
+                list.0.len() as u64,
+                list.0
+                    .iter()
+                    .fold(0, |acc, item| acc + item.storage_keys.len()) as u64,
+            )
+        },
+    )
+}

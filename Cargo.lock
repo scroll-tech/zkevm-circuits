@@ -2460,18 +2460,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2wrong"
-version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2wrong?branch=halo2-ecc-snark-verifier-0323#939d679cb16abf0e820bd606248661e400328afa"
-dependencies = [
- "group 0.12.1",
- "halo2_proofs",
- "num-bigint",
- "num-integer",
- "num-traits",
-]
-
-[[package]]
 name = "handlebars"
 version = "4.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3035,20 +3023,6 @@ dependencies = [
  "thiserror",
  "thread-id",
  "winapi",
-]
-
-[[package]]
-name = "maingate"
-version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2wrong?branch=halo2-ecc-snark-verifier-0323#939d679cb16abf0e820bd606248661e400328afa"
-dependencies = [
- "group 0.12.1",
- "halo2wrong",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand",
- "subtle",
 ]
 
 [[package]]
@@ -5826,7 +5800,6 @@ dependencies = [
  "keccak256",
  "lazy_static",
  "log",
- "maingate",
  "misc-precompiled-circuit",
  "mock",
  "mpt-zktrie",
