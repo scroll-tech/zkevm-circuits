@@ -45,6 +45,7 @@ use eth_types::{
         TxType,
         TxType::{Eip155, L1Msg, PreEip155, Eip2930, Eip1559},
     },
+    evm_types::GasCost as GS,
     sign_types::SignData,
     Address, Field, ToAddress, ToBigEndian, ToScalar,
 };
@@ -2284,51 +2285,129 @@ impl<F: Field> TxCircuitConfig<F> {
     ) -> Result<(), Error> {
         // tx1559_debug
         // assign to access_list related columns
-        let mut gas_cost_acc = 0;
-        let mut rlc = challenges.keccak_input().map(|_| F::zero());
-        for (idx, byte) in tx.call_data.iter().enumerate() {
-            let is_final = idx == (tx.call_data.len() - 1);
-            gas_cost_acc += if *byte == 0 { 4 } else { 16 };
-            rlc = rlc
-                .zip(challenges.keccak_input())
-                .map(|(rlc, keccak_input)| rlc * keccak_input + F::from(*byte as u64));
-            // the tx id of next row
-            let tx_id_next = if !is_final {
-                tx.id
-            } else {
-                next_tx.map_or(0, |tx| tx.id)
-            };
 
-            self.assign_common_part(
-                region,
-                *offset,
-                Some(tx),
-                tx_id_next,
-                CallData,
-                idx as u64,
-                Value::known(F::from(*byte as u64)),
-            )?;
+        if tx.access_list.0.len() > 0 {
+            // initialize gas counting
+            let mut gas_cost_acc = 0;
 
-            // 1st phase columns
-            for (col_anno, col, col_val) in [
-                ("block_num", self.block_num, F::from(tx.block_number)),
-                ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64)),
-                ("is_final", self.is_final, F::from(is_final as u64)),
-                (
-                    "gas_cost_acc",
-                    self.calldata_gas_cost_acc,
-                    F::from(gas_cost_acc),
-                ),
-                ("byte", self.calldata_byte, F::from(*byte as u64)),
-                ("is_calldata", self.is_calldata, F::one()),
-            ] {
-                region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
+            // idx helper
+            let mut sks_acc: usize = 0;
+
+            // row counting for determining when tx_id changes
+            let total_rows: usize = tx.access_list.0.iter().fold(0, |acc, al| {
+                acc + 1 + al.storage_keys.len()
+            });
+            let mut curr_row: usize = 0;
+
+            // initialize access list section rlc
+            let mut section_rlc = challenges.keccak_input().map(|_| F::zero());
+            // depending on prev row, the accumulator advances by different magnitude
+            let r20 = challenges.keccak_input().map(|f| f.pow(&[20, 0, 0, 0]) );
+            let r32 = challenges.keccak_input().map(|f| f.pow(&[32, 0, 0, 0]) );
+
+            for (al_idx, al) in tx.access_list.0.iter().enumerate() {
+                curr_row += 1;
+
+                gas_cost_acc += GS::ACCESS_LIST_PER_ADDRESS.as_u64();
+                let field_rlc = rlc_be_bytes(&al.address.to_fixed_bytes(), challenges.keccak_input());
+                section_rlc = section_rlc * r32 + field_rlc;
+
+                let tx_id_next = if curr_row == total_rows {
+                    next_tx.map_or(0, |tx| tx.id)
+                } else {
+                    tx.id
+                };
+
+                self.assign_common_part(
+                    region,
+                    *offset,
+                    Some(tx),
+                    tx_id_next,
+                    TxFieldTag::AccessListAddress,
+                    al_idx as u64,
+                    Value::known(al.address.to_scalar().unwrap()),
+                )?;
+
+                // 1st phase columns
+                for (col_anno, col, col_val) in [
+                    ("al_idx", self.al_idx, F::from((al_idx + 1) as u64)),
+                    ("sk_idx", self.sk_idx, F::from(0 as u64)),
+                    ("sks_acc", self.sks_acc, F::from(sks_acc as u64)),
+
+                    // ("block_num", self.block_num, F::from(tx.block_number)),
+                    // ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64)),
+                    // ("is_final", self.is_final, F::from(is_final as u64)),
+                    // (
+                    //     "gas_cost_acc",
+                    //     self.calldata_gas_cost_acc,
+                    //     F::from(gas_cost_acc),
+                    // ),
+                    // ("byte", self.calldata_byte, F::from(*byte as u64)),
+                    // ("is_calldata", self.is_calldata, F::one()),
+                ] {
+                    region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
+                }
+
+                // 2nd phase columns
+                region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || section_rlc)?;
+
+                *offset += 1;
+
+                for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
+                    curr_row += 1;
+
+                    sks_acc += 1;
+
+                    gas_cost_acc += GS::ACCESS_LIST_PER_STORAGE_KEY.as_u64();
+                    let field_rlc = rlc_be_bytes(&sk.to_fixed_bytes(), challenges.keccak_input());
+                    section_rlc = if sk_idx > 0 {
+                        section_rlc * r32 + field_rlc
+                    } else {
+                        section_rlc * r20 + field_rlc
+                    };
+
+                    let tx_id_next = if curr_row == total_rows {
+                        next_tx.map_or(0, |tx| tx.id)
+                    } else {
+                        tx.id
+                    };
+
+                    self.assign_common_part(
+                        region,
+                        *offset,
+                        Some(tx),
+                        tx_id_next,
+                        TxFieldTag::AccessListStorageKey,
+                        sks_acc as u64,
+                        rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word())
+                    )?;
+
+                    // 1st phase columns
+                    for (col_anno, col, col_val) in [
+                        ("al_idx", self.al_idx, F::from((al_idx + 1) as u64)),
+                        ("sk_idx", self.sk_idx, F::from((sk_idx + 1) as u64)),
+                        ("sks_acc", self.sks_acc, F::from(sks_acc as u64)),
+
+                        // ("block_num", self.block_num, F::from(tx.block_number)),
+                        // ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64)),
+                        // ("is_final", self.is_final, F::from(is_final as u64)),
+                        // (
+                        //     "gas_cost_acc",
+                        //     self.calldata_gas_cost_acc,
+                        //     F::from(gas_cost_acc),
+                        // ),
+                        // ("byte", self.calldata_byte, F::from(*byte as u64)),
+                        // ("is_calldata", self.is_calldata, F::one()),
+                    ] {
+                        region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
+                    }
+
+                    // 2nd phase columns
+                    region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || section_rlc)?;
+
+                    *offset += 1;
+                }
             }
-
-            // 2nd phase columns
-            region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || rlc)?;
-
-            *offset += 1;
         }
 
         Ok(())
