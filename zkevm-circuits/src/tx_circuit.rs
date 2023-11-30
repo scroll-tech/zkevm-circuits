@@ -19,10 +19,10 @@ use crate::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
-            AccessListAddressesLen, AccessListGasCost, AccessListStorageKeysLen, BlockNumber,
-            CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress, CallerAddress,
-            ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength,
-            TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+            AccessListAddressesLen, AccessListGasCost, AccessListRLC, AccessListStorageKeysLen,
+            BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
+            CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV,
+            TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
         TxTable, U16Table, U8Table,
     },
@@ -49,7 +49,7 @@ use eth_types::{
     sign_types::SignData,
     Address, Field, ToAddress, ToBigEndian, ToScalar,
 };
-use ethers_core::utils::keccak256;
+use ethers_core::utils::{keccak256, rlp::Encodable};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -80,7 +80,7 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 26;
+pub const TX_LEN: usize = 27;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
@@ -349,6 +349,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_access_list_addresses_len, AccessListAddressesLen);
         is_tx_tag!(is_access_list_storage_keys_len, AccessListStorageKeysLen);
         is_tx_tag!(is_access_list_gas_cost, AccessListGasCost);
+        is_tx_tag!(is_access_list_rlc, AccessListRLC);
 
         let tx_id_unchanged = IsEqualChip::configure(
             meta,
@@ -479,6 +480,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_access_list_addresses_len(meta), Null),
                 (is_access_list_storage_keys_len(meta), Null),
                 (is_access_list_gas_cost(meta), Null),
+                (is_access_list_rlc(meta), RLC),
             ];
 
             cb.require_boolean(
@@ -564,8 +566,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        // TODO: add constraints for AccessListAddressesLen, AccessListStorageKeysLen and
-        // AccessListGasCost.
+        // TODO: add constraints for AccessListAddressesLen, AccessListStorageKeysLen,
+        // AccessListGasCost and AccessListRLC.
 
         //////////////////////////////////////////////////////////
         ///// Constraints for booleans that reducing degree  /////
@@ -1958,6 +1960,23 @@ impl<F: Field> TxCircuitConfig<F> {
                 AccessListGasCost,
                 None,
                 Value::known(F::from(tx.access_list_gas_cost)),
+            ),
+            (
+                AccessListRLC,
+                Some(RlpTableInputValue {
+                    tag: RLC,
+                    is_none: false,
+                    be_bytes_len: 0,
+                    be_bytes_rlc: zero_rlc,
+                }),
+                // TODO: need to check if it's correct with RLP.
+                rlc_be_bytes(
+                    &tx.access_list
+                        .as_ref()
+                        .map(|access_list| access_list.rlp_bytes())
+                        .unwrap_or_default(),
+                    keccak_input,
+                ),
             ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];
