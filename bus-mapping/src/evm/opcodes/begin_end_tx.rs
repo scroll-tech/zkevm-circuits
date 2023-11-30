@@ -16,7 +16,7 @@ use eth_types::{
         gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
         GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
     },
-    geth_types::access_list_address_and_storage_key_sizes,
+    geth_types::access_list_size,
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -629,8 +629,7 @@ fn gen_tx_eip2930_ops(
     }
 
     let tx_id = NumberOrHash::Number(state.tx_ctx.id());
-    let (address_size, storage_key_size) =
-        access_list_address_and_storage_key_sizes(&state.tx.access_list);
+    let (address_size, storage_key_size) = access_list_size(&state.tx.access_list);
 
     // Add copy event for access-list addresses.
     let rw_counter_start = state.block_ctx.rwc;

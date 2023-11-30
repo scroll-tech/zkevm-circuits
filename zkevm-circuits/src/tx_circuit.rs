@@ -43,7 +43,7 @@ use crate::{
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{
     geth_types::{
-        access_list_address_and_storage_key_sizes, TxType,
+        access_list_size, TxType,
         TxType::{Eip155, L1Msg, PreEip155},
     },
     sign_types::SignData,
@@ -1751,7 +1751,7 @@ impl<F: Field> TxCircuitConfig<F> {
             get_rlp_len_tag_length(&tx.rlp_unsigned)
         };
         let (access_list_address_size, access_list_storage_key_size) =
-            access_list_address_and_storage_key_sizes(&tx.access_list);
+            access_list_size(&tx.access_list);
 
         // fixed_rows of a tx
         let fixed_rows = vec![

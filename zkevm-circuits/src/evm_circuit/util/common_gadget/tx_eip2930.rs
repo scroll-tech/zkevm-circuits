@@ -9,7 +9,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
-    geth_types::{access_list_address_and_storage_key_sizes, TxType},
+    geth_types::{access_list_size, TxType},
     Field,
 };
 use halo2_proofs::{
@@ -98,7 +98,7 @@ impl<F: Field> TxEip2930Gadget<F> {
         )?;
 
         let (access_list_address_len, access_list_storage_key_len) =
-            access_list_address_and_storage_key_sizes(&tx.access_list);
+            access_list_size(&tx.access_list);
 
         self.access_list_address_len.assign(
             region,

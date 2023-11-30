@@ -408,8 +408,9 @@ impl GethData {
 }
 */
 
-/// Return access list address size and all storage key size.
-pub fn access_list_address_and_storage_key_sizes(access_list: &Option<AccessList>) -> (u64, u64) {
+/// Returns the number of addresses and the cumulative number of storage keys in
+/// the entire access list.
+pub fn access_list_size(access_list: &Option<AccessList>) -> (u64, u64) {
     access_list.as_ref().map_or_else(
         || (0, 0),
         |list| {

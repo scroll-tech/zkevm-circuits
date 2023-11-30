@@ -18,7 +18,7 @@ use crate::{
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
-    geth_types::{access_list_address_and_storage_key_sizes, TxType, TxType::PreEip155},
+    geth_types::{access_list_size, TxType, TxType::PreEip155},
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
@@ -161,7 +161,7 @@ impl Transaction {
         let tx_hash_be_bytes = keccak256(&self.rlp_signed);
         let tx_sign_hash_be_bytes = keccak256(&self.rlp_unsigned);
         let (access_list_address_size, access_list_storage_key_size) =
-            access_list_address_and_storage_key_sizes(&self.access_list);
+            access_list_size(&self.access_list);
 
         let ret = vec![
             [
