@@ -26,7 +26,6 @@ itertools.workspace = true
 lazy_static.workspace = true
 mpt-zktrie = { path = "../zktrie" }
 keccak256 = { path = "../keccak256"}
-sha256-circuit = { package = "sha256", path = "../sha256"}
 log.workspace = true
 env_logger.workspace = true
 serde.workspace = true
@@ -37,6 +36,7 @@ misc-precompiled-circuit = { package = "misc-precompiled-circuit", git = "https:
 
 halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", tag = "v0.1.5", default-features=false, features=["halo2-pse","display"] }
 halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", tag = "v0.1.5", default-features=false, features=["halo2-pse","display"] }
+halo2_gadgets = { git = "https://github.com/scroll-tech/halo2.git", branch = "develop", features = ["unstable"] }
 
 maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
 

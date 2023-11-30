@@ -7,12 +7,13 @@ use halo2_proofs::{
     plonk::{Any, Column, ConstraintSystem, Error, Expression},
 };
 
-use sha256_circuit::{
-    circuit::{Hasher, SHA256Table as TableTrait},
-    BLOCK_SIZE,
-};
+mod circuit;
+#[cfg(test)]
+mod test;
 
-pub use sha256_circuit::circuit::CircuitConfig;
+pub use circuit::CircuitConfig;
+use circuit::{Hasher, SHA256Table as TableTrait};
+pub use halo2_gadgets::sha256::BLOCK_SIZE;
 
 use crate::{
     table::{LookupTable, SHA256Table},
