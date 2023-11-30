@@ -15,14 +15,14 @@ use crate::{
         Tag::{EndObject, EndVector},
     },
 };
-use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
+use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee, Access};
 use eth_types::{
     evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
     geth_types::{TxType, TxType::PreEip155},
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
-    Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
+    Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256, AccessList,
 };
 use ethers_core::{types::TransactionRequest, utils::keccak256};
 use halo2_proofs::{
@@ -67,6 +67,8 @@ pub struct Transaction {
     pub call_data_length: usize,
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
+    /// access list (EIP 2930)
+    pub access_list: AccessList,
     /// The gas cost for access list (EIP 2930)
     pub access_list_gas_cost: u64,
     /// The gas cost for rlp-encoded bytes of unsigned tx
@@ -1003,6 +1005,7 @@ impl From<MockTransaction> for Transaction {
             call_data: mock_tx.input.to_vec(),
             call_data_length: mock_tx.input.len(),
             call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
+            access_list: mock_tx.access_list.clone(),
             access_list_gas_cost: tx_access_list_gas_cost(&Some(mock_tx.access_list)),
             tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
             chain_id: mock_tx.chain_id,
@@ -1055,6 +1058,7 @@ pub(super) fn tx_convert(
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
         call_data_gas_cost: tx_data_gas_cost(&tx.input),
+        access_list: tx.access_list.clone().unwrap_or_default(),
         access_list_gas_cost: tx_access_list_gas_cost(&tx.access_list),
         tx_data_gas_cost: tx_gas_cost,
         chain_id,

@@ -32,7 +32,7 @@ use crate::{
     witness,
     witness::{
         rlp_fsm::{Tag, ValueTagLength},
-        Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
+        Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155, TxSignEip2930, TxSignEip1559, TxHashEip2930, TxHashEip1559},
         RlpTag,
         RlpTag::{GasCost, Len, Null, RLC},
         Tag::TxType as RLPTxType,
@@ -43,7 +43,7 @@ use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{
     geth_types::{
         TxType,
-        TxType::{Eip155, L1Msg, PreEip155},
+        TxType::{Eip155, L1Msg, PreEip155, Eip2930, Eip1559},
     },
     sign_types::SignData,
     Address, Field, ToAddress, ToBigEndian, ToScalar,
@@ -144,6 +144,8 @@ pub struct TxCircuitConfig<F: Field> {
     is_calldata: Column<Advice>,
     is_caller_address: Column<Advice>,
     is_l1_msg: Column<Advice>,
+    is_eip2930: Column<Advice>,
+    is_eip1559: Column<Advice>,
     is_chain_id: Column<Advice>,
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
 
@@ -278,6 +280,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // booleans to reduce degree
         let is_l1_msg = meta.advice_column();
+        let is_eip2930 = meta.advice_column();
+        let is_eip1559 = meta.advice_column();
         let is_calldata = meta.advice_column();
         let is_caller_address = meta.advice_column();
         let is_chain_id = meta.advice_column();
@@ -488,6 +492,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     usize::from(PreEip155).expr(),
                     usize::from(Eip155).expr(),
                     usize::from(L1Msg).expr(),
+                    usize::from(Eip2930).expr(),
+                    usize::from(Eip1559).expr(),
                 ],
             );
 
@@ -612,13 +618,25 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        meta.create_gate("is_l1_msg", |meta| {
+        meta.create_gate("distinguish tx type: is_l1_msg, is_eip2930, is_eip1559", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
                 "is_l1_msg = (tx_type == L1Msg)",
                 meta.query_advice(is_l1_msg, Rotation::cur()),
                 tx_type_bits.value_equals(L1Msg, Rotation::cur())(meta),
+            );
+
+            cb.require_equal(
+                "is_eip2930 = (tx_type == Eip2930)",
+                meta.query_advice(is_eip2930, Rotation::cur()),
+                tx_type_bits.value_equals(Eip2930, Rotation::cur())(meta),
+            );
+
+            cb.require_equal(
+                "is_eip1559 = (tx_type == Eip1559)",
+                meta.query_advice(is_eip1559, Rotation::cur()),
+                tx_type_bits.value_equals(Eip1559, Rotation::cur())(meta),
             );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -647,14 +665,21 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             let is_tag_in_tx_sign = sum::expr([
                 is_nonce(meta),
-                is_gas_price(meta),
+                and::expr([
+                    not::expr(meta.query_advice(is_eip1559, Rotation::cur())),
+                    is_gas_price(meta),
+                ]),
                 is_gas(meta),
                 is_to(meta),
                 is_value(meta),
                 is_data_rlc(meta),
                 and::expr([
                     meta.query_advice(is_chain_id, Rotation::cur()),
-                    tx_type_bits.value_equals(Eip155, Rotation::cur())(meta),
+                    sum::expr([
+                        tx_type_bits.value_equals(Eip155, Rotation::cur())(meta),
+                        meta.query_advice(is_eip2930, Rotation::cur()),
+                        meta.query_advice(is_eip1559, Rotation::cur()),
+                    ])
                 ]),
                 is_sign_length(meta),
                 is_sign_rlc(meta),
@@ -680,7 +705,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             let is_tag_in_tx_hash = sum::expr([
                 is_nonce(meta),
-                is_gas_price(meta),
+                and::expr([
+                    not::expr(meta.query_advice(is_eip1559, Rotation::cur())),
+                    is_gas_price(meta),
+                ]),
                 is_gas(meta),
                 is_to(meta),
                 is_value(meta),
@@ -770,6 +798,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_calldata,
             is_chain_id,
             is_l1_msg,
+            is_eip2930,
+            is_eip1559,
             sv_address,
             calldata_gas_cost_acc,
             calldata_rlc,
@@ -1367,6 +1397,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             num_all_txs_acc,
             total_l1_popped_before,
             is_l1_msg,
+            is_eip2930,
+            is_eip1559,
             is_chain_id,
             is_final,
             calldata_gas_cost_acc,
@@ -1401,6 +1433,8 @@ impl<F: Field> TxCircuitConfig<F> {
         is_calldata: Column<Advice>,
         is_chain_id: Column<Advice>,
         is_l1_msg_col: Column<Advice>,
+        is_eip2930: Column<Advice>,
+        is_eip1559: Column<Advice>,
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         calldata_rlc: Column<Advice>,
@@ -1563,7 +1597,9 @@ impl<F: Field> TxCircuitConfig<F> {
             let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
             let is_none = meta.query_advice(is_none, Rotation::cur());
             let sign_format = is_pre_eip155(meta) * TxSignPreEip155.expr()
-                + is_eip155(meta) * TxSignEip155.expr();
+                + is_eip155(meta) * TxSignEip155.expr()
+                + meta.query_advice(is_eip2930, Rotation::cur()) * TxSignEip2930.expr()
+                + meta.query_advice(is_eip1559, Rotation::cur()) * TxSignEip1559.expr();
 
             // q_enable, tx_id, format, rlp_tag, tag_value, is_output, is_none
             vec![
@@ -1604,7 +1640,9 @@ impl<F: Field> TxCircuitConfig<F> {
             let is_none = meta.query_advice(is_none, Rotation::cur());
             let hash_format = is_pre_eip155(meta) * TxHashPreEip155.expr()
                 + is_eip155(meta) * TxHashEip155.expr()
-                + is_l1_msg(meta) * L1MsgHash.expr();
+                + is_l1_msg(meta) * L1MsgHash.expr()
+                + meta.query_advice(is_eip2930, Rotation::cur()) * TxHashEip2930.expr()
+                + meta.query_advice(is_eip1559, Rotation::cur()) * TxHashEip1559.expr();
 
             vec![
                 1.expr(), // q_enable = true
@@ -1949,7 +1987,8 @@ impl<F: Field> TxCircuitConfig<F> {
             ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];
-
+        // tx1559_debug
+        // log::trace!("=> [Execution TxCircuit] assign - fixed_rows: {:?}", fixed_rows);
         for (tx_tag, rlp_input, tx_value) in fixed_rows {
             let rlp_tag = rlp_input.clone().map_or(Null, |input| input.tag);
             let rlp_is_none = rlp_input.clone().map_or(false, |input| input.is_none);
@@ -1958,6 +1997,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 .clone()
                 .map_or(zero_rlc, |input| input.be_bytes_rlc);
             let is_l1_msg = tx.tx_type.is_l1_msg();
+            let is_eip2930 = tx.tx_type.is_eip2930();
+            let is_eip1559 = tx.tx_type.is_eip1559();
             // it's the tx_id of next row
             let tx_id_next = if tx_tag == BlockNumber {
                 next_tx.map_or(0, |tx| tx.id)
@@ -2037,6 +2078,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     F::from((tx_tag == CallerAddress) as u64),
                 ),
             ] {
+                // tx1559_debug
+                // log::trace!("=> [Execution TxCircuit] assign - assign_fixed_rows - anno: {:?}, offset: {:?}", col_anno, offset);
                 region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
             }
 
@@ -2062,7 +2105,6 @@ impl<F: Field> TxCircuitConfig<F> {
             conditions.insert(LookupCondition::RlpSignTag, {
                 let sign_set = [
                     Nonce,
-                    GasPrice,
                     Gas,
                     CalleeAddress,
                     TxFieldTag::Value,
@@ -2072,14 +2114,14 @@ impl<F: Field> TxCircuitConfig<F> {
                 ];
                 let is_tag_in_set = sign_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 let case1 = is_tag_in_set && !is_l1_msg;
-                let case2 = tx.tx_type.is_eip155_tx() && (tx_tag == ChainID);
-                F::from((case1 || case2) as u64)
+                let case2 = !tx.tx_type.is_pre_eip155() && (tx_tag == ChainID);
+                let case3 = !tx.tx_type.is_eip1559() && (tx_tag == GasPrice);
+                F::from((case1 || case2 || case3) as u64)
             });
             // 3. lookup to RLP table for hashing (non L1 msg)
             conditions.insert(LookupCondition::RlpHashTag, {
                 let hash_set = [
                     Nonce,
-                    GasPrice,
                     Gas,
                     CalleeAddress,
                     TxFieldTag::Value,
@@ -2092,7 +2134,9 @@ impl<F: Field> TxCircuitConfig<F> {
                     TxHashRLC,
                 ];
                 let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
-                F::from((!is_l1_msg && is_tag_in_set) as u64)
+                let case1 = is_tag_in_set && !is_l1_msg;
+                let case3 = !tx.tx_type.is_eip1559() && (tx_tag == GasPrice);
+                F::from((case1 || case3) as u64)
             });
             // 4. lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
@@ -2277,6 +2321,17 @@ impl<F: Field> TxCircuitConfig<F> {
                 self.is_l1_msg,
                 F::from(tx_type.is_l1_msg() as u64),
             ),
+            (
+                "is_eip2930",
+                self.is_eip2930,
+                F::from(tx_type.is_eip2930() as u64),
+            ),
+            (
+                "is_eip1559",
+                self.is_eip1559,
+                F::from(tx_type.is_eip1559() as u64),
+            ),
+
         ] {
             region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
         }
@@ -2581,6 +2636,8 @@ impl<F: Field> TxCircuit<F> {
 
                 // 1. Empty entry
                 region.assign_fixed(|| "q_first", config.q_first, 0, || Value::known(F::one()))?;
+                // tx1559_debug
+                // log::trace!("=> [Execution TxCircuit] assign - assign_null_row - offset: {:?}", offset);
                 config.assign_null_row(&mut region, &mut offset)?;
 
                 // 2. Assign all tx fields except for call data
