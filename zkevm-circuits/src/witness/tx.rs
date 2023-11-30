@@ -25,7 +25,10 @@ use eth_types::{
     AccessList, Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord,
     Word, H256,
 };
-use ethers_core::{types::TransactionRequest, utils::keccak256};
+use ethers_core::{
+    types::TransactionRequest,
+    utils::{keccak256, rlp::Encodable},
+};
 use halo2_proofs::{
     circuit::Value,
     halo2curves::{group::ff::PrimeField, secp256k1},
@@ -321,7 +324,21 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
                 Value::known(F::zero()),
-                Value::known(F::from(self.access_list_gas_cost)),
+                rlc_be_bytes(&self.rlp_signed, challenges.keccak_input()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::AccessListRLC as u64)),
+                Value::known(F::zero()),
+                // TODO: need to check if it's correct with RLP.
+                rlc_be_bytes(
+                    &self
+                        .access_list
+                        .as_ref()
+                        .map(|access_list| access_list.rlp_bytes())
+                        .unwrap_or_default(),
+                    challenges.keccak_input(),
+                ),
             ],
             [
                 Value::known(F::from(self.id as u64)),
