@@ -190,6 +190,11 @@ pub struct TxCircuitConfig<F: Field> {
     rlp_table: RlpTable,
     keccak_table: KeccakTable,
 
+    // Access list columns
+    al_idx: Column<Advice>,
+    sk_idx: Column<Advice>,
+    sks_acc: Column<Advice>,
+
     _marker: PhantomData<F>,
 }
 
@@ -296,6 +301,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         .into_iter()
         .map(|condition| (condition, meta.advice_column()))
         .collect::<HashMap<LookupCondition, Column<Advice>>>();
+
+        // access list columns
+        let al_idx = meta.advice_column();
+        let sk_idx = meta.advice_column();
+        let sks_acc = meta.advice_column();
 
         // TODO: add lookup to SignVerify table for sv_address
         let sv_address = meta.advice_column();
@@ -1411,6 +1421,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             keccak_table,
             rlp_table,
             is_tag_block_num,
+            al_idx,
+            sk_idx,
+            sks_acc,
             _marker: PhantomData,
             num_txs,
         }
@@ -2210,6 +2223,67 @@ impl<F: Field> TxCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         // assign to call_data related columns
+        let mut gas_cost_acc = 0;
+        let mut rlc = challenges.keccak_input().map(|_| F::zero());
+        for (idx, byte) in tx.call_data.iter().enumerate() {
+            let is_final = idx == (tx.call_data.len() - 1);
+            gas_cost_acc += if *byte == 0 { 4 } else { 16 };
+            rlc = rlc
+                .zip(challenges.keccak_input())
+                .map(|(rlc, keccak_input)| rlc * keccak_input + F::from(*byte as u64));
+            // the tx id of next row
+            let tx_id_next = if !is_final {
+                tx.id
+            } else {
+                next_tx.map_or(0, |tx| tx.id)
+            };
+
+            self.assign_common_part(
+                region,
+                *offset,
+                Some(tx),
+                tx_id_next,
+                CallData,
+                idx as u64,
+                Value::known(F::from(*byte as u64)),
+            )?;
+
+            // 1st phase columns
+            for (col_anno, col, col_val) in [
+                ("block_num", self.block_num, F::from(tx.block_number)),
+                ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64)),
+                ("is_final", self.is_final, F::from(is_final as u64)),
+                (
+                    "gas_cost_acc",
+                    self.calldata_gas_cost_acc,
+                    F::from(gas_cost_acc),
+                ),
+                ("byte", self.calldata_byte, F::from(*byte as u64)),
+                ("is_calldata", self.is_calldata, F::one()),
+            ] {
+                region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
+            }
+
+            // 2nd phase columns
+            region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || rlc)?;
+
+            *offset += 1;
+        }
+
+        Ok(())
+    }
+
+    /// Assign access list rows of each tx
+    fn assign_access_list_rows(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: &mut usize,
+        tx: &Transaction,
+        next_tx: Option<&Transaction>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        // tx1559_debug
+        // assign to access_list related columns
         let mut gas_cost_acc = 0;
         let mut rlc = challenges.keccak_input().map(|_| F::zero());
         for (idx, byte) in tx.call_data.iter().enumerate() {
