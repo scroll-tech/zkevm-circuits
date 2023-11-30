@@ -183,10 +183,6 @@ pub enum TxFieldTag {
     MaxPriorityFeePerGas,
     /// Max Fee Per Gas (EIP1559)
     MaxFeePerGas,
-    /// Value is equal to tx.access_list.len()
-    AccessListAddressesLen,
-    /// Value is equal to tx.access_list.iter().map(|al| al.storage_keys.len()).sum()
-    AccessListStorageKeysLen,
     /// RLC of big endian bytes of tx.access_list.
     /// Used to make sure that no item in tx.access_list is skipped. 
     AccessListRLC,

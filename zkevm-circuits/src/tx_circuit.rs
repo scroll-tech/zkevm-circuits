@@ -22,6 +22,7 @@ use crate::{
             AccessListGasCost, BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC,
             CalleeAddress, CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS,
             SigV, TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+            AccessListAddress, AccessListStorageKey,
         },
         TxTable, U16Table, U8Table,
     },
@@ -361,6 +362,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_hash, TxHash);
         is_tx_tag!(is_block_num, BlockNumber);
         is_tx_tag!(is_tx_type, TxType);
+        is_tx_tag!(is_access_list_address, AccessListAddress);
+        is_tx_tag!(is_access_list_storage_key, AccessListStorageKey);
+
 
         let tx_id_unchanged = IsEqualChip::configure(
             meta,
@@ -477,6 +481,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_hash_rlc(meta), RLC),
                 (is_caller_addr(meta), Tag::Sender.into()),
                 (is_tx_gas_cost(meta), GasCost),
+                (is_access_list_address(meta), Tag::AccessListAddress.into()),
+                (is_access_list_storage_key(meta), Tag::AccessListStorageKey.into()),
                 // tx tags which correspond to Null
                 (is_null(meta), Null),
                 (is_create(meta), Null),
@@ -2330,12 +2336,13 @@ impl<F: Field> TxCircuitConfig<F> {
 
                 // 1st phase columns
                 for (col_anno, col, col_val) in [
+                    ("block_num", self.block_num, F::from(tx.block_number)),
                     ("al_idx", self.al_idx, F::from((al_idx + 1) as u64)),
                     ("sk_idx", self.sk_idx, F::from(0 as u64)),
                     ("sks_acc", self.sks_acc, F::from(sks_acc as u64)),
+                    ("rlp_tag", self.rlp_tag, F::from(usize::from(Tag::AccessListAddress) as u64)),
 
-                    // ("block_num", self.block_num, F::from(tx.block_number)),
-                    // ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64)),
+                    
                     // ("is_final", self.is_final, F::from(is_final as u64)),
                     // (
                     //     "gas_cost_acc",
@@ -2384,12 +2391,13 @@ impl<F: Field> TxCircuitConfig<F> {
 
                     // 1st phase columns
                     for (col_anno, col, col_val) in [
+                        ("block_num", self.block_num, F::from(tx.block_number)),
                         ("al_idx", self.al_idx, F::from((al_idx + 1) as u64)),
                         ("sk_idx", self.sk_idx, F::from((sk_idx + 1) as u64)),
                         ("sks_acc", self.sks_acc, F::from(sks_acc as u64)),
+                        ("rlp_tag", self.rlp_tag, F::from(usize::from(Tag::AccessListStorageKey) as u64)),
 
-                        // ("block_num", self.block_num, F::from(tx.block_number)),
-                        // ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64)),
+                        
                         // ("is_final", self.is_final, F::from(is_final as u64)),
                         // (
                         //     "gas_cost_acc",
@@ -2891,6 +2899,13 @@ impl<F: Field> TxCircuit<F> {
                         .skip(i + 1)
                         .find(|tx| !tx.call_data.is_empty());
                     config.assign_calldata_rows(
+                        &mut region,
+                        &mut offset,
+                        tx,
+                        next_tx,
+                        challenges,
+                    )?;
+                    config.assign_access_list_rows(
                         &mut region,
                         &mut offset,
                         tx,
