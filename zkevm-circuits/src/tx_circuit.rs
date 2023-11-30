@@ -2636,8 +2636,6 @@ impl<F: Field> TxCircuit<F> {
 
                 // 1. Empty entry
                 region.assign_fixed(|| "q_first", config.q_first, 0, || Value::known(F::one()))?;
-                // tx1559_debug
-                // log::trace!("=> [Execution TxCircuit] assign - assign_null_row - offset: {:?}", offset);
                 config.assign_null_row(&mut region, &mut offset)?;
 
                 // 2. Assign all tx fields except for call data

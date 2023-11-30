@@ -156,7 +156,7 @@ impl Transaction {
     pub fn table_assignments_fixed<F: Field>(
         &self,
         challenges: Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 4]> {
+    ) -> Vec<[Value<F>; 5]> {
         let tx_hash_be_bytes = keccak256(&self.rlp_signed);
         let tx_sign_hash_be_bytes = keccak256(&self.rlp_unsigned);
 
@@ -166,6 +166,7 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::Nonce as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.nonce)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -173,19 +174,23 @@ impl Transaction {
                 Value::known(F::zero()),
                 challenges
                     .evm_word()
-                    .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
+                    .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)
+                ),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Gas as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.gas)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallerAddress as u64)),
                 Value::known(F::zero()),
                 Value::known(self.caller_address.to_scalar().unwrap()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -197,12 +202,14 @@ impl Transaction {
                         .to_scalar()
                         .unwrap(),
                 ),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::IsCreate as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.is_create as u64)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -210,109 +217,128 @@ impl Transaction {
                 Value::known(F::zero()),
                 challenges
                     .evm_word()
-                    .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
+                    .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)
+                ),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallDataRLC as u64)),
                 Value::known(F::zero()),
                 rlc_be_bytes(&self.call_data, challenges.keccak_input()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallDataLength as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.call_data_length as u64)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.call_data_gas_cost)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.access_list_gas_cost)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxDataGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.tx_data_gas_cost)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::ChainID as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.chain_id)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::SigV as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.v)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::SigR as u64)),
                 Value::known(F::zero()),
                 rlc_be_bytes(&self.r.to_be_bytes(), challenges.evm_word()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::SigS as u64)),
                 Value::known(F::zero()),
                 rlc_be_bytes(&self.s.to_be_bytes(), challenges.evm_word()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxSignLength as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.rlp_unsigned.len() as u64)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxSignRLC as u64)),
                 Value::known(F::zero()),
                 rlc_be_bytes(&self.rlp_unsigned, challenges.keccak_input()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxSignHash as u64)),
                 Value::known(F::zero()),
                 rlc_be_bytes(&tx_sign_hash_be_bytes, challenges.evm_word()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxHashLength as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.rlp_signed.len() as u64)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxHashRLC as u64)),
                 Value::known(F::zero()),
                 rlc_be_bytes(&self.rlp_signed, challenges.keccak_input()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxHash as u64)),
                 Value::known(F::zero()),
                 rlc_be_bytes(&tx_hash_be_bytes, challenges.evm_word()),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxType as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.tx_type as u64)),
+                Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.block_number)),
+                Value::known(F::zero()),
             ],
         ];
 
@@ -323,7 +349,7 @@ impl Transaction {
     pub fn table_assignments_dyn<F: Field>(
         &self,
         _challenges: Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 4]> {
+    ) -> Vec<[Value<F>; 5]> {
         self.call_data
             .iter()
             .enumerate()
@@ -333,9 +359,40 @@ impl Transaction {
                     Value::known(F::from(TxContextFieldTag::CallData as u64)),
                     Value::known(F::from(idx as u64)),
                     Value::known(F::from(*byte as u64)),
+                    Value::known(F::zero()),
                 ]
             })
             .collect()
+    }
+
+    /// Assignments for tx table access list
+    pub fn table_assignments_access_list_dyn<F: Field>(
+        &self,
+        challenges: Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 5]> {
+        let mut assignments: Vec<[Value<F>; 5]> = vec![];
+
+        for (al_idx, al) in self.access_list.0.iter().enumerate() {
+            assignments.push([
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::AccessListAddress as u64)),
+                Value::known(F::from((al_idx + 1) as u64)),
+                Value::known(al.address.to_scalar().unwrap()),
+                Value::known(al.address.to_scalar().unwrap()),
+            ]);
+
+            for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
+                assignments.push([
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::AccessListStorageKey as u64)),
+                    Value::known(F::from(sk_idx as u64)),
+                    rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word()),
+                    Value::known(al.address.to_scalar().unwrap()),
+                ]);
+            }
+        }
+
+        assignments
     }
 
     pub(crate) fn gen_rlp_witness<F: Field>(

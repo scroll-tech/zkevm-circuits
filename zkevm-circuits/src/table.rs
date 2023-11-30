@@ -179,6 +179,21 @@ pub enum TxFieldTag {
     TxType,
     /// The block number in which this tx is included.
     BlockNumber,
+    /// Max Priority Fee Per Gas (EIP1559)
+    MaxPriorityFeePerGas,
+    /// Max Fee Per Gas (EIP1559)
+    MaxFeePerGas,
+    /// Value is equal to tx.access_list.len()
+    AccessListAddressesLen,
+    /// Value is equal to tx.access_list.iter().map(|al| al.storage_keys.len()).sum()
+    AccessListStorageKeysLen,
+    /// RLC of big endian bytes of tx.access_list.
+    /// Used to make sure that no item in tx.access_list is skipped. 
+    AccessListRLC,
+    /// AccessListAddress,
+    AccessListAddress,
+    /// AccessListStorageKey
+    AccessListStorageKey,
 }
 impl_expr!(TxFieldTag);
 
@@ -204,6 +219,8 @@ pub struct TxTable {
     pub index: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
+    /// Access list address
+    pub access_list_address: Column<Advice>,
 }
 
 impl TxTable {
@@ -217,6 +234,7 @@ impl TxTable {
             tag,
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
+            access_list_address: meta.advice_column(),
         }
     }
 
@@ -253,7 +271,7 @@ impl TxTable {
             q_enable: Column<Fixed>,
             advice_columns: &[Column<Advice>],
             tag: &Column<Fixed>,
-            row: &[Value<F>; 4],
+            row: &[Value<F>; 5],
             msg: &str,
         ) -> Result<AssignedCell<F, F>, Error> {
             let mut value_cell = None;
@@ -296,17 +314,18 @@ impl TxTable {
                     self.q_enable,
                     &advice_columns,
                     &self.tag,
-                    &[(); 4].map(|_| Value::known(F::zero())),
+                    &[(); 5].map(|_| Value::known(F::zero())),
                     "all-zero",
                 )?;
                 offset += 1;
 
                 // Tx Table contains an initial region that has a size parametrized by max_txs
-                // with all the tx data except for calldata, and then a second
+                // with all the tx data except for calldata and access list, and then a second
                 // region that has a size parametrized by max_calldata with all
-                // the tx calldata.  This is required to achieve a constant fixed column tag
-                // regardless of the number of input txs or the calldata size of each tx.
-                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                // the tx calldata and access list.  This is required to achieve a constant fixed column tag
+                // regardless of the number of input txs or the calldata/access list size of each tx.
+                let mut calldata_assignments: Vec<[Value<F>; 5]> = Vec::new();
+                let mut access_list_assignments: Vec<[Value<F>; 5]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs = (txs.len()..max_txs)
                     .into_iter()
@@ -321,6 +340,7 @@ impl TxTable {
                     debug_assert_eq!(i + 1, tx.id);
                     let tx_data = tx.table_assignments_fixed(*challenges);
                     let tx_calldata = tx.table_assignments_dyn(*challenges);
+                    let tx_access_list = tx.table_assignments_access_list_dyn(*challenges);
                     for row in tx_data {
                         tx_value_cells.push(assign_row(
                             &mut region,
@@ -334,9 +354,23 @@ impl TxTable {
                         offset += 1;
                     }
                     calldata_assignments.extend(tx_calldata.iter());
+                    access_list_assignments.extend(tx_access_list.iter());
                 }
                 // Assign Tx calldata
                 for row in calldata_assignments.into_iter() {
+                    assign_row(
+                        &mut region,
+                        offset,
+                        self.q_enable,
+                        &advice_columns,
+                        &self.tag,
+                        &row,
+                        "",
+                    )?;
+                    offset += 1;
+                }
+                // Assign Tx access_list
+                for row in access_list_assignments.into_iter() {
                     assign_row(
                         &mut region,
                         offset,
