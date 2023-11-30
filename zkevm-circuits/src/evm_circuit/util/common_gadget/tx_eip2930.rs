@@ -46,9 +46,9 @@ impl<F: Field> TxEip2930Gadget<F> {
                 // Let copy-circuit to write the tx-table's access list addresses into rw-table.
                 cb.copy_table_lookup(
                     tx_id.expr(),
-                    CopyDataType::TxAccessListAddresses.expr(),
+                    CopyDataType::AccessListAddresses.expr(),
                     tx_id.expr(),
-                    CopyDataType::RwAccessListAddresses.expr(),
+                    CopyDataType::AccessListAddresses.expr(),
                     0.expr(),
                     address_len.expr(),
                     0.expr(),
@@ -61,9 +61,9 @@ impl<F: Field> TxEip2930Gadget<F> {
                 // Let copy-circuit to write the tx-table's access list storage keys into rw-table.
                 cb.copy_table_lookup(
                     tx_id.expr(),
-                    CopyDataType::TxAccessListStorageKeys.expr(),
+                    CopyDataType::AccessListStorageKeys.expr(),
                     tx_id.expr(),
-                    CopyDataType::RwAccessListStorageKeys.expr(),
+                    CopyDataType::AccessListStorageKeys.expr(),
                     0.expr(),
                     storage_key_len.expr(),
                     0.expr(),
