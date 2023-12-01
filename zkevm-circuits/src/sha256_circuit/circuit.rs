@@ -20,31 +20,36 @@ pub trait SHA256Table {
     /// the cols has layout [s_enable, input_bytes, input_len, hashes, effect]
     fn cols(&self) -> [Column<Any>; 5];
 
-    /// ...
+    /// s_enable col with cell *EQUAL TO 1* mark the row is an effect entry for
+    /// *ANY* 512-bit block of SHA256
     fn s_enable(&self) -> Column<Fixed> {
         self.cols()[0]
             .try_into()
             .expect("must provide cols as expected layout")
     }
-    /// ...
+    /// input_rlc show the RLC for input bytes, the first byte is multipled with R^(n-1)
+    /// in which n is the length of bytes and R is random
     fn input_rlc(&self) -> Column<Advice> {
         self.cols()[1]
             .try_into()
             .expect("must provide cols as expected layout")
     }
-    /// ...
+    /// input_len show the accumulated lengh for input bytes
     fn input_len(&self) -> Column<Advice> {
         self.cols()[2]
             .try_into()
             .expect("must provide cols as expected layout")
     }
-    /// ...
+    /// hashes_rlc show the RLC for the 32-bytes digest of input bytes, the first byte
+    /// is multipled with R^31
     fn hashes_rlc(&self) -> Column<Advice> {
         self.cols()[3]
             .try_into()
             .expect("must provide cols as expected layout")
     }
-    /// a phase 0 col indicate this row is effect (corresponding to a final block)
+    /// is_effect col is a phase 0 col, when the cell is equal to 1 indicate this 512-bit 
+    /// block is the final one for current input bytes, the input_len in this row would
+    /// show the length *WITHOUT* padding of input bytes
     fn is_effect(&self) -> Column<Advice> {
         self.cols()[4]
             .try_into()
@@ -52,7 +57,7 @@ pub trait SHA256Table {
     }
 }
 
-/// ...
+/// CircuitConfig is the configure for SHA256 circuit
 #[derive(Clone, Debug)]
 pub struct CircuitConfig {
     table16: Table16Config,
