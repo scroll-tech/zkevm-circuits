@@ -146,8 +146,6 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
-    /// Gas cost for access list (EIP 2930)
-    AccessListGasCost,
     /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID
@@ -177,6 +175,12 @@ pub enum TxFieldTag {
     TxHash,
     /// TxType: Type of the transaction
     TxType,
+    /// Access list address count (EIP-2930)
+    AccessListAddressesLen,
+    /// Access list all storage key count (EIP-2930)
+    AccessListStorageKeysLen,
+    /// RLC of access list (EIP-2930)
+    AccessListRLC,
     /// The block number in which this tx is included.
     BlockNumber,
 }

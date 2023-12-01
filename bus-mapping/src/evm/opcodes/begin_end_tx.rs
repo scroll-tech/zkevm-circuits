@@ -16,6 +16,7 @@ use eth_types::{
         gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
         GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
     },
+    geth_types::access_list_size,
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -42,10 +43,12 @@ impl TxExecSteps for BeginEndTx {
 
 pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_begin_tx_step();
+
+    // Add two copy-events for tx access-list addresses and storage keys if EIP-2930.
+    gen_tx_eip2930_ops(state, &mut exec_step)?;
+
     let call = state.call()?.clone();
-
     let caller_address = call.caller_address;
-
     if state.tx.tx_type.is_l1_msg() {
         // for l1 message, no need to add rw op, but we must check
         // caller for its existent status
@@ -613,5 +616,58 @@ fn gen_tx_l1_fee_ops(
             fee_scalar_committed,
         ),
     )?;
+    Ok(())
+}
+
+// Add two copy-events for tx access-list addresses and storage keys if EIP-2930.
+fn gen_tx_eip2930_ops(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+) -> Result<(), Error> {
+    if !state.tx.tx_type.is_eip2930_tx() {
+        return Ok(());
+    }
+
+    let tx_id = NumberOrHash::Number(state.tx_ctx.id());
+    let (address_size, storage_key_size) = access_list_size(&state.tx.access_list);
+
+    // Add copy event for access-list addresses.
+    let rw_counter_start = state.block_ctx.rwc;
+    state.push_copy(
+        exec_step,
+        CopyEvent {
+            src_addr: 0,
+            src_addr_end: address_size,
+            src_type: CopyDataType::AccessListAddresses,
+            src_id: tx_id.clone(),
+            dst_addr: 0,
+            dst_type: CopyDataType::AccessListAddresses,
+            dst_id: tx_id.clone(),
+            log_id: None,
+            rw_counter_start,
+            // TODO
+            copy_bytes: CopyBytes::new(vec![], None, None),
+        },
+    );
+
+    // Add copy event for access-list storage keys.
+    let rw_counter_start = state.block_ctx.rwc;
+    state.push_copy(
+        exec_step,
+        CopyEvent {
+            src_addr: 0,
+            src_addr_end: storage_key_size,
+            src_type: CopyDataType::AccessListStorageKeys,
+            src_id: tx_id.clone(),
+            dst_addr: 0,
+            dst_type: CopyDataType::AccessListStorageKeys,
+            dst_id: tx_id,
+            log_id: None,
+            rw_counter_start,
+            // TODO
+            copy_bytes: CopyBytes::new(vec![], None, None),
+        },
+    );
+
     Ok(())
 }

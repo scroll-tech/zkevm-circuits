@@ -221,6 +221,12 @@ pub enum CopyDataType {
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
     RlcAcc,
+    /// When copy event is access-list addresses (EIP-2930), source is tx-table
+    /// and destination is rw-table.
+    AccessListAddresses,
+    /// When copy event is access-list storage keys (EIP-2930), source is
+    /// tx-table and destination is rw-table.
+    AccessListStorageKeys,
 }
 impl CopyDataType {
     /// How many bits are necessary to represent a copy data type.
@@ -307,6 +313,8 @@ impl From<CopyDataType> for usize {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
+            CopyDataType::AccessListAddresses => 6,
+            CopyDataType::AccessListStorageKeys => 7,
         }
     }
 }
@@ -320,6 +328,8 @@ impl From<&CopyDataType> for u64 {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
+            CopyDataType::AccessListAddresses => 6,
+            CopyDataType::AccessListStorageKeys => 7,
         }
     }
 }

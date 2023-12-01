@@ -19,9 +19,10 @@ use crate::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
-            AccessListGasCost, BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC,
-            CalleeAddress, CallerAddress, ChainID, Gas, GasPrice, IsCreate, Nonce, SigR, SigS,
-            SigV, TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+            AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
+            CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress, CallerAddress, ChainID,
+            Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength,
+            TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
         TxTable, U16Table, U8Table,
     },
@@ -42,13 +43,13 @@ use crate::{
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{
     geth_types::{
-        TxType,
+        access_list_size, TxType,
         TxType::{Eip155, L1Msg, PreEip155},
     },
     sign_types::SignData,
     Address, Field, ToAddress, ToBigEndian, ToScalar,
 };
-use ethers_core::utils::keccak256;
+use ethers_core::utils::{keccak256, rlp::Encodable};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -79,11 +80,11 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 24;
+pub const TX_LEN: usize = 26;
 /// Offset of TxHash tag in the tx table
-pub const TX_HASH_OFFSET: usize = 22;
+pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
-pub const CHAIN_ID_OFFSET: usize = 13;
+pub const CHAIN_ID_OFFSET: usize = 12;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -331,7 +332,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_data, CallData);
         is_tx_tag!(is_data_length, CallDataLength);
         is_tx_tag!(is_data_gas_cost, CallDataGasCost);
-        is_tx_tag!(is_access_list_gas_cost, AccessListGasCost);
         is_tx_tag!(is_tx_gas_cost, TxDataGasCost);
         is_tx_tag!(is_data_rlc, CallDataRLC);
         is_tx_tag!(is_chain_id_expr, ChainID);
@@ -346,6 +346,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_hash, TxHash);
         is_tx_tag!(is_block_num, BlockNumber);
         is_tx_tag!(is_tx_type, TxType);
+        is_tx_tag!(is_access_list_addresses_len, AccessListAddressesLen);
+        is_tx_tag!(is_access_list_storage_keys_len, AccessListStorageKeysLen);
+        is_tx_tag!(is_access_list_rlc, AccessListRLC);
 
         let tx_id_unchanged = IsEqualChip::configure(
             meta,
@@ -467,13 +470,15 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_create(meta), Null),
                 (is_data_length(meta), Null),
                 (is_data_gas_cost(meta), Null),
-                (is_access_list_gas_cost(meta), Null),
                 (is_sign_hash(meta), Null),
                 (is_hash(meta), Null),
                 (is_data(meta), Null),
                 (is_block_num(meta), Null),
                 (is_chain_id_expr(meta), Tag::ChainId.into()),
                 (is_tx_type(meta), Null),
+                (is_access_list_addresses_len(meta), Null),
+                (is_access_list_storage_keys_len(meta), Null),
+                (is_access_list_rlc(meta), RLC),
             ];
 
             cb.require_boolean(
@@ -559,7 +564,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        // TODO: add constraints for AccessListGasCost.
+        // TODO: add constraints for AccessListAddressesLen, AccessListStorageKeysLen
+        // and AccessListRLC.
 
         //////////////////////////////////////////////////////////
         ///// Constraints for booleans that reducing degree  /////
@@ -1744,6 +1750,8 @@ impl<F: Field> TxCircuitConfig<F> {
         } else {
             get_rlp_len_tag_length(&tx.rlp_unsigned)
         };
+        let (access_list_address_size, access_list_storage_key_size) =
+            access_list_size(&tx.access_list);
 
         // fixed_rows of a tx
         let fixed_rows = vec![
@@ -1838,11 +1846,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 CallDataGasCost,
                 None,
                 Value::known(F::from(tx.call_data_gas_cost)),
-            ),
-            (
-                AccessListGasCost,
-                None,
-                Value::known(F::from(tx.access_list_gas_cost)),
             ),
             (
                 TxDataGasCost,
@@ -1940,6 +1943,33 @@ impl<F: Field> TxCircuitConfig<F> {
                 TxFieldTag::TxType,
                 None,
                 Value::known(F::from(tx.tx_type as u64)),
+            ),
+            (
+                AccessListAddressesLen,
+                None,
+                Value::known(F::from(access_list_address_size)),
+            ),
+            (
+                AccessListStorageKeysLen,
+                None,
+                Value::known(F::from(access_list_storage_key_size)),
+            ),
+            (
+                AccessListRLC,
+                Some(RlpTableInputValue {
+                    tag: RLC,
+                    is_none: false,
+                    be_bytes_len: 0,
+                    be_bytes_rlc: zero_rlc,
+                }),
+                // TODO: need to check if it's correct with RLP.
+                rlc_be_bytes(
+                    &tx.access_list
+                        .as_ref()
+                        .map(|access_list| access_list.rlp_bytes())
+                        .unwrap_or_default(),
+                    keccak_input,
+                ),
             ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];
