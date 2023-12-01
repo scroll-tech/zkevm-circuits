@@ -47,7 +47,7 @@ pub trait SHA256Table {
             .try_into()
             .expect("must provide cols as expected layout")
     }
-    /// is_effect col is a phase 0 col, when the cell is equal to 1 indicate this 512-bit 
+    /// is_effect col is a phase 0 col, when the cell is equal to 1 indicate this 512-bit
     /// block is the final one for current input bytes, the input_len in this row would
     /// show the length *WITHOUT* padding of input bytes
     fn is_effect(&self) -> Column<Advice> {
