@@ -37,6 +37,7 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
+    + SHA256_TABLE_LOOKUPS
     + EXP_TABLE_LOOKUPS
     + SIG_TABLE_LOOKUPS
     + MODEXP_TABLE_LOOKUPS
@@ -52,6 +53,7 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Block, BLOCK_TABLE_LOOKUPS),
     (Table::Copy, COPY_TABLE_LOOKUPS),
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
+    (Table::Sha256, SHA256_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
     (Table::Sig, SIG_TABLE_LOOKUPS),
     (Table::ModExp, MODEXP_TABLE_LOOKUPS),
@@ -79,6 +81,9 @@ pub const COPY_TABLE_LOOKUPS: usize = 1;
 
 /// Keccak Table lookups done in EVMCircuit
 pub const KECCAK_TABLE_LOOKUPS: usize = 1;
+
+/// Keccak Table lookups done in EVMCircuit
+pub const SHA256_TABLE_LOOKUPS: usize = 1;
 
 /// Exp Table lookups done in EVMCircuit
 pub const EXP_TABLE_LOOKUPS: usize = 1;

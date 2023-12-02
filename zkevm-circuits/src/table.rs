@@ -1523,6 +1523,127 @@ impl KeccakTable {
     }
 }
 
+/// SHA256 Table, used to verify SHA256 hashing from RLC'ed input in precompile.
+#[derive(Clone, Debug)]
+pub struct SHA256Table {
+    /// True when the row is enabled
+    pub q_enable: Column<Fixed>,
+    /// True when the row is final
+    pub is_final: Column<Advice>,
+    /// Byte array input as `RLC(reversed(input))`
+    pub input_rlc: Column<Advice>, // RLC of input bytes
+    /// Byte array input length
+    pub input_len: Column<Advice>,
+    /// RLC of the hash result
+    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+}
+
+impl<F: Field> LookupTable<F> for SHA256Table {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.is_final.into(),
+            self.input_rlc.into(),
+            self.input_len.into(),
+            self.output_rlc.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enable"),
+            String::from("is_final"),
+            String::from("input_rlc"),
+            String::from("input_len"),
+            String::from("output_rlc"),
+        ]
+    }
+}
+
+impl SHA256Table {
+    /// Construct a new KeccakTable
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            is_final: meta.advice_column(),
+            input_len: meta.advice_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
+            output_rlc: meta.advice_column_in(SecondPhase),
+        }
+    }
+
+    /// Generate the sha256 table assignments from a byte array pair of input/output.
+    /// Used only for dev_load
+    pub fn assignments<F: Field>(
+        entry: (&[u8], &[u8; 32]),
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 4]> {
+        let (input, output) = entry;
+        let input_len = Value::known(F::from(input.len() as u64));
+        let input_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
+        let output_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(&Word::from_big_endian(output).to_le_bytes(), challenge));
+
+        vec![[Value::known(F::one()), input_rlc, input_len, output_rlc]]
+    }
+
+    /// Provide this function for the case that we want to consume a sha256
+    /// table but without running the full sha256 circuit
+    pub fn dev_load<'a, F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        entries: impl IntoIterator<Item = (&'a Vec<u8>, &'a [u8; 32])> + Clone,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "sha256 table dev",
+            |mut region| {
+                let mut offset = 0;
+                for column in <Self as LookupTable<F>>::advice_columns(self) {
+                    region.assign_fixed(
+                        || "sha256 table all-zero row",
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_advice(
+                        || "sha256 table all-zero row",
+                        column,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let table_columns = <Self as LookupTable<F>>::advice_columns(self);
+                for (input, digest) in entries.clone() {
+                    for row in Self::assignments((input, digest), challenges) {
+                        region.assign_fixed(
+                            || format!("table row {offset}"),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
+                        for (&column, value) in table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("table row {offset}"),
+                                column,
+                                offset,
+                                || value,
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
+}
+
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
 /// TxLogs and TxCallData.
 #[derive(Clone, Copy, Debug)]

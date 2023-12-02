@@ -33,9 +33,9 @@ pub(crate) fn execute_precompiled(
                 // Revm behavior is different from scroll evm,
                 // so we need to override the behavior of invalid input
                 match PrecompileCalls::from(address.0[19]) {
-                    PrecompileCalls::Blake2F
-                    | PrecompileCalls::Sha256
-                    | PrecompileCalls::Ripemd160 => (vec![], gas, false, false),
+                    PrecompileCalls::Blake2F | PrecompileCalls::Ripemd160 => {
+                        (vec![], gas, false, false)
+                    }
                     PrecompileCalls::Bn128Pairing => {
                         if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
                             (vec![], gas, false, false)
@@ -453,6 +453,15 @@ pub enum PrecompileAuxData {
         /// output bytes from the identity call.
         output_bytes: Vec<u8>,
         /// bytes returned back to the caller from the identity call.
+        return_bytes: Vec<u8>,
+    },
+    /// SHA256
+    SHA256 {
+        /// input bytes to the sha256 call.
+        input_bytes: Vec<u8>,
+        /// output bytes from the sha256 call.
+        output_bytes: Vec<u8>,
+        /// bytes returned back to the caller from the sha256 call.
         return_bytes: Vec<u8>,
     },
     /// Ecrecover.

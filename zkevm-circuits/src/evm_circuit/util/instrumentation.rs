@@ -100,6 +100,9 @@ impl Instrument {
                     CellType::Lookup(Table::Keccak) => {
                         report.keccak_table = data_entry;
                     }
+                    CellType::Lookup(Table::Sha256) => {
+                        report.sha256_table = data_entry;
+                    }
                     CellType::Lookup(Table::Exp) => {
                         report.exp_table = data_entry;
                     }
@@ -140,6 +143,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) block_table: StateReportRow,
     pub(crate) copy_table: StateReportRow,
     pub(crate) keccak_table: StateReportRow,
+    pub(crate) sha256_table: StateReportRow,
     pub(crate) exp_table: StateReportRow,
     pub(crate) sig_table: StateReportRow,
     pub(crate) modexp_table: StateReportRow,

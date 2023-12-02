@@ -43,7 +43,7 @@ name = "aggregator"
 version = "0.1.0"
 dependencies = [
  "ark-std 0.3.0",
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "ethers-core",
  "halo2_proofs",
@@ -484,7 +484,7 @@ name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
  "ctor",
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "ethers-core",
  "ethers-providers",
@@ -649,7 +649,7 @@ version = "0.1.0"
 dependencies = [
  "ark-std 0.3.0",
  "bus-mapping",
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "ethers",
  "ethers-signers",
@@ -1456,19 +1456,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a19187fea3ac7e84da7dacf48de0c45d63c6a76f9490dae389aead16c243fce3"
-dependencies = [
- "atty",
- "humantime",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
@@ -2215,7 +2202,7 @@ dependencies = [
 name = "geth-utils"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.10.0",
+ "env_logger",
  "gobuild",
  "log",
 ]
@@ -2415,15 +2402,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2_gadgets"
+version = "0.2.0"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#5b9a3d71a325a9ecbad164aba90a7f6a8550a015"
+dependencies = [
+ "arrayvec",
+ "bitvec",
+ "ff 0.12.1",
+ "group 0.12.1",
+ "halo2_proofs",
+ "halo2curves",
+ "lazy_static",
+ "rand",
+ "subtle",
+ "uint",
+]
+
+[[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#e3fe25eadd714fd991f35190d17ff0b8fb031188"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#5b9a3d71a325a9ecbad164aba90a7f6a8550a015"
 dependencies = [
  "ark-std 0.3.0",
  "blake2b_simd",
  "cfg-if 0.1.10",
  "crossbeam",
- "env_logger 0.8.4",
  "ff 0.12.1",
  "group 0.12.1",
  "halo2curves",
@@ -2773,7 +2776,7 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "bus-mapping",
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "ethers",
  "halo2_proofs",
@@ -2899,7 +2902,7 @@ dependencies = [
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "halo2_proofs",
  "itertools 0.11.0",
@@ -3112,7 +3115,7 @@ dependencies = [
 name = "mpt-zktrie"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "halo2-mpt-circuits",
  "halo2_proofs",
@@ -4712,7 +4715,7 @@ version = "0.0.1"
 source = "git+https://github.com/scroll-tech/snark-verifier?tag=v0.1.5#bc1d39ae31f3fe520c51dd150f0fefaf9653c465"
 dependencies = [
  "bincode",
- "env_logger 0.10.0",
+ "env_logger",
  "ethereum-types",
  "halo2-base",
  "hex",
@@ -4983,7 +4986,7 @@ dependencies = [
  "bus-mapping",
  "clap 3.2.25",
  "ctor",
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "ethers-core",
  "ethers-signers",
@@ -5787,13 +5790,14 @@ dependencies = [
  "criterion",
  "ctor",
  "either",
- "env_logger 0.10.0",
+ "env_logger",
  "eth-types",
  "ethers-core",
  "ethers-signers",
  "gadgets",
  "halo2-base",
  "halo2-ecc",
+ "halo2_gadgets",
  "halo2_proofs",
  "hex",
  "itertools 0.11.0",

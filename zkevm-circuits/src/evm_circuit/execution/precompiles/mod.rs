@@ -33,6 +33,9 @@ pub use ec_pairing::EcPairingGadget;
 mod identity;
 pub use identity::IdentityGadget;
 
+mod sha256;
+pub use sha256::SHA256Gadget;
+
 #[derive(Clone, Debug)]
 pub struct BasePrecompileGadget<F, const S: ExecutionState> {
     input_bytes_rlc: Cell<F>,

@@ -942,3 +942,53 @@ pub(crate) fn block_precompile_invalid_ec_pairing_fq_overflow() -> BlockTrace {
     .l2_trace()
     .clone()
 }
+
+#[cfg(feature = "scroll")]
+pub(crate) fn block_precompile_sha256() -> BlockTrace {
+    let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+    let chain_id = *MOCK_CHAIN_ID;
+
+    let bytecode_sha256 = PrecompileCallArgs {
+        name: "sha256: short bytes",
+        setup_code: bytecode! {
+            PUSH3(0x616263)
+            PUSH1(0x00)
+            MSTORE
+        },
+        call_data_offset: 0x1d.into(),
+        call_data_length: 0x03.into(),
+        ret_offset: 0x20.into(),
+        ret_size: 0x20.into(),
+        address: PrecompileCalls::Sha256.address().to_word(),
+        ..Default::default()
+    }
+    .with_call_op(OpcodeId::CALL);
+
+    let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+
+    let addr_a = wallet_a.address();
+    let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+
+    // 2 accounts and 1 tx.
+    TestContext::<2, 1>::new(
+        Some(vec![Word::zero()]),
+        |accs| {
+            accs[0].address(addr_a).balance(Word::from(1u64 << 24));
+            accs[1]
+                .address(addr_b)
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode_sha256);
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(wallet_a.clone())
+                .to(accs[1].address)
+                .gas(Word::from(1_000_000u64));
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .l2_trace()
+    .clone()
+}
