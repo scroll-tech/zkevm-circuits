@@ -136,7 +136,7 @@ The final Keccak hash makes use of the sponge function, with arbitrary bit-lengt
 #### Padding
 `NUM_WORDS_TO_ABSORB` = 17, `NUM_BYTES_PER_WORD` = 8, then `RATE` =  17 $\times$ 8 = 136. Since `NUM_BITS_PER_BYTE` = 8 , then `RATE_IN_BITS` = 17 $\times$ 8 $\times$ 8 = 1088. 
 
-Given an input with length counted in bytes, compute `padding_total=RATE-input.len()%RATE`, this gives total number of padding bytes. Note that if input length in bytes is a multiple of `RATE`, the number of padding bytes is `RATE` but not 0. This means we always do padding. 
+Given an input with length counted in bytes, compute `padding_total=RATE-input.len()%RATE`, this gives a total number of padding bytes. Note that if input length in bytes is a multiple of `RATE`, the number of padding bytes is `RATE` but not 0. This means we always do padding. 
 
 If the above `padding_total` is 1, then we pad a byte for $\verb"0x81"$; else pad a list of bytes $\verb"0x01", \verb"0x00", ..., \verb"0x00", \verb"0x80"$ with length in bytes equal to `padding_total`.
 
@@ -147,7 +147,7 @@ After padding, the input is extended to be with length in bytes a multiple of `R
 #### Absorb
 
 Following the result of padding represented in bits, in each chunk further divide this chunk into 17 sections with length 64 for each section. At the first chunk, initialize from all $A[i][j]=0$, then we perform the following absorb operation: for each of the first 17 words $A[i][j], i+5j<17$, we let $\verb"idx"=i+5j$ and we update
-$$A[i][j] \leftarrow A[i][j]\oplus \verb"chunk[idx * 64..(idx + 1) * 64]"$$ to obtain output $A[i][j]$. We perform this absorb operation before the 24 rounds of Keccak-f permutation. Then the 24-rounds of Keccak-f permutation is followed to operate on all $A[i][j]$'s where $0\leq i, j\leq 4$. After that we move to next chunk and repeat this process starting from the output $A[i][j]$ from last iteration (absorb + permutation). Such iteration is continued until the final chunk (which may contain padding data).
+$$A[i][j] \leftarrow A[i][j]\oplus \verb"chunk[idx * 64..(idx + 1) * 64]"$$ to obtain output $A[i][j]$. We perform this absorb operation before the 24 rounds of Keccak-f permutation. Then the 24-rounds of Keccak-f permutation is followed to operate on all $A[i][j]$'s where $0\leq i, j\leq 4$. After that we move to the next chunk and repeat this process starting from the output $A[i][j]$ from the last iteration (absorb + permutation). Such iteration is continued until the final chunk (which may contain padding data).
 
 #### Squeeze
 
@@ -182,14 +182,14 @@ which is the output of Keccak hash's RLC that we use in our zkevm-circuits' Kecc
 The whole of zkevm-circuits at the level of super circuit uses the following structure of the Keccak table which contains the following 4 advice columns
 
 - `is_final`: when true, it means that this row is the final part of a variable-length input extended with padding, so all Keccak rounds including absorb and permutation and squeeze are done, and the row's corresponding output is the hash result;
-- `input_rlc`: each row takes one byte of the input, and add it to the previous row's `input_rlc` multiplied by the challenge for Keccak input. At the row for the last byte of the input (without padding, so `is_final` may not be true), this row is the `input_rlc` for the whole input. After that row, if there are padding rows until `is_final` becomes true, this `input_rlc` keeps the same;
+- `input_rlc`: each row takes one byte of the input, and adds it to the previous row's `input_rlc` multiplied by the challenge for Keccak input. At the row for the last byte of the input (without padding, so `is_final` may not be true), this row is the `input_rlc` for the whole input. After that row, if there are padding rows until `is_final` becomes true, this `input_rlc` keeps the same;
 - `input_len`: similarly to `input_rlc`, it adds up $8$ bits for each row until the last byte (without padding) which gives the actual input length in bytes;
-- `output_rlc`: it is zero for all rows except the row corresponding to the last byte of input (with padding, so that `is_final` is true), where result is the `output_rlc` as we defined in the previous section. 
+- `output_rlc`: it is zero for all rows except the row corresponding to the last byte of input (with padding, so that `is_final` is true), where the result is the `output_rlc` as we defined in the previous section. 
 
 
 ## Arithmetic for Packed Implementation
 
-The multi-packed implementation for the Keccak Circuit uses special arithmetic called (Keccak) sparse-word-representation, this splits a 64-bit word into parts. 
+The multi-packed implementation for the Keccak Circuit uses special arithmetic called (Keccak) sparse-word-representation, which splits a 64-bit word into parts. 
 
 Each bit in the sparse-word-representation holds `BIT_COUNT` (=3) number of 0/1 bits, so equivalent to `BIT_SIZE` (=8) as the base of bit in the sparse-word-representation.
 
@@ -207,7 +207,7 @@ These operations have to go back-and-forth between input (to Keccak internal) an
 
 It must be noticed that the packing related functions/modules `pack`, `unpack`, `into_bits`, `to_bytes` etc used inside Keccak Circuit are all in terms of little-endian order (in bits).
 
-The underlying reason why we use these packing and unpacking operations is because of the simple fact that for two bit variables $x, y$ we have $x\oplus y=x+y\mod 2$. This means we can use simple addition then parity to build the Keccak Circuit arithmetic that constraints XOR operation. The pack-implementation helps to avoid carry to higher digits in the addition. The `BIT_SIZE` is chosen to be 8 because in the $\theta$-step we need 5 XOR operations so with the least number of bits >5 we must take 8 = $2^3$.
+The underlying reason why we use these packing and unpacking operations is because of the simple fact that for two bit variables $x, y$ we have $x\oplus y=x+y\mod 2$. This means we can use simple addition then parity to build the Keccak Circuit arithmetic that constraints XOR operation. The pack-implementation helps to avoid carrying to higher digits in the addition. The `BIT_SIZE` is chosen to be 8 because in the $\theta$-step we need 5 XOR operations so with the least number of bits >5 we must take 8 = $2^3$.
 
 ### `decode`
 
@@ -221,16 +221,16 @@ This is a util struict that returns a description of how a 64-bit word will be s
 - `uniform` is true, then `target_sizes` consists of dividing 64 bit positions into even `part_size` plus a possible remainder; 
 - `uniform` is false, then `target_sizes` consists of dividing both the `rot` (rotation) and (64-`rot`)-bit words into even `part_size` but named `part_a` and `part_b` plus a possible remainder for each. 
 
-The parts splitted from the word is then determined bit-by-bit from `target_size`, so that each part will consist of a collection of bit positions that it represents, starting from 0-th bit position. The way bit positions are determined ensures that if
+The parts split from the word are then determined bit-by-bit from `target_size`, so that each part will consist of a collection of bit positions that it represents, starting from 0-th bit position. The way bit positions are determined ensures that if
 
 - `uniform` is true, then the remaining `rot`-sized bits [63-`rot`+1,...,63] are divided by `part_size` plus a remainder, and first 64-`rot` bits are determined by a section compensating previous remainder, plus divide by `part_size`, and plus the remainder from `target_size` division; 
-- `uniform` is false, then the remaining `rot`-sized bits [63-`rot`+1,...,63] are divided by `part_size` plus remainder, and first 64-`rot` bits determined by `part_size` plus a remainder.
+- `uniform` is false, then the remaining `rot`-sized bits [63-`rot`+1,...,63] are divided by `part_size` plus remainder, and first 64-`rot` bits are determined by `part_size` plus a remainder.
 
 The way we do the above split when `uniform` is true enables an optimization shown below, where after rotation the front and tail remainders combined together becomes an interval of length `part_size`:
 
 ![split_normalize_true](https://hackmd.io/_uploads/S1V-8qoKn.png)
 
-Such a property is useful in `split_uniform`, because in that case it can use this specific partition to split an input word to parts and then rotation transform it to an input that will have the same partition layout as the output after rotation operation in Keccak permutations. This enables same input-output shape so that we can do lookup uniformly on input-output pairs without re-partition (`uniform_lookup = true`), i.e, splitting up the words into parts, then recombining and then splitting up again. This saves a significant amount of columns. 
+Such a property is useful in `split_uniform`, because in that case it can use this specific partition to split an input word into parts and then rotation transform it to an input that will have the same partition layout as the output after rotation operation in Keccak permutations. This enables the same input-output shape so that we can do lookup uniformly on input-output pairs without re-partition (`uniform_lookup = true`), i.e, splitting up the words into parts, then recombining and then splitting up again. This saves a significant amount of columns. 
 
 
 ### `split`
@@ -263,7 +263,7 @@ It bitwise transforms `input` expressed in `parts` to `output_parts` that are in
 
 ### Keccak specific CellManager
 
-Circuit uses Keccak specific `CellManager`, which layouts advice columns in `SecondPhase`. They form a rectangular region of `Cell`'s. 
+The circuit uses Keccak specific `CellManager`, which layouts advice columns in `SecondPhase`. They form a rectangular region of `Cell`'s. 
 
 `CellManager.rows` records the current length of used cells at each row. New cells are queried and inserted at the row with shortest length of used cells. The `start_region()` method pads all rows to the same length according to the longest row, making sure all rows start at the same column. This is used when a new region is started to fill in witnesses.
 
@@ -294,7 +294,7 @@ The first round of rows must be initialized with dummy values, in particular, se
 
 In the current set-up, the number of rows that each round will occupy is `DEFAULT_KECCAK_ROWS = 12`. This means `CellManager` at each region aligns cells vertically to reach a height of 12 before it starts to align cells at the next consecutive column.
 
-The number of columns consumed by each region (with different color in the figure) shown in the figure is just schematic. In reality this is determined by the size of data to be processed and the `part_size`, so that `CellManager` will insert each part into a cell and (vertically) align them.
+The number of columns consumed by each region (with different colors in the figure) shown in the figure is just schematic. In reality this is determined by the size of data to be processed and the `part_size`, so that `CellManager` will insert each part into a cell and (vertically) align them.
 
 ### Spread input, absorb data and squeeze data along with the rounds of Keccak permutation in the circuit layout
 
@@ -315,11 +315,11 @@ parity normalize table with each bit in range $[0,6)$;
 - `chi_base_table`:  [TableColumn; 2], for $\chi$-step lookup, $[0,1,1,0,0]$;
 - `pack_table`: [TableColumn; 2], indicates the pack relation, i.e. 0..256 encoded as Keccak-sparse-word representation;
 
-Since these tables can be used in multiple bits where each bit will do lookup according to the table, e.g. with number of bits equals `part_size`, Keccak Circuit needs to determine the optimal `part_size` for each table. This is done in the function `get_num_bits_per_lookup_impl`, which determines the maximum number of bits by the condition $$\verb"range"^{\verb"num_bits"+1}+\verb"num_unusable_rows"<=2^{\verb"KECCAK_DEGREE"}$$ Currently `KECCAK_DEGREE`=19.
+Since these tables can be used in multiple bits where each bit will do lookup according to the table, e.g. with a number of bits equals `part_size`, Keccak Circuit needs to determine the optimal `part_size` for each table. This is done in the function `get_num_bits_per_lookup_impl`, which determines the maximum number of bits by the condition $$\verb"range"^{\verb"num_bits"+1}+\verb"num_unusable_rows"<=2^{\verb"KECCAK_DEGREE"}$$ Currently `KECCAK_DEGREE`=19.
 
 ### Number of KeccakRows needed for one hash
 
-In some other circuits such as the [aggregation and compression circuits](https://github.com/scroll-tech/zkevm-circuits/tree/develop/aggregator), there is a need to exactly compute the number of rows consumed by one hash. This can be done by first compute the number of bytes in the input plus padding, and then divide into chunks of size `RATE`=136 bytes. The number of Keccak rows that each chunk will consume is equal to
+In some other circuits such as the [aggregation and compression circuits](https://github.com/scroll-tech/zkevm-circuits/tree/develop/aggregator), there is a need to exactly compute the number of rows consumed by one hash. This can be done by first computing the number of bytes in the input plus padding, and then dividing it into chunks of size `RATE`=136 bytes. The number of Keccak rows that each chunk will consume is equal to
 $$\verb"DEFAULT_KECCAK_ROWS" * (1+\verb"NUM_ROUNDS")$$ 
 and with the current setting `DEFAULT_KECCAK_ROWS=12`, `NUM_ROUNDS=24` this number will be 300. The number of chunks is determined by the input length plus padding and is equal to 
 $$\verb"input.len()"/\verb"RATE" + 1$$
@@ -364,7 +364,7 @@ There are 3 consecutive regions for     `rho_pi_chi_cells`:
 
 #### Constraints 
 
-Lookup in `normalize_4` table already gives a constraint. This is for the $os[i][j]$ step left in the $\theta$-step. Further, since `split_uniform` will combine small parts that are seperated by $0$, lookup to `normalize_4` of these small parts in a uniform way. 
+Lookup in `normalize_4` table already gives a constraint. This is for the $os[i][j]$ step left in the $\theta$-step. Further, since `split_uniform` will combine small parts that are separated by $0$, lookup to `normalize_4` of these small parts in a uniform way. 
 
 #### Rationale
 
@@ -412,7 +412,7 @@ Do, for round $k$, the computation $s[0][0]+\verb"round_cst"[k] \ (RC[k])$ and l
 ### Absorb
 
 #### Constraints 
-Verify the absorb data in parallel with each round of permutation, so in the first $17$ rounds each round absorb one word $A[i][j]$ indexed by $i+5j<17$, using $\verb"result"=\verb"state"+\verb"data"$ and then normalize to $\{0,1\}$ via `normalize_3` table.
+Verify the absorb data in parallel with each round of permutation, so in the first $17$ rounds each round absorbs one word $A[i][j]$ indexed by $i+5j<17$, using $\verb"result"=\verb"state"+\verb"data"$ and then normalize to $\{0,1\}$ via `normalize_3` table.
 
 #### Rationale
 - <i>Soundness</i>: Clear from fact that $a\oplus b$ has the same parity as $a+b$ (i.e. normalize to $\{0,1\}$).
@@ -423,7 +423,7 @@ Verify the absorb data in parallel with each round of permutation, so in the fir
 #### Constraints 
 When the previous hash is done: 
 (1) Verify that the hash RLC result from `squeeze_from_prev` is the same as `hash_rlc`. 
-(2) Verify that `squeeze_from_prev` are indeed filled in with the same values as state words $A[0][0], A[1][0], A[2][0], A[3][0]$ to squeeze.
+(2) Verify that `squeeze_from_prev` is indeed filled in with the same values as state words $A[0][0], A[1][0], A[2][0], A[3][0]$ to squeeze.
 
 The <b>Rationale</b> of above constraints are pretty straightforward 
 
@@ -439,7 +439,7 @@ Use `length` to record the actual length of input bytes, and pad until total len
 (4) padding input byte starts with $1$ then followed by $0$ if this is not last padding input byte; 
 (5) for last padding input byte, input bytes is $128$ (if not first padding, equals $\overline{00000001}$ in standard bits, little-endian-form) or $129$ (if is also first padding, equals $\overline{10000001}$ in standard bits, this means the only padding is $\overline{10000001}$). 
 
-The <b>Rationale</b> of the above constraints are also straightforward following the definition of padding. Only one thing that needs to pay attention: Keccack internal uses byte representation together with Keccack-sparse-word-representation. 
+The <b>Rationale</b> of the above constraints is also straightforward following the definition of padding. Only one thing that needs to pay attention: Keccack internal uses byte representation together with Keccack-sparse-word-representation. 
 
 
 ### data_rlc
