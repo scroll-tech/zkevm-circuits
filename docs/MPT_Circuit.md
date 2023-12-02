@@ -22,7 +22,7 @@ In zkevm-circuits, we use [MPT table](https://github.com/scroll-tech/zkevm-circu
 |-|-|-|-|-|-|-|-|
 |||actually the RLC of `storage_key` in little-endian bytes|[MPTProofType](https://github.com/scroll-tech/zkevm-circuits/blob/700e93c898775a19c22f9abd560ebb945082c854/zkevm-circuits/src/table.rs#L645)|||||
 
-In the above, each row of the MPT table reflects an update to the MPT ([MPTUpdate](https://github.com/scroll-tech/zkevm-circuits/blob/700e93c898775a19c22f9abd560ebb945082c854/zkevm-circuits/src/witness/mpt.rs#L15)). The columns `address` and `storage_key` indicate the location where changes in account or storage happen. The change in value for this update are recorded in `old_value` and `new_value`, and the corresponding change of the trie root are recorded in `old_root` and `new_root`.
+In the above, each row of the MPT table reflects an update to the MPT ([MPTUpdate](https://github.com/scroll-tech/zkevm-circuits/blob/700e93c898775a19c22f9abd560ebb945082c854/zkevm-circuits/src/witness/mpt.rs#L15)). The columns `address` and `storage_key` indicate the location where changes in account or storage happen. The change in value for this update is recorded in `old_value` and `new_value`, and the corresponding change of the trie root is recorded in `old_root` and `new_root`.
 
 For each row's corresponding MPT update, we will prove its correctness in the MPT circuit that we describe below. To facilitate this, we record the MPTProofType in the above table, which corresponds to the following proof types:
 
@@ -39,7 +39,7 @@ For each row's corresponding MPT update, we will prove its correctness in the MP
 
 ## The purpose of MPT circuit and encoding of MPT updates via `SMTTrace`
 
-MPT circuit aims at proving the correctedness of the MPT table described above. This means its constraint system enforces a unique change of MPT for each of the MPT's updates as recorded in the MPT table. In particular, when the MPT is changed due to account or storage updates, MPT circuit must prove this update leads to the correct root change. 
+MPT circuit aims at proving the correctness of the MPT table described above. This means its constraint system enforces a unique change of MPT for each of the MPT's updates as recorded in the MPT table. In particular, when the MPT is changed due to account or storage updates, MPT circuit must prove this update leads to the correct root change. 
 
 `SMTTrace` (SMT = Sparse Merkle Trie) is the witness data structure constructed inside the [zkTrie] of the zkevm-circuits to [encode](https://github.com/scroll-tech/zkevm-circuits/blob/c656b971d894102c41c30000a40e07f8e0520627/zkevm-circuits/src/witness/mpt.rs#L77) one update step of the MPT. `SMTTrace` carries the old and new paths on the trie before and after the change to either account or storage, with both paths running from root to leaf. Each path is encoded as an `SMTPath`, which consists of the root hash, the leafnode and all intermediate nodes along that path from root to leaf. Each node's value hash and its sibling's value hash are recorded. `SMTTrace` also records the address and storage key at which location the change is made. Furthermore, it carries information about the account or storage updates, such as change of nonce, balance, code hash, storage value hash, etc. .
 
@@ -170,13 +170,13 @@ The [`MPTProofType`](https://github.com/scroll-tech/mpt-circuit/blob/9d129125bd7
 
 Each circuit row represents the mpt update (from old to new) of a path from root to leaf, at a certain depth (depth of root is 0). So each row represents only one node (virtual node in case it does not exist). The row offset order `previous --> current --> next` indicates an increase of depth towards leafnode.
 
-The configuration changes to the MPT is characterized by the following two columns: 
+The configuration changes to the MPT are characterized by the following two columns: 
 
 (1) `PathType`: This characterizes topological structural change. It includes `PathType::Start`, `PathType::Common`, `PathType::ExtensionOld` and `PathType::ExtensionNew`; 
 
 (2) `SegmentType`: This characterizes data field (which form the trie's leafnode hash) change. It includes `SegmentType::Start`, `SegmentType::AccountTrie`, `SegmentType::AccountLeaf0`-`SegmentType::AccountLeaf4`, `SegmentType::StorageTrie`, `SegmentType::StorageLeaf0`-`SegmentType::StorageLeaf1`.
 
-In both of the above two column witnesses, `Start` is used as boundary marker between updates. This means each circuit row with a `Start` indicates a new MPT update.
+In both of the above two column witnesses, `Start` is used as a boundary marker between updates. This means each circuit row with a `Start` indicates a new MPT update.
 
 
 ### Topological structure changes to the trie, their corresponding mpt operations and account/storage types
@@ -188,7 +188,7 @@ Operations to the trie can be classified as
 ![PathType_Common_modify](https://hackmd.io/_uploads/B19kctid2.png)
 
 
-(2) <i>insert to/delete from append</i>: an account/storage slot is inserted to the MPT as append, i.e. it forms a new leafnode that previously does not exist even as empty nodes (<i>insert to append</i>), or it is deleted from an appended leaf, i.e., after deletion there will be no node (including empty node) left (<i>delete from append</i>). The account/storage under this operation is named <b>type 1</b>, i.e., type 1 account/storage are empty. Where they could be in the MPT, there is instead a leaf node that maps to another non-empty account/storage. Figure below (for insert case, and delete case just swap old and new): 
+(2) <i>insert to/delete from append</i>: an account/storage slot is inserted to the MPT as append, i.e. it forms a new leafnode that previously does not exist even as empty nodes (<i>insert to append</i>), or it is deleted from an appended leaf, i.e., after deletion there will be no node (including empty node) left (<i>delete from append</i>). The account/storage under this operation is named <b>type 1</b>, i.e., type 1 account/storage is empty. Where they could be in the MPT, there is instead a leaf node that maps to another non-empty account/storage. Figure below (for insert case, and delete case just swap old and new): 
 ![PathType_ExtensionNew_append](https://hackmd.io/_uploads/S1_M9Ksun.png)
 Notice that the zkTrie adds only one bit of common prefix at each level of its depth. It also applies the optimization that replaces subtrees consisting of exactly one leaf with a single leaf node to reduce the tree height. This means that when we insert to append (or delete from append), it may happen that an extension happens with some intermediate nodes that provide key prefix bits, either for the old path or for the new path. It is constrained that at all the new siblings added are empty nodes. 
 
@@ -199,19 +199,19 @@ Notice that the zkTrie adds only one bit of common prefix at each level of its d
 
 #### PathType::Common
 
-`PathType::Common` refers to the sitation that the old and new path share the same topological configuration.
+`PathType::Common` refers to the situation that the old and new paths share the same topological configuration.
 
 This can correspond to the topological configuration change on the whole path in the modify operation, or the common path (not extended one) of the insert to/delete from append, or the insert to/delete from fill operations. 
 
 #### PathType::ExtensionNew
 
-`PathType::ExtensionNew` refers to the sitation that the new path extends the old path in its toplogical configuration.
+`PathType::ExtensionNew` refers to the situation that the new path extends the old path in its toplogical configuration.
 
 This can correspond to the extended part of the path in insert to append, insert to fill operations.
 
 #### PathType::ExtensionOld
 
-`PathType::ExtensionOld` refers to the sitation that the old path extends the new path in its toplogical configuration.
+`PathType::ExtensionOld` refers to the situation that the old path extends the new path in its toplogical configuration.
 
 This can correspond to the extended part of the path in delete from append, delete from fill operations.
 
@@ -227,11 +227,11 @@ These cases of non-existence proofs are related to non-existence before writing 
 
 There are 2 cases to constrain based on the path directed by the provided non-existing key (coming from hash of account address):
 
-- <b>Type 1 non-existence proof</b> (insert to append/delete from append): the path ended at a leaf node. Illustration figure shown below:
+- <b>Type 1 non-existence proof</b> (insert to append/delete from append): the path ended at a leaf node. The illustration figure shown below:
 ![AccountNotExist_Leaf](https://i.imgur.com/SyExuBC.png)
 In this case, due to our construction of the old and new paths of `SMTTrace`, the old path (when inserting)/new path (when deleting) must be directed to this leaf node. The prefix key provided by the old/new path must end at a bit position <i>before</i> the last bit of the leaf key that is to be proved non-exist. So we constrain that the non-existing account/storage must have its key that is not equal to the key at this leaf node. Circuit columns `other_key`, `other_key_hash`, `other_leafnode_hash` and an IsEqualGadget `key_equals_other_key` are used to provide witness to these constraints and to constrain.
 
-- <b>Type 2 non-existence proof</b> (insert to fill/delete from fill): the path ended at an empty node. Illustration figure shown below:
+- <b>Type 2 non-existence proof</b> (insert to fill/delete from fill): the path ended at an empty node. The illustration figure shown below:
 ![AccounNotExist_Empty](https://i.imgur.com/FLxg11Q.png)
 In this case, due to our construction of the old and new paths of `SMTTrace`, the old path (when inserting)/new path (when deleting) must be directed to this empty node. So we constrain the emptiness of these nodes. Circuit provides two IsZeroGadgets `old_hash_is_zero` and`new_hash_is_zero` to constrain this case.
 
@@ -264,9 +264,9 @@ For storage, the formula for `valueHash` is
 
 The above expansions are beyond what the original trie defined in [zkTrie spec] can have, where the expansion of the trie will only be up to leafnodes that are classified into `AccountTrie` or `StorageTrie`, i.e.  trie-type segments. The leaf-type segments (non-trie segments) are witnesses generated <i>inside</i> the circuit (parsed from `SMTTrace`), and the trie-like structure shown above are just imaginary/virtual which only lives in the circuit. So such common constraints as key is 0 and depth is 0 for non-trie segments must be enforced in the circuit constraint system. 
 
-The depth of such expansion at witness generation depends on MPTProofType, which points to a specific data field at which level the expansion needs done.
+The depth of such expansion at witness generation depends on MPTProofType, which points to a specific data field at which level the expansion needs to be done.
 
-The `PathType` used inside the circuit is also corresponding to this expanded trie including leaf-type segments (non-trie segments). For example, in the case of insert to fill operation, `PathType` changes from `Common` to `ExtensionNew` at the empty node that is filled by a new leaf, and the path continues to the specific account/storage field. So constraints for `PathType::ExtensionNew(Old)` must discuss separately for trie and non-trie segment cases.
+The `PathType` used inside the circuit is also corresponding to this expanded trie including leaf-type segments (non-trie segments). For example, in the case of insert to fill operation, `PathType` changes from `Common` to `ExtensionNew` at the empty node that is filled by a new leaf, and the path continues to the specific account/storage field. So constraints for `PathType::ExtensionNew(Old)` must be discussed separately for trie and non-trie segment cases.
 
 
 ## Constraints 
@@ -300,7 +300,7 @@ on rows with `PathType::Common`:
 ### PathType::ExtensionNew
 on rows with `PathType::ExtensionNew`:
 - `old_value==0`
-- old path has `old_hash` keep unchanged on the extended path
+- old path has `old_hash` kept unchanged on the extended path
 - new path has `new_hash=poisedon_hash(leftchild, rightchild)`
 - on trie segments (`is_trie==true`)
     - In case next`SegmentType` is still trie type (`is_final_trie_segment==false` )
@@ -316,7 +316,7 @@ on rows with `PathType::ExtensionNew`:
         - for type 1 non-existence (type 1 account), in case `key!=other_key`, constrain that `old_hash_prev==poisedon(other_key_hash, other_leaf_data_hash)`
 
 ### PathType::ExtensionOld
-The constraints for this case is just symmetric with respect to `PathType::ExtensionNew` by swapping old and new.
+The constraints for this case are just symmetric with respect to `PathType::ExtensionNew` by swapping old and new.
 
 
 ### MPTProofType::NonceChanged
