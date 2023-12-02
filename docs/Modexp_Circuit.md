@@ -55,7 +55,7 @@ In addition, $x_3$ stands for $x_3=x\mod r$.
 
 Let x, y be in U256 and p be the prime used in Modexp, d<p be the remainder, both also in U256. Then the constraints for 
 $x y \mod p = d$ 
-is the same of that for 
+is the same as that for 
 $x y= kp+d$ 
 with some $k$ and d<p.
 
@@ -112,7 +112,7 @@ And by definition $\langle x\rangle_{n_3}=x_3$. Notice that if both $x, y$ are d
 ```
 because $n_2=2^{216}$.
 
-So constraints that ensure $xy=kp+d$ is given by
+So constraints that ensure $xy=kp+d$ are given by
 
 ```math
 (2) \left\{\begin{array}{rcll}
@@ -171,9 +171,9 @@ Modexp Circuit uses `assign_line` method to assign these cells. In `assign_line`
 
 Range checks of the limbs are done in a separate `RangeCheckChip`. The range check is usually applied to `l0` limb, and whenever the Modexp circuit needs a range check for the limb it will create a new gate with `l0` limb under lookup.
 
-The `RangeCheckChip` is connected with the Modexp Circuit via `register` method, in which we use lookup argument to assure that `l0` limb is contained as the first `acc` term in the `RangeCheckChip` and its target lookup size `lookup_hint` is contained in the first `rem` term in the `RangeCheckChip`. 
+The `RangeCheckChip` is connected with the Modexp Circuit via `register` method, in which we use lookup argument to ensure that `l0` limb is contained as the first `acc` term in the `RangeCheckChip` and its target lookup size `lookup_hint` is contained in the first `rem` term in the `RangeCheckChip`. 
 
-After that, `RangeCheckChip` uses `provide_lookup_evidence` method to assign values to the range check chip. The range checks are configured by putting constraints that decompose the limb into 12-bit sub-limbs, with each sub-limb under lookup to a table with terms $[0, 2^{12}-1=4095]$ listed in increasing order. It also checks the 12-bit by 12-bit carry to higher digits are done in a correct way.
+After that, `RangeCheckChip` uses `provide_lookup_evidence` method to assign values to the range check chip. The range checks are configured by putting constraints that decompose the limb into 12-bit sub-limbs, with each sub-limb under lookup to a table with terms $[0, 2^{12}-1=4095]$ listed in increasing order. It also checks the 12-bit by 12-bit carry to higher digits is done in a correct way.
 
 
 ## Constraints
@@ -229,7 +229,7 @@ So its one-line constraint is given by the equation
 
 This method returns `OK`.
 
-Factor 16 here is used as a buffer to make sure that `v` is positive, so that we are enabled to do range check for `q` (if `v` is negative, range check for `q` becomes hard to perform). In the constraint equation related to $\mod 2^{108}-1$ that calls `mod_power108m1zero` method, each of the `limb0`, `limb1`, `limb2` will not exceed $4\cdot (2^{108}-1)$, so their signed combination in absolute value will not exceed $12\cdot (2^{108}-1)<16\cdot (2^{108}-1)$, which is the reason why we choose 16 as buffer here.
+Factor 16 here is used as a buffer to make sure that `v` is positive, so that we are enabled to do a range check for `q` (if `v` is negative, the range check for `q` becomes hard to perform). In the constraint equation related to $\mod 2^{108}-1$ that calls `mod_power108m1zero` method, each of the `limb0`, `limb1`, `limb2` will not exceed $4\cdot (2^{108}-1)$, so their signed combination in absolute value will not exceed $12\cdot (2^{108}-1)<16\cdot (2^{108}-1)$, which is the reason why we choose 16 as buffer here.
 
 #### constraint equation $(x_0+x_1+x_2)(y_0+y_1+y_2) \equiv (k_0+k_1+k_2)(p_0+p_1+p_2) + (d_0+d_1+d_2)  \mod (2^{108}-1)$ in (2) 
 
@@ -307,7 +307,7 @@ So its one-line constraint is given by the equation
 
 This method returns `OK`.
 
-Factor 8 here is used as a buffer (`BUFMULT`) to make sure that `v` is positive, so that we are enabled to do range check for `q` (if `v` is negative, range check for `q` becomes hard to perform). In the constraint equation related to $\mod 2^{216}$ that calls `mod_power216zero` method, each of the `limb0`, `limb1`, `limb2` will not exceed $2\cdot 2^{216}$, so their signed combination in absolute value will not exceed $6\cdot 2^{216}<8\cdot 2^{216}-1$, which is the reason why we choose 8 as buffer here.
+Factor 8 here is used as a buffer (`BUFMULT`) to make sure that `v` is positive, so that we are enabled to do a range check for `q` (if `v` is negative, range check for `q` becomes hard to perform). In the constraint equation related to $\mod 2^{216}$ that calls `mod_power216zero` method, each of the `limb0`, `limb1`, `limb2` will not exceed $2\cdot 2^{216}$, so their signed combination in absolute value will not exceed $6\cdot 2^{216}<8\cdot 2^{216}-1$, which is the reason why we choose 8 as buffer here.
 
 #### constraint equation $x_0y_0 + (x_1y_0+x_0y_1)\cdot 2^{108}  \equiv k_0p_0 + (k_1p_0+k_0p_1)\cdot 2^{108} + d_0+d_1\cdot 2^{108}  \mod 2^{216}$ in (2) 
 
@@ -353,7 +353,7 @@ A remaining constraint in (2) to ensure that $xy = kp + d$ is the comparison d<p
 
 This method takes two U256 `Number` denoted as `lhs` and `rhs` and returns `1` if `lhs<rhs`, returns `0` if otherwise.
 
-To achieve this, it devides `lhs` and `rhs` into limbs `lhs.limb[0], lhs.limb[1], lhs.limb[2]` and `rhs.limb[0], rhs.limb[1], rhs.limb[2]`. Then 
+To achieve this, it divides `lhs` and `rhs` into limbs `lhs.limb[0], lhs.limb[1], lhs.limb[2]` and `rhs.limb[0], rhs.limb[1], rhs.limb[2]`. Then 
 - if `lhs.limb[2]<rhs.limb[2]`, returns `1`;
 - elseif `lhs.limb[1]<rhs.limb[1]`, returns `1`;
 - elseif `lhs.limb[0]<rhs.limb[0]`, returns `1`;
