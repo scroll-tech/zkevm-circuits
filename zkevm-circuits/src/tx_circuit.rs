@@ -2321,7 +2321,7 @@ impl<F: Field> TxCircuitConfig<F> {
         // tx1559_debug
         // assign to access_list related columns
 
-        if tx.access_list.0.len() > 0 {
+        if tx.access_list.as_ref().unwrap().0.len() > 0 {
             // initialize gas counting
             let mut gas_cost_acc = 0;
 
@@ -2329,7 +2329,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let mut sks_acc: usize = 0;
 
             // row counting for determining when tx_id changes
-            let total_rows: usize = tx.access_list.0.iter().fold(0, |acc, al| {
+            let total_rows: usize = tx.access_list.as_ref().unwrap().0.iter().fold(0, |acc, al| {
                 acc + 1 + al.storage_keys.len()
             });
             let mut curr_row: usize = 0;
@@ -2340,7 +2340,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let r20 = challenges.keccak_input().map(|f| f.pow(&[20, 0, 0, 0]) );
             let r32 = challenges.keccak_input().map(|f| f.pow(&[32, 0, 0, 0]) );
 
-            for (al_idx, al) in tx.access_list.0.iter().enumerate() {
+            for (al_idx, al) in tx.access_list.as_ref().unwrap().0.iter().enumerate() {
                 curr_row += 1;
 
                 gas_cost_acc += GS::ACCESS_LIST_PER_ADDRESS.as_u64();

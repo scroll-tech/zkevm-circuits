@@ -141,7 +141,7 @@ fn build_eip1559_tx() -> Transaction {
     tx.is_create = eth_tx.to.is_none();
     tx.call_data_length = tx.call_data.len();
     tx.call_data_gas_cost = tx_data_gas_cost(&tx.call_data);
-    tx.access_list = eth_tx.access_list.clone().unwrap_or_default();
+    tx.access_list = eth_tx.access_list.clone();
     tx.access_list_gas_cost = tx_access_list_gas_cost(&eth_tx.access_list);
     tx.tx_data_gas_cost = tx_data_gas_cost(&tx.rlp_signed);
     tx.v = eth_tx.v.as_u64();

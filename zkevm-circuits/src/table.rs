@@ -187,9 +187,6 @@ pub enum TxFieldTag {
     MaxPriorityFeePerGas,
     /// Max Fee Per Gas (EIP1559)
     MaxFeePerGas,
-    /// RLC of big endian bytes of tx.access_list.
-    /// Used to make sure that no item in tx.access_list is skipped. 
-    AccessListRLC,
     /// AccessListAddress,
     AccessListAddress,
     /// AccessListStorageKey
