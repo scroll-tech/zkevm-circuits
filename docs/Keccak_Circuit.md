@@ -364,7 +364,7 @@ There are 3 consecutive regions for     `rho_pi_chi_cells`:
 
 #### Constraints 
 
-Lookup in `normalize_4` table already gives a constraint. This is for the $os[i][j]$ step left in the $\theta$-step. Further, since `split_uniform` will combine small parts that are seperated by $0$, lookup to `normalize_4` of these small parts in a uniform way. 
+Lookup in `normalize_4` table already gives a constraint. This is for the $os[i][j]$ step left in the $\theta$-step. Further, since `split_uniform` will combine small parts that are separated by $0$, lookup to `normalize_4` of these small parts in a uniform way. 
 
 #### Rationale
 
@@ -439,7 +439,7 @@ Use `length` to record the actual length of input bytes, and pad until total len
 (4) padding input byte starts with $1$ then followed by $0$ if this is not last padding input byte; 
 (5) for last padding input byte, input bytes is $128$ (if not first padding, equals $\overline{00000001}$ in standard bits, little-endian-form) or $129$ (if is also first padding, equals $\overline{10000001}$ in standard bits, this means the only padding is $\overline{10000001}$). 
 
-The <b>Rationale</b> of the above constraints are also straightforward following the definition of padding. Only one thing that needs to pay attention: Keccack internal uses byte representation together with Keccack-sparse-word-representation. 
+The <b>Rationale</b> of the above constraints is also straightforward following the definition of padding. Only one thing that needs to pay attention: Keccack internal uses byte representation together with Keccack-sparse-word-representation. 
 
 
 ### data_rlc
