@@ -199,6 +199,9 @@ pub struct TxCircuitConfig<F: Field> {
     sks_acc: Column<Advice>,
     // section denoter for access list, reduces degree
     is_access_list: Column<Advice>,
+    // access list tag denoter, reduces degree
+    is_access_list_address: Column<Advice>,
+    is_access_list_storage_key: Column<Advice>,
 
     _marker: PhantomData<F>,
 }
@@ -312,6 +315,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let sk_idx = meta.advice_column();
         let sks_acc = meta.advice_column();
         let is_access_list = meta.advice_column();
+        let is_access_list_address = meta.advice_column();
+        let is_access_list_storage_key = meta.advice_column();
+
 
         // TODO: add lookup to SignVerify table for sv_address
         let sv_address = meta.advice_column();
@@ -368,8 +374,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_access_list_addresses_len, AccessListAddressesLen);
         is_tx_tag!(is_access_list_storage_keys_len, AccessListStorageKeysLen);
         is_tx_tag!(is_access_list_rlc, AccessListRLC);
-        is_tx_tag!(is_access_list_address, AccessListAddress);
-        is_tx_tag!(is_access_list_storage_key, AccessListStorageKey);
+        is_tx_tag!(is_tag_access_list_address, AccessListAddress);
+        is_tx_tag!(is_tag_access_list_storage_key, AccessListStorageKey);
 
 
         let tx_id_unchanged = IsEqualChip::configure(
@@ -487,8 +493,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_hash_rlc(meta), RLC),
                 (is_caller_addr(meta), Tag::Sender.into()),
                 (is_tx_gas_cost(meta), GasCost),
-                (is_access_list_address(meta), Tag::AccessListAddress.into()),
-                (is_access_list_storage_key(meta), Tag::AccessListStorageKey.into()),
+                (is_tag_access_list_address(meta), Tag::AccessListAddress.into()),
+                (is_tag_access_list_storage_key(meta), Tag::AccessListStorageKey.into()),
                 // tx tags which correspond to Null
                 (is_null(meta), Null),
                 (is_create(meta), Null),
@@ -612,12 +618,30 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "is_access_lits",
+                "is_access_list",
                 sum::expr([
-                    is_access_list_address(meta),
-                    is_access_list_storage_key(meta),
+                    meta.query_advice(is_access_list_address, Rotation::cur()),
+                    meta.query_advice(is_access_list_storage_key, Rotation::cur()),
                 ]),
                 meta.query_advice(is_access_list, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("is_access_list_address and is_access_list_storage_key", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_access_list_address",
+                tag_bits.value_equals(TxFieldTag::AccessListAddress, Rotation::cur())(meta),
+                meta.query_advice(is_access_list_address, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "is_access_list_storage_key",
+                tag_bits.value_equals(TxFieldTag::AccessListStorageKey, Rotation::cur())(meta),
+                meta.query_advice(is_access_list_storage_key, Rotation::cur()),
             );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1361,6 +1385,154 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
+
+        ////////////////////////////////////////////////////////////////////////
+        ///////////  Access List Constraints (if available on tx)  /////////////
+        ////////////////////////////////////////////////////////////////////////
+        meta.create_gate("tx call data bytes", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let is_final_cur = meta.query_advice(is_final, Rotation::cur());
+            cb.require_boolean("is_final is boolean", is_final_cur.clone());
+
+            // within same tx, next tag is AccessListAddress
+            cb.condition(
+                and::expr([
+                    not::expr(is_final_cur.clone()),
+                    meta.query_advice(is_access_list_address, Rotation::next())
+                ]),
+            |cb| {
+                cb.require_equal(
+                    "sks_acc' = sks_acc",
+                    meta.query_advice(sks_acc, Rotation::cur()),
+                    meta.query_advice(sks_acc, Rotation::next()),
+                );
+                cb.require_equal(
+                    "al_idx' = al_idx + 1",
+                    meta.query_advice(al_idx, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(al_idx, Rotation::next()),
+                );
+            });
+
+            // within same tx, next tag is AccessListStorageKey
+            cb.condition(
+                and::expr([
+                    not::expr(is_final_cur.clone()),
+                    meta.query_advice(is_access_list_storage_key, Rotation::next())
+                ]),
+            |cb| {
+                cb.require_equal(
+                    "sks_acc' = sks_acc + 1",
+                    meta.query_advice(sks_acc, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(sks_acc, Rotation::next()),
+                );
+                cb.require_equal(
+                    "sk_idx' = sk_idx + 1",
+                    meta.query_advice(sk_idx, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(sk_idx, Rotation::next()),
+                );
+                cb.require_equal(
+                    "al_idx' = al_idx",
+                    meta.query_advice(al_idx, Rotation::cur()),
+                    meta.query_advice(al_idx, Rotation::next()),
+                );
+                cb.require_equal(
+                    "access_list_address' = access_list_address",
+                    meta.query_advice(tx_table.access_list_address, Rotation::cur()),
+                    meta.query_advice(tx_table.access_list_address, Rotation::next()),
+                );
+            });
+
+
+
+
+
+
+
+
+
+            // checks for any row, except the final call data byte.
+            // cb.condition(, |cb| {
+            //     cb.require_equal(
+            //         "index::next == index::cur + 1",
+            //         meta.query_advice(tx_table.index, Rotation::next()),
+            //         meta.query_advice(tx_table.index, Rotation::cur()) + 1.expr(),
+            //     );
+            //     cb.require_equal(
+            //         "tx_id::next == tx_id::cur",
+            //         tx_id_unchanged.is_equal_expression.clone(),
+            //         1.expr(),
+            //     );
+
+            //     let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
+            //     let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
+            //     // call data gas cost accumulator check.
+            //     cb.require_equal(
+            //         "calldata_gas_cost_acc::next == calldata_gas_cost::cur + gas_cost_next",
+            //         meta.query_advice(calldata_gas_cost_acc, Rotation::next()),
+            //         meta.query_advice(calldata_gas_cost_acc, Rotation::cur()) + gas_cost_next,
+            //     );
+            //     cb.require_equal(
+            //         "section_rlc' = section_rlc * r + byte'",
+            //         meta.query_advice(section_rlc, Rotation::next()),
+            //         meta.query_advice(section_rlc, Rotation::cur()) * challenges.keccak_input()
+            //             + meta.query_advice(tx_table.value, Rotation::next()),
+            //     );
+            // });
+
+            // on the final call data byte, must transition to another
+            // calldata section or an access list section for the same tx
+
+
+
+
+            // tx1559_debug
+            // on the final call data byte, tx_id must change.
+            // cb.condition(is_final_cur.expr(), |cb| {
+            //     cb.require_zero(
+            //         "tx_id changes at is_final == 1",
+            //         tx_id_unchanged.is_equal_expression.clone(),
+            //     );
+            // });
+
+            // tx1559_debug
+            // cb.condition(
+            //     and::expr([
+            //         is_final_cur,
+            //         not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
+            //     ]),
+            //     |cb| {
+            //         let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
+            //         let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
+
+            //         cb.require_equal(
+            //             "index' == 0",
+            //             meta.query_advice(tx_table.index, Rotation::next()),
+            //             0.expr(),
+            //         );
+            //         cb.require_equal(
+            //             "calldata_gas_cost_acc' == gas_cost_next",
+            //             meta.query_advice(calldata_gas_cost_acc, Rotation::next()),
+            //             gas_cost_next,
+            //         );
+            //         cb.require_equal(
+            //             "section_rlc' == byte'",
+            //             meta.query_advice(section_rlc, Rotation::next()),
+            //             meta.query_advice(tx_table.value, Rotation::next()),
+            //         );
+            //     },
+            // );
+
+            cb.gate(and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_access_list, Rotation::cur()),
+                not::expr(tx_id_is_zero.expr(Rotation::cur())(meta)),
+            ]))
+        });
+
+
+
+
         ////////////////////////////////////////////////////////////////////////
         ///////////   SignVerify recover CallerAddress    //////////////////////
         ////////////////////////////////////////////////////////////////////////
@@ -1488,6 +1660,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sk_idx,
             sks_acc,
             is_access_list,
+            is_access_list_address,
+            is_access_list_storage_key,
             _marker: PhantomData,
             num_txs,
         }
@@ -2415,6 +2589,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     ("rlp_tag", self.rlp_tag, F::from(usize::from(Tag::AccessListAddress) as u64)),
                     ("is_final", self.is_final, F::from(is_final as u64)),
                     ("is_access_list", self.is_access_list, F::one()),
+                    ("is_access_list_address", self.is_access_list_address, F::one()),
+
                     
                     // ("byte", self.calldata_byte, F::from(*byte as u64)),
                 ] {
@@ -2463,6 +2639,8 @@ impl<F: Field> TxCircuitConfig<F> {
                         ("rlp_tag", self.rlp_tag, F::from(usize::from(Tag::AccessListStorageKey) as u64)),
                         ("is_final", self.is_final, F::from(is_final as u64)),
                         ("is_access_list", self.is_access_list, F::one()),
+                        ("is_access_list_storage_key", self.is_access_list_storage_key, F::one()),
+
 
                         // ("byte", self.calldata_byte, F::from(*byte as u64)),
                     ] {
