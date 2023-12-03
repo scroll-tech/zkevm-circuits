@@ -48,7 +48,7 @@ use eth_types::{
     },
     evm_types::GasCost as GS,
     sign_types::SignData,
-    Address, Field, ToAddress, ToBigEndian, ToScalar,
+    Address, Field, ToAddress, ToBigEndian, ToScalar, AccessList,
 };
 use ethers_core::utils::{keccak256, rlp::Encodable};
 use gadgets::{
@@ -2066,14 +2066,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: 0,
                     be_bytes_rlc: zero_rlc,
                 }),
-                // TODO: need to check if it's correct with RLP.
-                rlc_be_bytes(
-                    &tx.access_list
-                        .as_ref()
-                        .map(|access_list| access_list.rlp_bytes())
-                        .unwrap_or_default(),
-                    keccak_input,
-                ),
+                access_list_rlc(&tx.access_list, challenges),
             ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];
@@ -3134,3 +3127,31 @@ pub(crate) fn get_sign_data(
         .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
     Ok(signatures)
 }
+
+/// Returns the RLC of the access list including addresses and storage keys
+pub fn access_list_rlc<F: Field>(access_list: &Option<AccessList>, challenges: &Challenges<Value<F>>) -> Value<F> {
+    if access_list.is_some() {
+        let mut section_rlc = challenges.keccak_input().map(|_| F::zero());
+        let r20 = challenges.keccak_input().map(|f| f.pow(&[20, 0, 0, 0]) );
+        let r32 = challenges.keccak_input().map(|f| f.pow(&[32, 0, 0, 0]) );
+    
+        for al in access_list.as_ref().unwrap().0.iter() {
+            let field_rlc = rlc_be_bytes(&al.address.to_fixed_bytes(), challenges.keccak_input());
+            section_rlc = section_rlc * r32 + field_rlc;
+    
+            for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
+                let field_rlc = rlc_be_bytes(&sk.to_fixed_bytes(), challenges.keccak_input());
+                section_rlc = if sk_idx > 0 {
+                    section_rlc * r32 + field_rlc
+                } else {
+                    section_rlc * r20 + field_rlc
+                };
+            }
+        }
+    
+        section_rlc
+    } else {
+        Value::known(F::zero())
+    }
+}
+
