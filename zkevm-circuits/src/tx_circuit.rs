@@ -1385,15 +1385,47 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-
         ////////////////////////////////////////////////////////////////////////
         ///////////  Access List Constraints (if available on tx)  /////////////
         ////////////////////////////////////////////////////////////////////////
-        meta.create_gate("tx call data bytes", |meta| {
+        meta.create_gate("tx access list", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             let is_final_cur = meta.query_advice(is_final, Rotation::cur());
             cb.require_boolean("is_final is boolean", is_final_cur.clone());
+
+            // current tag is AccessListAddress
+            cb.condition(
+                and::expr([
+                    not::expr(is_final_cur.clone()),
+                    meta.query_advice(is_access_list_address, Rotation::cur())
+                ]),
+            |cb| {
+                cb.require_equal(
+                    "index = al_idx",
+                    meta.query_advice(al_idx, Rotation::cur()),
+                    meta.query_advice(tx_table.index, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "access_list_address = value",
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                    meta.query_advice(tx_table.access_list_address, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "sk_idx = 0",
+                    meta.query_advice(sk_idx, Rotation::cur()),
+                );
+            });
+
+            // current tag is AccessListStorageKey
+            cb.condition(
+                and::expr([
+                    not::expr(is_final_cur.clone()),
+                    meta.query_advice(is_access_list_storage_key, Rotation::cur())
+                ]),
+            |cb| {
+                
+            });
 
             // within same tx, next tag is AccessListAddress
             cb.condition(
@@ -1443,14 +1475,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 );
             });
 
-
-
-
-
-
-
-
-
             // checks for any row, except the final call data byte.
             // cb.condition(, |cb| {
             //     cb.require_equal(
@@ -1482,9 +1506,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             // on the final call data byte, must transition to another
             // calldata section or an access list section for the same tx
-
-
-
 
             // tx1559_debug
             // on the final call data byte, tx_id must change.
@@ -1529,9 +1550,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 not::expr(tx_id_is_zero.expr(Rotation::cur())(meta)),
             ]))
         });
-
-
-
 
         ////////////////////////////////////////////////////////////////////////
         ///////////   SignVerify recover CallerAddress    //////////////////////
@@ -2003,6 +2021,7 @@ impl<F: Field> TxCircuitConfig<F> {
             TxFieldTag::Null,
             0,
             Value::known(F::zero()),
+            Value::known(F::zero()),
         )?;
         let (col_anno, col, col_val) = ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64));
         region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
@@ -2283,6 +2302,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 tx_tag,
                 0,
                 tx_value,
+                Value::known(F::zero()),
             )?);
 
             // 1st phase columns
@@ -2502,6 +2522,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 CallData,
                 idx as u64,
                 Value::known(F::from(*byte as u64)),
+                Value::known(F::zero()),
             )?;
 
             // 1st phase columns
@@ -2576,7 +2597,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     Some(tx),
                     tx_id_next,
                     TxFieldTag::AccessListAddress,
-                    al_idx as u64,
+                    (al_idx + 1) as u64,
+                    Value::known(al.address.to_scalar().unwrap()),
                     Value::known(al.address.to_scalar().unwrap()),
                 )?;
 
@@ -2627,7 +2649,8 @@ impl<F: Field> TxCircuitConfig<F> {
                         tx_id_next,
                         TxFieldTag::AccessListStorageKey,
                         sks_acc as u64,
-                        rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word())
+                        rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word()),
+                        Value::known(al.address.to_scalar().unwrap()),
                     )?;
 
                     // 1st phase columns
@@ -2672,6 +2695,7 @@ impl<F: Field> TxCircuitConfig<F> {
         tag: TxFieldTag,
         index: u64,
         value: Value<F>,
+        access_list_address: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         let (tx_type, tx_id) = if let Some(tx) = tx {
             (tx.tx_type, tx.id)
@@ -2733,9 +2757,14 @@ impl<F: Field> TxCircuitConfig<F> {
         ] {
             region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
         }
+
+        // additional access_list_address column
+        region.assign_advice(|| "access_list_address value", self.tx_table.access_list_address, offset, || access_list_address)?;
+
         // 2nd phase columns
         let tx_value_cell =
             region.assign_advice(|| "tx_value", self.tx_table.value, offset, || value)?;
+        
 
         Ok(tx_value_cell)
     }
