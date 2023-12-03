@@ -1424,7 +1424,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(is_access_list_storage_key, Rotation::cur())
                 ]),
             |cb| {
-                
+                cb.require_equal(
+                    "index = sks_acc",
+                    meta.query_advice(sks_acc, Rotation::cur()),
+                    meta.query_advice(tx_table.index, Rotation::cur()),
+                );
             });
 
             // within same tx, next tag is AccessListAddress
