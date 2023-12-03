@@ -165,10 +165,11 @@ pub struct TxCircuitConfig<F: Field> {
     /// An accumulator value used to correctly calculate the calldata gas cost
     /// for a tx.
     calldata_gas_cost_acc: Column<Advice>,
-    /// An accumulator value used to correctly calculate the RLC(calldata) for a tx.
-    calldata_rlc: Column<Advice>,
+    /// An accumulator value used to correctly calculate the RLC(calldata and access list) for a tx.
+    /// contains two sections if access list is present on the tx
+    section_rlc: Column<Advice>,
     /// 1st phase column which equals to tx_table.value when is_calldata is true
-    /// We need this because tx_table.value is a 2nd phase column and is used to get calldata_rlc.
+    /// We need this because tx_table.value is a 2nd phase column and is used to get section_rlc.
     /// It's not safe to do RLC on columns of same phase.
     calldata_byte: Column<Advice>,
 
@@ -284,7 +285,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // columns for accumulating length and gas_cost of call_data
         let is_final = meta.advice_column();
         let calldata_gas_cost_acc = meta.advice_column();
-        let calldata_rlc = meta.advice_column_in(SecondPhase);
+        let section_rlc = meta.advice_column_in(SecondPhase);
         let calldata_byte = meta.advice_column();
 
         // booleans to reduce degree
@@ -843,7 +844,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_eip1559,
             sv_address,
             calldata_gas_cost_acc,
-            calldata_rlc,
+            section_rlc,
             tx_table.clone(),
             keccak_table.clone(),
             rlp_table,
@@ -1241,8 +1242,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 gas_cost,
             );
             cb.require_equal(
-                "calldata_rlc == byte",
-                meta.query_advice(calldata_rlc, Rotation::cur()),
+                "section_rlc == byte",
+                meta.query_advice(section_rlc, Rotation::cur()),
                 meta.query_advice(tx_table.value, Rotation::cur()),
             );
 
@@ -1280,9 +1281,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(calldata_gas_cost_acc, Rotation::cur()) + gas_cost_next,
                 );
                 cb.require_equal(
-                    "calldata_rlc' = calldata_rlc * r + byte'",
-                    meta.query_advice(calldata_rlc, Rotation::next()),
-                    meta.query_advice(calldata_rlc, Rotation::cur()) * challenges.keccak_input()
+                    "section_rlc' = section_rlc * r + byte'",
+                    meta.query_advice(section_rlc, Rotation::next()),
+                    meta.query_advice(section_rlc, Rotation::cur()) * challenges.keccak_input()
                         + meta.query_advice(tx_table.value, Rotation::next()),
                 );
             });
@@ -1321,14 +1322,16 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             //             gas_cost_next,
             //         );
             //         cb.require_equal(
-            //             "calldata_rlc' == byte'",
-            //             meta.query_advice(calldata_rlc, Rotation::next()),
+            //             "section_rlc' == byte'",
+            //             meta.query_advice(section_rlc, Rotation::next()),
             //             meta.query_advice(tx_table.value, Rotation::next()),
             //         );
             //     },
             // );
 
 
+            // Initialize the dynamic access list assignment section.
+            // Must follow immediately when the calldata section ends.
             cb.condition(
                 and::expr([
                     is_final_cur.expr(),
@@ -1338,6 +1341,15 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     cb.require_zero(
                         "tx_id stays the same for access list section at is_final == 1",
                         tx_id_unchanged.is_equal_expression.clone() - 1.expr(),
+                    );
+                    cb.require_equal(
+                        "al_idx starts with 1",
+                        meta.query_advice(al_idx, Rotation::next()),
+                        1.expr()
+                    );
+                    cb.require_zero(
+                        "sks_acc starts with 0",
+                        meta.query_advice(sks_acc, Rotation::next()),
                     );
                 }
             );
@@ -1463,7 +1475,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_chain_id,
             is_final,
             calldata_gas_cost_acc,
-            calldata_rlc,
+            section_rlc,
             calldata_byte,
             sv_address,
             sig_table,
@@ -1503,7 +1515,7 @@ impl<F: Field> TxCircuitConfig<F> {
         is_eip1559: Column<Advice>,
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
-        calldata_rlc: Column<Advice>,
+        section_rlc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
@@ -1588,7 +1600,7 @@ impl<F: Field> TxCircuitConfig<F> {
         });
         meta.lookup_any("lookup CallDataRLC in the calldata part", |meta| {
             let is_call_data = meta.query_advice(is_calldata, Rotation::cur());
-            let calldata_rlc = meta.query_advice(calldata_rlc, Rotation::cur());
+            let section_rlc = meta.query_advice(section_rlc, Rotation::cur());
             let enable = and::expr([
                 meta.query_fixed(tx_table.q_enable, Rotation::cur()),
                 is_call_data,
@@ -1599,7 +1611,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let input_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 CallDataRLC.expr(),
-                calldata_rlc.expr(),
+                section_rlc.expr(),
             ];
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
@@ -2335,7 +2347,7 @@ impl<F: Field> TxCircuitConfig<F> {
             }
 
             // 2nd phase columns
-            region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || rlc)?;
+            region.assign_advice(|| "rlc", self.section_rlc, *offset, || rlc)?;
 
             *offset += 1;
         }
@@ -2410,7 +2422,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 }
 
                 // 2nd phase columns
-                region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || section_rlc)?;
+                region.assign_advice(|| "rlc", self.section_rlc, *offset, || section_rlc)?;
 
                 *offset += 1;
 
@@ -2458,7 +2470,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     }
 
                     // 2nd phase columns
-                    region.assign_advice(|| "rlc", self.calldata_rlc, *offset, || section_rlc)?;
+                    region.assign_advice(|| "rlc", self.section_rlc, *offset, || section_rlc)?;
 
                     *offset += 1;
                 }
