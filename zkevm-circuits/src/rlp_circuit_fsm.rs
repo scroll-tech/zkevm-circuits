@@ -1923,8 +1923,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         witness: &RlpFsmWitnessRow<F>,
         witness_next: Option<&RlpFsmWitnessRow<F>>,
     ) -> Result<(), Error> {
-        // tx1559_debug
-        log::trace!("=> [Execution assign_sm_row] witness: {:?}", witness);
         // assign to selector
         region.assign_fixed(
             || "q_enable",

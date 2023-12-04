@@ -2831,8 +2831,6 @@ impl<F: Field> TxCircuitConfig<F> {
                         F::one(),
                     ),
                 ] {
-                    // tx1559_debug
-                    log::trace!("=> [Execution assign_access_list_rows] col_anno: {:?}, offset: {:?}, value: {:?}", col_anno, offset, col_val);
                     region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
                 }
 
