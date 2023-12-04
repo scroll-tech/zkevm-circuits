@@ -1411,6 +1411,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let is_final_cur = meta.query_advice(is_final, Rotation::cur());
             cb.require_boolean("is_final is boolean", is_final_cur.clone());
 
+            // section_rlc accumulation factor, rand^20 for addresses or rand^32 for storage keys
+            let r20 = [1, 0, 1, 0, 0].iter()
+                .fold(1.expr(), |acc: Expression<F>, bit| acc.clone() * acc * if *bit > 0 { challenges.keccak_input() } else { 1.expr() });
+            let r32 = [1, 0, 0, 0, 0, 0].iter()
+                .fold(1.expr(), |acc: Expression<F>, bit| acc.clone() * acc * if *bit > 0 { challenges.keccak_input() } else { 1.expr() });
+
             // current tag is AccessListAddress
             cb.condition(
                 and::expr([
@@ -1432,6 +1438,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     "sk_idx = 0",
                     meta.query_advice(sk_idx, Rotation::cur()),
                 );
+                cb.require_equal(
+                    "section_rlc accumulation: r = rand^20, section_rlc' = section_rlc * r + field_rlc'",
+                    meta.query_advice(section_rlc, Rotation::next()),
+                    meta.query_advice(section_rlc, Rotation::cur()) * r20
+                        + meta.query_advice(field_rlc, Rotation::next()),
+                );
             });
 
             // current tag is AccessListStorageKey
@@ -1445,6 +1457,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     "index = sks_acc",
                     meta.query_advice(sks_acc, Rotation::cur()),
                     meta.query_advice(tx_table.index, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "section_rlc accumulation: r = rand^32, section_rlc' = section_rlc * r + field_rlc'",
+                    meta.query_advice(section_rlc, Rotation::next()),
+                    meta.query_advice(section_rlc, Rotation::cur()) * r32
+                        + meta.query_advice(field_rlc, Rotation::next()),
                 );
             });
 
