@@ -394,6 +394,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tag.into(),
             self.index.into(),
             self.value.into(),
+            self.access_list_address.into(),
         ]
     }
 
@@ -404,6 +405,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             String::from("tag"),
             String::from("index"),
             String::from("value"),
+            String::from("access_list_address"),
         ]
     }
 
@@ -414,6 +416,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
             meta.query_advice(self.value, Rotation::cur()),
+            meta.query_advice(self.access_list_address, Rotation::cur()),
         ]
     }
 }

@@ -352,7 +352,6 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::AccessListRLC as u64)),
                 Value::known(F::zero()),
-                // TODO: need to check if it's correct with RLP.
                 rlc_be_bytes(
                     &self
                         .access_list
@@ -365,31 +364,20 @@ impl Transaction {
             ],
             [
                 Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::AccessListAddressesLen as u64)),
+                Value::known(F::from(TxContextFieldTag::MaxFeePerGas as u64)),
                 Value::known(F::zero()),
-                Value::known(F::from(access_list_address_size)),
-                Value::known(F::zero()),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::AccessListStorageKeysLen as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(access_list_storage_key_size)),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.max_fee_per_gas.to_le_bytes(), challenge)),
                 Value::known(F::zero()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::AccessListRLC as u64)),
+                Value::known(F::from(TxContextFieldTag::MaxPriorityFeePerGas as u64)),
                 Value::known(F::zero()),
-                // TODO: need to check if it's correct with RLP.
-                rlc_be_bytes(
-                    &self
-                        .access_list
-                        .as_ref()
-                        .map(|access_list| access_list.rlp_bytes())
-                        .unwrap_or_default(),
-                    challenges.keccak_input(),
-                ),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.max_priority_fee_per_gas.to_le_bytes(), challenge)),
                 Value::known(F::zero()),
             ],
             [
