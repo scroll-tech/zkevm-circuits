@@ -2830,7 +2830,7 @@ impl<F: Field> TxCircuitConfig<F> {
     ) -> Result<(), Error> {
         // assign to access_list related columns
 
-        if !tx.access_list.as_ref().unwrap().0.is_empty() {
+        if tx.access_list.is_some() {
             // storage key len accumulator
             let mut sks_acc: usize = 0;
 
