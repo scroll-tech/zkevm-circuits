@@ -1170,8 +1170,16 @@ pub(super) fn tx_convert(
         nonce: tx.nonce,
         gas: tx.gas,
         gas_price: tx.gas_price,
-        max_fee_per_gas: if tx.tx_type.is_eip1559() { tx.gas_fee_cap } else { tx.gas_price },
-        max_priority_fee_per_gas: if tx.tx_type.is_eip1559() { tx.gas_tip_cap } else { tx.gas_price },
+        max_fee_per_gas: if tx.tx_type.is_eip1559() {
+            tx.gas_fee_cap
+        } else {
+            tx.gas_price
+        },
+        max_priority_fee_per_gas: if tx.tx_type.is_eip1559() {
+            tx.gas_tip_cap
+        } else {
+            tx.gas_price
+        },
         caller_address: tx.from,
         callee_address,
         is_create: tx.is_create(),
