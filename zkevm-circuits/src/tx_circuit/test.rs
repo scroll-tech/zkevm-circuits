@@ -141,6 +141,8 @@ fn build_eip1559_tx() -> Transaction {
     tx.value = eth_tx.value;
     tx.gas_price = eth_tx.gas_price.unwrap_or(U256::zero());
     tx.gas = eth_tx.gas.as_u64();
+    tx.max_fee_per_gas = eth_tx.max_fee_per_gas.unwrap_or(U256::zero());
+    tx.max_priority_fee_per_gas = eth_tx.max_priority_fee_per_gas.unwrap_or(U256::zero());
     tx.call_data = eth_tx.input.to_vec();
     tx.callee_address = eth_tx.to;
     tx.caller_address = eth_tx.from;

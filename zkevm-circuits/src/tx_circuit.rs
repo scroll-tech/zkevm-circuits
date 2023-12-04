@@ -22,7 +22,7 @@ use crate::{
             AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
             CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress, CallerAddress, ChainID,
             Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength,
-            TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+            TxHashRLC, TxSignHash, TxSignLength, TxSignRLC, MaxFeePerGas, MaxPriorityFeePerGas,
         },
         TxTable, U16Table, U8Table,
     },
@@ -83,7 +83,7 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 26;
+pub const TX_LEN: usize = 28;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
@@ -382,6 +382,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_access_list_rlc, AccessListRLC);
         is_tx_tag!(is_tag_access_list_address, AccessListAddress);
         is_tx_tag!(is_tag_access_list_storage_key, AccessListStorageKey);
+        is_tx_tag!(is_max_fee_per_gas, MaxFeePerGas);
+        is_tx_tag!(is_max_priority_fee_per_gas, MaxPriorityFeePerGas);
 
         let tx_id_unchanged = IsEqualChip::configure(
             meta,
@@ -506,6 +508,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     is_tag_access_list_storage_key(meta),
                     Tag::AccessListStorageKey.into(),
                 ),
+                (
+                    is_max_fee_per_gas(meta),
+                    Tag::MaxFeePerGas.into(),
+                ),
+                (
+                    is_max_priority_fee_per_gas(meta),
+                    Tag::MaxPriorityFeePerGas.into(),
+                ),
                 // tx tags which correspond to Null
                 (is_null(meta), Null),
                 (is_create(meta), Null),
@@ -606,9 +616,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
-
-        // TODO: add constraints for AccessListAddressesLen, AccessListStorageKeysLen
-        // and AccessListRLC.
 
         //////////////////////////////////////////////////////////
         ///// Constraints for booleans that reducing degree  /////
@@ -763,6 +770,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         meta.query_advice(is_eip1559, Rotation::cur()),
                     ]),
                 ]),
+                and::expr([
+                    meta.query_advice(is_eip1559, Rotation::cur()),
+                    is_max_fee_per_gas(meta),
+                ]),
+                and::expr([
+                    meta.query_advice(is_eip1559, Rotation::cur()),
+                    is_max_priority_fee_per_gas(meta),
+                ]),
                 is_sign_length(meta),
                 is_sign_rlc(meta),
             ]);
@@ -801,6 +816,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 is_sig_s(meta),
                 is_hash_length(meta),
                 is_hash_rlc(meta),
+                and::expr([
+                    meta.query_advice(is_eip1559, Rotation::cur()),
+                    is_max_fee_per_gas(meta),
+                ]),
+                and::expr([
+                    meta.query_advice(is_eip1559, Rotation::cur()),
+                    is_max_priority_fee_per_gas(meta),
+                ]),
             ]);
 
             cb.require_equal(
@@ -2485,6 +2508,26 @@ impl<F: Field> TxCircuitConfig<F> {
                 }),
                 access_list_rlc(&tx.access_list, challenges),
             ),
+            (
+                MaxFeePerGas,
+                Some(RlpTableInputValue {
+                    tag: Tag::MaxFeePerGas.into(),
+                    is_none: tx.max_fee_per_gas.is_zero(),
+                    be_bytes_len: tx.max_fee_per_gas.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), evm_word),
+            ),
+            (
+                MaxPriorityFeePerGas,
+                Some(RlpTableInputValue {
+                    tag: Tag::MaxPriorityFeePerGas.into(),
+                    is_none: tx.max_priority_fee_per_gas.is_zero(),
+                    be_bytes_len: tx.max_priority_fee_per_gas.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.max_priority_fee_per_gas.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.max_priority_fee_per_gas.to_be_bytes(), evm_word),
+            ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];
         for (tx_tag, rlp_input, tx_value) in fixed_rows {
@@ -2611,7 +2654,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 let case1 = is_tag_in_set && !is_l1_msg;
                 let case2 = !tx.tx_type.is_pre_eip155() && (tx_tag == ChainID);
                 let case3 = !tx.tx_type.is_eip1559() && (tx_tag == GasPrice);
-                F::from((case1 || case2 || case3) as u64)
+                let case4 = tx.tx_type.is_eip1559() && (tx_tag == MaxFeePerGas || tx_tag == MaxPriorityFeePerGas);
+                F::from((case1 || case2 || case3 || case4) as u64)
             });
             // 3. lookup to RLP table for hashing (non L1 msg)
             conditions.insert(LookupCondition::RlpHashTag, {
@@ -2631,7 +2675,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 let case1 = is_tag_in_set && !is_l1_msg;
                 let case3 = !tx.tx_type.is_eip1559() && (tx_tag == GasPrice);
-                F::from((case1 || case3) as u64)
+                let case4 = tx.tx_type.is_eip1559() && (tx_tag == MaxFeePerGas || tx_tag == MaxPriorityFeePerGas);
+                F::from((case1 || case3 || case4) as u64)
             });
             // 4. lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
