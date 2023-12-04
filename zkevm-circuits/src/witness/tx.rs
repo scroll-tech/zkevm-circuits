@@ -440,7 +440,7 @@ impl Transaction {
                     Value::known(al.address.to_scalar().unwrap()),
                     Value::known(al.address.to_scalar().unwrap()),
                 ]);
-    
+
                 for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
                     assignments.push([
                         Value::known(F::from(self.id as u64)),
