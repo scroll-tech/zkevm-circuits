@@ -865,7 +865,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             &lookup_conditions,
             is_final,
             is_calldata,
-            is_access_list,
+            // tx1559_debug
+            // is_access_list,
             is_chain_id,
             is_l1_msg,
             is_eip2930,
@@ -873,15 +874,17 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sv_address,
             calldata_gas_cost_acc,
             section_rlc,
-            field_rlc,
+            // tx1559_debug
+            // field_rlc,
             tx_table.clone(),
             keccak_table.clone(),
             rlp_table,
             sig_table,
-            is_access_list_address,
-            is_access_list_storage_key,
-            al_idx,
-            sk_idx,
+            // tx1559_debug
+            // is_access_list_address,
+            // is_access_list_storage_key,
+            // al_idx,
+            // sk_idx,
         );
 
         meta.create_gate("tx_gas_cost == 0 for L1 msg", |meta| {
@@ -1384,6 +1387,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         "sks_acc starts with 0",
                         meta.query_advice(sks_acc, Rotation::next()),
                     );
+                    cb.require_equal(
+                        "section_rlc::cur == field_rlc::cur",
+                        meta.query_advice(section_rlc, Rotation::next()),
+                        meta.query_advice(field_rlc, Rotation::next()),
+                    );
                 }
             );
 
@@ -1714,7 +1722,8 @@ impl<F: Field> TxCircuitConfig<F> {
         lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
         is_final: Column<Advice>,
         is_calldata: Column<Advice>,
-        is_access_list: Column<Advice>,
+        // tx1559_debug
+        // is_access_list: Column<Advice>,
         is_chain_id: Column<Advice>,
         is_l1_msg_col: Column<Advice>,
         is_eip2930: Column<Advice>,
@@ -1722,15 +1731,17 @@ impl<F: Field> TxCircuitConfig<F> {
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         section_rlc: Column<Advice>,
-        field_rlc: Column<Advice>,
+        // tx1559_debug
+        // field_rlc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
         sig_table: SigTable,
-        is_access_list_address: Column<Advice>,
-        is_access_list_storage_key: Column<Advice>,
-        al_idx: Column<Advice>,
-        sk_idx: Column<Advice>,
+        // tx1559_debug
+        // is_access_list_address: Column<Advice>,
+        // is_access_list_storage_key: Column<Advice>,
+        // al_idx: Column<Advice>,
+        // sk_idx: Column<Advice>,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
