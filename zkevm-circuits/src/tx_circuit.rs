@@ -202,6 +202,10 @@ pub struct TxCircuitConfig<F: Field> {
     // access list tag denoter, reduces degree
     is_access_list_address: Column<Advice>,
     is_access_list_storage_key: Column<Advice>,
+    // field_rlc holds tag rlc from RLP FSM
+    // works together with section_rlc to ensure
+    // no ommittance in access list dynamic section
+    field_rlc: Column<Advice>,
 
     _marker: PhantomData<F>,
 }
@@ -317,7 +321,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_access_list = meta.advice_column();
         let is_access_list_address = meta.advice_column();
         let is_access_list_storage_key = meta.advice_column();
-
+        let field_rlc = meta.advice_column();
 
         // TODO: add lookup to SignVerify table for sv_address
         let sv_address = meta.advice_column();
@@ -869,10 +873,15 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sv_address,
             calldata_gas_cost_acc,
             section_rlc,
+            field_rlc,
             tx_table.clone(),
             keccak_table.clone(),
             rlp_table,
             sig_table,
+            is_access_list_address,
+            is_access_list_storage_key,
+            al_idx,
+            sk_idx,
         );
 
         meta.create_gate("tx_gas_cost == 0 for L1 msg", |meta| {
@@ -1684,6 +1693,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_access_list,
             is_access_list_address,
             is_access_list_storage_key,
+            field_rlc,
             _marker: PhantomData,
             num_txs,
         }
@@ -1712,10 +1722,15 @@ impl<F: Field> TxCircuitConfig<F> {
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         section_rlc: Column<Advice>,
+        field_rlc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
         sig_table: SigTable,
+        is_access_list_address: Column<Advice>,
+        is_access_list_storage_key: Column<Advice>,
+        al_idx: Column<Advice>,
+        sk_idx: Column<Advice>,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
@@ -1937,6 +1952,80 @@ impl<F: Field> TxCircuitConfig<F> {
             .collect()
         });
 
+        // tx1559_debug
+        // lookup access list address in RLP table
+        // 1. ensure field_rlc is correct
+        // 2. ensure value of address is correct
+        // meta.lookup_any("lookup access list address in RLP Table from tx circuit dynamic section", |meta| {
+        //     let enable = and::expr(vec![
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         meta.query_advice(is_access_list_address, Rotation::cur()),
+        //     ]);
+
+        //     // only eip2930 and eip1559 contains an access list
+        //     let sign_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxSignEip2930.expr()
+        //         + meta.query_advice(is_eip1559, Rotation::cur()) * TxSignEip1559.expr();
+        //     let hash_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxHashEip2930.expr()
+        //         + meta.query_advice(is_eip1559, Rotation::cur()) * TxHashEip1559.expr();
+
+        //     vec![
+        //         1.expr(), // q_enable = true
+        //         meta.query_advice(tx_table.tx_id, Rotation::cur()),
+        //         // tx1559_debug
+        //         // hash_format,
+        //         sign_format,
+        //         meta.query_advice(rlp_tag, Rotation::cur()),
+        //         meta.query_advice(tx_table.value, Rotation::cur()),
+        //         meta.query_advice(field_rlc, Rotation::cur()),
+        //         20.expr(), // 20 bytes for address
+        //         1.expr(), // is_output = true
+        //         0.expr(), // is_none = false. must have value
+        //         meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
+        //         meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
+        //     ]
+        //     .into_iter()
+        //     .zip_eq(rlp_table.table_exprs(meta).into_iter())
+        //     .map(|(arg, table)| (enable.clone() * arg, table))
+        //     .collect()
+        // });
+
+        // tx1559_debug
+        // lookup access list storage key in RLP table
+        // 1. ensure field_rlc is correct
+        // 2. ensure value of storage key is correct
+        // meta.lookup_any("lookup access list storage key in RLP Table from tx circuit dynamic section", |meta| {
+        //     let enable = and::expr(vec![
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         meta.query_advice(is_access_list_storage_key, Rotation::cur()),
+        //     ]);
+
+        //     // only eip2930 and eip1559 contains an access list
+        //     let sign_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxSignEip2930.expr()
+        //         + meta.query_advice(is_eip1559, Rotation::cur()) * TxSignEip1559.expr();
+        //     let hash_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxHashEip2930.expr()
+        //         + meta.query_advice(is_eip1559, Rotation::cur()) * TxHashEip1559.expr();
+
+        //     vec![
+        //         1.expr(), // q_enable = true
+        //         meta.query_advice(tx_table.tx_id, Rotation::cur()),
+        //         sign_format,
+        //         // tx1559_debug
+        //         // hash_format,
+        //         meta.query_advice(rlp_tag, Rotation::cur()),
+        //         meta.query_advice(tx_table.value, Rotation::cur()),
+        //         meta.query_advice(field_rlc, Rotation::cur()),
+        //         32.expr(), // 32 bytes for storage keys
+        //         1.expr(), // is_output = true
+        //         0.expr(), // is_none = false. must have value
+        //         meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
+        //         meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
+        //     ]
+        //     .into_iter()
+        //     .zip_eq(rlp_table.table_exprs(meta).into_iter())
+        //     .map(|(arg, table)| (enable.clone() * arg, table))
+        //     .collect()
+        // });
+
         ////////////////////////////////////////////////////////////////////
         /////////////////    Sig table lookups     //////////////////////
         ///////////////// //////////////////////////////////////////////////
@@ -2026,6 +2115,8 @@ impl<F: Field> TxCircuitConfig<F> {
             0,
             Value::known(F::zero()),
             Value::known(F::zero()),
+            // tx1559_debug
+            false,
         )?;
         let (col_anno, col, col_val) = ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64));
         region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
@@ -2307,6 +2398,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 0,
                 tx_value,
                 Value::known(F::zero()),
+                // tx1559_debug
+                false,
             )?);
 
             // 1st phase columns
@@ -2527,6 +2620,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 idx as u64,
                 Value::known(F::from(*byte as u64)),
                 Value::known(F::zero()),
+                // tx1559_debug
+                false,
             )?;
 
             // 1st phase columns
@@ -2564,6 +2659,7 @@ impl<F: Field> TxCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         // tx1559_debug
+        let should_print = true;
         // assign to access_list related columns
 
         if tx.access_list.as_ref().unwrap().0.len() > 0 {
@@ -2604,6 +2700,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     (al_idx + 1) as u64,
                     Value::known(al.address.to_scalar().unwrap()),
                     Value::known(al.address.to_scalar().unwrap()),
+                    should_print
                 )?;
 
                 // 1st phase columns
@@ -2617,11 +2714,17 @@ impl<F: Field> TxCircuitConfig<F> {
                     ("is_access_list", self.is_access_list, F::one()),
                     ("is_access_list_address", self.is_access_list_address, F::one()),
 
-                    
                     // ("byte", self.calldata_byte, F::from(*byte as u64)),
                 ] {
+                    // tx1559_debug
+                    log::trace!("=> [Execution TxCircuit] assign - assign_access_list_rows - anno: {:?}, offset: {:?}, value: {:?}", col_anno, offset, col_val);
                     region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
                 }
+
+                // field_rlc to work with section_rlc
+                // tx1559_debug
+                log::trace!("=> [Execution TxCircuit] assign - assign_access_list_rows - anno: {:?}, offset: {:?}, value: {:?}", "field_rlc", offset, field_rlc.into_field());
+                region.assign_advice(|| "field_rlc", self.field_rlc, *offset, || field_rlc)?;
 
                 // 2nd phase columns
                 region.assign_advice(|| "rlc", self.section_rlc, *offset, || section_rlc)?;
@@ -2655,6 +2758,8 @@ impl<F: Field> TxCircuitConfig<F> {
                         sks_acc as u64,
                         rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word()),
                         Value::known(al.address.to_scalar().unwrap()),
+                        // tx1559_debug
+                        false,
                     )?;
 
                     // 1st phase columns
@@ -2668,11 +2773,13 @@ impl<F: Field> TxCircuitConfig<F> {
                         ("is_access_list", self.is_access_list, F::one()),
                         ("is_access_list_storage_key", self.is_access_list_storage_key, F::one()),
 
-
                         // ("byte", self.calldata_byte, F::from(*byte as u64)),
                     ] {
                         region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
                     }
+
+                    // field_rlc to work with section_rlc
+                    region.assign_advice(|| "field_rlc", self.field_rlc, *offset, || field_rlc)?;
 
                     // 2nd phase columns
                     region.assign_advice(|| "rlc", self.section_rlc, *offset, || section_rlc)?;
@@ -2700,6 +2807,8 @@ impl<F: Field> TxCircuitConfig<F> {
         index: u64,
         value: Value<F>,
         access_list_address: Value<F>,
+        // tx1559_debug
+        should_print: bool,
     ) -> Result<AssignedCell<F, F>, Error> {
         let (tx_type, tx_id) = if let Some(tx) = tx {
             (tx.tx_type, tx.id)
@@ -2733,6 +2842,10 @@ impl<F: Field> TxCircuitConfig<F> {
             ("q_enable", self.tx_table.q_enable, F::one()),
             ("tag", self.tx_table.tag, F::from(usize::from(tag) as u64)),
         ] {
+            // tx1559_debug
+            if should_print {
+                log::trace!("=> [Execution TxCircuit] assign - assign_access_list_rows - anno: {:?}, offset: {:?}, value: {:?}", col_anno, offset, col_val);
+            }
             region.assign_fixed(|| col_anno, col, offset, || Value::known(col_val))?;
         }
 
@@ -2757,15 +2870,26 @@ impl<F: Field> TxCircuitConfig<F> {
                 self.is_eip1559,
                 F::from(tx_type.is_eip1559() as u64),
             ),
-
         ] {
+            // tx1559_debug
+            if should_print {
+                log::trace!("=> [Execution TxCircuit] assign - assign_access_list_rows - anno: {:?}, offset: {:?}, value: {:?}", col_anno, offset, col_val);
+            }
             region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
         }
 
         // additional access_list_address column
+        // tx1559_debug
+        if should_print {
+            log::trace!("=> [Execution TxCircuit] assign - assign_access_list_rows - anno: {:?}, offset: {:?}, value: {:?}", "access_list_address value", offset, access_list_address.into_field());
+        }
         region.assign_advice(|| "access_list_address value", self.tx_table.access_list_address, offset, || access_list_address)?;
 
         // 2nd phase columns
+        // tx1559_debug
+        if should_print {
+            log::trace!("=> [Execution TxCircuit] assign - assign_access_list_rows - anno: {:?}, offset: {:?}, value: {:?}", "tx_table.value", offset, value.into_field());
+        }
         let tx_value_cell =
             region.assign_advice(|| "tx_value", self.tx_table.value, offset, || value)?;
         
@@ -3378,3 +3502,36 @@ pub fn access_list_rlc<F: Field>(access_list: &Option<AccessList>, challenges: &
     }
 }
 
+// tx1559_debug
+// Evaluate an expression using a `CachedRegion` at `offset`.
+// pub(crate) fn evaluate_expression<F: Field>(
+//     expr: &Expression<F>,
+//     region: &Region<'_, F>,
+//     offset: usize,
+// ) -> Value<F> {
+//     expr.evaluate(
+//         &|scalar| Value::known(scalar),
+//         &|_| unimplemented!("selector column"),
+//         &|fixed_query| {
+//             Value::known(region.fi
+//                 region.get_fixed(
+//                 offset,
+//                 fixed_query.column_index(),
+//                 fixed_query.rotation(),
+//             ))
+//         },
+//         &|advice_query| {
+//             Value::known(region.get_advice(
+//                 offset,
+//                 advice_query.column_index(),
+//                 advice_query.rotation(),
+//             ))
+//         },
+//         &|_| unimplemented!("instance column"),
+//         &|challenge| *region.challenges().indexed()[challenge.index()],
+//         &|a| -a,
+//         &|a, b| a + b,
+//         &|a, b| a * b,
+//         &|a, scalar| a * Value::known(scalar),
+//     )
+// }
