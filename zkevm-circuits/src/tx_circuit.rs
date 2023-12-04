@@ -880,11 +880,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             keccak_table.clone(),
             rlp_table,
             sig_table,
+            is_access_list,
             // tx1559_debug
             // is_access_list_address,
             // is_access_list_storage_key,
-            // al_idx,
-            // sk_idx,
+            al_idx,
+            sk_idx,
         );
 
         meta.create_gate("tx_gas_cost == 0 for L1 msg", |meta| {
@@ -1371,7 +1372,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             //     },
             // );
 
-
             // Initialize the dynamic access list assignment section.
             // Must follow immediately when the calldata section ends.
             cb.condition(
@@ -1761,11 +1761,12 @@ impl<F: Field> TxCircuitConfig<F> {
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
         sig_table: SigTable,
+        is_access_list: Column<Advice>,
         // tx1559_debug
         // is_access_list_address: Column<Advice>,
         // is_access_list_storage_key: Column<Advice>,
-        // al_idx: Column<Advice>,
-        // sk_idx: Column<Advice>,
+        al_idx: Column<Advice>,
+        sk_idx: Column<Advice>,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
@@ -1858,6 +1859,31 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 CallDataRLC.expr(),
                 section_rlc.expr(),
+            ];
+            let table_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
+            ];
+
+            input_exprs
+                .into_iter()
+                .zip(table_exprs.into_iter())
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+
+        meta.lookup_any("lookup AccessListAddressLen in the TxTable", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_access_list, Rotation::cur()),
+                meta.query_advice(is_final, Rotation::cur()),
+            ]);
+
+            let input_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                AccessListAddressesLen.expr(),
+                meta.query_advice(al_idx, Rotation::cur()),
             ];
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
