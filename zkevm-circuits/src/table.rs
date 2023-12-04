@@ -2356,12 +2356,12 @@ impl RlpFsmRlpTable {
                         (
                             "access_list_idx",
                             self.access_list_idx.into(),
-                            Value::known(F::from(row.access_list_idx as u64)),
+                            Value::known(F::from(row.access_list_idx)),
                         ),
                         (
                             "storage_key_idx",
                             self.storage_key_idx.into(),
-                            Value::known(F::from(row.storage_key_idx as u64)),
+                            Value::known(F::from(row.storage_key_idx)),
                         ),
                     ];
 
