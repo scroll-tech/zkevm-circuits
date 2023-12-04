@@ -878,8 +878,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             &lookup_conditions,
             is_final,
             is_calldata,
-            // tx1559_debug
-            // is_access_list,
             is_chain_id,
             is_l1_msg,
             is_eip2930,
@@ -887,18 +885,16 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sv_address,
             calldata_gas_cost_acc,
             section_rlc,
-            // tx1559_debug
-            // field_rlc,
+            field_rlc,
             tx_table.clone(),
             keccak_table.clone(),
             rlp_table,
             sig_table,
             is_access_list,
-            // tx1559_debug
-            // is_access_list_address,
-            // is_access_list_storage_key,
+            is_access_list_address,
+            is_access_list_storage_key,
             al_idx,
-            // sk_idx,
+            sk_idx,
             sks_acc,
         );
 
@@ -1713,8 +1709,6 @@ impl<F: Field> TxCircuitConfig<F> {
         lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
         is_final: Column<Advice>,
         is_calldata: Column<Advice>,
-        // tx1559_debug
-        // is_access_list: Column<Advice>,
         is_chain_id: Column<Advice>,
         is_l1_msg_col: Column<Advice>,
         is_eip2930: Column<Advice>,
@@ -1722,18 +1716,16 @@ impl<F: Field> TxCircuitConfig<F> {
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         section_rlc: Column<Advice>,
-        // tx1559_debug
-        // field_rlc: Column<Advice>,
+        field_rlc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
         sig_table: SigTable,
         is_access_list: Column<Advice>,
-        // tx1559_debug
-        // is_access_list_address: Column<Advice>,
-        // is_access_list_storage_key: Column<Advice>,
+        is_access_list_address: Column<Advice>,
+        is_access_list_storage_key: Column<Advice>,
         al_idx: Column<Advice>,
-        // sk_idx: Column<Advice>,
+        sk_idx: Column<Advice>,
         sks_acc: Column<Advice>,
     ) {
         macro_rules! is_tx_type {
@@ -2031,81 +2023,127 @@ impl<F: Field> TxCircuitConfig<F> {
             .collect()
         });
 
-        // tx1559_debug
         // lookup access list address in RLP table
         // 1. ensure field_rlc is correct
         // 2. ensure value of address is correct
-        // meta.lookup_any("lookup access list address in RLP Table from tx circuit dynamic
-        // section", |meta| {     let enable = and::expr(vec![
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         meta.query_advice(is_access_list_address, Rotation::cur()),
-        //     ]);
+        meta.lookup_any("Lookup access list address in RLP Table from tx circuit dynamic section (Signing)", |meta| {
+            let enable = and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_access_list_address, Rotation::cur()),
+            ]);
 
-        //     // only eip2930 and eip1559 contains an access list
-        //     let sign_format = meta.query_advice(is_eip2930, Rotation::cur()) *
-        // TxSignEip2930.expr()         + meta.query_advice(is_eip1559, Rotation::cur()) *
-        // TxSignEip1559.expr();     let hash_format = meta.query_advice(is_eip2930,
-        // Rotation::cur()) * TxHashEip2930.expr()         + meta.query_advice(is_eip1559,
-        // Rotation::cur()) * TxHashEip1559.expr();
+            // only eip2930 and eip1559 contains an access list
+            let sign_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxSignEip2930.expr() 
+                + meta.query_advice(is_eip1559, Rotation::cur()) * TxSignEip1559.expr();     
+            
+            vec![
+                1.expr(), // q_enable = true
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                sign_format,
+                meta.query_advice(rlp_tag, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(field_rlc, Rotation::cur()),
+                20.expr(), // 20 bytes for address
+                1.expr(), // is_output = true
+                0.expr(), // is_none = false. must have value
+                meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
+                meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
+            ]
+            .into_iter()
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
 
-        //     vec![
-        //         1.expr(), // q_enable = true
-        //         meta.query_advice(tx_table.tx_id, Rotation::cur()),
-        //         // tx1559_debug
-        //         // hash_format,
-        //         sign_format,
-        //         meta.query_advice(rlp_tag, Rotation::cur()),
-        //         meta.query_advice(tx_table.value, Rotation::cur()),
-        //         meta.query_advice(field_rlc, Rotation::cur()),
-        //         20.expr(), // 20 bytes for address
-        //         1.expr(), // is_output = true
-        //         0.expr(), // is_none = false. must have value
-        //         meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
-        //         meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
-        //     ]
-        //     .into_iter()
-        //     .zip_eq(rlp_table.table_exprs(meta).into_iter())
-        //     .map(|(arg, table)| (enable.clone() * arg, table))
-        //     .collect()
-        // });
+        meta.lookup_any("Lookup access list address in RLP Table from tx circuit dynamic section (Hashing)", |meta| {
+            let enable = and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_access_list_address, Rotation::cur()),
+            ]);
 
-        // tx1559_debug
+            // only eip2930 and eip1559 contains an access list
+            let hash_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxHashEip2930.expr() 
+                + meta.query_advice(is_eip1559, Rotation::cur()) * TxHashEip1559.expr();
+            
+            vec![
+                1.expr(), // q_enable = true
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                hash_format,
+                meta.query_advice(rlp_tag, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(field_rlc, Rotation::cur()),
+                20.expr(), // 20 bytes for address
+                1.expr(), // is_output = true
+                0.expr(), // is_none = false. must have value
+                meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
+                meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
+            ]
+            .into_iter()
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
+
         // lookup access list storage key in RLP table
         // 1. ensure field_rlc is correct
         // 2. ensure value of storage key is correct
-        // meta.lookup_any("lookup access list storage key in RLP Table from tx circuit dynamic
-        // section", |meta| {     let enable = and::expr(vec![
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         meta.query_advice(is_access_list_storage_key, Rotation::cur()),
-        //     ]);
+        meta.lookup_any("Lookup access list storage key in RLP Table from tx circuit dynamic section (Signing)", |meta| {
+            let enable = and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_access_list_storage_key, Rotation::cur()),
+            ]);
 
-        //     // only eip2930 and eip1559 contains an access list
-        //     let sign_format = meta.query_advice(is_eip2930, Rotation::cur()) *
-        // TxSignEip2930.expr()         + meta.query_advice(is_eip1559, Rotation::cur()) *
-        // TxSignEip1559.expr();     let hash_format = meta.query_advice(is_eip2930,
-        // Rotation::cur()) * TxHashEip2930.expr()         + meta.query_advice(is_eip1559,
-        // Rotation::cur()) * TxHashEip1559.expr();
+            // only eip2930 and eip1559 contains an access list
+            let sign_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxSignEip2930.expr() 
+                + meta.query_advice(is_eip1559, Rotation::cur()) * TxSignEip1559.expr();
 
-        //     vec![
-        //         1.expr(), // q_enable = true
-        //         meta.query_advice(tx_table.tx_id, Rotation::cur()),
-        //         sign_format,
-        //         // tx1559_debug
-        //         // hash_format,
-        //         meta.query_advice(rlp_tag, Rotation::cur()),
-        //         meta.query_advice(tx_table.value, Rotation::cur()),
-        //         meta.query_advice(field_rlc, Rotation::cur()),
-        //         32.expr(), // 32 bytes for storage keys
-        //         1.expr(), // is_output = true
-        //         0.expr(), // is_none = false. must have value
-        //         meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
-        //         meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
-        //     ]
-        //     .into_iter()
-        //     .zip_eq(rlp_table.table_exprs(meta).into_iter())
-        //     .map(|(arg, table)| (enable.clone() * arg, table))
-        //     .collect()
-        // });
+            vec![
+                1.expr(), // q_enable = true
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                sign_format,
+                meta.query_advice(rlp_tag, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(field_rlc, Rotation::cur()),
+                32.expr(), // 32 bytes for storage keys
+                1.expr(), // is_output = true
+                0.expr(), // is_none = false. must have value
+                meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
+                meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
+            ]
+            .into_iter()
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
+
+        meta.lookup_any("Lookup access list storage key in RLP Table from tx circuit dynamic section (Hashing)", |meta| {
+            let enable = and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_access_list_storage_key, Rotation::cur()),
+            ]);
+
+            // only eip2930 and eip1559 contains an access list   
+            let hash_format = meta.query_advice(is_eip2930, Rotation::cur()) * TxHashEip2930.expr() 
+                + meta.query_advice(is_eip1559, Rotation::cur()) * TxHashEip1559.expr();
+
+            vec![
+                1.expr(), // q_enable = true
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                hash_format,
+                meta.query_advice(rlp_tag, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(field_rlc, Rotation::cur()),
+                32.expr(), // 32 bytes for storage keys
+                1.expr(), // is_output = true
+                0.expr(), // is_none = false. must have value
+                meta.query_advice(al_idx, Rotation::cur()), // access_list_idx
+                meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
+            ]
+            .into_iter()
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
 
         ////////////////////////////////////////////////////////////////////
         /////////////////    Sig table lookups     //////////////////////
@@ -2793,6 +2831,8 @@ impl<F: Field> TxCircuitConfig<F> {
                         F::one(),
                     ),
                 ] {
+                    // tx1559_debug
+                    log::trace!("=> [Execution assign_access_list_rows] col_anno: {:?}, offset: {:?}, value: {:?}", col_anno, offset, col_val);
                     region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
                 }
 

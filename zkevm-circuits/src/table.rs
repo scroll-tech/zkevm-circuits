@@ -2353,6 +2353,16 @@ impl RlpFsmRlpTable {
                             self.is_none.into(),
                             Value::known(F::from(row.is_none as u64)),
                         ),
+                        (
+                            "access_list_idx",
+                            self.access_list_idx.into(),
+                            Value::known(F::from(row.access_list_idx as u64)),
+                        ),
+                        (
+                            "storage_key_idx",
+                            self.storage_key_idx.into(),
+                            Value::known(F::from(row.storage_key_idx as u64)),
+                        ),
                     ];
 
                     for cell in cells.into_iter() {
