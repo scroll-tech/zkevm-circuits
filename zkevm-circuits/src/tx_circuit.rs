@@ -1324,24 +1324,30 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 );
             });
 
+            // End of calldata bytes transition:
             // on the final call data byte, must transition to another
             // calldata section or an access list section for the same tx
 
-
-            // tx1559_debug
-            // on the final call data byte, tx_id must change.
-            // cb.condition(is_final_cur.expr(), |cb| {
-            //     cb.require_zero(
-            //         "tx_id changes at is_final == 1",
-            //         tx_id_unchanged.is_equal_expression.clone(),
-            //     );
-            // });
+            // on the final call data byte, if there's no access list, tx_id must change.
+            cb.condition(
+                and::expr([
+                    is_final_cur.expr(),
+                    not::expr(meta.query_advice(is_access_list, Rotation::next())),
+                ]),
+                |cb| {
+                    cb.require_zero(
+                        "tx_id changes at is_final == 1",
+                        tx_id_unchanged.is_equal_expression.clone(),
+                    );
+                }
+            );
 
             // tx1559_debug
             // cb.condition(
             //     and::expr([
-            //         is_final_cur,
+            //         is_final_cur.clone(),
             //         not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
+            //         not::expr(meta.query_advice(is_access_list, Rotation::next())),
             //     ]),
             //     |cb| {
             //         let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
