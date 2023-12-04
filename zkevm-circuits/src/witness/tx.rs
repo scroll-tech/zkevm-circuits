@@ -431,23 +431,25 @@ impl Transaction {
     ) -> Vec<[Value<F>; 5]> {
         let mut assignments: Vec<[Value<F>; 5]> = vec![];
 
-        for (al_idx, al) in self.access_list.as_ref().unwrap().0.iter().enumerate() {
-            assignments.push([
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::AccessListAddress as u64)),
-                Value::known(F::from((al_idx + 1) as u64)),
-                Value::known(al.address.to_scalar().unwrap()),
-                Value::known(al.address.to_scalar().unwrap()),
-            ]);
-
-            for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
+        if self.access_list.is_some() {
+            for (al_idx, al) in self.access_list.as_ref().unwrap().0.iter().enumerate() {
                 assignments.push([
                     Value::known(F::from(self.id as u64)),
-                    Value::known(F::from(TxContextFieldTag::AccessListStorageKey as u64)),
-                    Value::known(F::from(sk_idx as u64)),
-                    rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word()),
+                    Value::known(F::from(TxContextFieldTag::AccessListAddress as u64)),
+                    Value::known(F::from((al_idx + 1) as u64)),
+                    Value::known(al.address.to_scalar().unwrap()),
                     Value::known(al.address.to_scalar().unwrap()),
                 ]);
+    
+                for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
+                    assignments.push([
+                        Value::known(F::from(self.id as u64)),
+                        Value::known(F::from(TxContextFieldTag::AccessListStorageKey as u64)),
+                        Value::known(F::from(sk_idx as u64)),
+                        rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word()),
+                        Value::known(al.address.to_scalar().unwrap()),
+                    ]);
+                }
             }
         }
 
