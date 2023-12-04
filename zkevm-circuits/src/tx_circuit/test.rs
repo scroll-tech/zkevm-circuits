@@ -1,8 +1,14 @@
 #![allow(unused_imports)]
 
 use ethers_core::{
-    types::{transaction::eip2718::TypedTransaction, NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest, Eip1559TransactionRequest},
-    utils::{keccak256, rlp::{Decodable, Rlp}},
+    types::{
+        transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, NameOrAddress,
+        Signature, Transaction as EthTransaction, TransactionRequest,
+    },
+    utils::{
+        keccak256,
+        rlp::{Decodable, Rlp},
+    },
 };
 use std::cmp::max;
 
@@ -11,7 +17,11 @@ use crate::{
     tx_circuit::{dev::TxCircuitTester, get_sign_data},
     util::{log2_ceil, unusable_rows},
 };
-use eth_types::{address, evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost}, word, H256, U256, U64};
+use eth_types::{
+    address,
+    evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
+    word, H256, U256, U64,
+};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
@@ -120,12 +130,8 @@ fn build_eip1559_tx() -> Transaction {
     let typed_tx: TypedTransaction = eth_tx_req.into();
     let rlp_unsigned = typed_tx.rlp().to_vec();
 
-    let mut tx = Transaction::new_from_rlp_bytes(
-        1,
-        TxType::Eip1559,
-        raw_tx_rlp_bytes,
-        rlp_unsigned,
-    );
+    let mut tx =
+        Transaction::new_from_rlp_bytes(1, TxType::Eip1559, raw_tx_rlp_bytes, rlp_unsigned);
 
     tx.hash = eth_tx.hash;
     tx.block_number = 1;
@@ -176,7 +182,6 @@ fn run<F: Field>(
 
     prover.verify_at_rows_par(0..active_row_num, 0..active_row_num)
 }
-
 
 #[test]
 // tx1559_debug

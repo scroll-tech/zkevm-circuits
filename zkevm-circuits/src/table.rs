@@ -319,8 +319,9 @@ impl TxTable {
                 // Tx Table contains an initial region that has a size parametrized by max_txs
                 // with all the tx data except for calldata and access list, and then a second
                 // region that has a size parametrized by max_calldata with all
-                // the tx calldata and access list.  This is required to achieve a constant fixed column tag
-                // regardless of the number of input txs or the calldata/access list size of each tx.
+                // the tx calldata and access list.  This is required to achieve a constant fixed
+                // column tag regardless of the number of input txs or the
+                // calldata/access list size of each tx.
                 let mut calldata_assignments: Vec<[Value<F>; 5]> = Vec::new();
                 let mut access_list_assignments: Vec<[Value<F>; 5]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)

@@ -15,9 +15,9 @@ use crate::{
         Tag::{EndObject, EndVector},
     },
 };
-use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee, Access};
+use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, Access, TxL1Fee};
 use eth_types::{
-    evm_types::gas_utils::{tx_data_gas_cost, tx_access_list_gas_cost},
+    evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
     geth_types::{access_list_size, TxType, TxType::PreEip155},
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
@@ -180,8 +180,7 @@ impl Transaction {
                 Value::known(F::zero()),
                 challenges
                     .evm_word()
-                    .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)
-                ),
+                    .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
                 Value::known(F::zero()),
             ],
             [
@@ -223,8 +222,7 @@ impl Transaction {
                 Value::known(F::zero()),
                 challenges
                     .evm_word()
-                    .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)
-                ),
+                    .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
                 Value::known(F::zero()),
             ],
             [
