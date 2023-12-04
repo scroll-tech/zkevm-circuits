@@ -886,6 +886,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             // is_access_list_storage_key,
             al_idx,
             sk_idx,
+            sks_acc,
         );
 
         meta.create_gate("tx_gas_cost == 0 for L1 msg", |meta| {
@@ -1767,6 +1768,7 @@ impl<F: Field> TxCircuitConfig<F> {
         // is_access_list_storage_key: Column<Advice>,
         al_idx: Column<Advice>,
         sk_idx: Column<Advice>,
+        sks_acc: Column<Advice>,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
@@ -1884,6 +1886,31 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 AccessListAddressesLen.expr(),
                 meta.query_advice(al_idx, Rotation::cur()),
+            ];
+            let table_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::cur()),
+            ];
+
+            input_exprs
+                .into_iter()
+                .zip(table_exprs.into_iter())
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+
+        meta.lookup_any("lookup AccessListStorageKeysLen in the TxTable", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_access_list, Rotation::cur()),
+                meta.query_advice(is_final, Rotation::cur()),
+            ]);
+
+            let input_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                AccessListStorageKeysLen.expr(),
+                meta.query_advice(sks_acc, Rotation::cur()),
             ];
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
