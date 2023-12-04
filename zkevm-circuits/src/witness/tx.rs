@@ -15,7 +15,7 @@ use crate::{
         Tag::{EndObject, EndVector},
     },
 };
-use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, Access, TxL1Fee};
+use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
     geth_types::{access_list_size, TxType, TxType::PreEip155},

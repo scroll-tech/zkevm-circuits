@@ -45,7 +45,6 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{
-    evm_types::GasCost as GS,
     geth_types::{
         access_list_size, TxType,
         TxType::{Eip155, Eip1559, Eip2930, L1Msg, PreEip155},
@@ -53,7 +52,7 @@ use eth_types::{
     sign_types::SignData,
     AccessList, Address, Field, ToAddress, ToBigEndian, ToScalar,
 };
-use ethers_core::utils::{keccak256, rlp::Encodable};
+use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -899,7 +898,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             // is_access_list_address,
             // is_access_list_storage_key,
             al_idx,
-            sk_idx,
+            // sk_idx,
             sks_acc,
         );
 
@@ -1540,7 +1539,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             // conditions are defined using the tail location of calldata (in the previous constraint block)
             cb.condition(
                 and::expr([
-                    is_final_cur.clone(),
+                    is_final_cur,
                     not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
                     meta.query_advice(is_access_list, Rotation::next()),
                 ]),
@@ -1734,7 +1733,7 @@ impl<F: Field> TxCircuitConfig<F> {
         // is_access_list_address: Column<Advice>,
         // is_access_list_storage_key: Column<Advice>,
         al_idx: Column<Advice>,
-        sk_idx: Column<Advice>,
+        // sk_idx: Column<Advice>,
         sks_acc: Column<Advice>,
     ) {
         macro_rules! is_tx_type {
@@ -2437,8 +2436,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 .clone()
                 .map_or(zero_rlc, |input| input.be_bytes_rlc);
             let is_l1_msg = tx.tx_type.is_l1_msg();
-            let is_eip2930 = tx.tx_type.is_eip2930();
-            let is_eip1559 = tx.tx_type.is_eip1559();
             // it's the tx_id of next row
             let tx_id_next = if tx_tag == BlockNumber {
                 next_tx.map_or(0, |tx| tx.id)
@@ -2720,7 +2717,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let should_print = true;
         // assign to access_list related columns
 
-        if tx.access_list.as_ref().unwrap().0.len() > 0 {
+        if !tx.access_list.as_ref().unwrap().0.is_empty() {
             // storage key len accumulator
             let mut sks_acc: usize = 0;
 
@@ -2770,7 +2767,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 for (col_anno, col, col_val) in [
                     ("block_num", self.block_num, F::from(tx.block_number)),
                     ("al_idx", self.al_idx, F::from((al_idx + 1) as u64)),
-                    ("sk_idx", self.sk_idx, F::from(0 as u64)),
+                    ("sk_idx", self.sk_idx, F::from(0u64)),
                     ("sks_acc", self.sks_acc, F::from(sks_acc as u64)),
                     (
                         "rlp_tag",
