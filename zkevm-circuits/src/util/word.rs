@@ -114,10 +114,10 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         {
             let _res = cell.assign(region, offset, Value::known(value));
             // disable clippy complaint: err should be handled
-            match _res {
-                Ok(value) => println!("Value: {value:?}"),
-                Err(error) => println!("Error: {error}"),
-            }
+            // match _res {
+            //     Ok(value) => println!("Value: {value:?}"),
+            //     Err(error) => println!("Error: {error}"),
+            // }
         }
         // assign hi
         // let bytes_hi_assigned = bytes_hi_le.map(|bytes| {
@@ -137,10 +137,10 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
             {
                 let _res = cell.assign(region, offset, Value::known(value));
                 // disable clippy complaint: err should be handled
-                match _res {
-                    Ok(value) => println!("Value: {value:?}"),
-                    Err(error) => println!("Error: {error}"),
-                }
+                // match _res {
+                //     Ok(value) => println!("Value: {value:?}"),
+                //     Err(error) => println!("Error: {error}"),
+                // }
             }
         }
 

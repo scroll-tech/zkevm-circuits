@@ -34,7 +34,7 @@ use bus_mapping::{
 };
 use eth_types::{
     evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE},
-    Field, ToAddress, ToBigEndian, ToScalar, U256,
+    Field, ToAddress, ToBigEndian, ToScalar, ToWord, U256,
 };
 use halo2_proofs::{
     circuit::Value,
@@ -987,10 +987,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             (is_precompiled_call, precompile_addr)
         };
         let code_address = callee_address;
-        self.is_code_address_zero
-            .assign_u256(region, offset, code_address)?;
-        self.is_precompile_lt
-            .assign(region, offset, code_address, 0x0Au64.into())?;
+        self.is_code_address_zero.assign_value(
+            region,
+            offset,
+            Value::known(Word::from(code_address.to_address())),
+        )?;
+        // self.is_code_address_zero.assign_u256(region, offset, callee_address)?;
+        self.is_precompile_lt.assign(
+            region,
+            offset,
+            callee_address.to_address().to_word(),
+            0x0Au64.into(),
+        )?;
+        // self.is_precompile_lt.assign(region, offset, callee_address, 0x0Au64.into())?;
         log::trace!("callop is precompile call {}", is_precompile_call);
         let precompile_return_length = if is_precompile_call && is_precheck_ok {
             rws.offset_add(14); // skip
