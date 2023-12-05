@@ -108,12 +108,20 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         {
             let _res = cell.assign(region, offset, Value::known(value));
             // disable clippy complaint: err should be handled
-            match _res {
-                Ok(_value) => {}
-                Err(error) => println!("Error: {error}"),
-            }
+            // match _res {
+            //     Ok(value) => println!("Value: {value:?}"),
+            //     Err(error) => println!("Error: {error}"),
+            // }
         }
         // assign hi
+        // let bytes_hi_assigned = bytes_hi_le.map(|bytes| {
+        //     bytes
+        //         .chunks(N_HI / half_limb_size) // chunk in little endian
+        //         .map(|chunk| from_bytes::value(chunk))
+        //         .zip_eq(self.limbs[half_limb_size..].iter())
+        //         .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
+        //         .collect::<Result<Vec<Option<AssignedCell<F, F>>>, _>>()?
+        // });
 
         if let Some(bytes) = bytes_hi_le {
             for (value, cell) in bytes
@@ -123,12 +131,21 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
             {
                 let _res = cell.assign(region, offset, Value::known(value));
                 // disable clippy complaint: err should be handled
-                match _res {
-                    Ok(_value) => {}
-                    Err(error) => println!("Error: {error}"),
-                }
+                // match _res {
+                //     Ok(value) => println!("Value: {value:?}"),
+                //     Err(error) => println!("Error: {error}"),
+                // }
             }
         }
+
+        // Ok([
+        //     bytes_lo_assigned.to_vec(),
+        //     match bytes_hi_assigned {
+        //         Some(hi_assigned) => hi_assigned?.to_vec(),
+        //         None => vec![],
+        //     },
+        // ]
+        // .concat())
     }
 
     /// assign u256 to wordlimbs
