@@ -67,13 +67,7 @@ ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branc
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.0" }
 [patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
-poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "sync-ff-0.13" }
-#[patch."https://github.com/privacy-scaling-explorations/halo2wrong.git"]
-#maingate = { git = "https://github.com/scroll-tech/halo2wrong", branch = "halo2-ecc-snark-verifier-0323" }
-
-[patch."https://github.com/scroll-tech/snark-verifier"]
-snark-verifier = { git = "https://github.com/noel2004/snark-verifier", branch = "sync-ff-0.13" }
-snark-verifier-sdk = { git = "https://github.com/noel2004/snark-verifier", branch = "sync-ff-0.13" }
+poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "main" }
 
 
 # Definition of benchmarks profile to use.
