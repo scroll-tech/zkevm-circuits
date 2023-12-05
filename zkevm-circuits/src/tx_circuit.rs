@@ -2682,8 +2682,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 ];
                 let is_tag_in_set = sign_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 let case1 = is_tag_in_set && !is_l1_msg;
-                let case2 = !tx.tx_type.is_pre_eip155() && (tx_tag == ChainID);
-                let case3 = !tx.tx_type.is_eip1559() && (tx_tag == GasPrice);
+                let case2 = !tx.tx_type.is_pre_eip155() && !is_l1_msg && (tx_tag == ChainID);
+                let case3 = !tx.tx_type.is_eip1559() && !is_l1_msg && (tx_tag == GasPrice);
                 let case4 = tx.tx_type.is_eip1559()
                     && (tx_tag == MaxFeePerGas || tx_tag == MaxPriorityFeePerGas);
                 F::from((case1 || case2 || case3 || case4) as u64)
@@ -2705,10 +2705,10 @@ impl<F: Field> TxCircuitConfig<F> {
                 ];
                 let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 let case1 = is_tag_in_set && !is_l1_msg;
-                let case3 = !tx.tx_type.is_eip1559() && (tx_tag == GasPrice);
-                let case4 = tx.tx_type.is_eip1559()
+                let case2 = !tx.tx_type.is_eip1559() && !is_l1_msg && (tx_tag == GasPrice);
+                let case3 = tx.tx_type.is_eip1559()
                     && (tx_tag == MaxFeePerGas || tx_tag == MaxPriorityFeePerGas);
-                F::from((case1 || case3 || case4) as u64)
+                F::from((case1 || case2 || case3) as u64)
             });
             // 4. lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
@@ -3066,8 +3066,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 F::from((tx_id == 0) as u64),
             ),
         ] {
-            // tx1559_debug
-            log::trace!("=> [assign is_tx_id_zero] col_anno: {:?}, offset: {:?}, val: {:?}", col_anno, offset, col_val);
             region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
         }
 

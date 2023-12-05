@@ -1,0 +1,422 @@
+    Blocking waiting for file lock on build directory
+   Compiling zkevm-circuits v0.1.0 (/Users/raymondgao/Desktop/zkevm-circuits-work/zkevm-circuits)
+warning: unused imports: `mpt_circuit::MptCircuit`, `util::SubCircuit`, `witness::block_convert`
+    --> zkevm-circuits/src/evm_circuit/execution/callop.rs:1153:9
+     |
+1153 |         mpt_circuit::MptCircuit, test_util::CircuitTestBuilder, util::SubCircuit,
+     |         ^^^^^^^^^^^^^^^^^^^^^^^                                 ^^^^^^^^^^^^^^^^
+1154 |         witness::block_convert,
+     |         ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `mock::BlockData`
+    --> zkevm-circuits/src/evm_circuit/execution/callop.rs:1156:62
+     |
+1156 |     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+     |                                                              ^^^^^^^^^^^^^^^
+
+warning: unused import: `GethData`
+    --> zkevm-circuits/src/evm_circuit/execution/callop.rs:1160:31
+     |
+1160 |         geth_types::{Account, GethData},
+     |                               ^^^^^^^^
+
+warning: unused imports: `dev::MockProver`, `halo2curves::bn256::Fr`
+    --> zkevm-circuits/src/evm_circuit/execution/callop.rs:1163:24
+     |
+1163 |     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+     |                        ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling integration-tests v0.1.0 (/Users/raymondgao/Desktop/zkevm-circuits-work/integration-tests)
+   Compiling aggregator v0.1.0 (/Users/raymondgao/Desktop/zkevm-circuits-work/aggregator)
+   Compiling prover v0.1.0 (/Users/raymondgao/Desktop/zkevm-circuits-work/prover)
+   Compiling circuit-benchmarks v0.1.0 (/Users/raymondgao/Desktop/zkevm-circuits-work/circuit-benchmarks)
+   Compiling testool v0.1.0 (/Users/raymondgao/Desktop/zkevm-circuits-work/testool)
+warning: variable does not need to be mutable
+   --> testool/src/statetest/executor.rs:560:13
+    |
+560 |     let (_, mut trace_config, post) = into_traceconfig(st.clone());
+    |             ----^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: `testool` (bin "testool" test) generated 1 warning (run `cargo fix --bin "testool" --tests` to apply 1 suggestion)
+warning: `zkevm-circuits` (lib test) generated 4 warnings (run `cargo fix --lib -p zkevm-circuits --tests` to apply 4 suggestions)
+    Finished test [unoptimized + debuginfo] target(s) in 54.70s
+     Running unittests src/lib.rs (target/debug/deps/aggregator-b8ca1009cd7be173)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/bus_mapping-be22080c86aded88)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 66 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/circuit_benchmarks-7a2a8e48926146f4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/eth_types-39dc8ee3cf4846e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/external_tracer-6f36029a05644959)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/gadgets-d1febf07fa5bed2a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/geth_utils-4759d6976c1ac707)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/integration_tests-136bc6136abc225e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gen_blockchain_data.rs (target/debug/deps/gen_blockchain_data-259f9014d2198487)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/circuit_input_builder.rs (target/debug/deps/circuit_input_builder-0b95a3d634ec7a80)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/circuits.rs (target/debug/deps/circuits-1a289e0d2b0edc87)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.00s
+
+     Running tests/mainnet.rs (target/debug/deps/mainnet-f46ad174707ca7e4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/rpc.rs (target/debug/deps/rpc-030b30ceb12bd315)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/keccak256-fb7849d1c3ab5b6f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mock-a8b180075292ccc2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpt_zktrie-1cad4ab933ec3e66)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/prover-ee0a88654eff2942)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/testool-0b06b9af4140306a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/zkevm_circuits-68f918ed565bb50a)
+
+running 1 test
+[2023-12-05T00:46:49Z INFO  zkevm_circuits::tx_circuit] TxCircuit::new(max_txs = 4, max_calldata = 400, chain_id = 1338)
+[2023-12-05T00:46:49Z DEBUG zkevm_circuits::sig_circuit::utils] ecdsa chip uses 57 advice columns for 128 signatures
+[2023-12-05T00:46:49Z DEBUG zkevm_circuits::sig_circuit::utils] ecdsa chip uses 8 lookup advice columns for 128 signatures
+[2023-12-05T00:46:49Z INFO  zkevm_circuits::sig_circuit] configuring ECDSA chip with multiple phases
+[2023-12-05T00:46:49Z INFO  zkevm_circuits::tx_circuit] after tx_circuit, meta.degree: 9
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 1) sign witness rows len = 0
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 1) tx hash witness rows len = 444
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 2) sign witness rows len = 29
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 2) tx hash witness rows len = 97
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 3) sign witness rows len = 29
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 3) tx hash witness rows len = 97
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 4) sign witness rows len = 29
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::witness::tx] tx (id: 4) tx hash witness rows len = 97
+[2023-12-05T00:46:56Z DEBUG halo2_proofs::circuit::floor_planner::single_pass] region "RLP dev table" row_count: 73
+[2023-12-05T00:46:56Z DEBUG halo2_proofs::circuit::floor_planner::single_pass] region "RLP dev table", idx 1 start 0
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::tx_circuit] block_nums: {1}
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::tx_circuit] num_all_txs: {1: 12}
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::tx_circuit] [block_num: 1, num_txs: 1, cum_num_txs: 1] tx_id: 0, num_all_txs_acc: 12
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::tx_circuit] [block_num: 0, num_txs: 0, cum_num_txs: 1] tx_id: 1, num_all_txs_acc: 1
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::tx_circuit] [block_num: 0, num_txs: 0, cum_num_txs: 1] tx_id: 2, num_all_txs_acc: 2
+[2023-12-05T00:46:56Z DEBUG zkevm_circuits::tx_circuit] [block_num: 0, num_txs: 0, cum_num_txs: 1] tx_id: 3, num_all_txs_acc: 3
+[2023-12-05T00:46:57Z DEBUG halo2_proofs::circuit::floor_planner::single_pass] region "tx table aux" row_count: 513
+[2023-12-05T00:46:57Z DEBUG halo2_proofs::circuit::floor_planner::single_pass] region "tx table aux", idx 3 start 0
+[2023-12-05T00:46:57Z DEBUG zkevm_circuits::tx_circuit] [block_num: 1, num_txs: 1, cum_num_txs: 1] tx_id: 0, num_all_txs_acc: 12
+[2023-12-05T00:46:57Z DEBUG zkevm_circuits::tx_circuit] [block_num: 0, num_txs: 0, cum_num_txs: 1] tx_id: 1, num_all_txs_acc: 1
+[2023-12-05T00:46:57Z DEBUG zkevm_circuits::tx_circuit] [block_num: 0, num_txs: 0, cum_num_txs: 1] tx_id: 2, num_all_txs_acc: 2
+[2023-12-05T00:46:57Z DEBUG zkevm_circuits::tx_circuit] [block_num: 0, num_txs: 0, cum_num_txs: 1] tx_id: 3, num_all_txs_acc: 3
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash [Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c0) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000a6) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c4) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000024) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ac) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000071) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000057) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ae) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000040) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000083) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000098) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000007e) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005f) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000045) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000052) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000009) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000001a) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000069) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000012) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000fc) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b7) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b8) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c2) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000065) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000090) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000029) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000039) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005b) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }]
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] address: Value { inner: Some(0x0000000000000000000000007e5f4552091a69125d5dfcb7b8c2659029395bdf) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished data decomposition
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash [Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c0) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000a6) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c4) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000024) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ac) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000071) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000057) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ae) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000040) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000083) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000098) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000007e) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005f) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000045) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000052) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000009) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000001a) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000069) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000012) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000fc) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b7) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b8) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c2) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000065) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000090) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000029) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000039) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005b) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }]
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] address: Value { inner: Some(0x0000000000000000000000007e5f4552091a69125d5dfcb7b8c2659029395bdf) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished data decomposition
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash [Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c0) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000a6) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c4) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000024) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ac) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000071) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000057) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ae) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000040) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000083) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000098) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000007e) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005f) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000045) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000052) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000009) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000001a) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000069) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000012) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000fc) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b7) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b8) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c2) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000065) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000090) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000029) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000039) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005b) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }]
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] address: Value { inner: Some(0x0000000000000000000000007e5f4552091a69125d5dfcb7b8c2659029395bdf) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished data decomposition
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash [Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c0) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000a6) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c4) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000024) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ac) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000071) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000057) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000ae) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000040) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000083) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000098) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000007e) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005f) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000045) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000052) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000009) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000001a) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000069) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000012) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005d) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000fc) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b7) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000b8) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000c2) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000065) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000090) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000029) }, Value { inner: Some(0x0000000000000000000000000000000000000000000000000000000000000039) }, Value { inner: Some(0x000000000000000000000000000000000000000000000000000000000000005b) }, Value { inner: Some(0x00000000000000000000000000000000000000000000000000000000000000df) }]
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] address: Value { inner: Some(0x0000000000000000000000007e5f4552091a69125d5dfcb7b8c2659029395bdf) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000007c7b0f7a860d79d1daccf7) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000eab6f7ed73ff0c7f59aaa8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000514f67b68c9220ed3377) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000ce28d959f2815b16f81798) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000006295ce870b07029bfcdb2d) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000079be667ef9dcbbac55a0) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000008554199c47d08ffb10d4b8) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000fbfc0e1108a8fd17b448a6) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+    reconstructed Value { inner: Some(0x00000000000000000000000000000000000000000000483ada7726a3c4655da4) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished data decomposition
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000b5baf8b8454773f328df61) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000651a6f34baaf3dc29b396f) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000004faabf49beea23083894) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 1 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000332be9809a444d541272c1) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 2 
+    input Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+    reconstructed Value { inner: Some(0x000000000000000000000000000000000000000000db7e75bafcb04ea141ca20) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] limb 3 
+    input Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+    reconstructed Value { inner: Some(0x0000000000000000000000000000000000000000000075ae2dd5e4e688c9dbc6) }
+[2023-12-05T00:47:12Z INFO  zkevm_circuits::sig_circuit] before proceeding to the next phase
+Context "ECDSA context" used 2 advice columns and 1844697 total advice cells in phase 0
+Special lookup advice cells: optimal columns: 1, total 253104 cells used in phase 0.
+Fixed columns: 1, Total fixed cells: 8032
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] evm challenge: Value { inner: Some(0x2cc67045d9924a297606aa509ddcf7235ee11f77683a7d127b4cb83d74c12519) } 
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] assigned msg hash rlc: Value { inner: Some(0x03373ba14e2b334f51f08f631d5f34a89e123e671f6cd34945d053a5e8ffabab) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk rlc: Value { inner: Some(0x0be9c9544e6f4802ce10acdc91895953af1c1ac924051c3673a2f66448f17d06) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash rlc halo2ecc: Value { inner: Some(0x015fef9eb9ea60256d5350e4e4085a66639f8cd7d1b078a69c15be16224ba117) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished sign verify
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] evm challenge: Value { inner: Some(0x2cc67045d9924a297606aa509ddcf7235ee11f77683a7d127b4cb83d74c12519) } 
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] assigned msg hash rlc: Value { inner: Some(0x03373ba14e2b334f51f08f631d5f34a89e123e671f6cd34945d053a5e8ffabab) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk rlc: Value { inner: Some(0x0be9c9544e6f4802ce10acdc91895953af1c1ac924051c3673a2f66448f17d06) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash rlc halo2ecc: Value { inner: Some(0x015fef9eb9ea60256d5350e4e4085a66639f8cd7d1b078a69c15be16224ba117) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished sign verify
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] evm challenge: Value { inner: Some(0x2cc67045d9924a297606aa509ddcf7235ee11f77683a7d127b4cb83d74c12519) } 
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] assigned msg hash rlc: Value { inner: Some(0x03373ba14e2b334f51f08f631d5f34a89e123e671f6cd34945d053a5e8ffabab) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk rlc: Value { inner: Some(0x0be9c9544e6f4802ce10acdc91895953af1c1ac924051c3673a2f66448f17d06) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash rlc halo2ecc: Value { inner: Some(0x015fef9eb9ea60256d5350e4e4085a66639f8cd7d1b078a69c15be16224ba117) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished sign verify
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] evm challenge: Value { inner: Some(0x2cc67045d9924a297606aa509ddcf7235ee11f77683a7d127b4cb83d74c12519) } 
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] assigned msg hash rlc: Value { inner: Some(0x03373ba14e2b334f51f08f631d5f34a89e123e671f6cd34945d053a5e8ffabab) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk rlc: Value { inner: Some(0x0be9c9544e6f4802ce10acdc91895953af1c1ac924051c3673a2f66448f17d06) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] pk hash rlc halo2ecc: Value { inner: Some(0x015fef9eb9ea60256d5350e4e4085a66639f8cd7d1b078a69c15be16224ba117) }
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished sign verify
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] keccak lookup
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished keccak lookup
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] keccak lookup
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished keccak lookup
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] keccak lookup
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished keccak lookup
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] keccak lookup
+[2023-12-05T00:47:12Z TRACE zkevm_circuits::sig_circuit] finished keccak lookup
+[2023-12-05T00:47:12Z INFO  zkevm_circuits::sig_circuit] total number of lookup cells: 0
+Context "ECDSA context" used 2 advice columns and 1844697 total advice cells in phase 0
+Special lookup advice cells: optimal columns: 1, total 253104 cells used in phase 0.
+Context "ECDSA context" used 1 advice columns and 2324 total advice cells in phase 1
+Special lookup advice cells: optimal columns: 0, total 0 cells used in phase 1.
+Fixed columns: 1, Total fixed cells: 8032
+[2023-12-05T00:47:12Z INFO  halo2_proofs::dev] MockProver synthesize took 20.166517083s
+[2023-12-05T00:47:17Z DEBUG halo2_proofs::dev] regions.len() = 9
+test tx_circuit::test::tx_circuit_l1_msg_tx ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 597 filtered out; finished in 44.04s
+
