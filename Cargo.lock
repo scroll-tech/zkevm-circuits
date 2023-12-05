@@ -2413,7 +2413,7 @@ dependencies = [
 [[package]]
 name = "halo2-gate-generator"
 version = "0.1.0"
-source = "git+https://github.com/noel2004/halo2gategen?branch=sync-ff-0.13#52e99e4846556c6e5ab54e6ee9f5f75b73428649"
+source = "git+https://github.com/scroll-tech/halo2gategen#8ccf462e1eff4ed0e602d7ba19771b2c53dee0e3"
 dependencies = [
  "halo2_proofs",
  "lazy_static",
@@ -3111,17 +3111,16 @@ dependencies = [
 [[package]]
 name = "misc-precompiled-circuit"
 version = "0.1.0"
-source = "git+https://github.com/noel2004/misc-precompiled-circuit.git?branch=sync-ff-0.13#df0ab05761b0898645689f1427362540d6e0ecb3"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=sync-ff-0.13#e2c4b034d7f121c24bd9c3124e51dc26f9ddb598"
 dependencies = [
  "halo2-gate-generator",
  "halo2_proofs",
- "lazy_static",
  "num-bigint",
  "rand",
  "serde",
  "serde_json",
- "strum 0.24.1",
- "strum_macros 0.24.3",
+ "strum 0.25.0",
+ "strum_macros 0.25.3",
  "subtle",
 ]
 
