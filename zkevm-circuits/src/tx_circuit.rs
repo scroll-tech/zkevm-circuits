@@ -1391,7 +1391,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 and::expr([
                     is_final_cur.clone(),
                     not::expr(meta.query_advice(is_tx_id_zero, Rotation::next())),
-                    not::expr(meta.query_advice(is_access_list, Rotation::next())),
+                    meta.query_advice(is_calldata, Rotation::next()),
                 ]),
                 |cb| {
                     let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
