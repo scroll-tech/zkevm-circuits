@@ -2453,7 +2453,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "plotters",
- "poseidon 0.2.0 (git+https://github.com/scroll-tech/poseidon.git?branch=main)",
+ "poseidon",
  "rand_core",
  "rayon",
  "sha3 0.9.1",
@@ -3726,15 +3726,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "poseidon"
-version = "0.2.0"
-source = "git+https://github.com/scroll-tech/poseidon.git?branch=sync-ff-0.13#5787dd3d2ce7a9e9601a035c396ac0c03449b54d"
-dependencies = [
- "halo2curves",
- "subtle",
-]
-
-[[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
 source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-1201#c6f058bcf3bb0c7933d1979563c414f5cc480f25"
@@ -4761,7 +4752,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/noel2004/snark-verifier?branch=sync-ff-0.13#8e3762a4dc11bd4faddfce070090d28a3972100c"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#12c1121a855564936a267b37bc9c27306de3eb3b"
 dependencies = [
  "bytes",
  "ethereum-types",
@@ -4773,7 +4764,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "poseidon 0.2.0 (git+https://github.com/scroll-tech/poseidon.git?branch=sync-ff-0.13)",
+ "poseidon",
  "rand",
  "revm",
  "rlp",
@@ -4785,7 +4776,7 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/noel2004/snark-verifier?branch=sync-ff-0.13#8e3762a4dc11bd4faddfce070090d28a3972100c"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#12c1121a855564936a267b37bc9c27306de3eb3b"
 dependencies = [
  "bincode",
  "ethereum-types",
