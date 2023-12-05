@@ -271,8 +271,7 @@ fn tx_circuit_1tx_2max_tx() {
 }
 
 #[test]
-// tx1559_debug
-// #[cfg(feature = "scroll")]
+#[cfg(feature = "scroll")]
 fn tx_circuit_l1_msg_tx() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 400;
