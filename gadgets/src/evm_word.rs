@@ -255,7 +255,7 @@ mod tests {
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
-                    name: "Encoded word / Pub inputs".to_string(),
+                    name: "Encoded word / Pub inputs",
                     lookup_index: 32,
                     location: FailureLocation::InRegion {
                         region: halo2_proofs::dev::metadata::Region::from((
