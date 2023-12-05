@@ -151,6 +151,7 @@ pub struct TxCircuitConfig<F: Field> {
     is_eip2930: Column<Advice>,
     is_eip1559: Column<Advice>,
     is_chain_id: Column<Advice>,
+    is_tx_id_zero: Column<Advice>,
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
 
     /// Columns for computing num_all_txs
@@ -302,6 +303,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_eip2930 = meta.advice_column();
         let is_eip1559 = meta.advice_column();
         let is_calldata = meta.advice_column();
+        let is_tx_id_zero = meta.advice_column();
         let is_caller_address = meta.advice_column();
         let is_chain_id = meta.advice_column();
         let is_tag_block_num = meta.advice_column();
@@ -624,6 +626,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 "is_calldata",
                 is_data(meta),
                 meta.query_advice(is_calldata, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("is_tx_id_zero", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_tx_id_zero",
+                tx_id_is_zero.expr(Rotation::cur())(meta),
+                meta.query_advice(is_tx_id_zero, Rotation::cur()),
             );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1373,34 +1387,33 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 },
             );
 
-            // tx1559_debug
-            // cb.condition(
-            //     and::expr([
-            //         is_final_cur.clone(),
-            //         not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
-            //         not::expr(meta.query_advice(is_access_list, Rotation::next())),
-            //     ]),
-            //     |cb| {
-            //         let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
-            //         let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
+            cb.condition(
+                and::expr([
+                    is_final_cur.clone(),
+                    not::expr(meta.query_advice(is_tx_id_zero, Rotation::next())),
+                    not::expr(meta.query_advice(is_access_list, Rotation::next())),
+                ]),
+                |cb| {
+                    let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
+                    let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
 
-            //         cb.require_equal(
-            //             "index' == 0",
-            //             meta.query_advice(tx_table.index, Rotation::next()),
-            //             0.expr(),
-            //         );
-            //         cb.require_equal(
-            //             "calldata_gas_cost_acc' == gas_cost_next",
-            //             meta.query_advice(calldata_gas_cost_acc, Rotation::next()),
-            //             gas_cost_next,
-            //         );
-            //         cb.require_equal(
-            //             "section_rlc' == byte'",
-            //             meta.query_advice(section_rlc, Rotation::next()),
-            //             meta.query_advice(tx_table.value, Rotation::next()),
-            //         );
-            //     },
-            // );
+                    cb.require_equal(
+                        "index' == 0",
+                        meta.query_advice(tx_table.index, Rotation::next()),
+                        0.expr(),
+                    );
+                    cb.require_equal(
+                        "calldata_gas_cost_acc' == gas_cost_next",
+                        meta.query_advice(calldata_gas_cost_acc, Rotation::next()),
+                        gas_cost_next,
+                    );
+                    cb.require_equal(
+                        "section_rlc' == byte'",
+                        meta.query_advice(section_rlc, Rotation::next()),
+                        meta.query_advice(tx_table.value, Rotation::next()),
+                    );
+                },
+            );
 
             // Initialize the dynamic access list assignment section.
             // Must follow immediately when the calldata section ends.
@@ -1434,7 +1447,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(is_calldata, Rotation::cur()),
-                not::expr(tx_id_is_zero.expr(Rotation::cur())(meta)),
+                not::expr(meta.query_advice(is_tx_id_zero, Rotation::cur())),
             ]))
         });
 
@@ -1676,6 +1689,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             value_is_zero,
             tx_id_unchanged,
             is_calldata,
+            is_tx_id_zero,
             is_caller_address,
             tx_id_cmp_cum_num_txs,
             tx_id_gt_prev_cnt,
@@ -2612,12 +2626,12 @@ impl<F: Field> TxCircuitConfig<F> {
                     self.sv_address,
                     sign_data.get_addr().to_scalar().unwrap(),
                 ),
-                // tx_tag related indicator columns
                 (
                     "is_tag_calldata",
                     self.is_calldata,
                     F::from((tx_tag == CallData) as u64),
                 ),
+                // tx_tag related indicator columns
                 (
                     "is_tag_block_num",
                     self.is_tag_block_num,
@@ -3046,7 +3060,14 @@ impl<F: Field> TxCircuitConfig<F> {
                 self.is_eip1559,
                 F::from(tx_type.is_eip1559() as u64),
             ),
+            (
+                "is_tx_id_zero",
+                self.is_tx_id_zero,
+                F::from((tx_id == 0) as u64),
+            ),
         ] {
+            // tx1559_debug
+            log::trace!("=> [assign is_tx_id_zero] col_anno: {:?}, offset: {:?}, val: {:?}", col_anno, offset, col_val);
             region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
         }
 
@@ -3110,6 +3131,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
                 (self.calldata_gas_cost_acc, F::zero()),
+                (self.is_tx_id_zero, F::one()),
             ] {
                 region.assign_advice(|| "", col, offset, || Value::known(value))?;
             }
