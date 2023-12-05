@@ -43,7 +43,7 @@ name = "aggregator"
 version = "0.1.0"
 dependencies = [
  "ark-std 0.3.0",
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "ethers-core 2.0.7",
  "halo2_proofs",
@@ -485,7 +485,7 @@ name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
  "ctor",
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "ethers-core 2.0.7",
  "ethers-providers",
@@ -650,7 +650,7 @@ version = "0.1.0"
 dependencies = [
  "ark-std 0.3.0",
  "bus-mapping",
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "ethers",
  "ethers-signers",
@@ -1473,19 +1473,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
-dependencies = [
- "atty",
- "humantime",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95b3f3e67048839cb0d0781f445682a35113da7121f7c949db0e2be96a4fbece"
@@ -2249,7 +2236,7 @@ dependencies = [
 name = "geth-utils"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.10.1",
+ "env_logger",
  "gobuild",
  "log",
 ]
@@ -2429,9 +2416,9 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?rev=94892b5c8286ab22f3d291437c465f09181d970e#94892b5c8286ab22f3d291437c465f09181d970e"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?rev=a544844b071ee37ca54b7a266b8ffb7672277d76#a544844b071ee37ca54b7a266b8ffb7672277d76"
 dependencies = [
- "env_logger 0.9.3",
+ "env_logger",
  "ethers-core 2.0.10",
  "halo2_proofs",
  "hex",
@@ -2811,7 +2798,7 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "bus-mapping",
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "ethers",
  "halo2_proofs",
@@ -2919,7 +2906,7 @@ dependencies = [
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "halo2_proofs",
  "itertools",
@@ -3143,7 +3130,7 @@ dependencies = [
 name = "mpt-zktrie"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "halo2-mpt-circuits",
  "halo2_proofs",
@@ -5102,7 +5089,7 @@ dependencies = [
  "bus-mapping",
  "clap 3.2.25",
  "ctor",
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "ethers-core 2.0.7",
  "ethers-signers",
@@ -5942,7 +5929,7 @@ dependencies = [
  "criterion",
  "ctor",
  "either",
- "env_logger 0.10.1",
+ "env_logger",
  "eth-types",
  "ethers-core 2.0.7",
  "ethers-signers",
