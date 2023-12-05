@@ -31,10 +31,10 @@ ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "
 ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"
 ff = "0.13"
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "sync-ff-0.13" }
-hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "sync-ff-0.13" }
-halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "sync-ff-0.13", default-features=false, features=["halo2-pse","display"] }
-halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "sync-ff-0.13", default-features=false, features=["halo2-pse","display"] }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.0" }
+hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-1201" }
+halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
+halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
 hex = "0.4"
 itertools = "0.10"
 lazy_static = "1.4"
@@ -65,11 +65,19 @@ url = "2.2"
 ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "sync-ff-0.13" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.0" }
 [patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
 poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "sync-ff-0.13" }
-# [patch."https://github.com/privacy-scaling-explorations/halo2wrong.git"]
-# maingate = { git = "https://github.com/scroll-tech/halo2wrong", branch = "halo2-ecc-snark-verifier-0323" }
+#[patch."https://github.com/privacy-scaling-explorations/halo2wrong.git"]
+#maingate = { git = "https://github.com/scroll-tech/halo2wrong", branch = "halo2-ecc-snark-verifier-0323" }
+
+[patch."https://github.com/scroll-tech/misc-precompiled-circuit.git"]
+misc-precompiled-circuit = { git = "https://github.com/noel2004/misc-precompiled-circuit.git", branch = "sync-ff-0.13" }
+[patch."https://github.com/zhenfeizhang/halo2gategen"]
+halo2-gate-generator = { git = "https://github.com/noel2004/halo2gategen", branch = "sync-ff-0.13" }
+[patch."https://github.com/scroll-tech/snark-verifier"]
+snark-verifier = { git = "https://github.com/noel2004/snark-verifier", branch = "sync-ff-0.13" }
+snark-verifier-sdk = { git = "https://github.com/noel2004/snark-verifier", branch = "sync-ff-0.13" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]

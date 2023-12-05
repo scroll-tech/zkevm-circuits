@@ -8,7 +8,7 @@ license.workspace = true
 
 [dependencies]
 halo2_proofs.workspace = true
-mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", branch = "sync-ff-0.13" }
+mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", rev = "94892b5c8286ab22f3d291437c465f09181d970e" }
 zktrie = { git = "https://github.com/scroll-tech/zktrie.git", tag = "v0.7.1" }
 hash-circuit.workspace = true
 eth-types = { path = "../eth-types" }

@@ -43,12 +43,12 @@ name = "aggregator"
 version = "0.1.0"
 dependencies = [
  "ark-std 0.3.0",
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "ethers-core 2.0.7",
  "halo2_proofs",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "log",
  "rand",
  "serde",
@@ -147,7 +147,7 @@ dependencies = [
  "ark-std 0.4.0",
  "derivative",
  "digest 0.10.7",
- "itertools 0.10.5",
+ "itertools",
  "num-bigint",
  "num-traits",
  "paste",
@@ -485,7 +485,7 @@ name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
  "ctor",
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "ethers-core 2.0.7",
  "ethers-providers",
@@ -493,7 +493,7 @@ dependencies = [
  "gadgets",
  "halo2_proofs",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "keccak256",
  "lazy_static",
  "log",
@@ -581,9 +581,9 @@ dependencies = [
 
 [[package]]
 name = "cargo_metadata"
-version = "0.17.0"
+version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7daec1a2a2129eeba1644b220b4647ec537b0b5d4bfd6876fcc5a540056b592"
+checksum = "eee4243f1f26fc7a42710e7439c149e2b10b05472f88090acce52632f231a73a"
 dependencies = [
  "camino",
  "cargo-platform",
@@ -650,12 +650,12 @@ version = "0.1.0"
 dependencies = [
  "ark-std 0.3.0",
  "bus-mapping",
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "ethers",
  "ethers-signers",
  "halo2_proofs",
- "itertools 0.10.5",
+ "itertools",
  "keccak256",
  "log",
  "mock",
@@ -942,7 +942,7 @@ dependencies = [
  "clap 2.34.0",
  "criterion-plot",
  "csv",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "num-traits",
  "oorandom",
@@ -964,7 +964,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2673cc8207403546f45f5fd319a974b1e6983ad1a3ee7e6041650013be041876"
 dependencies = [
  "cast",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -1295,15 +1295,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dirs"
-version = "5.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
-dependencies = [
- "dirs-sys",
-]
-
-[[package]]
 name = "dirs-next"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1311,18 +1302,6 @@ checksum = "b98cf8ebf19c3d1b223e151f99a4f9f0690dca41414773390fc824184ac833e1"
 dependencies = [
  "cfg-if 1.0.0",
  "dirs-sys-next",
-]
-
-[[package]]
-name = "dirs-sys"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "520f05a5cbd335fae5a99ff7a6ab8627577660ee5cfd6a94a6a929b52ff0321c"
-dependencies = [
- "libc",
- "option-ext",
- "redox_users",
- "windows-sys",
 ]
 
 [[package]]
@@ -1494,6 +1473,19 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
+dependencies = [
+ "atty",
+ "humantime",
+ "log",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
+name = "env_logger"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95b3f3e67048839cb0d0781f445682a35113da7121f7c949db0e2be96a4fbece"
@@ -1552,7 +1544,7 @@ dependencies = [
  "halo2-base",
  "halo2_proofs",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "num",
  "num-bigint",
@@ -1630,16 +1622,16 @@ dependencies = [
  "ethers-middleware",
  "ethers-providers",
  "ethers-signers",
- "ethers-solc",
+ "ethers-solc 2.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "ethers-addressbook"
-version = "2.0.10"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6e9e8acd0ed348403cc73a670c24daba3226c40b98dc1a41903766b3ab6240a"
+checksum = "7b856b7b8ff5c961093cb8efe151fbcce724b451941ce20781de11a531ccd578"
 dependencies = [
- "ethers-core 2.0.10",
+ "ethers-core 2.0.7",
  "once_cell",
  "serde",
  "serde_json",
@@ -1647,15 +1639,16 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract"
-version = "2.0.10"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d79269278125006bb0552349c03593ffa9702112ca88bc7046cc669f148fb47c"
+checksum = "e066a0d9cfc70c454672bf16bb433b0243427420076dc5b2f49c448fb5a10628"
 dependencies = [
- "const-hex",
  "ethers-contract-abigen",
  "ethers-contract-derive",
- "ethers-core 2.0.10",
+ "ethers-core 2.0.7",
+ "ethers-providers",
  "futures-util",
+ "hex",
  "once_cell",
  "pin-project",
  "serde",
@@ -1665,16 +1658,16 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract-abigen"
-version = "2.0.10"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce95a43c939b2e4e2f3191c5ad4a1f279780b8a39139c9905b43a7433531e2ab"
+checksum = "c113e3e86b6bc16d98484b2c3bb2d01d6fed9f489fe2e592e5cc87c3024d616b"
 dependencies = [
  "Inflector",
- "const-hex",
  "dunce",
- "ethers-core 2.0.10",
+ "ethers-core 2.0.7",
  "ethers-etherscan",
  "eyre",
+ "hex",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -1689,14 +1682,14 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract-derive"
-version = "2.0.10"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e9ce44906fc871b3ee8c69a695ca7ec7f70e50cb379c9b9cb5e532269e492f6"
+checksum = "8c3fb5adee25701c79ec58fcf2c63594cd8829bc9ad6037ff862d5a111101ed2"
 dependencies = [
  "Inflector",
- "const-hex",
  "ethers-contract-abigen",
- "ethers-core 2.0.10",
+ "ethers-core 2.0.7",
+ "hex",
  "proc-macro2",
  "quote",
  "serde_json",
@@ -1710,6 +1703,7 @@ source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd6
 dependencies = [
  "arrayvec",
  "bytes",
+ "cargo_metadata",
  "chrono",
  "elliptic-curve 0.13.6",
  "ethabi",
@@ -1717,12 +1711,14 @@ dependencies = [
  "hex",
  "k256 0.13.1",
  "num_enum 0.6.1",
+ "once_cell",
  "open-fastrlp",
  "rand",
  "rlp",
  "serde",
  "serde_json",
  "strum 0.24.1",
+ "syn 2.0.39",
  "tempfile",
  "thiserror",
  "tiny-keccak",
@@ -1737,7 +1733,6 @@ checksum = "c0a17f0708692024db9956b31d7a20163607d2745953f5ae8125ab368ba280ad"
 dependencies = [
  "arrayvec",
  "bytes",
- "cargo_metadata",
  "chrono",
  "const-hex",
  "elliptic-curve 0.13.6",
@@ -1745,14 +1740,12 @@ dependencies = [
  "generic-array",
  "k256 0.13.1",
  "num_enum 0.7.1",
- "once_cell",
  "open-fastrlp",
  "rand",
  "rlp",
  "serde",
  "serde_json",
  "strum 0.25.0",
- "syn 2.0.39",
  "tempfile",
  "thiserror",
  "tiny-keccak",
@@ -1761,12 +1754,11 @@ dependencies = [
 
 [[package]]
 name = "ethers-etherscan"
-version = "2.0.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e53451ea4a8128fbce33966da71132cf9e1040dcfd2a2084fd7733ada7b2045"
+version = "2.0.7"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd62e7cdec31160b91c5a646883594a586ba"
 dependencies = [
- "ethers-core 2.0.10",
- "ethers-solc",
+ "ethers-core 2.0.7",
+ "ethers-solc 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "reqwest",
  "semver 1.0.20",
  "serde",
@@ -1860,16 +1852,15 @@ dependencies = [
 
 [[package]]
 name = "ethers-solc"
-version = "2.0.10"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de34e484e7ae3cab99fbfd013d6c5dc7f9013676a4e0e414d8b12e1213e8b3ba"
+checksum = "a81c89f121595cf8959e746045bb8b25a6a38d72588561e1a3b7992fc213f674"
 dependencies = [
  "cfg-if 1.0.0",
- "const-hex",
- "dirs",
  "dunce",
- "ethers-core 2.0.10",
+ "ethers-core 2.0.7",
  "glob",
+ "hex",
  "home",
  "md-5",
  "num_cpus",
@@ -1882,6 +1873,35 @@ dependencies = [
  "serde_json",
  "solang-parser",
  "svm-rs",
+ "thiserror",
+ "tiny-keccak",
+ "tokio",
+ "tracing",
+ "walkdir",
+ "yansi",
+]
+
+[[package]]
+name = "ethers-solc"
+version = "2.0.7"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd62e7cdec31160b91c5a646883594a586ba"
+dependencies = [
+ "cfg-if 1.0.0",
+ "dunce",
+ "ethers-core 2.0.7",
+ "glob",
+ "hex",
+ "home",
+ "md-5",
+ "num_cpus",
+ "once_cell",
+ "path-slash",
+ "rayon",
+ "regex",
+ "semver 1.0.20",
+ "serde",
+ "serde_json",
+ "solang-parser",
  "thiserror",
  "tiny-keccak",
  "tokio",
@@ -2229,7 +2249,7 @@ dependencies = [
 name = "geth-utils"
 version = "0.1.0"
 dependencies = [
- "env_logger",
+ "env_logger 0.10.1",
  "gobuild",
  "log",
 ]
@@ -2359,11 +2379,11 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=sync-ff-0.13#17318039da63711d307fac5013a4ada227b456fe"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#b7c53bb7456063936f4ca6df8fa8e751d9c17d85"
 dependencies = [
  "ff 0.13.0",
  "halo2_proofs",
- "itertools 0.10.5",
+ "itertools",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2374,12 +2394,12 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=sync-ff-0.13#17318039da63711d307fac5013a4ada227b456fe"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#b7c53bb7456063936f4ca6df8fa8e751d9c17d85"
 dependencies = [
  "ff 0.13.0",
  "group 0.13.0",
  "halo2-base",
- "itertools 0.10.5",
+ "itertools",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2393,7 +2413,7 @@ dependencies = [
 [[package]]
 name = "halo2-gate-generator"
 version = "0.1.0"
-source = "git+https://github.com/zhenfeizhang/halo2gategen/?branch=sync-ff-0.13#0ada1c8079dece0df1d4730f0afb9380066b6932"
+source = "git+https://github.com/noel2004/halo2gategen?branch=sync-ff-0.13#52e99e4846556c6e5ab54e6ee9f5f75b73428649"
 dependencies = [
  "halo2_proofs",
  "lazy_static",
@@ -2409,18 +2429,20 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=sync-ff-0.13#42a18aa89867c21e5ad1657e829ccab2a6be0ec1"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?rev=94892b5c8286ab22f3d291437c465f09181d970e#94892b5c8286ab22f3d291437c465f09181d970e"
 dependencies = [
+ "env_logger 0.9.3",
  "ethers-core 2.0.10",
  "halo2_proofs",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "num-bigint",
  "num-traits",
  "poseidon-circuit",
  "rand",
+ "rand_chacha",
  "serde",
  "serde_json",
  "strum 0.24.1",
@@ -2431,7 +2453,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=sync-ff-0.13#ae6e02cf54e6bcaa056427c5acc61e33c7bfb66d"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.0#44dbed4515984bbc14cb8283e273794b03c28afa"
 dependencies = [
  "ark-std 0.3.0",
  "blake2b_simd",
@@ -2444,7 +2466,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "plotters",
- "poseidon",
+ "poseidon 0.2.0 (git+https://github.com/scroll-tech/poseidon.git?branch=main)",
  "rand_core",
  "rayon",
  "sha3 0.9.1",
@@ -2789,7 +2811,7 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "bus-mapping",
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "ethers",
  "halo2_proofs",
@@ -2832,15 +2854,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
 dependencies = [
  "either",
 ]
@@ -2906,10 +2919,10 @@ dependencies = [
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "halo2_proofs",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "num-bigint",
@@ -2921,20 +2934,20 @@ dependencies = [
 
 [[package]]
 name = "lalrpop"
-version = "0.20.0"
+version = "0.19.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da4081d44f4611b66c6dd725e6de3169f9f63905421e8626fcb86b6a898998b8"
+checksum = "0a1cbf952127589f2851ab2046af368fd20645491bb4b376f04b7f94d7a9837b"
 dependencies = [
  "ascii-canvas",
  "bit-set",
  "diff",
  "ena",
  "is-terminal",
- "itertools 0.10.5",
+ "itertools",
  "lalrpop-util",
  "petgraph",
  "regex",
- "regex-syntax 0.7.5",
+ "regex-syntax 0.6.29",
  "string_cache",
  "term",
  "tiny-keccak",
@@ -2943,9 +2956,9 @@ dependencies = [
 
 [[package]]
 name = "lalrpop-util"
-version = "0.20.0"
+version = "0.19.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f35c735096c0293d313e8f2a641627472b83d01b937177fe76e5e2708d31e0d"
+checksum = "d3c48237b9604c5a4702de6b824e02006c3214327564636aef27c1028a8fa0ed"
 
 [[package]]
 name = "lazy_static"
@@ -3098,7 +3111,7 @@ dependencies = [
 [[package]]
 name = "misc-precompiled-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=sync-ff-0.13#a620c79eeee48be051af908eb2812a40b525293e"
+source = "git+https://github.com/noel2004/misc-precompiled-circuit.git?branch=sync-ff-0.13#df0ab05761b0898645689f1427362540d6e0ecb3"
 dependencies = [
  "halo2-gate-generator",
  "halo2_proofs",
@@ -3120,7 +3133,7 @@ dependencies = [
  "ethers-core 2.0.7",
  "ethers-signers",
  "external-tracer",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "rand",
@@ -3131,7 +3144,7 @@ dependencies = [
 name = "mpt-zktrie"
 version = "0.1.0"
 dependencies = [
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "halo2-mpt-circuits",
  "halo2_proofs",
@@ -3353,12 +3366,6 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
-
-[[package]]
-name = "option-ext"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "os_str_bytes"
@@ -3726,6 +3733,15 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
+source = "git+https://github.com/scroll-tech/poseidon.git?branch=main#5787dd3d2ce7a9e9601a035c396ac0c03449b54d"
+dependencies = [
+ "halo2curves",
+ "subtle",
+]
+
+[[package]]
+name = "poseidon"
+version = "0.2.0"
 source = "git+https://github.com/scroll-tech/poseidon.git?branch=sync-ff-0.13#5787dd3d2ce7a9e9601a035c396ac0c03449b54d"
 dependencies = [
  "halo2curves",
@@ -3735,7 +3751,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=sync-ff-0.13#cdc20edfa1265cd396f1a1d02b6c2781a1910f7f"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-1201#c6f058bcf3bb0c7933d1979563c414f5cc480f25"
 dependencies = [
  "bitvec",
  "ff 0.13.0",
@@ -3903,7 +3919,7 @@ dependencies = [
  "git-version",
  "halo2_proofs",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "log",
  "log4rs",
  "mpt-zktrie",
@@ -4049,9 +4065,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.7.5"
+version = "0.6.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbb5fb1acd8a1a18b3dd5be62d25485eb770e05afb408a9627d14d451bae12da"
+checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
@@ -4759,19 +4775,19 @@ dependencies = [
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=sync-ff-0.13#dcfd5928e9b757ae9a76fd8b5fa92e8ea9dfaa7e"
+source = "git+https://github.com/noel2004/snark-verifier?branch=sync-ff-0.13#8e3762a4dc11bd4faddfce070090d28a3972100c"
 dependencies = [
  "bytes",
  "ethereum-types",
  "halo2-base",
  "halo2-ecc",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "num-bigint",
  "num-integer",
  "num-traits",
- "poseidon",
+ "poseidon 0.2.0 (git+https://github.com/scroll-tech/poseidon.git?branch=sync-ff-0.13)",
  "rand",
  "revm",
  "rlp",
@@ -4783,14 +4799,14 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=sync-ff-0.13#dcfd5928e9b757ae9a76fd8b5fa92e8ea9dfaa7e"
+source = "git+https://github.com/noel2004/snark-verifier?branch=sync-ff-0.13#8e3762a4dc11bd4faddfce070090d28a3972100c"
 dependencies = [
  "bincode",
  "ethereum-types",
  "ff 0.13.0",
  "halo2-base",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "num-bigint",
@@ -4825,11 +4841,11 @@ dependencies = [
 
 [[package]]
 name = "solang-parser"
-version = "0.3.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cb9fa2fa2fa6837be8a2495486ff92e3ffe68a99b6eeba288e139efdd842457"
+checksum = "4a94494913728908efa7a25a2dd2e4f037e714897985c24273c40596638ed909"
 dependencies = [
- "itertools 0.11.0",
+ "itertools",
  "lalrpop",
  "lalrpop-util",
  "phf",
@@ -4968,13 +4984,13 @@ checksum = "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc"
 
 [[package]]
 name = "svm-rs"
-version = "0.3.3"
+version = "0.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20689c7d03b6461b502d0b95d6c24874c7d24dea2688af80486a130a06af3b07"
+checksum = "3a04fc4f5cd35c700153b233f5575ccb3237e0f941fa5049d9e98254d10bf2fe"
 dependencies = [
- "dirs",
  "fs2",
  "hex",
+ "home",
  "once_cell",
  "reqwest",
  "semver 1.0.20",
@@ -5087,7 +5103,7 @@ dependencies = [
  "bus-mapping",
  "clap 3.2.25",
  "ctor",
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "ethers-core 2.0.7",
  "ethers-signers",
@@ -5096,7 +5112,7 @@ dependencies = [
  "halo2_proofs",
  "handlebars",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "keccak256",
  "log",
  "mock",
@@ -5927,7 +5943,7 @@ dependencies = [
  "criterion",
  "ctor",
  "either",
- "env_logger",
+ "env_logger 0.10.1",
  "eth-types",
  "ethers-core 2.0.7",
  "ethers-signers",
@@ -5937,7 +5953,7 @@ dependencies = [
  "halo2-ecc",
  "halo2_proofs",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "keccak256",
  "lazy_static",
  "log",
@@ -6000,8 +6016,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "ethers-etherscan"
-version = "2.0.7"
-source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd62e7cdec31160b91c5a646883594a586ba"
