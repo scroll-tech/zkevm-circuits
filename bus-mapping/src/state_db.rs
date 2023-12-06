@@ -6,20 +6,20 @@ use crate::{
     util::{hash_code, KECCAK_CODE_HASH_EMPTY},
 };
 use eth_types::{Address, Hash, Word, H256, U256};
-use lazy_static::lazy_static;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    sync::LazyLock,
+};
 
-lazy_static! {
-    static ref ACCOUNT_ZERO: Account = Account::zero();
-    /// Hash value for empty code hash.
-    static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
-    /// bytes of empty code hash, in little endian order.
-    pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
-        let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
-        bytes.reverse();
-        bytes
-    };
-}
+static ACCOUNT_ZERO: LazyLock<Account> = LazyLock::new(Account::zero);
+/// Hash value for empty code hash.
+static EMPTY_CODE_HASH: LazyLock<Hash> = LazyLock::new(|| CodeDB::hash(&[]));
+/// bytes of empty code hash, in little endian order.
+pub static EMPTY_CODE_HASH_LE: LazyLock<[u8; 32]> = LazyLock::new(|| {
+    let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
+    bytes.reverse();
+    bytes
+});
 
 const VALUE_ZERO: Word = Word::zero();
 

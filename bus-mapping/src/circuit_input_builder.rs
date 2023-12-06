@@ -38,7 +38,7 @@ use ethers_providers::JsonRpcClient;
 pub use execution::{
     BigModExp, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp,
     EcMulOp, EcPairingOp, EcPairingPair, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
-    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP, SHA256,
 };
 use hex::decode_to_slice;
 
@@ -497,7 +497,7 @@ impl<'a> CircuitInputBuilder {
             RW::READ,
             StorageOp::new(
                 *MESSAGE_QUEUE,
-                *WITHDRAW_TRIE_ROOT_SLOT,
+                WITHDRAW_TRIE_ROOT_SLOT,
                 withdraw_root,
                 withdraw_root,
                 dummy_tx_id,
@@ -678,7 +678,7 @@ impl<'a> CircuitInputBuilder {
                     )
                 } else {
                     let stack_input_num = 1024 - geth_step.op.valid_stack_ptr_range().1 as usize;
-                    (0..stack_input_num).into_iter().map(|i|
+                    (0..stack_input_num).map(|i|
                         format!("{:?}",  geth_step.stack.nth_last(i))
                     ).collect_vec().join(" ")
                 }

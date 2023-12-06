@@ -15,12 +15,12 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    GethExecStep, ToLittleEndian, Word, H256, U256,
+    Field, GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
-    arithmetic::{CurveAffine, Field},
+    arithmetic::{CurveAffine, Field as Halo2Field},
     halo2curves::{
         bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
         group::prime::PrimeCurveAffine,
@@ -221,6 +221,12 @@ pub enum CopyDataType {
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
     RlcAcc,
+    /// When copy event is access-list addresses (EIP-2930), source is tx-table
+    /// and destination is rw-table.
+    AccessListAddresses,
+    /// When copy event is access-list storage keys (EIP-2930), source is
+    /// tx-table and destination is rw-table.
+    AccessListStorageKeys,
 }
 impl CopyDataType {
     /// How many bits are necessary to represent a copy data type.
@@ -307,6 +313,8 @@ impl From<CopyDataType> for usize {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
+            CopyDataType::AccessListAddresses => 6,
+            CopyDataType::AccessListStorageKeys => 7,
         }
     }
 }
@@ -320,6 +328,8 @@ impl From<&CopyDataType> for u64 {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
+            CopyDataType::AccessListAddresses => 6,
+            CopyDataType::AccessListStorageKeys => 7,
         }
     }
 }
@@ -908,6 +918,20 @@ impl PrecompileEvents {
             .cloned()
             .collect()
     }
+    /// Get all SHA256 events.
+    pub fn get_sha256_events(&self) -> Vec<SHA256> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::SHA256(op) = e {
+                    Some(op)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 /// I/O from a precompiled contract call.
@@ -923,6 +947,8 @@ pub enum PrecompileEvent {
     EcPairing(Box<EcPairingOp>),
     /// Represents the I/O from Modexp call.
     ModExp(BigModExp),
+    /// Represents the I/O from SHA256 call.
+    SHA256(SHA256),
 }
 
 impl Default for PrecompileEvent {
@@ -1368,4 +1394,13 @@ impl Default for BigModExp {
             result: Default::default(),
         }
     }
+}
+
+/// Event representating an SHA256 hash in precompile sha256.
+#[derive(Clone, Debug, Default)]
+pub struct SHA256 {
+    /// input bytes
+    pub input: Vec<u8>,
+    /// digest
+    pub digest: [u8; 32],
 }

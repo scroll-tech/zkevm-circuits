@@ -240,7 +240,7 @@ mod test {
 
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         if let Some(r) = r {
-            let mut last = ctx
+            let last = ctx
                 .geth_traces
                 .first_mut()
                 .unwrap()

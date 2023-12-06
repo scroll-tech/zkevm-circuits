@@ -3,7 +3,7 @@ use super::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, ECC_TABLE_LOOKUPS,
         EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, MODEXP_TABLE_LOOKUPS,
         N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS,
-        RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        RW_TABLE_LOOKUPS, SHA256_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, Inverter, StoredExpression},
     EvmCircuitExports,
@@ -28,7 +28,6 @@ use bus_mapping::util::read_env_var;
 use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
         Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
@@ -40,6 +39,7 @@ use itertools::Itertools;
 use std::{
     collections::{BTreeSet, HashMap},
     iter,
+    sync::LazyLock,
 };
 
 #[cfg(feature = "onephase")]
@@ -52,10 +52,8 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::ThirdPhase;
 
 use strum::{EnumCount, IntoEnumIterator};
-
-use once_cell::sync::Lazy;
-pub(crate) static CHECK_RW_LOOKUP: Lazy<bool> =
-    Lazy::new(|| read_env_var("CHECK_RW_LOOKUP", false));
+pub(crate) static CHECK_RW_LOOKUP: LazyLock<bool> =
+    LazyLock::new(|| read_env_var("CHECK_RW_LOOKUP", false));
 
 mod add_sub;
 mod addmod;
@@ -210,6 +208,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use precompiles::{
     EcAddGadget, EcMulGadget, EcPairingGadget, EcrecoverGadget, IdentityGadget, ModExpGadget,
+    SHA256Gadget,
 };
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
@@ -226,7 +225,7 @@ use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 
-pub(crate) trait ExecutionGadget<F: FieldExt> {
+pub(crate) trait ExecutionGadget<F: Field> {
     const NAME: &'static str;
 
     const EXECUTION_STATE: ExecutionState;
@@ -359,7 +358,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     // precompile calls
     precompile_ecrecover_gadget: Box<EcrecoverGadget<F>>,
-    precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
+    precompile_sha2_gadget: Box<SHA256Gadget<F>>,
     precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
     precompile_modexp_gadget: Box<ModExpGadget<F>>,
@@ -383,6 +382,7 @@ impl<F: Field> ExecutionConfig<F> {
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
+        sha256_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
         modexp_table: &dyn LookupTable<F>,
@@ -663,6 +663,7 @@ impl<F: Field> ExecutionConfig<F> {
             block_table,
             copy_table,
             keccak_table,
+            sha256_table,
             exp_table,
             sig_table,
             modexp_table,
@@ -929,6 +930,7 @@ impl<F: Field> ExecutionConfig<F> {
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
+        sha256_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
         modexp_table: &dyn LookupTable<F>,
@@ -949,6 +951,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Block => block_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
+                        Table::Sha256 => sha256_table,
                         Table::Exp => exp_table,
                         Table::Sig => sig_table,
                         Table::ModExp => modexp_table,
@@ -1058,9 +1061,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         // There should be 3 group of regions
         // 1. real steps
-        // 2. padding EndBlocks.
-        //    For the ease of implementation, even for `no_padding` case,
-        //     we will still pad 1 end_block_not_last.
+        // 2. padding EndBlocks. For the ease of implementation, even for `no_padding` case, we will
+        //    still pad 1 end_block_not_last.
         // 3. final EndBlock
         let region1_height = self.get_num_rows_required_no_padding(block);
         let region3_height = 2; // EndBlock, plus a dummy "next" row used for Rotation
@@ -1095,7 +1097,7 @@ impl<F: Field> ExecutionConfig<F> {
             .txs
             .last()
             .map(|tx| tx.calls[0].clone())
-            .unwrap_or_else(Call::default);
+            .unwrap_or_default();
         let end_block_not_last = &block.end_block_not_last;
         let end_block_last = &block.end_block_last;
 
@@ -1107,8 +1109,7 @@ impl<F: Field> ExecutionConfig<F> {
             offset: usize,
         }
         let total_step_num = block.txs.iter().map(|t| t.steps.len()).sum::<usize>();
-        let mut step_assignments: Vec<StepAssignment> = Vec::new();
-        step_assignments.reserve(total_step_num);
+        let mut step_assignments: Vec<StepAssignment> = Vec::with_capacity(total_step_num);
 
         // the "global offset"
         let mut offset = 0;
@@ -1383,6 +1384,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
+            ("EVM_lookup_sha256", SHA256_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
             ("EVM_lookup_modexp", MODEXP_TABLE_LOOKUPS),

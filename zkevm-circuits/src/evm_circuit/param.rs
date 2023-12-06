@@ -4,7 +4,7 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 140;
@@ -37,6 +37,7 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
+    + SHA256_TABLE_LOOKUPS
     + EXP_TABLE_LOOKUPS
     + SIG_TABLE_LOOKUPS
     + MODEXP_TABLE_LOOKUPS
@@ -52,6 +53,7 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Block, BLOCK_TABLE_LOOKUPS),
     (Table::Copy, COPY_TABLE_LOOKUPS),
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
+    (Table::Sha256, SHA256_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
     (Table::Sig, SIG_TABLE_LOOKUPS),
     (Table::ModExp, MODEXP_TABLE_LOOKUPS),
@@ -79,6 +81,9 @@ pub const COPY_TABLE_LOOKUPS: usize = 1;
 
 /// Keccak Table lookups done in EVMCircuit
 pub const KECCAK_TABLE_LOOKUPS: usize = 1;
+
+/// Keccak Table lookups done in EVMCircuit
+pub const SHA256_TABLE_LOOKUPS: usize = 1;
 
 /// Exp Table lookups done in EVMCircuit
 pub const EXP_TABLE_LOOKUPS: usize = 1;
@@ -135,10 +140,10 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
 
-lazy_static::lazy_static! {
-    // Step slot height in evm circuit
-    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
-}
+// Step slot height in evm circuit
+pub(crate) static EXECUTION_STATE_HEIGHT_MAP: LazyLock<HashMap<ExecutionState, usize>> =
+    LazyLock::new(get_step_height_map);
+
 fn get_step_height_map() -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
     let circuit = EvmCircuit::configure(&mut meta);

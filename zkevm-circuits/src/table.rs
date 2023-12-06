@@ -28,7 +28,6 @@ use gadgets::{
     util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Fq, G1Affine},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -146,8 +145,6 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
-    /// Gas cost for access list (EIP 2930)
-    AccessListGasCost,
     /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID
@@ -177,6 +174,12 @@ pub enum TxFieldTag {
     TxHash,
     /// TxType: Type of the transaction
     TxType,
+    /// Access list address count (EIP-2930)
+    AccessListAddressesLen,
+    /// Access list all storage key count (EIP-2930)
+    AccessListStorageKeysLen,
+    /// RLC of access list (EIP-2930)
+    AccessListRLC,
     /// The block number in which this tx is included.
     BlockNumber,
 }
@@ -309,7 +312,6 @@ impl TxTable {
                 let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs = (txs.len()..max_txs)
-                    .into_iter()
                     .map(|tx_id| {
                         let mut padding_tx = Transaction::dummy(chain_id);
                         padding_tx.id = tx_id + 1;
@@ -604,7 +606,7 @@ impl<F: Field> LookupTable<F> for RwTable {
 }
 impl RwTable {
     /// Construct a new RwTable
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             rw_counter: meta.advice_column(),
@@ -760,7 +762,7 @@ impl<F: Field> LookupTable<F> for MptTable {
 
 impl MptTable {
     /// Construct a new MptTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             address: meta.advice_column(),
@@ -881,7 +883,7 @@ impl PoseidonTable {
     pub(crate) const INPUT_WIDTH: usize = Self::WIDTH - 1;
 
     /// Construct a new PoseidonTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             hash_id: meta.advice_column(),
@@ -1143,7 +1145,7 @@ impl BytecodeTable {
     }
 
     /// A sub-table of bytecode without is_code nor push_rlc.
-    fn columns_mini<F: Field>(&self) -> Vec<Column<Any>> {
+    fn columns_mini(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
             self.code_hash.into(),
@@ -1155,7 +1157,7 @@ impl BytecodeTable {
 
     /// The expressions of the sub-table of bytecode without is_code nor push_rlc.
     pub fn table_exprs_mini<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.columns_mini::<F>()
+        self.columns_mini()
             .iter()
             .map(|&column| meta.query_any(column, Rotation::cur()))
             .collect()
@@ -1489,6 +1491,127 @@ impl KeccakTable {
     }
 }
 
+/// SHA256 Table, used to verify SHA256 hashing from RLC'ed input in precompile.
+#[derive(Clone, Debug)]
+pub struct SHA256Table {
+    /// True when the row is enabled
+    pub q_enable: Column<Fixed>,
+    /// True when the row is final
+    pub is_final: Column<Advice>,
+    /// Byte array input as `RLC(reversed(input))`
+    pub input_rlc: Column<Advice>, // RLC of input bytes
+    /// Byte array input length
+    pub input_len: Column<Advice>,
+    /// RLC of the hash result
+    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+}
+
+impl<F: Field> LookupTable<F> for SHA256Table {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.is_final.into(),
+            self.input_rlc.into(),
+            self.input_len.into(),
+            self.output_rlc.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enable"),
+            String::from("is_final"),
+            String::from("input_rlc"),
+            String::from("input_len"),
+            String::from("output_rlc"),
+        ]
+    }
+}
+
+impl SHA256Table {
+    /// Construct a new KeccakTable
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            is_final: meta.advice_column(),
+            input_len: meta.advice_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
+            output_rlc: meta.advice_column_in(SecondPhase),
+        }
+    }
+
+    /// Generate the sha256 table assignments from a byte array pair of input/output.
+    /// Used only for dev_load
+    pub fn assignments<F: Field>(
+        entry: (&[u8], &[u8; 32]),
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 4]> {
+        let (input, output) = entry;
+        let input_len = Value::known(F::from(input.len() as u64));
+        let input_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
+        let output_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(&Word::from_big_endian(output).to_le_bytes(), challenge));
+
+        vec![[Value::known(F::one()), input_rlc, input_len, output_rlc]]
+    }
+
+    /// Provide this function for the case that we want to consume a sha256
+    /// table but without running the full sha256 circuit
+    pub fn dev_load<'a, F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        entries: impl IntoIterator<Item = (&'a Vec<u8>, &'a [u8; 32])> + Clone,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "sha256 table dev",
+            |mut region| {
+                let mut offset = 0;
+                for column in <Self as LookupTable<F>>::advice_columns(self) {
+                    region.assign_fixed(
+                        || "sha256 table all-zero row",
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_advice(
+                        || "sha256 table all-zero row",
+                        column,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let table_columns = <Self as LookupTable<F>>::advice_columns(self);
+                for (input, digest) in entries.clone() {
+                    for row in Self::assignments((input, digest), challenges) {
+                        region.assign_fixed(
+                            || format!("table row {offset}"),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
+                        for (&column, value) in table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("table row {offset}"),
+                                column,
+                                offset,
+                                || value,
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
+}
+
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
 /// TxLogs and TxCallData.
 #[derive(Clone, Copy, Debug)]
@@ -1606,7 +1729,7 @@ impl CopyTable {
             .copy_bytes
             .bytes_write_prev
             .clone()
-            .unwrap_or(vec![]);
+            .unwrap_or_default();
 
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
@@ -2332,15 +2455,14 @@ impl<F: Field> LookupTable<F> for SigTable {
     }
 }
 
-/// 1. if EcAdd(P, Q) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 1. if EcAdd(P, Q) == R then: (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc,
+///    output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = rlc(Q.x), arg4_rlc = rlc(Q.x),
 ///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
 ///
-/// 2. if EcMul(P, s) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 2. if EcMul(P, s) == R then: (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = s
@@ -2596,7 +2718,7 @@ impl ModExpTable {
 
         let mut bytes = [0u8; 64];
         remainder.to_little_endian(&mut bytes[..32]);
-        F::from_bytes_wide(&bytes)
+        F::from_uniform_bytes(&bytes)
     }
 
     /// fill a blank 4-row region start from offset for empty lookup
@@ -2654,6 +2776,7 @@ impl ModExpTable {
 
                     for i in 0..3 {
                         for (limbs, &col) in [base_limbs, exp_limbs, modulus_limbs, result_limbs]
+                            .iter()
                             .zip([&self.base, &self.exp, &self.modulus, &self.result])
                         {
                             region.assign_advice(
@@ -2666,13 +2789,10 @@ impl ModExpTable {
                     }
 
                     // native is not used by lookup (and in fact it can be omitted in dev)
-                    for (word, &col) in [
-                        &event.base,
-                        &event.exponent,
-                        &event.modulus,
-                        &event.result,
-                    ]
-                    .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                    for (word, &col) in
+                        [&event.base, &event.exponent, &event.modulus, &event.result]
+                            .iter()
+                            .zip([&self.base, &self.exp, &self.modulus, &self.result])
                     {
                         region.assign_advice(
                             || format!("modexp table native row {}", offset + 3),

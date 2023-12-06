@@ -578,7 +578,7 @@ mod test {
             };
             try_test!(
                 ContractCreateGadgetContainer<Fr, false>,
-                vec![
+                [
                     caller_address.to_word(),
                     Word::from(caller_nonce),
                     rlp_len,
@@ -593,12 +593,12 @@ mod test {
     fn create2_address() {
         let caller_address = mock::MOCK_ACCOUNTS[0];
         let salt = Word::from(0xbeefcafedeadu64);
-        let code = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let code = [1, 2, 3, 4, 5, 6, 7, 8];
         let code_hash = Word::from(CodeDB::hash(&code).to_fixed_bytes());
-        let keccak_code_hash = Word::from(keccak256(&code));
+        let keccak_code_hash = Word::from(keccak256(code));
         try_test!(
             ContractCreateGadgetContainer<Fr, true>,
-            vec![
+            [
                 caller_address.to_word(),
                 Word::default(),
                 85u64.into(),

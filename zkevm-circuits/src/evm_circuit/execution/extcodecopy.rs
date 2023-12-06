@@ -253,13 +253,11 @@ mod test {
     use eth_types::{
         address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word,
     };
-    use lazy_static::lazy_static;
     use mock::TestContext;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref EXTERNAL_ADDRESS: Address =
-            address!("0xaabbccddee000000000000000000000000000000");
-    }
+    static EXTERNAL_ADDRESS: LazyLock<Address> =
+        LazyLock::new(|| address!("0xaabbccddee000000000000000000000000000000"));
 
     fn test_ok(
         external_account: Option<Account>,

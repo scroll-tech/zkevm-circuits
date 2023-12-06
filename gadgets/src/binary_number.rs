@@ -61,10 +61,9 @@ where
 
     /// Return the constant that represents a given value. To be compared with the value expression.
     pub fn constant_expr<F: Field>(&self, value: T) -> Expression<F> {
-        let f = value
-            .as_bits()
-            .iter()
-            .fold(F::zero(), |result, bit| F::from(*bit) + result * F::from(2));
+        let f = value.as_bits().iter().fold(F::ZERO, |result, bit| {
+            F::from(*bit as u64) + result * F::from(2)
+        });
         Expression::Constant(f)
     }
 
@@ -199,7 +198,7 @@ where
                 || format!("binary number {column:?}"),
                 column,
                 offset,
-                || Value::known(F::from(bit)),
+                || Value::known(F::from(bit as u64)),
             )?;
         }
         Ok(())

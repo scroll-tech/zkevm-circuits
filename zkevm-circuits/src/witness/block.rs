@@ -12,7 +12,7 @@ use crate::{
 use bus_mapping::{
     circuit_input_builder::{
         self, BigModExp, CircuitsParams, CopyEvent, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEvents,
+        PrecompileEvents, SHA256,
     },
     Error,
 };
@@ -136,6 +136,11 @@ impl<F: Field> Block<F> {
     /// Get BigModexp operations from all precompiled contract calls in this block.
     pub(crate) fn get_big_modexp(&self) -> Vec<BigModExp> {
         self.precompile_events.get_modexp_events()
+    }
+
+    /// Get sha256 operations from all precompiled contract calls in this block.
+    pub(crate) fn get_sha256(&self) -> Vec<SHA256> {
+        self.precompile_events.get_sha256_events()
     }
 
     pub(crate) fn print_evm_circuit_row_usage(&self) {
@@ -466,8 +471,7 @@ pub fn block_convert<F: Field>(
     let last_block_num = block
         .headers
         .iter()
-        .rev()
-        .next()
+        .next_back()
         .map(|(k, _)| *k)
         .unwrap_or_default();
     let chain_id = block.chain_id();
@@ -500,7 +504,7 @@ pub fn block_convert<F: Field>(
     let withdraw_root_entry = mpt_updates.get(&super::rw::Rw::AccountStorage {
         tx_id: total_tx_as_txid,
         account_address: *bus_mapping::l2_predeployed::message_queue::ADDRESS,
-        storage_key: *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT,
+        storage_key: bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT,
         // following field is not used in Mpt::Key so we just fill them arbitrarily
         rw_counter: 0,
         is_write: false,

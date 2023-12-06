@@ -48,7 +48,7 @@ mod tests {
             STOP
         };
 
-        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(*MOCK_CHAIN_ID);
+        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(MOCK_CHAIN_ID);
 
         let addr_a = wallet_a.address();
         let addr_b = address!("0x000000000000000000000000000000000000BBBB");

@@ -113,20 +113,16 @@ mod tests {
 
     #[test]
     fn test_0_is_zero() {
-        try_test!(IsZeroGadgetTestContainer<Fr>, vec![Word::from(0)], true);
+        try_test!(IsZeroGadgetTestContainer<Fr>, [Word::from(0)], true);
     }
 
     #[test]
     fn test_1_is_not_zero() {
-        try_test!(IsZeroGadgetTestContainer<Fr>, vec![Word::from(1)], false);
+        try_test!(IsZeroGadgetTestContainer<Fr>, [Word::from(1)], false);
     }
 
     #[test]
     fn test_large_num_is_not_zero() {
-        try_test!(
-            IsZeroGadgetTestContainer<Fr>,
-            vec![Word::from(10000)],
-            false,
-        );
+        try_test!(IsZeroGadgetTestContainer<Fr>, [Word::from(10000)], false,);
     }
 }

@@ -132,7 +132,7 @@ fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
 fn block_1tx_deploy() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let addr_a = wallet_a.address();
@@ -156,7 +156,7 @@ fn block_1tx_deploy() -> BlockTrace {
 fn block_1tx_ctx() -> TestContext<2, 1> {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -200,7 +200,7 @@ pub(crate) fn block_1tx() -> GethData {
 fn block_2tx_ctx() -> TestContext<2, 2> {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -468,6 +468,19 @@ fn serial_test_super_circuit_precompile_invalid_ec_pairing_fq_overflow() {
     const MAX_CALLDATA: usize = 0x180;
 
     let block = precompile_block_trace::block_precompile_invalid_ec_pairing_fq_overflow();
+    let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
+}
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_precompile_sha256() {
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 0x180;
+
+    let block = precompile_block_trace::block_precompile_sha256();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);

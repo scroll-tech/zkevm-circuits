@@ -155,6 +155,8 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
 impl<F: Field> Circuit<F> for TxCircuitTester<F> {
     type Config = (TxCircuitTesterConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -214,7 +216,6 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         config.u16_table.load(&mut layouter)?;
 
         let padding_txs = (self.tx_circuit.txs.len()..self.tx_circuit.max_txs)
-            .into_iter()
             .map(|i| {
                 let mut tx = Transaction::dummy(self.tx_circuit.chain_id);
                 tx.id = i + 1;

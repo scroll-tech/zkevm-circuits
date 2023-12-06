@@ -31,9 +31,11 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+mod tx_eip2930;
 mod tx_l1_fee;
 mod tx_l1_msg;
 
+pub(crate) use tx_eip2930::TxEip2930Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
@@ -284,13 +286,17 @@ impl<F: Field> RestoreContextGadget<F> {
                 [U256::zero(); 9]
             } else {
                 field_tags
+                    .iter()
                     .zip([0, 1, 2, 3, 4, 5, 6, 7, 8])
-                    .map(|(field_tag, i)| {
+                    .map(|(&field_tag, i)| {
                         let idx = step.rw_indices[i + rw_offset];
                         let rw = block.rws[idx];
                         debug_assert_eq!(rw.field_tag(), Some(field_tag as u64));
                         rw.call_context_value()
                     })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
             };
 
         for (cell, value) in [
@@ -1809,13 +1815,11 @@ pub(crate) fn get_copy_bytes(
 ) -> Vec<u8> {
     // read real copy bytes from padded memory words
     let padded_bytes: Vec<u8> = (0..copy_rwc_inc)
-        .map(|_| {
+        .flat_map(|_| {
             let mut bytes = rws.next().memory_word_pair().0.to_le_bytes();
             bytes.reverse();
             bytes
         })
-        .into_iter()
-        .flatten()
         .collect();
     let values: Vec<u8> = if copy_size == 0 {
         vec![0; 0]
