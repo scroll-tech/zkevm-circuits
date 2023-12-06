@@ -95,7 +95,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 meta.query_advice(is_field_border, Rotation::cur()),
             );
 
-            let f_128 = F::from(1 << 32).pow(&[4, 0, 0, 0]);
+            let f_128 = F::from(1 << 32).pow([4, 0, 0, 0]);
             let word_code_hash = bytecode_table.code_hash.query_advice(meta, Rotation::cur());
             cb.require_equal(
                 "poseidon_code_hash = code_hash.hi * 2^128 + code_hash.lo",
@@ -448,7 +448,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         );
         let empty_hash = POSEIDON_CODE_HASH_EMPTY.to_word();
         let empty_hash_word = word::Word::from(empty_hash).map(Value::known);
-        let f_128 = F::from(1 << 32).pow(&[4, 0, 0, 0]);
+        let f_128 = F::from(1 << 32).pow([4, 0, 0, 0]);
         let poseidon_empty_code_hash =
             unwrap_value(empty_hash_word.hi()) * f_128 + unwrap_value(empty_hash_word.lo());
 

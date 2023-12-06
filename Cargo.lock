@@ -2333,9 +2333,8 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=feat/hi_lo#b4f152b1f843e4b1364d2006c0b8eaccdb4fe0d3"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=feat/hi_lo#43ba0749a943057a44b5339e4819e7b09df021c2"
 dependencies = [
- "env_logger",
  "ethers-core",
  "halo2_proofs",
  "hex",
@@ -2346,7 +2345,6 @@ dependencies = [
  "num-traits",
  "poseidon-circuit",
  "rand",
- "rand_chacha",
  "serde",
  "serde_json",
  "strum 0.24.1",

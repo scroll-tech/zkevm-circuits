@@ -1090,7 +1090,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         };
         self.init_code_rlc.assign(region, offset, init_code_rlc)?;
         self.keccak_code_hash
-            .assign_u256(region, offset, keccak_code_hash)?;
+            .assign_u256(region, offset, keccak_code_hash_rlc)?;
 
         self.create.assign(
             region,
