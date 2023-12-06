@@ -119,14 +119,8 @@ fn bytecode_unrolling() {
     // Unroll the bytecode
     let unrolled = unroll(bytecode.to_vec());
     // Check if the bytecode was unrolled correctly
-    // TODO: re-enable it later
-    // assert_eq!(
-    //     UnrolledBytecode {
-    //         bytes: bytecode.to_vec(),
-    //         rows,
-    //     },
-    //     unrolled,
-    // );
+    // UnrolledBytecode contains Word<Value<F>>, Value<F> not implemented `PartialEq`.
+    assert_eq!(bytecode.to_vec(), unrolled.bytes,);
     // Verify the unrolling in the circuit
     test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled], true);
 }
@@ -189,7 +183,6 @@ fn bytecode_push() {
 
 /// Test invalid code_hash data
 #[test]
-//pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
 fn bytecode_invalid_hash_data() {
     let k = 9;
     let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];

@@ -197,7 +197,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 });
                 cb.require_equal(
                     "calldata equals memory data",
-                    //cb.word_rlc(calldata_word.limbs.clone()),
                     calldata_word_rlc,
                     cb.word_rlc(mem_calldata_overlap),
                 );

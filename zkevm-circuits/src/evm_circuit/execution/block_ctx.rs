@@ -101,10 +101,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u64.value.assign_u256(
-            region, offset, // Some(u64::try_from(value).unwrap().to_le_bytes()),
-            value,
-        )?;
+        self.value_u64.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }
@@ -141,15 +138,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u160.value.assign_u256(
-            region, offset,
-            // Some(
-            //     value.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-            //         .try_into()
-            //         .unwrap(),
-            // ),
-            value,
-        )?;
+        self.value_u160.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }

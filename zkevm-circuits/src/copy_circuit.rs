@@ -372,7 +372,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(rw_counter, CURRENT),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
-                //meta.query_advice(id, CURRENT), // call_id
                 meta.query_advice(id.lo(), Rotation::cur()), // call_id
                 addr_slot,
                 0.expr(),

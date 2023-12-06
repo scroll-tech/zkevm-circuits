@@ -80,7 +80,6 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
     // check address collision use
-    // TODO: check Word32Cell more suitable for keccak_code_hash field ?
     keccak_code_hash: Word32Cell<F>,
     #[cfg(feature = "scroll")]
     prev_keccak_code_hash: WordCell<F>,
@@ -134,13 +133,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 .unwrap(),
         );
 
-        //let contract_addr = expr_from_bytes(&keccak_output.limbs[..N_BYTES_ACCOUNT_ADDRESS]);
-
         // stack operations
         let value = cb.query_word32();
-
-        // let init_code_memory_offset = cb.query_cell_phase2();
-        // let init_code_length = cb.query_word_rlc();
 
         // init_code_length
         let length = cb.query_memory_address();

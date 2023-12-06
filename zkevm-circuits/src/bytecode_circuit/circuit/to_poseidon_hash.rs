@@ -97,6 +97,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
 
             let f_128 = F::from(1 << 32).pow([4, 0, 0, 0]);
             let word_code_hash = bytecode_table.code_hash.query_advice(meta, Rotation::cur());
+            // check poseidon_code_hash = code_hash.hi * 2^128 + code_hash.lo
             cb.require_equal(
                 "poseidon_code_hash = code_hash.hi * 2^128 + code_hash.lo",
                 meta.query_advice(poseidon_code_hash, Rotation::cur()),
@@ -375,7 +376,6 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 let mut constraints = Vec::new();
                 let lookup_inputs = [
                     1.expr(),
-                    //TODO: check code_hash.lo, constrain poseidon_code_hash = hi*2^128 + loxss
                     //meta.query_advice(code_hash.lo(), Rotation::cur()),
                     meta.query_advice(poseidon_code_hash, Rotation::cur()),
                     0.expr(),

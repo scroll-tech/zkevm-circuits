@@ -327,7 +327,6 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: Box<StopGadget<F>>,
     swap_gadget: Box<SwapGadget<F>>,
     blockhash_gadget: Box<BlockHashGadget<F>>,
-    //block_ctx_gadget: Box<BlockCtxGadget<F>>,
     block_ctx_u64_gadget: Box<BlockCtxU64Gadget<F>>,
     block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
@@ -614,7 +613,6 @@ impl<F: Field> ExecutionConfig<F> {
             sstore_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
-            // block_ctx_gadget: configure_gadget!(),
             // error gadgets
             error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
@@ -1581,7 +1579,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
-            // ExecutionState::BLOCKCTX => assign_exec_step!(self.block_ctx_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
