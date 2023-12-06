@@ -395,10 +395,9 @@ impl CircuitInputBuilder {
                 !existed
             }),
         )
-        .fold(
-            Ok(HashMap::new()),
-            |m, parsed| -> Result<HashMap<_, _>, Error> {
-                let mut m = m?;
+        .try_fold(
+            HashMap::new(),
+            |mut m, parsed| -> Result<HashMap<_, _>, Error> {
                 let (addr, acc) = parsed.map_err(Error::IoError)?;
                 m.insert(addr, acc);
                 Ok(m)
@@ -415,10 +414,9 @@ impl CircuitInputBuilder {
                 !existed
             }),
         )
-        .fold(
-            Ok(HashMap::new()),
-            |m, parsed| -> Result<HashMap<(Address, Word), Word>, Error> {
-                let mut m = m?;
+        .try_fold(
+            HashMap::new(),
+            |mut m, parsed| -> Result<HashMap<(Address, Word), Word>, Error> {
                 let ((addr, key), val) = parsed.map_err(Error::IoError)?;
                 m.insert((addr, key), val.into());
                 Ok(m)

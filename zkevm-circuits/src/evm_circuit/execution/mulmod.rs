@@ -60,13 +60,13 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = cb.query_word32();
         let e = cb.query_word32();
 
-        // 1.  k1 * n + a_reduced  == a
+        // 1. k1 * n + a_reduced  == a
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
 
-        // 2.  a_reduced * b + 0 == d * 2^256 + e
+        // 2. a_reduced * b + 0 == d * 2^256 + e
         let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &d, &e], None);
 
-        // 3.  k2 * n + r == d * 2^256 + e
+        // 3. k2 * n + r == d * 2^256 + e
         let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
@@ -181,7 +181,7 @@ mod test {
 
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         if let Some(r) = r {
-            let mut last = ctx
+            let last = ctx
                 .geth_traces
                 .first_mut()
                 .unwrap()

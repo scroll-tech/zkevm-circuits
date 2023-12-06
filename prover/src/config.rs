@@ -1,24 +1,28 @@
 use crate::utils::read_env_var;
 use aggregator::ConfigParams;
-use once_cell::sync::Lazy;
-use std::{collections::HashSet, fmt, fs::File, path::Path};
+use std::{collections::HashSet, fmt, fs::File, path::Path, sync::LazyLock};
 
-pub static INNER_DEGREE: Lazy<u32> = Lazy::new(|| read_env_var("SCROLL_PROVER_INNER_DEGREE", 20));
+pub static INNER_DEGREE: LazyLock<u32> =
+    LazyLock::new(|| read_env_var("SCROLL_PROVER_INNER_DEGREE", 20));
 
-pub static ASSETS_DIR: Lazy<String> =
-    Lazy::new(|| read_env_var("SCROLL_PROVER_ASSETS_DIR", "configs".to_string()));
+pub static ASSETS_DIR: LazyLock<String> =
+    LazyLock::new(|| read_env_var("SCROLL_PROVER_ASSETS_DIR", "configs".to_string()));
 
-pub static LAYER1_CONFIG_PATH: Lazy<String> = Lazy::new(|| asset_file_path("layer1.config"));
-pub static LAYER2_CONFIG_PATH: Lazy<String> = Lazy::new(|| asset_file_path("layer2.config"));
-pub static LAYER3_CONFIG_PATH: Lazy<String> = Lazy::new(|| asset_file_path("layer3.config"));
-pub static LAYER4_CONFIG_PATH: Lazy<String> = Lazy::new(|| asset_file_path("layer4.config"));
+pub static LAYER1_CONFIG_PATH: LazyLock<String> =
+    LazyLock::new(|| asset_file_path("layer1.config"));
+pub static LAYER2_CONFIG_PATH: LazyLock<String> =
+    LazyLock::new(|| asset_file_path("layer2.config"));
+pub static LAYER3_CONFIG_PATH: LazyLock<String> =
+    LazyLock::new(|| asset_file_path("layer3.config"));
+pub static LAYER4_CONFIG_PATH: LazyLock<String> =
+    LazyLock::new(|| asset_file_path("layer4.config"));
 
-pub static LAYER1_DEGREE: Lazy<u32> = Lazy::new(|| layer_degree(&LAYER1_CONFIG_PATH));
-pub static LAYER2_DEGREE: Lazy<u32> = Lazy::new(|| layer_degree(&LAYER2_CONFIG_PATH));
-pub static LAYER3_DEGREE: Lazy<u32> = Lazy::new(|| layer_degree(&LAYER3_CONFIG_PATH));
-pub static LAYER4_DEGREE: Lazy<u32> = Lazy::new(|| layer_degree(&LAYER4_CONFIG_PATH));
+pub static LAYER1_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER1_CONFIG_PATH));
+pub static LAYER2_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER2_CONFIG_PATH));
+pub static LAYER3_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER3_CONFIG_PATH));
+pub static LAYER4_DEGREE: LazyLock<u32> = LazyLock::new(|| layer_degree(&LAYER4_CONFIG_PATH));
 
-pub static ZKEVM_DEGREES: Lazy<Vec<u32>> = Lazy::new(|| {
+pub static ZKEVM_DEGREES: LazyLock<Vec<u32>> = LazyLock::new(|| {
     Vec::from_iter(HashSet::from([
         *INNER_DEGREE,
         *LAYER1_DEGREE,
@@ -26,8 +30,8 @@ pub static ZKEVM_DEGREES: Lazy<Vec<u32>> = Lazy::new(|| {
     ]))
 });
 
-pub static AGG_DEGREES: Lazy<Vec<u32>> =
-    Lazy::new(|| Vec::from_iter(HashSet::from([*LAYER3_DEGREE, *LAYER4_DEGREE])));
+pub static AGG_DEGREES: LazyLock<Vec<u32>> =
+    LazyLock::new(|| Vec::from_iter(HashSet::from([*LAYER3_DEGREE, *LAYER4_DEGREE])));
 
 #[derive(Clone, Copy, Debug)]
 pub enum LayerId {

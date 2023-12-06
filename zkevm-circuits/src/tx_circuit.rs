@@ -14,7 +14,7 @@ pub use dev::TxCircuitTester as TestTxCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    sig_circuit::SigCircuit,
+    // sig_circuit::SigCircuit,
     table::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
@@ -989,7 +989,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             input_expr
                 .into_iter()
-                .zip(table_expr.into_iter())
+                .zip(table_expr)
                 .map(|(input, table)| (input * condition.clone(), table))
                 .collect::<Vec<_>>()
         });
@@ -1098,7 +1098,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             input_expr
                 .into_iter()
-                .zip(table_expr.into_iter())
+                .zip(table_expr)
                 .map(|(input, table)| (input * condition.clone(), table))
                 .collect::<Vec<_>>()
         });
@@ -1118,7 +1118,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             input_expr
                 .into_iter()
-                .zip(table_expr.into_iter())
+                .zip(table_expr)
                 .map(|(input, table)| (input * condition.clone(), table))
                 .collect::<Vec<_>>()
         });
@@ -1449,15 +1449,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 1.expr(),                                            // is_final = 1
             ]
             .into_iter()
-            .zip(
-                vec![
-                    meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                    meta.query_fixed(tx_table.tag, Rotation::cur()),
-                    meta.query_advice(calldata_gas_cost_acc, Rotation::cur()),
-                    meta.query_advice(is_final, Rotation::cur()),
-                ]
-                .into_iter(),
-            )
+            .zip(vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(calldata_gas_cost_acc, Rotation::cur()),
+                meta.query_advice(is_final, Rotation::cur()),
+            ])
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1481,15 +1478,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 1.expr(), // is_final = true
             ]
             .into_iter()
-            .zip(
-                vec![
-                    meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                    meta.query_fixed(tx_table.tag, Rotation::cur()),
-                    meta.query_advice(tx_table.index, Rotation::cur()),
-                    meta.query_advice(is_final, Rotation::cur()),
-                ]
-                .into_iter(),
-            )
+            .zip(vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.index, Rotation::cur()),
+                meta.query_advice(is_final, Rotation::cur()),
+            ])
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1516,7 +1510,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(table_exprs.into_iter())
+                .zip(table_exprs)
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
@@ -1551,7 +1545,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(rlp_table.table_exprs(meta).into_iter())
+                .zip(rlp_table.table_exprs(meta))
                 .map(|(input, table)| (enable.expr() * input, table))
                 .collect()
         });
@@ -1583,7 +1577,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 is_none,
             ]
             .into_iter()
-            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .zip_eq(rlp_table.table_exprs(meta))
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1621,7 +1615,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 is_none,
             ]
             .into_iter()
-            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .zip_eq(rlp_table.table_exprs(meta))
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1673,7 +1667,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(table_exprs.into_iter())
+                .zip(table_exprs)
                 .map(|(input, table)| (input * enabled.expr(), table))
                 .collect()
         });
@@ -1698,7 +1692,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.value, Rotation(2)),      // output_rlc
             ]
             .into_iter()
-            .zip(keccak_table.table_exprs(meta).into_iter())
+            .zip(keccak_table.table_exprs(meta))
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -2441,7 +2435,7 @@ impl<F: Field> TxCircuit<F> {
             chain_id,
             start_l1_queue_index,
             value_cells: RefCell::new(None),
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 
@@ -2788,7 +2782,6 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         assert!(self.txs.len() <= self.max_txs);
 
         let padding_txs = (self.txs.len()..self.max_txs)
-            .into_iter()
             .map(|i| {
                 let mut tx = Transaction::dummy(self.chain_id);
                 tx.id = i + 1;
@@ -2857,7 +2850,6 @@ pub(crate) fn get_sign_data(
     chain_id: usize,
 ) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
     let padding_txs = (txs.len()..max_txs)
-        .into_iter()
         .map(|i| {
             let mut tx = Transaction::dummy(chain_id as u64);
             tx.id = i + 1;

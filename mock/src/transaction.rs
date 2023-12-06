@@ -10,74 +10,73 @@ use ethers_core::{
     types::{OtherFields, TransactionRequest},
 };
 use ethers_signers::{LocalWallet, Signer};
-use lazy_static::lazy_static;
 use rand::SeedableRng;
 use rand_chacha::{rand_core::OsRng, ChaCha20Rng};
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// Collection of correctly hashed and signed Transactions which can be used to test circuits or opcodes that have to check integrity of the Tx itself.
-    /// Some of the parameters of the Tx are hardcoded such as `nonce`, `value`, `gas_price` etc...
-    pub static ref CORRECT_MOCK_TXS: Vec<MockTransaction> = {
-        let mut rng = ChaCha20Rng::seed_from_u64(2u64);
+/// Collection of correctly hashed and signed Transactions which can be used to test circuits or
+/// opcodes that have to check integrity of the Tx itself. Some of the parameters of the Tx are
+/// hardcoded such as `nonce`, `value`, `gas_price` etc...
+pub static CORRECT_MOCK_TXS: LazyLock<Vec<MockTransaction>> = LazyLock::new(|| {
+    let mut rng = ChaCha20Rng::seed_from_u64(2u64);
 
-        vec![
-            MockTransaction::default()
-                .transaction_idx(1u64)
-                .from(AddrOrWallet::random(&mut rng))
-                .to(MOCK_ACCOUNTS[0])
-                .nonce(word!("0x103"))
-                .value(word!("0x3e8"))
-                .gas_price(word!("0x4d2"))
-                .input(vec![1, 2, 3, 4, 5, 0, 6, 7, 8, 9].into()) // call data gas cost of 0 is 4
-                .build(),
-            MockTransaction::default()
-                .transaction_idx(2u64)
-                .from(AddrOrWallet::random(&mut rng))
-                .to(MOCK_ACCOUNTS[1])
-                .nonce(word!("0x104"))
-                .value(word!("0x3e8"))
-                .gas_price(word!("0x4d2"))
-                .input(Bytes::from(b"hello"))
-                .build(),
-            MockTransaction::default()
-                .transaction_idx(3u64)
-                .from(AddrOrWallet::random(&mut rng))
-                .to(MOCK_ACCOUNTS[2])
-                .nonce(word!("0x105"))
-                .value(word!("0x3e8"))
-                .gas_price(word!("0x4d2"))
-                .input(Bytes::from(b"hello"))
-                .build(),
-            MockTransaction::default()
-                .transaction_idx(4u64)
-                .from(AddrOrWallet::random(&mut rng))
-                .to(MOCK_ACCOUNTS[3])
-                .nonce(word!("0x106"))
-                .value(word!("0x3e8"))
-                .gas_price(word!("0x4d2"))
-                .input(Bytes::from(b""))
-                .build(),
-            MockTransaction::default()
-                .transaction_idx(5u64)
-                .from(AddrOrWallet::random(&mut rng))
-                .to(MOCK_ACCOUNTS[4])
-                .nonce(word!("0x0"))
-                .value(word!("0x0"))
-                .gas_price(word!("0x4d2"))
-                .input(Bytes::from(b"hello"))
-                .build(),
-            MockTransaction::default()
-                .transaction_idx(6u64)
-                .from(AddrOrWallet::random(&mut rng))
-                .to(AddrOrWallet::Addr(Address::zero()))
-                .nonce(word!("0x0"))
-                .value(word!("0x0"))
-                .gas_price(word!("0x4d2"))
-                .input(Bytes::from(b"hello"))
-                .build(),
-        ]
-    };
-}
+    vec![
+        MockTransaction::default()
+            .transaction_idx(1u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[0])
+            .nonce(word!("0x103"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(vec![1, 2, 3, 4, 5, 0, 6, 7, 8, 9].into()) // call data gas cost of 0 is 4
+            .build(),
+        MockTransaction::default()
+            .transaction_idx(2u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[1])
+            .nonce(word!("0x104"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+        MockTransaction::default()
+            .transaction_idx(3u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[2])
+            .nonce(word!("0x105"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+        MockTransaction::default()
+            .transaction_idx(4u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[3])
+            .nonce(word!("0x106"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b""))
+            .build(),
+        MockTransaction::default()
+            .transaction_idx(5u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[4])
+            .nonce(word!("0x0"))
+            .value(word!("0x0"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+        MockTransaction::default()
+            .transaction_idx(6u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(AddrOrWallet::Addr(Address::zero()))
+            .nonce(word!("0x0"))
+            .value(word!("0x0"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+    ]
+});
 
 #[derive(Debug, Clone)]
 pub enum AddrOrWallet {
@@ -185,7 +184,7 @@ impl Default for MockTransaction {
             access_list: AccessList::default(),
             max_priority_fee_per_gas: Word::zero(),
             max_fee_per_gas: Word::zero(),
-            chain_id: *MOCK_CHAIN_ID,
+            chain_id: MOCK_CHAIN_ID,
         }
     }
 }

@@ -384,22 +384,20 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
 pub(crate) mod cached {
     use super::*;
     use halo2_proofs::halo2curves::bn256::Fr;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
     struct Cache {
         cs: ConstraintSystem<Fr>,
         config: (EvmCircuitConfig<Fr>, Challenges),
     }
 
-    lazy_static! {
-        /// Cached values of the ConstraintSystem after the EVM Circuit configuration and the EVM
-        /// Circuit configuration.  These values are calculated just once.
-        static ref CACHE: Cache = {
-            let mut meta = ConstraintSystem::<Fr>::default();
-            let config = EvmCircuit::<Fr>::configure(&mut meta);
-            Cache { cs: meta, config }
-        };
-    }
+    /// Cached values of the ConstraintSystem after the EVM Circuit configuration and the EVM
+    /// Circuit configuration.  These values are calculated just once.
+    static CACHE: LazyLock<Cache> = LazyLock::new(|| {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        let config = EvmCircuit::<Fr>::configure(&mut meta);
+        Cache { cs: meta, config }
+    });
 
     /// Wrapper over the EvmCircuit that behaves the same way and also
     /// implements the halo2 Circuit trait, but reuses the precalculated
@@ -447,6 +445,8 @@ use crate::util::MockChallenges as Challenges;
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

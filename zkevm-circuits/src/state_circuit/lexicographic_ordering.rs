@@ -38,10 +38,8 @@ use strum_macros::EnumIter;
 
 //  1. limb_difference fits into 16 bits.
 //  2. limb_difference is not zero because its inverse exists.
-//  3. RLC of the pairwise limb differences before the first_different_limb is
-//     zero.
-//  4. limb_difference equals the difference of the limbs at
-//     first_different_limb.
+//  3. RLC of the pairwise limb differences before the first_different_limb is zero.
+//  4. limb_difference equals the difference of the limbs at first_different_limb.
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum LimbIndex {
@@ -312,7 +310,7 @@ fn rlc_limb_differences<F: Field>(
 ) -> Vec<Expression<F>> {
     let mut result = vec![];
     let mut partial_sum = 0u64.expr();
-    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness.into_iter());
+    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness);
     for ((cur_limb, prev_limb), power_of_randomness) in cur
         .be_limbs()
         .iter()

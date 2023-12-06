@@ -157,37 +157,37 @@ mod tests {
     fn test_mod_n_expected_rem() {
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![U256::from(0), U256::from(0), U256::from(0)],
+            [Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![U256::from(1), U256::from(0), U256::from(0)],
+            [Word::from(1), Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![U256::from(548), U256::from(50), U256::from(48)],
+            [Word::from(548), Word::from(50), Word::from(48)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![U256::from(30), U256::from(50), U256::from(30)],
+            [Word::from(30), Word::from(50), Word::from(30)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, U256::from(1024), U256::from(1023)],
+            [WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, U256::from(1024), U256::from(0)],
+            [WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, U256::from(2), U256::from(0)],
+            [WORD_CELL_MAX, Word::from(2), Word::from(0)],
             true,
         );
     }
@@ -204,10 +204,10 @@ mod tests {
         // ModGadget, the statement would be invalid in the ModGadget.
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![
-                U256::from(2),
-                U256::from(3),
-                U256::from(0),
+            [
+                Word::from(2),
+                Word::from(3),
+                Word::from(0),
                 // magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3
                 U256::try_from(U512([2, 0, 0, 0, 1, 0, 0, 0]) / U512::from(3)).unwrap(),
             ],
@@ -215,27 +215,27 @@ mod tests {
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![U256::from(1), U256::from(1), U256::from(1)],
+            [Word::from(1), Word::from(1), Word::from(1)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![U256::from(46), U256::from(50), U256::from(48)],
+            [Word::from(46), Word::from(50), Word::from(48)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, U256::from(999999), U256::from(888888)],
+            [WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, U256::from(999999999), U256::from(666666666)],
+            [WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, U256::from(999999), U256::from(777777)],
+            [WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
             false,
         );
     }

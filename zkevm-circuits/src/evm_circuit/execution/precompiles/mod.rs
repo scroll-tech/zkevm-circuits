@@ -1,8 +1,3 @@
-use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{Field, ToScalar};
-use gadgets::util::{select, Expr};
-use halo2_proofs::{circuit::Value, plonk::Error};
-
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -15,6 +10,10 @@ use crate::{
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
+use bus_mapping::precompile::PrecompileAuxData;
+use eth_types::{Field, ToScalar};
+use gadgets::util::{select, Expr};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 mod ec_add;
 pub use ec_add::EcAddGadget;

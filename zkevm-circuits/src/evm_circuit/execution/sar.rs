@@ -282,7 +282,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         self.b.assign_u256(region, offset, b)?;
 
         let is_neg = 127 < a.to_le_bytes()[31];
-        let shf0 = u128::from(shift.to_le_bytes()[0]);
+        let shf0 = u64::from(shift.to_le_bytes()[0]);
         let shf_div64 = shf0 / 64;
         let shf_mod64 = shf0 % 64;
         let p_lo = 1 << shf_mod64;
@@ -295,7 +295,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let shf_lt256 = shift
             .to_le_bytes()
             .iter()
-            .fold(0, |acc, val| acc + u128::from(*val))
+            .fold(0, |acc, val| acc + u64::from(*val))
             - shf0;
         let a64s = a.0;
         let mut a64s_lo = [0; 4];
@@ -327,9 +327,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             .map(|(c, v)| c.assign(region, offset, Value::known(F::from_u128(v))))
             .collect::<Result<Vec<_>, _>>()?;
         self.shf_div64
-            .assign(region, offset, Value::known(F::from_u128(shf_div64)))?;
+            .assign(region, offset, Value::known(F::from(shf_div64)))?;
         self.shf_mod64
-            .assign(region, offset, Value::known(F::from_u128(shf_mod64)))?;
+            .assign(region, offset, Value::known(F::from(shf_mod64)))?;
         self.p_lo
             .assign(region, offset, Value::known(F::from_u128(p_lo)))?;
         self.p_hi
@@ -343,19 +343,18 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             u64::from(a.to_le_bytes()[31]).into(),
         )?;
         self.shf_div64_lt_4
-            .assign(region, offset, F::from_u128(shf_div64), 4.into())?;
+            .assign(region, offset, F::from(shf_div64), 4.into())?;
         self.shf_mod64_lt_64
-            .assign(region, offset, F::from_u128(shf_mod64), 64.into())?;
-        self.shf_lt256
-            .assign(region, offset, F::from_u128(shf_lt256))?;
+            .assign(region, offset, F::from(shf_mod64), 64.into())?;
+        self.shf_lt256.assign(region, offset, F::from(shf_lt256))?;
         self.shf_lo_div64_eq0
-            .assign(region, offset, F::from_u128(shf_div64))?;
+            .assign(region, offset, F::from(shf_div64))?;
         self.shf_lo_div64_eq1
-            .assign(region, offset, F::from_u128(shf_div64), F::from(1))?;
+            .assign(region, offset, F::from(shf_div64), F::from(1))?;
         self.shf_lo_div64_eq2
-            .assign(region, offset, F::from_u128(shf_div64), F::from(2))?;
+            .assign(region, offset, F::from(shf_div64), F::from(2))?;
         self.shf_lo_div64_eq3
-            .assign(region, offset, F::from_u128(shf_div64), F::from(3))?;
+            .assign(region, offset, F::from(shf_div64), F::from(3))?;
         self.a64s_lo_lt_p_lo
             .iter()
             .zip(a64s_lo.into_iter())
@@ -376,20 +375,18 @@ mod test {
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, U256};
     use ethers_core::types::I256;
-    use lazy_static::lazy_static;
     use mock::TestContext;
     use rand::Rng;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        // Maximum negative word value of i256 (integer value of -1)
-        static ref MAX_NEG: U256 = U256::MAX;
+    // Maximum negative word value of i256 (integer value of -1)
+    static MAX_NEG: U256 = U256::MAX;
 
-        // Maximum positive word value of i256
-        static ref MAX_POS: U256 = U256::try_from(I256::MAX).unwrap();
+    // Maximum positive word value of i256
+    static MAX_POS: U256 = I256::MAX.into_raw();
 
-        // Negative sign (the highest bit is 1)
-        static ref NEG_SIGN: U256 = MAX_POS.checked_add(1.into()).unwrap();
-    }
+    // Negative sign (the highest bit is 1)
+    static NEG_SIGN: LazyLock<U256> = LazyLock::new(|| MAX_POS.checked_add(1.into()).unwrap());
 
     #[test]
     fn test_sar_gadget_with_positive_a() {
@@ -422,16 +419,16 @@ mod test {
     #[test]
     fn test_sar_gadget_with_max_values() {
         // Test either (or both) `a` or `shift` is a maximum word.
-        test_ok(8.into(), *MAX_NEG);
-        test_ok(129.into(), *MAX_NEG);
-        test_ok(300.into(), *MAX_NEG);
-        test_ok(8.into(), *MAX_POS);
-        test_ok(129.into(), *MAX_POS);
-        test_ok(300.into(), *MAX_POS);
-        test_ok(*MAX_NEG, *MAX_NEG);
-        test_ok(*MAX_NEG, *MAX_POS);
-        test_ok(*MAX_POS, *MAX_NEG);
-        test_ok(*MAX_POS, *MAX_POS);
+        test_ok(8.into(), MAX_NEG);
+        test_ok(129.into(), MAX_NEG);
+        test_ok(300.into(), MAX_NEG);
+        test_ok(8.into(), MAX_POS);
+        test_ok(129.into(), MAX_POS);
+        test_ok(300.into(), MAX_POS);
+        test_ok(MAX_NEG, MAX_NEG);
+        test_ok(MAX_NEG, MAX_POS);
+        test_ok(MAX_POS, MAX_NEG);
+        test_ok(MAX_POS, MAX_POS);
     }
 
     #[test]
@@ -453,15 +450,15 @@ mod test {
         test_ok(0xFF.into(), *NEG_SIGN);
         test_ok(0x100.into(), *NEG_SIGN);
         test_ok(0x101.into(), *NEG_SIGN);
-        test_ok(0.into(), *MAX_NEG);
-        test_ok(1.into(), *MAX_NEG);
-        test_ok(0xFF.into(), *MAX_NEG);
-        test_ok(0x100.into(), *MAX_NEG);
+        test_ok(0.into(), MAX_NEG);
+        test_ok(1.into(), MAX_NEG);
+        test_ok(0xFF.into(), MAX_NEG);
+        test_ok(0x100.into(), MAX_NEG);
         test_ok(0xFE.into(), U256::from(2).checked_pow(254.into()).unwrap());
-        test_ok(0xF8.into(), *MAX_POS);
-        test_ok(0xFE.into(), *MAX_POS);
-        test_ok(0xFF.into(), *MAX_POS);
-        test_ok(0x100.into(), *MAX_POS);
+        test_ok(0xF8.into(), MAX_POS);
+        test_ok(0xFE.into(), MAX_POS);
+        test_ok(0xFF.into(), MAX_POS);
+        test_ok(0x100.into(), MAX_POS);
     }
 
     fn test_ok(shift: U256, a: U256) {

@@ -61,7 +61,7 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
         for (i, round) in preimage_padded.chunks(INPUT_LEN_PER_ROUND).enumerate() {
             let f_round_offset = round_ctr * keccak_f_rows;
             // indices for preimages
-            for (j, _chunk) in round.chunks(8).into_iter().enumerate() {
+            for (j, _chunk) in round.chunks(8).enumerate() {
                 let inner_offset = f_round_offset + (j + 1) * inner_round_rows;
                 for k in 0..8 {
                     preimage_indices.push(inner_offset + k);
@@ -83,12 +83,7 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     }
     // last hash is for data_hash and has various length, so we output all the possible cells
     for _i in 0..get_data_hash_keccak_updates(MAX_AGG_SNARKS) {
-        for (j, _) in (0..INPUT_LEN_PER_ROUND)
-            .into_iter()
-            .chunks(8)
-            .into_iter()
-            .enumerate()
-        {
+        for (j, _) in (0..INPUT_LEN_PER_ROUND).chunks(8).into_iter().enumerate() {
             let inner_offset = round_ctr * keccak_f_rows + (j + 1) * inner_round_rows;
             for k in 0..8 {
                 preimage_indices.push(inner_offset + k);

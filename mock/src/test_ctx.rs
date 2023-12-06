@@ -33,7 +33,6 @@ pub use external_tracer::LoggerConfig;
 /// ```rust
 /// use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
 /// use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
-/// use lazy_static::lazy_static;
 /// use mock::test_ctx::{helpers::*, TestContext};
 /// // code_a calls code
 /// // jump to 0x10 which is outside the code (and also not marked with

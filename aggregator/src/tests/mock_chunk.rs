@@ -111,10 +111,9 @@ impl Circuit<Fr> for MockChunkCircuit {
                 let mut index = 0;
                 let acc_len = if self.has_accumulator { ACC_LEN } else { 0 };
 
-                for (_i, byte) in iter::repeat(0)
+                for byte in iter::repeat(0)
                     .take(acc_len)
                     .chain(self.chunk.public_input_hash().as_bytes().iter().copied())
-                    .enumerate()
                 {
                     let cell = config
                         .rlc_config

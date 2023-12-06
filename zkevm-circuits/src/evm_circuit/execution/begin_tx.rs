@@ -1067,10 +1067,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         //     stream.append(&tx.caller_address);
         //     stream.append(&eth_types::U256::from(tx.nonce));
         //     let rlp_encoding = stream.out().to_vec();
-        //     keccak256(&rlp_encoding)
+        //     keccak256(rlp_encoding)
         // };
+        // for (c, v) in self
+        //     .caller_nonce_hash_bytes
+        //     .iter()
+        //     .rev()
+        //     .zip(untrimmed_contract_addr.iter())
+        // {
+        //     c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        // }
 
-        let (init_code_rlc, keccak_code_hash) = if tx.is_create {
+        let (init_code_rlc, keccak_code_hash_rlc) = if tx.is_create {
             let init_code_rlc =
                 region.keccak_rlc(&tx.call_data.iter().cloned().rev().collect::<Vec<u8>>());
             // keccak_code_hash_rlc: rename to keccak_code_hash for word type, no need to use rlc,
