@@ -3,11 +3,13 @@ use crate::{error::Error, evm_types::GasCost};
 use core::fmt::Debug;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
-use std::{fmt, matches, str::FromStr, sync::LazyLock};
+use std::{fmt, marker::ConstParamTy, matches, str::FromStr, sync::LazyLock};
 use strum_macros::EnumIter;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash, EnumIter, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash, EnumIter, PartialOrd, Ord, ConstParamTy,
+)]
 pub enum OpcodeId {
     /// `STOP`
     STOP,

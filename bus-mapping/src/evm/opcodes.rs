@@ -176,32 +176,30 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
         OpcodeId::PUSH0 => Push0::gen_associated_ops,
         OpcodeId::STOP => Stop::gen_associated_ops,
-        OpcodeId::ADD => ArithmeticOpcode::<{ OpcodeId::ADD.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::MUL => ArithmeticOpcode::<{ OpcodeId::MUL.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SUB => ArithmeticOpcode::<{ OpcodeId::SUB.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::DIV => ArithmeticOpcode::<{ OpcodeId::DIV.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SDIV => ArithmeticOpcode::<{ OpcodeId::SDIV.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::MOD => ArithmeticOpcode::<{ OpcodeId::MOD.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SMOD => ArithmeticOpcode::<{ OpcodeId::SMOD.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::ADDMOD => ArithmeticOpcode::<{ OpcodeId::ADDMOD.as_u8() }, 3>::gen_associated_ops,
-        OpcodeId::MULMOD => ArithmeticOpcode::<{ OpcodeId::MULMOD.as_u8() }, 3>::gen_associated_ops,
-        OpcodeId::SIGNEXTEND => {
-            ArithmeticOpcode::<{ OpcodeId::SIGNEXTEND.as_u8() }, 2>::gen_associated_ops
-        }
-        OpcodeId::LT => ArithmeticOpcode::<{ OpcodeId::LT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::GT => ArithmeticOpcode::<{ OpcodeId::GT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SLT => ArithmeticOpcode::<{ OpcodeId::SLT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SGT => ArithmeticOpcode::<{ OpcodeId::SGT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::EQ => ArithmeticOpcode::<{ OpcodeId::EQ.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::ISZERO => ArithmeticOpcode::<{ OpcodeId::ISZERO.as_u8() }, 1>::gen_associated_ops,
-        OpcodeId::AND => ArithmeticOpcode::<{ OpcodeId::AND.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::OR => ArithmeticOpcode::<{ OpcodeId::OR.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::XOR => ArithmeticOpcode::<{ OpcodeId::XOR.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::NOT => ArithmeticOpcode::<{ OpcodeId::NOT.as_u8() }, 1>::gen_associated_ops,
-        OpcodeId::BYTE => ArithmeticOpcode::<{ OpcodeId::BYTE.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SHL => ArithmeticOpcode::<{ OpcodeId::SHL.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SHR => ArithmeticOpcode::<{ OpcodeId::SHR.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SAR => ArithmeticOpcode::<{ OpcodeId::SAR.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::ADD => ArithmeticOpcode::<{ OpcodeId::ADD }, 2>::gen_associated_ops,
+        OpcodeId::MUL => ArithmeticOpcode::<{ OpcodeId::MUL }, 2>::gen_associated_ops,
+        OpcodeId::SUB => ArithmeticOpcode::<{ OpcodeId::SUB }, 2>::gen_associated_ops,
+        OpcodeId::DIV => ArithmeticOpcode::<{ OpcodeId::DIV }, 2>::gen_associated_ops,
+        OpcodeId::SDIV => ArithmeticOpcode::<{ OpcodeId::SDIV }, 2>::gen_associated_ops,
+        OpcodeId::MOD => ArithmeticOpcode::<{ OpcodeId::MOD }, 2>::gen_associated_ops,
+        OpcodeId::SMOD => ArithmeticOpcode::<{ OpcodeId::SMOD }, 2>::gen_associated_ops,
+        OpcodeId::ADDMOD => ArithmeticOpcode::<{ OpcodeId::ADDMOD }, 3>::gen_associated_ops,
+        OpcodeId::MULMOD => ArithmeticOpcode::<{ OpcodeId::MULMOD }, 3>::gen_associated_ops,
+        OpcodeId::SIGNEXTEND => ArithmeticOpcode::<{ OpcodeId::SIGNEXTEND }, 2>::gen_associated_ops,
+        OpcodeId::LT => ArithmeticOpcode::<{ OpcodeId::LT }, 2>::gen_associated_ops,
+        OpcodeId::GT => ArithmeticOpcode::<{ OpcodeId::GT }, 2>::gen_associated_ops,
+        OpcodeId::SLT => ArithmeticOpcode::<{ OpcodeId::SLT }, 2>::gen_associated_ops,
+        OpcodeId::SGT => ArithmeticOpcode::<{ OpcodeId::SGT }, 2>::gen_associated_ops,
+        OpcodeId::EQ => ArithmeticOpcode::<{ OpcodeId::EQ }, 2>::gen_associated_ops,
+        OpcodeId::ISZERO => ArithmeticOpcode::<{ OpcodeId::ISZERO }, 1>::gen_associated_ops,
+        OpcodeId::AND => ArithmeticOpcode::<{ OpcodeId::AND }, 2>::gen_associated_ops,
+        OpcodeId::OR => ArithmeticOpcode::<{ OpcodeId::OR }, 2>::gen_associated_ops,
+        OpcodeId::XOR => ArithmeticOpcode::<{ OpcodeId::XOR }, 2>::gen_associated_ops,
+        OpcodeId::NOT => ArithmeticOpcode::<{ OpcodeId::NOT }, 1>::gen_associated_ops,
+        OpcodeId::BYTE => ArithmeticOpcode::<{ OpcodeId::BYTE }, 2>::gen_associated_ops,
+        OpcodeId::SHL => ArithmeticOpcode::<{ OpcodeId::SHL }, 2>::gen_associated_ops,
+        OpcodeId::SHR => ArithmeticOpcode::<{ OpcodeId::SHR }, 2>::gen_associated_ops,
+        OpcodeId::SAR => ArithmeticOpcode::<{ OpcodeId::SAR }, 2>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => Address::gen_associated_ops,
         OpcodeId::BALANCE => Balance::gen_associated_ops,
@@ -221,26 +219,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => Blockhash::gen_associated_ops,
-        OpcodeId::COINBASE => {
-            GetBlockHeaderField::<{ OpcodeId::COINBASE.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::TIMESTAMP => {
-            GetBlockHeaderField::<{ OpcodeId::TIMESTAMP.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::NUMBER => GetBlockHeaderField::<{ OpcodeId::NUMBER.as_u8() }>::gen_associated_ops,
-        OpcodeId::DIFFICULTY => {
-            GetBlockHeaderField::<{ OpcodeId::DIFFICULTY.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::GASLIMIT => {
-            GetBlockHeaderField::<{ OpcodeId::GASLIMIT.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::CHAINID => {
-            GetBlockHeaderField::<{ OpcodeId::CHAINID.as_u8() }>::gen_associated_ops
-        }
+        OpcodeId::COINBASE => GetBlockHeaderField::<{ OpcodeId::COINBASE }>::gen_associated_ops,
+        OpcodeId::TIMESTAMP => GetBlockHeaderField::<{ OpcodeId::TIMESTAMP }>::gen_associated_ops,
+        OpcodeId::NUMBER => GetBlockHeaderField::<{ OpcodeId::NUMBER }>::gen_associated_ops,
+        OpcodeId::DIFFICULTY => GetBlockHeaderField::<{ OpcodeId::DIFFICULTY }>::gen_associated_ops,
+        OpcodeId::GASLIMIT => GetBlockHeaderField::<{ OpcodeId::GASLIMIT }>::gen_associated_ops,
+        OpcodeId::CHAINID => GetBlockHeaderField::<{ OpcodeId::CHAINID }>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
-        OpcodeId::BASEFEE => {
-            GetBlockHeaderField::<{ OpcodeId::BASEFEE.as_u8() }>::gen_associated_ops
-        }
+        OpcodeId::BASEFEE => GetBlockHeaderField::<{ OpcodeId::BASEFEE }>::gen_associated_ops,
         OpcodeId::POP => StackPopOnlyOpcode::<1>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,

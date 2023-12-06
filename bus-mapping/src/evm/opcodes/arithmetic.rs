@@ -98,40 +98,39 @@ impl PartialOrd for SignedWord {
     }
 }
 
-// TODO: replace `OP: u8` after `adt_const_params` available
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ArithmeticOpcode<const OP: u8, const N_POPS: usize>;
+pub(crate) struct ArithmeticOpcode<const OP: OpcodeId, const N_POPS: usize>;
 
 trait Arithmetic<const N: usize> {
     fn handle(inputs: [Word; N]) -> Word;
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::ADD.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::ADD }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         lhs.overflowing_add(rhs).0
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SUB.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SUB }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         lhs.overflowing_sub(rhs).0
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::MUL.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::MUL }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         lhs.overflowing_mul(rhs).0
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::DIV.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::DIV }, 2> {
     /// integer result of the integer division. If the denominator is 0, the result will be 0.
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         lhs.checked_div(rhs).unwrap_or_default()
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SDIV.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SDIV }, 2> {
     /// integer result of the signed integer division. If the denominator is 0, the result will be
     /// 0.
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
@@ -144,7 +143,7 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SDIV.as_u8() }, 2> {
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::MOD.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::MOD }, 2> {
     /// integer result of the integer modulo. If the denominator is 0, the result will be 0.
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         if rhs == Word::zero() {
@@ -155,7 +154,7 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::MOD.as_u8() }, 2> {
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SMOD.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SMOD }, 2> {
     /// integer result of the signed integer modulo. If the denominator is 0, the result will be 0.
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         if rhs == Word::zero() {
@@ -167,7 +166,7 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SMOD.as_u8() }, 2> {
     }
 }
 
-impl Arithmetic<3> for ArithmeticOpcode<{ OpcodeId::ADDMOD.as_u8() }, 3> {
+impl Arithmetic<3> for ArithmeticOpcode<{ OpcodeId::ADDMOD }, 3> {
     /// integer result of the addition followed by a modulo.
     /// If the denominator is 0, the result will be 0.
     fn handle([lhs, rhs, modulus]: [Word; 3]) -> Word {
@@ -186,7 +185,7 @@ impl Arithmetic<3> for ArithmeticOpcode<{ OpcodeId::ADDMOD.as_u8() }, 3> {
     }
 }
 
-impl Arithmetic<3> for ArithmeticOpcode<{ OpcodeId::MULMOD.as_u8() }, 3> {
+impl Arithmetic<3> for ArithmeticOpcode<{ OpcodeId::MULMOD }, 3> {
     /// integer result of the multiplication followed by a modulo.
     /// If the denominator is 0, the result will be 0.
     fn handle([lhs, rhs, modulus]: [Word; 3]) -> Word {
@@ -199,7 +198,7 @@ impl Arithmetic<3> for ArithmeticOpcode<{ OpcodeId::MULMOD.as_u8() }, 3> {
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SIGNEXTEND.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SIGNEXTEND }, 2> {
     /// b: size in byte - 1 of the integer to sign extend.
     /// x: integer value to sign extend.
     fn handle([b, x]: [Word; 2]) -> Word {
@@ -220,58 +219,58 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SIGNEXTEND.as_u8() }, 2> {
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::LT.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::LT }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         ((lhs < rhs) as u8).into()
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::GT.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::GT }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         ((lhs > rhs) as u8).into()
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SLT.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SLT }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         ((SignedWord(lhs) < SignedWord(rhs)) as u8).into()
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SGT.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SGT }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         ((SignedWord(lhs) > SignedWord(rhs)) as u8).into()
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::EQ.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::EQ }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         ((lhs == rhs) as u8).into()
     }
 }
-impl Arithmetic<1> for ArithmeticOpcode<{ OpcodeId::ISZERO.as_u8() }, 1> {
+impl Arithmetic<1> for ArithmeticOpcode<{ OpcodeId::ISZERO }, 1> {
     fn handle([n]: [Word; 1]) -> Word {
         (n.is_zero() as u8).into()
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::AND.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::AND }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         lhs & rhs
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::OR.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::OR }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         lhs | rhs
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::XOR.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::XOR }, 2> {
     fn handle([lhs, rhs]: [Word; 2]) -> Word {
         lhs ^ rhs
     }
 }
-impl Arithmetic<1> for ArithmeticOpcode<{ OpcodeId::NOT.as_u8() }, 1> {
+impl Arithmetic<1> for ArithmeticOpcode<{ OpcodeId::NOT }, 1> {
     fn handle([n]: [Word; 1]) -> Word {
         !n
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::BYTE.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::BYTE }, 2> {
     /// the indicated byte at the least significant position.
     /// If the byte offset is out of range, the result is 0.
     fn handle([index, word]: [Word; 2]) -> Word {
@@ -285,7 +284,7 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::BYTE.as_u8() }, 2> {
     }
 }
 
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SHL.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SHL }, 2> {
     fn handle([shift, word]: [Word; 2]) -> Word {
         if shift > Word::from(255) {
             Word::zero()
@@ -294,7 +293,7 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SHL.as_u8() }, 2> {
         }
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SHR.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SHR }, 2> {
     fn handle([shift, word]: [Word; 2]) -> Word {
         if shift > Word::from(255) {
             Word::zero()
@@ -303,7 +302,7 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SHR.as_u8() }, 2> {
         }
     }
 }
-impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SAR.as_u8() }, 2> {
+impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SAR }, 2> {
     /// Shift the bits towards the least significant one.
     /// The bits moved before the first one are discarded,
     /// the new bits are set to 0 if the previous most significant bit was 0,
@@ -325,7 +324,7 @@ impl Arithmetic<2> for ArithmeticOpcode<{ OpcodeId::SAR.as_u8() }, 2> {
     }
 }
 
-impl<const OP: u8, const N_POPS: usize> Opcode for ArithmeticOpcode<OP, N_POPS>
+impl<const OP: OpcodeId, const N_POPS: usize> Opcode for ArithmeticOpcode<OP, N_POPS>
 where
     Self: Arithmetic<N_POPS>,
 {
@@ -357,7 +356,7 @@ where
             output,
             geth_steps[1].stack.nth_last(0)?,
             "stack mismatch, opcode: {}, inputs: {}, actual: {:x}, expected: {:x}",
-            OpcodeId::from(OP),
+            OP,
             stack_inputs.iter().map(|w| format!("{w:x}")).join(", "),
             output,
             geth_steps[1].stack.nth_last(0)?
@@ -376,19 +375,15 @@ mod tests {
     use rand::{thread_rng, Rng};
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-    fn test_handle<const N_POPS: usize, const OP: u8>(inputs: [Word; N_POPS], expected: Word)
+    fn test_handle<const N_POPS: usize, const OP: OpcodeId>(inputs: [Word; N_POPS], expected: Word)
     where
         ArithmeticOpcode<OP, N_POPS>: Arithmetic<N_POPS>,
     {
         let actual = ArithmeticOpcode::<OP, N_POPS>::handle(inputs);
         assert_eq!(
-            actual,
-            expected,
+            actual, expected,
             "{} handle produce incrroect outputs:\ninputs: {:x?}, actual: {:x}, expected: {:x}",
-            OpcodeId::from(OP),
-            inputs,
-            actual,
-            expected
+            OP, inputs, actual, expected
         );
     }
 
@@ -408,15 +403,15 @@ mod tests {
             .unwrap();
     }
 
-    fn test_both<const N_POPS: usize, const OP: u8>(inputs: [Word; N_POPS], expected: Word)
+    fn test_both<const N_POPS: usize, const OP: OpcodeId>(inputs: [Word; N_POPS], expected: Word)
     where
         ArithmeticOpcode<OP, N_POPS>: Arithmetic<N_POPS>,
     {
         test_handle::<N_POPS, OP>(inputs, expected);
-        test_trace::<N_POPS>(OpcodeId::from(OP), inputs);
+        test_trace::<N_POPS>(OP, inputs);
     }
 
-    fn test_random<const N_POPS: usize, const OP: u8>()
+    fn test_random<const N_POPS: usize, const OP: OpcodeId>()
     where
         ArithmeticOpcode<OP, N_POPS>: Arithmetic<N_POPS>,
     {
@@ -427,60 +422,57 @@ mod tests {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap();
-            test_trace(OpcodeId::from(OP), inputs);
+            test_trace(OP, inputs);
         });
     }
 
     #[test]
     fn random() {
-        test_random::<2, { OpcodeId::ADD.as_u8() }>();
-        test_random::<2, { OpcodeId::SDIV.as_u8() }>();
-        test_random::<2, { OpcodeId::MUL.as_u8() }>();
-        test_random::<2, { OpcodeId::DIV.as_u8() }>();
-        test_random::<2, { OpcodeId::SDIV.as_u8() }>();
-        test_random::<2, { OpcodeId::MOD.as_u8() }>();
-        test_random::<2, { OpcodeId::SMOD.as_u8() }>();
-        test_random::<3, { OpcodeId::ADDMOD.as_u8() }>();
-        test_random::<3, { OpcodeId::MULMOD.as_u8() }>();
-        test_random::<2, { OpcodeId::SIGNEXTEND.as_u8() }>();
-        test_random::<2, { OpcodeId::LT.as_u8() }>();
-        test_random::<2, { OpcodeId::GT.as_u8() }>();
-        test_random::<2, { OpcodeId::SLT.as_u8() }>();
-        test_random::<2, { OpcodeId::SGT.as_u8() }>();
-        test_random::<2, { OpcodeId::EQ.as_u8() }>();
-        test_random::<1, { OpcodeId::ISZERO.as_u8() }>();
-        test_random::<2, { OpcodeId::AND.as_u8() }>();
-        test_random::<2, { OpcodeId::OR.as_u8() }>();
-        test_random::<2, { OpcodeId::XOR.as_u8() }>();
-        test_random::<1, { OpcodeId::NOT.as_u8() }>();
-        test_random::<2, { OpcodeId::BYTE.as_u8() }>();
-        test_random::<2, { OpcodeId::SHL.as_u8() }>();
-        test_random::<2, { OpcodeId::SHR.as_u8() }>();
-        test_random::<2, { OpcodeId::SAR.as_u8() }>();
+        test_random::<2, { OpcodeId::ADD }>();
+        test_random::<2, { OpcodeId::SDIV }>();
+        test_random::<2, { OpcodeId::MUL }>();
+        test_random::<2, { OpcodeId::DIV }>();
+        test_random::<2, { OpcodeId::SDIV }>();
+        test_random::<2, { OpcodeId::MOD }>();
+        test_random::<2, { OpcodeId::SMOD }>();
+        test_random::<3, { OpcodeId::ADDMOD }>();
+        test_random::<3, { OpcodeId::MULMOD }>();
+        test_random::<2, { OpcodeId::SIGNEXTEND }>();
+        test_random::<2, { OpcodeId::LT }>();
+        test_random::<2, { OpcodeId::GT }>();
+        test_random::<2, { OpcodeId::SLT }>();
+        test_random::<2, { OpcodeId::SGT }>();
+        test_random::<2, { OpcodeId::EQ }>();
+        test_random::<1, { OpcodeId::ISZERO }>();
+        test_random::<2, { OpcodeId::AND }>();
+        test_random::<2, { OpcodeId::OR }>();
+        test_random::<2, { OpcodeId::XOR }>();
+        test_random::<1, { OpcodeId::NOT }>();
+        test_random::<2, { OpcodeId::BYTE }>();
+        test_random::<2, { OpcodeId::SHL }>();
+        test_random::<2, { OpcodeId::SHR }>();
+        test_random::<2, { OpcodeId::SAR }>();
     }
 
     #[test]
     fn test_sdiv() {
-        test_both::<2, { OpcodeId::SDIV.as_u8() }>([0x60u64.into(), 0x80u64.into()], 0u64.into());
+        test_both::<2, { OpcodeId::SDIV }>([0x60u64.into(), 0x80u64.into()], 0u64.into());
     }
 
     #[test]
     fn test_mod() {
-        test_both::<2, { OpcodeId::MOD.as_u8() }>([0x60u64.into(), 0x80u64.into()], 0x60u64.into());
+        test_both::<2, { OpcodeId::MOD }>([0x60u64.into(), 0x80u64.into()], 0x60u64.into());
     }
 
     #[test]
     fn test_smod() {
-        test_both::<2, { OpcodeId::SMOD.as_u8() }>(
-            [0x60u64.into(), 0x80u64.into()],
-            0x60u64.into(),
-        );
+        test_both::<2, { OpcodeId::SMOD }>([0x60u64.into(), 0x80u64.into()], 0x60u64.into());
     }
 
     #[test]
     fn test_addmod() {
         // testool: randomStatetest382_d0_g0_v0, randomStatetest242_d0_g0_v0
-        test_both::<3, { OpcodeId::ADDMOD.as_u8() }>(
+        test_both::<3, { OpcodeId::ADDMOD }>(
             [
                 word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
                 word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
@@ -489,7 +481,7 @@ mod tests {
             word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd"),
         );
         // testool: randomStatetest605_d0_g0_v0
-        test_both::<3, { OpcodeId::ADDMOD.as_u8() }>(
+        test_both::<3, { OpcodeId::ADDMOD }>(
             [
                 word!("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"),
                 word!("0xffffffffffffffffffffffff00000000000000000000000000000000000000ea"),
@@ -501,56 +493,56 @@ mod tests {
 
     #[test]
     fn test_lt() {
-        test_both::<2, { OpcodeId::LT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x01u64.into());
-        test_both::<2, { OpcodeId::LT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::LT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::LT }>([0x01u64.into(), 0x02u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::LT }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::LT }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
     }
 
     #[test]
     fn test_gt() {
-        test_both::<2, { OpcodeId::GT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::GT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::GT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::GT }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::GT }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::GT }>([0x02u64.into(), 0x01u64.into()], 0x01u64.into());
     }
 
     #[test]
     fn test_slt() {
-        test_both::<2, { OpcodeId::SLT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x01u64.into());
-        test_both::<2, { OpcodeId::SLT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::SLT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::SLT }>([0x01u64.into(), 0x02u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::SLT }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::SLT }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
     }
 
     #[test]
     fn test_sgt() {
-        test_both::<2, { OpcodeId::SGT.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::SGT.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::SGT.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::SGT }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::SGT }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::SGT }>([0x02u64.into(), 0x01u64.into()], 0x01u64.into());
     }
 
     #[test]
     fn test_and() {
-        test_both::<2, { OpcodeId::AND.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::AND.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x01u64.into());
-        test_both::<2, { OpcodeId::AND.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::AND }>([0x01u64.into(), 0x02u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::AND }>([0x01u64.into(), 0x01u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::AND }>([0x02u64.into(), 0x01u64.into()], 0x00u64.into());
     }
 
     #[test]
     fn test_or() {
-        test_both::<2, { OpcodeId::OR.as_u8() }>([0x01u64.into(), 0x02u64.into()], 0x03u64.into());
-        test_both::<2, { OpcodeId::OR.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x01u64.into());
-        test_both::<2, { OpcodeId::OR.as_u8() }>([0x02u64.into(), 0x01u64.into()], 0x03u64.into());
+        test_both::<2, { OpcodeId::OR }>([0x01u64.into(), 0x02u64.into()], 0x03u64.into());
+        test_both::<2, { OpcodeId::OR }>([0x01u64.into(), 0x01u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::OR }>([0x02u64.into(), 0x01u64.into()], 0x03u64.into());
     }
 
     #[test]
     fn test_xor() {
-        test_both::<2, { OpcodeId::XOR.as_u8() }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
-        test_both::<2, { OpcodeId::XOR.as_u8() }>([0x01u64.into(), 0x00u64.into()], 0x01u64.into());
-        test_both::<2, { OpcodeId::XOR.as_u8() }>([0x00u64.into(), 0x00u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::XOR }>([0x01u64.into(), 0x01u64.into()], 0x00u64.into());
+        test_both::<2, { OpcodeId::XOR }>([0x01u64.into(), 0x00u64.into()], 0x01u64.into());
+        test_both::<2, { OpcodeId::XOR }>([0x00u64.into(), 0x00u64.into()], 0x00u64.into());
     }
 
     #[test]
     fn test_not() {
-        test_both::<1, { OpcodeId::NOT.as_u8() }>(
+        test_both::<1, { OpcodeId::NOT }>(
             [word!(
                 "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
             )],

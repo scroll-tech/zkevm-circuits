@@ -6,55 +6,55 @@ use crate::{
 use eth_types::{evm_types::OpcodeId, GethExecStep, ToWord, Word, U256};
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct GetBlockHeaderField<const OP: u8>;
+pub(crate) struct GetBlockHeaderField<const OP: OpcodeId>;
 
 trait BlockHeaderToField {
     fn handle(block_head: &BlockHead) -> Word;
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::COINBASE.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::COINBASE }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.coinbase.to_word()
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::TIMESTAMP.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::TIMESTAMP }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.timestamp
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::NUMBER.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::NUMBER }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.number
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::DIFFICULTY.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::DIFFICULTY }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.difficulty
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::GASLIMIT.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::GASLIMIT }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.gas_limit.into()
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::CHAINID.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::CHAINID }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.chain_id.into()
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::BASEFEE.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::BASEFEE }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.base_fee
     }
 }
 
-impl<const OP: u8> Opcode for GetBlockHeaderField<OP>
+impl<const OP: OpcodeId> Opcode for GetBlockHeaderField<OP>
 where
     Self: BlockHeaderToField,
 {
