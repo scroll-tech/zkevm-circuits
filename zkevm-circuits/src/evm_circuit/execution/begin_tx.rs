@@ -947,7 +947,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             stream.append(&tx.caller_address);
             stream.append(&eth_types::U256::from(tx.nonce));
             let rlp_encoding = stream.out().to_vec();
-            keccak256(&rlp_encoding)
+            keccak256(rlp_encoding)
         };
         for (c, v) in self
             .caller_nonce_hash_bytes
@@ -986,7 +986,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             stream.append(&tx.caller_address);
             stream.append(&eth_types::U256::from(tx.nonce));
             let rlp_encoding = stream.out().to_vec();
-            keccak256(&rlp_encoding)
+            keccak256(rlp_encoding)
         };
         for (c, v) in self
             .caller_nonce_hash_bytes

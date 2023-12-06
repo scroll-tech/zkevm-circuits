@@ -164,232 +164,232 @@ mod valid_invalid_cases {
     use super::*;
     use eth_types::word;
     use snark_verifier::util::arithmetic::PrimeCurveAffine;
+    use std::sync::LazyLock;
 
-    lazy_static::lazy_static! {
-        pub(crate) static ref EC_ADD_OPS: Vec<EcAddOp> = {
-            vec![
-                // 1. valid: P == Q == G1::generator
-                {
+    pub(crate) static EC_ADD_OPS: LazyLock<Vec<EcAddOp>> = LazyLock::new(|| {
+        vec![
+            // 1. valid: P == Q == G1::generator
+            {
+                let p = G1Affine::generator();
+                EcAddOp {
+                    p: (U256::from(1), U256::from(2)),
+                    q: (U256::from(1), U256::from(2)),
+                    r: Some(p.add(&p).into()),
+                }
+            },
+            // 2. invalid: P not on curve
+            EcAddOp {
+                p: (U256::from(2), U256::from(3)),
+                q: (U256::from(1), U256::from(2)),
+                r: None,
+            },
+            // 3. valid: all zeroes
+            EcAddOp {
+                p: (U256::zero(), U256::zero()),
+                q: (U256::zero(), U256::zero()),
+                r: Some(G1Affine::identity()),
+            },
+            // 4. invalid: Px and Py > Fq::MODULUS
+            EcAddOp {
+                p: (
+                    word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"), /* p + 1 */
+                    word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"), /* p + 2 */
+                ),
+                q: (U256::from(1), U256::from(2)),
+                r: None,
+            },
+            // 5. valid: P == -Q
+            EcAddOp {
+                p: (U256::from(1), U256::from(2)),
+                q: (
+                    U256::from(1),
+                    word!("0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"),
+                ),
+                r: Some(G1Affine::identity()),
+            },
+        ]
+    });
+
+    pub(crate) static EC_MUL_OPS: LazyLock<Vec<EcMulOp>> = LazyLock::new(|| {
+        vec![
+            // 1. valid: P = G1::generator, s = 3
+            EcMulOp {
+                p: (U256::from(1), U256::from(2)),
+                s: Fr::from(3),
+                r: Some({
                     let p = G1Affine::generator();
-                    EcAddOp {
-                        p: (U256::from(1), U256::from(2)),
-                        q: (U256::from(1), U256::from(2)),
-                        r: Some(p.add(&p).into()),
-                    }
-                },
-                // 2. invalid: P not on curve
-                EcAddOp {
-                    p: (U256::from(2), U256::from(3)),
-                    q: (U256::from(1), U256::from(2)),
-                    r: None,
-                },
-                // 3. valid: all zeroes
-                EcAddOp {
-                    p: (U256::zero(), U256::zero()),
-                    q: (U256::zero(), U256::zero()),
-                    r: Some(G1Affine::identity()),
-                },
-                // 4. invalid: Px and Py > Fq::MODULUS
-                EcAddOp {
-                    p: (
-                        word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"), // p + 1
-                        word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"), // p + 2
-                    ),
-                    q: (U256::from(1), U256::from(2)),
-                    r: None,
-                },
-                // 5. valid: P == -Q
-                EcAddOp {
-                    p: (U256::from(1), U256::from(2)),
-                    q: (
-                        U256::from(1),
-                        word!("0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"),
-                    ),
-                    r: Some(G1Affine::identity()),
-                },
-            ]
-        };
-        pub(crate) static ref EC_MUL_OPS: Vec<EcMulOp> = {
-            vec![
-                // 1. valid: P = G1::generator, s = 3
-                EcMulOp {
-                    p: (U256::from(1), U256::from(2)),
-                    s: Fr::from(3),
-                    r: Some({
-                        let p = G1Affine::generator();
-                        let s = Fr::from(3);
-                        p.mul(s).into()
-                    }),
-                },
-                // 2. invalid: P = (2, 3), i.e. not on curve
-                EcMulOp {
-                    p: (U256::from(2), U256::from(3)),
-                    s: Fr::from(3),
-                    r: None,
-                },
-                // 3. invalid: P == (p + 1, p + 2), i.e. > Fq::MODULUS
-                EcMulOp {
-                    p: (
-                        word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"), // p + 1
-                        word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"), // p + 2
-                    ),
-                    s: Fr::from(3),
-                    r: None,
-                },
-            ]
-        };
-        pub(crate) static ref EC_PAIRING_OPS1: Vec<EcPairingOp> = {
-            vec![
-                // 1. valid: pairing_check == 1
-                {
-                    let alpha = Fr::from(0x102030);
-                    let beta = Fr::from(0x413121);
-                    let point_p = G1Affine::from(G1Affine::generator() * alpha);
-                    let point_p_negated = point_p.neg();
-                    let point_q = G2Affine::from(G2Affine::generator() * beta);
-                    let point_s = G1Affine::from(G1Affine::generator() * alpha * beta);
-                    let point_t = G2Affine::generator();
-                    let pairs = [
-                        EcPairingPair::new(point_p_negated, point_q),
-                        EcPairingPair::new(point_s, point_t),
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                    ];
-                    EcPairingOp {
-                        pairs,
-                        output: U256::one(),
-                        ..Default::default()
-                    }
-                },
-                // 2. invalid: field element > Fq::MODULUS, mod p is OK
-                {
-                    let alpha = Fr::from(0x102030);
-                    let beta = Fr::from(0x413121);
-                    let point_p = G1Affine::from(G1Affine::generator() * alpha);
-                    let point_p_negated = point_p.neg();
-                    let point_q = G2Affine::from(G2Affine::generator() * beta);
-                    let point_t = G2Affine::from(G2Affine::generator() * alpha * beta);
-                    let pairs = [
-                        EcPairingPair::new(point_p_negated, point_q),
-                        EcPairingPair {
-                            g1_point: (
-                                word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"),
-                                word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"),
-                            ),
-                            g2_point: (
-                                U256::from_little_endian(&point_t.x.c1.to_bytes()),
-                                U256::from_little_endian(&point_t.x.c0.to_bytes()),
-                                U256::from_little_endian(&point_t.y.c1.to_bytes()),
-                                U256::from_little_endian(&point_t.y.c0.to_bytes()),
-                            ),
-                        },
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                    ];
-                    EcPairingOp {
-                        pairs,
-                        output: U256::zero(),
-                        ..Default::default()
-                    }
-                },
-            ]
-        };
-        pub(crate) static ref EC_PAIRING_OPS2: Vec<EcPairingOp> = {
-            vec![
-                // 3. valid: pairing_check == 0
-                {
-                    let alpha = Fr::from(0x102030);
-                    let beta = Fr::from(0x413121);
-                    let gamma = Fr::from(0x591242);
-                    let point_p = G1Affine::from(G1Affine::generator() * alpha);
-                    let point_p_negated = point_p.neg();
-                    let point_q = G2Affine::from(G2Affine::generator() * beta);
-                    let point_s = G1Affine::from(G1Affine::generator() * gamma);
-                    let point_t = G2Affine::generator();
-                    let pairs = [
-                        EcPairingPair::new(point_p_negated, point_q),
-                        EcPairingPair::new(point_s, point_t),
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                    ];
-                    EcPairingOp {
-                        pairs,
-                        output: U256::zero(),
-                        ..Default::default()
-                    }
-                },
-                // 4. invalid: not on curve G1.
+                    let s = Fr::from(3);
+                    p.mul(s).into()
+                }),
+            },
+            // 2. invalid: P = (2, 3), i.e. not on curve
+            EcMulOp {
+                p: (U256::from(2), U256::from(3)),
+                s: Fr::from(3),
+                r: None,
+            },
+            // 3. invalid: P == (p + 1, p + 2), i.e. > Fq::MODULUS
+            EcMulOp {
+                p: (
+                    word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"), /* p + 1 */
+                    word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"), /* p + 2 */
+                ),
+                s: Fr::from(3),
+                r: None,
+            },
+        ]
+    });
+    pub(crate) static EC_PAIRING_OPS1: LazyLock<Vec<EcPairingOp>> = LazyLock::new(|| {
+        vec![
+            // 1. valid: pairing_check == 1
+            {
+                let alpha = Fr::from(0x102030);
+                let beta = Fr::from(0x413121);
+                let point_p = G1Affine::from(G1Affine::generator() * alpha);
+                let point_p_negated = point_p.neg();
+                let point_q = G2Affine::from(G2Affine::generator() * beta);
+                let point_s = G1Affine::from(G1Affine::generator() * alpha * beta);
+                let point_t = G2Affine::generator();
+                let pairs = [
+                    EcPairingPair::new(point_p_negated, point_q),
+                    EcPairingPair::new(point_s, point_t),
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                ];
                 EcPairingOp {
-                    pairs: [
-                        EcPairingPair {
-                            g1_point: (U256::from(3), U256::from(4)),
-                            g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
-                        },
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                    ],
-                    output: 0.into(),
+                    pairs,
+                    output: U256::one(),
                     ..Default::default()
-                },
-            ]
-        };
-        pub(crate) static ref EC_PAIRING_OPS3: Vec<EcPairingOp> = {
-            vec![
-                // 5. invalid: not on curve G2.
+                }
+            },
+            // 2. invalid: field element > Fq::MODULUS, mod p is OK
+            {
+                let alpha = Fr::from(0x102030);
+                let beta = Fr::from(0x413121);
+                let point_p = G1Affine::from(G1Affine::generator() * alpha);
+                let point_p_negated = point_p.neg();
+                let point_q = G2Affine::from(G2Affine::generator() * beta);
+                let point_t = G2Affine::from(G2Affine::generator() * alpha * beta);
+                let pairs = [
+                    EcPairingPair::new(point_p_negated, point_q),
+                    EcPairingPair {
+                        g1_point: (
+                            word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"),
+                            word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"),
+                        ),
+                        g2_point: (
+                            U256::from_little_endian(&point_t.x.c1.to_bytes()),
+                            U256::from_little_endian(&point_t.x.c0.to_bytes()),
+                            U256::from_little_endian(&point_t.y.c1.to_bytes()),
+                            U256::from_little_endian(&point_t.y.c0.to_bytes()),
+                        ),
+                    },
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                ];
                 EcPairingOp {
-                    pairs: [
-                        EcPairingPair {
-                            g1_point: (U256::zero(), U256::zero()),
-                            g2_point: (U256::from(3), U256::from(4), U256::from(5), U256::from(6)),
-                        },
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                    ],
-                    output: 0.into(),
+                    pairs,
+                    output: U256::zero(),
                     ..Default::default()
-                },
-                // 6. valid: all zero.
+                }
+            },
+        ]
+    });
+    pub(crate) static EC_PAIRING_OPS2: LazyLock<Vec<EcPairingOp>> = LazyLock::new(|| {
+        vec![
+            // 3. valid: pairing_check == 0
+            {
+                let alpha = Fr::from(0x102030);
+                let beta = Fr::from(0x413121);
+                let gamma = Fr::from(0x591242);
+                let point_p = G1Affine::from(G1Affine::generator() * alpha);
+                let point_p_negated = point_p.neg();
+                let point_q = G2Affine::from(G2Affine::generator() * beta);
+                let point_s = G1Affine::from(G1Affine::generator() * gamma);
+                let point_t = G2Affine::generator();
+                let pairs = [
+                    EcPairingPair::new(point_p_negated, point_q),
+                    EcPairingPair::new(point_s, point_t),
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                ];
                 EcPairingOp {
-                    pairs: [
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                    ],
-                    output: 1.into(),
+                    pairs,
+                    output: U256::zero(),
                     ..Default::default()
-                },
-            ]
-        };
-        pub(crate) static ref EC_PAIRING_OPS4: Vec<EcPairingOp> = {
-            vec![
-                // 7. valid: [(G1::gen, G2::gen), (-G1::gen, G2::gen)]
-                EcPairingOp {
-                    pairs: [
-                        EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
-                        EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
-                        EcPairingPair::padding_pair(),
-                        EcPairingPair::padding_pair(),
-                    ],
-                    output: 1.into(),
-                    ..Default::default()
-                },
-                // 8. valid: [(G1::gen, G2::gen), (-G1::gen, G2::gen); 2]
-                EcPairingOp {
-                    pairs: [
-                        EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
-                        EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
-                        EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
-                        EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
-                    ],
-                    output: 1.into(),
-                    ..Default::default()
-                },
-            ]
-        };
-    }
+                }
+            },
+            // 4. invalid: not on curve G1.
+            EcPairingOp {
+                pairs: [
+                    EcPairingPair {
+                        g1_point: (U256::from(3), U256::from(4)),
+                        g2_point: (U256::zero(), U256::zero(), U256::zero(), U256::zero()),
+                    },
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                ],
+                output: 0.into(),
+                ..Default::default()
+            },
+        ]
+    });
+    pub(crate) static EC_PAIRING_OPS3: LazyLock<Vec<EcPairingOp>> = LazyLock::new(|| {
+        vec![
+            // 5. invalid: not on curve G2.
+            EcPairingOp {
+                pairs: [
+                    EcPairingPair {
+                        g1_point: (U256::zero(), U256::zero()),
+                        g2_point: (U256::from(3), U256::from(4), U256::from(5), U256::from(6)),
+                    },
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                ],
+                output: 0.into(),
+                ..Default::default()
+            },
+            // 6. valid: all zero.
+            EcPairingOp {
+                pairs: [
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                ],
+                output: 1.into(),
+                ..Default::default()
+            },
+        ]
+    });
+    pub(crate) static EC_PAIRING_OPS4: LazyLock<Vec<EcPairingOp>> = LazyLock::new(|| {
+        vec![
+            // 7. valid: [(G1::gen, G2::gen), (-G1::gen, G2::gen)]
+            EcPairingOp {
+                pairs: [
+                    EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
+                    EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
+                    EcPairingPair::padding_pair(),
+                    EcPairingPair::padding_pair(),
+                ],
+                output: 1.into(),
+                ..Default::default()
+            },
+            // 8. valid: [(G1::gen, G2::gen), (-G1::gen, G2::gen); 2]
+            EcPairingOp {
+                pairs: [
+                    EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
+                    EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
+                    EcPairingPair::new(G1Affine::generator(), G2Affine::generator()),
+                    EcPairingPair::new(G1Affine::generator().neg(), G2Affine::generator()),
+                ],
+                output: 1.into(),
+                ..Default::default()
+            },
+        ]
+    });
 }
 
 #[test]
@@ -473,7 +473,6 @@ fn test_invalid_ec_add() {
         })
     };
     let ec_adds = (0..50)
-        .into_iter()
         .map(|_| {
             let px = u256_max - (rng.next_u64() % 1024);
             let x = Fq::from_raw(px.0);
@@ -503,7 +502,6 @@ fn test_invalid_ec_add() {
     // 2. p is on g1 but p.x[i] is close to Fq::MODULUS.limbs[i] and p.y < p
     //   and q is generator
     let ec_adds = (0..50)
-        .into_iter()
         .map(|_| {
             let fq_limbs: [u64; 4] = [
                 0x3c208c16d87cfd47,

@@ -72,24 +72,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode::Bytecode, Word};
-    use lazy_static::lazy_static;
     use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
 
     #[cfg(feature = "scroll")]
     use eth_types::address;
 
-    lazy_static! {
-        static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [
-            // Single invalid opcode
-            vec![0x0e],
-            vec![0x4f],
-            vec![0xa5],
-            vec![0xf6],
-            vec![0xfe],
-            // Multiple invalid opcodes
-            vec![0x5c, 0x5e],
-        ];
-    }
+    static TESTING_INVALID_CODES: [&[u8]; 6] = [
+        // Single invalid opcode
+        &[0x0e],
+        &[0x4f],
+        &[0xa5],
+        &[0xf6],
+        &[0xfe],
+        // Multiple invalid opcodes
+        &[0x5c, 0x5e],
+    ];
 
     #[test]
     fn invalid_opcode_root() {

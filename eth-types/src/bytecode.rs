@@ -573,7 +573,7 @@ mod tests {
             POP
             STOP
         };
-        assert_eq!(Bytecode::try_from(code.to_vec()).unwrap(), code);
+        assert_eq!(Bytecode::from(code.to_vec()), code);
     }
 
     #[test]

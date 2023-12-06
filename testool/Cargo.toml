@@ -21,7 +21,6 @@ keccak256 = { path = "../keccak256" }
 log.workspace = true
 itertools.workspace = true
 mock = { path = "../mock" }
-once_cell.workspace = true
 prettytable-rs = "0.10"
 prover = { path = "../prover", optional = true }
 rayon.workspace = true

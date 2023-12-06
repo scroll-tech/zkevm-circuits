@@ -19,7 +19,7 @@ use eth_types::{address, bytecode, evm_types::GasCost, word, Bytecode, ToWord, W
 pub(crate) fn block_ec_ops() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode_ec_add = PrecompileCallArgs {
         name: "ecAdd (valid inputs)",
@@ -230,7 +230,7 @@ pub(crate) fn block_ec_ops() -> BlockTrace {
 #[cfg(feature = "scroll")]
 pub(crate) fn block_precompile_oog() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let ec_add_input = vec![
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -326,7 +326,7 @@ pub(crate) fn block_precompile_oog() -> BlockTrace {
 pub(crate) fn block_invalid_precompile() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     // Tx1: 4 Out of Gas cases for EcAdd, EcMul, EcPairing and ModExp
     let mut contract_code_oog = Bytecode::default();
@@ -851,7 +851,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
 pub(crate) fn block_precompile_invalid_ec_pairing_fq_overflow() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode_ec_pairing_oor = PrecompileCallArgs {
         name: "ecPairing (invalid): invalid field element, mod p is valid",
@@ -947,7 +947,7 @@ pub(crate) fn block_precompile_invalid_ec_pairing_fq_overflow() -> BlockTrace {
 pub(crate) fn block_precompile_sha256() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode_sha256 = PrecompileCallArgs {
         name: "sha256: short bytes",

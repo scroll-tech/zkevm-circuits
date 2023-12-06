@@ -249,7 +249,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                     is_byte(meta),
                 ]);
 
-                let lookup_columns = vec![value, push_data_size];
+                let lookup_columns = [value, push_data_size];
 
                 let mut constraints = vec![];
 

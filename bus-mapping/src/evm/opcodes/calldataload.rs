@@ -150,8 +150,7 @@ mod calldataload_tests {
             memory_a.resize(call_data_length, 0);
         }
 
-        let mut memory_bytes = vec![];
-        memory_bytes.resize(32 - pushdata.len(), 0);
+        let mut memory_bytes = vec![0; 32 - pushdata.len()];
         let mut pushdata_mut = pushdata.clone();
         memory_bytes.append(&mut pushdata_mut);
         // let code_a = bytecode! {

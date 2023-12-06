@@ -115,27 +115,19 @@ mod tests {
     fn test_ltword_expect() {
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![Word::from(0), Word::from(1)],
+            [Word::from(0), Word::from(1)],
+            true,
+        );
+        try_test!(LtWordTestContainer<Fr>, [Word::from(1), Word::MAX], true,);
+        try_test!(LtWordTestContainer<Fr>, [WORD_LOW_MAX, WORD_HIGH_MAX], true,);
+        try_test!(
+            LtWordTestContainer<Fr>,
+            [Word::from(90), WORD_LOW_MAX],
             true,
         );
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![Word::from(1), Word::MAX],
-            true,
-        );
-        try_test!(
-            LtWordTestContainer<Fr>,
-            vec![WORD_LOW_MAX, WORD_HIGH_MAX],
-            true,
-        );
-        try_test!(
-            LtWordTestContainer<Fr>,
-            vec![Word::from(90), WORD_LOW_MAX],
-            true,
-        );
-        try_test!(
-            LtWordTestContainer<Fr>,
-            vec![Word::from(90), WORD_HIGH_MAX],
+            [Word::from(90), WORD_HIGH_MAX],
             true,
         );
     }
@@ -144,14 +136,14 @@ mod tests {
     fn test_ltword_unexpect() {
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![Word::from(1), Word::from(0)],
+            [Word::from(1), Word::from(0)],
             false,
         );
-        try_test!(LtWordTestContainer<Fr>, vec![Word::MAX, Word::MAX], false,);
+        try_test!(LtWordTestContainer<Fr>, [Word::MAX, Word::MAX], false,);
 
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, WORD_LOW_MAX],
+            [WORD_HIGH_MAX, WORD_LOW_MAX],
             false,
         );
     }

@@ -15,12 +15,12 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    GethExecStep, ToLittleEndian, Word, H256, U256,
+    Field, GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
-    arithmetic::{CurveAffine, Field},
+    arithmetic::{CurveAffine, Field as Halo2Field},
     halo2curves::{
         bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
         group::prime::PrimeCurveAffine,

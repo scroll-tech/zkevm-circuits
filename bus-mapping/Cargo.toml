@@ -16,7 +16,6 @@ ethers-providers.workspace = true
 halo2_proofs.workspace = true
 hash-circuit.workspace = true
 itertools.workspace = true
-lazy_static.workspace = true
 log.workspace = true
 num.workspace = true
 rand = { workspace = true, optional = true }
@@ -28,7 +27,6 @@ strum_macros.workspace = true
 
 # precompile related crates
 revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-fix" }
-once_cell.workspace = true
 
 [dev-dependencies]
 hex.workspace = true

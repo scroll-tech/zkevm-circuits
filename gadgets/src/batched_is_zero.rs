@@ -7,7 +7,6 @@
 
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Phase, VirtualCells},
     poly::Rotation,
@@ -48,7 +47,7 @@ pub struct BatchedIsZeroChip<F, const N: usize> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
+impl<F: Field, const N: usize> BatchedIsZeroChip<F, N> {
     /// Configure the BatchedIsZeroChip
     pub fn configure<P: Phase>(
         meta: &mut ConstraintSystem<F>,
@@ -100,9 +99,9 @@ impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
                 .iter()
                 .find_map(|value| Option::<F>::from(value.invert()))
             {
-                (F::zero(), inverse)
+                (F::ZERO, inverse)
             } else {
-                (F::one(), F::zero())
+                (F::ONE, F::ZERO)
             }
         });
 
@@ -134,7 +133,6 @@ impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
 mod test {
     use super::*;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr,
@@ -151,15 +149,17 @@ mod test {
     }
 
     #[derive(Default)]
-    struct TestCircuit<F: FieldExt, const N: usize> {
+    struct TestCircuit<F: Field, const N: usize> {
         values: Option<[u64; N]>,
         expect_is_zero: Option<bool>,
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt, const N: usize> Circuit<F> for TestCircuit<F, N> {
+    impl<F: Field, const N: usize> Circuit<F> for TestCircuit<F, N> {
         type Config = TestCircuitConfig<N>;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -218,7 +218,7 @@ mod test {
                         || "expect_is_zero",
                         config.expect_is_zero,
                         0,
-                        || Value::known(F::from(*expect_is_zero)),
+                        || Value::known(F::from(*expect_is_zero as u64)),
                     )?;
                     for (value_column, value) in config.values.iter().zip(values.iter()) {
                         region.assign_advice(
