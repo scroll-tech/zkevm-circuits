@@ -58,7 +58,7 @@ impl TxType {
     }
 
     /// If this type is EIP155 or not
-    pub fn is_eip155_tx(&self) -> bool {
+    pub fn is_eip155(&self) -> bool {
         matches!(*self, TxType::Eip155)
     }
 
