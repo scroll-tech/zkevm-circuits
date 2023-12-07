@@ -99,6 +99,8 @@ enum LookupCondition {
     RlpHashTag,
     // lookup into keccak table
     Keccak,
+    // lookup into dynamic access list section of tx table
+    TxAccessList,
 }
 
 #[derive(Clone, Debug)]
@@ -313,6 +315,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             LookupCondition::RlpSignTag,
             LookupCondition::RlpHashTag,
             LookupCondition::Keccak,
+            LookupCondition::TxAccessList,
         ]
         .into_iter()
         .map(|condition| (condition, meta.advice_column()))
@@ -753,6 +756,24 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 ]),
                 meta.query_advice(
                     lookup_conditions[&LookupCondition::TxCalldata],
+                    Rotation::cur(),
+                ),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("lookup to access list dynamic section condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "condition",
+                and::expr([
+                    is_access_list_addresses_len(meta),
+                    not::expr(value_is_zero.expr(Rotation::cur())(meta)),
+                ]),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::TxAccessList],
                     Rotation::cur(),
                 ),
             );
@@ -1860,7 +1881,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
-
         meta.lookup_any("lookup AccessListAddressLen in the TxTable", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1885,7 +1905,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
-
         meta.lookup_any("lookup AccessListStorageKeysLen in the TxTable", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1910,7 +1929,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
-
         meta.lookup_any("lookup AccessListRLC in the TxTable", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1932,6 +1950,37 @@ impl<F: Field> TxCircuitConfig<F> {
             input_exprs
                 .into_iter()
                 .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+        meta.lookup_any("is_final access list row should be present", |meta| {
+            let enable = and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::TxAccessList],
+                    Rotation::cur(),
+                ),
+            ]);
+            let input_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                1.expr(),
+                1.expr(),
+                meta.query_advice(tx_table.value, Rotation(0)), // al_idx
+                meta.query_advice(tx_table.value, Rotation(1)), // sks_acc
+                meta.query_advice(tx_table.value, Rotation(2)), // section_rlc for access list
+            ];
+            let table_exprs = vec![
+                meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                meta.query_advice(is_access_list, Rotation::cur()),
+                meta.query_advice(is_final, Rotation::cur()),
+                meta.query_advice(al_idx, Rotation::cur()),
+                meta.query_advice(sks_acc, Rotation::cur()),
+                meta.query_advice(section_rlc, Rotation::cur()),
+            ];
+
+            input_exprs
+                .into_iter()
+                .zip(table_exprs.into_iter())
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
@@ -2663,7 +2712,16 @@ impl<F: Field> TxCircuitConfig<F> {
                     F::zero()
                 }
             });
-            // 2. lookup to RLP table for signing (non L1 msg)
+            // 2. lookup to ensure the final row in the access list dynamic section is present.
+            conditions.insert(LookupCondition::TxAccessList, {
+                let tag_enable = tx_tag == AccessListAddressesLen;
+                if tag_enable && tx.access_list.is_some() && tx.access_list.as_ref().unwrap().0.len() > 0 {
+                    F::one()
+                } else {
+                    F::zero()
+                }
+            });
+            // 3. lookup to RLP table for signing (non L1 msg)
             conditions.insert(LookupCondition::RlpSignTag, {
                 let sign_set = [
                     Nonce,
@@ -2682,7 +2740,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     && (tx_tag == MaxFeePerGas || tx_tag == MaxPriorityFeePerGas);
                 F::from((case1 || case2 || case3 || case4) as u64)
             });
-            // 3. lookup to RLP table for hashing (non L1 msg)
+            // 4. lookup to RLP table for hashing (non L1 msg)
             conditions.insert(LookupCondition::RlpHashTag, {
                 let hash_set = [
                     Nonce,
@@ -2704,7 +2762,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     && (tx_tag == MaxFeePerGas || tx_tag == MaxPriorityFeePerGas);
                 F::from((case1 || case2 || case3) as u64)
             });
-            // 4. lookup to RLP table for hashing (L1 msg)
+            // 5. lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
                 let hash_set = [
                     Nonce,
@@ -2720,7 +2778,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 F::from((is_l1_msg && is_tag_in_set) as u64)
             });
-            // 5. lookup to Keccak table for tx_sign_hash and tx_hash
+            // 6. lookup to Keccak table for tx_sign_hash and tx_hash
             conditions.insert(LookupCondition::Keccak, {
                 let case1 = (tx_tag == TxSignLength) && !is_l1_msg;
                 let case2 = tx_tag == TxHashLength;
