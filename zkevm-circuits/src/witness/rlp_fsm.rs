@@ -1,6 +1,10 @@
 use eth_types::{Address, Field, H160, U256};
 use gadgets::{impl_expr, util::Expr};
-use halo2_proofs::{circuit::Value, plonk::Expression};
+use halo2_proofs::{
+    circuit::Value, 
+    plonk::Expression,
+    halo2curves::ff::PrimeField,
+};
 use strum_macros::EnumIter;
 
 use crate::util::Challenges;
@@ -775,7 +779,7 @@ pub enum StackOp {
 /// Using simulated stack constraints to make sure all bytes in nested structure are correctly
 /// decoded
 #[derive(Clone, Debug)]
-pub struct RlpStackOp<F: FieldExt> {
+pub struct RlpStackOp<F: PrimeField> {
     /// Key1 (Id), concat of tx_id, format
     pub id: Value<F>,
     /// Key2 (Address), in this case depth
@@ -793,15 +797,15 @@ pub struct RlpStackOp<F: FieldExt> {
     pub stack_op: StackOp,
 }
 
-impl<F: FieldExt> RlpStackOp<F> {
+impl<F: PrimeField> RlpStackOp<F> {
     pub fn init(id: Value<F>, value: usize) -> Self {
         Self {
             id,
             depth: 0,
             value,
             value_prev: 0,
-            stack_acc: Value::known(F::zero()),
-            stack_acc_pow_of_rand: Value::known(F::one()),
+            stack_acc: Value::known(F::ZERO),
+            stack_acc_pow_of_rand: Value::known(F::ONE),
             stack_op: StackOp::Init,
         }
     }
