@@ -321,9 +321,8 @@ impl TxTable {
                 // the tx calldata and access list.  This is required to achieve a constant fixed
                 // column tag regardless of the number of input txs or the
                 // calldata/access list size of each tx.
-                let mut calldata_assignments: Vec<[Value<F>; 5]> = Vec::new();
-                let mut access_list_assignments: Vec<[Value<F>; 5]> = Vec::new();
-                // Assign Tx data (all tx fields except for calldata)
+
+                // Assign Tx data (all tx fields except for calldata and access list)
                 let padding_txs = (txs.len()..max_txs)
                     .map(|tx_id| {
                         let mut padding_tx = Transaction::dummy(chain_id);
@@ -335,8 +334,6 @@ impl TxTable {
                 for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
                     debug_assert_eq!(i + 1, tx.id);
                     let tx_data = tx.table_assignments_fixed(*challenges);
-                    let tx_calldata = tx.table_assignments_dyn(*challenges);
-                    let tx_access_list = tx.table_assignments_access_list_dyn(*challenges);
                     for row in tx_data {
                         tx_value_cells.push(assign_row(
                             &mut region,
@@ -349,35 +346,36 @@ impl TxTable {
                         )?);
                         offset += 1;
                     }
-                    calldata_assignments.extend(tx_calldata.iter());
-                    access_list_assignments.extend(tx_access_list.iter());
                 }
-                // Assign Tx calldata
-                for row in calldata_assignments.into_iter() {
-                    assign_row(
-                        &mut region,
-                        offset,
-                        self.q_enable,
-                        &advice_columns,
-                        &self.tag,
-                        &row,
-                        "",
-                    )?;
-                    offset += 1;
+
+                // Assign dynamic calldata and access list section
+                for (_, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
+                    for row in tx.table_assignments_dyn(*challenges).into_iter() {
+                        assign_row(
+                            &mut region,
+                            offset,
+                            self.q_enable,
+                            &advice_columns,
+                            &self.tag,
+                            &row,
+                            "",
+                        )?;
+                        offset += 1;
+                    }
+                    for row in tx.table_assignments_access_list_dyn(*challenges).into_iter() {
+                        assign_row(
+                            &mut region,
+                            offset,
+                            self.q_enable,
+                            &advice_columns,
+                            &self.tag,
+                            &row,
+                            "",
+                        )?;
+                        offset += 1;
+                    }
                 }
-                // Assign Tx access_list
-                for row in access_list_assignments.into_iter() {
-                    assign_row(
-                        &mut region,
-                        offset,
-                        self.q_enable,
-                        &advice_columns,
-                        &self.tag,
-                        &row,
-                        "",
-                    )?;
-                    offset += 1;
-                }
+                
                 Ok(tx_value_cells)
             },
         )
