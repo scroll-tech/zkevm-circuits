@@ -1877,7 +1877,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(table_exprs.into_iter())
+                .zip(table_exprs)
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
@@ -1901,7 +1901,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(table_exprs.into_iter())
+                .zip(table_exprs)
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
@@ -1925,7 +1925,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(table_exprs.into_iter())
+                .zip(table_exprs)
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
@@ -1980,7 +1980,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(table_exprs.into_iter())
+                .zip(table_exprs)
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
@@ -2130,7 +2130,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
                 ]
                 .into_iter()
-                .zip_eq(rlp_table.table_exprs(meta).into_iter())
+                .zip_eq(rlp_table.table_exprs(meta))
                 .map(|(arg, table)| (enable.clone() * arg, table))
                 .collect()
             },
@@ -2163,7 +2163,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
                 ]
                 .into_iter()
-                .zip_eq(rlp_table.table_exprs(meta).into_iter())
+                .zip_eq(rlp_table.table_exprs(meta))
                 .map(|(arg, table)| (enable.clone() * arg, table))
                 .collect()
             },
@@ -2199,7 +2199,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
                 ]
                 .into_iter()
-                .zip_eq(rlp_table.table_exprs(meta).into_iter())
+                .zip_eq(rlp_table.table_exprs(meta))
                 .map(|(arg, table)| (enable.clone() * arg, table))
                 .collect()
             },
@@ -2232,7 +2232,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     meta.query_advice(sk_idx, Rotation::cur()), // storage_key_idx
                 ]
                 .into_iter()
-                .zip_eq(rlp_table.table_exprs(meta).into_iter())
+                .zip_eq(rlp_table.table_exprs(meta))
                 .map(|(arg, table)| (enable.clone() * arg, table))
                 .collect()
             },
@@ -2717,7 +2717,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 let tag_enable = tx_tag == AccessListAddressesLen;
                 if tag_enable
                     && tx.access_list.is_some()
-                    && tx.access_list.as_ref().unwrap().0.len() > 0
+                    && !tx.access_list.as_ref().unwrap().0.is_empty()
                 {
                     F::one()
                 } else {
@@ -2916,8 +2916,8 @@ impl<F: Field> TxCircuitConfig<F> {
             // initialize access list section rlc
             let mut section_rlc = challenges.keccak_input().map(|_| F::zero());
             // depending on prev row, the accumulator advances by different magnitude
-            let r20 = challenges.keccak_input().map(|f| f.pow(&[20, 0, 0, 0]));
-            let r32 = challenges.keccak_input().map(|f| f.pow(&[32, 0, 0, 0]));
+            let r20 = challenges.keccak_input().map(|f| f.pow([20, 0, 0, 0]));
+            let r32 = challenges.keccak_input().map(|f| f.pow([32, 0, 0, 0]));
 
             for (al_idx, al) in tx.access_list.as_ref().unwrap().0.iter().enumerate() {
                 curr_row += 1;
@@ -3724,8 +3724,8 @@ pub fn access_list_rlc<F: Field>(
 ) -> Value<F> {
     if access_list.is_some() {
         let mut section_rlc = challenges.keccak_input().map(|_| F::zero());
-        let r20 = challenges.keccak_input().map(|f| f.pow(&[20, 0, 0, 0]));
-        let r32 = challenges.keccak_input().map(|f| f.pow(&[32, 0, 0, 0]));
+        let r20 = challenges.keccak_input().map(|f| f.pow([20, 0, 0, 0]));
+        let r32 = challenges.keccak_input().map(|f| f.pow([32, 0, 0, 0]));
 
         for al in access_list.as_ref().unwrap().0.iter() {
             let field_rlc = rlc_be_bytes(&al.address.to_fixed_bytes(), challenges.keccak_input());

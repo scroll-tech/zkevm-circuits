@@ -349,7 +349,7 @@ impl TxTable {
                 }
 
                 // Assign dynamic calldata and access list section
-                for (_, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
+                for tx in txs.iter().chain(padding_txs.iter()) {
                     for row in tx.table_assignments_dyn(*challenges).into_iter() {
                         assign_row(
                             &mut region,
