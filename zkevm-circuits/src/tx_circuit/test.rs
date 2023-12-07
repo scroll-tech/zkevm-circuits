@@ -187,7 +187,8 @@ fn run<F: Field>(
 }
 
 #[test]
-#[cfg(feature = "scroll")]
+// tx1559_debug
+// #[cfg(feature = "scroll")]
 fn tx_circuit_1tx_2max_eip1559() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 3200;
@@ -195,7 +196,7 @@ fn tx_circuit_1tx_2max_eip1559() {
     let tx = build_eip1559_tx();
 
     assert_eq!(
-        run::<Fr>(vec![tx], *mock::MOCK_CHAIN_ID, MAX_TXS, MAX_CALLDATA, 0),
+        run::<Fr>(vec![tx], mock::MOCK_CHAIN_ID, MAX_TXS, MAX_CALLDATA, 0),
         Ok(())
     );
 }
@@ -271,8 +272,7 @@ fn tx_circuit_1tx_2max_tx() {
 }
 
 #[test]
-// tx1559_debug
-// #[cfg(feature = "scroll")]
+#[cfg(feature = "scroll")]
 fn tx_circuit_l1_msg_tx() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 400;
