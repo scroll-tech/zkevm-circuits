@@ -2715,7 +2715,10 @@ impl<F: Field> TxCircuitConfig<F> {
             // 2. lookup to ensure the final row in the access list dynamic section is present.
             conditions.insert(LookupCondition::TxAccessList, {
                 let tag_enable = tx_tag == AccessListAddressesLen;
-                if tag_enable && tx.access_list.is_some() && tx.access_list.as_ref().unwrap().0.len() > 0 {
+                if tag_enable
+                    && tx.access_list.is_some()
+                    && tx.access_list.as_ref().unwrap().0.len() > 0
+                {
                     F::one()
                 } else {
                     F::zero()

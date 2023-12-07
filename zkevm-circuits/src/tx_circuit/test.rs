@@ -212,7 +212,13 @@ fn tx_circuit_2tx_2max_tx_eip1559() {
     let tx2 = build_eip1559_tx(2);
 
     assert_eq!(
-        run::<Fr>(vec![tx1, tx2], mock::MOCK_CHAIN_ID, MAX_TXS, MAX_CALLDATA, 0),
+        run::<Fr>(
+            vec![tx1, tx2],
+            mock::MOCK_CHAIN_ID,
+            MAX_TXS,
+            MAX_CALLDATA,
+            0
+        ),
         Ok(())
     );
 }

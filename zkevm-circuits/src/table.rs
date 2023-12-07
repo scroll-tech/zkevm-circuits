@@ -362,7 +362,10 @@ impl TxTable {
                         )?;
                         offset += 1;
                     }
-                    for row in tx.table_assignments_access_list_dyn(*challenges).into_iter() {
+                    for row in tx
+                        .table_assignments_access_list_dyn(*challenges)
+                        .into_iter()
+                    {
                         assign_row(
                             &mut region,
                             offset,
@@ -375,7 +378,7 @@ impl TxTable {
                         offset += 1;
                     }
                 }
-                
+
                 Ok(tx_value_cells)
             },
         )
