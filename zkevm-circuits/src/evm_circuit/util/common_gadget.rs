@@ -34,10 +34,12 @@ use halo2_proofs::{
 mod tx_eip2930;
 mod tx_l1_fee;
 mod tx_l1_msg;
+mod tx_l1_block_hashes;
 
 pub(crate) use tx_eip2930::TxEip2930Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
+pub(crate) use tx_l1_block_hashes::TxL1BlockHashesGadget;
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,

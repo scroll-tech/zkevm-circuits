@@ -933,7 +933,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if !tx.tx_type.is_l1_msg() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+            if !tx.tx_type.is_l1_custom_tx() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
                 warn!(
                     "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
                     i
@@ -944,7 +944,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
             }
         })
         .map(|(_, tx)| {
-            if tx.tx_type.is_l1_msg() {
+            if tx.tx_type.is_l1_custom_tx() {
                 Ok(SignData::default())
             } else {
                 tx.sign_data()

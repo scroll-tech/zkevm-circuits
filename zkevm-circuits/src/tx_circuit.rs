@@ -16,7 +16,7 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     // sig_circuit::SigCircuit,
     table::{
-        BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
+        BlockContextFieldTag::{CumNumTxs, L1BlockHashesCalldata, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
             AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
@@ -33,7 +33,10 @@ use crate::{
     witness,
     witness::{
         rlp_fsm::{Tag, ValueTagLength},
-        Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
+        Format::{
+            L1BlockHashesHash, L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155,
+            TxSignPreEip155,
+        },
         RlpTag,
         RlpTag::{GasCost, Len, Null, RLC},
         Tag::TxType as RLPTxType,
@@ -44,7 +47,7 @@ use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{
     geth_types::{
         access_list_size, TxType,
-        TxType::{Eip155, L1Msg, PreEip155},
+        TxType::{Eip155, L1Msg, L1BlockHashes, PreEip155},
     },
     sign_types::SignData,
     Address, Field, ToAddress, ToBigEndian, ToScalar,
@@ -55,7 +58,7 @@ use gadgets::{
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
-    util::{and, not, select, sum, Expr},
+    util::{and, not, or, select, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -92,6 +95,7 @@ enum LookupCondition {
     TxCalldata,
     // lookup into rlp table
     L1MsgHash,
+    L1BlockHashesHash,
     RlpSignTag,
     RlpHashTag,
     // lookup into keccak table
@@ -145,6 +149,7 @@ pub struct TxCircuitConfig<F: Field> {
     is_calldata: Column<Advice>,
     is_caller_address: Column<Advice>,
     is_l1_msg: Column<Advice>,
+    is_l1_block_hashes: Column<Advice>,
     is_chain_id: Column<Advice>,
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
 
@@ -279,6 +284,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // booleans to reduce degree
         let is_l1_msg = meta.advice_column();
+        let is_l1_block_hashes = meta.advice_column();
         let is_calldata = meta.advice_column();
         let is_caller_address = meta.advice_column();
         let is_chain_id = meta.advice_column();
@@ -286,6 +292,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let lookup_conditions = [
             LookupCondition::TxCalldata,
             LookupCondition::L1MsgHash,
+            LookupCondition::L1BlockHashesHash,
             LookupCondition::RlpSignTag,
             LookupCondition::RlpHashTag,
             LookupCondition::Keccak,
@@ -299,7 +306,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.enable_equality(tx_table.value);
 
         let log_deg = |s: &'static str, meta: &mut ConstraintSystem<F>| {
-            debug_assert!(meta.degree() <= 9);
+            debug_assert!(meta.degree() <= 11);
             log::info!("after {}, meta.degree: {}", s, meta.degree());
         };
 
@@ -493,6 +500,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     usize::from(PreEip155).expr(),
                     usize::from(Eip155).expr(),
                     usize::from(L1Msg).expr(),
+                    usize::from(L1BlockHashes).expr(),
                 ],
             );
 
@@ -630,6 +638,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        meta.create_gate("is_l1_block_hashes", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_l1_block_hashes = (tx_type == L1BlockHashes)",
+                meta.query_advice(is_l1_block_hashes, Rotation::cur()),
+                tx_type_bits.value_equals(L1BlockHashes, Rotation::cur())(meta),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         meta.create_gate("calldata lookup into tx table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -677,7 +697,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                and::expr([
+                    not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                    not::expr(meta.query_advice(is_l1_block_hashes, Rotation::cur())),
+                ]),
             ]))
         });
 
@@ -710,7 +733,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                and::expr([
+                    not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                    not::expr(meta.query_advice(is_l1_block_hashes, Rotation::cur())),
+                ]),
             ]))
         });
 
@@ -742,6 +768,34 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
+        meta.create_gate("l1 block hashes lookup into RLP table condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            let is_tag_in_l1_block_hashes_hash = sum::expr([
+                is_nonce(meta),
+                is_gas(meta),
+                is_to(meta),
+                is_value(meta),
+                is_data_rlc(meta),
+                is_caller_addr(meta),
+                is_hash_length(meta),
+                is_hash_rlc(meta),
+            ]);
+
+            cb.require_equal(
+                "lookup into RLP table iff tag in l1 block hashes hash",
+                is_tag_in_l1_block_hashes_hash,
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::L1BlockHashesHash],
+                    Rotation::cur(),
+                ),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_l1_block_hashes, Rotation::cur()),
+            ]))
+        });
+
         meta.create_gate("lookup into Keccak table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -749,6 +803,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 and::expr([
                     is_sign_length(meta),
                     not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                    not::expr(meta.query_advice(is_l1_block_hashes, Rotation::cur())),
                 ]),
                 is_hash_length(meta),
             ]);
@@ -776,6 +831,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_calldata,
             is_chain_id,
             is_l1_msg,
+            is_l1_block_hashes,
             sv_address,
             calldata_gas_cost_acc,
             calldata_rlc,
@@ -785,7 +841,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sig_table,
         );
 
-        meta.create_gate("tx_gas_cost == 0 for L1 msg", |meta| {
+        meta.create_gate("tx_gas_cost == 0 for L1 msg or L1 block hashes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.condition(is_tx_gas_cost(meta), |cb| {
@@ -797,7 +853,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(is_l1_msg, Rotation::cur()),
+                or::expr([
+                    meta.query_advice(is_l1_msg, Rotation::cur()),
+                    meta.query_advice(is_l1_block_hashes, Rotation::cur()),
+                ]),
             ]))
         });
 
@@ -993,9 +1052,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 .collect::<Vec<_>>()
         });
 
-        ///////////////////////////////////////////////////////////////////////
-        ///////  constraints on block_table's num_txs & num_cum_txs  //////////
-        ///////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////
+        ///////  constraints on block_table's num_txs, num_cum_txs & l1 bock hashes calldata
+        /////// ////////// /////////////////////////////////////////////////////////////////
+        /////// ////////////////////////
         meta.create_gate("is_padding_tx", |meta| {
             let is_tag_caller_addr = is_caller_addr(meta);
             let mut cb = BaseConstraintBuilder::default();
@@ -1005,7 +1065,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cb.require_equal(
                     "is_padding_tx = true if caller_address = 0",
                     meta.query_advice(is_padding_tx, Rotation::cur()),
-                    value_is_zero.expr(Rotation::cur())(meta),
+                    and::expr([
+                        not::expr(meta.query_advice(is_l1_block_hashes, Rotation::cur())),
+                        value_is_zero.expr(Rotation::cur())(meta),
+                    ]),
                 );
             });
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1118,6 +1181,26 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             input_expr
                 .into_iter()
                 .zip(table_expr)
+                .map(|(input, table)| (input * condition.clone(), table))
+                .collect::<Vec<_>>()
+        });
+
+        meta.lookup_any("l1 block hashes calldata in block table", |meta| {
+            let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
+            let block_num = meta.query_advice(tx_table.value, Rotation::cur());
+            let calldata_rlc = meta.query_advice(calldata_rlc, Rotation::cur());
+
+            let input_expr = vec![L1BlockHashesCalldata.expr(), block_num, calldata_rlc];
+            let table_expr = block_table.table_exprs(meta);
+            let condition = and::expr([
+                is_tag_block_num,
+                meta.query_advice(is_l1_block_hashes, Rotation::cur()),
+                meta.query_fixed(q_enable, Rotation::cur()),
+            ]);
+
+            input_expr
+                .into_iter()
+                .zip(table_expr.into_iter())
                 .map(|(input, table)| (input * condition.clone(), table))
                 .collect::<Vec<_>>()
         });
@@ -1313,15 +1396,27 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 },
             );
 
+            //  4. l1 block hashes: v == 0
+            cb.condition(
+                and::expr([
+                    is_chain_id.expr(),
+                    tx_type_bits.value_equals(L1BlockHashes, Rotation::cur())(meta),
+                ]),
+                |cb| {
+                    let v = meta.query_advice(tx_table.value, Rotation::next());
+                    cb.require_zero("V == 0", v);
+                },
+            );
+
             // TODO:
-            //  4. eip1559 tx: v Є {0, 1}
-            //  5. eip2930 tx: v Є {0, 1}
+            //  5. eip1559 tx: v Є {0, 1}
+            //  6. eip2930 tx: v Є {0, 1}
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate(
-            "caller address == sv_address if it's not zero and tx_type != L1Msg",
+            "caller address == sv_address if it's not zero and tx_type != L1Msg && tx_type != L1BlockHashes",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
@@ -1336,7 +1431,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_caller_address, Rotation::cur()),
-                    not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                    and::expr([
+                        not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                        not::expr(meta.query_advice(is_l1_block_hashes, Rotation::cur())),
+                    ]),
                 ]))
             },
         );
@@ -1373,6 +1471,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             num_all_txs_acc,
             total_l1_popped_before,
             is_l1_msg,
+            is_l1_block_hashes,
             is_chain_id,
             is_final,
             calldata_gas_cost_acc,
@@ -1407,6 +1506,7 @@ impl<F: Field> TxCircuitConfig<F> {
         is_calldata: Column<Advice>,
         is_chain_id: Column<Advice>,
         is_l1_msg_col: Column<Advice>,
+        is_l1_block_hashes_col: Column<Advice>,
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         calldata_rlc: Column<Advice>,
@@ -1522,7 +1622,7 @@ impl<F: Field> TxCircuitConfig<F> {
         is_tx_type!(is_l1_msg, L1Msg);
 
         // lookup tx type in RLP table for L1Msg only
-        meta.lookup_any("lookup tx type in RLP table", |meta| {
+        meta.lookup_any("lookup l1 msg tx type in RLP table", |meta| {
             let enable = and::expr([meta.query_fixed(q_enable, Rotation::cur()), is_l1_msg(meta)]);
             let hash_format = L1MsgHash.expr();
             let tag_value = 0x7E.expr();
@@ -1626,6 +1726,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let enabled = and::expr([
                 // use is_l1_msg_col instead of is_l1_msg(meta) because it has lower degree
                 not::expr(meta.query_advice(is_l1_msg_col, Rotation::cur())),
+                not::expr(meta.query_advice(is_l1_block_hashes_col, Rotation::cur())),
                 // lookup to sig table on the ChainID row because we have an indicator of degree 1
                 // for ChainID and ChainID is not far from (msg_hash_rlc, sig_v,
                 // ...)
@@ -1738,7 +1839,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
         let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut tx_value_cells = vec![];
-        let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
+        let rlp_sign_tag_length = if tx.tx_type.is_l1_custom_tx() {
             // l1 msg does not have sign data
             0
         } else {
@@ -1976,6 +2077,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 .clone()
                 .map_or(zero_rlc, |input| input.be_bytes_rlc);
             let is_l1_msg = tx.tx_type.is_l1_msg();
+            let is_l1_block_hashes = tx.tx_type.is_l1_block_hashes();
             // it's the tx_id of next row
             let tx_id_next = if tx_tag == BlockNumber {
                 next_tx.map_or(0, |tx| tx.id)
@@ -2026,7 +2128,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (
                     "is_padding_tx",
                     self.is_padding_tx,
-                    F::from(tx.caller_address.is_zero() as u64),
+                    F::from((tx.caller_address.is_zero() && !tx.tx_type.is_l1_block_hashes()) as u64),
                 ),
                 (
                     "sv_address",
@@ -2076,7 +2178,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     F::zero()
                 }
             });
-            // 2. lookup to RLP table for signing (non L1 msg)
+            // 2. lookup to RLP table for signing (non L1 msg and L1 block hashes)
             conditions.insert(LookupCondition::RlpSignTag, {
                 let sign_set = [
                     Nonce,
@@ -2089,11 +2191,11 @@ impl<F: Field> TxCircuitConfig<F> {
                     TxSignRLC,
                 ];
                 let is_tag_in_set = sign_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
-                let case1 = is_tag_in_set && !is_l1_msg;
+                let case1 = is_tag_in_set && !is_l1_msg && !is_l1_block_hashes;
                 let case2 = tx.tx_type.is_eip155_tx() && (tx_tag == ChainID);
                 F::from((case1 || case2) as u64)
             });
-            // 3. lookup to RLP table for hashing (non L1 msg)
+            // 3. lookup to RLP table for hashing (non L1 msg and L1 block hashes)
             conditions.insert(LookupCondition::RlpHashTag, {
                 let hash_set = [
                     Nonce,
@@ -2110,7 +2212,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     TxHashRLC,
                 ];
                 let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
-                F::from((!is_l1_msg && is_tag_in_set) as u64)
+                F::from((!is_l1_msg && !is_l1_block_hashes && is_tag_in_set) as u64)
             });
             // 4. lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
@@ -2128,9 +2230,25 @@ impl<F: Field> TxCircuitConfig<F> {
                 let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 F::from((is_l1_msg && is_tag_in_set) as u64)
             });
-            // 5. lookup to Keccak table for tx_sign_hash and tx_hash
+            // 5. lookup to RLP table for hashing (L1 block hashes)
+            conditions.insert(LookupCondition::L1BlockHashesHash, {
+                let hash_set = [
+                    Nonce,
+                    Gas,
+                    CalleeAddress,
+                    TxFieldTag::Value,
+                    CallDataRLC,
+                    CallerAddress,
+                    TxHashLength,
+                    TxHashRLC,
+                ];
+
+                let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
+                F::from((is_l1_block_hashes && is_tag_in_set) as u64)
+            });
+            // 6. lookup to Keccak table for tx_sign_hash and tx_hash
             conditions.insert(LookupCondition::Keccak, {
-                let case1 = (tx_tag == TxSignLength) && !is_l1_msg;
+                let case1 = (tx_tag == TxSignLength) && !is_l1_msg && !is_l1_block_hashes;
                 let case2 = tx_tag == TxHashLength;
                 F::from((case1 || case2) as u64)
             });
@@ -2294,6 +2412,11 @@ impl<F: Field> TxCircuitConfig<F> {
                 "is_l1_msg",
                 self.is_l1_msg,
                 F::from(tx_type.is_l1_msg() as u64),
+            ),
+            (
+                "is_l1_block_hashes",
+                self.is_l1_block_hashes,
+                F::from(tx_type.is_l1_block_hashes() as u64),
             ),
         ] {
             region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
@@ -2461,7 +2584,7 @@ impl<F: Field> TxCircuit<F> {
             .chain(iter::once(&padding_tx))
             .enumerate()
             .map(|(_, tx)| {
-                if tx.tx_type.is_l1_msg() {
+                if tx.tx_type.is_l1_custom_tx() {
                     Ok(SignData::default())
                 } else {
                     tx.sign_data().map_err(|e| {
@@ -2792,7 +2915,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .iter()
             .chain(padding_txs.iter())
             .map(|tx| {
-                if tx.tx_type.is_l1_msg() {
+                if tx.tx_type.is_l1_custom_tx() {
                     Ok(SignData::default())
                 } else {
                     tx.sign_data().map_err(|e| {
@@ -2819,7 +2942,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             let pk_hash = keccak(&pk);
             let address = pk_hash.to_address();
             // L1 Msg does not have signature
-            if !tx.tx_type.is_l1_msg() && address != tx.caller_address {
+            if !tx.tx_type.is_l1_custom_tx() && address != tx.caller_address {
                 log::error!(
                     "pk address from sign data {:?} does not match the one from tx address {:?}",
                     address,
@@ -2859,7 +2982,7 @@ pub(crate) fn get_sign_data(
         .iter()
         .chain(padding_txs.iter())
         .map(|tx| {
-            if tx.tx_type.is_l1_msg() {
+            if tx.tx_type.is_l1_custom_tx() {
                 // dummy signature
                 Ok(SignData::default())
             } else {

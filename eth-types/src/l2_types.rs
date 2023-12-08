@@ -44,7 +44,7 @@ pub struct BlockTrace {
     pub l1_block_hashes: Option<Vec<Hash>>,
 }
 
-/// l2 block full trace
+/// l2 chunk trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct ChunkTrace {
   /// Block traces

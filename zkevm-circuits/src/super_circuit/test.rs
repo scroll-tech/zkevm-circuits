@@ -22,6 +22,8 @@ use std::env::set_var;
 use crate::witness::block_apply_mpt_state;
 
 #[cfg(feature = "scroll")]
+use eth_types::geth_types::TxType;
+#[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
 #[cfg(feature = "scroll")]
 use ethers_core::types::U64;
@@ -101,6 +103,9 @@ fn test_super_circuit<
         &mut block,
         &builder.mpt_init_state.expect("used non-light mode"),
     );
+
+    block.txs[0].tx_type = TxType::L1BlockHashes;
+    block.txs[0].caller_address = address!("0x0000000000000000000000000000000000000000");
 
     let active_row_num =SuperCircuit::<
         Fr,

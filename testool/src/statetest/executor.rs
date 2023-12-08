@@ -568,7 +568,7 @@ pub fn run_test(
         .iter()
         .any(|(_, acc)| acc.balance.to_be_bytes()[0] != 0u8);
     #[cfg(feature = "scroll")]
-    for (_, acc) in trace_config.accounts.iter_mut() {
+    for (_, acc) in trace_config.clone().accounts.iter_mut() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
             acc.balance = U256::from(1u128 << 127);
             //return Err(StateTestError::SkipTestBalanceOverflow);

@@ -6,7 +6,7 @@ use crate::{
         rlp_fsm::SmState,
         DataTable, Format,
         Format::{
-            L1MsgHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
+            L1MsgHash, L1BlockHashesHash, TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
             TxSignEip1559, TxSignEip2930, TxSignPreEip155,
         },
         RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, State,
@@ -375,6 +375,7 @@ impl Transaction {
                     TxType::PreEip155 => TxHashPreEip155,
                     TxType::Eip1559 => TxHashEip1559,
                     TxType::L1Msg => L1MsgHash,
+                    TxType::L1BlockHashes => L1BlockHashesHash,
                     TxType::Eip2930 => TxHashEip2930,
                 },
             )
@@ -787,6 +788,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         let hash_wit = self.gen_rlp_witness(true, challenges);
         let sign_wit = match self.tx_type {
             TxType::L1Msg => vec![],
+            TxType::L1BlockHashes => vec![],
             _ => self.gen_rlp_witness(false, challenges),
         };
 
@@ -814,6 +816,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
             TxType::Eip1559 => (TxHashEip1559, Some(TxSignEip1559)),
             TxType::Eip2930 => (TxHashEip2930, Some(TxSignEip2930)),
             TxType::L1Msg => (L1MsgHash, None),
+            TxType::L1BlockHashes => (L1BlockHashesHash, None),
         };
 
         let get_table = |rlp_bytes: &Vec<u8>, format: Format| {
@@ -924,7 +927,7 @@ pub(super) fn tx_convert(
     }
     let callee_address = tx.to;
     //if tx.is_create() { None } else { Some(tx.to) };
-    let tx_gas_cost = if tx.tx_type.is_l1_msg() {
+    let tx_gas_cost = if tx.tx_type.is_l1_custom_tx() {
         0
     } else {
         tx_data_gas_cost(&tx.rlp_bytes)

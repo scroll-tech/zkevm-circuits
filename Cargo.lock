@@ -3076,6 +3076,7 @@ name = "mock"
 version = "0.1.0"
 dependencies = [
  "eth-types",
+ "ethabi",
  "ethers-core",
  "ethers-signers",
  "external-tracer",
@@ -5834,6 +5835,7 @@ dependencies = [
  "either",
  "env_logger",
  "eth-types",
+ "ethabi",
  "ethers-core",
  "ethers-signers",
  "ff 0.13.0",

@@ -24,7 +24,7 @@ use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
     MptUpdates, RwMap, Transaction,
 };
-use crate::util::Challenges;
+use crate::util::{rlc_be_bytes, Challenges};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -114,7 +114,7 @@ impl<F: Field> Block<F> {
             .txs
             .iter()
             // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
-            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .filter(|tx| !tx.tx_type.is_l1_custom_tx())
             .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
@@ -347,6 +347,7 @@ impl BlockContext {
         num_txs: usize,
         cum_num_txs: usize,
         num_all_txs: u64,
+        l1_block_hashes_calldata: Vec<u8>,
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
@@ -404,6 +405,16 @@ impl BlockContext {
                     Value::known(current_block_number),
                     Value::known(F::from(num_all_txs)),
                 ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::L1BlockHashesCalldata as u64)),
+                    Value::known(current_block_number),
+                    rlc_be_bytes(&l1_block_hashes_calldata, challenges.keccak_input()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::L1BlockHashesCalldataLength as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(l1_block_hashes_calldata.len() as u64)),
+                ]
             ],
             self.block_hash_assignments(randomness),
         ]

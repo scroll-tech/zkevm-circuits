@@ -207,6 +207,7 @@ use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     witness::{
         l1_msg,
+        l1_block_hashes,
         Format::{
             TxHashEip155, TxHashEip1559, TxHashEip2930, TxHashPreEip155, TxSignEip155,
             TxSignEip1559, TxSignEip2930, TxSignPreEip155,
@@ -592,6 +593,8 @@ pub enum Format {
     TxHashEip2930,
     /// L1 Msg
     L1MsgHash,
+    /// L1 Block Hashes
+    L1BlockHashesHash,
 }
 
 impl From<Format> for usize {
@@ -613,6 +616,7 @@ impl Format {
             TxSignEip2930 => eip2930_tx_sign_rom_table_rows(),
             TxHashEip2930 => eip2930_tx_hash_rom_table_rows(),
             Self::L1MsgHash => l1_msg::rom_table_rows(),
+            Self::L1BlockHashesHash => l1_block_hashes::rom_table_rows(),
         }
     }
 }
