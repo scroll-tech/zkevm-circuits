@@ -588,6 +588,7 @@ impl<'a> CircuitInputBuilder {
             ExecState::BeginTx,
         )?;
 
+        let is_precompile = tx.to.map(|ref addr| is_precompiled(addr)).unwrap_or(false);
         // check gas cost
         {
             let real_gas_cost = if geth_trace.struct_logs.is_empty() {
@@ -596,7 +597,6 @@ impl<'a> CircuitInputBuilder {
                 GasCost(tx.gas - geth_trace.struct_logs[0].gas.0)
             };
             if real_gas_cost != begin_tx_step.gas_cost {
-                let is_precompile = tx.to.map(|ref addr| is_precompiled(addr)).unwrap_or(false);
                 if is_precompile {
                     // FIXME after we implement all precompiles
                     if begin_tx_step.gas_cost != real_gas_cost {
@@ -616,6 +616,11 @@ impl<'a> CircuitInputBuilder {
         }
 
         tx.steps_mut().push(begin_tx_step);
+
+        // for precompile, insert additional precompile step
+        if is_precompile{
+            
+        }
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let tx_gas = tx.gas;

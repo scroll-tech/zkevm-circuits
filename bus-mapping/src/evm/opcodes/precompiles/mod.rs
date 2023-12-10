@@ -5,7 +5,7 @@ use crate::{
         Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent, SHA256,
     },
     operation::CallContextField,
-    precompile::{PrecompileAuxData, PrecompileCalls},
+    precompile::{PrecompileAuxData, PrecompileCalls, execute_precompiled},
     Error,
 };
 
@@ -125,4 +125,24 @@ fn common_call_ctx_reads(
         state.call_context_read(exec_step, call.call_id, field, value)?;
     }
     Ok(())
+}
+
+pub fn gen_associated_ops_for_begin_tx(
+    state: &mut CircuitInputStateRef,
+    geth_step: GethExecStep,
+    call: Call,
+    precompile: PrecompileCalls,
+) -> Result<ExecStep, Error> {
+
+    let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
+        &code_address,
+        if args_length != 0 {
+            let caller_memory = &state.caller_ctx()?.memory;
+            &caller_memory.0[args_offset..args_offset + args_length]
+        } else {
+            &[]
+        },
+        callee_gas_left_with_stipend,
+    );
+
 }

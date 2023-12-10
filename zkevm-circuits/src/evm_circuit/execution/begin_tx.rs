@@ -1414,6 +1414,8 @@ mod test {
         )
         .unwrap();
 
+        println!("{:#?}", ctx.geth_traces);
+
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 

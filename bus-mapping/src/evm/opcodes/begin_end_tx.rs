@@ -6,7 +6,7 @@ use crate::{
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
     },
-    precompile::is_precompiled,
+    precompile::{is_precompiled, execute_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
@@ -232,6 +232,53 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
         AccountField::CodeHash,
         account_code_hash,
     )?;
+
+    // some *pre-handling* for precompile address, like what we have done in callop
+    // the generation of precompile step is in `handle_tx`, right after the generation
+    // of begin_tx step
+    if is_precompile {
+        let precompile_call: PrecompileCalls = call.address.0[19].into();
+
+        // just like callop, insert a copy event (input) generate word memory read for input.
+        // we do not handle output / return since it is not part of the mined tx
+        let rw_counter_start = state.block_ctx.rwc;
+        let input_bytes = {
+            let call_data_len = state.tx.input.len();
+            let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
+                min(input_len, call_data_len)
+            } else {
+                call_data_len
+            };
+            // we copy whole call data
+            let src_addr = call.call_data_offset;
+            let src_addr_end = call.call_data_offset.checked_add(call.call_data_length).unwrap();
+
+            let (copy_steps, prev_bytes) =
+                state.gen_copy_steps_for_call_data_root(&mut exec_step, call.call_data_offset, 0, n_input_bytes)?;
+
+            let input_bytes = copy_steps
+                .iter()
+                .filter(|(_, _, is_mask)| !*is_mask)
+                .map(|t| t.0)
+                .collect::<Vec<u8>>();
+            state.push_copy(
+                &mut exec_step,
+                CopyEvent {
+                    src_id: NumberOrHash::Number(state.tx_ctx.id()),
+                    src_type: CopyDataType::TxCalldata,
+                    src_addr,
+                    src_addr_end,
+                    dst_id: NumberOrHash::Number(state.tx_ctx.id()),
+                    dst_type: CopyDataType::RlcAcc,
+                    dst_addr: 0,
+                    log_id: None,
+                    rw_counter_start,
+                    copy_bytes: CopyBytes::new(copy_steps, None, None),
+                },
+            );
+            input_bytes
+        };        
+    }
 
     if state.tx.is_create()
         && ((!account_code_hash_is_empty_or_zero) || !callee_account.nonce.is_zero())
