@@ -47,7 +47,7 @@ i.e.,
 \underbrace{\xi_{108}\xi_{109}\cdots  \xi_{215}}_{x_1}
 \underbrace{\xi_{216}\xi_{217}\cdots  \xi_{255}}_{x_2}}
 ```
-in little-endian. This guarentees that $x_0\leq 2^{108}$, $x_1\leq 2^{108}$ and $x_2\leq 2^{108}$, so each of $x_0, x_1, x_2$ can be fit into an $\mathbb{F}_r$ element of Halo2.
+in little-endian. This guarantees that $x_0\leq 2^{108}$, $x_1\leq 2^{108}$ and $x_2\leq 2^{108}$, so each of $x_0, x_1, x_2$ can be fit into an $\mathbb{F}_r$ element of Halo2.
 
 In addition, $x_3$ stands for $x_3=x\mod r$.
 
@@ -353,7 +353,7 @@ A remaining constraint in (2) to ensure that $xy = kp + d$ is the comparison d<p
 
 This method takes two U256 `Number` denoted as `lhs` and `rhs` and returns `1` if `lhs<rhs`, returns `0` if otherwise.
 
-To achieve this, it devides `lhs` and `rhs` into limbs `lhs.limb[0], lhs.limb[1], lhs.limb[2]` and `rhs.limb[0], rhs.limb[1], rhs.limb[2]`. Then 
+To achieve this, it divides `lhs` and `rhs` into limbs `lhs.limb[0], lhs.limb[1], lhs.limb[2]` and `rhs.limb[0], rhs.limb[1], rhs.limb[2]`. Then 
 - if `lhs.limb[2]<rhs.limb[2]`, returns `1`;
 - elseif `lhs.limb[1]<rhs.limb[1]`, returns `1`;
 - elseif `lhs.limb[0]<rhs.limb[0]`, returns `1`;

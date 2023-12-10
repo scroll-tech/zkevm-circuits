@@ -221,7 +221,7 @@ This is a util struict that returns a description of how a 64-bit word will be s
 - `uniform` is true, then `target_sizes` consists of dividing 64 bit positions into even `part_size` plus a possible remainder; 
 - `uniform` is false, then `target_sizes` consists of dividing both the `rot` (rotation) and (64-`rot`)-bit words into even `part_size` but named `part_a` and `part_b` plus a possible remainder for each. 
 
-The parts splitted from the word is then determined bit-by-bit from `target_size`, so that each part will consist of a collection of bit positions that it represents, starting from 0-th bit position. The way bit positions are determined ensures that if
+The parts split from the word is then determined bit-by-bit from `target_size`, so that each part will consist of a collection of bit positions that it represents, starting from 0-th bit position. The way bit positions are determined ensures that if
 
 - `uniform` is true, then the remaining `rot`-sized bits [63-`rot`+1,...,63] are divided by `part_size` plus a remainder, and first 64-`rot` bits are determined by a section compensating previous remainder, plus divide by `part_size`, and plus the remainder from `target_size` division; 
 - `uniform` is false, then the remaining `rot`-sized bits [63-`rot`+1,...,63] are divided by `part_size` plus remainder, and first 64-`rot` bits determined by `part_size` plus a remainder.
@@ -245,7 +245,7 @@ where $\verb#input#[i]$ is the (sparse-word-representation) bit value of `input`
 
 The module splits a $64$-bit word in sparse-word-representation into `parts` according to a given `part_size` using `Word_Parts` with `uniform=true`. 
 
-When this module is called, it will use `CellManager` to allocate a region to store the `input_parts`, which are to be the partition returned by `WordParts`. It then merges the splitted `part_size` interval that contains 0 into one part with size `part_size` in the `output_parts`, while stores the original splitted `input_parts` that are divided by 0 as two separate parts.
+When this module is called, it will use `CellManager` to allocate a region to store the `input_parts`, which are to be the partition returned by `WordParts`. It then merges the split `part_size` interval that contains 0 into one part with size `part_size` in the `output_parts`, while stores the original split `input_parts` that are divided by 0 as two separate parts.
 
 The returned parts from this module are the `output_parts`, which are used for inputs in uniform lookup to check relations constrained by Keccak-permutation operations that involve rotations, such as $\rho/\pi/\chi$ steps.
 
@@ -364,7 +364,7 @@ There are 3 consecutive regions for     `rho_pi_chi_cells`:
 
 #### Constraints 
 
-Lookup in `normalize_4` table already gives a constraint. This is for the $os[i][j]$ step left in the $\theta$-step. Further, since `split_uniform` will combine small parts that are seperated by $0$, lookup to `normalize_4` of these small parts in a uniform way. 
+Lookup in `normalize_4` table already gives a constraint. This is for the $os[i][j]$ step left in the $\theta$-step. Further, since `split_uniform` will combine small parts that are separated by $0$, lookup to `normalize_4` of these small parts in a uniform way. 
 
 #### Rationale
 
