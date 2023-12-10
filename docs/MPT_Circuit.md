@@ -199,19 +199,19 @@ Notice that the zkTrie adds only one bit of common prefix at each level of its d
 
 #### PathType::Common
 
-`PathType::Common` refers to the sitation that the old and new path share the same topological configuration.
+`PathType::Common` refers to the situation that the old and new path share the same topological configuration.
 
 This can correspond to the topological configuration change on the whole path in the modify operation, or the common path (not extended one) of the insert to/delete from append, or the insert to/delete from fill operations. 
 
 #### PathType::ExtensionNew
 
-`PathType::ExtensionNew` refers to the sitation that the new path extends the old path in its toplogical configuration.
+`PathType::ExtensionNew` refers to the situation that the new path extends the old path in its toplogical configuration.
 
 This can correspond to the extended part of the path in insert to append, insert to fill operations.
 
 #### PathType::ExtensionOld
 
-`PathType::ExtensionOld` refers to the sitation that the old path extends the new path in its toplogical configuration.
+`PathType::ExtensionOld` refers to the situation that the old path extends the new path in its toplogical configuration.
 
 This can correspond to the extended part of the path in delete from append, delete from fill operations.
 
