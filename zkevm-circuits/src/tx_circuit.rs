@@ -21,8 +21,8 @@ use crate::{
         TxFieldTag::{
             AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
             CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress, CallerAddress, ChainID,
-            Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength,
-            TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
+            Gas, GasPrice, IsCreate, MaxFeePerGas, MaxPriorityFeePerGas, Nonce, SigR, SigS, SigV,
+            TxDataGasCost, TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
         TxTable, U16Table, U8Table,
     },
@@ -80,7 +80,7 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 26;
+pub const TX_LEN: usize = 28;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
@@ -349,6 +349,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_access_list_addresses_len, AccessListAddressesLen);
         is_tx_tag!(is_access_list_storage_keys_len, AccessListStorageKeysLen);
         is_tx_tag!(is_access_list_rlc, AccessListRLC);
+        is_tx_tag!(is_max_fee_per_gas, MaxFeePerGas);
+        is_tx_tag!(is_max_priority_fee_per_gas, MaxPriorityFeePerGas);
 
         let tx_id_unchanged = IsEqualChip::configure(
             meta,
@@ -479,6 +481,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_access_list_addresses_len(meta), Null),
                 (is_access_list_storage_keys_len(meta), Null),
                 (is_access_list_rlc(meta), RLC),
+                (is_max_fee_per_gas(meta), Tag::MaxFeePerGas.into()),
+                (
+                    is_max_priority_fee_per_gas(meta),
+                    Tag::MaxPriorityFeePerGas.into(),
+                ),
             ];
 
             cb.require_boolean(
@@ -1964,6 +1971,29 @@ impl<F: Field> TxCircuitConfig<F> {
                         .unwrap_or_default(),
                     keccak_input,
                 ),
+            ),
+            (
+                MaxPriorityFeePerGas,
+                Some(RlpTableInputValue {
+                    tag: Tag::MaxPriorityFeePerGas.into(),
+                    is_none: tx.max_priority_fee_per_gas.is_zero(),
+                    be_bytes_len: tx.max_priority_fee_per_gas.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(
+                        &tx.max_priority_fee_per_gas.to_be_bytes(),
+                        keccak_input,
+                    ),
+                }),
+                rlc_be_bytes(&tx.max_priority_fee_per_gas.to_be_bytes(), evm_word),
+            ),
+            (
+                MaxFeePerGas,
+                Some(RlpTableInputValue {
+                    tag: Tag::MaxFeePerGas.into(),
+                    is_none: tx.max_fee_per_gas.is_zero(),
+                    be_bytes_len: tx.max_fee_per_gas.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), evm_word),
             ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];

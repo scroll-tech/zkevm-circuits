@@ -57,6 +57,10 @@ pub struct Transaction {
     pub gas: u64,
     /// The gas price
     pub gas_price: Word,
+    /// Max fee per gas (EIP1559)
+    pub max_fee_per_gas: Word,
+    /// Max priority fee per gas (EIP1559)
+    pub max_priority_fee_per_gas: Word,
     /// The caller address
     pub caller_address: Address,
     /// The callee address
@@ -331,6 +335,22 @@ impl Transaction {
                         .unwrap_or_default(),
                     challenges.keccak_input(),
                 ),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::MaxPriorityFeePerGas as u64)),
+                Value::known(F::zero()),
+                challenges.evm_word().map(|challenge| {
+                    rlc::value(&self.max_priority_fee_per_gas.to_le_bytes(), challenge)
+                }),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::MaxFeePerGas as u64)),
+                Value::known(F::zero()),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.max_fee_per_gas.to_le_bytes(), challenge)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -886,6 +906,8 @@ impl From<MockTransaction> for Transaction {
             nonce: mock_tx.nonce.as_u64(),
             gas: mock_tx.gas.as_u64(),
             gas_price: mock_tx.gas_price,
+            max_fee_per_gas: mock_tx.max_fee_per_gas,
+            max_priority_fee_per_gas: mock_tx.max_priority_fee_per_gas,
             caller_address: mock_tx.from.address(),
             callee_address: mock_tx.to.as_ref().map(|to| to.address()),
             is_create,
@@ -938,6 +960,16 @@ pub(super) fn tx_convert(
         nonce: tx.nonce,
         gas: tx.gas,
         gas_price: tx.gas_price,
+        max_fee_per_gas: if tx.tx_type.is_eip1559_tx() {
+            tx.gas_fee_cap
+        } else {
+            tx.gas_price
+        },
+        max_priority_fee_per_gas: if tx.tx_type.is_eip1559_tx() {
+            tx.gas_tip_cap
+        } else {
+            tx.gas_price
+        },
         caller_address: tx.from,
         callee_address,
         is_create: tx.is_create(),
