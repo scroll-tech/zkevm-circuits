@@ -190,10 +190,6 @@ pub enum TxFieldTag {
     MaxPriorityFeePerGas,
     /// Max Fee Per Gas (EIP1559)
     MaxFeePerGas,
-    /// AccessListAddress,
-    AccessListAddress,
-    /// AccessListStorageKey
-    AccessListStorageKey,
 }
 impl_expr!(TxFieldTag);
 
