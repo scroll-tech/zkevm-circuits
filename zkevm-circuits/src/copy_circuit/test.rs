@@ -12,12 +12,17 @@ use bus_mapping::{
     mock::BlockData,
     precompile::PrecompileCalls,
 };
-use eth_types::{bytecode, geth_types::GethData, word, ToWord, Word};
+use eth_types::{
+    address, bytecode, geth_types::GethData, word, AccessList, AccessListItem, ToWord, Word, H256,
+};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
-use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
+use mock::{
+    eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, MockTransaction, TestContext,
+    MOCK_ACCOUNTS,
+};
 
 const K: u32 = 20;
 
@@ -259,6 +264,48 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
     builder
 }
 
+fn gen_access_list_data() -> CircuitInputBuilder {
+    let test_access_list = AccessList(vec![
+        AccessListItem {
+            address: address!("0x0000000000000000000000000000000000001111"),
+            storage_keys: [10, 11].map(H256::from_low_u64_be).to_vec(),
+        },
+        AccessListItem {
+            address: address!("0x0000000000000000000000000000000000002222"),
+            storage_keys: [20, 22].map(H256::from_low_u64_be).to_vec(),
+        },
+        AccessListItem {
+            address: address!("0x0000000000000000000000000000000000003333"),
+            storage_keys: [30, 33].map(H256::from_low_u64_be).to_vec(),
+        },
+    ]);
+    let test_ctx = TestContext::<1, 1>::new(
+        None,
+        |accs| {
+            accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+        },
+        |mut txs, _accs| {
+            txs[0]
+                .from(MOCK_ACCOUNTS[0])
+                .to(MOCK_ACCOUNTS[1])
+                .gas_price(gwei(2))
+                .gas(Word::from(0x10000))
+                .value(eth(2))
+                .transaction_type(1) // Set tx type to EIP-2930.
+                .access_list(test_access_list);
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap();
+    let block: GethData = test_ctx.into();
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+
+    builder
+}
+
 fn gen_create_data() -> CircuitInputBuilder {
     let code = bytecode! {
         PUSH21(Word::from("6B6020600060003760206000F3600052600C6014F3"))
@@ -339,6 +386,13 @@ fn copy_circuit_valid_sha3() {
 #[test]
 fn copy_circuit_valid_tx_log() {
     let builder = gen_tx_log_data();
+    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    assert_eq!(test_copy_circuit_from_block(block), Ok(()));
+}
+
+#[test]
+fn copy_circuit_valid_access_list() {
+    let builder = gen_access_list_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     assert_eq!(test_copy_circuit_from_block(block), Ok(()));
 }
@@ -448,8 +502,6 @@ fn copy_circuit_invalid_tx_log() {
         .find(|err| matches!(err, VerifyFailure::Lookup { .. }))
         .expect("there should be a lookup error");
 }
-
-// todo: add invalid create/return/returndatacopy tests
 
 #[test]
 fn copy_circuit_precompile_call() {

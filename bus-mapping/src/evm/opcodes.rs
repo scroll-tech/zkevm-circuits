@@ -19,6 +19,7 @@ use crate::util::GETH_TRACE_CHECK_LEVEL;
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
+mod arithmetic;
 mod balance;
 mod begin_end_tx;
 mod blockhash;
@@ -33,6 +34,7 @@ mod codecopy;
 mod codesize;
 mod create;
 mod dup;
+mod environment;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -79,6 +81,7 @@ pub use callop::tests::PrecompileCallArgs;
 use self::{pushn::PushN, sha3::Sha3};
 
 use address::Address;
+use arithmetic::ArithmeticOpcode;
 use balance::Balance;
 use begin_end_tx::BeginEndTx;
 use blockhash::Blockhash;
@@ -92,6 +95,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
+use environment::{Gas, GetBlockHeaderField, Msize, Pc};
 use error_codestore::ErrorCodeStore;
 use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
@@ -119,7 +123,7 @@ use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
-use stackonlyop::StackOnlyOpcode;
+use stackonlyop::StackPopOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
 
@@ -172,30 +176,30 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
         OpcodeId::PUSH0 => Push0::gen_associated_ops,
         OpcodeId::STOP => Stop::gen_associated_ops,
-        OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SUB => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::DIV => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SDIV => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::MOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SMOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::ADDMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
-        OpcodeId::MULMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
-        OpcodeId::SIGNEXTEND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::LT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::GT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SLT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SGT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::EQ => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::ISZERO => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        OpcodeId::AND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::OR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::XOR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::NOT => StackOnlyOpcode::<1, 1>::gen_associated_ops,
-        OpcodeId::BYTE => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
+        OpcodeId::ADD => ArithmeticOpcode::<{ OpcodeId::ADD }, 2>::gen_associated_ops,
+        OpcodeId::MUL => ArithmeticOpcode::<{ OpcodeId::MUL }, 2>::gen_associated_ops,
+        OpcodeId::SUB => ArithmeticOpcode::<{ OpcodeId::SUB }, 2>::gen_associated_ops,
+        OpcodeId::DIV => ArithmeticOpcode::<{ OpcodeId::DIV }, 2>::gen_associated_ops,
+        OpcodeId::SDIV => ArithmeticOpcode::<{ OpcodeId::SDIV }, 2>::gen_associated_ops,
+        OpcodeId::MOD => ArithmeticOpcode::<{ OpcodeId::MOD }, 2>::gen_associated_ops,
+        OpcodeId::SMOD => ArithmeticOpcode::<{ OpcodeId::SMOD }, 2>::gen_associated_ops,
+        OpcodeId::ADDMOD => ArithmeticOpcode::<{ OpcodeId::ADDMOD }, 3>::gen_associated_ops,
+        OpcodeId::MULMOD => ArithmeticOpcode::<{ OpcodeId::MULMOD }, 3>::gen_associated_ops,
+        OpcodeId::SIGNEXTEND => ArithmeticOpcode::<{ OpcodeId::SIGNEXTEND }, 2>::gen_associated_ops,
+        OpcodeId::LT => ArithmeticOpcode::<{ OpcodeId::LT }, 2>::gen_associated_ops,
+        OpcodeId::GT => ArithmeticOpcode::<{ OpcodeId::GT }, 2>::gen_associated_ops,
+        OpcodeId::SLT => ArithmeticOpcode::<{ OpcodeId::SLT }, 2>::gen_associated_ops,
+        OpcodeId::SGT => ArithmeticOpcode::<{ OpcodeId::SGT }, 2>::gen_associated_ops,
+        OpcodeId::EQ => ArithmeticOpcode::<{ OpcodeId::EQ }, 2>::gen_associated_ops,
+        OpcodeId::ISZERO => ArithmeticOpcode::<{ OpcodeId::ISZERO }, 1>::gen_associated_ops,
+        OpcodeId::AND => ArithmeticOpcode::<{ OpcodeId::AND }, 2>::gen_associated_ops,
+        OpcodeId::OR => ArithmeticOpcode::<{ OpcodeId::OR }, 2>::gen_associated_ops,
+        OpcodeId::XOR => ArithmeticOpcode::<{ OpcodeId::XOR }, 2>::gen_associated_ops,
+        OpcodeId::NOT => ArithmeticOpcode::<{ OpcodeId::NOT }, 1>::gen_associated_ops,
+        OpcodeId::BYTE => ArithmeticOpcode::<{ OpcodeId::BYTE }, 2>::gen_associated_ops,
+        OpcodeId::SHL => ArithmeticOpcode::<{ OpcodeId::SHL }, 2>::gen_associated_ops,
+        OpcodeId::SHR => ArithmeticOpcode::<{ OpcodeId::SHR }, 2>::gen_associated_ops,
+        OpcodeId::SAR => ArithmeticOpcode::<{ OpcodeId::SAR }, 2>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => Address::gen_associated_ops,
         OpcodeId::BALANCE => Balance::gen_associated_ops,
@@ -215,25 +219,25 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => Blockhash::gen_associated_ops,
-        OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::GASLIMIT => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::COINBASE => GetBlockHeaderField::<{ OpcodeId::COINBASE }>::gen_associated_ops,
+        OpcodeId::TIMESTAMP => GetBlockHeaderField::<{ OpcodeId::TIMESTAMP }>::gen_associated_ops,
+        OpcodeId::NUMBER => GetBlockHeaderField::<{ OpcodeId::NUMBER }>::gen_associated_ops,
+        OpcodeId::DIFFICULTY => GetBlockHeaderField::<{ OpcodeId::DIFFICULTY }>::gen_associated_ops,
+        OpcodeId::GASLIMIT => GetBlockHeaderField::<{ OpcodeId::GASLIMIT }>::gen_associated_ops,
+        OpcodeId::CHAINID => GetBlockHeaderField::<{ OpcodeId::CHAINID }>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
-        OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
+        OpcodeId::BASEFEE => GetBlockHeaderField::<{ OpcodeId::BASEFEE }>::gen_associated_ops,
+        OpcodeId::POP => StackPopOnlyOpcode::<1>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
         OpcodeId::SLOAD => Sload::gen_associated_ops,
         OpcodeId::SSTORE => Sstore::gen_associated_ops,
-        OpcodeId::JUMP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
-        OpcodeId::JUMPI => StackOnlyOpcode::<2, 0>::gen_associated_ops,
-        OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::JUMP => StackPopOnlyOpcode::<1>::gen_associated_ops,
+        OpcodeId::JUMPI => StackPopOnlyOpcode::<2>::gen_associated_ops,
+        OpcodeId::PC => Pc::gen_associated_ops,
+        OpcodeId::MSIZE => Msize::gen_associated_ops,
+        OpcodeId::GAS => Gas::gen_associated_ops,
         OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
@@ -295,7 +299,7 @@ fn fn_gen_error_state_associated_ops(
 ) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
-        ExecError::InvalidOpcode => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops),
         // Depth error could occur in CALL, CALLCODE, DELEGATECALL and STATICCALL.
         ExecError::Depth(DepthError::Call) => match geth_step.op {
             OpcodeId::CALL | OpcodeId::CALLCODE => Some(CallOpcode::<7>::gen_associated_ops),
@@ -309,34 +313,34 @@ fn fn_gen_error_state_associated_ops(
         ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => {
-            Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::Create) => match geth_step.op {
-            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 0, true>::gen_associated_ops),
-            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops),
+            OpcodeId::CREATE => Some(StackPopOnlyOpcode::<3, true>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(StackPopOnlyOpcode::<4, true>::gen_associated_ops),
             op => unreachable!("OOG Create cannot occur in {op}"),
         },
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
-            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<2, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
-            Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<1, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::Exp) => {
-            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<2, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::Sha3) => {
-            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+            Some(StackPopOnlyOpcode::<2, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::AccountAccess) => {
             Some(ErrorOOGAccountAccess::gen_associated_ops)
         }
         // ExecError::
-        ExecError::StackOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
-        ExecError::StackUnderflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
+        ExecError::StackOverflow => Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops),
+        ExecError::StackUnderflow => Some(StackPopOnlyOpcode::<0, true>::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
         ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode

@@ -19,6 +19,8 @@ pub fn constrain_tag<F: Field>(
     is_bytecode: Column<Advice>,
     is_memory: Column<Advice>,
     is_tx_log: Column<Advice>,
+    is_access_list_address: Column<Advice>,
+    is_access_list_storage_key: Column<Advice>,
 ) {
     meta.create_gate("decode tag", |meta| {
         let enabled = meta.query_fixed(q_enable, CURRENT);
@@ -26,6 +28,8 @@ pub fn constrain_tag<F: Field>(
         let is_bytecode = meta.query_advice(is_bytecode, CURRENT);
         let is_memory = meta.query_advice(is_memory, CURRENT);
         let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
+        let is_access_list_address = meta.query_advice(is_access_list_address, CURRENT);
+        let is_access_list_storage_key = meta.query_advice(is_access_list_storage_key, CURRENT);
         vec![
             // Match boolean indicators to their respective tag values.
             enabled.expr()
@@ -34,6 +38,12 @@ pub fn constrain_tag<F: Field>(
                 * (is_bytecode - tag.value_equals(CopyDataType::Bytecode, CURRENT)(meta)),
             enabled.expr() * (is_memory - tag.value_equals(CopyDataType::Memory, CURRENT)(meta)),
             enabled.expr() * (is_tx_log - tag.value_equals(CopyDataType::TxLog, CURRENT)(meta)),
+            enabled.expr()
+                * (is_access_list_address
+                    - tag.value_equals(CopyDataType::AccessListAddresses, CURRENT)(meta)),
+            enabled.expr()
+                * (is_access_list_storage_key
+                    - tag.value_equals(CopyDataType::AccessListStorageKeys, CURRENT)(meta)),
         ]
     });
 }
@@ -484,15 +494,14 @@ pub fn constrain_address<F: Field>(
 pub fn constrain_rw_counter<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
-    is_last: Expression<F>,      // The last row.
-    is_last_step: Expression<F>, // Both the last reader and writer rows.
+    is_last: Expression<F>, // The last row.
     is_rw_type: Expression<F>,
-    is_word_end: Expression<F>,
+    is_row_end: Expression<F>,
     rw_counter: Column<Advice>,
     rwc_inc_left: Column<Advice>,
 ) {
     // Decrement rwc_inc_left for the next row, when an RW operation happens.
-    let rwc_diff = is_rw_type.expr() * is_word_end.expr();
+    let rwc_diff = is_rw_type.expr() * is_row_end.expr();
     let new_value = meta.query_advice(rwc_inc_left, CURRENT) - rwc_diff;
     // At the end, it must reach 0.
     let update_or_finish = select::expr(
@@ -514,13 +523,20 @@ pub fn constrain_rw_counter<F: Field>(
             meta.query_advice(rw_counter, NEXT_ROW) + meta.query_advice(rwc_inc_left, NEXT_ROW),
         );
     });
+}
 
-    // Ensure that the word operation completes.
+/// Ensure the word operation completes for RW.
+pub fn constrain_rw_word_complete<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    is_last_step: Expression<F>, // Both the last reader and writer rows.
+    is_rw_word_type: Expression<F>,
+    is_word_end: Expression<F>,
+) {
     cb.require_zero(
         "is_last_step requires is_word_end for word-based types",
         and::expr([
             is_last_step.expr(),
-            is_rw_type.expr(),
+            is_rw_word_type.expr(),
             not::expr(is_word_end.expr()),
         ]),
     );

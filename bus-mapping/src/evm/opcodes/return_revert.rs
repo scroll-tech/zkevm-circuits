@@ -282,6 +282,7 @@ fn handle_copy(
             dst_addr: destination.offset.try_into().unwrap(),
             log_id: None,
             copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(dst_data_prev)),
+            access_list: vec![],
         },
     );
 
@@ -348,6 +349,7 @@ fn handle_create(
             dst_addr: 0,
             log_id: None,
             copy_bytes: CopyBytes::new(copy_steps, None, None),
+            access_list: vec![],
         },
     );
 

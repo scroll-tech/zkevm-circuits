@@ -16,7 +16,7 @@ According to the [Elliptic Curve Digital Signature Algorithm] (ECDSA), the signa
  
 The `public_key` is obtained from `private_key` by mapping the latter to an elliptic curve (EC) point. The `r` is the x-component of an EC point, and the same EC point's y-component will be used to determine the recovery id `v = y%2` (the parity of y). Given the signature `(v,r,s)`, the `public_key` can be recovered from `(v,r,s)` and `msg_hash` using `ecrecover`.
 
-The above scheme is applied to the Ethereum protocol. Each EOA address has its own private key and the corresponding public key is obtained via EC mapping (Note: only EOA address can initiate a tx and contract address cannot, because contract address is not calculated from public key but from nonce and EOA address). For a tx, we have `msg_hash=keccak(RLP(tx's data that needs to be signed))`.  Since EOA account's address is created from from its public key via the formula `caller_address=keccak(public_key)[-20:]`, we can recover the caller address once we recovered the public key. 
+The above scheme is applied to the Ethereum protocol. Each EOA address has its own private key and the corresponding public key is obtained via EC mapping (Note: only EOA address can initiate a tx and contract address cannot, because contract address is not calculated from public key but from nonce and EOA address). For a tx, we have `msg_hash=keccak(RLP(tx's data that needs to be signed))`.  Since EOA account's address is created from from its public key via the formula `caller_address=keccak(public_key)[-20:]`, we can recover the caller address once we recover the public key. 
 
 ## SigTable and the Purpose of Sig Circuit
 
@@ -28,7 +28,7 @@ The above scheme is applied to the Ethereum protocol. Each EOA address has its o
 - `recovered_addr`: Advice Column, the recovered address, i.e. the 20-bytes address that must have signed the message;
 - `is_valid`: Advice Column, indicates whether or not the signature is valid or not upon signature verification.
 
-The Sig Circuit aims at proving the correctness of SigTable. This mainly includes the following type of constraints:
+The Sig Circuit aims at proving the correctness of SigTable. This mainly includes the following types of constraints:
 
 - checking that the signature is obtained correctly. This is done by the ECDSA chip, and the correctness of `v` is checked separately;
 - checking that `msg_hash` is obtained correctly from Keccak hash function. This is done by lookup to Keccak table from `rlc_column` with `q_keccak=1`;
