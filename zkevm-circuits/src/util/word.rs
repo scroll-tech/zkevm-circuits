@@ -109,7 +109,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
             let _res = cell.assign(region, offset, Value::known(value));
             // disable clippy complaint: err should be handled
             match _res {
-                Ok(value) => println!("Value: {value:?}"),
+                Ok(_value) => {}
                 Err(error) => println!("Error: {error}"),
             }
         }
@@ -124,7 +124,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
                 let _res = cell.assign(region, offset, Value::known(value));
                 // disable clippy complaint: err should be handled
                 match _res {
-                    Ok(value) => println!("Value: {value:?}"),
+                    Ok(_value) => {}
                     Err(error) => println!("Error: {error}"),
                 }
             }

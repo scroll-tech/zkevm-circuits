@@ -992,14 +992,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             offset,
             Value::known(Word::from(code_address.to_address())),
         )?;
-        // self.is_code_address_zero.assign_u256(region, offset, callee_address)?;
         self.is_precompile_lt.assign(
             region,
             offset,
             callee_address.to_address().to_word(),
             0x0Au64.into(),
         )?;
-        // self.is_precompile_lt.assign(region, offset, callee_address, 0x0Au64.into())?;
         log::trace!("callop is precompile call {}", is_precompile_call);
         let precompile_return_length = if is_precompile_call && is_precheck_ok {
             rws.offset_add(14); // skip
