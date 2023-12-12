@@ -3,7 +3,7 @@ use super::{
     from_bytes,
     math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
     memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
-    AccountAddress, CachedRegion,
+    CachedRegion,
 };
 use crate::{
     evm_circuit::{
@@ -28,7 +28,7 @@ use crate::{
 };
 use bus_mapping::state_db::CodeDB;
 use either::Either;
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, ToWord, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ToWord, U256};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::Value,
@@ -303,13 +303,17 @@ impl<F: Field> RestoreContextGadget<F> {
                 [U256::zero(); 9]
             } else {
                 field_tags
+                    .iter()
                     .zip([0, 1, 2, 3, 4, 5, 6, 7, 8])
-                    .map(|(field_tag, i)| {
+                    .map(|(&field_tag, i)| {
                         let idx = step.rw_indices[i + rw_offset];
                         let rw = block.rws[idx];
                         debug_assert_eq!(rw.field_tag(), Some(field_tag as u64));
                         rw.call_context_value()
                     })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
             };
 
         for (cell, value) in [
@@ -1048,7 +1052,7 @@ pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool
 
     pub gas: Word32Cell<F>,
     pub gas_is_u64: IsZeroGadget<F>,
-    pub callee_address: AccountAddress<F>,
+    pub callee_address_word: Word32Cell<F>,
     pub value: Word32Cell<F>,
     pub cd_address: MemAddrGadget,
     pub rd_address: MemAddrGadget,
@@ -1060,7 +1064,6 @@ pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool
     // phase2_callee_code_hash
     pub callee_code_hash: WordCell<F>,
     pub is_empty_code_hash: IsEqualWordGadget<F, WordCell<F>, Word<Expression<F>>>,
-    //pub is_empty_code_hash: IsEqualGadget<F>,
 
     //pub callee_not_exists: IsZeroGadget<F>,
     pub callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
@@ -1090,7 +1093,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         );
 
         let gas_word = cb.query_word32();
-        let callee_address = cb.query_account_address();
+        let callee_address_word = cb.query_word32();
         let value = cb.query_word32();
         let is_success = cb.query_bool();
 
@@ -1106,7 +1109,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         // For both CALL and STATICCALL, caller address is
         // `current_callee_address` and callee address is `callee_address`.
         cb.stack_pop(gas_word.to_word());
-        cb.stack_pop(callee_address.to_word());
+        cb.stack_pop(callee_address_word.to_word());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
         cb.condition(is_call.clone() + is_callcode.clone(), |cb| {
@@ -1139,8 +1142,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         );
 
         let callee_code_hash = cb.query_word_unchecked();
+        let limbs = callee_address_word.limbs.clone().map(|l| l.expr());
+        let callee_address_normal = from_bytes::expr(&limbs[0..20]);
         cb.account_read(
-            callee_address.to_word(),
+            Word::from_lo_unchecked(callee_address_normal),
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
@@ -1151,7 +1156,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
 
         Self {
             is_success,
-            callee_address,
+            callee_address_word,
             gas: gas_word,
             gas_is_u64,
             value,
@@ -1172,7 +1177,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
     }
 
     pub fn callee_address(&self) -> Word<Expression<F>> {
-        self.callee_address.to_word()
+        self.callee_address_word.to_word()
     }
 
     pub fn gas_expr(&self) -> Expression<F> {
@@ -1213,8 +1218,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         callee_code_hash: U256,
     ) -> Result<u64, Error> {
         self.gas.assign_u256(region, offset, gas)?;
-        self.callee_address
-            .assign_h160(region, offset, callee_address.to_address())?;
+        // self.callee_address
+        //     .assign_h160(region, offset, callee_address.to_address())?;
+        self.callee_address_word
+            .assign_u256(region, offset, callee_address)?;
         self.value.assign_u256(region, offset, value)?;
         if IS_SUCCESS_CALL {
             self.is_success
@@ -1492,7 +1499,6 @@ impl<F: Field> CommonErrorGadget<F> {
     ) -> Self {
         cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
 
-        //let rw_counter_end_of_reversion = cb.query_cell();
         // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
         let rw_counter_end_of_reversion = cb.query_word_unchecked();
 
@@ -1636,9 +1642,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.lt_cap.expr()
     }
 
-    // pub(crate) fn original_ref(&self) -> &Word<F> {
-    //     self.word.original.clone()
-    // }
+    // orginal ref of word limbs
     pub(crate) fn original_ref(&self) -> &Word32Cell<F> {
         self.word.original_ref()
     }
@@ -1844,13 +1848,11 @@ pub(crate) fn get_copy_bytes(
 ) -> Vec<u8> {
     // read real copy bytes from padded memory words
     let padded_bytes: Vec<u8> = (0..copy_rwc_inc)
-        .map(|_| {
+        .flat_map(|_| {
             let mut bytes = rws.next().memory_word_pair().0.to_le_bytes();
             bytes.reverse();
             bytes
         })
-        .into_iter()
-        .flatten()
         .collect();
     let values: Vec<u8> = if copy_size == 0 {
         vec![0; 0]

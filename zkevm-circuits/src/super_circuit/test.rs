@@ -132,7 +132,7 @@ fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
 fn block_1tx_deploy() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let addr_a = wallet_a.address();
@@ -156,7 +156,7 @@ fn block_1tx_deploy() -> BlockTrace {
 fn block_1tx_ctx() -> TestContext<2, 1> {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -200,7 +200,7 @@ pub(crate) fn block_1tx() -> GethData {
 fn block_2tx_ctx() -> TestContext<2, 2> {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS

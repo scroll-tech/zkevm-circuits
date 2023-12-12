@@ -22,17 +22,8 @@ impl Bytecode {
     ) -> Vec<[Value<F>; 7]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        // no need rlc for hash now
-        // let hash = if cfg!(feature = "poseidon-codehash") {
-        //     challenges
-        //         .evm_word()
-        //         .map(|_challenge| rlc::value(&self.hash.to_le_bytes(), F::from(256u64)))
-        // } else {
-        //     challenges
-        //         .evm_word()
-        //         .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge))
-        // };
 
+        // no need rlc for hash now
         let hash_word: word::Word<Value<F>> = word::Word::<F>::from(self.hash).map(Value::known);
 
         rows.push([

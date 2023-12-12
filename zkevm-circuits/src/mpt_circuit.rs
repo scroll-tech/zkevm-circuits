@@ -51,7 +51,7 @@ pub struct MptCircuitConfigArgs {
     pub poseidon_table: PoseidonTable,
     /// MptTable
     pub mpt_table: MptTable,
-    // Challenges
+    // Challenges no need after word hi lo
     // pub challenges: Challenges,
 }
 
@@ -71,7 +71,6 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
         Self::ConfigArgs {
             poseidon_table,
             mpt_table,
-            // challenges,
         }: Self::ConfigArgs,
     ) -> Self {
         let conf = mpt::MptCircuitConfig::configure(meta, &poseidon_table);
@@ -156,6 +155,8 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
 impl Circuit<Fr> for MptCircuit<Fr> {
     type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self {
@@ -175,7 +176,6 @@ impl Circuit<Fr> for MptCircuit<Fr> {
                 MptCircuitConfigArgs {
                     poseidon_table,
                     mpt_table,
-                    // challenges,
                 },
             )
         };

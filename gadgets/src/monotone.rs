@@ -2,8 +2,8 @@
 //! Monotone gadget helps to check if an advice column is monotonically
 //! increasing within a range. With strict enabled, it disallows equality of two
 //! cell.
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Chip, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -25,7 +25,7 @@ pub(crate) struct MonotoneChip<F, const RANGE: usize, const INCR: bool, const ST
 }
 
 #[allow(dead_code)]
-impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
+impl<F: Field, const RANGE: usize, const INCR: bool, const STRICT: bool>
     MonotoneChip<F, RANGE, INCR, STRICT>
 {
     /// configure which column should be check. q_enable here as a fn is
@@ -90,7 +90,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
     }
 }
 
-impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip<F>
+impl<F: Field, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip<F>
     for MonotoneChip<F, RANGE, INCR, STRICT>
 {
     type Config = MonotoneConfig;
@@ -108,8 +108,8 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Chip
 #[cfg(test)]
 mod test {
     use super::{MonotoneChip, MonotoneConfig, Value};
+    use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{
             FailureLocation, MockProver,
@@ -128,16 +128,18 @@ mod test {
     }
 
     #[derive(Default)]
-    struct TestCircuit<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> {
+    struct TestCircuit<F: Field, const RANGE: usize, const INCR: bool, const STRICT: bool> {
         values: Option<Vec<u64>>,
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool> Circuit<F>
+    impl<F: Field, const RANGE: usize, const INCR: bool, const STRICT: bool> Circuit<F>
         for TestCircuit<F, RANGE, INCR, STRICT>
     {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()

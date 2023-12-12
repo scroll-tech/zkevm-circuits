@@ -95,8 +95,9 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 meta.query_advice(is_field_border, Rotation::cur()),
             );
 
-            let f_128 = F::from(1 << 32).pow(&[4, 0, 0, 0]);
+            let f_128 = F::from(1 << 32).pow([4, 0, 0, 0]);
             let word_code_hash = bytecode_table.code_hash.query_advice(meta, Rotation::cur());
+            // check poseidon_code_hash = code_hash.hi * 2^128 + code_hash.lo
             cb.require_equal(
                 "poseidon_code_hash = code_hash.hi * 2^128 + code_hash.lo",
                 meta.query_advice(poseidon_code_hash, Rotation::cur()),
@@ -375,7 +376,6 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 let mut constraints = Vec::new();
                 let lookup_inputs = [
                     1.expr(),
-                    //TODO: check code_hash.lo, constrain poseidon_code_hash = hi*2^128 + loxss
                     //meta.query_advice(code_hash.lo(), Rotation::cur()),
                     meta.query_advice(poseidon_code_hash, Rotation::cur()),
                     0.expr(),
@@ -448,7 +448,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         );
         let empty_hash = POSEIDON_CODE_HASH_EMPTY.to_word();
         let empty_hash_word = word::Word::from(empty_hash).map(Value::known);
-        let f_128 = F::from(1 << 32).pow(&[4, 0, 0, 0]);
+        let f_128 = F::from(1 << 32).pow([4, 0, 0, 0]);
         let poseidon_empty_code_hash =
             unwrap_value(empty_hash_word.hi()) * f_128 + unwrap_value(empty_hash_word.lo());
 
@@ -708,7 +708,6 @@ impl<F: Field> SubCircuitConfig<F> for ToHashBlockCircuitConfig<F, HASHBLOCK_BYT
 #[cfg(any(feature = "test", test))]
 #[cfg(test)]
 pub mod tests {
-    use super::*;
     // use super::super::tests::get_randomness;
     // use crate::{bytecode_circuit::dev::test_bytecode_circuit_unrolled,
     // util::DEFAULT_RAND}; use eth_types::Bytecode;
@@ -717,7 +716,7 @@ pub mod tests {
 
     #[test]
     fn bytecode_unrolling_to_input() {
-        let bt = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        let bt = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
         let out = unroll_to_hash_input::<Fr, 4, 2>(bt.iter().copied().take(6));
         assert_eq!(out.len(), 1);

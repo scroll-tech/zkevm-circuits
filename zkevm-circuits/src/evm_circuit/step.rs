@@ -15,11 +15,10 @@ use crate::{
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::{evm_types::GasCost, Field, ToWord};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::{fmt::Display, iter};
+use std::{fmt::Display, iter, marker::ConstParamTy};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -40,7 +39,7 @@ impl From<PrecompileCalls> for ExecutionState {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(ConstParamTy, Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum ExecutionState {
     // Internal state
     BeginTx,
@@ -85,8 +84,6 @@ pub enum ExecutionState {
     BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
     BLOCKCTXU160, // COINBASE
     BLOCKCTXU256, // BASEFEE, DIFFICULTY (for non-scroll)
-    /// TIMESTAMP, NUMBER, GASLIMIT, COINBASE, DIFFICULTY, BASEFEE
-    // BLOCKCTX,
     #[cfg(feature = "scroll")]
     DIFFICULTY, // DIFFICULTY
     CHAINID,
@@ -283,26 +280,6 @@ impl ExecutionState {
                     vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE]
                 }
             }
-            // Self::BLOCKCTX => {
-            //     if cfg!(feature = "scroll") {
-            //         vec![
-            //             OpcodeId::TIMESTAMP,
-            //             OpcodeId::NUMBER,
-            //             OpcodeId::GASLIMIT,
-            //             OpcodeId::COINBASE,
-            //             OpcodeId::DIFFICULTY,
-            //         ]
-            //     } else {
-            //         vec![
-            //             OpcodeId::TIMESTAMP,
-            //             OpcodeId::NUMBER,
-            //             OpcodeId::GASLIMIT,
-            //             OpcodeId::COINBASE,
-            //             OpcodeId::DIFFICULTY,
-            //             OpcodeId::BASEFEE,
-            //         ]
-            //     }
-            // }
             #[cfg(feature = "scroll")]
             Self::DIFFICULTY => vec![OpcodeId::DIFFICULTY],
             Self::CHAINID => vec![OpcodeId::CHAINID],
@@ -463,7 +440,7 @@ pub(crate) struct DynamicSelectorHalf<F> {
     pub(crate) target_pairs: Vec<Cell<F>>,
 }
 
-impl<F: FieldExt> DynamicSelectorHalf<F> {
+impl<F: Field> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
         let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
         let target_odd = cell_manager.query_cell(CellType::StoragePhase1);

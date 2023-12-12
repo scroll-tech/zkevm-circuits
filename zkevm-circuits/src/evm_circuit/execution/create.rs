@@ -80,7 +80,6 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
     // check address collision use
-    // TODO: check Word32Cell more suitable for keccak_code_hash field ?
     keccak_code_hash: Word32Cell<F>,
     #[cfg(feature = "scroll")]
     prev_keccak_code_hash: WordCell<F>,
@@ -134,13 +133,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 .unwrap(),
         );
 
-        //let contract_addr = expr_from_bytes(&keccak_output.limbs[..N_BYTES_ACCOUNT_ADDRESS]);
-
         // stack operations
         let value = cb.query_word32();
-
-        // let init_code_memory_offset = cb.query_cell_phase2();
-        // let init_code_length = cb.query_word_rlc();
 
         // init_code_length
         let length = cb.query_memory_address();
@@ -182,11 +176,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 keccak_code_hash.to_word(),
                 cb.empty_keccak_hash(),
             );
-            // cb.require_equal(
-            //     "code hash of empty bytes",
-            //     create.code_hash(),
-            //     cb.empty_code_hash(),
-            // );
+            cb.require_equal_word(
+                "code hash of empty bytes",
+                create.code_hash(),
+                cb.empty_code_hash(),
+            );
         });
 
         cb.call_context_lookup(
@@ -414,10 +408,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     );
                 });
 
-                //TODO: enable later
                 // keccak table lookup to verify contract address.
                 let kecck_output_exprs = keccak_output.limbs.clone().map(|l| l.expr());
-                //kecck_output_exprs.reverse();
                 let keccak_output_rlc = cb.word_rlc(kecck_output_exprs);
                 cb.keccak_table_lookup(
                     create.input_rlc(cb),
@@ -630,10 +622,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_create2 = opcode == OpcodeId::CREATE2;
-        println!(
-            "offset {} rw_counter {}, is_create2 {}",
-            offset, step.rw_counter, is_create2
-        );
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -896,13 +884,12 @@ mod test {
         address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, Bytecode, Word,
     };
     use itertools::Itertools;
-    use lazy_static::lazy_static;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use std::sync::LazyLock;
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
-    lazy_static! {
-        static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
-    }
+    static CALLER_ADDRESS: LazyLock<Address> =
+        LazyLock::new(|| address!("0x00bbccddee000000000000000000000000002400"));
 
     fn run_test_circuits<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)

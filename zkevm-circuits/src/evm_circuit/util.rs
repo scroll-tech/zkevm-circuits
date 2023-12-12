@@ -15,7 +15,6 @@ use crate::{
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
     halo2curves::group::ff::BatchInvert,
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -47,7 +46,7 @@ pub struct Cell<F> {
     cell_column_index: usize,
 }
 
-impl<F: FieldExt> Cell<F> {
+impl<F: Field> Cell<F> {
     pub(crate) fn new(
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
@@ -82,18 +81,18 @@ impl<F: FieldExt> Cell<F> {
     }
 }
 
-impl<F: FieldExt> Expr<F> for Cell<F> {
+impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
-impl<F: FieldExt> Expr<F> for &Cell<F> {
+impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
-pub struct CachedRegion<'r, 'b, F: FieldExt> {
+pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
     challenges: &'r Challenges<Value<F>>,
@@ -108,7 +107,7 @@ pub struct CachedRegion<'r, 'b, F: FieldExt> {
     height_limit: usize,
 }
 
-impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
+impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
@@ -222,7 +221,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
 
     pub fn code_hash(&self, n: U256) -> Value<F> {
         if cfg!(feature = "poseidon-codehash") {
-            // only FieldExt is not enough for ToScalar trait so we have to make workaround
+            // only Field is not enough for ToScalar trait so we have to make workaround
             Value::known(rlc::value(&n.to_le_bytes(), F::from(256u64)))
         } else {
             self.challenges
@@ -273,7 +272,7 @@ impl<F> Hash for StoredExpression<F> {
     }
 }
 
-impl<F: FieldExt> StoredExpression<F> {
+impl<F: Field> StoredExpression<F> {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -320,7 +319,7 @@ pub(crate) enum CellType {
 
 impl CellType {
     // The phase that given `Expression` becomes evaluateable.
-    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
+    fn expr_phase<F: Field>(expr: &Expression<F>) -> u8 {
         use Expression::*;
         match expr {
             Challenge(challenge) => challenge.phase() + 1,
@@ -341,7 +340,7 @@ impl CellType {
     }
 
     /// Return the storage cell of the expression
-    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
+    pub(crate) fn storage_for_expr<F: Field>(expr: &Expression<F>) -> CellType {
         Self::storage_for_phase(Self::expr_phase::<F>(expr))
     }
 }
@@ -354,7 +353,7 @@ pub(crate) struct CellColumn<F> {
     pub(crate) expr: Expression<F>,
 }
 
-impl<F: FieldExt> Expr<F> for CellColumn<F> {
+impl<F: Field> Expr<F> for CellColumn<F> {
     fn expr(&self) -> Expression<F> {
         self.expr.clone()
     }
@@ -368,7 +367,7 @@ pub(crate) struct CellManager<F> {
     columns: Vec<CellColumn<F>>,
 }
 
-impl<F: FieldExt> CellManager<F> {
+impl<F: Field> CellManager<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         height: usize,
@@ -529,7 +528,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
     pub(crate) cells: [Cell<F>; N],
 }
 
-impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
@@ -557,7 +556,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     }
 }
 
-impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
@@ -572,9 +571,10 @@ pub(crate) type U64Cell<F> = IntDecomposition<F, N_BYTES_U64>;
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
@@ -588,7 +588,7 @@ pub(crate) mod from_bytes {
         value
     }
 
-    pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
+    pub(crate) fn value<F: Field>(bytes: &[u8]) -> F {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
@@ -606,9 +606,10 @@ pub(crate) mod from_bytes {
 /// Decodes a field element from its binary representation
 pub(crate) mod from_bits {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bits: &[E]) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bits: &[E]) -> Expression<F> {
         debug_assert!(
             bits.len() <= MAX_N_BYTES_INTEGER * 8,
             "Too many bits to compose an integer in field"
@@ -622,7 +623,7 @@ pub(crate) mod from_bits {
         value
     }
 
-    pub(crate) fn value<F: FieldExt>(bits: &[bool]) -> F {
+    pub(crate) fn value<F: Field>(bits: &[bool]) -> F {
         debug_assert!(
             bits.len() <= MAX_N_BYTES_INTEGER * 8,
             "Too many bits to compose an integer in field"
@@ -643,9 +644,10 @@ pub(crate) mod rlc {
     use std::ops::{Add, Mul};
 
     use crate::util::Expr;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
         if !expressions.is_empty() {
             generic(expressions.iter().map(|e| e.expr()), randomness.expr())
         } else {
@@ -653,7 +655,7 @@ pub(crate) mod rlc {
         }
     }
 
-    pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
+    pub(crate) fn value<'a, F: Field, I>(values: I, randomness: F) -> F
     where
         I: IntoIterator<Item = &'a u8>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
@@ -682,13 +684,13 @@ pub(crate) mod rlc {
     }
 }
 
-/// Returns 2**by as FieldExt
-pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
-    F::from(2).pow(&[by as u64, 0, 0, 0])
+/// Returns 2**by as Field
+pub(crate) fn pow_of_two<F: Field>(by: usize) -> F {
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
 /// Returns 2**by as Expression
-pub(crate) fn pow_of_two_expr<F: FieldExt>(by: usize) -> Expression<F> {
+pub(crate) fn pow_of_two_expr<F: Field>(by: usize) -> Expression<F> {
     Expression::Constant(pow_of_two(by))
 }
 
@@ -769,7 +771,7 @@ pub struct Inverter<F> {
     inverses: Vec<F>,
 }
 
-impl<F: FieldExt> Inverter<F> {
+impl<F: Field> Inverter<F> {
     /// Create a new Inverter with preloaded inverses up to `preload_up_to` inclusive.
     pub fn new(preload_up_to: u64) -> Self {
         let mut inverses = (0..=preload_up_to).map(F::from).collect::<Vec<F>>();

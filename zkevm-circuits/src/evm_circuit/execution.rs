@@ -28,7 +28,6 @@ use bus_mapping::util::read_env_var;
 use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
         Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
@@ -40,6 +39,7 @@ use itertools::Itertools;
 use std::{
     collections::{BTreeSet, HashMap},
     iter,
+    sync::LazyLock,
 };
 
 #[cfg(feature = "onephase")]
@@ -52,10 +52,8 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::ThirdPhase;
 
 use strum::{EnumCount, IntoEnumIterator};
-
-use once_cell::sync::Lazy;
-pub(crate) static CHECK_RW_LOOKUP: Lazy<bool> =
-    Lazy::new(|| read_env_var("CHECK_RW_LOOKUP", false));
+pub(crate) static CHECK_RW_LOOKUP: LazyLock<bool> =
+    LazyLock::new(|| read_env_var("CHECK_RW_LOOKUP", false));
 
 mod add_sub;
 mod addmod;
@@ -227,7 +225,7 @@ use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 
-pub(crate) trait ExecutionGadget<F: FieldExt> {
+pub(crate) trait ExecutionGadget<F: Field> {
     const NAME: &'static str;
 
     const EXECUTION_STATE: ExecutionState;
@@ -329,7 +327,6 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: Box<StopGadget<F>>,
     swap_gadget: Box<SwapGadget<F>>,
     blockhash_gadget: Box<BlockHashGadget<F>>,
-    //block_ctx_gadget: Box<BlockCtxGadget<F>>,
     block_ctx_u64_gadget: Box<BlockCtxU64Gadget<F>>,
     block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
@@ -616,7 +613,6 @@ impl<F: Field> ExecutionConfig<F> {
             sstore_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
-            // block_ctx_gadget: configure_gadget!(),
             // error gadgets
             error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
@@ -1065,9 +1061,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         // There should be 3 group of regions
         // 1. real steps
-        // 2. padding EndBlocks.
-        //    For the ease of implementation, even for `no_padding` case,
-        //     we will still pad 1 end_block_not_last.
+        // 2. padding EndBlocks. For the ease of implementation, even for `no_padding` case, we will
+        //    still pad 1 end_block_not_last.
         // 3. final EndBlock
         let region1_height = self.get_num_rows_required_no_padding(block);
         let region3_height = 2; // EndBlock, plus a dummy "next" row used for Rotation
@@ -1102,7 +1097,7 @@ impl<F: Field> ExecutionConfig<F> {
             .txs
             .last()
             .map(|tx| tx.calls[0].clone())
-            .unwrap_or_else(Call::default);
+            .unwrap_or_default();
         let end_block_not_last = &block.end_block_not_last;
         let end_block_last = &block.end_block_last;
 
@@ -1114,8 +1109,7 @@ impl<F: Field> ExecutionConfig<F> {
             offset: usize,
         }
         let total_step_num = block.txs.iter().map(|t| t.steps.len()).sum::<usize>();
-        let mut step_assignments: Vec<StepAssignment> = Vec::new();
-        step_assignments.reserve(total_step_num);
+        let mut step_assignments: Vec<StepAssignment> = Vec::with_capacity(total_step_num);
 
         // the "global offset"
         let mut offset = 0;
@@ -1585,7 +1579,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
-            // ExecutionState::BLOCKCTX => assign_exec_step!(self.block_ctx_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),

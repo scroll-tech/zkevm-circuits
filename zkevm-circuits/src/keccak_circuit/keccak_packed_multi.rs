@@ -5,7 +5,6 @@ use crate::{
 };
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
@@ -142,7 +141,7 @@ pub(crate) struct KeccakRegion<F> {
     pub(crate) rows: Vec<Vec<F>>,
 }
 
-impl<F: FieldExt> KeccakRegion<F> {
+impl<F: Field> KeccakRegion<F> {
     pub(crate) fn new() -> Self {
         Self { rows: Vec::new() }
     }
@@ -937,7 +936,7 @@ pub fn multi_keccak<F: Field>(
         .par_iter()
         .flat_map_iter(|bytes| keccak_rows(bytes, challenges))
         .collect();
-    rows.extend(real_rows.into_iter());
+    rows.extend(real_rows);
     debug!("keccak rows len without padding: {}", rows.len());
     if let Some(capacity) = capacity {
         let padding_rows = {

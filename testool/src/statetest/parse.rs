@@ -1,17 +1,14 @@
-use std::collections::HashMap;
-
 use crate::{abi, Compiler};
-
 use anyhow::{bail, Context, Result};
 use eth_types::{Address, Bytes, H256, U256};
 use log::debug;
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::{collections::HashMap, sync::LazyLock};
 
 type Label = String;
 
-static YUL_FRAGMENT_PARSER: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<code>\{[\S\s]*)"#).unwrap());
+static YUL_FRAGMENT_PARSER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<code>\{[\S\s]*)"#).unwrap());
 
 /// returns the element as an address
 pub fn parse_address(as_str: &str) -> Result<Address> {

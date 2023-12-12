@@ -24,6 +24,7 @@ pub fn calculate_row_usage_of_witness_block(
     unimplemented!("Must build with feature scroll")
 }
 
+#[allow(clippy::ptr_arg)]
 pub fn check_batch_capacity(_block_traces: &mut Vec<BlockTrace>) -> Result<()> {
     unimplemented!("Must build with feature scroll")
 }

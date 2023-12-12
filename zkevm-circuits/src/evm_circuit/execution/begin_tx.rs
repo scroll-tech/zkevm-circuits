@@ -129,11 +129,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        // let [tx_caller_address, tx_callee_address] = [
-        //     TxContextFieldTag::CallerAddress,
-        //     TxContextFieldTag::CalleeAddress,
-        // ]
-        // .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
         let [tx_caller_address, tx_callee_address] =
             [cb.query_word_unchecked(), cb.query_word_unchecked()];
 
@@ -161,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // the cost caused by l1
         let l1_fee_cost = select::expr(tx_l1_msg.is_l1_msg(), 0.expr(), tx_l1_fee.tx_l1_fee());
-        // todo: change to call_context_lookup_write ?
+        // change to call_context_lookup_write helper ?
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
@@ -182,6 +177,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Word::from_lo_unchecked(reversion_info.is_persistent()),
         ); // rwc_delta += 1
 
+        // enable this after tx table changed to word type
         // let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
         //     .map(|field_tag| cb.tx_context_as_word32(tx_id.expr(), field_tag, None));
 
@@ -217,14 +213,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Increase caller's nonce.
         // (tx caller's nonce always increases even when tx ends with error)
-        // cb.account_write(
-        //     tx_caller_address.expr(),
-        //     AccountFieldTag::Nonce,
-        //     sender_nonce.expr() + 1.expr(),
-        //     sender_nonce.expr(),
-        //     None,
-        // ); // rwc_delta += 1
-        // tx_nonce == sender_nonce ？should be correct.
+        // tx_nonce == sender_nonce
         cb.account_write(
             tx_caller_address.to_word(),
             AccountFieldTag::Nonce,
@@ -423,15 +412,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 1. Handle contract creation transaction.
         let (init_code_rlc, keccak_code_hash) = cb.condition(tx_is_create.expr(), |cb| {
-            // let output_rlc: Expression<F> = cb.word_rlc::<N_BYTES_WORD>(
-            //     caller_nonce_hash_bytes
-            //         .iter()
-            //         .map(Expr::expr)
-            //         .collect::<Vec<_>>()
-            //         .try_into()
-            //         .unwrap(),
-            // );
-
             let caller_nonce_hash_bytes_rlc =
                 cb.word_rlc(caller_nonce_hash_bytes.limbs.clone().map(|l| l.expr()));
             cb.keccak_table_lookup(
@@ -920,11 +900,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             self.account_keccak_code_hash.assign_u256(
                 region,
                 offset,
-                // region.word_rlc(
-                //     transfer_assign_result
-                //         .account_keccak_code_hash
-                //         .unwrap_or_default(),
-                // ),
                 transfer_assign_result
                     .account_keccak_code_hash
                     .unwrap_or_default(),
@@ -952,12 +927,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.gas_price * tx.gas,
         )?;
         let caller_address = tx.caller_address;
-        // .to_scalar()
-        // .expect("unexpected Address -> Scalar conversion failure");
         let callee_address = tx.callee_address.unwrap_or(Address::zero());
 
-        // .to_scalar()
-        // .expect("unexpected Address -> Scalar conversion failure");
         self.tx_caller_address
             .assign_h160(region, offset, caller_address)?;
         self.tx_caller_address_is_zero
@@ -1020,14 +991,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             let rlp_encoding = stream.out().to_vec();
             keccak256(rlp_encoding)
         };
-        // for (c, v) in self
-        //     .caller_nonce_hash_bytes
-        //     .iter()
-        //     .rev()
-        //     .zip(untrimmed_contract_addr.iter())
-        // {
-        //     c.assign(region, offset, Value::known(F::from(*v as u64)))?;
-        // }
+
         self.caller_nonce_hash_bytes.assign_u256(
             region,
             offset,
@@ -1036,39 +1000,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.account_code_hash_is_empty.assign_u256(
             region,
             offset,
-            //region.code_hash(account_code_hash),
             account_code_hash,
-            //region.empty_code_hash_rlc(),
             CodeDB::empty_code_hash().to_word(),
         )?;
-        self.account_code_hash_is_zero.assign_u256(
-            region,
-            offset,
-            //region.code_hash(account_code_hash),
-            account_code_hash,
-        )?;
+        self.account_code_hash_is_zero
+            .assign_u256(region, offset, account_code_hash)?;
         self.call_code_hash_is_empty.assign_u256(
             region,
             offset,
-            //region.code_hash(call.code_hash),
             call.code_hash,
             CodeDB::empty_code_hash().to_word(),
         )?;
-        self.call_code_hash_is_zero.assign_u256(
-            region,
-            offset,
-            //region.code_hash(call.code_hash),
-            call.code_hash,
-        )?;
-
-        // let untrimmed_contract_addr = {
-        //     let mut stream = ethers_core::utils::rlp::RlpStream::new();
-        //     stream.begin_list(2);
-        //     stream.append(&tx.caller_address);
-        //     stream.append(&eth_types::U256::from(tx.nonce));
-        //     let rlp_encoding = stream.out().to_vec();
-        //     keccak256(&rlp_encoding)
-        // };
+        self.call_code_hash_is_zero
+            .assign_u256(region, offset, call.code_hash)?;
 
         let (init_code_rlc, keccak_code_hash) = if tx.is_create {
             let init_code_rlc =

@@ -977,7 +977,7 @@ fn variadic_size_check() {
         overrides: HashMap::default(),
         n_rows: N_ROWS,
         exports: Default::default(),
-        _marker: std::marker::PhantomData::default(),
+        _marker: std::marker::PhantomData,
     };
     let power_of_randomness = circuit.instance();
     let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
@@ -1006,7 +1006,7 @@ fn variadic_size_check() {
         overrides: HashMap::default(),
         n_rows: N_ROWS,
         exports: Default::default(),
-        _marker: std::marker::PhantomData::default(),
+        _marker: std::marker::PhantomData,
     };
     let power_of_randomness = circuit.instance();
     let prover2 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
@@ -1047,7 +1047,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         overrides,
         n_rows: N_ROWS,
         exports: Default::default(),
-        _marker: std::marker::PhantomData::default(),
+        _marker: std::marker::PhantomData,
     };
     let instance = circuit.instance();
 
@@ -1094,5 +1094,8 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
         VerifyFailure::CellNotAssigned { .. } => panic!(),
         VerifyFailure::ConstraintPoisoned { .. } => panic!(),
         VerifyFailure::Permutation { .. } => panic!(),
+        // FIXME
+        // &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } =>
+        // todo!(),
     }
 }

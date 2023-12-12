@@ -253,7 +253,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                     is_byte(meta),
                 ]);
 
-                let lookup_columns = vec![value, push_data_size];
+                let lookup_columns = [value, push_data_size];
 
                 let mut constraints = vec![];
 
@@ -282,11 +282,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 Word32::new(POSEIDON_CODE_HASH_EMPTY.to_word().to_le_bytes())
                     .to_expr::<F>()
                     .to_word()
-                //let empty_expr =
-                // Expression::Constant(POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap());
-                // Word::from(POSEIDON_CODE_HASH_EMPTY.to_word()).to_expr::<F>()
             } else {
-                //Word::from(U256::from_little_endian(&*EMPTY_CODE_HASH_LE).to_word()).to_word()
                 Word32::new(*EMPTY_CODE_HASH_LE).to_expr::<F>().to_word()
             };
 

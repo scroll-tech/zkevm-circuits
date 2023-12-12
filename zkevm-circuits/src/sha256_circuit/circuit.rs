@@ -979,7 +979,7 @@ impl Hasher {
         &mut self,
         layouter: &mut impl Layouter<Fr>,
         chng: Value<Fr>,
-    ) -> Result<([BlockWord; DIGEST_SIZE]), Error> {
+    ) -> Result<[BlockWord; DIGEST_SIZE], Error> {
         // check padding requirement
         let mut padding_pos = Some(self.cur_block.len());
 

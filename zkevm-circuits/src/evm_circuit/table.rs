@@ -229,7 +229,7 @@ pub(crate) enum Lookup<F> {
         /// field_tag is Calldata, otherwise should be set to 0.
         index: Expression<F>,
         /// Value of the field.
-        // value: Word<Expression<F>>,
+        // value: Word<Expression<F>>, change to word in stage2
         value: Expression<F>,
     },
     /// Lookup to read-write table, which contains read-write access records of
@@ -457,6 +457,7 @@ impl<F: Field> Lookup<F> {
                 number,
                 value,
             } => {
+                // used in stage2 after block table to word
                 //vec![field_tag.clone(), number.clone(), value.lo(), value.hi()]
                 vec![field_tag.clone(), number.clone(), value.clone()]
             }

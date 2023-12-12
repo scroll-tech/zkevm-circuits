@@ -211,7 +211,7 @@ mod tests {
         // 0 * 0 + 0 == 0
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(0),
                 Word::from(0),
@@ -223,7 +223,7 @@ mod tests {
         // 1 * 0 + 0 == 0
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(0),
                 Word::from(0),
@@ -235,7 +235,7 @@ mod tests {
         // 1 * 1 + 0 == 1
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(1),
                 Word::from(0),
@@ -247,7 +247,7 @@ mod tests {
         // 1 * 1 + 1 == 2
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(1),
                 Word::from(1),
@@ -259,7 +259,7 @@ mod tests {
         // 100 * 54 + 98 == 5498
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(98),
@@ -271,7 +271,7 @@ mod tests {
         // 100 * 54 + low_max == low_max + 5400
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 WORD_LOW_MAX,
@@ -283,7 +283,7 @@ mod tests {
         // 100 * 54 + high_max == high_max + 5400
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 WORD_HIGH_MAX,
@@ -299,7 +299,7 @@ mod tests {
         // high_max + low_max + 1 == 0 with overflow 1
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 WORD_LOW_MAX + 1,
                 Word::from(1),
                 WORD_HIGH_MAX,
@@ -318,7 +318,7 @@ mod tests {
         // overflow == 73786976294838206460 + ((1<<64)-1)*((1<<64)-1)*6
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::MAX,
                 Word::MAX,
                 Word::MAX,
@@ -334,7 +334,7 @@ mod tests {
         // 10 * 1 + 1 != 3
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(10),
                 Word::from(1),
                 Word::from(1),
@@ -347,7 +347,7 @@ mod tests {
         // 1 * 1 + 1 != word_max, no underflow
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(1),
                 Word::from(1),
@@ -360,7 +360,7 @@ mod tests {
         // 100 * 54 + high_max == high_max + 5400, no overflow
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 WORD_HIGH_MAX,
@@ -373,7 +373,7 @@ mod tests {
         // (low_max + 1) * 1 + high_max == 0 with overflow 1
         try_test!(
             MulAddGadgetContainer<Fr>,
-            vec![
+            [
                 WORD_LOW_MAX + 1,
                 Word::from(1),
                 WORD_HIGH_MAX,

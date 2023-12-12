@@ -2,10 +2,7 @@
 use eth_types::{Hash, U256};
 pub use eth_types::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY};
 use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
-use once_cell::sync::Lazy;
-use std::convert::Infallible;
-
-use std::str::FromStr;
+use std::{convert::Infallible, str::FromStr, sync::LazyLock};
 
 /// ..
 pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T {
@@ -14,8 +11,8 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
         .unwrap_or(default)
 }
 /// env var for Geth trace sanity check level
-pub static GETH_TRACE_CHECK_LEVEL: Lazy<GethTraceSanityCheckLevel> =
-    Lazy::new(|| read_env_var("GETH_TRACE_CHECK_LEVEL", GethTraceSanityCheckLevel::None));
+pub static GETH_TRACE_CHECK_LEVEL: LazyLock<GethTraceSanityCheckLevel> =
+    LazyLock::new(|| read_env_var("GETH_TRACE_CHECK_LEVEL", GethTraceSanityCheckLevel::None));
 
 /// Geth trace sanity check level
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

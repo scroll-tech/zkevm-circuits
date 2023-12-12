@@ -23,7 +23,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct GasPriceGadget<F> {
     tx_id: Cell<F>,
     gas_price: WordCell<F>,
-    // TODO: remove gas_price_rlc in word hi lo stage2
+    // TODO: remove gas_price_rlc in word hi lo stage2 (txtable to word)
     gas_price_rlc: Cell<F>,
     same_context: SameContextGadget<F>,
 }

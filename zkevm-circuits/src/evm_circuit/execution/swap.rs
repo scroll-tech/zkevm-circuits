@@ -32,7 +32,6 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        //let phase2_values = [cb.query_cell_phase2(), cb.query_cell_phase2()];
         let values = [cb.query_word_unchecked(), cb.query_word_unchecked()];
 
         // The stack index we have to peek, deduced from the 'x' value of

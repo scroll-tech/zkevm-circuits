@@ -1,6 +1,6 @@
 use eth_types::{Address, Field, H160, U256};
 use gadgets::{impl_expr, util::Expr};
-use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
+use halo2_proofs::{circuit::Value, plonk::Expression};
 use strum_macros::EnumIter;
 
 use crate::util::Challenges;
@@ -642,7 +642,7 @@ impl_expr!(Tag);
 impl_expr!(Format);
 impl_expr!(State);
 
-impl<F: FieldExt> Expr<F> for RlpTag {
+impl<F: Field> Expr<F> for RlpTag {
     fn expr(&self) -> Expression<F> {
         match self {
             Self::Tag(tag) => tag.expr(),
@@ -653,7 +653,7 @@ impl<F: FieldExt> Expr<F> for RlpTag {
 
 /// Data table holds the raw RLP bytes
 #[derive(Clone, Copy, Debug)]
-pub struct DataTable<F: FieldExt> {
+pub struct DataTable<F: Field> {
     /// The index of tx to be decoded
     pub tx_id: u64,
     /// The format of format to be decoded
@@ -670,7 +670,7 @@ pub struct DataTable<F: FieldExt> {
     pub gas_cost_acc: Value<F>,
 }
 
-impl<F: FieldExt> DataTable<F> {
+impl<F: Field> DataTable<F> {
     /// values
     pub fn values(&self) -> Vec<Value<F>> {
         vec![
@@ -687,7 +687,7 @@ impl<F: FieldExt> DataTable<F> {
 
 /// RLP table that is connected to the state machine in the RLP circuit.
 #[derive(Clone, Copy, Debug)]
-pub struct RlpTable<F: FieldExt> {
+pub struct RlpTable<F: Field> {
     /// The index of tx we decoded
     pub tx_id: u64,
     /// The format of format we decoded
@@ -710,7 +710,7 @@ pub struct RlpTable<F: FieldExt> {
 
 /// State Machine
 #[derive(Clone, Copy, Debug)]
-pub struct StateMachine<F: FieldExt> {
+pub struct StateMachine<F: Field> {
     /// Current state
     pub state: State,
     /// Current tag to be decoded
@@ -742,7 +742,7 @@ pub struct StateMachine<F: FieldExt> {
 
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
-pub struct RlpFsmWitnessRow<F: FieldExt> {
+pub struct RlpFsmWitnessRow<F: Field> {
     /// Witness to the RLP table.
     pub rlp_table: RlpTable<F>,
     /// The state machine witness.
@@ -751,7 +751,7 @@ pub struct RlpFsmWitnessRow<F: FieldExt> {
 
 /// The RlpFsmWitnessGen trait is implemented by data types who's RLP encoding can
 /// be verified by the RLP-encoding circuit.
-pub trait RlpFsmWitnessGen<F: FieldExt>: Sized {
+pub trait RlpFsmWitnessGen<F: Field>: Sized {
     /// Generate witness to the RLP state machine, as a vector of RlpFsmWitnessRow.
     fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>>;
 

@@ -130,13 +130,6 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let id = MpiChip::configure(meta, selector, [rw_table.id], lookups);
         let address = MpiChip::configure(meta, selector, [rw_table.address], lookups);
 
-        // let storage_key = RlcChip::configure(
-        //     meta,
-        //     selector,
-        //     rw_table.storage_key,
-        //     lookups,
-        //     challenges.evm_word(),
-        // );
         let storage_key = MpiChip::configure(
             meta,
             selector,
@@ -179,7 +172,6 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             storage_key,
             rw_counter,
         };
-        //let power_of_randomness: [Expression<F>; 31] =
         // challenges.evm_word_powers_of_randomness();
         let power_of_randomness: [Expression<F>; 31] = challenges.keccak_powers_of_randomness();
         let lexicographic_ordering = LexicographicOrderingConfig::configure(
@@ -266,15 +258,10 @@ impl<F: Field> StateCircuitConfig<F> {
         );
         let rows_len = rows.len();
 
-        // let mut state_root: Value<F> =
-        //     randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(),
-        // randomness));
         let mut state_root = updates.old_root();
 
         let mut start_state_root: Option<word::Word<AssignedCell<F, F>>> = None;
         let mut end_state_root: Option<word::Word<AssignedCell<F, F>>> = None;
-        //let mut start_state_root: Option<AssignedCell<_, F>> = None;
-        //let mut end_state_root: Option<AssignedCell<_, F>> = None;
         // annotate columns
         self.annotate_circuit_in_region(region);
 
@@ -553,19 +540,6 @@ impl<F: Field> StateCircuitConfig<F> {
 
             // Identify non-existing if both committed value and new value are zero and field tag is
             // CodeHash
-            // let is_non_exist_inputs = randomness.map(|randomness| {
-            //     let (_, committed_value) = updates
-            //         .get(row)
-            //         .map(|u| u.value_assignments(randomness))
-            //         .unwrap_or_default();
-            //     let value = row.value_assignment(randomness);
-            //     [
-            //         F::from(row.field_tag().unwrap_or_default())
-            //             - F::from(AccountFieldTag::CodeHash as u64),
-            //         committed_value,
-            //         value,
-            //     ]
-            // });
             let (committed_value, value) = {
                 let (_, committed_value) = updates
                     .get(row)
@@ -633,9 +607,6 @@ impl<F: Field> StateCircuitConfig<F> {
     ) -> Result<StateCircuitExports<Assigned<F>>, Error> {
         let rows_len = rows.len();
 
-        // let mut state_root =
-        //     randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(),
-        // randomness));
         let mut state_root = updates.old_root();
 
         let mut start_state_root: Option<word::Word<AssignedCell<_, F>>> = None;
@@ -797,7 +768,6 @@ impl<F: Field> StateCircuitConfig<F> {
                 .enumerate()
                 .map(|(part_idx, (indices, is_first_time))| {
                     let rows = rows.as_slice();
-                    let updates = updates;
                     move |mut region: Region<'_, F>| {
                         if *is_first_time {
                             *is_first_time = false;
@@ -807,7 +777,7 @@ impl<F: Field> StateCircuitConfig<F> {
                                 self.initial_value,
                                 indices.len() - 1,
                             )?;
-
+                            // upstream rename to initial_value, disable for scroll
                             // region.assign_advice(
                             //     || "initial_value",
                             //     column,
@@ -959,7 +929,7 @@ impl<F: Field> StateCircuit<F> {
             n_rows,
             #[cfg(any(feature = "test", test, feature = "test-circuits"))]
             overrides: HashMap::new(),
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
@@ -977,7 +947,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             n_rows: block.circuits_params.max_rws,
             #[cfg(any(feature = "test", test, feature = "test-circuits"))]
             overrides: HashMap::new(),
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 

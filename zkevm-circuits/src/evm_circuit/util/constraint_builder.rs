@@ -566,7 +566,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     // poseidon codehash if enalbe scroll or poseidon-codehash, else keccak_hash.
     pub(crate) fn empty_code_hash(&self) -> Word<Expression<F>> {
         if cfg!(feature = "poseidon-codehash") {
-            //let codehash = POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap();
             Word32::new(
                 POSEIDON_CODE_HASH_EMPTY
                     .to_word()
@@ -575,7 +574,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             )
             .to_word()
         } else {
-            //self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
             Word32::new(EMPTY_CODE_HASH_LE.map(|byte| byte.expr())).to_word()
         }
     }
@@ -834,7 +832,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         id: Expression<F>,
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
-        //value: Word<Expression<F>>,
+        //value: Word<Expression<F>>, used in stage2 for tx table to word
         value: Expression<F>,
     ) {
         self.add_lookup(

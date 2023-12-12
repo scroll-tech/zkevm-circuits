@@ -64,14 +64,14 @@ State Circuit aims to prove that the `rw_table` is formed correctly. This result
     - Example: some of the items such as `is_write` shall be boolean, etc.
 - The correctness of each of the above form of read-write records as classified by `tag`. 
     - Example: constraints for `start`, `memory`, `stack`, `account_storage`, etc.
-- Constraints enforced by sub-configurations. These sub-configurations will be discussed in the next two sections on State Circuit Layout and Architechture & Design.
+- Constraints enforced by sub-configurations. These sub-configurations will be discussed in the next two sections on State Circuit Layout and Architecture & Design.
     - Example: `MpiChip` constrains  the correct decomposition of a multiple-precision-integer into limbs with each limb in u16. This is applied to `rw_counter`, `address`, `id`.
 
 
 
 ### Circuit Layout
 
-State Circuit is configured as a  constraint system through various smaller gadgets and chips, where each gagdet or chip may consist of Halo2 columns (fixed or advice) or even smaller gadgets or chips. Due to this reason, although we can think of the State Circuit layout in a geometric way as horizontally aligned regions of columns belonging to each of its sub-configuration, it may be better to think in a hierarchical way (tree-like structure). In the below, we describe this hirachy through the configration of State Circuit, where each sub-configration at its smallest granuity of bifurcation lands in some column of the circuit layout (one can click the interior nodes of the hirachy tree below to expand/contract the next level):
+State Circuit is configured as a  constraint system through various smaller gadgets and chips, where each gadget or chip may consist of Halo2 columns (fixed or advice) or even smaller gadgets or chips. Due to this reason, although we can think of the State Circuit layout in a geometric way as horizontally aligned regions of columns belonging to each of its sub-configurations, it may be better to think in a hierarchical way (tree-like structure). In the below, we describe this hierarchy through the configuration of State Circuit, where each sub-configuration at its smallest gratuity of bifurcation lands in some column of the circuit layout (one can click the interior nodes of the hierarchy tree below to expand/contract the next level):
 
 ```markmap
 # State Circuit Configuration
@@ -145,7 +145,7 @@ State Circuit is configured as a  constraint system through various smaller gadg
 
 Besides the above, State Circuit's configuration also carries `power_of_randomness` which is for RLC of bytes for `storage_key`.
 
-The numbers of columns used for the sub-configurations are set as parameters/hard coded inside State Circuit. From there and the above hirachy, the total number of columns in the State Circuit layout can be easily calculated.
+The numbers of columns used for the sub-configurations are set as parameters/hard coded inside State Circuit. From there and the above hierarchy, the total number of columns in the State Circuit layout can be easily calculated.
 
 Here 
 - `initial_value` is the Assigned value at the start of the block. For `Rw::Account` and `Rw::AccountStorage` rows this is the committed value in the MPT, for others, it is 0;
@@ -154,14 +154,14 @@ Here
 - `not_first_access` is false when at least one of the keys `(tag, id, address, field_tag, storage_key)` in the current row differs from the previous row, otherwise it is true;
 - `state_root` is the RLC value of the little-endian bytes of the old state root before the change to MPT. 
 
-For other sub-configurations and columns listed in the above hirachy tree, we will explain them in the section below about circuit design and code architecture. 
+For other sub-configurations and columns listed in the above hierarchy tree, we will explain them in the section below about circuit design and code architecture. 
 
 
 ### Architecture and Design 
 
 #### Workflow
 
-Above the columns in the State Circuit layout (via State Circuit's Configuration), an additional layer `Queries` that contains witness data is build. The `ConstraintBuilder` will take data from `Queries` to establish constraints for each type of `tag` in `rw_table`. In addition, the sub-configurations are sometimes based directly on witnesses provided by State Circuit's Configuration. These two parts of constraints combine together to establish the constraint system for the State Circuit. So we have the following design of State Circuit's workflow:
+Above the columns in the State Circuit layout (via State Circuit's Configuration), an additional layer `Queries` that contains witness data is built. The `ConstraintBuilder` will take data from `Queries` to establish constraints for each type of `tag` in `rw_table`. In addition, the sub-configurations are sometimes based directly on witnesses provided by State Circuit's Configuration. These two parts of constraints combine together to establish the constraint system for the State Circuit. So we have the following design of State Circuit's workflow:
 
 ```mermaid
 stateDiagram
@@ -187,7 +187,7 @@ We illustrate the `Queries` data structure as below:
     - `storage_key`: `RlcQueries`, this is the query for `random_linear_combination` chip. It contains the bytes for `storage_key` with number = `N_BYTES_WORD`
     - `initial_value`: this is the `initial_value` from State Circuit's configuration
     - `initial_value_prev`: this is the previous `initial_value` from State Circuit's configuration
-    - `is_non_exist`: this is the `is_non_exist` from State Circuit's cofiguration
+    - `is_non_exist`: this is the `is_non_exist` from State Circuit's configuration
     - `mpt_proof_type`: this is the `mpt_proof_type` column from State Circuit's configuration
     - `lookups`: this is the query for the `Lookup` chip with range check columns for `u8`, `u10`, `u16` and `call_context_field_tag`
     - power_of_randomness: this is the `power_of_randomness` from State Circuit's configuration for `storage_key`'s RLC bytes
@@ -200,7 +200,7 @@ We illustrate the `Queries` data structure as below:
 
 #### Constraint Builder
 
-State Circuit's `constraint_builder` takes in `Queries` and then build constraint system for each type of `tag` in the `rw_table`, as well as general constraints and range lookups from the `lookups` sub-configuration. 
+State Circuit's `constraint_builder` takes in `Queries` and then builds a constraint system for each type of `tag` in the `rw_table`, as well as general constraints and range lookups from the `lookups` sub-configuration. 
 
 #### Sub-configurations of State Circuit
 
@@ -236,7 +236,7 @@ This chip helps to check a list of values are all 0. This is applied to check wh
 
 ### Constraints
 
-Since there is a large number of misallenous constraints in the State Circuit, here we'll only take one example to give the reader an impression on the style of constraints in State Circuit. 
+Since there is a large number of misallenous constraints in the State Circuit, here we'll only take one example to give the reader an impression of the style of constraints in State Circuit. 
 
 We discuss <b>account constraints</b>, which are established in the `ConstraintBuilder`. 
 

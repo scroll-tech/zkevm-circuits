@@ -413,8 +413,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             self.keccak_code_hash.assign_u256(
                 region,
                 offset,
-                //region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
-                //TODO: from_little_endiam
                 U256::from_big_endian(&keccak_code_hash),
             )?;
 

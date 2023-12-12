@@ -6,22 +6,22 @@ use crate::{
     utils::read_env_var,
     ChunkHash, ChunkProof,
 };
-use once_cell::sync::Lazy;
+use std::sync::{LazyLock, Mutex};
 
-static mut BATCH_PROVER: Lazy<Prover> = Lazy::new(|| {
+static BATCH_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
     let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
     let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
 
     let prover = Prover::from_dirs(&params_dir, &assets_dir);
     log::info!("Constructed batch-prover");
 
-    prover
+    Mutex::new(prover)
 });
 
-static mut BATCH_VERIFIER: Lazy<Verifier> = Lazy::new(|| {
+static BATCH_VERIFIER: LazyLock<Mutex<Verifier>> = LazyLock::new(|| {
     let assets_dir = read_env_var("SCROLL_PROVER_ASSETS_DIR", "./test_assets".to_string());
 
-    let prover = unsafe { &mut BATCH_PROVER };
+    let mut prover = BATCH_PROVER.lock().expect("poisoned batch-prover");
     let params = prover.inner.params(LayerId::Layer4.degree()).clone();
 
     let pk = prover
@@ -35,20 +35,23 @@ static mut BATCH_VERIFIER: Lazy<Verifier> = Lazy::new(|| {
     let verifier = Verifier::new(params, vk, deployment_code);
     log::info!("Constructed batch-verifier");
 
-    verifier
+    Mutex::new(verifier)
 });
 
 pub fn batch_prove(test: &str, chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)>) {
     log::info!("{test}: batch-prove BEGIN");
 
-    let prover = unsafe { &mut BATCH_PROVER };
-    let proof = prover
+    let proof = BATCH_PROVER
+        .lock()
+        .expect("poisoned batch-prover")
         .gen_agg_evm_proof(chunk_hashes_proofs, None, None)
         .unwrap_or_else(|err| panic!("{test}: failed to generate batch proof: {err}"));
     log::info!("{test}: generated batch proof");
 
-    let verifier = unsafe { &mut BATCH_VERIFIER };
-    let verified = verifier.verify_agg_evm_proof(proof);
+    let verified = BATCH_VERIFIER
+        .lock()
+        .expect("poisoned batch-verifier")
+        .verify_agg_evm_proof(proof);
     assert!(verified, "{test}: failed to verify batch proof");
 
     log::info!("{test}: batch-prove END");

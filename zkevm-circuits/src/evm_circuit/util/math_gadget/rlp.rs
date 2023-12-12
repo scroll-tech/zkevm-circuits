@@ -411,7 +411,6 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
                 + (self.caller_address_rlc(cb) * challenge_power_64)
                 + (self.salt_keccak_rlc(cb) * challenge_power_32)
                 + self.keccak_code_hash_keccak_rlc(cb)
-            //+ self.code_hash_rlc.expr()
         } else {
             // RLC(RLP([caller_address, caller_nonce]))
             let challenge_power_21 = challenges[20].clone();
@@ -583,7 +582,7 @@ mod test {
             };
             try_test!(
                 ContractCreateGadgetContainer<Fr, false>,
-                vec![
+                [
                     caller_address.to_word(),
                     Word::from(caller_nonce),
                     rlp_len,
@@ -598,12 +597,12 @@ mod test {
     fn create2_address() {
         let caller_address = mock::MOCK_ACCOUNTS[0];
         let salt = Word::from(0xbeefcafedeadu64);
-        let code = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let code = [1, 2, 3, 4, 5, 6, 7, 8];
         let code_hash = Word::from(CodeDB::hash(&code).to_fixed_bytes());
-        let keccak_code_hash = Word::from(keccak256(&code));
+        let keccak_code_hash = Word::from(keccak256(code));
         try_test!(
             ContractCreateGadgetContainer<Fr, true>,
-            vec![
+            [
                 caller_address.to_word(),
                 Word::default(),
                 85u64.into(),

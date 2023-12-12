@@ -207,8 +207,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let [memory_start, msize] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
 
-        //self.mstart_word.assign(region, offset, memory_start)?;
-
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;

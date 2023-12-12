@@ -54,8 +54,6 @@ pub struct Queries<F: Field> {
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
-    // upstream storage_key: MpiQueries<F, N_LIMBS_WORD>
-    // check it later if can take upstream way.
     pub storage_key: MpiQueries<F, N_LIMBS_WORD>,
     pub initial_value: word::Word<Expression<F>>,
     pub initial_value_prev: word::Word<Expression<F>>,

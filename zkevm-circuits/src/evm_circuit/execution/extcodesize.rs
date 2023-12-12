@@ -81,7 +81,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             cb.account_read(
                 address.to_word(),
                 AccountFieldTag::CodeSize,
-                //from_bytes::expr(&code_size.limbs),
                 code_size.to_word(),
             );
             #[cfg(not(feature = "scroll"))]

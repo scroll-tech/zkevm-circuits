@@ -589,7 +589,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                     "rpi == dummy_tx_hash",
                     meta.query_advice(rpi, Rotation::cur()),
                     iter::once(1.expr())
-                        .chain(challenges.evm_word_powers_of_randomness::<31>().into_iter())
+                        .chain(challenges.evm_word_powers_of_randomness::<31>())
                         .rev()
                         .zip(
                             get_dummy_tx_hash()
@@ -619,12 +619,12 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // | lo  |     b0    | b15*2^120+... | b31*r^31+...|
 
         // We use copy constraints to
-        // 1. copy the RLC(data_bytes, keccak_rand) in the `rpi_rlc_acc` column
-        //     to the `rpi` column on the row that q_keccak = 1 for data bytes.
-        // 2. copy the len(data_bytes) in the `rpi_length_acc` column to the
-        //     `rpi_length_acc` column on the row that q_keccak = 1 for data bytes.
-        // 3. copy the RLC(data_hash_bytes, word_rand) in the `rpi_rlc_acc` column
-        //     to the `rpi_rlc_acc` column on the row that q_keccak = 1 for data hash.
+        // 1. copy the RLC(data_bytes, keccak_rand) in the `rpi_rlc_acc` column to the `rpi` column
+        //    on the row that q_keccak = 1 for data bytes.
+        // 2. copy the len(data_bytes) in the `rpi_length_acc` column to the `rpi_length_acc` column
+        //    on the row that q_keccak = 1 for data bytes.
+        // 3. copy the RLC(data_hash_bytes, word_rand) in the `rpi_rlc_acc` column to the
+        //    `rpi_rlc_acc` column on the row that q_keccak = 1 for data hash.
 
         // The layout for entire pi circuit looks like
         // data bytes:      |   rpi   | rpi_bytes | rpi_bytes_acc | rpi_rlc_acc | rpi_length_acc |
@@ -661,7 +661,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         //     input_exprs
         //         .into_iter()
-        //         .zip(keccak_table_exprs.into_iter())
+        //         .zip(keccak_table_exprs)
         //         .map(|(input, table)| (q_keccak.expr() * input, table))
         //         .collect()
         // });
@@ -1510,15 +1510,13 @@ impl<F: Field> PiCircuitConfig<F> {
         let block_ctxs = &public_data.block_ctxs;
         let num_all_txs_in_blocks = public_data.get_num_all_txs();
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
-            (block_ctxs.ctxs.len()..public_data.max_inner_blocks)
-                .into_iter()
-                .map(|_| {
-                    BlockContext::padding(
-                        public_data.chain_id,
-                        public_data.difficulty(),
-                        public_data.coinbase(),
-                    )
-                }),
+            (block_ctxs.ctxs.len()..public_data.max_inner_blocks).map(|_| {
+                BlockContext::padding(
+                    public_data.chain_id,
+                    public_data.difficulty(),
+                    public_data.coinbase(),
+                )
+            }),
         ) {
             let num_txs = public_data
                 .transactions
