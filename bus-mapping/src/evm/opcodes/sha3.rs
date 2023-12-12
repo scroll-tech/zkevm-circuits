@@ -96,6 +96,7 @@ impl Opcode for Sha3 {
                 log_id: None,
                 rw_counter_start,
                 copy_bytes: CopyBytes::new(copy_steps, None, None),
+                access_list: vec![],
             },
         );
 

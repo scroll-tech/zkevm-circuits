@@ -37,6 +37,7 @@ ctor.workspace = true
 env_logger.workspace = true
 mock = { path = "../mock" }
 rand.workspace = true
+rayon.workspace = true
 
 [features]
 default = ["test", "enable-stack", "enable-storage"]

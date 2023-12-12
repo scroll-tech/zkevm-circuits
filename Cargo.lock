@@ -501,6 +501,7 @@ dependencies = [
  "poseidon-circuit",
  "pretty_assertions",
  "rand",
+ "rayon",
  "revm-precompile",
  "serde",
  "serde_json",

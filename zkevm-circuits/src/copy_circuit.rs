@@ -11,13 +11,13 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
+use array_init::array_init;
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, Word};
-
 use gadgets::{
     binary_number::BinaryNumberChip,
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    util::{not, Expr},
+    util::{not, select, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -46,8 +46,9 @@ use crate::{
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_first_last,
     constrain_forward_parameters, constrain_is_pad, constrain_mask, constrain_masked_value,
-    constrain_must_terminate, constrain_non_pad_non_mask, constrain_rw_counter, constrain_tag,
-    constrain_value_rlc, constrain_word_index, constrain_word_rlc,
+    constrain_must_terminate, constrain_non_pad_non_mask, constrain_rw_counter,
+    constrain_rw_word_complete, constrain_tag, constrain_value_rlc, constrain_word_index,
+    constrain_word_rlc,
 };
 
 /// The current row.
@@ -97,6 +98,12 @@ pub struct CopyCircuitConfig<F> {
     pub is_memory: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
     pub is_tx_log: Column<Advice>,
+    /// Booleans to indicate if `CopyDataType::AccessListAddresses` exists at
+    /// the current row.
+    pub is_access_list_address: Column<Advice>,
+    /// Booleans to indicate if `CopyDataType::AccessListStorageKeys` exists at
+    /// the current row.
+    pub is_access_list_storage_key: Column<Advice>,
     /// Whether the row is enabled or not.
     pub q_enable: Column<Fixed>,
     /// The Copy Table contains the columns that are exposed via the lookup
@@ -159,13 +166,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
         let value_acc = meta.advice_column_in(SecondPhase);
 
-        let (is_tx_calldata, is_bytecode, is_memory, is_tx_log) = (
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        );
-        let is_pad = meta.advice_column();
+        let [is_pad, is_tx_calldata, is_bytecode, is_memory, is_tx_log, is_access_list_address, is_access_list_storage_key] =
+            array_init(|_| meta.advice_column());
         let is_first = copy_table.is_first;
         let id = copy_table.id;
         let addr = copy_table.addr;
@@ -210,6 +212,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_bytecode,
             is_memory,
             is_tx_log,
+            is_access_list_address,
+            is_access_list_storage_key,
         );
 
         meta.create_gate("verify copy events", |meta| {
@@ -233,6 +237,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // NEXT_STEP.
             let is_word_end = is_word_end.expr();
             let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
+            let is_access_list = meta.query_advice(is_access_list_address, CURRENT)
+                + meta.query_advice(is_access_list_storage_key, CURRENT);
 
             constrain_first_last(cb, is_reader.expr(), is_first.expr(), is_last.expr());
 
@@ -254,8 +260,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             let (mask, mask_next, front_mask) = {
                 // The first 31 bytes may be front_mask, but not the last byte of the first word.
-                // LOG has no front mask at all.
-                let forbid_front_mask = is_word_end.expr() + is_tx_log.expr();
+                // LOG, access-list address and storage-key have no front mask at all.
+                let forbid_front_mask =
+                    is_word_end.expr() + is_tx_log.expr() + is_access_list.expr();
 
                 constrain_mask(
                     cb,
@@ -294,8 +301,11 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 constrain_word_rlc(
                     cb,
                     meta,
-                    is_first.expr(),
-                    is_continue.expr(),
+                    // Not constrain word rlc for access list, since `value`
+                    // saves access list address and `value_prev` saves storage
+                    // key.
+                    is_first.expr() * (1.expr() - is_access_list.expr()),
+                    is_continue.expr() * (1.expr() - is_access_list.expr()),
                     is_word_end.expr(),
                     word_rlc,
                     value,
@@ -324,18 +334,27 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             constrain_address(cb, meta, is_continue.expr(), front_mask.expr(), addr);
 
             {
-                let is_rw_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();
+                let is_rw_word_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();
+                let is_rw_type = is_rw_word_type.expr() + is_access_list.expr();
+
+                // No word align for access list address and storage key.
+                let is_row_end = select::expr(
+                    is_access_list.expr(),
+                    not::expr(is_reader),
+                    is_word_end.expr(),
+                );
 
                 constrain_rw_counter(
                     cb,
                     meta,
                     is_last.expr(),
-                    is_last_step.expr(),
                     is_rw_type.expr(),
-                    is_word_end.expr(),
+                    is_row_end.expr(),
                     rw_counter,
                     rwc_inc_left,
                 );
+
+                constrain_rw_word_complete(cb, is_last_step, is_rw_word_type.expr(), is_word_end);
             }
 
             cb.gate(meta.query_fixed(q_enable, CURRENT))
@@ -432,6 +451,112 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
+        /* TODO: enable tx lookup for access list after merging EIP-1559 PR with tx-table update.
+
+                meta.lookup_any("Tx access list address lookup", |meta| {
+                    let cond = meta.query_fixed(q_enable, CURRENT)
+                        * meta.query_advice(is_access_list_address, CURRENT);
+
+                    let tx_id = meta.query_advice(id, CURRENT);
+                    let index = meta.query_advice(addr, CURRENT);
+                    let address = meta.query_advice(value, CURRENT);
+
+                    vec![
+                        1.expr(),
+                        tx_id,
+                        TxContextFieldTag::AccessListAddress.expr(),
+                        index,
+                        address.expr(),
+                        address,
+                    ]
+                    .into_iter()
+                    .zip(tx_table.table_exprs(meta))
+                    .map(|(arg, table)| (cond.clone() * arg, table))
+                    .collect()
+                });
+        */
+
+        meta.lookup_any("Rw access list address lookup", |meta| {
+            let cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_access_list_address, CURRENT);
+
+            let tx_id = meta.query_advice(id, CURRENT);
+            let address = meta.query_advice(value, CURRENT);
+
+            vec![
+                1.expr(),
+                meta.query_advice(rw_counter, CURRENT),
+                1.expr(),
+                RwTableTag::TxAccessListAccount.expr(),
+                tx_id,
+                address, // access list address
+                0.expr(),
+                0.expr(),
+                1.expr(), // is_warm
+                0.expr(), // is_warm_prev
+                0.expr(),
+                0.expr(),
+            ]
+            .into_iter()
+            .zip(rw_table.table_exprs(meta))
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
+        });
+
+        /* TODO: enable tx lookup for access list after merging EIP-1559 PR with tx-table update.
+
+                meta.lookup_any("Tx access list storage key lookup", |meta| {
+                    let cond = meta.query_fixed(q_enable, CURRENT)
+                        * meta.query_advice(is_access_list_storage_key, CURRENT);
+
+                    let tx_id = meta.query_advice(id, CURRENT);
+                    let index = meta.query_advice(addr, CURRENT);
+                    let address = meta.query_advice(value, CURRENT);
+                    let storage_key = meta.query_advice(value_prev, CURRENT);
+
+                    vec![
+                        1.expr(),
+                        tx_id,
+                        TxContextFieldTag::AccessListStorageKey.expr(),
+                        index,
+                        storage_key,
+                        address,
+                    ]
+                    .into_iter()
+                    .zip(tx_table.table_exprs(meta))
+                    .map(|(arg, table)| (cond.clone() * arg, table))
+                    .collect()
+                });
+        */
+
+        meta.lookup_any("Rw access list storage key lookup", |meta| {
+            let cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_access_list_storage_key, CURRENT);
+
+            let tx_id = meta.query_advice(id, CURRENT);
+            let address = meta.query_advice(value, CURRENT);
+            let storage_key = meta.query_advice(value_prev, CURRENT);
+
+            vec![
+                1.expr(),
+                meta.query_advice(rw_counter, CURRENT),
+                1.expr(),
+                RwTableTag::TxAccessListAccountStorage.expr(),
+                tx_id,
+                address, // access list address
+                0.expr(),
+                storage_key, // access list storage key
+                1.expr(),    // is_warm
+                0.expr(),    // is_warm_prev
+                0.expr(),
+                0.expr(),
+            ]
+            .into_iter()
+            .zip(rw_table.table_exprs(meta))
+            .map(|(arg, table)| (cond.clone() * arg, table))
+            .collect()
+        });
+
         Self {
             q_step,
             is_last,
@@ -448,6 +573,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_bytecode,
             is_memory,
             is_tx_log,
+            is_access_list_address,
+            is_access_list_storage_key,
             q_enable,
             is_src_end,
             is_word_end,
@@ -584,6 +711,18 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_tx_log,
                 *offset,
                 || Value::known(F::from(tag.eq(&CopyDataType::TxLog))),
+            )?;
+            region.assign_advice(
+                || format!("is_access_list_address at row: {}", *offset),
+                self.is_access_list_address,
+                *offset,
+                || Value::known(F::from(tag.eq(&CopyDataType::AccessListAddresses))),
+            )?;
+            region.assign_advice(
+                || format!("is_access_list_storage_key at row: {}", *offset),
+                self.is_access_list_storage_key,
+                *offset,
+                || Value::known(F::from(tag.eq(&CopyDataType::AccessListStorageKeys))),
             )?;
 
             *offset += 1;
@@ -865,6 +1004,8 @@ impl<F: Field> CopyCircuitConfig<F> {
             self.is_bytecode,
             self.is_memory,
             self.is_tx_log,
+            self.is_access_list_address,
+            self.is_access_list_storage_key,
         ] {
             region.assign_advice(
                 || format!("assigning padding row: {}", *offset),

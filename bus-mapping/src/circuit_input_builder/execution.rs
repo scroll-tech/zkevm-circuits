@@ -15,7 +15,7 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    Field, GethExecStep, ToLittleEndian, Word, H256, U256,
+    Address, Field, GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
@@ -228,11 +228,12 @@ pub enum CopyDataType {
     /// tx-table and destination is rw-table.
     AccessListStorageKeys,
 }
+
 impl CopyDataType {
     /// How many bits are necessary to represent a copy data type.
     pub const N_BITS: usize = 3usize;
 }
-const NUM_COPY_DATA_TYPES: usize = 6usize;
+const NUM_COPY_DATA_TYPES: usize = 8usize;
 pub struct CopyDataTypeIter {
     idx: usize,
     back_idx: usize,
@@ -247,6 +248,8 @@ impl CopyDataTypeIter {
             3usize => Some(CopyDataType::TxCalldata),
             4usize => Some(CopyDataType::TxLog),
             5usize => Some(CopyDataType::RlcAcc),
+            6usize => Some(CopyDataType::AccessListAddresses),
+            7usize => Some(CopyDataType::AccessListStorageKeys),
             _ => None,
         }
     }
@@ -428,6 +431,11 @@ pub struct CopyEvent {
     pub rw_counter_start: RWCounter,
     /// Represents the list of bytes related during this copy event
     pub copy_bytes: CopyBytes,
+    /// Represents transaction access list (EIP-2930), if copy data type is
+    /// address, the first item is access list address and second is zero, if
+    /// copy data type is storage key, the first item is access list address and
+    /// second is access list storage key.
+    pub access_list: Vec<(Address, Word)>,
 }
 
 pub type CopyEventSteps = Vec<(u8, bool, bool)>;
@@ -451,7 +459,10 @@ impl CopyEvent {
 
     /// Whether the destination performs RW lookups in the state circuit.
     pub fn is_destination_rw(&self) -> bool {
-        self.dst_type == CopyDataType::Memory || self.dst_type == CopyDataType::TxLog
+        self.dst_type == CopyDataType::Memory
+            || self.dst_type == CopyDataType::TxLog
+            || self.dst_type == CopyDataType::AccessListAddresses
+            || self.dst_type == CopyDataType::AccessListStorageKeys
     }
 
     /// Whether the RLC of data must be computed.
@@ -469,6 +480,15 @@ impl CopyEvent {
 
     /// The number of RW lookups performed by this copy event.
     pub fn rw_counter_delta(&self) -> u64 {
+        if self.dst_type == CopyDataType::AccessListAddresses
+            || self.dst_type == CopyDataType::AccessListStorageKeys
+        {
+            // For access list, the placeholder is used for copy bytes which
+            // value will be replaced by address and storage key, and no word
+            // operations.
+            return self.full_length();
+        }
+
         (self.is_source_rw() as u64 + self.is_destination_rw() as u64) * (self.full_length() / 32)
     }
 }

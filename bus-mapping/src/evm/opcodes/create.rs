@@ -386,6 +386,7 @@ fn handle_copy(
             dst_addr: 0,
             log_id: None,
             copy_bytes: CopyBytes::new(copy_steps, None, None),
+            access_list: vec![],
         },
     );
 

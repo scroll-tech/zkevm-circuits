@@ -1,4 +1,3 @@
-#![feature(lazy_cell)]
 //! ![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/appliedzkp/zkevm-circuits/CI%20checks/main?style=for-the-badge)
 //! Bus-Mapping is a crate designed to parse EVM execution traces and manipulate
 //! all of the data they provide in order to obtain structured witness inputs
@@ -227,6 +226,9 @@
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::result_large_err)] // it's large, but what can we do?
 #![allow(clippy::collapsible_else_if)]
+#![allow(incomplete_features)]
+#![feature(lazy_cell)]
+#![feature(adt_const_params)]
 
 extern crate alloc;
 extern crate core;

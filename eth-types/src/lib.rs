@@ -38,7 +38,10 @@ use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
     types::{
-        transaction::{eip2930::AccessList, response::Transaction},
+        transaction::{
+            eip2930::{AccessList, AccessListItem},
+            response::Transaction,
+        },
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };

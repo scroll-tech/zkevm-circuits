@@ -35,18 +35,18 @@ According to this document of [ETHTransactions], a submitted (legacy, [EIP2718] 
 - `v`, `r`, `s`: signature of the tx sender, `v` (U64) is the recovery id, `(r,s)` (U256, U256) is the ECDSA signature computed from [EllipticCurveDigitalSignatureAlgorithm] with specified message and key;
 - `hash`: U256, Keccak-256 hash of the signed tx's data = `[Nonce, Gas, GasPrice, To, Value, CallData, v, r, s]`.
 
-A transaction can be contract creation or message call. For contract creation, `to=0`. 
+A transaction can be a contract creation or a message call. For contract creation, `to=0`. 
 
 ### Types of Transactions
 
-Besides legacy transation, there are also other types of transactions such as [EIP155], [EIP2930] ([EIP2718] type `0x01`) and [EIP1559] ([EIP2718] type `0x02`). They differ by their details in tx information and their signing process. 
+Besides legacy transaction, there are also other types of transactions such as [EIP155], [EIP2930] ([EIP2718] type `0x01`) and [EIP1559] ([EIP2718] type `0x02`). They differ by their details in tx information and their signing process. 
 
 For example, in the above legacy transaction the ECDSA signature `(r,s)` is obtained by signing with message `RLP([nonce, gasprice, startgas, to, value, data])` and the private key of the EOA account that initiates this tx. In this case `v` is 27 or 28; instead, in EIP155 the sign message becomes `RLP([nonce, gasprice, startgas, to, value, data, chainid, 0, 0])` and `v` is `ChainID*2+35` or `ChainID*2+36`. 
 
 In the tx circuit, we currently support the following 3 types of txs:
 - `PreEip155`: legacy tx
 - `Eip155`: as above EIP-155
-- `L1Msg`: L1 message tx. This is not a tx type in the original Etherem protocol, but a tx type in which bridge contract users initiate deposit tx or invoke L2 contract txs. We follow [EIP2718] and use `0x7e` to stand for this tx type.
+- `L1Msg`: L1 message tx. This is not a tx type in the original Ethereum protocol, but a tx type in which bridge contract users initiate deposit tx or invoke L2 contract txs. We follow [EIP2718] and use `0x7e` to stand for this tx type.
 
 ### Transactions data provided to the Tx Circuit
 
@@ -62,7 +62,7 @@ Besides the above transaction data, some metadata are also available for the tx 
 
 ### Use of Keccak256 hash and the tx signature process
 
-In the Tx Circuit, there are two pieces of tx related data that will be applied the Keccak256 hash. They both correspond to some tx_tag fields ([`TxFieldTag`]):
+In the Tx Circuit, there are two pieces of tx related data that will be applied to the Keccak256 hash. They both correspond to some tx_tag fields ([`TxFieldTag`]):
 - (`TxHashLength`, `TxHashRLC`, `TxHash`): signed tx's data = `[Nonce, Gas, GasPrice, To, Value, CallData, v, r, s]`. `TxHashLength` stands for the length in bytes of `RLP([signed tx's data])`; `TxHashRLC` stands for the RLC in bytes of signed tx's data and `TxHash=Keccak256(RLP(signed tx's data))`. `TxHash` becomes the `hash` data field in tx data; 
 - (`TxSignLength`, `TxSignRLC`, `TxSignHash`): tx's data that needs to be signed = `[Nonce, Gas, GasPrice, To, Value, ChainID, CallData]`. `TxSignLenth` stands for the length in bytes of `RLP(tx's data that needs to be signed)`; `TxSignRLC` stands for the RLC in bytes of `RLP(tx's data that needs to be signed)` and  `TxSignHash=Keccak256(RLP(tx's data that needs to be signed))`. `TxSignHash` is the same as the `msg_hash` data field that will be used to obtain the tx sender's signature `(v,r,s)`.
 
@@ -72,7 +72,7 @@ According to the [EllipticCurveDigitalSignatureAlgorithm] (ECDSA), the signature
 
 `(r,s)=ecdsa(msg_hash, public_key)`
 
-The recovery id `v` is then computed from the parity of the `y` component of the EC point corresponding to `x` compnent being `r`. The `public_key` can be recovered from `(v,r,s)` and `msg_hash` using `ecrecover`, which further determines the caller address as `caller_address=keccak(public_key)[-20:]` (because this is the way account address is created, which is derived from its public key). Notice that only EOA address can initiate a tx and contract address cannot, because contract address is not calculated from public key but from nonce and EOA address. Also notice that EOA account's private key are elliptic-curve pre-images of public key and are thus hidden, while the public key can be calculated from the private key.
+The recovery id `v` is then computed from the parity of the `y` component of the EC point corresponding to `x` component being `r`. The `public_key` can be recovered from `(v,r,s)` and `msg_hash` using `ecrecover`, which further determines the caller address as `caller_address=keccak(public_key)[-20:]` (because this is the way account address is created, which is derived from its public key). Notice that only EOA address can initiate a tx and contract address cannot, because contract address is not calculated from public key but from nonce and EOA address. Also notice that EOA account's private key are elliptic-curve pre-images of public key and are thus hidden, while the public key can be calculated from the private key.
 
 In the Tx Circuit, validation of correct signature is made through lookup to the sig table; validation of correct RLP is made through lookup to the RLP table; and validation of correct has is made through lookup to the Keccak table.
 
@@ -107,16 +107,16 @@ Some boolean columns are used to reduce the degree of constraint system, such as
 - `is_l1_msg`: Advice Column. If `tx_type` is `L1Msg`;
 - `is_chain_id`: Advice Column. If tx_tag is `ChainID`;
 - `LookupCondition`
-    - `TxCallData`: condition that enables lookup to tx table for CallDataLength and CallDataGasCost. This is enabled when tx_tag is `CallDataLength` and the latter has non-zero value;
-    - `L1MsgHash`: condition that enables lookup to RLP table for message hashing of `tx_type = L1Msg`. This is enabled when `is_l1_msg==1` and tx_tag chosen among `Nonce, Gas, CalleeAddress, Value, CallDataRLC, CallerAddress, TxHashLength, TxHashRLC`;
+    - `TxCallData`: the condition that enables lookup to tx table for CallDataLength and CallDataGasCost. This is enabled when tx_tag is `CallDataLength` and the latter has non-zero value;
+    - `L1MsgHash`: the condition that enables lookup to RLP table for message hashing of `tx_type = L1Msg`. This is enabled when `is_l1_msg==1` and tx_tag chosen among `Nonce, Gas, CalleeAddress, Value, CallDataRLC, CallerAddress, TxHashLength, TxHashRLC`;
     - `RlpSignTag`: condition that enables lookup to RLP table for signing in case `tx_type != L1Msg`;
-    - `RlpHashTag`: condition that enables lookup to RLP table for message hashing of `tx_type != L1Msg`. This is enabled when `is_l1_msg==0` and tx_tag chosen among `Nonce, GasPrice, Gas, CalleeAddress, Value, CallDataRLC, TxDataGasCost, SigV, SigR, SigS, TxHashLength, TxHashRLC`;
+    - `RlpHashTag`: condition that enables lookup to RLP table for message hashing of `tx_type != L1Msg`. This is enabled when `is_l1_msg==0` and tx_tag is chosen among `Nonce, GasPrice, Gas, CalleeAddress, Value, CallDataRLC, TxDataGasCost, SigV, SigR, SigS, TxHashLength, TxHashRLC`;
     - `Keccak`: condition that enables lookup to Keccak table. This is enabled when tx_tag is `TxSignLength` (and `is_l1_msg==0`) or `TxHashLength`;
 - `is_final`: Advice Column. Final part of assigning tx data is the CallData part;
 - `call_data_gas_cost_acc`: Advice Column. Accumulated CallDataGasCost, starting to accumulate from the first CallDataByte. Otherwise None;
 - `is_padding_tx`: Advice Column. If this row is for padding tx;
 - `cum_num_txs`: Advice Column. The cumulative number of txs;
-- `sv_address`: Advice Column. The sign-verified caller address recovered using `ecrecover`.
+- `sv_address`: Advice Column. The sign-verified caller address was recovered using `ecrecover`.
 
 ### Sub-Configurations
 
@@ -162,22 +162,22 @@ Assign an empty row first, then followed by each tx's data fields except calldat
 
 - constraints for columns that are boolean indicators:
     - `is_call_data`, `is_caller_address`, `is_chain_id`, `is_tag_block_num`, `is_l1_msg` are boolean;
-    - Conditions for each type of `LookupCondition::xx` imposed correctly in accordance with the way they are assigned.
+    - Conditions for each type of `LookupCondition::xx` are imposed correctly in accordance with the way they are assigned.
 
 - lookup to tx_table for CallData (LookupCondition::TxCallData)
     - triggered when tag is CallDataLength and CallDataLength is not 0;
     - Lookup tx table to validate call_data_gas_cost_acc;
     - Lookup tx table to validate last call data byte in tx has index = call_data_length-1 when the call data length is larger than 0.
 
-- lookup to RLP table for tx_type when the latter is `L1Msg`, to check that the corrsponding hash format in RLP table is `L1MsgHash`.
+- lookup to RLP table for tx_type when the latter is `L1Msg`, to check that the corresponding hash format in RLP table is `L1MsgHash`.
 
 - lookup to RLP table for signing (LookupCondition::RlpSignTag)
     - triggered when tx_tag is one of the following: Nonce, GasPrice, Gas, CalleeAddress, Value, CallDataRLC, TxSignLength, TxSignRLC;
     - Lookup RLP table to validate the value correspond to any of these tags with the corresponding sign format `TxSignPreEip155` (for `tx_type==PreEip155`) or `TxSignEip155` (for `tx_type==Eip155`).
 
-- lookup to RLP table for hasing (LookupCondition::RlpHashTag and LookupCondition::L1MsgHash)
-    - LookupCondition::RlpHashTag triggerd when tx_tag is one of the following: Nonce, GasPrice, Gas, CalleeAddress, Value, CallDataRLC, TxDataGasCost, SigV, SigR, SigS, TxHashLength, TxHashRLC;
-    - LookupCondition::L1MsgHash triggerd when tx_tag is one of the following: Nonce, Gas, CalleeAddress, Value, CallDataRLC, CallerAddress, TxHashLength, TxHashRLC;
+- lookup to RLP table for hashing (LookupCondition::RlpHashTag and LookupCondition::L1MsgHash)
+    - LookupCondition::RlpHashTag triggered when tx_tag is one of the following: Nonce, GasPrice, Gas, CalleeAddress, Value, CallDataRLC, TxDataGasCost, SigV, SigR, SigS, TxHashLength, TxHashRLC;
+    - LookupCondition::L1MsgHash triggered when tx_tag is one of the following: Nonce, Gas, CalleeAddress, Value, CallDataRLC, CallerAddress, TxHashLength, TxHashRLC;
     - Lookup RLP table to validate the value correspond to any of these tags with the corresponding hash format `L1MsgHash`(for `tx_type==L1Msg`) or `TxHashPreEip155` (for `tx_type==PreEip155`) or `TxHashEip155` (for `tx_type==Eip155`).
 
 - lookup to sig table for signature information `(msg_hash_rlc, v, r, s, sv_address)`
