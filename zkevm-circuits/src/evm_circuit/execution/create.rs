@@ -694,14 +694,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign_u256(region, offset, callee_prev_code_hash)?;
         self.prev_code_hash_is_zero
             .assign_u256(region, offset, callee_prev_code_hash)?;
+        
+        let diff_code_hash = 
+                CodeDB::empty_code_hash().to_word().overflowing_sub(callee_prev_code_hash) ;
+        let is_empty_code_hash = CodeDB::empty_code_hash().to_word() == callee_prev_code_hash;
         self.not_address_collision.assign_u256(
             region,
             offset,
-            U256::from(callee_nonce)
-                + callee_prev_code_hash
-                    * (CodeDB::empty_code_hash().to_word() - callee_prev_code_hash),
+            U256::from(callee_nonce).overflowing_add(callee_prev_code_hash
+                .overflowing_mul(diff_code_hash.0).0).0
         )?;
-
         let shift = init_code_start.low_u64() % 32;
         let copy_rw_increase: u64 = step.copy_rw_counter_delta;
         let values: Vec<u8> = if is_precheck_ok {
