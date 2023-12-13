@@ -18,8 +18,9 @@ pub(crate) fn execute_precompiled(
     input: &[u8],
     gas: u64,
 ) -> (Vec<u8>, u64, bool) {
-    let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
-        .get(address.as_fixed_bytes())  else {
+    let Some(Precompile::Standard(precompile_fn)) =
+        Precompiles::berlin().get(address.as_fixed_bytes())
+    else {
         panic!("calling non-exist precompiled contract address")
     };
     log::trace!(

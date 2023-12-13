@@ -44,6 +44,7 @@ impl Circuit<Fr> for ArithTestCircuit {
         let mut rng = test_rng();
 
         let mut first_pass = true;
+
         layouter.assign_region(
             || "test field circuit",
             |mut region| -> Result<(), Error> {

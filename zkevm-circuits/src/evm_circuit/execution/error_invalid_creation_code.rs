@@ -157,16 +157,15 @@ mod test {
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
     };
+    use std::sync::LazyLock;
 
-    use lazy_static::lazy_static;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     use crate::test_util::CircuitTestBuilder;
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
-    lazy_static! {
-        static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
-    }
+    static CALLER_ADDRESS: LazyLock<Address> =
+        LazyLock::new(|| address!("0x00bbccddee000000000000000000000000002400"));
 
     const MAXCODESIZE: u64 = 0x6000u64;
 

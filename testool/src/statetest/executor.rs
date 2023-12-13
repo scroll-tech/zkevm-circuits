@@ -16,8 +16,7 @@ use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-use std::{collections::HashMap, env, str::FromStr};
+use std::{collections::HashMap, env, str::FromStr, sync::LazyLock};
 use thiserror::Error;
 use zkevm_circuits::{
     bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
@@ -32,7 +31,7 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
         .unwrap_or(default)
 }
 /// Which circuit to test. Default is evm + state.
-pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_string()));
+pub static CIRCUIT: LazyLock<String> = LazyLock::new(|| read_env_var("CIRCUIT", "".to_string()));
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -557,6 +556,7 @@ pub fn run_test(
     log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
     // get the geth traces
+    #[allow(unused_mut)]
     let (_, mut trace_config, post) = into_traceconfig(st.clone());
 
     let balance_overflow = trace_config

@@ -117,7 +117,7 @@ The backend proof system is based on Halo2, so all constraints are implemented a
 
 #### CellTypes
 
-`Challenge` API is a feature of Halo2 that can produce SNARK's random challenges based on different phases of the proof in the transcript. In alignment with the `Challenge` API, EVM Circuit classifies its cells based on different phases of the proof. This results in `CellType`, which currently contains `StoragePhase1`, `StoragePhase2`, `StoragePermutation` and `Lookup` for different types of lookup tables, etc. . A given column in EVM Circuit will consist of cells with the same `CellType`. Columns under a given `CellType` will be horizontally layouted in a consecutive way to occupy a region. Cells that are of the same `CellType` will be subject to the same random challenge produced by `Challenge` API when Random Linear Combination (RLC) is applied to them.
+`Challenge` API is a feature of Halo2 that can produce SNARK's random challenges based on different phases of the proof in the transcript. In alignment with the `Challenge` API, EVM Circuit classifies its cells based on different phases of the proof. This results in `CellType`, which currently contains `StoragePhase1`, `StoragePhase2`, `StoragePermutation` and `Lookup` for different types of lookup tables, etc. . A given column in EVM Circuit will consist of cells with the same `CellType`. Columns under a given `CellType` will be horizontally layouted in a consecutive way to occupy a region. Cells that are of the same `CellType` will be subject to the same random challenge produced by `Challenge` API when a Random Linear Combination (RLC) is applied to them.
 
 #### Behavior of CellManager within columns of the same CellType
 
@@ -153,12 +153,12 @@ Then we enable an advice column:
 A few extra columns are enabled for various purposes, including:
 
 - `constants`, a fixed column, hold constant values used for copy constraints
-- `num_rows_until_next_step`, an advice column, count the number of rows until next step
+- `num_rows_until_next_step`, an advice column, count the number of rows until the next step
 - `num_rows_inv`, an advice column, for a constraint that enforces `q_step:= num_rows_until_next_step == 0`
 
-In alignment with the `Challenge` API of Halo2, we classify all above columns as in phase 1 columns using Halo2's phase convention.
+In alignment with the `Challenge` API of Halo2, we classify all the above columns as in phase 1 columns using Halo2's phase convention.
 
-After that, a rectangular region of advice columns is arranged for the execution step specific constraints that corresponds to an `ExecutionGadget`. The width of this region is set to be a constant `STEP_WIDTH`. The step height is not fixed, so it is dynamic. This part is handled by `CellManager`. 
+After that, a rectangular region of advice columns is arranged for the execution step specific constraints that correspond to an `ExecutionGadget`. The width of this region is set to be a constant `STEP_WIDTH`. The step height is not fixed, so it is dynamic. This part is handled by `CellManager`. 
 
 For each step, `CellManager` allocates an area of advice columns with a given height and the number of advice columns as its width. The allocation process is in alignment with `Challenge` API. So within the area allocated to advice columns, `CellManager` marks columns in consecutive regions from left to right as
 
@@ -245,7 +245,7 @@ For the EVM Circuit, there are internal and external lookup tables. We summarize
 
 #### Lookup into the table
 
-We use `Lookup::input_exprs`  method to extract input expressions from an EVM execution trace that we want to do lookup, and we use `LookupTable::table_exprs` method to extract table expressions from a recorded lookup table. The lookup argument aims at proving the former expression lies in the latter ones. This is done by first RLC (Random Linear Combine) both sides of expressions using the same random challenge and then lookup the RLC expression. Here each column of a lookup table corresponds to one lookup expression, and EVM Step's lookup input expressions must correspond to the table expressions. See the following illustration:
+We use `Lookup::input_exprs`  method to extract input expressions from an EVM execution trace that we want to do lookup, and we use `LookupTable::table_exprs` method to extract table expressions from a recorded lookup table. The lookup argument aims to prove that the former expression lies in the latter ones. This is done by first RLC (Random Linear Combine) on both sides of expressions using the same random challenge and then lookup the RLC expression. Here each column of a lookup table corresponds to one lookup expression, and EVM Step's lookup input expressions must correspond to the table expressions. See the following illustration:
 
 ![evm-circuit-lookup](https://hackmd.io/_uploads/rynmiTWF2.png)
 
@@ -255,7 +255,7 @@ At the execution level, the input expression RLCs enter EVM Circuit's lookup cel
 
 At each step, `CellManager` allocates a region with columns consisting of `CellType::Lookup(table)` that are for various types of lookups. Cells in these columns are filled with the RLC result of input expressions induced by the execution trace. This is done by the `add_lookup` method in `ConstraintBuilder`. 
 
-The number of columns allocated for one type of lookup (corresponding lookup will be into a particular lookup table) follows the configuration setting in `LOOKUP_CONFIG`. These numbers are tunable in order to make the circuit more "compact", i.e., with less unused cells, so that performance can be improved.
+The number of columns allocated for one type of lookup (the corresponding lookup will be into a particular lookup table) follows the configuration setting in `LOOKUP_CONFIG`. These numbers are tunable in order to make the circuit more "compact", i.e., with less unused cells, so that performance can be improved.
 
 #### Challenge used for EVM Circuit's lookup cells
 
@@ -269,7 +269,7 @@ Due to page limit we only discuss some examples here.
 
 #### `SameContextGadget`
 
-This gadget is applied to every execution step in order to check the correct transition from current state to next state. The constraints include
+This gadget is applied to every execution step in order to check the correct transition from the current state to the next state. The constraints include
 - lookup to Bytecode Table and Fixed Table (with `tag=FixedTableTag::ResponsibleOpcode`) for the correctness of the current opcode;
 - check remaining gas is sufficient;
 - check correct step state transition, such as change of `rw_counter`, `program_counter`, `stack_pointer` etc.
@@ -354,7 +354,7 @@ Note that the data to be copied to memory that exceeds return data size ($||\mu_
 
 For RETURNDATACOPY opcode, EVM Circuit does the following type of constraint checks together with witness assignments:
 
-- Constraints for stack pop of `dest_offset`, `data_offset` and `size`. This means they are assigned from the step's rw data (via bus mapping) and then they are checked by doing RwTable lookups with `tag=RwTableTag::Stack`, as well as verifying correct stack pointer update;
+- Constraints for stack pop of `dest_offset`, `data_offset` and `size`. This means they are assigned from the step's rw data (via bus mapping) and then they are checked by doing RwTable lookups with `tag=RwTableTag::Stack`, as well as verifying the correct stack pointer update;
 - Constraints for call context related data including `last_callee_id`, `return_data_offset` (offset for $\mu_{o}$) and `return_data_size` ($\|\mu_o\|$). These are assigned and then checked by RwTable lookups with `tag=RwTableTag::CallContext`. Here return data means the output data from last call, from which we fetch data that is to be copied into memory;
 - Constraints for ensuring no out-of-bound errors happen with `return_data_size`;
 - Constraints for memory related behavior. This includes memory address and expansion via `dest_offset` and `size`, as well as gas cost for memory expansion;

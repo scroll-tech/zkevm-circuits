@@ -3,7 +3,6 @@ use std::collections::BTreeSet;
 
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Value},
     plonk::{Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
 };
@@ -22,7 +21,7 @@ pub use gadgets::util::Expr;
 /// A wrapper of is_zero in gadgets which gives is_zero at any rotation
 pub mod is_zero;
 
-pub(crate) fn query_expression<F: FieldExt, T>(
+pub(crate) fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
     mut f: impl FnMut(&mut VirtualCells<F>) -> T,
 ) -> T {
@@ -34,7 +33,7 @@ pub(crate) fn query_expression<F: FieldExt, T>(
     expr.unwrap()
 }
 
-pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
+pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
     rlc::value(&bytes, randomness)
 }
 
@@ -64,7 +63,7 @@ pub struct MockChallenges {
 
 impl MockChallenges {
     /// ..
-    pub fn construct<F: FieldExt>(_meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(_meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             evm_word: 0x100,
             keccak_input: 0x101,
@@ -72,7 +71,7 @@ impl MockChallenges {
         }
     }
     /// ..
-    pub fn exprs<F: FieldExt>(&self, _meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+    pub fn exprs<F: Field>(&self, _meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
         Challenges {
             evm_word: Expression::Constant(F::from(self.evm_word)),
             keccak_input: Expression::Constant(F::from(self.keccak_input)),
@@ -80,7 +79,7 @@ impl MockChallenges {
         }
     }
     /// ..
-    pub fn values<F: FieldExt>(&self, _layouter: &impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: Field>(&self, _layouter: &impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
             evm_word: Value::known(F::from(self.evm_word)),
             keccak_input: Value::known(F::from(self.keccak_input)),
@@ -91,7 +90,7 @@ impl MockChallenges {
 
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         #[cfg(any(not(feature = "onephase"), feature = "test", test))]
         let _dummy_cols = [
             meta.advice_column(),
@@ -107,7 +106,7 @@ impl Challenges {
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
-    pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+    pub fn exprs<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
         let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
             [self.evm_word, self.keccak_input, self.lookup_input]
                 .map(|challenge| meta.query_challenge(challenge))
@@ -120,7 +119,7 @@ impl Challenges {
     }
 
     /// Returns `Value` of challenges from `Layouter`.
-    pub fn values<F: FieldExt>(&self, layouter: &impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: Field>(&self, layouter: &impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
             evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),

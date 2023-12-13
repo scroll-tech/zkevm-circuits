@@ -153,7 +153,7 @@ impl<F: Field, const N: usize, const IS_BYTE: bool> ByteOrBitSizeGadget<F, N, IS
                 region,
                 offset,
                 Value::known(
-                    F::from(u64::try_from(most_significant_nonzero_value).unwrap())
+                    F::from(u64::from(most_significant_nonzero_value))
                         .invert()
                         .unwrap(),
                 ),
@@ -252,18 +252,18 @@ mod tests {
 
     #[test]
     fn test_bytesize_0() {
-        try_test!(ByteSizeGadgetContainer<Fr, 0>, vec![Word::from(0)], true)
+        try_test!(ByteSizeGadgetContainer<Fr, 0>, [Word::from(0)], true)
     }
 
     #[test]
     fn test_bytesize_1() {
-        try_test!(ByteSizeGadgetContainer<Fr, 1>, vec![Word::from(1)], true)
+        try_test!(ByteSizeGadgetContainer<Fr, 1>, [Word::from(1)], true)
     }
 
     #[test]
     fn test_bytesize_1_neq_0() {
         try_test!(ByteSizeGadgetContainer<Fr, 0>,
-            vec![Word::from(1)],
+            [Word::from(1)],
             false
         );
     }
@@ -271,30 +271,30 @@ mod tests {
     #[test]
     fn test_bytesize_256_eq_2() {
         try_test!(ByteSizeGadgetContainer<Fr, 2>,
-            vec![Word::from(256)],
+            [Word::from(256)],
             true
         );
     }
 
     #[test]
     fn test_bytesize_wordmax_eq_32() {
-        try_test!(ByteSizeGadgetContainer<Fr, 32>, vec![Word::MAX], true)
+        try_test!(ByteSizeGadgetContainer<Fr, 32>, [Word::MAX], true)
     }
 
     #[test]
     fn test_bytesize_msb_0() {
-        try_test!(WordMSBGadgetContainer<Fr, 0>, vec![Word::from(0)], true)
+        try_test!(WordMSBGadgetContainer<Fr, 0>, [Word::from(0)], true)
     }
 
     #[test]
     fn test_bytesize_msb_1() {
-        try_test!(WordMSBGadgetContainer<Fr, 1>, vec![Word::from(1)], true)
+        try_test!(WordMSBGadgetContainer<Fr, 1>, [Word::from(1)], true)
     }
 
     #[test]
     fn test_bytesize_1_msb_neq_0() {
         try_test!(WordMSBGadgetContainer<Fr, 0>,
-            vec![Word::from(1)],
+            [Word::from(1)],
             false
         );
     }
@@ -302,13 +302,13 @@ mod tests {
     #[test]
     fn test_bytesize_512_msb_eq_2() {
         try_test!(WordMSBGadgetContainer<Fr, 2>,
-            vec![Word::from(512)],
+            [Word::from(512)],
             true
         );
     }
 
     #[test]
     fn test_bytesize_258_msb_neq_2() {
-        try_test!(ByteSizeGadgetContainer<Fr, 2>, vec![Word::from(258)], true)
+        try_test!(ByteSizeGadgetContainer<Fr, 2>, [Word::from(258)], true)
     }
 }

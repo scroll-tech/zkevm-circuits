@@ -599,7 +599,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             input_exprs
                 .into_iter()
-                .zip(table_exprs.into_iter())
+                .zip(table_exprs)
                 .map(|(arg, table)| (cond.expr() * arg, table))
                 .collect()
         });
@@ -617,7 +617,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(format, Rotation::cur()),
             ]
             .into_iter()
-            .zip(rom_table.table_exprs(meta).into_iter())
+            .zip(rom_table.table_exprs(meta))
             .map(|(arg, table)| (cond.expr() * arg, table))
             .collect()
         });
@@ -1949,7 +1949,6 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
         debug_assert!(block.txs.len() <= max_txs);
 
         let padding_txs = (block.txs.len()..max_txs)
-            .into_iter()
             .map(|i| {
                 let mut tx = Transaction::dummy(block.chain_id);
                 tx.id = i + 1;

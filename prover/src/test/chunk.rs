@@ -4,21 +4,23 @@ use crate::{
     utils::read_env_var,
     ChunkHash, ChunkProof, CompressionCircuit, WitnessBlock,
 };
-use once_cell::sync::Lazy;
-use std::env;
+use std::{
+    env,
+    sync::{LazyLock, Mutex},
+};
 
-static mut CHUNK_PROVER: Lazy<Prover> = Lazy::new(|| {
+static CHUNK_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
     let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
     let prover = Prover::from_params_dir(&params_dir, &ZKEVM_DEGREES);
     log::info!("Constructed chunk-prover");
 
-    prover
+    Mutex::new(prover)
 });
 
-static mut CHUNK_VERIFIER: Lazy<Verifier<CompressionCircuit>> = Lazy::new(|| {
+static CHUNK_VERIFIER: LazyLock<Mutex<Verifier<CompressionCircuit>>> = LazyLock::new(|| {
     env::set_var("COMPRESSION_CONFIG", LayerId::Layer2.config_path());
 
-    let prover = unsafe { &mut CHUNK_PROVER };
+    let mut prover = CHUNK_PROVER.lock().expect("poisoned chunk-prover");
     let params = prover.params(LayerId::Layer2.degree()).clone();
 
     let pk = prover
@@ -29,13 +31,13 @@ static mut CHUNK_VERIFIER: Lazy<Verifier<CompressionCircuit>> = Lazy::new(|| {
     let verifier = Verifier::new(params, vk);
     log::info!("Constructed chunk-verifier");
 
-    verifier
+    Mutex::new(verifier)
 });
 
 pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
     log::info!("{test}: chunk-prove BEGIN");
 
-    let prover = unsafe { &mut CHUNK_PROVER };
+    let mut prover = CHUNK_PROVER.lock().expect("poisoned chunk-prover");
     let inner_id = read_env_var("INNER_LAYER_ID", LayerId::Inner.id().to_string());
     let inner_id_changed = prover.pk(&inner_id).is_none();
 
@@ -49,7 +51,7 @@ pub fn chunk_prove(test: &str, witness_block: &WitnessBlock) -> ChunkProof {
         .unwrap_or_else(|err| panic!("{test}: failed to generate chunk snark: {err}"));
     log::info!("{test}: generated chunk snark");
 
-    let verifier = unsafe { &mut CHUNK_VERIFIER };
+    let mut verifier = CHUNK_VERIFIER.lock().expect("poisoned chunk-verifier");
 
     // Reset VK if inner-layer ID changed.
     if inner_id_changed {

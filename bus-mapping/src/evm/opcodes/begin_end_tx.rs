@@ -1,3 +1,4 @@
+use super::TxExecSteps;
 use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
@@ -16,12 +17,9 @@ use eth_types::{
         gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
         GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
     },
-    geth_types::access_list_size,
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
-
-use super::TxExecSteps;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BeginEndTx;
@@ -146,7 +144,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     for address in 1..=9 {
         let address = eth_types::Address::from_low_u64_be(address);
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
-        state.tx_accesslist_account_write(
+        state.tx_access_list_account_write(
             &mut exec_step,
             state.tx_ctx.id(),
             address,
@@ -171,7 +169,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     let accessed_addresses = [call.caller_address, call.address];
     for address in accessed_addresses {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
-        state.tx_accesslist_account_write(
+        state.tx_access_list_account_write(
             &mut exec_step,
             state.tx_ctx.id(),
             address,
@@ -316,6 +314,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
                 log_id: None,
                 rw_counter_start,
                 copy_bytes: CopyBytes::new(bytes, None, None),
+                access_list: vec![],
             },
         );
     }
@@ -628,46 +627,118 @@ fn gen_tx_eip2930_ops(
         return Ok(());
     }
 
+    add_access_list_address_copy_event(state, exec_step)?;
+    add_access_list_storage_key_copy_event(state, exec_step)?;
+
+    Ok(())
+}
+
+fn add_access_list_address_copy_event(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+) -> Result<(), Error> {
+    let tx_id = state.tx_ctx.id();
+    let rw_counter_start = state.block_ctx.rwc;
+
+    // Build copy access list including addresses.
+    let access_list = state.tx.access_list.clone().map_or(Ok(vec![]), |al| {
+        al.0.iter()
+            .map(|item| {
+                // Add RW write operations for access list addresses
+                // (will lookup in copy circuit).
+                state.tx_access_list_account_write(exec_step, tx_id, item.address, true, false)?;
+                Ok((item.address, Word::zero()))
+            })
+            .collect::<Result<Vec<(_, _)>, Error>>()
+    })?;
+
+    let tx_id = NumberOrHash::Number(tx_id);
+
+    // Use placeholder bytes for copy steps.
+    let copy_bytes = CopyBytes::new(vec![(0, false, false); access_list.len()], None, None);
+
+    // Add copy event to copy table.
+    let copy_event = CopyEvent {
+        src_type: CopyDataType::AccessListAddresses,
+        dst_type: CopyDataType::AccessListAddresses,
+        src_id: tx_id.clone(),
+        dst_id: tx_id,
+        src_addr: 1, // index starts from 1.
+        src_addr_end: access_list.len() as u64 + 1,
+        dst_addr: 1,
+        rw_counter_start,
+        copy_bytes,
+        access_list,
+        log_id: None,
+    };
+
+    state.push_copy(exec_step, copy_event);
+
+    Ok(())
+}
+
+fn add_access_list_storage_key_copy_event(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+) -> Result<(), Error> {
+    let tx_id = state.tx_ctx.id();
+    let rw_counter_start = state.block_ctx.rwc;
+
+    // Build copy access list including addresses and storage keys.
+    let access_list = state
+        .tx
+        .access_list
+        .clone()
+        .map_or(Ok(vec![]), |al| {
+            al.0.iter()
+                .map(|item| {
+                    item.storage_keys
+                        .iter()
+                        .map(|&sk| {
+                            let sk = sk.to_word();
+
+                            // Add RW write operations for access list address storage keys
+                            // (will lookup in copy circuit).
+                            state.tx_access_list_storage_key_write(
+                                exec_step,
+                                tx_id,
+                                item.address,
+                                sk,
+                                true,
+                                false,
+                            )?;
+
+                            Ok((item.address, sk))
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .collect::<Result<Vec<_>, Error>>()
+        })?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
     let tx_id = NumberOrHash::Number(state.tx_ctx.id());
-    let (address_size, storage_key_size) = access_list_size(&state.tx.access_list);
 
-    // Add copy event for access-list addresses.
-    let rw_counter_start = state.block_ctx.rwc;
-    state.push_copy(
-        exec_step,
-        CopyEvent {
-            src_addr: 0,
-            src_addr_end: address_size,
-            src_type: CopyDataType::AccessListAddresses,
-            src_id: tx_id.clone(),
-            dst_addr: 0,
-            dst_type: CopyDataType::AccessListAddresses,
-            dst_id: tx_id.clone(),
-            log_id: None,
-            rw_counter_start,
-            // TODO
-            copy_bytes: CopyBytes::new(vec![], None, None),
-        },
-    );
+    // Use placeholder bytes for copy steps.
+    let copy_bytes = CopyBytes::new(vec![(0, false, false); access_list.len()], None, None);
 
-    // Add copy event for access-list storage keys.
-    let rw_counter_start = state.block_ctx.rwc;
-    state.push_copy(
-        exec_step,
-        CopyEvent {
-            src_addr: 0,
-            src_addr_end: storage_key_size,
-            src_type: CopyDataType::AccessListStorageKeys,
-            src_id: tx_id.clone(),
-            dst_addr: 0,
-            dst_type: CopyDataType::AccessListStorageKeys,
-            dst_id: tx_id,
-            log_id: None,
-            rw_counter_start,
-            // TODO
-            copy_bytes: CopyBytes::new(vec![], None, None),
-        },
-    );
+    // Add copy event to copy table.
+    let copy_event = CopyEvent {
+        src_type: CopyDataType::AccessListStorageKeys,
+        dst_type: CopyDataType::AccessListStorageKeys,
+        src_id: tx_id.clone(),
+        dst_id: tx_id,
+        src_addr: 1, // index starts from 1 in tx-table.
+        src_addr_end: access_list.len() as u64 + 1,
+        dst_addr: 1,
+        rw_counter_start,
+        copy_bytes,
+        access_list,
+        log_id: None,
+    };
+
+    state.push_copy(exec_step, copy_event);
 
     Ok(())
 }

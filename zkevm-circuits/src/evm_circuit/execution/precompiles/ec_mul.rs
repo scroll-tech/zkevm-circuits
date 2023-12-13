@@ -1,13 +1,3 @@
-use std::ops::{Add, Sub};
-
-use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, or, select, split_u256, sum, Expr};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
-
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -24,19 +14,32 @@ use crate::{
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
+use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use gadgets::util::{and, not, or, select, split_u256, sum, Expr};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
+use std::{
+    ops::{Add, Sub},
+    sync::LazyLock,
+};
 
-lazy_static::lazy_static! {
-    // r = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
-    static ref FR_MODULUS: U256 = {
-        U256::from_dec_str("21888242871839275222246405745257275088548364400416034343698204186575808495617")
-            .expect("Fr::MODULUS")
-    };
-    // q = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47
-    static ref FQ_MODULUS: U256 = {
-        U256::from_dec_str("21888242871839275222246405745257275088696311157297823662689037894645226208583")
-            .expect("Fq::MODULUS")
-    };
-}
+// r = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
+static FR_MODULUS: LazyLock<U256> = LazyLock::new(|| {
+    U256::from_dec_str(
+        "21888242871839275222246405745257275088548364400416034343698204186575808495617",
+    )
+    .expect("Fr::MODULUS")
+});
+// q = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47
+static FQ_MODULUS: LazyLock<U256> = LazyLock::new(|| {
+    U256::from_dec_str(
+        "21888242871839275222246405745257275088696311157297823662689037894645226208583",
+    )
+    .expect("Fq::MODULUS")
+});
 
 #[derive(Clone, Debug)]
 pub struct EcMulGadget<F> {
@@ -501,17 +504,17 @@ mod test {
     use itertools::Itertools;
     use mock::TestContext;
     use rayon::iter::{ParallelBridge, ParallelIterator};
+    use std::sync::LazyLock;
 
     use crate::test_util::CircuitTestBuilder;
 
-    lazy_static::lazy_static! {
-        static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
-            vec![
-                PrecompileCallArgs {
-                    name: "ecMul (valid input)",
-                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                    // s = 7
-                    setup_code: bytecode! {
+    static TEST_VECTOR: LazyLock<Vec<PrecompileCallArgs>> = LazyLock::new(|| {
+        vec![
+            PrecompileCallArgs {
+                name: "ecMul (valid input)",
+                // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                // s = 7
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
                         PUSH1(0x00)
@@ -527,18 +530,18 @@ mod test {
                         PUSH1(0x40)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x40.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (invalid input: point not on curve)",
-                    // P = (2, 3)
-                    // s = 7
-                    setup_code: bytecode! {
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x60.into(),
+                ret_offset: 0x60.into(),
+                ret_size: 0x40.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (invalid input: point not on curve)",
+                // P = (2, 3)
+                // s = 7
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
                         PUSH1(0x00)
@@ -554,18 +557,18 @@ mod test {
                         PUSH1(0x40)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x00.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (valid input < 96 bytes)",
-                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                    // s = blank
-                    setup_code: bytecode! {
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x60.into(),
+                ret_offset: 0x60.into(),
+                ret_size: 0x00.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (valid input < 96 bytes)",
+                // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                // s = blank
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
                         PUSH1(0x00)
@@ -576,28 +579,28 @@ mod test {
                         PUSH1(0x20)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x40.into(),
-                    ret_offset: 0x40.into(),
-                    ret_size: 0x40.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (should succeed on empty inputs)",
-                    setup_code: bytecode! {},
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x00.into(),
-                    ret_offset: 0x00.into(),
-                    ret_size: 0x40.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (valid inputs > 96 bytes)",
-                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                    // s = 7
-                    setup_code: bytecode! {
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x40.into(),
+                ret_offset: 0x40.into(),
+                ret_size: 0x40.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (should succeed on empty inputs)",
+                setup_code: bytecode! {},
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x00.into(),
+                ret_offset: 0x00.into(),
+                ret_size: 0x40.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (valid inputs > 96 bytes)",
+                // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                // s = 7
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
                         PUSH1(0x00)
@@ -622,18 +625,18 @@ mod test {
                         PUSH1(0x60)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x80.into(),
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x40.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (invalid input: must mod p to be valid)",
-                    // P = (p + 1, p + 2)
-                    // s = 7
-                    setup_code: bytecode! {
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x80.into(),
+                ret_offset: 0x80.into(),
+                ret_size: 0x40.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (invalid input: must mod p to be valid)",
+                // P = (p + 1, p + 2)
+                // s = 7
+                setup_code: bytecode! {
                         // p_x
                         PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD48"))
                         PUSH1(0x00)
@@ -649,23 +652,23 @@ mod test {
                         PUSH1(0x40)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x00.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (valid: scalar larger than scalar field order n but less than base field p)",
-                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x60.into(),
+                ret_offset: 0x60.into(),
+                ret_size: 0x00.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (valid: scalar larger than scalar field order n but less than base field p)",
+                // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
 
-                    // For bn256 (alt_bn128) scalar field:
-                    // n = 21888242871839275222246405745257275088548364400416034343698204186575808495617
+                // For bn256 (alt_bn128) scalar field:
+                // n = 21888242871839275222246405745257275088548364400416034343698204186575808495617
 
-                    // Choose scalar s such that n < s < p
-                    // s = 21888242871839275222246405745257275088548364400416034343698204186575808500000
-                    setup_code: bytecode! {
+                // Choose scalar s such that n < s < p
+                // s = 21888242871839275222246405745257275088548364400416034343698204186575808500000
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
                         PUSH1(0x00)
@@ -680,18 +683,18 @@ mod test {
                         PUSH1(0x40)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x40.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (valid: scalar larger than base field order)",
-                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                    // s = 2^256 - 1
-                    setup_code: bytecode! {
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x60.into(),
+                ret_offset: 0x60.into(),
+                ret_size: 0x40.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (valid: scalar larger than base field order)",
+                // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                // s = 2^256 - 1
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
                         PUSH1(0x00)
@@ -707,18 +710,18 @@ mod test {
                         PUSH1(0x40)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x40.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (valid input): s == Fr::MODULUS - 1, i.e. P == -R",
-                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                    // s = Fr::MODULUS - 1
-                    setup_code: bytecode! {
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x60.into(),
+                ret_offset: 0x60.into(),
+                ret_size: 0x40.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (valid input): s == Fr::MODULUS - 1, i.e. P == -R",
+                // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                // s = Fr::MODULUS - 1
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
                         PUSH1(0x00)
@@ -732,19 +735,19 @@ mod test {
                         PUSH1(0x40)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x40.into(),
-                    value: 1.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecMul (invalid input): s == Fr::MODULUS - 1, but P not on curve",
-                    // P = (3, 4), i.e. not on curve
-                    // s = Fr::MODULUS - 1
-                    setup_code: bytecode! {
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x60.into(),
+                ret_offset: 0x60.into(),
+                ret_size: 0x40.into(),
+                value: 1.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul (invalid input): s == Fr::MODULUS - 1, but P not on curve",
+                // P = (3, 4), i.e. not on curve
+                // s = Fr::MODULUS - 1
+                setup_code: bytecode! {
                         // p_x
                         PUSH1(0x03)
                         PUSH1(0x00)
@@ -758,50 +761,47 @@ mod test {
                         PUSH1(0x40)
                         MSTORE
                     },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x40.into(),
-                    value: 1.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    ..Default::default()
-                },
-            ]
-        };
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x60.into(),
+                ret_offset: 0x60.into(),
+                ret_size: 0x40.into(),
+                value: 1.into(),
+                address: PrecompileCalls::Bn128Mul.address().to_word(),
+                ..Default::default()
+            },
+        ]
+    });
 
-        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
-            vec![
-                PrecompileCallArgs {
-                    name: "ecMul (valid: scalar larger than base field order)",
-                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                    // s = 2^256 - 1
-                    setup_code: bytecode! {
-                        // p_x
-                        PUSH1(0x02)
-                        PUSH1(0x00)
-                        MSTORE
+    static OOG_TEST_VECTOR: LazyLock<Vec<PrecompileCallArgs>> = LazyLock::new(|| {
+        vec![PrecompileCallArgs {
+            name: "ecMul (valid: scalar larger than base field order)",
+            // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+            // s = 2^256 - 1
+            setup_code: bytecode! {
+                // p_x
+                PUSH1(0x02)
+                PUSH1(0x00)
+                MSTORE
 
-                        // p_y
-                        PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
-                        PUSH1(0x20)
-                        MSTORE
+                // p_y
+                PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                PUSH1(0x20)
+                MSTORE
 
-                        // s
-                        PUSH32(word!("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
-                        PUSH1(0x40)
-                        MSTORE
-                    },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    ret_offset: 0x60.into(),
-                    ret_size: 0x40.into(),
-                    address: PrecompileCalls::Bn128Mul.address().to_word(),
-                    gas: (PrecompileCalls::Bn128Mul.base_gas_cost().as_u64() - 1).to_word(),
-                    ..Default::default()
-                }
-            ]
-        };
-    }
+                // s
+                PUSH32(word!("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+                PUSH1(0x40)
+                MSTORE
+            },
+            call_data_offset: 0x00.into(),
+            call_data_length: 0x60.into(),
+            ret_offset: 0x60.into(),
+            ret_size: 0x40.into(),
+            address: PrecompileCalls::Bn128Mul.address().to_word(),
+            gas: (PrecompileCalls::Bn128Mul.base_gas_cost().as_u64() - 1).to_word(),
+            ..Default::default()
+        }]
+    });
 
     #[test]
     fn precompile_ec_mul_test() {

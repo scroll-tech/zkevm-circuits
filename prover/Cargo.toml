@@ -28,7 +28,6 @@ itertools.workspace = true
 log.workspace = true
 log4rs = { version = "1.2.0", default_features = false, features = ["console_appender", "file_appender"] }
 num-bigint.workspace = true
-once_cell.workspace = true
 rand.workspace = true
 rand_xorshift.workspace = true
 serde.workspace = true

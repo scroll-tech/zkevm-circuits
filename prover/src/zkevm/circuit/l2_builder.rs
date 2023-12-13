@@ -9,16 +9,15 @@ use eth_types::{l2_types::BlockTrace, ToWord, H256};
 use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 use mpt_zktrie::state::{ZkTrieHash, ZktrieState};
-use once_cell::sync::Lazy;
-use std::time::Instant;
+use std::{sync::LazyLock, time::Instant};
 use zkevm_circuits::{
     evm_circuit::witness::{block_apply_mpt_state, Block},
     util::SubCircuit,
     witness::block_convert,
 };
 
-static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 53077));
-static AUTO_TRUNCATE: Lazy<bool> = Lazy::new(|| read_env_var("AUTO_TRUNCATE", false));
+static CHAIN_ID: LazyLock<u64> = LazyLock::new(|| read_env_var("CHAIN_ID", 53077));
+static AUTO_TRUNCATE: LazyLock<bool> = LazyLock::new(|| read_env_var("AUTO_TRUNCATE", false));
 
 ////// params for degree = 20 ////////////
 pub const MAX_TXS: usize = 100;

@@ -8,7 +8,7 @@ use itertools::Itertools;
 use mpt_zktrie::{
     mpt_circuits::{serde::SMTTrace, MPTProofType},
     state,
-    state::{builder::HASH_SCHEME_DONE, witness::WitnessGenerator},
+    state::{builder::init_hash_scheme, witness::WitnessGenerator},
 };
 use serde::{Deserialize, Serialize};
 pub use state::ZktrieState;
@@ -130,7 +130,7 @@ impl MptUpdates {
 
     /// initialize a mock witness generator that is consistent with the old values of self.updates
     pub(crate) fn mock_fill_state_roots(&mut self) {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
         let temp_trie = ZktrieState::default();
         let mut wit_gen = WitnessGenerator::from(&temp_trie);
         let mut storage_touched = std::collections::HashSet::<(&Address, &Word)>::new();
@@ -202,7 +202,7 @@ impl MptUpdates {
         if gen_withdraw_proof {
             // generate withdraw proof
             let address = *bus_mapping::l2_predeployed::message_queue::ADDRESS;
-            let key = *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT;
+            let key = bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT;
             let account_proof = wit_gen.account_proof(address);
             let storage_proof = wit_gen.storage_proof(address, key);
             // TODO: add withdraw_root to WithdrawProof?
@@ -548,11 +548,11 @@ fn value_prev(row: &Rw) -> Word {
 #[cfg(test)]
 mod test {
     use super::*;
-    use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
+    use mpt_zktrie::state::builder::init_hash_scheme;
 
     #[test]
     fn invalid_state_from_reading_nonce() {
-        assert!(*HASH_SCHEME_DONE,);
+        init_hash_scheme();
 
         let key = Key::Account {
             address: Address::zero(),
@@ -572,7 +572,7 @@ mod test {
 
     #[test]
     fn invalid_state_from_reading_balance() {
-        assert!(*HASH_SCHEME_DONE,);
+        init_hash_scheme();
 
         let key = Key::Account {
             address: Address::zero(),
@@ -607,7 +607,7 @@ mod test {
 
     #[test]
     fn nonce_update_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -636,7 +636,7 @@ mod test {
 
     #[test]
     fn nonexisting_type_1() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -667,7 +667,7 @@ mod test {
 
     #[test]
     fn nonce_update_type_1() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -693,7 +693,7 @@ mod test {
 
     #[test]
     fn nonce_update_type_2() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         updates.insert(nonce_update(Address::zero()));
@@ -726,7 +726,7 @@ mod test {
 
     #[test]
     fn balance_update_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -755,7 +755,7 @@ mod test {
 
     #[test]
     fn balance_update_type_1() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -781,7 +781,7 @@ mod test {
 
     #[test]
     fn balance_update_type_2() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         updates.insert(nonce_update(Address::zero()));
@@ -803,7 +803,7 @@ mod test {
 
     #[test]
     fn update_code_size_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -839,7 +839,7 @@ mod test {
 
     #[test]
     fn update_code_hash_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -875,7 +875,7 @@ mod test {
 
     #[test]
     fn update_keccak_code_hash_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -913,7 +913,7 @@ mod test {
     // except for type 1 -> type 2 and type 2 -> type 1
     #[test]
     fn update_storage_existing_to_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -967,8 +967,8 @@ mod test {
 
     #[test]
     fn update_storage_type_1_to_type_1() {
-        assert!(*HASH_SCHEME_DONE);
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1031,42 +1031,42 @@ mod test {
 
     #[test]
     fn update_storage_type_2_to_type_2() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
     }
 
     #[test]
     fn update_storage_type_1_to_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
     }
 
     #[test]
     fn update_storage_type_2_to_existing() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
     }
 
     #[test]
     fn update_storage_existing_to_type_1() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
     }
 
     #[test]
     fn update_storage_existing_to_type_2() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
     }
 
     #[test]
     fn read_storage_type_1() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
     }
 
     #[test]
     fn read_storage_type_2() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
     }
 
     #[test]
     fn read_empty_storage_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1097,7 +1097,7 @@ mod test {
 
     #[test]
     fn write_empty_storage_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1129,7 +1129,7 @@ mod test {
 
     #[test]
     fn read_singleton_storage_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1169,7 +1169,7 @@ mod test {
 
     #[test]
     fn write_singleton_storage_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1210,7 +1210,7 @@ mod test {
 
     #[test]
     fn write_zero_to_singleton_storage_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1251,7 +1251,7 @@ mod test {
 
     #[test]
     fn write_zero_to_doubleton_storage_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1302,7 +1302,7 @@ mod test {
 
     #[test]
     fn write_zero_to_storage_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1345,7 +1345,7 @@ mod test {
 
     #[test]
     fn empty_storage_proof_empty_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1375,7 +1375,7 @@ mod test {
 
     #[test]
     fn empty_storage_proof_singleton_trie() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1415,7 +1415,7 @@ mod test {
 
     #[test]
     fn empty_storage_proof_type_1() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1458,7 +1458,7 @@ mod test {
     #[ignore = "TODO(mason): is it valid to put these storage writes on empty acc?"]
     #[test]
     fn empty_account_empty_storage_proof() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.
@@ -1498,7 +1498,7 @@ mod test {
     #[ignore = "TODO(mason): is it valid to put these storage writes on empty acc?"]
     #[test]
     fn empty_account_storage_write() {
-        assert!(*HASH_SCHEME_DONE);
+        init_hash_scheme();
 
         let mut updates = MptUpdates::default();
         // Add precompile addresses in so MPT isn't too empty.

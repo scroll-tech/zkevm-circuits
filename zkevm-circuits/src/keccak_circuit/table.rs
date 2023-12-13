@@ -258,6 +258,8 @@ mod tests {
     impl Circuit<F> for TableTestCircuit {
         type Config = [TableColumn; 2];
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             self.clone()

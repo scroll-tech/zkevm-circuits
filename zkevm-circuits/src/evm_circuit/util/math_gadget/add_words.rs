@@ -215,27 +215,27 @@ mod tests {
 
     #[test]
     fn test_addwords_0_0() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![Word::from(0), Word::from(0), Word::from(0)], true);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, [Word::from(0), Word::from(0), Word::from(0)], true);
     }
 
     #[test]
     fn test_addwords_1_1() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![Word::from(1), Word::from(1), Word::from(2)], true);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, [Word::from(1), Word::from(1), Word::from(2)], true);
     }
 
     #[test]
     fn test_addwords_1000_1000() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![Word::from(1000), Word::from(1000), Word::from(2000)], true);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, [Word::from(1000), Word::from(1000), Word::from(2000)], true);
     }
 
     #[test]
     fn test_addwords_to_wordmax() {
-        try_test!(AddWordsTestContainer<Fr, 2,0u64, true>, vec![Word::MAX - 1, Word::from(1), Word::MAX], true);
+        try_test!(AddWordsTestContainer<Fr, 2,0u64, true>, [Word::MAX - 1, Word::from(1), Word::MAX], true);
     }
 
     #[test]
     fn test_addwords_high_low_max() {
-        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, vec![WORD_LOW_MAX, WORD_HIGH_MAX, Word::MAX], true);
+        try_test!(AddWordsTestContainer<Fr, 2, 0u64, true>, [WORD_LOW_MAX, WORD_HIGH_MAX, Word::MAX], true);
     }
 
     #[test]

@@ -91,13 +91,13 @@ mod tests {
 
     #[test]
     fn test_rangecheck_just_in_range() {
-        try_test!(RangeCheckTestContainer<Fr, 4>, vec![Word::from(0)], true);
+        try_test!(RangeCheckTestContainer<Fr, 4>, [Word::from(0)], true);
 
-        try_test!(RangeCheckTestContainer<Fr, 4>, vec![Word::from(1)], true);
+        try_test!(RangeCheckTestContainer<Fr, 4>, [Word::from(1)], true);
         // max - 1
         try_test!(
             RangeCheckTestContainer<Fr, 4>,
-            vec![Word::from((1u64 << 32) - 1)],
+            [Word::from((1u64 << 32) - 1)],
             true,
         );
     }
@@ -106,7 +106,7 @@ mod tests {
     fn test_rangecheck_out_of_range() {
         try_test!(
             RangeCheckTestContainer<Fr, 4>,
-            vec![Word::from(1u64 << 32)],
+            [Word::from(1u64 << 32)],
             false,
         );
     }

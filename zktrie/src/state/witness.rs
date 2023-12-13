@@ -396,7 +396,7 @@ fn smt_hash_from_bytes(bt: &[u8]) -> SMTHash {
 }
 
 fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
-    use halo2_proofs::{arithmetic::FieldExt, halo2curves::bn256::Fr};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use hash_circuit::hash::Hashable;
 
     let first_16bytes: [u8; 16] = key_buf[..16].try_into().expect("expect first 16 bytes");

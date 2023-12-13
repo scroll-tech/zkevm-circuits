@@ -217,111 +217,108 @@ mod test {
     use eth_types::{bytecode, word, ToWord};
     use itertools::Itertools;
     use mock::TestContext;
+    use std::sync::LazyLock;
 
     use crate::test_util::CircuitTestBuilder;
 
-    lazy_static::lazy_static! {
-        static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
-            vec![
-                PrecompileCallArgs {
-                    name: "simple success",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH3(0x616263)
-                        PUSH1(0x00)
-                        MSTORE
-                    },
-                    call_data_offset: 0x1d.into(),
-                    call_data_length: 0x03.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Sha256.address().to_word(),
-                    ..Default::default()
+    static TEST_VECTOR: LazyLock<Vec<PrecompileCallArgs>> = LazyLock::new(|| {
+        vec![
+            PrecompileCallArgs {
+                name: "simple success",
+                setup_code: bytecode! {
+                    // place params in memory
+                    PUSH3(0x616263)
+                    PUSH1(0x00)
+                    MSTORE
                 },
-                PrecompileCallArgs {
-                    name: "nil success",
-                    setup_code: bytecode! {},
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x00.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Sha256.address().to_word(),
-                    ..Default::default()
+                call_data_offset: 0x1d.into(),
+                call_data_length: 0x03.into(),
+                ret_offset: 0x20.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::Sha256.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "nil success",
+                setup_code: bytecode! {},
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x00.into(),
+                ret_offset: 0x20.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::Sha256.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "block edge",
+                setup_code: bytecode! {
+                    // place params in memory
+                    PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                    PUSH1(0x00)
+                    MSTORE
+                    PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                    PUSH1(0x20)
+                    MSTORE
                 },
-                PrecompileCallArgs {
-                    name: "block edge",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
-                        PUSH1(0x00)
-                        MSTORE
-                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
-                        PUSH1(0x20)
-                        MSTORE
-                    },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x40.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Sha256.address().to_word(),
-                    ..Default::default()
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x40.into(),
+                ret_offset: 0x20.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::Sha256.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "simple truncated return",
+                setup_code: bytecode! {
+                    // place params in memory
+                    PUSH3(0x616263)
+                    PUSH1(0x00)
+                    MSTORE
                 },
-                PrecompileCallArgs {
-                    name: "simple truncated return",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH3(0x616263)
-                        PUSH1(0x00)
-                        MSTORE
-                    },
-                    call_data_offset: 0x1d.into(),
-                    call_data_length: 0x03.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x10.into(),
-                    address: PrecompileCalls::Sha256.address().to_word(),
-                    ..Default::default()
+                call_data_offset: 0x1d.into(),
+                call_data_length: 0x03.into(),
+                ret_offset: 0x20.into(),
+                ret_size: 0x10.into(),
+                address: PrecompileCalls::Sha256.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "overlapped return",
+                setup_code: bytecode! {
+                    // place params in memory
+                    PUSH3(0x616263)
+                    PUSH1(0x00)
+                    MSTORE
                 },
-                PrecompileCallArgs {
-                    name: "overlapped return",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH3(0x616263)
-                        PUSH1(0x00)
-                        MSTORE
-                    },
-                    call_data_offset: 0x1d.into(),
-                    call_data_length: 0x03.into(),
-                    ret_offset: 0x00.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Sha256.address().to_word(),
-                    ..Default::default()
-                },
-            ]
-        };
+                call_data_offset: 0x1d.into(),
+                call_data_length: 0x03.into(),
+                ret_offset: 0x00.into(),
+                ret_size: 0x20.into(),
+                address: PrecompileCalls::Sha256.address().to_word(),
+                ..Default::default()
+            },
+        ]
+    });
 
-        static ref OOG_TEST_VECTOR: Vec<PrecompileCallArgs> = {
-            vec![
-                PrecompileCallArgs {
-                    name: "oog",
-                    setup_code: bytecode! {
-                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
-                        PUSH1(0x00)
-                        MSTORE
-                        PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
-                        PUSH1(0x20)
-                        MSTORE
-                    },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x40.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Sha256.address().to_word(),
-                    gas: 20.into(),
-                    ..Default::default()
-                },
-            ]
-        };
-    }
+    static OOG_TEST_VECTOR: LazyLock<Vec<PrecompileCallArgs>> = LazyLock::new(|| {
+        vec![PrecompileCallArgs {
+            name: "oog",
+            setup_code: bytecode! {
+                PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                PUSH1(0x00)
+                MSTORE
+                PUSH32(word!("0x6161616161616161616161616161616161616161616161616161616161616161"))
+                PUSH1(0x20)
+                MSTORE
+            },
+            call_data_offset: 0x00.into(),
+            call_data_length: 0x40.into(),
+            ret_offset: 0x20.into(),
+            ret_size: 0x20.into(),
+            address: PrecompileCalls::Sha256.address().to_word(),
+            gas: 20.into(),
+            ..Default::default()
+        }]
+    });
 
     #[test]
     fn precompile_sha256_common_test() {

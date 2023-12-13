@@ -28,7 +28,6 @@ use gadgets::{
     util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Fq, G1Affine},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -175,6 +174,10 @@ pub enum TxFieldTag {
     TxHash,
     /// TxType: Type of the transaction
     TxType,
+    /// Access list address
+    AccessListAddress,
+    /// Access list storage key
+    AccessListStorageKey,
     /// Access list address count (EIP-2930)
     AccessListAddressesLen,
     /// Access list all storage key count (EIP-2930)
@@ -313,7 +316,6 @@ impl TxTable {
                 let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs = (txs.len()..max_txs)
-                    .into_iter()
                     .map(|tx_id| {
                         let mut padding_tx = Transaction::dummy(chain_id);
                         padding_tx.id = tx_id + 1;
@@ -608,7 +610,7 @@ impl<F: Field> LookupTable<F> for RwTable {
 }
 impl RwTable {
     /// Construct a new RwTable
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             rw_counter: meta.advice_column(),
@@ -764,7 +766,7 @@ impl<F: Field> LookupTable<F> for MptTable {
 
 impl MptTable {
     /// Construct a new MptTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             address: meta.advice_column(),
@@ -885,7 +887,7 @@ impl PoseidonTable {
     pub(crate) const INPUT_WIDTH: usize = Self::WIDTH - 1;
 
     /// Construct a new PoseidonTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             hash_id: meta.advice_column(),
@@ -1147,7 +1149,7 @@ impl BytecodeTable {
     }
 
     /// A sub-table of bytecode without is_code nor push_rlc.
-    fn columns_mini<F: Field>(&self) -> Vec<Column<Any>> {
+    fn columns_mini(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
             self.code_hash.into(),
@@ -1159,7 +1161,7 @@ impl BytecodeTable {
 
     /// The expressions of the sub-table of bytecode without is_code nor push_rlc.
     pub fn table_exprs_mini<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.columns_mini::<F>()
+        self.columns_mini()
             .iter()
             .map(|&column| meta.query_any(column, Rotation::cur()))
             .collect()
@@ -1731,7 +1733,7 @@ impl CopyTable {
             .copy_bytes
             .bytes_write_prev
             .clone()
-            .unwrap_or(vec![]);
+            .unwrap_or_default();
 
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
@@ -1762,6 +1764,8 @@ impl CopyTable {
             word_rlc_prev: Value::known(F::zero()),
         };
 
+        let is_access_list = copy_event.src_type == CopyDataType::AccessListAddresses
+            || copy_event.src_type == CopyDataType::AccessListStorageKeys;
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
@@ -1796,13 +1800,25 @@ impl CopyTable {
 
             let is_pad = is_read_step && thread.addr >= thread.addr_end;
 
-            let value = Value::known(F::from(copy_step.value as u64));
+            let [value, value_prev] = if is_access_list {
+                let address_pair = copy_event.access_list[step_idx / 2];
+                [
+                    address_pair.0.to_scalar().unwrap(),
+                    address_pair.1.to_scalar().unwrap(),
+                ]
+            } else {
+                [
+                    F::from(copy_step.value as u64),
+                    F::from(copy_step.prev_value as u64),
+                ]
+            }
+            .map(Value::known);
+
             let value_or_pad = if is_pad {
                 Value::known(F::zero())
             } else {
                 value
             };
-            let value_prev = Value::known(F::from(copy_step.prev_value as u64));
 
             if !copy_step.mask {
                 thread.front_mask = false;
@@ -1865,9 +1881,10 @@ impl CopyTable {
             if !copy_step.mask {
                 thread.bytes_left -= 1;
             }
+            // No word operation for access list data types.
+            let is_row_end = is_access_list || (step_idx / 2) % 32 == 31;
             // Update the RW counter.
-            let is_word_end = (step_idx / 2) % 32 == 31;
-            if is_word_end && thread.is_rw {
+            if is_row_end && thread.is_rw {
                 rw_counter += 1;
                 rwc_inc_left -= 1;
             }
@@ -2457,15 +2474,14 @@ impl<F: Field> LookupTable<F> for SigTable {
     }
 }
 
-/// 1. if EcAdd(P, Q) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 1. if EcAdd(P, Q) == R then: (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc,
+///    output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = rlc(Q.x), arg4_rlc = rlc(Q.x),
 ///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
 ///
-/// 2. if EcMul(P, s) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 2. if EcMul(P, s) == R then: (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = s
@@ -2721,7 +2737,7 @@ impl ModExpTable {
 
         let mut bytes = [0u8; 64];
         remainder.to_little_endian(&mut bytes[..32]);
-        F::from_bytes_wide(&bytes)
+        F::from_uniform_bytes(&bytes)
     }
 
     /// fill a blank 4-row region start from offset for empty lookup
@@ -2779,6 +2795,7 @@ impl ModExpTable {
 
                     for i in 0..3 {
                         for (limbs, &col) in [base_limbs, exp_limbs, modulus_limbs, result_limbs]
+                            .iter()
                             .zip([&self.base, &self.exp, &self.modulus, &self.result])
                         {
                             region.assign_advice(
@@ -2791,13 +2808,10 @@ impl ModExpTable {
                     }
 
                     // native is not used by lookup (and in fact it can be omitted in dev)
-                    for (word, &col) in [
-                        &event.base,
-                        &event.exponent,
-                        &event.modulus,
-                        &event.result,
-                    ]
-                    .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                    for (word, &col) in
+                        [&event.base, &event.exponent, &event.modulus, &event.result]
+                            .iter()
+                            .zip([&self.base, &self.exp, &self.modulus, &self.result])
                     {
                         region.assign_advice(
                             || format!("modexp table native row {}", offset + 3),

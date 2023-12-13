@@ -2,7 +2,7 @@
 
 use super::{keccak_packed_multi::keccak_unusable_rows, param::*};
 use eth_types::{Field, ToScalar, Word};
-use halo2_proofs::{circuit::Value, halo2curves::FieldExt};
+use halo2_proofs::circuit::Value;
 use std::env::var;
 
 /// Description of which bits (positions) a part contains
@@ -233,7 +233,7 @@ pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> u
     num_bits as usize
 }
 
-pub(crate) fn extract_field<F: FieldExt>(value: Value<F>) -> F {
+pub(crate) fn extract_field<F: Field>(value: Value<F>) -> F {
     let mut field = F::zero();
     let _ = value.map(|f| {
         field = f;
