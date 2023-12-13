@@ -1142,10 +1142,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         );
 
         let callee_code_hash = cb.query_word_unchecked();
-        let limbs = callee_address_word.limbs.clone().map(|l| l.expr());
-        let callee_address_normal = from_bytes::expr(&limbs[0..20]);
+        let callee_address_normal = Self::callee_address_valid(&callee_address_word);
+
         cb.account_read(
-            Word::from_lo_unchecked(callee_address_normal),
+            callee_address_normal,
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
@@ -1177,7 +1177,14 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
     }
 
     pub fn callee_address(&self) -> Word<Expression<F>> {
-        self.callee_address_word.to_word()
+        Self::callee_address_valid(&self.callee_address_word)
+    }
+
+    pub fn callee_address_valid(callee_address_word: &Word32Cell<F>) -> Word<Expression<F>> {
+        let limbs: [Expression<F>; 32] = callee_address_word.limbs.clone().map(|l| l.expr());
+        let callee_address_lo = from_bytes::expr(&limbs[0..16]);
+        let callee_address_hi = from_bytes::expr(&limbs[16..20]);
+        Word::new([callee_address_lo, callee_address_hi])
     }
 
     pub fn gas_expr(&self) -> Expression<F> {
@@ -1218,10 +1225,9 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         callee_code_hash: U256,
     ) -> Result<u64, Error> {
         self.gas.assign_u256(region, offset, gas)?;
-        // self.callee_address
-        //     .assign_h160(region, offset, callee_address.to_address())?;
         self.callee_address_word
             .assign_u256(region, offset, callee_address)?;
+
         self.value.assign_u256(region, offset, value)?;
         if IS_SUCCESS_CALL {
             self.is_success
