@@ -14,12 +14,12 @@ use crate::{
             },
             math_gadget::{
                 ConstantDivisionGadget, ContractCreateGadget, IsZeroWordGadget, LtGadget,
-                LtWordGadget,
+                LtWordGadget, IsZeroGadget, IsEqualWordGadget,
             },
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, AccountAddress, CachedRegion, Cell, StepRws,
+            or, not, AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,7 +35,7 @@ use eth_types::{
     Field, ToBigEndian, ToScalar, ToWord, H256, KECCAK_CODE_HASH_EMPTY, U256,
 };
 use ethers_core::utils::keccak256;
-use gadgets::util::and;
+use gadgets::util::{and, or::expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -75,7 +75,9 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     is_depth_in_range: LtGadget<F, N_BYTES_U64>,
     is_insufficient_balance: LtWordGadget<F>,
     is_nonce_in_range: LtGadget<F, N_BYTES_U64>,
-    not_address_collision: IsZeroWordGadget<F, Word<Expression<F>>>,
+    // not_address_collision: IsZeroWordGadget<F, Word<Expression<F>>>,
+    is_callee_once_zero: IsZeroGadget<F>,
+    is_empty_callee_prev_hash: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
@@ -261,8 +263,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let prev_keccak_code_hash = cb.query_word_unchecked();
         let callee_nonce = cb.query_cell();
 
+        let is_callee_once_zero =  IsZeroGadget::construct(cb, callee_nonce.expr());
+        let is_empty_callee_prev_hash = IsEqualWordGadget::construct(cb, &prev_code_hash.to_word(), &cb.empty_code_hash());
         // callee address's nonce
-        let (prev_code_hash_is_zero, not_address_collision) =
+        let prev_code_hash_is_zero =
             cb.condition(is_precheck_ok.expr(), |cb| {
                 // increase caller's nonce
                 cb.account_write(
@@ -297,24 +301,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                         Word::from_lo_unchecked(callee_nonce.expr()),
                     );
                 });
-                // ErrContractAddressCollision, if any one of following criteria meets.
-                // Nonce is not zero or account code hash is not either 0 or EMPTY_CODE_HASH.
-                // Here use `isZeroGadget(callee_nonce + prev_code_hash * (prev_code_hash -
-                // empty_code_hash))` to represent `(callee_nonce == 0 && (prev_code_hash == 0
-                // or prev_code_hash == empty_code_hash))`
-                let prev_code_hash_word = prev_code_hash.to_word();
-                (
-                    prev_code_hash_is_zero,
-                    IsZeroWordGadget::construct(
-                        cb,
-                        &Word::from_lo_unchecked(callee_nonce.expr()).add_unchecked(
-                            prev_code_hash_word.clone().mul_unchecked(
-                                prev_code_hash_word.sub_unchecked(cb.empty_code_hash()),
-                            ),
-                        ),
-                    ),
-                )
+              
+                prev_code_hash_is_zero
             });
+        
+          // ErrContractAddressCollision, if any one of following criteria meets.
+         // Nonce is not zero or account code hash is not either 0 or EMPTY_CODE_HASH.
+         // Here use `isZeroGadget(callee_nonce + prev_code_hash * (prev_code_hash -
+         // empty_code_hash))` to represent `(callee_nonce == 0 && (prev_code_hash == 0
+         // or prev_code_hash == empty_code_hash))`
+        let not_address_collision = and::expr([is_callee_once_zero.expr(), or::expr([is_empty_callee_prev_hash.expr(), prev_code_hash_is_zero.expr()])]);
 
         for (field_tag, value) in [
             (
@@ -601,7 +597,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             callee_nonce,
             keccak_code_hash,
             keccak_output,
-            not_address_collision,
+            //not_address_collision,
+            is_callee_once_zero,
+            is_empty_callee_prev_hash,
             is_success,
             prev_code_hash,
             prev_code_hash_is_zero,
@@ -695,15 +693,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.prev_code_hash_is_zero
             .assign_u256(region, offset, callee_prev_code_hash)?;
         
-        let diff_code_hash = 
-                CodeDB::empty_code_hash().to_word().overflowing_sub(callee_prev_code_hash) ;
-        let is_empty_code_hash = CodeDB::empty_code_hash().to_word() == callee_prev_code_hash;
-        self.not_address_collision.assign_u256(
-            region,
-            offset,
-            U256::from(callee_nonce).overflowing_add(callee_prev_code_hash
-                .overflowing_mul(diff_code_hash.0).0).0
-        )?;
+        let empty_code_hash = 
+        callee_prev_code_hash == CodeDB::empty_code_hash().to_word();
+        println!("empty_code_hash {}, is_create2 {}, callee_nonce {}", empty_code_hash, is_create2, callee_nonce);
+        // self.not_address_collision.assign_u256(
+        //     region,
+        //     offset,
+        //     U256::from(callee_nonce).overflowing_add(callee_prev_code_hash
+        //         .overflowing_mul(diff_code_hash.0).0).0
+        // )?;
+        self.is_callee_once_zero.assign(region, offset, F::from(callee_nonce))?;
+        self.is_empty_callee_prev_hash.assign_u256(region, offset, callee_prev_code_hash, CodeDB::empty_code_hash().to_word())?;
         let shift = init_code_start.low_u64() % 32;
         let copy_rw_increase: u64 = step.copy_rw_counter_delta;
         let values: Vec<u8> = if is_precheck_ok {
