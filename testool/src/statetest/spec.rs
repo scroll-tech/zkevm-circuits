@@ -1,6 +1,16 @@
+use crate::utils::ETH_CHAIN_ID;
 use anyhow::{anyhow, bail, Context};
-use eth_types::{geth_types::Account, AccessList, Address, Bytes, Word, H256, U256};
-use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
+use eth_types::{
+    geth_types::{Account, TxType},
+    AccessList, Address, Bytes, Word, H256, U256,
+};
+use ethers_core::{
+    k256::ecdsa::SigningKey,
+    types::{
+        transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, TransactionRequest,
+    },
+    utils::secret_key_to_address,
+};
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
@@ -53,6 +63,8 @@ pub struct StateTest {
     pub from: Address,
     pub to: Option<Address>,
     pub gas_limit: u64,
+    pub max_priority_fee_per_gas: Option<U256>,
+    pub max_fee_per_gas: Option<U256>,
     pub gas_price: U256,
     pub nonce: U256,
     pub value: U256,
@@ -114,10 +126,19 @@ impl std::fmt::Display for StateTest {
         table.add_row(row!["from", format!("{:?}", self.from)]);
         table.add_row(row!["to", format!("{:?}", self.to)]);
         table.add_row(row!["gas_limit", format!("{}", self.gas_limit)]);
+        table.add_row(row![
+            "max_priority_fee_per_gas",
+            format!("{:?}", self.max_priority_fee_per_gas)
+        ]);
+        table.add_row(row![
+            "max_fee_per_gas",
+            format!("{:?}", self.max_fee_per_gas)
+        ]);
         table.add_row(row!["gas_price", format!("{}", self.gas_price)]);
         table.add_row(row!["nonce", format!("{}", self.nonce)]);
         table.add_row(row!["value", format!("{}", self.value)]);
         table.add_row(row!["data", format(&hex::encode(&self.data), "")]);
+        table.add_row(row!["access_list", format!("{:?}", self.access_list)]);
         table.add_row(row!["exception", self.exception]);
 
         let mut addrs: Vec<_> = self.pre.keys().collect();
@@ -279,6 +300,8 @@ impl StateTest {
             from,
             to,
             gas_limit,
+            max_priority_fee_per_gas: None,
+            max_fee_per_gas: None,
             gas_price: U256::one(),
             nonce: U256::zero(),
             value,
@@ -290,5 +313,89 @@ impl StateTest {
         };
 
         Ok(state_test)
+    }
+
+    /// Parse transaction type.
+    pub fn tx_type(&self) -> TxType {
+        if self.max_priority_fee_per_gas.is_some() {
+            // For EIP-1559, both maxPriorityFeePerGas and maxFeePerGas must
+            // exist, and accessList should exist but may be empty.
+            assert!(self.max_fee_per_gas.is_some());
+            assert!(self.access_list.is_some());
+
+            TxType::Eip1559
+        } else if self.access_list.is_some() {
+            TxType::Eip2930
+        } else {
+            // Set transaction type to EIP-155 as default.
+            TxType::Eip155
+        }
+    }
+
+    /// Normalize the signature back to 0/1.
+    pub fn normalize_sig_v(&self, v: u64) -> u64 {
+        match self.tx_type() {
+            TxType::Eip1559 | TxType::Eip2930 => {
+                // <https://github.com/gakonst/ethers-rs/blob/8421cfdbb4f26be3989bd11e525f8768d4323bfe/ethers-core/src/types/transaction/mod.rs#L40>
+                if v > 1 {
+                    v - ETH_CHAIN_ID * 2 - 35
+                } else {
+                    v
+                }
+            }
+            _ => v,
+        }
+    }
+
+    /// Build a transaction from this test case.
+    pub fn build_tx(&self) -> TypedTransaction {
+        match self.tx_type() {
+            TxType::Eip1559 => self.build_eip1559_tx(),
+            TxType::Eip2930 => self.build_eip2930_tx(),
+            _ => self.build_normal_tx_request().into(),
+        }
+    }
+
+    fn build_eip1559_tx(&self) -> TypedTransaction {
+        let mut request = Eip1559TransactionRequest::new()
+            .chain_id(ETH_CHAIN_ID)
+            .from(self.from)
+            .nonce(self.nonce)
+            .value(self.value)
+            .data(self.data.clone())
+            .gas(self.gas_limit)
+            .access_list(self.access_list.clone().unwrap())
+            .max_priority_fee_per_gas(self.max_priority_fee_per_gas.unwrap())
+            .max_fee_per_gas(self.max_fee_per_gas.unwrap());
+
+        if let Some(to) = self.to {
+            request = request.to(to);
+        }
+
+        request.into()
+    }
+
+    fn build_eip2930_tx(&self) -> TypedTransaction {
+        let request = self.build_normal_tx_request();
+        request
+            .with_access_list(self.access_list.clone().unwrap())
+            .into()
+    }
+
+    fn build_normal_tx_request(&self) -> TransactionRequest {
+        let mut request = TransactionRequest::new()
+            .chain_id(ETH_CHAIN_ID)
+            .from(self.from)
+            .nonce(self.nonce)
+            .value(self.value)
+            .data(self.data.clone())
+            .gas(self.gas_limit)
+            .gas_price(self.gas_price);
+
+        if let Some(to) = self.to {
+            request = request.to(to);
+        }
+
+        request
     }
 }
