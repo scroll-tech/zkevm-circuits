@@ -19,7 +19,9 @@ use halo2_proofs::plonk::{Error, Expression};
 /// Transaction L1 fee gadget for L1GasPriceOracle contract
 #[derive(Clone, Debug)]
 pub(crate) struct TxL1FeeGadget<F> {
-    /// Calculated L1 fee of transaction
+    /// Transaction L1 fee
+    /// It should be an Uint64, but it's also used to check sender balance which
+    /// needs to be added as a Word.
     tx_l1_fee_word: Word<F>,
     /// Remainder when calculating L1 fee
     remainder_word: U64Word<F>,
