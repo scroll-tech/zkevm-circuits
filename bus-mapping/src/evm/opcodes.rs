@@ -499,8 +499,6 @@ pub fn gen_associated_steps(
     fn_gen_associated_steps(state)
 }
 
-pub use precompiles::gen_ops_for_begin_tx as precompile_gen_ops_for_begin_tx;
-
 #[derive(Debug, Copy, Clone)]
 struct DummySelfDestruct;
 

@@ -365,77 +365,73 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
         }
-        // 2. Call to account with empty code (is_empty_code_hash == true).
-        (_, _, true) => (),
-        (_, is_precompile, false) => {
-            // 3. Call to precompiled.
-            // 4. Call to account with non-empty code (is_empty_code_hash == false).
+        // 2. Call to precompiled.
+        (_, true, _) => {
 
-            if is_precompile {
-                // some *pre-handling* for precompile address, like what we have done in callop
-                // the generation of precompile step is in `handle_tx`, right after the generation
-                // of begin_tx step
+            // some *pre-handling* for precompile address, like what we have done in callop
+            // the generation of precompile step is in `handle_tx`, right after the generation
+            // of begin_tx step
 
-                let precompile_call: PrecompileCalls = call.address.0[19].into();
+            let precompile_call: PrecompileCalls = call.address.0[19].into();
 
-                // insert a copy event (input) generate word memory read for input.
-                // we do not handle output / return since it is not part of the mined tx
-                let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
-                    std::cmp::min(input_len as u64, call.call_data_length)
-                } else {
-                    call.call_data_length
-                };
-                // we copy the truncated part or whole call data
-                let src_addr = call.call_data_offset;
-                let src_addr_end = call.call_data_offset.checked_add(n_input_bytes).unwrap();
-    
-                let (copy_steps, _) =
-                    state.gen_copy_steps_for_call_data_root(&mut exec_step, call.call_data_offset, 0, n_input_bytes)?;
-    
-                let input_bytes = copy_steps
-                    .iter()
-                    .filter(|(_, _, is_mask)| !*is_mask)
-                    .map(|t| t.0)
-                    .collect::<Vec<u8>>();
-                let rw_counter_start = state.block_ctx.rwc;
-                state.push_copy(
-                    &mut exec_step,
-                    CopyEvent {
-                        src_id: NumberOrHash::Number(state.tx_ctx.id()),
-                        src_type: CopyDataType::TxCalldata,
-                        src_addr,
-                        src_addr_end,
-                        dst_id: NumberOrHash::Number(call.call_id),
-                        dst_type: CopyDataType::RlcAcc,
-                        dst_addr: 0,
-                        log_id: None,
-                        rw_counter_start,
-                        copy_bytes: CopyBytes::new(copy_steps, None, None),
-                        access_list: vec![],
-                    },
-                );
+            // insert a copy event (input) generate word memory read for input.
+            // we do not handle output / return since it is not part of the mined tx
+            let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
+                std::cmp::min(input_len as u64, call.call_data_length)
+            } else {
+                call.call_data_length
+            };
+            // we copy the truncated part or whole call data
+            let src_addr = call.call_data_offset;
+            let src_addr_end = call.call_data_offset.checked_add(n_input_bytes).unwrap();
 
-                precompile_step.replace(precompile_gen_ops_for_begin_tx(
-                    state,
-                    &mut exec_step,
-                    precompile_call,
-                    &input_bytes,
-                )?);
+            let (copy_steps, _) =
+                state.gen_copy_steps_for_call_data_root(&mut exec_step, call.call_data_offset, 0, n_input_bytes)?;
 
-                // and we need more call contexts
-                for (field, value) in [
-                    (
-                        CallContextField::IsSuccess,
-                        Word::from(call.is_success as u64),
-                    ),
-                    (CallContextField::CallerId, call.caller_id.into()),
-                    (CallContextField::ReturnDataOffset,0.into(),),
-                    (CallContextField::ReturnDataLength, 0.into()),
-                ] {
-                    state.call_context_write(&mut exec_step, call.call_id, field, value)?;
-                }                
-            }
+            let input_bytes = copy_steps
+                .iter()
+                .filter(|(_, _, is_mask)| !*is_mask)
+                .map(|t| t.0)
+                .collect::<Vec<u8>>();
+            let rw_counter_start = state.block_ctx.rwc;
+            state.push_copy(
+                &mut exec_step,
+                CopyEvent {
+                    src_id: NumberOrHash::Number(state.tx_ctx.id()),
+                    src_type: CopyDataType::TxCalldata,
+                    src_addr,
+                    src_addr_end,
+                    dst_id: NumberOrHash::Number(call.call_id),
+                    dst_type: CopyDataType::RlcAcc,
+                    dst_addr: 0,
+                    log_id: None,
+                    rw_counter_start,
+                    copy_bytes: CopyBytes::new(copy_steps, None, None),
+                    access_list: vec![],
+                },
+            );
 
+            precompile_step.replace(precompile_gen_ops_for_begin_tx(
+                state,
+                &mut exec_step,
+                precompile_call,
+                &input_bytes,
+            )?);
+
+            // and we need more call contexts
+            for (field, value) in [
+                (
+                    CallContextField::IsSuccess,
+                    Word::from(call.is_success as u64),
+                ),
+                (CallContextField::CallerId, call.caller_id.into()),
+                (CallContextField::ReturnDataOffset,0.into(),),
+                (CallContextField::ReturnDataLength, 0.into()),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+            }                
+            
+            // TODO: do we also need these call context?
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (
@@ -465,11 +461,43 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             
             // for callop we need handle_return while we
             // only need to handle reversion when unsuccess
-            if is_precompile && !state.call().unwrap().is_success {
+            if !call.is_success {
                 let mut rev_steps = std::iter::once(&mut exec_step)
                     .chain(precompile_step.as_mut())
                     .collect::<Vec<_>>();
                 state.handle_reversion(&mut rev_steps);
+            }
+        },
+        (_, _, is_empty_code_hash) => {
+            // 3. Call to account with empty code (is_empty_code_hash == true).
+            // 4. Call to account with non-empty code (is_empty_code_hash == false).
+            if !is_empty_code_hash {
+                for (field, value) in [
+                    (CallContextField::Depth, call.depth.into()),
+                    (
+                        CallContextField::CallerAddress,
+                        call.caller_address.to_word(),
+                    ),
+                    (CallContextField::CalleeAddress, call.address.to_word()),
+                    (
+                        CallContextField::CallDataOffset,
+                        call.call_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::CallDataLength,
+                        call.call_data_length.into(),
+                    ),
+                    (CallContextField::Value, call.value),
+                    (CallContextField::IsStatic, (call.is_static as usize).into()),
+                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                    (CallContextField::IsRoot, 1.into()),
+                    (CallContextField::IsCreate, call.is_create().to_word()),
+                    (CallContextField::CodeHash, call_code_hash),
+                ] {
+                    state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+                }
             }
         }
     }

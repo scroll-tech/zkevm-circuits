@@ -1,5 +1,5 @@
 use eth_types::{
-    evm_types::{Gas, GasCost},
+    evm_types::GasCost,
     GethExecStep, ToWord, Word,
 };
 
