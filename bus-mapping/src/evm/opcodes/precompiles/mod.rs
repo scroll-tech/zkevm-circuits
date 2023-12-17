@@ -1,4 +1,7 @@
-use eth_types::{GethExecStep, ToWord, Word};
+use eth_types::{
+    evm_types::{Gas, GasCost},
+    GethExecStep, ToWord, Word,
+};
 
 use crate::{
     circuit_input_builder::{
@@ -8,6 +11,7 @@ use crate::{
     precompile::{PrecompileAuxData, PrecompileCalls, execute_precompiled},
     Error,
 };
+use super::error_oog_precompile::ErrorOOGPrecompile;
 
 mod ec_add;
 mod ec_mul;
@@ -30,8 +34,30 @@ pub fn gen_associated_ops(
     output_bytes: &[u8],
     return_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
+
+    let input_step = state.new_step(&geth_step)?;
+
+    gen_ops(
+        state,
+        input_step,
+        call,
+        precompile,
+        input_bytes,
+        output_bytes,
+        return_bytes,
+    )
+}
+
+fn gen_ops(
+    state: &mut CircuitInputStateRef,
+    mut exec_step: ExecStep,
+    call: Call,
+    precompile: PrecompileCalls,
+    input_bytes: &[u8],
+    output_bytes: &[u8],
+    return_bytes: &[u8],
+) -> Result<ExecStep, Error> {
     assert_eq!(call.code_address(), Some(precompile.into()));
-    let mut exec_step = state.new_step(&geth_step)?;
     exec_step.exec_state = ExecState::Precompile(precompile);
 
     common_call_ctx_reads(state, &mut exec_step, &call)?;
@@ -127,22 +153,52 @@ fn common_call_ctx_reads(
     Ok(())
 }
 
-pub fn gen_associated_ops_for_begin_tx(
+/// generate precompile step for *successful* precompile call
+pub fn gen_ops_for_begin_tx(
     state: &mut CircuitInputStateRef,
-    geth_step: GethExecStep,
-    call: Call,
+    begin_step: &ExecStep,
     precompile: PrecompileCalls,
+    input_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
 
+    let call = state.call()?.clone();
+    let precompile_step = state.new_post_begin_tx_step(begin_step);
+
     let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
-        &code_address,
-        if args_length != 0 {
-            let caller_memory = &state.caller_ctx()?.memory;
-            &caller_memory.0[args_offset..args_offset + args_length]
-        } else {
-            &[]
-        },
-        callee_gas_left_with_stipend,
+        &precompile.into(),
+        input_bytes,
+        precompile_step.gas_left.0,
     );
 
+    // modexp's oog error is handled in ModExpGadget
+    let mut step = if has_oog_err && precompile != PrecompileCalls::Modexp {
+        log::debug!(
+            "precompile call ({:?}) runs out of gas: callee_gas_left = {}",
+            precompile,
+            precompile_step.gas_left.0,
+        );
+
+        let oog_step = ErrorOOGPrecompile::gen_ops(
+            state,
+            precompile_step,
+            call,
+        )?;
+
+        oog_step
+    } else {
+        gen_ops(
+            state,
+            precompile_step,
+            call,
+            precompile,
+            input_bytes,
+            &result,
+            &[], // notice we suppose return is omitted
+        )?
+    };
+
+    // adjust gas cost
+    step.gas_cost = GasCost(precompile_call_gas_cost);    
+
+    Ok(step)
 }

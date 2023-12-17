@@ -77,6 +77,21 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
+    /// Create a step after BeginTx step
+    pub fn new_post_begin_tx_step(&self, ref_setp: &ExecStep) -> ExecStep {
+        let gas_left = ref_setp.gas_left.0 - ref_setp.gas_cost.as_u64();
+
+        let step = ExecStep {
+            exec_state: ExecState::BeginTx,
+            gas_left: Gas(gas_left),
+            rwc: self.block_ctx.rwc,
+            log_id: self.tx_ctx.log_id,
+            ..Default::default()
+        };
+
+        step
+    }
+
     /// Create a new EndTx step
     pub fn new_end_tx_step(&self) -> ExecStep {
         let prev_step = self

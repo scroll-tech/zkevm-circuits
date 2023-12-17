@@ -1,17 +1,16 @@
-use super::TxExecSteps;
+use super::precompiles::gen_ops_for_begin_tx as precompile_gen_ops_for_begin_tx;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     l2_predeployed::l1_gas_price_oracle,
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
     },
-    precompile::{is_precompiled, execute_precompiled, PrecompileCalls},
+    precompile::{is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
-use core::fmt::Debug;
 use eth_types::{
     evm_types::{
         gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
@@ -21,25 +20,26 @@ use eth_types::{
 };
 use ethers_core::utils::get_contract_address;
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct BeginEndTx;
+// #[derive(Clone, Copy, Debug)]
+// pub(crate) struct BeginEndTx;
 
-impl TxExecSteps for BeginEndTx {
-    fn gen_associated_steps(
-        state: &mut CircuitInputStateRef,
-        execution_step: ExecState,
-    ) -> Result<ExecStep, Error> {
-        match execution_step {
-            ExecState::BeginTx => gen_begin_tx_steps(state),
-            ExecState::EndTx => gen_end_tx_steps(state),
-            _ => {
-                unreachable!()
-            }
-        }
-    }
-}
+// impl TxExecSteps for BeginEndTx {
+//     fn gen_associated_steps(
+//         state: &mut CircuitInputStateRef,
+//         execution_step: ExecState,
+//     ) -> Result<ExecStep, Error> {
+//         match execution_step {
+//             ExecState::BeginTx => gen_begin_tx_steps(state),
+//             ExecState::EndTx => gen_end_tx_steps(state),
+//             _ => {
+//                 unreachable!()
+//             }
+//         }
+//     }
+// }
 
-pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
+pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
+
     let mut exec_step = state.new_begin_tx_step();
 
     // Add two copy-events for tx access-list addresses and storage keys if EIP-2930.
@@ -198,7 +198,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     } + call_data_gas_cost
         + access_list_gas_cost
         + init_code_gas_cost;
-    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, access_list_gas_cost {access_list_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
+    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, access_list_gas_cost {access_list_gas_cost}, init_code_gas_cost {init_code_gas_cost}, &mut exec_step.gas_cost {:?}", &mut exec_step.gas_cost);
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee account
@@ -230,53 +230,6 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
         AccountField::CodeHash,
         account_code_hash,
     )?;
-
-    // some *pre-handling* for precompile address, like what we have done in callop
-    // the generation of precompile step is in `handle_tx`, right after the generation
-    // of begin_tx step
-    if is_precompile {
-        let precompile_call: PrecompileCalls = call.address.0[19].into();
-
-        // just like callop, insert a copy event (input) generate word memory read for input.
-        // we do not handle output / return since it is not part of the mined tx
-        let rw_counter_start = state.block_ctx.rwc;
-        let input_bytes = {
-            let call_data_len = state.tx.input.len();
-            let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
-                min(input_len, call_data_len)
-            } else {
-                call_data_len
-            };
-            // we copy whole call data
-            let src_addr = call.call_data_offset;
-            let src_addr_end = call.call_data_offset.checked_add(call.call_data_length).unwrap();
-
-            let (copy_steps, prev_bytes) =
-                state.gen_copy_steps_for_call_data_root(&mut exec_step, call.call_data_offset, 0, n_input_bytes)?;
-
-            let input_bytes = copy_steps
-                .iter()
-                .filter(|(_, _, is_mask)| !*is_mask)
-                .map(|t| t.0)
-                .collect::<Vec<u8>>();
-            state.push_copy(
-                &mut exec_step,
-                CopyEvent {
-                    src_id: NumberOrHash::Number(state.tx_ctx.id()),
-                    src_type: CopyDataType::TxCalldata,
-                    src_addr,
-                    src_addr_end,
-                    dst_id: NumberOrHash::Number(state.tx_ctx.id()),
-                    dst_type: CopyDataType::RlcAcc,
-                    dst_addr: 0,
-                    log_id: None,
-                    rw_counter_start,
-                    copy_bytes: CopyBytes::new(copy_steps, None, None),
-                },
-            );
-            input_bytes
-        };        
-    }
 
     if state.tx.is_create()
         && ((!account_code_hash_is_empty_or_zero) || !callee_account.nonce.is_zero())
@@ -366,6 +319,8 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
         );
     }
 
+    let mut precompile_step = None;
+
     // There are 4 branches from here.
     match (
         call.is_create(),
@@ -410,47 +365,117 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
         }
-        // 2. Call to precompiled.
-        (_, true, _) => (),
-        (_, _, is_empty_code_hash) => {
-            // 3. Call to account with empty code (is_empty_code_hash == true).
+        // 2. Call to account with empty code (is_empty_code_hash == true).
+        (_, _, true) => (),
+        (_, is_precompile, false) => {
+            // 3. Call to precompiled.
             // 4. Call to account with non-empty code (is_empty_code_hash == false).
-            if !is_empty_code_hash {
+
+            if is_precompile {
+                // some *pre-handling* for precompile address, like what we have done in callop
+                // the generation of precompile step is in `handle_tx`, right after the generation
+                // of begin_tx step
+
+                let precompile_call: PrecompileCalls = call.address.0[19].into();
+
+                // insert a copy event (input) generate word memory read for input.
+                // we do not handle output / return since it is not part of the mined tx
+                let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
+                    std::cmp::min(input_len as u64, call.call_data_length)
+                } else {
+                    call.call_data_length
+                };
+                // we copy the truncated part or whole call data
+                let src_addr = call.call_data_offset;
+                let src_addr_end = call.call_data_offset.checked_add(n_input_bytes).unwrap();
+    
+                let (copy_steps, _) =
+                    state.gen_copy_steps_for_call_data_root(&mut exec_step, call.call_data_offset, 0, n_input_bytes)?;
+    
+                let input_bytes = copy_steps
+                    .iter()
+                    .filter(|(_, _, is_mask)| !*is_mask)
+                    .map(|t| t.0)
+                    .collect::<Vec<u8>>();
+                let rw_counter_start = state.block_ctx.rwc;
+                state.push_copy(
+                    &mut exec_step,
+                    CopyEvent {
+                        src_id: NumberOrHash::Number(state.tx_ctx.id()),
+                        src_type: CopyDataType::TxCalldata,
+                        src_addr,
+                        src_addr_end,
+                        dst_id: NumberOrHash::Number(call.call_id),
+                        dst_type: CopyDataType::RlcAcc,
+                        dst_addr: 0,
+                        log_id: None,
+                        rw_counter_start,
+                        copy_bytes: CopyBytes::new(copy_steps, None, None),
+                        access_list: vec![],
+                    },
+                );
+
+                precompile_step.replace(precompile_gen_ops_for_begin_tx(
+                    state,
+                    &mut exec_step,
+                    precompile_call,
+                    &input_bytes,
+                )?);
+
+                // and we need more call contexts
                 for (field, value) in [
-                    (CallContextField::Depth, call.depth.into()),
                     (
-                        CallContextField::CallerAddress,
-                        call.caller_address.to_word(),
+                        CallContextField::IsSuccess,
+                        Word::from(call.is_success as u64),
                     ),
-                    (CallContextField::CalleeAddress, call.address.to_word()),
-                    (
-                        CallContextField::CallDataOffset,
-                        call.call_data_offset.into(),
-                    ),
-                    (
-                        CallContextField::CallDataLength,
-                        call.call_data_length.into(),
-                    ),
-                    (CallContextField::Value, call.value),
-                    (CallContextField::IsStatic, (call.is_static as usize).into()),
-                    (CallContextField::LastCalleeId, 0.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                    (CallContextField::IsRoot, 1.into()),
-                    (CallContextField::IsCreate, call.is_create().to_word()),
-                    (CallContextField::CodeHash, call_code_hash),
+                    (CallContextField::CallerId, call.caller_id.into()),
+                    (CallContextField::ReturnDataOffset,0.into(),),
+                    (CallContextField::ReturnDataLength, 0.into()),
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value)?;
-                }
+                }                
+            }
+
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    call.call_data_length.into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, call.is_create().to_word()),
+                (CallContextField::CodeHash, call_code_hash),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+            }
+            
+            // for callop we need handle_return while we
+            // only need to handle reversion when unsuccess
+            if is_precompile && !state.call().unwrap().is_success {
+                let mut rev_steps = std::iter::once(&mut exec_step)
+                    .chain(precompile_step.as_mut())
+                    .collect::<Vec<_>>();
+                state.handle_reversion(&mut rev_steps);
             }
         }
     }
-    log::trace!("begin_tx_step: {:?}", exec_step);
-    if is_precompile && !state.call().unwrap().is_success {
-        state.handle_reversion(&mut [&mut exec_step]);
-    }
+    log::trace!("begin_tx_step: {:?}, {:?}", exec_step, precompile_step);
 
-    Ok(exec_step)
+    Ok(std::iter::once(exec_step).chain(precompile_step).collect())
 }
 
 pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
