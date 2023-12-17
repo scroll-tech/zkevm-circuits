@@ -1507,4 +1507,31 @@ mod test {
             .block_modifier(Box::new(|block| block.circuits_params.max_txs = 3))
             .run();
     }
+
+    // TODO: add a negative case after upgrading geth.
+    #[test]
+    fn test_begin_tx_gadget_for_eip1559_tx() {
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(gwei(80_000));
+                accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(1));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .to(MOCK_ACCOUNTS[1])
+                    .gas_price(gwei(2))
+                    .gas(30_000.into())
+                    .value(gwei(20_000))
+                    .max_fee_per_gas(gwei(2))
+                    .max_priority_fee_per_gas(gwei(2))
+                    .transaction_type(2); // Set tx type to EIP-1559.
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
 }
