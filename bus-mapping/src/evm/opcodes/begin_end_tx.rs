@@ -1,4 +1,7 @@
-use super::precompiles::gen_ops_for_begin_tx as precompile_gen_ops_for_begin_tx;
+use super::{
+    precompiles::gen_ops as precompile_gen_ops_for_begin_tx,
+    error_oog_precompile::ErrorOOGPrecompile,
+};
 use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
@@ -7,7 +10,7 @@ use crate::{
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
     },
-    precompile::{is_precompiled, PrecompileCalls},
+    precompile::{is_precompiled, execute_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
@@ -372,7 +375,50 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             // the generation of precompile step is in `handle_tx`, right after the generation
             // of begin_tx step
 
+            // add dummy field which precompile call contexts needed
+            for (field, value) in [
+                (CallContextField::CallerId, call.caller_id.into()),            
+                (CallContextField::ReturnDataOffset, 0.into()),
+                (CallContextField::ReturnDataLength, 0.into()),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+            }
+
+            // init call context fields like calling normal contract
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    call.call_data_length.into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, call.is_create().to_word()),
+                (CallContextField::CodeHash, call_code_hash),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+            }
+
+            let next_step = state.new_next_step(&exec_step)?;
             let precompile_call: PrecompileCalls = call.address.0[19].into();
+            let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
+                &precompile_call.into(),
+                &state.tx.input,
+                next_step.gas_left.0,
+            );
 
             // insert a copy event (input) generate word memory read for input.
             // we do not handle output / return since it is not part of the mined tx
@@ -410,63 +456,44 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                     access_list: vec![],
                 },
             );
-
-            precompile_step.replace(precompile_gen_ops_for_begin_tx(
-                state,
-                &mut exec_step,
-                precompile_call,
-                &input_bytes,
-            )?);
-
-            // and we need more call contexts
-            for (field, value) in [
-                (
-                    CallContextField::IsSuccess,
-                    Word::from(call.is_success as u64),
-                ),
-                (CallContextField::CallerId, call.caller_id.into()),
-                (CallContextField::ReturnDataOffset,0.into(),),
-                (CallContextField::ReturnDataLength, 0.into()),
-            ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
-            }                
             
-            // TODO: do we also need these call context?
-            for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
-                (
-                    CallContextField::CallerAddress,
-                    call.caller_address.to_word(),
-                ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
-                (
-                    CallContextField::CallDataOffset,
-                    call.call_data_offset.into(),
-                ),
-                (
-                    CallContextField::CallDataLength,
-                    call.call_data_length.into(),
-                ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
-                (CallContextField::LastCalleeId, 0.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                (CallContextField::IsRoot, 1.into()),
-                (CallContextField::IsCreate, call.is_create().to_word()),
-                (CallContextField::CodeHash, call_code_hash),
-            ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+            let call_success = call.is_success;
+            // modexp's oog error is handled in ModExpGadget
+            let mut next_step = if has_oog_err && precompile_call != PrecompileCalls::Modexp {
+                log::debug!(
+                    "precompile call ({:?}) runs out of gas: callee_gas_left = {}",
+                    precompile_call,
+                    next_step.gas_left.0,
+                );
+
+                ErrorOOGPrecompile::gen_ops(
+                    state,
+                    next_step,
+                    call,
+                )
+            } else {
+                precompile_gen_ops_for_begin_tx(
+                    state,
+                    next_step,
+                    call,
+                    precompile_call,
+                    &input_bytes,
+                    &result,
+                    &[], // notice we suppose return is omitted
+                )
+            }?;
+
+            // adjust gas cost
+            next_step.gas_cost = GasCost(precompile_call_gas_cost);
+
+            // notice we are handling a 'handle_return' process without associated geth step
+            // 1.handle reversion if needed
+            if !call_success {
+                state.handle_reversion(&mut [&mut exec_step, &mut next_step]);
             }
-            
-            // for callop we need handle_return while we
-            // only need to handle reversion when unsuccess
-            if !call.is_success {
-                let mut rev_steps = std::iter::once(&mut exec_step)
-                    .chain(precompile_step.as_mut())
-                    .collect::<Vec<_>>();
-                state.handle_reversion(&mut rev_steps);
-            }
+            // 2.pop call ctx
+            state.tx_ctx.pop_call_ctx();
+            precompile_step.replace(next_step);
         },
         (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code (is_empty_code_hash == true).

@@ -1,5 +1,4 @@
 use eth_types::{
-    evm_types::GasCost,
     GethExecStep, ToWord, Word,
 };
 
@@ -8,10 +7,9 @@ use crate::{
         Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent, SHA256,
     },
     operation::CallContextField,
-    precompile::{PrecompileAuxData, PrecompileCalls, execute_precompiled},
+    precompile::{PrecompileAuxData, PrecompileCalls},
     Error,
 };
-use super::error_oog_precompile::ErrorOOGPrecompile;
 
 mod ec_add;
 mod ec_mul;
@@ -48,7 +46,8 @@ pub fn gen_associated_ops(
     )
 }
 
-fn gen_ops(
+/// generate an execstep for the input step
+pub fn gen_ops(
     state: &mut CircuitInputStateRef,
     mut exec_step: ExecStep,
     call: Call,
@@ -151,54 +150,4 @@ fn common_call_ctx_reads(
         state.call_context_read(exec_step, call.call_id, field, value)?;
     }
     Ok(())
-}
-
-/// generate precompile step for *successful* precompile call
-pub fn gen_ops_for_begin_tx(
-    state: &mut CircuitInputStateRef,
-    begin_step: &ExecStep,
-    precompile: PrecompileCalls,
-    input_bytes: &[u8],
-) -> Result<ExecStep, Error> {
-
-    let call = state.call()?.clone();
-    let precompile_step = state.new_post_begin_tx_step(begin_step);
-
-    let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
-        &precompile.into(),
-        input_bytes,
-        precompile_step.gas_left.0,
-    );
-
-    // modexp's oog error is handled in ModExpGadget
-    let mut step = if has_oog_err && precompile != PrecompileCalls::Modexp {
-        log::debug!(
-            "precompile call ({:?}) runs out of gas: callee_gas_left = {}",
-            precompile,
-            precompile_step.gas_left.0,
-        );
-
-        let oog_step = ErrorOOGPrecompile::gen_ops(
-            state,
-            precompile_step,
-            call,
-        )?;
-
-        oog_step
-    } else {
-        gen_ops(
-            state,
-            precompile_step,
-            call,
-            precompile,
-            input_bytes,
-            &result,
-            &[], // notice we suppose return is omitted
-        )?
-    };
-
-    // adjust gas cost
-    step.gas_cost = GasCost(precompile_call_gas_cost);    
-
-    Ok(step)
 }
