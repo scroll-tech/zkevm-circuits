@@ -566,6 +566,11 @@ impl Transaction {
                         );
 
                         if !remaining_bytes.is_empty() {
+                            // The circuit recovers the byte count remained on the previous depth level
+                            // by taking it out of the stack_acc using the same random coefficient (a power of keccak_rand)
+
+                            // stack_acc = RLC(remaining_bytes[0..depth], keccak_rand);
+                            // stack_acc_pow_of_rand = [keccak_rand^0, keccak_rand^1, keccak_rand^2, keccak_rand^3]
                             let byte_remained = *remaining_bytes.last().unwrap();
                             stack_acc = stack_acc
                                 - stack_acc_pow_of_rand[cur.depth - 1]
@@ -618,6 +623,9 @@ impl Transaction {
                             assert!(*rem >= 1);
 
                             if !(0xc0..=0xf7).contains(&byte_value) {
+                                // Note: if the byte_value is in the range [0xc0..=0xf7],
+                                // then we anticipate a PUSH onto a higher depth.
+
                                 // add stack op on same depth
                                 stack_ops.push(RlpStackOp::update(
                                     id,
