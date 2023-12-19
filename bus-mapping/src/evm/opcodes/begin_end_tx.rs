@@ -412,12 +412,11 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
 
-            let next_step = state.new_next_step(&exec_step)?;
             let precompile_call: PrecompileCalls = call.address.0[19].into();
             let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
                 &precompile_call.into(),
                 &state.tx.input,
-                next_step.gas_left.0,
+                exec_step.gas_left.0 - exec_step.gas_cost.as_u64(),
             );
 
             // insert a copy event (input) generate word memory read for input.
@@ -431,8 +430,8 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             let src_addr = call.call_data_offset;
             let src_addr_end = call.call_data_offset.checked_add(n_input_bytes).unwrap();
 
-            let (copy_steps, _) =
-                state.gen_copy_steps_for_call_data_root(&mut exec_step, call.call_data_offset, 0, n_input_bytes)?;
+            let copy_steps = state.tx.input.iter().copied()
+                .take(n_input_bytes as usize).map(|b|(b, false, false)).collect::<Vec<_>>();
 
             let input_bytes = copy_steps
                 .iter()
@@ -460,6 +459,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             let call_success = call.is_success;
             // modexp's oog error is handled in ModExpGadget
             let mut next_step = if has_oog_err && precompile_call != PrecompileCalls::Modexp {
+                let next_step = state.new_next_step(&exec_step)?;
                 log::debug!(
                     "precompile call ({:?}) runs out of gas: callee_gas_left = {}",
                     precompile_call,
@@ -474,7 +474,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             } else {
                 precompile_gen_ops_for_begin_tx(
                     state,
-                    next_step,
+                    state.new_next_step(&exec_step)?,
                     call,
                     precompile_call,
                     &input_bytes,

@@ -238,7 +238,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             not::expr(tx_callee_address_is_zero.expr()),
             is_precompile_lt.expr(),
         ]);
-        let precompile_input_rws = cb.query_cell();
         let precompile_input_len = cb.query_cell();
 
         let tx_call_data_word_length =
@@ -510,7 +509,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (init_code_rlc, keccak_code_hash)
         });
 
-        let precompile_output_bytes_rlc = cb.query_cell_phase2();
         // 2. Handle call to precompiled contracts.
         let (
             precompile_gadget,
@@ -606,7 +604,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr()
-                        + precompile_input_rws.expr()
                 ),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
@@ -1488,8 +1485,6 @@ mod test {
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap();
-
-        println!("{:#?}", ctx.geth_traces);
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
         .block_modifier(Box::new(|blk|{
