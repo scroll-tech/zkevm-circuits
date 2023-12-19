@@ -501,8 +501,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb,
                     call_gadget.callee_address_expr(),
                     precompile_input_bytes_rlc.expr(),
-                    precompile_output_bytes_rlc.expr(),
-                    precompile_return_bytes_rlc.expr(),
+                    Some(precompile_output_bytes_rlc.expr()),
+                    Some(precompile_return_bytes_rlc.expr()),
                 );
 
                 (
