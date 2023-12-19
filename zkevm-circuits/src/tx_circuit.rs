@@ -1620,6 +1620,7 @@ impl<F: Field> TxCircuitConfig<F> {
         is_tx_type!(is_pre_eip155, PreEip155);
         is_tx_type!(is_eip155, Eip155);
         is_tx_type!(is_l1_msg, L1Msg);
+        is_tx_type!(is_l1_block_hashes, L1BlockHashes);
 
         // lookup tx type in RLP table for L1Msg only
         meta.lookup_any("lookup l1 msg tx type in RLP table", |meta| {
@@ -1695,12 +1696,17 @@ impl<F: Field> TxCircuitConfig<F> {
                         lookup_conditions[&LookupCondition::L1MsgHash],
                         Rotation::cur(),
                     ),
+                    meta.query_advice(
+                        lookup_conditions[&LookupCondition::L1BlockHashesHash],
+                        Rotation::cur(),
+                    ),
                 ]),
             ]);
             let is_none = meta.query_advice(is_none, Rotation::cur());
             let hash_format = is_pre_eip155(meta) * TxHashPreEip155.expr()
                 + is_eip155(meta) * TxHashEip155.expr()
-                + is_l1_msg(meta) * L1MsgHash.expr();
+                + is_l1_msg(meta) * L1MsgHash.expr()
+                + is_l1_block_hashes(meta) * L1BlockHashesHash.expr();
 
             vec![
                 1.expr(), // q_enable = true
@@ -2339,6 +2345,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
                 ("byte", self.calldata_byte, F::from(*byte as u64)),
                 ("is_calldata", self.is_calldata, F::one()),
+                ("is_l1_block_hashes", self.is_l1_block_hashes, F::from(tx.tx_type.is_l1_block_hashes())),
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
             }
@@ -2474,6 +2481,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
                 (self.calldata_gas_cost_acc, F::zero()),
+                (self.is_l1_block_hashes, F::zero()),
             ] {
                 region.assign_advice(|| "", col, offset, || Value::known(value))?;
             }
