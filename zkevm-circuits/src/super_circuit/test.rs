@@ -105,7 +105,6 @@ fn test_super_circuit<
     );
 
     block.txs[0].tx_type = TxType::L1BlockHashes;
-    block.txs[0].caller_address = address!("0x0000000000000000000000000000000000000000");
 
     let active_row_num =SuperCircuit::<
         Fr,

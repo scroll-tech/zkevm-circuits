@@ -558,7 +558,7 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
         // Sanity check for transaction L1 fee.
-        let tx_l1_fee = if tx.tx_type.is_l1_msg() {
+        let tx_l1_fee = if tx.tx_type.is_l1_msg() || tx.tx_type.is_l1_block_hashes() {
             0
         } else {
             tx.l1_fee()

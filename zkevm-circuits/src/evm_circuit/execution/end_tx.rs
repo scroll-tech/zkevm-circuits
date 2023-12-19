@@ -140,7 +140,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let effective_fee = cb.query_word_rlc();
 
         cb.condition(tx_l1_custom_tx.expr(), |cb| {
-            cb.require_zero("l1fee is 0 for l1msg", tx_l1_fee.expr());
+            cb.require_zero("l1fee is 0 for l1msg and l1 block hashesg", tx_l1_fee.expr());
         });
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
@@ -405,7 +405,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         )?;
 
         let tx_l1_fee = if tx.tx_type.is_l1_custom_tx() {
-            log::trace!("tx is l1msg and l1 fee is 0");
+            log::trace!("tx is l1msg or l1 block hashes and l1 fee is 0");
             0
         } else {
             tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0

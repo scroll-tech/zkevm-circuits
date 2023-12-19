@@ -1186,14 +1186,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
 
         meta.lookup_any("l1 block hashes calldata in block table", |meta| {
-            let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
-            let block_num = meta.query_advice(tx_table.value, Rotation::cur());
-            let calldata_rlc = meta.query_advice(calldata_rlc, Rotation::cur());
+            let is_tag_good = meta.query_advice(is_calldata, Rotation::cur());
+            let block_num = meta.query_advice(tx_table.value, Rotation(16));
+            let calldata_rlc = meta.query_advice(tx_table.value, Rotation::cur());
 
             let input_expr = vec![L1BlockHashesCalldata.expr(), block_num, calldata_rlc];
             let table_expr = block_table.table_exprs(meta);
             let condition = and::expr([
-                is_tag_block_num,
+                is_tag_good,
                 meta.query_advice(is_l1_block_hashes, Rotation::cur()),
                 meta.query_fixed(q_enable, Rotation::cur()),
             ]);

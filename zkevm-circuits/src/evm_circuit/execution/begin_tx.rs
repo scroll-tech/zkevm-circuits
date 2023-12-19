@@ -182,10 +182,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
-            and::expr([
-                not::expr(tx_l1_block_hashes.is_l1_block_hashes()),
-                tx_caller_address_is_zero.expr(),
-            ]),
+            tx_caller_address_is_zero.expr(),
             false.expr(),
         );
         let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
