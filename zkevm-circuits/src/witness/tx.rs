@@ -510,7 +510,7 @@ impl Transaction {
         let mut stack_ops: Vec<RlpStackOp<F>> = vec![];
         // This variable tracks how many bytes were left on a depth level before the last UPDATE.
         // Unlike the remaining_bytes variable, it tracks the byte count before the UPDATE
-        // operation took place. This is a utility variable for correctly filling the 
+        // operation took place. This is a utility variable for correctly filling the
         // value_prev field in a POP record.
         let mut prev_bytes_on_depth: [usize; 4] = [0, 0, 0, 0];
         let mut stack_acc = Value::known(F::zero());
@@ -566,11 +566,13 @@ impl Transaction {
                         );
 
                         if !remaining_bytes.is_empty() {
-                            // The circuit recovers the byte count remained on the previous depth level
-                            // by taking it out of the stack_acc using the same random coefficient (a power of keccak_rand)
+                            // The circuit recovers the byte count remained on the previous depth
+                            // level by taking it out of the stack_acc
+                            // using the same random coefficient (a power of keccak_rand)
 
                             // stack_acc = RLC(remaining_bytes[0..depth], keccak_rand);
-                            // stack_acc_pow_of_rand = [keccak_rand^0, keccak_rand^1, keccak_rand^2, keccak_rand^3]
+                            // stack_acc_pow_of_rand = [keccak_rand^0, keccak_rand^1, keccak_rand^2,
+                            // keccak_rand^3]
                             let byte_remained = *remaining_bytes.last().unwrap();
                             stack_acc = stack_acc
                                 - stack_acc_pow_of_rand[cur.depth - 1]
