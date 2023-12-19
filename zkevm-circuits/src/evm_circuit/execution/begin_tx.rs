@@ -526,6 +526,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             //     1.expr(),
             // );
 
+            // call's dummy context for precompile.
+            for (field_tag, value) in [
+                (CallContextFieldTag::CallerId, 0.expr()), // caller id for root call is always 0
+                (CallContextFieldTag::ReturnDataOffset, 0.expr()),
+                (CallContextFieldTag::ReturnDataLength, 0.expr()),
+            ] {
+                cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
+            }
+
             // Setup first call's context.
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
@@ -608,7 +617,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
-                code_hash: To(account_code_hash.expr()),
                 gas_left: To(gas_left.clone()),
                 reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta()),
                 log_id: To(0.expr()),
@@ -920,6 +928,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     .unwrap_or(account_code_hash),
             ),
         )?;
+
         #[cfg(feature = "scroll")]
         {
             self.account_keccak_code_hash.assign(
@@ -1488,7 +1497,7 @@ mod test {
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
         .block_modifier(Box::new(|blk|{
-            println!("{:#?}", blk.txs[0].steps);
+            //println!("{:#?}", blk.txs[0].steps);
         }))
         .run();
     }

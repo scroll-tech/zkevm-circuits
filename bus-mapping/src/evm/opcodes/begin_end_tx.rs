@@ -407,7 +407,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, call.is_create().to_word()),
-                (CallContextField::CodeHash, call_code_hash),
+                (CallContextField::CodeHash, account_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
