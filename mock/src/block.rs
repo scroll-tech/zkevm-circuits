@@ -69,7 +69,7 @@ impl Default for MockBlock {
             mix_hash: Hash::zero(),
             nonce: H64::zero(),
             chain_id: MOCK_CHAIN_ID,
-            last_applied_l1_block: U64([*MOCK_LAST_APPLIED_L1_BLOCK]),
+            last_applied_l1_block: MOCK_LAST_APPLIED_L1_BLOCK.into(),
             l1_block_hashes: None,
         }
     }

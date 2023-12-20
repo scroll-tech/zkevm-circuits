@@ -78,7 +78,7 @@ fn test_super_circuit<
     let mut difficulty_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
-    l2_trace.header.last_applied_l1_block = Some(U64([*MOCK_LAST_APPLIED_L1_BLOCK]));
+    l2_trace.header.last_applied_l1_block = Some(MOCK_LAST_APPLIED_L1_BLOCK.into());
     l2_trace.l1_block_hashes = Some(vec![Hash::from_str("0x5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap()]);
 
     let mut builder =
@@ -88,7 +88,7 @@ fn test_super_circuit<
     builder
         .apply_l1_block_hashes(
             Some(90),
-            Some(*MOCK_LAST_APPLIED_L1_BLOCK),
+            Some(MOCK_LAST_APPLIED_L1_BLOCK.into()),
             Some(Hash::from_str("0x2ad93677390840a070c85971a6737477e113895f52fb853a66295ef5655e1af4").unwrap()),
         )
         .expect("could not apply l1 block hashes");

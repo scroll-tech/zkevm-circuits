@@ -8,10 +8,11 @@ mod param;
 mod test;
 
 use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
+use ethabi::{Token, encode, Function, StateMutability, Param, ParamType};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
-use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
+use bus_mapping::circuit_input_builder::{get_dummy_tx_hash, DUMMY_L1_BLOCK_HASH};
+use eth_types::{Address, Field, Hash, ToBigEndian, ToWord, Word, H256, U64};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
@@ -50,7 +51,7 @@ use crate::{
         BlockContextFieldTag,
         BlockContextFieldTag::{
             BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumAllTxs, NumTxs, Number,
-            Timestamp,
+            Timestamp, L1BlockHashesCalldataRLC,
         },
     },
     util::rlc_be_bytes,
@@ -95,6 +96,16 @@ pub struct PublicData {
     pub max_calldata: usize,
     /// Max number of supported inner blocks in a chunk
     pub max_inner_blocks: usize,
+    /// Previous last applied l1 block
+    pub prev_last_applied_l1_block: u64,
+    /// Last applied l1 block
+    pub last_applied_l1_block: u64,
+    /// L1 block range hash
+    pub l1_block_range_hash: Hash,
+    /// Cumulative l1 block hashes array in this chunk
+    pub l1_block_hashes: Vec<Hash>,
+    /// Max number of l1 block hashes
+    pub max_l1_block_hashes: usize,
 }
 
 impl PublicData {
@@ -134,6 +145,23 @@ impl PublicData {
         }
 
         num_all_txs_in_blocks
+    }
+
+    fn get_num_all_l1_block_hashes(&self) -> usize {
+        let mut num_all_l1_block_hashes_in_blocks = 0;
+        for block_ctx in self.block_ctxs.ctxs.values() {
+            if let Some(l1_block_hashes) = &block_ctx.l1_block_hashes {
+                num_all_l1_block_hashes_in_blocks += l1_block_hashes.len();
+            }
+        }
+
+        num_all_l1_block_hashes_in_blocks
+    }
+
+    fn get_last_applied_l1_block(&self) -> Option<U64> {
+        self.block_ctxs.ctxs
+            .last_key_value()
+            .map(|(_, blk)| blk.eth_block.last_applied_l1_block.unwrap_or(U64::zero()))
     }
 
     /// Compute the bytes for dataHash from the verifier's perspective.
@@ -203,6 +231,8 @@ impl PublicData {
             .chain(self.withdraw_trie_root.to_fixed_bytes())
             // data hash
             .chain(data_hash.to_fixed_bytes())
+            .chain(self.l1_block_range_hash.to_fixed_bytes())
+            .chain(self.last_applied_l1_block.to_be_bytes())
             .collect::<Vec<u8>>()
     }
 
@@ -274,7 +304,7 @@ impl PublicData {
     }
 
     fn pi_bytes_end_offset(&self) -> usize {
-        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 4
+        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 5
     }
 
     fn pi_hash_start_offset(&self) -> usize {
@@ -311,6 +341,7 @@ impl BlockContext {
             base_fee: Default::default(),
             history_hashes: vec![],
             eth_block: Default::default(),
+            l1_block_hashes: None,
         }
     }
 }
@@ -349,6 +380,7 @@ pub struct PiCircuitConfig<F: Field> {
     real_rpi: Column<Advice>,
     q_tx_hashes: Column<Fixed>,
     q_block_context: Column<Fixed>,
+    q_l1_block_hashes: Column<Fixed>,
 
     // columns for assertion about cum_num_txs in block table
     cum_num_txs: Column<Advice>,
@@ -370,6 +402,15 @@ pub struct PiCircuitConfig<F: Field> {
     block_table: BlockTable,
     tx_table: TxTable,
     keccak_table: KeccakTable,
+
+    // The number of l1 block hashes computed by last_applied_l1_block - prev_last_applied_l1_block
+    l1_block_hashes_count: Column<Advice>, // RLC(rpi) as the input to Keccak table
+     // The count of the l1 block hashes in the chunk
+    num_all_l1_block_hashes: Column<Advice>,
+    // The last_applied_l1_block from the prover's perspective
+    last_applied_l1_block: Column<Advice>,
+    // The last_applied_l1_block from the last block in the chunk
+    last_applied_l1_block_from_last_block: Column<Advice>,
 
     _marker: PhantomData<F>,
 }
@@ -438,6 +479,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         let q_block_context = meta.fixed_column();
         let q_tx_hashes = meta.fixed_column();
+        let q_l1_block_hashes = meta.fixed_column();
 
         let q_not_end = meta.complex_selector();
         // We are accumulating bytes for three different purposes
@@ -451,6 +493,11 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let cum_num_txs = meta.advice_column();
         let is_block_num_txs = meta.fixed_column();
 
+        let l1_block_hashes_count = meta.advice_column();
+        let num_all_l1_block_hashes = meta.advice_column();
+        let last_applied_l1_block = meta.advice_column();
+        let last_applied_l1_block_from_last_block = meta.advice_column();
+
         meta.enable_constant(constant);
         meta.enable_equality(rpi_bytes);
         meta.enable_equality(rpi_bytes_acc);
@@ -463,6 +510,10 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta.enable_equality(tx_table.value); // copy tx hashes to rpi
         meta.enable_equality(cum_num_txs);
         meta.enable_equality(pi);
+        meta.enable_equality(l1_block_hashes_count);
+        meta.enable_equality(num_all_l1_block_hashes);
+        meta.enable_equality(last_applied_l1_block);
+        meta.enable_equality(last_applied_l1_block_from_last_block);
 
         // 1. constrain rpi_bytes, rpi_bytes_acc, and rpi for each field
         meta.create_gate(
@@ -599,6 +650,50 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_tx_hashes, Rotation::cur()))
         });
 
+         meta.create_gate("padding l1 block hashes", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_boolean(
+                "is_rpi_padding is boolean",
+                meta.query_advice(is_rpi_padding, Rotation::cur()),
+            );
+
+            // if is_rpi_padding == true, then is_rpi_padding' is true too.
+            cb.condition(
+                and::expr([
+                    meta.query_fixed(q_l1_block_hashes, Rotation::next()),
+                    meta.query_advice(is_rpi_padding, Rotation::cur()),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "is_rpi_padding' == true if is_rpi_padding is true",
+                        meta.query_advice(is_rpi_padding, Rotation::next()),
+                        true.expr(),
+                    )
+                },
+            );
+
+            // if_rpi_padding == true, then rpi == dummy_l1_block_hash
+            cb.condition(meta.query_advice(is_rpi_padding, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "rpi == dummy_l1_block_hash",
+                    meta.query_advice(rpi, Rotation::cur()),
+                    iter::once(1.expr())
+                        .chain(challenges.evm_word_powers_of_randomness::<31>().into_iter())
+                        .rev()
+                        .zip(
+                            DUMMY_L1_BLOCK_HASH
+                                .to_fixed_bytes()
+                                .into_iter()
+                                .map(|byte| byte.expr()),
+                        )
+                        .fold(0.expr(), |acc, (rand_pow, byte)| acc + rand_pow * byte),
+                );
+            });
+
+            cb.gate(meta.query_fixed(q_l1_block_hashes, Rotation::cur()))
+        });
+
         // We reuse the layout for rpi to compute the keccak output.
         // The 32 bytes of keccak output are combined into (hi, lo)
         //  where r = challenges.evm_word().
@@ -713,6 +808,11 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             pi,
             _marker: PhantomData,
             q_block_context,
+            l1_block_hashes_count,
+            num_all_l1_block_hashes,
+            q_l1_block_hashes,
+            last_applied_l1_block,
+            last_applied_l1_block_from_last_block,
         }
     }
 }
@@ -804,7 +904,17 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
-        // 2. Assign public input bytes.
+        // 2. Assign l1 block hashes bytes.
+        let (offset, l1_block_range_hash_rlc_cell) = self.assign_l1_block_hashes_bytes(
+            region,
+            offset,
+            public_data,
+            challenges,
+        )?;
+        // TODO: uncomment this assertion once we have a way to compute the offset of l1 block
+        // debug_assert_eq!(offset, public_data.l1_block_hashes_start_offset());
+
+        // 3. Assign public input bytes.
         let (offset, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
             region,
             offset,
@@ -812,16 +922,17 @@ impl<F: Field> PiCircuitConfig<F> {
             block_value_cells,
             tx_value_cells,
             &data_hash_rlc_cell,
+            &l1_block_range_hash_rlc_cell,
             challenges,
         )?;
         debug_assert_eq!(offset, public_data.pi_hash_start_offset());
 
-        // 3. Assign public input hash (hi, lo) decomposition.
+        // 4. Assign public input hash (hi, lo) decomposition.
         let (offset, pi_hash_cells) =
             self.assign_pi_hash(region, offset, public_data, &pi_hash_rlc_cell, challenges)?;
         debug_assert_eq!(offset, public_data.constants_start_offset());
 
-        // 4. Assign block coinbase and difficulty.
+        // 5. Assign block coinbase and difficulty.
         let offset =
             self.assign_constants(region, offset, public_data, block_value_cells, challenges)?;
         debug_assert_eq!(offset, public_data.constants_end_offset() + 1);
@@ -1015,6 +1126,90 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok((offset + 1, data_hash_rlc_cell))
     }
 
+    /// Assign l1 block hashes bytes, that represent the pre-image to l1_block_hashes.
+    fn assign_l1_block_hashes_bytes(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        public_data: &PublicData,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(usize, AssignedCell<F, F>), Error> {
+        let (offset, rpi_rlc_acc, rpi_length) = self.assign_rlc_init(region, offset)?;
+
+        let q_l1_block_hashes_start_row = offset;
+        let q_l1_block_hashes_end_row = q_l1_block_hashes_start_row + KECCAK_DIGEST_SIZE * public_data.max_l1_block_hashes;
+        let num_l1_block_hashes = public_data.get_num_all_l1_block_hashes();
+        let l1_block_hashes = public_data.l1_block_hashes.clone();
+        let dummy_l1_block_hash = *DUMMY_L1_BLOCK_HASH;
+        let mut l1_block_hashes_bytes_rlc = None;
+        let mut l1_block_hashes_bytes_length = None;
+
+        for (i, l1_block_hash) in l1_block_hashes  
+            .into_iter()  
+            .chain(std::iter::repeat(dummy_l1_block_hash))  
+            .take(public_data.max_l1_block_hashes)  
+            .enumerate() 
+        {
+            let is_rpi_padding = i >= num_l1_block_hashes;
+
+            let (_, _, _, cells) = self.assign_field(
+                region,
+                offset,
+                &l1_block_hash.to_fixed_bytes(),
+                RpiFieldType::DefaultType,
+                is_rpi_padding,
+                rpi_rlc_acc,
+                rpi_length,
+                challenges,
+            )?;
+
+            if i == public_data.max_l1_block_hashes - 1 {
+                l1_block_hashes_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
+                l1_block_hashes_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
+            }
+        }
+        for i in q_l1_block_hashes_start_row..q_l1_block_hashes_end_row {
+            region.assign_fixed(
+                || "q_l1_block_hashes",
+                self.q_l1_block_hashes,
+                i,
+                || Value::known(F::one()),
+            )?;
+        }
+
+        assert_eq!(offset, q_l1_block_hashes_end_row + 1);
+
+        // the last row of l1 block hashes bytes part is disabled
+        for i in q_l1_block_hashes_start_row..q_l1_block_hashes_end_row {
+            self.q_not_end.enable(region, i)?;
+        }
+
+        let l1_block_range_hash_row = offset;
+        l1_block_hashes_bytes_rlc.unwrap().copy_advice(
+            || "l1_block_hashes_bytes_rlc in the rpi col",
+            region,
+            self.raw_public_inputs,
+            l1_block_range_hash_row,
+        )?;
+        let l1_block_range_hash = public_data.l1_block_range_hash;
+        let l1_block_range_hash_rlc = rlc_be_bytes(&l1_block_range_hash.to_fixed_bytes(), challenges.evm_word());
+        l1_block_hashes_bytes_length.unwrap().copy_advice(
+            || "l1_block_hashes_bytes_length in the rpi_length_acc col",
+            region,
+            self.rpi_length_acc,
+            l1_block_range_hash_row,
+        )?;
+        let l1_block_range_hash_rlc_cell = region.assign_advice(
+            || "l1_block_range_hash_rlc",
+            self.rpi_rlc_acc,
+            l1_block_range_hash_row,
+            || l1_block_range_hash_rlc,
+        )?;
+        self.q_keccak.enable(region, l1_block_range_hash_row)?;
+        
+        Ok((offset + 1, l1_block_range_hash_rlc_cell))
+    }
+
     /// Assign public input bytes, that represent the pre-image to pi_hash.
     /// i.e. keccak256(rlc(pi_bytes)) == pi_hash.
     #[allow(clippy::too_many_arguments)]
@@ -1027,6 +1222,7 @@ impl<F: Field> PiCircuitConfig<F> {
         block_value_cells: &[AssignedCell<F, F>],
         tx_value_cells: &[AssignedCell<F, F>],
         data_hash_rlc_cell: &AssignedCell<F, F>,
+        l1_block_range_hash_rlc_cell: &AssignedCell<F, F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, AssignedCell<F, F>, Connections<F>), Error> {
         let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
@@ -1093,6 +1289,21 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         let data_hash_cell = cells[RPI_CELL_IDX].clone();
+
+        (offset, _, _, cells) = self.assign_field(
+            region,
+            offset,
+            &public_data.l1_block_range_hash.to_fixed_bytes(),
+            RpiFieldType::DefaultType,
+            false, // no padding in this case
+            rpi_rlc_acc,
+            rpi_length,
+            challenges,
+        )?;
+        let l1_block_range_hash_cell = cells[RPI_CELL_IDX].clone();
+
+        region.constrain_equal(l1_block_range_hash_rlc_cell.cell(), l1_block_range_hash_cell.cell())?;
+
         let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
         let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
 
@@ -1224,6 +1435,63 @@ impl<F: Field> PiCircuitConfig<F> {
                 block_value_cells[BLOCK_LEN * block_idx + DIFFICULTY_OFFSET].cell(),
             )?;
         }
+
+        //////////////////////////////////////////////
+        ///////  assign l1 block hashes count ////////
+        //////////////////////////////////////////////
+        let last_applied_l1_block = public_data.get_last_applied_l1_block();
+        let num_all_l1_block_hashes = public_data.get_num_all_l1_block_hashes() as u64;
+        let mut l1_block_hashes_count = num_all_l1_block_hashes;
+        // The first time there are l1 block hashes, the prev_last_applied_l1_block is 0.
+        if public_data.prev_last_applied_l1_block != 0 {
+            assert!(
+                public_data.last_applied_l1_block >= public_data.prev_last_applied_l1_block,
+                "last_applied_l1_block should be greater or equal than prev_last_applied_l1_block");
+            l1_block_hashes_count =
+                public_data.last_applied_l1_block - public_data.prev_last_applied_l1_block;
+        }
+
+        let l1_block_hashes_count_cell = region.assign_advice(
+            || "field l1 block hashes count",
+            self.l1_block_hashes_count,
+            offset,
+            || Value::known(F::from(l1_block_hashes_count)),
+        )?;
+        offset += 1;
+
+        let num_all_l1_block_hashes_cell = region.assign_advice(
+            || "field l1 block hashes count",
+            self.num_all_l1_block_hashes,
+            offset,
+            || Value::known(F::from(num_all_l1_block_hashes)),
+        )?;
+        offset += 1;
+
+        region.constrain_equal(
+            l1_block_hashes_count_cell.cell(),
+            num_all_l1_block_hashes_cell.cell(),
+        )?;
+
+        let last_applied_l1_block_cell = region.assign_advice(
+            || "field last applied l1 block",
+            self.last_applied_l1_block,
+            offset,
+            || Value::known(F::from(public_data.last_applied_l1_block)),
+        )?;
+        offset += 1;
+
+        let last_applied_l1_block_from_last_block_cell = region.assign_advice(
+            || "field last applied l1 block from last block",
+            self.last_applied_l1_block_from_last_block,
+            offset,
+            || Value::known(F::from(last_applied_l1_block.map(|blk| blk.as_u64()).unwrap_or(0))),
+        )?;
+        offset += 1;
+
+        region.constrain_equal(
+            last_applied_l1_block_cell.cell(),
+            last_applied_l1_block_from_last_block_cell.cell(),
+        )?;
 
         Ok(offset)
     }
@@ -1495,6 +1763,18 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut block_value_cells = vec![];
         let block_ctxs = &public_data.block_ctxs;
         let num_all_txs_in_blocks = public_data.get_num_all_txs();
+
+        #[allow(deprecated)]
+        let function = Function {
+            name: "appendBlockhashes".to_owned(),
+            inputs: vec![Param { name: "_hashes".to_owned(), kind: ParamType::Array(Box::new(ParamType::FixedBytes(32))), internal_type: None }],
+            outputs: vec![],
+            state_mutability: StateMutability::NonPayable,
+            constant: None,
+        };
+        let function_signature = function.signature();
+        let selector = &keccak256(function_signature.as_bytes())[0..4];
+
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
             (block_ctxs.ctxs.len()..public_data.max_inner_blocks).map(|_| {
                 BlockContext::padding(
@@ -1516,8 +1796,16 @@ impl<F: Field> PiCircuitConfig<F> {
                 .unwrap_or(0);
             let tag = [
                 Coinbase, Timestamp, Number, Difficulty, GasLimit, BaseFee, ChainId, NumTxs,
-                CumNumTxs, NumAllTxs,
+                CumNumTxs, NumAllTxs, L1BlockHashesCalldataRLC,
             ];
+
+            let l1_block_hashes = block_ctx
+                .l1_block_hashes
+                .as_ref()
+                .map_or_else(|| vec![], |hashes| hashes.iter().map(|&h| Token::FixedBytes(h.as_bytes().to_vec())).collect());
+            let params = encode(&[Token::Array(l1_block_hashes)]);
+            let mut l1_block_hashes_calldata = selector.to_vec();
+            l1_block_hashes_calldata.extend(params);
 
             // index_cells of same block are equal to block_number.
             let mut index_cells = vec![];
@@ -1526,7 +1814,7 @@ impl<F: Field> PiCircuitConfig<F> {
             let mut cum_num_txs_field = F::from(cum_num_txs as u64);
             cum_num_txs += num_txs;
             for (row, tag) in block_ctx
-                .table_assignments(num_txs, cum_num_txs, num_all_txs, challenges)
+                .table_assignments(num_txs, cum_num_txs, num_all_txs, l1_block_hashes_calldata, challenges)
                 .into_iter()
                 .zip(tag.iter())
             {
@@ -1622,6 +1910,7 @@ impl<F: Field> PiCircuit<F> {
         max_txs: usize,
         max_calldata: usize,
         max_inner_blocks: usize,
+        max_l1_block_hashes: usize,
         block: &Block<F>,
     ) -> Self {
         let chain_id = block.chain_id;
@@ -1649,6 +1938,11 @@ impl<F: Field> PiCircuit<F> {
             prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),
             next_state_root,
             withdraw_trie_root: H256(block.withdraw_root.to_be_bytes()),
+            prev_last_applied_l1_block: block.prev_last_applied_l1_block.unwrap_or(0),
+            last_applied_l1_block: block.last_applied_l1_block.unwrap_or(0),
+            l1_block_range_hash: block.l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))),
+            l1_block_hashes: block.l1_block_hashes.clone(),
+            max_l1_block_hashes: max_l1_block_hashes,
         };
 
         Self {
@@ -1732,6 +2026,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.circuits_params.max_inner_blocks,
+            block.circuits_params.max_l1_block_hashes,
             block,
         )
     }
@@ -1741,10 +2036,13 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let tx_usage = block.txs.len() as f32 / block.circuits_params.max_txs as f32;
         let max_inner_blocks = block.circuits_params.max_inner_blocks;
         let max_txs = block.circuits_params.max_txs;
+        let max_l1_block_hashes = block.circuits_params.max_l1_block_hashes;
 
-        let num_rows = 1 + max_inner_blocks * BLOCK_HEADER_BYTES_NUM
+        let num_rows = 2 + max_inner_blocks * BLOCK_HEADER_BYTES_NUM
             + max_txs * KECCAK_DIGEST_SIZE
+            + max_l1_block_hashes * KECCAK_DIGEST_SIZE
             + 1 // for data hash row
+            + 1 // for l1 block range hash row
             + 1 // for pi bytes start row
             + N_BYTES_U64 // chain_id
             + 4 * KECCAK_DIGEST_SIZE // state_roots & data hash
@@ -1752,6 +2050,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             + 1 // for pi hash bytes start row
             + KECCAK_DIGEST_SIZE // pi hash bytes
             + 1 // for coinbase & difficulty start row
+            + KECCAK_DIGEST_SIZE // for l1 block range hash
+            + 2 // for l1_block_hashes_count and num_all_l1_block_hashes
+            + 2 // for last_applied_l1_block and last_applied_l1_block_from_last_block
             + N_BYTES_ACCOUNT_ADDRESS
             + N_BYTES_WORD;
 

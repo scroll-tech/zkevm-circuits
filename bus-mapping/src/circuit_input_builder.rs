@@ -12,7 +12,7 @@ mod l2;
 mod tracer_tests;
 mod transaction;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
 use crate::{
@@ -822,10 +822,7 @@ pub fn get_dummy_tx_hash() -> H256 {
 }
 
 /// Get the dummy hash
-pub static DUMMY_L1_BLOCK_HASH: Lazy<Hash> = Lazy::new(|| {
-    Hash::from_str("0x5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap()
-});
-
+pub static DUMMY_L1_BLOCK_HASH: LazyLock<Hash> = LazyLock::new(|| Hash::from_str("0x5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap());
 
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
