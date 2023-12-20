@@ -72,14 +72,14 @@ impl<F: Field> PrecompileGadget<F> {
                     "equality: RLC(output_bytes)",
                     next_output_bytes_rlc.expr(),
                     output_bytes_rlc.expr(),
-                );    
+                );
             }
             if let Some(return_bytes_rlc) = return_bytes_rlc {
                 cb.require_equal(
                     "equality: RLC(return_bytes)",
                     next_return_bytes_rlc.expr(),
                     return_bytes_rlc.expr(),
-                );    
+                );
             }
         });
 

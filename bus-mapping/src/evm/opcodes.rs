@@ -482,8 +482,7 @@ pub fn gen_associated_steps(
     state: &mut CircuitInputStateRef,
     execution_step: ExecState,
 ) -> Result<Vec<ExecStep>, Error> {
-
-    fn gen_end_tx_steps_adapt(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error>{
+    fn gen_end_tx_steps_adapt(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
         let ret = gen_end_tx_steps(state)?;
         Ok(vec![ret])
     }

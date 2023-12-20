@@ -1,6 +1,4 @@
-use eth_types::{
-    GethExecStep, ToWord, Word,
-};
+use eth_types::{GethExecStep, ToWord, Word};
 
 use crate::{
     circuit_input_builder::{
@@ -32,7 +30,6 @@ pub fn gen_associated_ops(
     output_bytes: &[u8],
     return_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
-
     let input_step = state.new_step(&geth_step)?;
 
     gen_ops(
@@ -129,10 +126,7 @@ fn common_call_ctx_reads(
             CallContextField::CalleeAddress,
             call.code_address().unwrap().to_word(),
         ),
-        (   
-            CallContextField::IsRoot, 
-            Word::from(call.is_root as u64),
-        ),
+        (CallContextField::IsRoot, Word::from(call.is_root as u64)),
         (
             CallContextField::CallDataOffset,
             call.call_data_offset.into(),

@@ -1,6 +1,6 @@
 use super::{
-    precompiles::gen_ops as precompile_gen_ops_for_begin_tx,
     error_oog_precompile::ErrorOOGPrecompile,
+    precompiles::gen_ops as precompile_gen_ops_for_begin_tx,
 };
 use crate::{
     circuit_input_builder::{
@@ -10,7 +10,7 @@ use crate::{
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
     },
-    precompile::{is_precompiled, execute_precompiled, PrecompileCalls},
+    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
@@ -42,7 +42,6 @@ use ethers_core::utils::get_contract_address;
 // }
 
 pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
-
     let mut exec_step = state.new_begin_tx_step();
 
     // Add two copy-events for tx access-list addresses and storage keys if EIP-2930.
@@ -370,7 +369,6 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
         }
         // 2. Call to precompiled.
         (_, true, _) => {
-
             // some *pre-handling* for precompile address, like what we have done in callop
             // the generation of precompile step is in `handle_tx`, right after the generation
             // of begin_tx step
@@ -429,8 +427,14 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             let src_addr = call.call_data_offset;
             let src_addr_end = call.call_data_offset.checked_add(n_input_bytes).unwrap();
 
-            let copy_steps = state.tx.input.iter().copied()
-                .take(n_input_bytes as usize).map(|b|(b, false, false)).collect::<Vec<_>>();
+            let copy_steps = state
+                .tx
+                .input
+                .iter()
+                .copied()
+                .take(n_input_bytes as usize)
+                .map(|b| (b, false, false))
+                .collect::<Vec<_>>();
 
             let input_bytes = copy_steps
                 .iter()
@@ -454,7 +458,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                     access_list: vec![],
                 },
             );
-            
+
             let call_success = call.is_success;
             // modexp's oog error is handled in ModExpGadget
             let mut next_step = if has_oog_err && precompile_call != PrecompileCalls::Modexp {
@@ -465,11 +469,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                     next_step.gas_left.0,
                 );
 
-                ErrorOOGPrecompile::gen_ops(
-                    state,
-                    next_step,
-                    call,
-                )
+                ErrorOOGPrecompile::gen_ops(state, next_step, call)
             } else {
                 precompile_gen_ops_for_begin_tx(
                     state,
@@ -493,7 +493,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
             // 2.pop call ctx
             state.tx_ctx.pop_call_ctx();
             precompile_step.replace(next_step);
-        },
+        }
         (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code (is_empty_code_hash == true).
             // 4. Call to account with non-empty code (is_empty_code_hash == false).

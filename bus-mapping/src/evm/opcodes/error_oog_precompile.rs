@@ -18,7 +18,7 @@ impl ErrorOOGPrecompile {
         Self::gen_ops(state, state.new_step(geth_step)?, call)
     }
 
-    pub fn gen_ops (
+    pub fn gen_ops(
         state: &mut CircuitInputStateRef,
         mut exec_step: ExecStep,
         call: Call,
@@ -47,5 +47,4 @@ impl ErrorOOGPrecompile {
 
         Ok(exec_step)
     }
-
 }

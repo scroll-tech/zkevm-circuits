@@ -124,10 +124,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         cb.require_equal("gas_left < required_gas", insufficient_gas.expr(), 1.expr());
 
         let restore_context = super::precompiles::gen_restore_context(
-            cb, 
+            cb,
             is_root.expr(),
             false.expr(),
-            cb.curr.state.gas_left.expr(), 
+            cb.curr.state.gas_left.expr(),
             0.expr(), // ReturnDataLength
         );
 
@@ -171,11 +171,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         )?;
 
         // is_root
-        self.is_root.assign(
-            region,
-            offset,
-            Value::known(F::from(call.is_root)),
-        )?;
+        self.is_root
+            .assign(region, offset, Value::known(F::from(call.is_root)))?;
 
         // n_pairs
         let n_pairs = call.call_data_length / 192;

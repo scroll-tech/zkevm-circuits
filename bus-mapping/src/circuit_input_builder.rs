@@ -589,7 +589,7 @@ impl<'a> CircuitInputBuilder {
 
         // check gas cost
         {
-            let steps_gas_cost : u64 = begin_tx_steps.iter().map(|st|st.gas_cost.0).sum();
+            let steps_gas_cost: u64 = begin_tx_steps.iter().map(|st| st.gas_cost.0).sum();
             let real_gas_cost = if geth_trace.struct_logs.is_empty() {
                 GasCost(geth_trace.gas.0)
             } else {
@@ -597,13 +597,14 @@ impl<'a> CircuitInputBuilder {
             };
             // EIP2930 not implemented
             if tx.access_list.is_none() {
-                debug_assert_eq!(steps_gas_cost, real_gas_cost.as_u64(),
+                debug_assert_eq!(
+                    steps_gas_cost,
+                    real_gas_cost.as_u64(),
                     "begin step cost {:?}, precompile step cost {:?}",
                     begin_tx_steps[0].gas_cost,
-                    begin_tx_steps.get(1).map(|st|st.gas_cost),
+                    begin_tx_steps.get(1).map(|st| st.gas_cost),
                 );
             }
-            
         }
 
         tx.steps_mut().extend(begin_tx_steps);

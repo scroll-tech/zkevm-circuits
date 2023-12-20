@@ -87,14 +87,14 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ref_step.exec_state.clone(),
             pc: ref_step.pc,
             stack_size: ref_step.stack_size,
-            
+
             memory_size: call_ctx.memory.len(),
             call_index: call_ctx.index,
             reversible_write_counter: call_ctx.reversible_write_counter,
             rwc: self.block_ctx.rwc,
             log_id: self.tx_ctx.log_id,
 
-            gas_left: Gas(gas_left),            
+            gas_left: Gas(gas_left),
             ..Default::default()
         };
 

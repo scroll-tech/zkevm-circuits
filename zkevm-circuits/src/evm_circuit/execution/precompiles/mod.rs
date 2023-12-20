@@ -5,8 +5,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition},
-            rlc, not,
-            CachedRegion, Cell,
+            not, rlc, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -15,7 +14,10 @@ use crate::{
 use bus_mapping::precompile::PrecompileAuxData;
 use eth_types::{Field, ToScalar};
 use gadgets::util::{select, Expr};
-use halo2_proofs::{circuit::Value, plonk::{Expression, Error}};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 mod ec_add;
 pub use ec_add::EcAddGadget;
@@ -46,7 +48,6 @@ pub fn gen_restore_context<F: Field>(
     gas_cost: Expression<F>,
     call_data_length: Expression<F>,
 ) -> RestoreContextGadget<F> {
-
     // for root calling (tx.to == precomile)
     cb.condition(is_root.expr(), |cb| {
         cb.require_next_state(ExecutionState::EndTx);
@@ -55,8 +56,7 @@ pub fn gen_restore_context<F: Field>(
             stack_pointer: Transition::Same,
             rw_counter: Transition::Delta(
                 cb.rw_counter_offset()
-                    + not::expr(is_success.expr())
-                        * cb.curr.state.reversible_write_counter.expr(),
+                    + not::expr(is_success.expr()) * cb.curr.state.reversible_write_counter.expr(),
             ),
             gas_left: Transition::Delta(-gas_cost.expr()),
             reversible_write_counter: Transition::To(0.expr()),
@@ -78,7 +78,6 @@ pub fn gen_restore_context<F: Field>(
             0.expr(),
         )
     })
-
 }
 
 #[derive(Clone, Debug)]

@@ -118,7 +118,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-
         if let Some(PrecompileAuxData::Identity {
             input_bytes,
             output_bytes,

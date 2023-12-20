@@ -510,130 +510,127 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // 2. Handle call to precompiled contracts.
-        let (
-            precompile_gadget,
-            precompile_input_bytes_rlc
-        ) = cb.condition(is_precompile.expr(), |cb| {
-            cb.require_equal(
-                "precompile should be empty code hash",
-                // FIXME: see in opcodes.rs gen_begin_tx_ops
-                account_code_hash_is_empty_or_zero.expr(),
-                true.expr(),
-            );
-            // cb.require_equal(
-            //     "Go to EndTx when Tx to precompile",
-            //     cb.next.execution_state_selector([ExecutionState::EndTx]),
-            //     1.expr(),
-            // );
+        let (precompile_gadget, precompile_input_bytes_rlc) =
+            cb.condition(is_precompile.expr(), |cb| {
+                cb.require_equal(
+                    "precompile should be empty code hash",
+                    // FIXME: see in opcodes.rs gen_begin_tx_ops
+                    account_code_hash_is_empty_or_zero.expr(),
+                    true.expr(),
+                );
+                // cb.require_equal(
+                //     "Go to EndTx when Tx to precompile",
+                //     cb.next.execution_state_selector([ExecutionState::EndTx]),
+                //     1.expr(),
+                // );
 
-            // call's dummy context for precompile.
-            for (field_tag, value) in [
-                (CallContextFieldTag::ReturnDataOffset, 0.expr()),
-                (CallContextFieldTag::ReturnDataLength, 0.expr()),
-            ] {
-                cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
-            }
+                // call's dummy context for precompile.
+                for (field_tag, value) in [
+                    (CallContextFieldTag::ReturnDataOffset, 0.expr()),
+                    (CallContextFieldTag::ReturnDataLength, 0.expr()),
+                ] {
+                    cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
+                }
 
-            // Setup first call's context.
-            for (field_tag, value) in [
-                (CallContextFieldTag::Depth, 1.expr()),
-                (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
-                (
-                    CallContextFieldTag::CalleeAddress,
+                // Setup first call's context.
+                for (field_tag, value) in [
+                    (CallContextFieldTag::Depth, 1.expr()),
+                    (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
+                    (
+                        CallContextFieldTag::CalleeAddress,
+                        call_callee_address.expr(),
+                    ),
+                    (CallContextFieldTag::CallDataOffset, 0.expr()),
+                    (
+                        CallContextFieldTag::CallDataLength,
+                        tx_call_data_length.expr(),
+                    ),
+                    (CallContextFieldTag::Value, tx_value.expr()),
+                    (CallContextFieldTag::IsStatic, 0.expr()),
+                    (CallContextFieldTag::LastCalleeId, 0.expr()),
+                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+                    (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
+                    (CallContextFieldTag::IsRoot, 1.expr()),
+                    (CallContextFieldTag::IsCreate, tx_is_create.expr()),
+                    (CallContextFieldTag::CodeHash, account_code_hash.expr()),
+                ] {
+                    cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
+                }
+
+                // copy table lookup to verify the copying of bytes:
+                // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
+                // - to the precompile input.
+                let precompile_input_bytes_rlc = cb.query_cell_phase2();
+                cb.copy_table_lookup(
+                    tx_id.expr(), //cb.curr.state.call_id.expr(),
+                    CopyDataType::TxCalldata.expr(),
+                    call_id.expr(),
+                    CopyDataType::RlcAcc.expr(),
+                    0.expr(),
+                    precompile_input_len.expr(),
+                    0.expr(),
+                    precompile_input_len.expr(),
+                    precompile_input_bytes_rlc.expr(),
+                    0.expr(), // notice copy from calldata -> rlc do not cost rwc
+                ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
+
+                cb.require_step_state_transition(StepStateTransition {
+                    // 23 reads and writes + input data copy:
+                    //   - Write CallContext TxId
+                    //   - Write CallContext RwCounterEndOfReversion
+                    //   - Write CallContext IsPersistent
+                    //   - Write CallContext IsSuccess
+                    //   - Write Account (Caller) Nonce
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
+                    //   - Write TxAccessListAccount (Caller)
+                    //   - Write TxAccessListAccount (Callee)
+                    //   - Write TxAccessListAccount (Coinbase) only for Shanghai
+                    //   - Read Account CodeHash
+                    //   - a TxL1FeeGadget
+                    //   - a TransferWithGasFeeGadget
+                    //   - Write CallContext (Dummy) CallerId
+                    //   - Write CallContext (Dummy) ReturnDataOffset
+                    //   - Write CallContext (Dummy) ReturnDataLength
+                    //   - Write CallContext Depth
+                    //   - Write CallContext CallerAddress
+                    //   - Write CallContext CalleeAddress
+                    //   - Write CallContext CallDataOffset
+                    //   - Write CallContext CallDataLength
+                    //   - Write CallContext Value
+                    //   - Write CallContext IsStatic
+                    //   - Write CallContext LastCalleeId
+                    //   - Write CallContext LastCalleeReturnDataOffset
+                    //   - Write CallContext LastCalleeReturnDataLength
+                    //   - Write CallContext IsRoot
+                    //   - Write CallContext IsCreate
+                    //   - Write CallContext CodeHash
+                    rw_counter: Delta(
+                        23.expr()
+                            + l1_rw_delta.expr()
+                            + transfer_with_gas_fee.rw_delta()
+                            + SHANGHAI_RW_DELTA.expr()
+                            + PRECOMPILE_COUNT.expr(),
+                    ),
+                    call_id: To(call_id.expr()),
+                    is_root: To(true.expr()),
+                    is_create: To(tx_is_create.expr()),
+                    gas_left: To(gas_left.clone()),
+                    reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta()),
+                    log_id: To(0.expr()),
+                    ..StepStateTransition::any() /* do need to constraint evm status since we
+                                                  * have fixed next step */
+                });
+
+                let precompile_gadget = PrecompileGadget::construct(
+                    cb,
                     call_callee_address.expr(),
-                ),
-                (CallContextFieldTag::CallDataOffset, 0.expr()),
-                (
-                    CallContextFieldTag::CallDataLength,
-                    tx_call_data_length.expr(),
-                ),
-                (CallContextFieldTag::Value, tx_value.expr()),
-                (CallContextFieldTag::IsStatic, 0.expr()),
-                (CallContextFieldTag::LastCalleeId, 0.expr()),
-                (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
-                (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
-                (CallContextFieldTag::IsRoot, 1.expr()),
-                (CallContextFieldTag::IsCreate, tx_is_create.expr()),
-                (CallContextFieldTag::CodeHash, account_code_hash.expr()),
-            ] {
-                cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
-            }
+                    precompile_input_bytes_rlc.expr(),
+                    None,
+                    None,
+                );
 
-            // copy table lookup to verify the copying of bytes:
-            // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
-            // - to the precompile input.
-            let precompile_input_bytes_rlc = cb.query_cell_phase2();                
-            cb.copy_table_lookup(
-                tx_id.expr(),//cb.curr.state.call_id.expr(),
-                CopyDataType::TxCalldata.expr(),
-                call_id.expr(),
-                CopyDataType::RlcAcc.expr(),
-                0.expr(),
-                precompile_input_len.expr(),
-                0.expr(),
-                precompile_input_len.expr(),
-                precompile_input_bytes_rlc.expr(),
-                0.expr(), // notice copy from calldata -> rlc do not cost rwc
-            ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
-                
-            cb.require_step_state_transition(StepStateTransition {
-                // 23 reads and writes + input data copy:
-                //   - Write CallContext TxId
-                //   - Write CallContext RwCounterEndOfReversion
-                //   - Write CallContext IsPersistent
-                //   - Write CallContext IsSuccess
-                //   - Write Account (Caller) Nonce
-                //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
-                //   - Write TxAccessListAccount (Caller)
-                //   - Write TxAccessListAccount (Callee)
-                //   - Write TxAccessListAccount (Coinbase) only for Shanghai
-                //   - Read Account CodeHash
-                //   - a TxL1FeeGadget
-                //   - a TransferWithGasFeeGadget
-                //   - Write CallContext (Dummy) CallerId
-                //   - Write CallContext (Dummy) ReturnDataOffset
-                //   - Write CallContext (Dummy) ReturnDataLength
-                //   - Write CallContext Depth
-                //   - Write CallContext CallerAddress
-                //   - Write CallContext CalleeAddress
-                //   - Write CallContext CallDataOffset
-                //   - Write CallContext CallDataLength
-                //   - Write CallContext Value
-                //   - Write CallContext IsStatic
-                //   - Write CallContext LastCalleeId
-                //   - Write CallContext LastCalleeReturnDataOffset
-                //   - Write CallContext LastCalleeReturnDataLength
-                //   - Write CallContext IsRoot
-                //   - Write CallContext IsCreate
-                //   - Write CallContext CodeHash            
-                rw_counter: Delta(
-                    23.expr()
-                        + l1_rw_delta.expr()
-                        + transfer_with_gas_fee.rw_delta()
-                        + SHANGHAI_RW_DELTA.expr()
-                        + PRECOMPILE_COUNT.expr()
-                ),
-                call_id: To(call_id.expr()),
-                is_root: To(true.expr()),
-                is_create: To(tx_is_create.expr()),
-                gas_left: To(gas_left.clone()),
-                reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta()),
-                log_id: To(0.expr()),
-                ..StepStateTransition::any() // do need to constraint evm status since we have fixed next step
+                (precompile_gadget, precompile_input_bytes_rlc)
             });
-
-            let precompile_gadget = PrecompileGadget::construct(
-                cb,
-                call_callee_address.expr(),
-                precompile_input_bytes_rlc.expr(),
-                None, None,
-            );
-
-            (
-                precompile_gadget,
-                precompile_input_bytes_rlc,
-            )
-        });
 
         // 3. Call to account with empty code.
         cb.condition(
@@ -982,10 +979,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_precompile_lt
             .assign(region, offset, callee_address, F::from(0xA))?;
         // precompile related assignment.
-        let (
-            precompile_input_len,
-            precompile_input_bytes_rlc,
-        ) = if tx.callee_address.as_ref().map(is_precompiled).unwrap_or_default() {
+        let (precompile_input_len, precompile_input_bytes_rlc) = if tx
+            .callee_address
+            .as_ref()
+            .map(is_precompiled)
+            .unwrap_or_default()
+        {
             let precompile_call: PrecompileCalls = tx.callee_address.unwrap().0[19].into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
                 std::cmp::min(input_len, tx.call_data_length)
@@ -994,24 +993,25 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             };
 
             let input_bytes_rlc = region.keccak_rlc(
-                &tx.call_data.iter().cloned().take(input_len).rev().collect::<Vec<_>>(),
+                &tx.call_data
+                    .iter()
+                    .cloned()
+                    .take(input_len)
+                    .rev()
+                    .collect::<Vec<_>>(),
             );
             log::trace!("input_bytes_rlc: {input_bytes_rlc:?}");
-            self.precompile_gadget.assign(region, offset, precompile_call)?;
-            (
-                input_len as u64,
-                input_bytes_rlc,
-            )
-
+            self.precompile_gadget
+                .assign(region, offset, precompile_call)?;
+            (input_len as u64, input_bytes_rlc)
         } else {
-            (
-                0,
-                Value::known(F::zero()),
-            )
-        };        
+            (0, Value::known(F::zero()))
+        };
 
-        self.precompile_input_len
-            .assign(region, offset, Value::known(F::from(precompile_input_len)),
+        self.precompile_input_len.assign(
+            region,
+            offset,
+            Value::known(F::from(precompile_input_len)),
         )?;
         self.precompile_input_bytes_rlc
             .assign(region, offset, precompile_input_bytes_rlc)?;
