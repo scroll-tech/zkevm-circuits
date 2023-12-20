@@ -1562,6 +1562,27 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    /// TODO: remove this test after we have built gadget for blake2f/rimp160
+    #[test]
+    fn begin_tx_precompile_fail() {
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(address!("0x0000000000000000000000000000000000000003"))
+                    .input(Bytes::from(vec![0x01, 0x02, 0x03]));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
     /// testool case EmptyTransaction3_d0_g0_v0
     #[test]
     fn begin_tx_create_empty_tx() {
