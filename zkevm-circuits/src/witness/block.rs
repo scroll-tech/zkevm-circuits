@@ -406,14 +406,9 @@ impl BlockContext {
                     Value::known(F::from(num_all_txs)),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::L1BlockHashesCalldata as u64)),
+                    Value::known(F::from(BlockContextFieldTag::L1BlockHashesCalldataRLC as u64)),
                     Value::known(current_block_number),
                     rlc_be_bytes(&l1_block_hashes_calldata, challenges.keccak_input()),
-                ],
-                [
-                    Value::known(F::from(BlockContextFieldTag::L1BlockHashesCalldataLength as u64)),
-                    Value::known(current_block_number),
-                    Value::known(F::from(l1_block_hashes_calldata.len() as u64)),
                 ]
             ],
             self.block_hash_assignments(randomness),

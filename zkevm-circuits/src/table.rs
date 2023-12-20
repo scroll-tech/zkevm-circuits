@@ -1269,10 +1269,8 @@ pub enum BlockContextFieldTag {
     /// included in this block which also taking skipped l1 msgs into account.
     /// This could possibly be larger than NumTxs.
     NumAllTxs,
-    /// The L1 Block Hashes Tx Calldata in the block.
-    L1BlockHashesCalldata,
-    /// The L1 Block Hashes Tx Calldata length in the block.
-    L1BlockHashesCalldataLength,
+    /// The L1 Block Hashes Tx Calldata RLC in the block.
+    L1BlockHashesCalldataRLC,
 }
 impl_expr!(BlockContextFieldTag);
 

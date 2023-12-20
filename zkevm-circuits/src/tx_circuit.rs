@@ -16,7 +16,7 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     // sig_circuit::SigCircuit,
     table::{
-        BlockContextFieldTag::{CumNumTxs, L1BlockHashesCalldata, NumAllTxs, NumTxs},
+        BlockContextFieldTag::{CumNumTxs, L1BlockHashesCalldataRLC, NumAllTxs, NumTxs},
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxFieldTag::{
             AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
@@ -1185,15 +1185,15 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 .collect::<Vec<_>>()
         });
 
-        meta.lookup_any("l1 block hashes calldata in block table", |meta| {
-            let is_tag_good = meta.query_advice(is_calldata, Rotation::cur());
+        meta.lookup_any("l1 block hashes calldata rlc in block table", |meta| {
+            let is_data_rlc = is_data_rlc(meta);
             let block_num = meta.query_advice(tx_table.value, Rotation(16));
             let calldata_rlc = meta.query_advice(tx_table.value, Rotation::cur());
 
-            let input_expr = vec![L1BlockHashesCalldata.expr(), block_num, calldata_rlc];
+            let input_expr = vec![L1BlockHashesCalldataRLC.expr(), block_num, calldata_rlc];
             let table_expr = block_table.table_exprs(meta);
             let condition = and::expr([
-                is_tag_good,
+                is_data_rlc,
                 meta.query_advice(is_l1_block_hashes, Rotation::cur()),
                 meta.query_fixed(q_enable, Rotation::cur()),
             ]);
