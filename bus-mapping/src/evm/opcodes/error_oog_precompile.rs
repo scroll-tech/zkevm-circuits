@@ -38,6 +38,12 @@ impl ErrorOOGPrecompile {
             CallContextField::CallDataLength,
             call.call_data_length.into(),
         )?;
+        state.call_context_read(
+            &mut exec_step,
+            call.call_id,
+            CallContextField::IsRoot,
+            (call.is_root as u64).into(),
+        )?;
 
         Ok(exec_step)
     }

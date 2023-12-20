@@ -377,7 +377,6 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
 
             // add dummy field which precompile call contexts needed
             for (field, value) in [
-                (CallContextField::CallerId, call.caller_id.into()),            
                 (CallContextField::ReturnDataOffset, 0.into()),
                 (CallContextField::ReturnDataLength, 0.into()),
             ] {

@@ -528,7 +528,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
             // call's dummy context for precompile.
             for (field_tag, value) in [
-                (CallContextFieldTag::CallerId, 0.expr()), // caller id for root call is always 0
                 (CallContextFieldTag::ReturnDataOffset, 0.expr()),
                 (CallContextFieldTag::ReturnDataLength, 0.expr()),
             ] {
@@ -578,7 +577,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
                 
             cb.require_step_state_transition(StepStateTransition {
-                // 24 reads and writes + input data copy:
+                // 23 reads and writes + input data copy:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -608,7 +607,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash            
                 rw_counter: Delta(
-                    24.expr()
+                    23.expr()
                         + l1_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
                         + SHANGHAI_RW_DELTA.expr()
@@ -1479,7 +1478,7 @@ mod test {
     }
 
     #[test]
-    fn begin_tx_precompile_identify() {
+    fn begin_tx_precompile() {
         let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
@@ -1495,11 +1494,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx)
-        .block_modifier(Box::new(|blk|{
-            //println!("{:#?}", blk.txs[0].steps);
-        }))
-        .run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -1541,8 +1536,6 @@ mod test {
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap();
-
-        println!("{:#?}", ctx.geth_traces);
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }

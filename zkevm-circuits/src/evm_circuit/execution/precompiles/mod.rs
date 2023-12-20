@@ -3,7 +3,9 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder, rlc,
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition},
+            rlc, not,
             CachedRegion, Cell,
         },
     },
@@ -13,7 +15,7 @@ use crate::{
 use bus_mapping::precompile::PrecompileAuxData;
 use eth_types::{Field, ToScalar};
 use gadgets::util::{select, Expr};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{circuit::Value, plonk::{Expression, Error}};
 
 mod ec_add;
 pub use ec_add::EcAddGadget;
@@ -34,6 +36,50 @@ pub use identity::IdentityGadget;
 
 mod sha256;
 pub use sha256::SHA256Gadget;
+
+/// build RestoreContextGadget with consideration for root calling
+/// MUST be called after all rw has completed since we use `rw_counter_offset``
+pub fn gen_restore_context<F: Field>(
+    cb: &mut EVMConstraintBuilder<F>,
+    is_root: Expression<F>,
+    is_success: Expression<F>,
+    gas_cost: Expression<F>,
+    call_data_length: Expression<F>,
+) -> RestoreContextGadget<F> {
+
+    // for root calling (tx.to == precomile)
+    cb.condition(is_root.expr(), |cb| {
+        cb.require_next_state(ExecutionState::EndTx);
+        cb.require_step_state_transition(StepStateTransition {
+            program_counter: Transition::Same,
+            stack_pointer: Transition::Same,
+            rw_counter: Transition::Delta(
+                cb.rw_counter_offset()
+                    + not::expr(is_success.expr())
+                        * cb.curr.state.reversible_write_counter.expr(),
+            ),
+            gas_left: Transition::Delta(-gas_cost.expr()),
+            reversible_write_counter: Transition::To(0.expr()),
+            memory_word_size: Transition::Same,
+            end_tx: Transition::To(1.expr()),
+            ..StepStateTransition::default()
+        });
+    });
+
+    cb.condition(not::expr(is_root.expr()), |cb| {
+        RestoreContextGadget::construct2(
+            cb,
+            is_success.expr(),
+            gas_cost.expr(),
+            0.expr(),
+            0x00.expr(),             // ReturnDataOffset
+            call_data_length.expr(), // ReturnDataLength
+            0.expr(),
+            0.expr(),
+        )
+    })
+
+}
 
 #[derive(Clone, Debug)]
 pub struct BasePrecompileGadget<F, const S: ExecutionState> {
