@@ -88,7 +88,7 @@ pub struct BasePrecompileGadget<F, const S: ExecutionState> {
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
-    caller_id: Cell<F>,
+    is_root: Cell<F>,
     call_data_offset: Cell<F>,
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
@@ -109,11 +109,11 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             cb.query_cell_phase2(),
         );
         let gas_cost = cb.query_cell();
-        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
+        let [is_success, callee_address, is_root, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
                 CallContextFieldTag::CalleeAddress,
-                CallContextFieldTag::CallerId,
+                CallContextFieldTag::IsRoot,
                 CallContextFieldTag::CallDataOffset,
                 CallContextFieldTag::CallDataLength,
                 CallContextFieldTag::ReturnDataOffset,
@@ -128,23 +128,21 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
         );
 
         let last_callee_return_data_length = match Self::EXECUTION_STATE {
-            ExecutionState::PrecompileSha256 | ExecutionState::PrecompileRipemd160 => 0x20,
+            ExecutionState::PrecompileRipemd160 => 0x20,
             ExecutionState::PrecompileBlake2f => 0x40,
             _ => unreachable!("{} should not use the base gadget", Self::EXECUTION_STATE),
         };
-        let restore_context = RestoreContextGadget::construct2(
+
+        let restore_context = gen_restore_context(
             cb,
+            is_root.expr(),
             is_success.expr(),
             gas_cost.expr(),
-            0.expr(),
-            0.expr(), // ReturnDataOffset
             select::expr(
                 is_success.expr(),
                 last_callee_return_data_length.expr(),
                 0x00.expr(),
             ), // ReturnDataLength
-            0.expr(),
-            0.expr(),
         );
 
         Self {
@@ -154,7 +152,7 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
 
             is_success,
             callee_address,
-            caller_id,
+            is_root,
             call_data_offset,
             call_data_length,
             return_data_offset,
@@ -210,8 +208,8 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             offset,
             Value::known(call.code_address.unwrap().to_scalar().unwrap()),
         )?;
-        self.caller_id
-            .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
+        self.is_root
+            .assign(region, offset, Value::known(F::from(call.is_root as u64)))?;
         self.call_data_offset.assign(
             region,
             offset,
