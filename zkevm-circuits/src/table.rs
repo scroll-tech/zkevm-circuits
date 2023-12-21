@@ -210,7 +210,8 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    //pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
 }
 
 impl TxTable {
@@ -223,7 +224,8 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag,
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            //value: meta.advice_column_in(SecondPhase),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -296,7 +298,7 @@ impl TxTable {
             |mut region| {
                 let mut offset = 0;
                 let mut tx_value_cells = vec![];
-                let advice_columns = [self.tx_id, self.index, self.value];
+                let advice_columns = [self.tx_id, self.index, self.value.lo(), self.value.hi()];
                 assign_row(
                     &mut region,
                     offset,
@@ -367,7 +369,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            self.value.into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
         ]
     }
 
@@ -377,7 +380,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             String::from("tx_id"),
             String::from("tag"),
             String::from("index"),
-            String::from("value"),
+            String::from("value lo"),
+            String::from("value hi"),
         ]
     }
 
@@ -387,7 +391,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value, Rotation::cur()),
+            meta.query_advice(self.value.lo(), Rotation::cur()),
+            meta.query_advice(self.value.hi(), Rotation::cur()),
         ]
     }
 }
