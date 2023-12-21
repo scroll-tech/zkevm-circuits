@@ -135,7 +135,7 @@ pub struct TxCircuitConfig<F: Field> {
     tx_id_is_zero: IsZeroConfig<F>,
     /// Primarily used to verify if the `CallDataLength` is zero or non-zero
     ///  and `CallData` byte is zero or non-zero.
-    value_is_zero: IsZeroConfig<F>,
+    value_is_zero: [IsZeroConfig<F>; 2],
     /// We use an equality gadget to know whether the tx id changes between
     /// subsequent rows or not.
     tx_id_unchanged: IsEqualConfig<F>,
@@ -359,7 +359,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         );
 
         // testing if value is zero for tags
-        let value_is_zero = IsZeroChip::configure(
+        let value_is_zero_lo = IsZeroChip::configure(
             meta,
             |meta| {
                 and::expr(vec![
@@ -374,7 +374,25 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     ]),
                 ])
             },
-            tx_table.value,
+            tx_table.value.lo(),
+            |meta| meta.advice_column_in(SecondPhase), // value is at 2nd phase
+        );
+        let value_is_zero_hi = IsZeroChip::configure(
+            meta,
+            |meta| {
+                and::expr(vec![
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    sum::expr(vec![
+                        // if caller_address is zero, then skip the sig verify.
+                        is_caller_addr(meta),
+                        // if call_data_length is zero, then skip lookup to tx table for call data
+                        is_data_length(meta),
+                        // if call data byte is zero, then gas_cost = 4 (16 otherwise)
+                        is_data(meta),
+                    ]),
+                ])
+            },
+            tx_table.value.hi(),
             |meta| meta.advice_column_in(SecondPhase), // value is at 2nd phase
         );
 
@@ -558,7 +576,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 |cb| {
                     cb.require_zero(
                         "CallDataLength != 0",
-                        value_is_zero.expr(Rotation::next())(meta),
+                        value_is_zero_lo.expr(Rotation::next())(meta)
+                            + value_is_zero_hi.expr(Rotation::next())(meta),
                     );
                 },
             );
@@ -639,7 +658,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 "condition",
                 and::expr([
                     is_data_length(meta),
-                    not::expr(value_is_zero.expr(Rotation::cur())(meta)),
+                    //not::expr(value_is_zero.expr(Rotation::cur())(meta)),
+                    value_is_zero_lo.expr(Rotation::cur())(meta)
+                        + value_is_zero_hi.expr(Rotation::cur())(meta),
                 ]),
                 meta.query_advice(
                     lookup_conditions[&LookupCondition::TxCalldata],
@@ -1009,7 +1030,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cb.require_equal(
                     "is_padding_tx = true if caller_address = 0",
                     meta.query_advice(is_padding_tx, Rotation::cur()),
-                    value_is_zero.expr(Rotation::cur())(meta),
+                    //value_is_zero.expr(Rotation::cur())(meta),
+                    value_is_zero_lo.expr(Rotation::cur())(meta)
+                        + value_is_zero_hi.expr(Rotation::cur())(meta),
                 );
             });
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1088,7 +1111,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         meta.lookup_any("num_txs in block table", |meta| {
             let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
-            let block_num = meta.query_advice(tx_table.value, Rotation::cur());
+            // TODO: check why block_num come from tx table ?
+            let block_num = meta.query_advice(tx_table.value.lo(), Rotation::cur());
             let num_txs = meta.query_advice(num_txs, Rotation::cur());
 
             let input_expr = vec![NumTxs.expr(), block_num, num_txs];
@@ -1108,7 +1132,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         meta.lookup_any("cum_num_txs in block table", |meta| {
             let is_tag_block_num = meta.query_advice(is_tag_block_num, Rotation::cur());
-            let block_num = meta.query_advice(tx_table.value, Rotation::cur());
+            let block_num = meta.query_advice(tx_table.value.lo(), Rotation::cur());
             let cum_num_txs = meta.query_advice(cum_num_txs, Rotation::cur());
 
             let input_expr = vec![CumNumTxs.expr(), block_num, cum_num_txs];
@@ -1156,7 +1180,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cb.require_equal(
                     "calldata_byte == tx_table.value",
                     meta.query_advice(calldata_byte, Rotation::cur()),
-                    meta.query_advice(tx_table.value, Rotation::cur()),
+                    // byte only use value.lo
+                    meta.query_advice(tx_table.value.lo(), Rotation::cur()),
                 );
             });
 
@@ -1166,7 +1191,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("tx call data init", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let value_is_zero = value_is_zero.expr(Rotation::cur())(meta);
+            let value_is_zero = value_is_zero_lo.expr(Rotation::cur())(meta)
+                + value_is_zero_hi.expr(Rotation::cur())(meta);
+
             let gas_cost = select::expr(value_is_zero, 4.expr(), 16.expr());
 
             cb.require_equal(
@@ -1182,7 +1209,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.require_equal(
                 "calldata_rlc == byte",
                 meta.query_advice(calldata_rlc, Rotation::cur()),
-                meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(tx_table.value.lo(), Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -1210,7 +1237,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     1.expr(),
                 );
 
-                let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
+                let value_next_is_zero = value_is_zero_lo.expr(Rotation::next())(meta)
+                    + value_is_zero_hi.expr(Rotation::next())(meta);
+
                 let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
                 // call data gas cost accumulator check.
                 cb.require_equal(
@@ -1222,7 +1251,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     "calldata_rlc' = calldata_rlc * r + byte'",
                     meta.query_advice(calldata_rlc, Rotation::next()),
                     meta.query_advice(calldata_rlc, Rotation::cur()) * challenges.keccak_input()
-                        + meta.query_advice(tx_table.value, Rotation::next()),
+                    // TODO: check if value.lo() can cover calldata_rlc
+                        + meta.query_advice(tx_table.value.lo(), Rotation::next()),
                 );
             });
 
@@ -1240,7 +1270,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
                 ]),
                 |cb| {
-                    let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
+                    //let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
+                    let value_next_is_zero = value_is_zero_lo.expr(Rotation::next())(meta)
+                        + value_is_zero_hi.expr(Rotation::next())(meta);
                     let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
 
                     cb.require_equal(
@@ -1256,7 +1288,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     cb.require_equal(
                         "calldata_rlc' == byte'",
                         meta.query_advice(calldata_rlc, Rotation::next()),
-                        meta.query_advice(tx_table.value, Rotation::next()),
+                        meta.query_advice(tx_table.value.lo(), Rotation::next()),
                     );
                 },
             );
@@ -1283,7 +1315,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 ]),
                 |cb| {
                     // we rely on the assumption that SigV is on the next of ChainID
-                    let v = meta.query_advice(tx_table.value, Rotation::next());
+                    let v = meta.query_advice(tx_table.value.lo(), Rotation::next());
                     // tx_table.value.lo() can cover chain_id range.
                     let chain_id = meta.query_advice(tx_table.value.lo(), Rotation::cur());
 
@@ -1314,8 +1346,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     tx_type_bits.value_equals(L1Msg, Rotation::cur())(meta),
                 ]),
                 |cb| {
-                    let v = meta.query_advice(tx_table.value, Rotation::next());
-                    cb.require_zero("V == 0", v);
+                    let v = tx_table.value.query_advice(meta, Rotation::next());
+                    cb.require_zero_word("V == 0", v);
                 },
             );
 
@@ -1330,11 +1362,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             "caller address == sv_address if it's not zero and tx_type != L1Msg",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
+                let value_is_zero = value_is_zero_lo.expr(Rotation::cur())(meta)
+                    + value_is_zero_hi.expr(Rotation::cur())(meta);
 
-                cb.condition(not::expr(value_is_zero.expr(Rotation::cur())(meta)), |cb| {
+                cb.condition(not::expr(value_is_zero), |cb| {
                     cb.require_equal(
                         "caller address == sv_address",
-                        meta.query_advice(tx_table.value, Rotation::cur()),
+                        // TODO: check if value.lo can cover address in this case
+                        meta.query_advice(tx_table.value.lo(), Rotation::cur()),
                         meta.query_advice(sv_address, Rotation::cur()),
                     );
                 });
@@ -1364,7 +1399,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             u8_table,
             u16_table,
             tx_id_is_zero,
-            value_is_zero,
+            value_is_zero: [value_is_zero_lo, value_is_zero_hi],
             tx_id_unchanged,
             is_calldata,
             is_caller_address,
@@ -1450,8 +1485,9 @@ impl<F: Field> TxCircuitConfig<F> {
             vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 CallData.expr(),
-                meta.query_advice(tx_table.value, Rotation::next()), // calldata_gas_cost
-                1.expr(),                                            // is_final = 1
+                //TODO: check if lo covers calldata_gas_cost_acc
+                meta.query_advice(tx_table.value.lo(), Rotation::next()), // calldata_gas_cost
+                1.expr(),                                                 // is_final = 1
             ]
             .into_iter()
             .zip(vec![
@@ -1478,8 +1514,8 @@ impl<F: Field> TxCircuitConfig<F> {
             vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 CallData.expr(),
-                meta.query_advice(tx_table.value, Rotation::cur()) - 1.expr(), /* index starts
-                                                                                * from 0 */
+                meta.query_advice(tx_table.value.lo(), Rotation::cur()) - 1.expr(), /* index starts
+                                                                                     * from 0 */
                 1.expr(), // is_final = true
             ]
             .into_iter()
@@ -1510,7 +1546,8 @@ impl<F: Field> TxCircuitConfig<F> {
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 meta.query_fixed(tx_table.tag, Rotation::cur()),
-                meta.query_advice(tx_table.value, Rotation::cur()),
+                //TODO: check lo covers calldata_rlc ?
+                meta.query_advice(tx_table.value.lo(), Rotation::cur()),
             ];
 
             input_exprs
@@ -1575,7 +1612,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 sign_format,
                 rlp_tag,
-                meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(tx_table.value.lo(), Rotation::cur()), // lo covers tag
                 meta.query_advice(tx_value_rlc, Rotation::cur()),
                 meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
@@ -1613,7 +1650,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 hash_format,
                 rlp_tag,
-                meta.query_advice(tx_table.value, Rotation::cur()),
+                meta.query_advice(tx_table.value.lo(), Rotation::cur()),
                 meta.query_advice(tx_value_rlc, Rotation::cur()),
                 meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
@@ -1638,11 +1675,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(is_chain_id, Rotation::cur()),
             ]);
 
-            let msg_hash_rlc = meta.query_advice(tx_table.value, Rotation(6));
-            let chain_id = meta.query_advice(tx_table.value, Rotation::cur());
-            let sig_v = meta.query_advice(tx_table.value, Rotation(1));
-            let sig_r = meta.query_advice(tx_table.value, Rotation(2));
-            let sig_s = meta.query_advice(tx_table.value, Rotation(3));
+            // TODO: check if lo covers msg_hash_rlc, sig(v,r,s)
+            let msg_hash_rlc = meta.query_advice(tx_table.value.lo(), Rotation(6));
+            let chain_id = meta.query_advice(tx_table.value.lo(), Rotation::cur());
+            let sig_v = meta.query_advice(tx_table.value.lo(), Rotation(1));
+            let sig_r = meta.query_advice(tx_table.value.lo(), Rotation(2));
+            let sig_s = meta.query_advice(tx_table.value.lo(), Rotation(3));
             let sv_address = meta.query_advice(sv_address, Rotation::cur());
 
             let v = is_eip155(meta) * (sig_v.expr() - 2.expr() * chain_id - 35.expr())
@@ -1690,11 +1728,11 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                            // q_enable
-                1.expr(),                                            // is_final
-                meta.query_advice(tx_table.value, Rotation::next()), // input_rlc
-                meta.query_advice(tx_table.value, Rotation::cur()),  // input_len
-                meta.query_advice(tx_table.value, Rotation(2)),      // output_rlc
+                1.expr(),                                                 // q_enable
+                1.expr(),                                                 // is_final
+                meta.query_advice(tx_table.value.lo(), Rotation::next()), // input_rlc
+                meta.query_advice(tx_table.value.lo(), Rotation::cur()),  // input_len
+                meta.query_advice(tx_table.value.lo(), Rotation(2)),      // output_rlc
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))
@@ -1712,7 +1750,7 @@ impl<F: Field> TxCircuitConfig<F> {
             1,
             TxFieldTag::Null,
             0,
-            Value::known(F::zero()),
+            word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
         )?;
         let (col_anno, col, col_val) = ("rlp_tag", self.rlp_tag, F::from(usize::from(Null) as u64));
         region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
@@ -2253,8 +2291,8 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_id_next: usize,
         tag: TxFieldTag,
         index: u64,
-        value: Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
+        value: word::Word<Value<F>>,
+    ) -> Result<word::Word<AssignedCell<F, F>>, Error> {
         let (tx_type, tx_id) = if let Some(tx) = tx {
             (tx.tx_type, tx.id)
         } else {
@@ -2305,10 +2343,12 @@ impl<F: Field> TxCircuitConfig<F> {
             region.assign_advice(|| col_anno, col, offset, || Value::known(col_val))?;
         }
         // 2nd phase columns
-        let tx_value_cell =
-            region.assign_advice(|| "tx_value", self.tx_table.value, offset, || value)?;
+        // let tx_value_cell =
+        //     region.assign_advice(|| "tx_value", self.tx_table.value, offset, || value)?;
 
-        Ok(tx_value_cell)
+        let tx_value_cells =
+            value.assign_advice(region, || "tx_value", self.tx_table.value, offset)?;
+        Ok(tx_value_cells)
     }
 
     fn assign_calldata_zeros(
