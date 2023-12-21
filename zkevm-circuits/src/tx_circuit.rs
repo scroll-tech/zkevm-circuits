@@ -83,7 +83,7 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 28;
+pub const TX_LEN: usize = 30;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
@@ -532,11 +532,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_access_list_addresses_len(meta), Null),
                 (is_access_list_storage_keys_len(meta), Null),
                 (is_access_list_rlc(meta), RLC),
-                (is_max_fee_per_gas(meta), Tag::MaxFeePerGas.into()),
-                (
-                    is_max_priority_fee_per_gas(meta),
-                    Tag::MaxPriorityFeePerGas.into(),
-                ),
             ];
 
             cb.require_boolean(
