@@ -1018,15 +1018,20 @@ impl<F: Field> PiCircuitConfig<F> {
                 challenges.evm_word(),
             );
 
-            let data_hash_word = word::Word::from(public_data.get_data_hash().to_word()).map(Value::known);
-            data_hash_word.assign_advice(region, || "assign rw row on rw table", self.rpi_rlc_acc_word, offset)?;
+            let data_hash_word =
+                word::Word::from(public_data.get_data_hash().to_word()).map(Value::known);
+            data_hash_word.assign_advice(
+                region,
+                || "assign rpi_rlc_acc_word",
+                self.rpi_rlc_acc_word,
+                offset,
+            )?;
             region.assign_advice(
                 || "data_hash_rlc",
                 self.rpi_rlc_acc,
                 offset,
                 || data_hash_rlc,
             )?
-
         };
         self.q_keccak.enable(region, offset)?;
 
@@ -1074,7 +1079,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 rpi_length,
                 challenges,
             )?;
-            Ok((cells[0].clone(), cells[1].clone(), cells[2].clone()))
+            Ok((cells[0].clone(), cells[3].clone(), cells[4].clone()))
         })
         .collect::<Result<Vec<_>, Error>>()?;
 
@@ -1135,7 +1140,12 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
 
         let pi_hash_word = word::Word::from(public_data.get_pi().to_word()).map(Value::known);
-        pi_hash_word.assign_advice(region, || "assign rpi_rlc_acc_word", self.rpi_rlc_acc_word, offset)?;
+        pi_hash_word.assign_advice(
+            region,
+            || "assign rpi_rlc_acc_word",
+            self.rpi_rlc_acc_word,
+            offset,
+        )?;
         let pi_hash_rlc_cell = {
             let pi_hash_rlc = rlc_be_bytes(
                 &public_data.get_pi().to_fixed_bytes(),
@@ -1143,6 +1153,7 @@ impl<F: Field> PiCircuitConfig<F> {
             );
             region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
         };
+        println!("enable q_keccak for pi_hash_word at offset {} ", offset);
         self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, pi_hash_rlc_cell, connections))
@@ -1176,7 +1187,7 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         (offset, rpi_rlc_acc, rpi_length) = (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length);
-        let pi_hash_hi_cells = cells[3..].to_vec();
+        let pi_hash_hi_cells = cells[5..].to_vec();
 
         // the low 16 bytes of keccak output
         let (tmp_offset, _, _, cells) = self.assign_field(
@@ -1190,7 +1201,7 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         offset = tmp_offset;
-        let pi_hash_lo_cells = cells[3..].to_vec();
+        let pi_hash_lo_cells = cells[5..].to_vec();
 
         // Copy pi_hash value we collected from assigning pi bytes.
         region.constrain_equal(pi_hash_rlc_cell.cell(), cells[RPI_RLC_ACC_CELL_IDX].cell())?;
@@ -1330,8 +1341,12 @@ impl<F: Field> PiCircuitConfig<F> {
             self.q_field_step.enable(region, q_offset)?;
         }
 
-        let (mut final_rpi_cell, mut final_rpi_rlc_cell, mut final_rpi_word_cells  , mut final_rpi_length_cell) =
-            (None, None, None, None);
+        let (
+            mut final_rpi_cell,
+            mut final_rpi_rlc_cell,
+            mut final_rpi_word_cells,
+            mut final_rpi_length_cell,
+        ) = (None, None, None, None);
         let cells: Vec<(AssignedCell<F, F>, (AssignedCell<F, F>, AssignedCell<F, F>))> =
             value_be_bytes
                 .iter()
@@ -1398,15 +1413,24 @@ impl<F: Field> PiCircuitConfig<F> {
                     )?;
 
                     let rpi_word = if value_be_bytes.len() >= 32 {
-                        let value_word = Word::from_little_endian(&value_be_bytes[..32]);
+                        let value_word = Word::from_big_endian(&value_be_bytes[..32]);
                         word::Word::from(value_word).map(Value::known)
-                    }else { // no meaningful, just for final_rpi_word_cells dummy value
-                        let  f_val = F::from_bytes_le(value_be_bytes);
-                        word::Word::new([f_val, F::zero()]).map(Value::known)
+                    } else {
+                        // no meaningful, just for final_rpi_word_cells dummy value
+                        let len = value_be_bytes.len();
+                        let f_lo = F::from_bytes_le(&value_be_bytes[..len / 2]);
+                        let f_hi = F::from_bytes_le(&value_be_bytes[len / 2..len]);
+
+                        word::Word::new([f_lo, f_hi]).map(Value::known)
                     };
 
-                    final_rpi_word_cells = Some(rpi_word.assign_advice(region, || "assign rpi_rlc_acc_word", self.rpi_rlc_acc_word, row_offset)?);
-                   
+                    final_rpi_word_cells = Some(rpi_word.assign_advice(
+                        region,
+                        || "assign rpi_rlc_acc_word",
+                        self.rpi_rlc_acc_word,
+                        row_offset,
+                    )?);
+
                     let rpi_length_cell = region.assign_advice(
                         || "rpi_length_acc",
                         self.rpi_length_acc,
@@ -1481,10 +1505,10 @@ impl<F: Field> PiCircuitConfig<F> {
             [
                 vec![
                     final_rpi_cell.unwrap(),
-                    final_rpi_word_cells_unwrap.lo(),
-                    final_rpi_word_cells_unwrap.hi(),
                     final_rpi_rlc_cell.unwrap(),
                     final_rpi_length_cell.unwrap(),
+                    final_rpi_word_cells_unwrap.lo(),
+                    final_rpi_word_cells_unwrap.hi(),
                 ],
                 byte_cells,
             ]
