@@ -1153,7 +1153,6 @@ impl<F: Field> PiCircuitConfig<F> {
             );
             region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
         };
-        println!("enable q_keccak for pi_hash_word at offset {} ", offset);
         self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, pi_hash_rlc_cell, connections))
@@ -1755,14 +1754,22 @@ impl<F: Field> PiCircuit<F> {
                     );
 
                     // TODO: enable this constraint later after pi circuit, tx circuit updated
-                    // region.constrain_equal(
-                    //     local_conn.start_state_root.cell(),
-                    //     state_roots.start_state_root.0,
-                    // )?;
-                    // region.constrain_equal(
-                    //     local_conn.end_state_root.cell(),
-                    //     state_roots.end_state_root.0,
-                    // )?;
+                    region.constrain_equal(
+                        local_conn.start_state_root.lo().cell(),
+                        state_roots.start_state_root.0.lo(),
+                    )?;
+                    region.constrain_equal(
+                        local_conn.start_state_root.hi().cell(),
+                        state_roots.start_state_root.0.hi(),
+                    )?;
+                    region.constrain_equal(
+                        local_conn.end_state_root.lo().cell(),
+                        state_roots.end_state_root.0.lo(),
+                    )?;
+                    region.constrain_equal(
+                        local_conn.end_state_root.hi().cell(),
+                        state_roots.end_state_root.0.hi(),
+                    )?;
                 } else {
                     log::warn!("state roots are not set, skip connection with state circuit");
                 }
