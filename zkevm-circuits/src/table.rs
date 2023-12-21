@@ -184,12 +184,12 @@ pub enum TxFieldTag {
     AccessListStorageKeysLen,
     /// RLC of access list (EIP-2930)
     AccessListRLC,
-    /// The block number in which this tx is included.
-    BlockNumber,
     /// Max Priority Fee Per Gas (EIP1559)
     MaxPriorityFeePerGas,
     /// Max Fee Per Gas (EIP1559)
     MaxFeePerGas,
+    /// The block number in which this tx is included.
+    BlockNumber,
 }
 impl_expr!(TxFieldTag);
 

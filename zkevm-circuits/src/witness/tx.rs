@@ -382,6 +382,24 @@ impl Transaction {
             ],
             [
                 Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::MaxPriorityFeePerGas as u64)),
+                Value::known(F::zero()),
+                challenges.evm_word().map(|challenge| {
+                    rlc::value(&self.max_priority_fee_per_gas.to_le_bytes(), challenge)
+                }),
+                Value::known(F::zero()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::MaxFeePerGas as u64)),
+                Value::known(F::zero()),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.max_fee_per_gas.to_le_bytes(), challenge)),
+                Value::known(F::zero()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.block_number)),

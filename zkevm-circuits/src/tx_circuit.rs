@@ -532,6 +532,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_access_list_addresses_len(meta), Null),
                 (is_access_list_storage_keys_len(meta), Null),
                 (is_access_list_rlc(meta), RLC),
+                (is_max_fee_per_gas(meta), Tag::MaxFeePerGas.into()),
+                (
+                    is_max_priority_fee_per_gas(meta),
+                    Tag::MaxPriorityFeePerGas.into(),
+                ),
             ];
 
             cb.require_boolean(
@@ -2600,6 +2605,29 @@ impl<F: Field> TxCircuitConfig<F> {
                     ),
                 }),
                 rlc_be_bytes(&tx.max_priority_fee_per_gas.to_be_bytes(), evm_word),
+            ),
+            (
+                MaxPriorityFeePerGas,
+                Some(RlpTableInputValue {
+                    tag: Tag::MaxPriorityFeePerGas.into(),
+                    is_none: tx.max_priority_fee_per_gas.is_zero(),
+                    be_bytes_len: tx.max_priority_fee_per_gas.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(
+                        &tx.max_priority_fee_per_gas.to_be_bytes(),
+                        keccak_input,
+                    ),
+                }),
+                rlc_be_bytes(&tx.max_priority_fee_per_gas.to_be_bytes(), evm_word),
+            ),
+            (
+                MaxFeePerGas,
+                Some(RlpTableInputValue {
+                    tag: Tag::MaxFeePerGas.into(),
+                    is_none: tx.max_fee_per_gas.is_zero(),
+                    be_bytes_len: tx.max_fee_per_gas.tag_length(),
+                    be_bytes_rlc: rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), keccak_input),
+                }),
+                rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), evm_word),
             ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];

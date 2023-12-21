@@ -6,8 +6,8 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                TransferGadgetInfo, TransferWithGasFeeGadget, TxEip2930Gadget, TxL1FeeGadget,
-                TxL1MsgGadget,
+                TransferGadgetInfo, TransferWithGasFeeGadget, TxEip1559Gadget, TxEip2930Gadget,
+                TxL1FeeGadget, TxL1MsgGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -92,6 +92,7 @@ pub(crate) struct BeginTxGadget<F> {
     is_coinbase_warm: Cell<F>,
     tx_l1_fee: TxL1FeeGadget<F>,
     tx_l1_msg: TxL1MsgGadget<F>,
+    tx_eip1559: TxEip1559Gadget<F>,
     tx_eip2930: TxEip2930Gadget<F>,
 }
 
@@ -348,6 +349,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_value.clone(),
             tx_fee.clone(),
             &mut reversion_info,
+        );
+
+        // Construct EIP-1559 gadget to check sender balance.
+        let tx_eip1559 = TxEip1559Gadget::construct(
+            cb,
+            tx_id.expr(),
+            tx_type.expr(),
+            tx_gas.expr(),
+            tx_l1_fee.tx_l1_fee_word(),
+            &tx_value,
+            transfer_with_gas_fee.sender_balance_prev(),
         );
 
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
@@ -719,6 +731,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_coinbase_warm,
             tx_l1_fee,
             tx_l1_msg,
+            tx_eip1559,
             tx_eip2930,
         }
     }
@@ -1055,6 +1068,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.l1_fee,
             tx.l1_fee_committed,
             tx.tx_data_gas_cost,
+        )?;
+
+        self.tx_eip1559.assign(
+            region,
+            offset,
+            tx,
+            tx_l1_fee,
+            transfer_assign_result
+                .sender_balance_sub_fee_pair
+                .unwrap()
+                .1,
         )?;
 
         self.tx_eip2930.assign(region, offset, tx)
@@ -1482,5 +1506,32 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .block_modifier(Box::new(|block| block.circuits_params.max_txs = 3))
             .run();
+    }
+
+    // TODO: add a negative case after upgrading geth.
+    #[test]
+    fn test_begin_tx_gadget_for_eip1559_tx() {
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(gwei(80_000));
+                accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(1));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .to(MOCK_ACCOUNTS[1])
+                    .gas_price(gwei(2))
+                    .gas(30_000.into())
+                    .value(gwei(20_000))
+                    .max_fee_per_gas(gwei(2))
+                    .max_priority_fee_per_gas(gwei(2))
+                    .transaction_type(2); // Set tx type to EIP-1559.
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }
