@@ -977,6 +977,9 @@ impl<F: Field> PiCircuitConfig<F> {
             }
         }
         // Copy tx_hashes to tx table
+        log::trace!("tx_copy_cells: {:?}", tx_copy_cells);
+        log::trace!("tx_value_cells: {:?}", tx_value_cells);
+
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
             region.constrain_equal(
                 tx_hash_cell.cell(),
