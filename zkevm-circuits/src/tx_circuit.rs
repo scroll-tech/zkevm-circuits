@@ -47,7 +47,7 @@ use eth_types::{
         TxType::{Eip155, L1Msg, PreEip155},
     },
     sign_types::SignData,
-    Address, Field, ToAddress, ToBigEndian, ToScalar,
+    Address, Field, ToAddress, ToBigEndian, ToScalar, ToWord, U256,
 };
 use ethers_core::utils::{keccak256, rlp::Encodable};
 use gadgets::{
@@ -1802,7 +1802,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.nonce.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.nonce.to_be_bytes(), keccak_input),
                 }),
-                Value::known(F::from(tx.nonce)),
+                word::Word::new([Value::known(F::from(tx.nonce)), Value::known(F::zero())]),
             ),
             (
                 GasPrice,
@@ -1812,7 +1812,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.gas_price.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.gas_price.to_be_bytes(), keccak_input),
                 }),
-                rlc_be_bytes(&tx.gas_price.to_be_bytes(), evm_word),
+                //rlc_be_bytes(&tx.gas_price.to_be_bytes(), evm_word),
+                word::Word::from(tx.gas_price).map(Value::known),
             ),
             (
                 Gas,
@@ -1822,7 +1823,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.gas.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.gas.to_be_bytes(), keccak_input),
                 }),
-                Value::known(F::from(tx.gas)),
+                //Value::known(F::from(tx.gas)),
+                word::Word::new([Value::known(F::from(tx.gas)), Value::known(F::zero())]),
             ),
             (
                 CallerAddress,
@@ -1832,7 +1834,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.caller_address.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.caller_address.to_fixed_bytes(), keccak_input),
                 }),
-                Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
+                //Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
+                word::Word::from(tx.caller_address.to_word()).map(Value::known),
             ),
             (
                 CalleeAddress,
@@ -1847,14 +1850,23 @@ impl<F: Field> TxCircuitConfig<F> {
                         keccak_input,
                     ),
                 }),
-                Value::known(
-                    tx.callee_address
-                        .unwrap_or(Address::zero())
-                        .to_scalar()
-                        .expect("tx.to too big"),
-                ),
+                // Value::known(
+                //     tx.callee_address
+                //         .unwrap_or(Address::zero())
+                //         .to_scalar()
+                //         .expect("tx.to too big"),
+                // ),
+                word::Word::from(tx.callee_address.unwrap_or(Address::zero()).to_word())
+                    .map(Value::known),
             ),
-            (IsCreate, None, Value::known(F::from(tx.is_create as u64))),
+            (
+                IsCreate,
+                None,
+                word::Word::new([
+                    Value::known(F::from(tx.is_create as u64)),
+                    Value::known(F::zero()),
+                ]),
+            ),
             (
                 TxFieldTag::Value,
                 Some(RlpTableInputValue {
@@ -1863,7 +1875,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.value.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.value.to_be_bytes(), keccak_input),
                 }),
-                rlc_be_bytes(&tx.value.to_be_bytes(), evm_word),
+                //rlc_be_bytes(&tx.value.to_be_bytes(), evm_word),
+                word::Word::from(tx.value.to_word()).map(Value::known),
             ),
             (
                 CallDataRLC,
@@ -1873,17 +1886,29 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.call_data.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.call_data, keccak_input),
                 }),
-                rlc_be_bytes(&tx.call_data, keccak_input),
+                //rlc_be_bytes(&tx.call_data, keccak_input)
+                word::Word::new([
+                    rlc_be_bytes(&tx.call_data, keccak_input),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 CallDataLength,
                 None,
-                Value::known(F::from(tx.call_data.len() as u64)),
+                //Value::known(F::from(tx.call_data.len() as u64)),
+                word::Word::new([
+                    Value::known(F::from(tx.call_data.len() as u64)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 CallDataGasCost,
                 None,
-                Value::known(F::from(tx.call_data_gas_cost)),
+                //Value::known(F::from(tx.call_data_gas_cost)),
+                word::Word::new([
+                    Value::known(F::from(tx.call_data_gas_cost)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 TxDataGasCost,
@@ -1893,7 +1918,11 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: 0,
                     be_bytes_rlc: zero_rlc,
                 }),
-                Value::known(F::from(tx.tx_data_gas_cost)),
+                //Value::known(F::from(tx.tx_data_gas_cost)),
+                word::Word::new([
+                    Value::known(F::from(tx.tx_data_gas_cost)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 ChainID,
@@ -1903,7 +1932,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.chain_id.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.chain_id.to_be_bytes(), keccak_input),
                 }),
-                Value::known(F::from(tx.chain_id)),
+                //Value::known(F::from(tx.chain_id)),
+                word::Word::new([Value::known(F::from(tx.chain_id)), Value::known(F::zero())]),
             ),
             (
                 SigV,
@@ -1913,7 +1943,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.v.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.v.to_be_bytes(), keccak_input),
                 }),
-                Value::known(F::from(tx.v)),
+                //Value::known(F::from(tx.v)),
+                word::Word::new([Value::known(F::from(tx.v)), Value::known(F::zero())]),
             ),
             (
                 SigR,
@@ -1923,7 +1954,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.r.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.r.to_be_bytes(), keccak_input),
                 }),
-                rlc_be_bytes(&tx.r.to_be_bytes(), evm_word),
+                //rlc_be_bytes(&tx.r.to_be_bytes(), evm_word),
+                word::Word::from(tx.r.to_word()).map(Value::known),
             ),
             (
                 SigS,
@@ -1933,7 +1965,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.s.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.s.to_be_bytes(), keccak_input),
                 }),
-                rlc_be_bytes(&tx.s.to_be_bytes(), evm_word),
+                //rlc_be_bytes(&tx.s.to_be_bytes(), evm_word),
+                word::Word::from(tx.s.to_word()).map(Value::known),
             ),
             (
                 TxSignLength,
@@ -1943,7 +1976,11 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: rlp_sign_tag_length,
                     be_bytes_rlc: zero_rlc,
                 }),
-                Value::known(F::from(tx.rlp_unsigned.len() as u64)),
+                //Value::known(F::from(tx.rlp_unsigned.len() as u64)),
+                word::Word::new([
+                    Value::known(F::from(tx.rlp_unsigned.len() as u64)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 TxSignRLC,
@@ -1953,9 +1990,18 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: 0,
                     be_bytes_rlc: zero_rlc,
                 }),
-                rlc_be_bytes(&tx.rlp_unsigned, keccak_input),
+                //rlc_be_bytes(&tx.rlp_unsigned, keccak_input),
+                word::Word::new([
+                    rlc_be_bytes(&tx.rlp_unsigned, keccak_input),
+                    Value::known(F::zero()),
+                ]),
             ),
-            (TxSignHash, None, sign_hash_rlc),
+            //(TxSignHash, None, sign_hash_rlc),
+            (
+                TxSignHash,
+                None,
+                word::Word::from(U256::from_big_endian(&sign_hash)).map(Value::known),
+            ),
             (
                 TxHashLength,
                 Some(RlpTableInputValue {
@@ -1964,7 +2010,11 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: get_rlp_len_tag_length(&tx.rlp_signed),
                     be_bytes_rlc: zero_rlc,
                 }),
-                Value::known(F::from(tx.rlp_signed.len() as u64)),
+                //Value::known(F::from(tx.rlp_signed.len() as u64)),
+                word::Word::new([
+                    Value::known(F::from(tx.rlp_signed.len() as u64)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 TxHashRLC,
@@ -1974,23 +2024,44 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: 0,
                     be_bytes_rlc: zero_rlc,
                 }),
-                rlc_be_bytes(&tx.rlp_signed, keccak_input),
+                //rlc_be_bytes(&tx.rlp_signed, keccak_input),
+                word::Word::new([
+                    rlc_be_bytes(&tx.rlp_signed, keccak_input),
+                    Value::known(F::zero()),
+                ]),
             ),
-            (TxFieldTag::TxHash, None, hash_rlc),
+            //(TxFieldTag::TxHash, None, hash_rlc),
+            (
+                TxFieldTag::TxHash,
+                None,
+                word::Word::from(U256::from_big_endian(&hash)).map(Value::known),
+            ),
             (
                 TxFieldTag::TxType,
                 None,
-                Value::known(F::from(tx.tx_type as u64)),
+                //Value::known(F::from(tx.tx_type as u64)),
+                word::Word::new([
+                    Value::known(F::from(tx.tx_type as u64)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 AccessListAddressesLen,
                 None,
-                Value::known(F::from(access_list_address_size)),
+                //Value::known(F::from(access_list_address_size)),
+                word::Word::new([
+                    Value::known(F::from(access_list_address_size)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 AccessListStorageKeysLen,
                 None,
-                Value::known(F::from(access_list_storage_key_size)),
+                //Value::known(F::from(access_list_storage_key_size)),
+                word::Word::new([
+                    Value::known(F::from(access_list_storage_key_size)),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 AccessListRLC,
@@ -2001,15 +2072,27 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_rlc: zero_rlc,
                 }),
                 // TODO: need to check if it's correct with RLP.
-                rlc_be_bytes(
-                    &tx.access_list
-                        .as_ref()
-                        .map(|access_list| access_list.rlp_bytes())
-                        .unwrap_or_default(),
-                    keccak_input,
-                ),
+                {
+                    let access_list_rlc = rlc_be_bytes(
+                        &tx.access_list
+                            .as_ref()
+                            .map(|access_list| access_list.rlp_bytes())
+                            .unwrap_or_default(),
+                        keccak_input,
+                    );
+
+                    word::Word::new([access_list_rlc, Value::known(F::zero())])
+                },
             ),
-            (BlockNumber, None, Value::known(F::from(tx.block_number))),
+            (
+                BlockNumber,
+                None,
+                word::Word::new([
+                    Value::known(F::from(tx.block_number)),
+                    Value::known(F::zero()),
+                ]),
+            ),
+            //Value::known(F::from(tx.block_number))),
         ];
 
         for (tx_tag, rlp_input, tx_value) in fixed_rows {
