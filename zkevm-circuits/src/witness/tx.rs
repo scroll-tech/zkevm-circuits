@@ -513,13 +513,6 @@ impl Transaction {
         // operation took place. This is a utility variable for correctly filling the
         // value_prev field in a POP record.
         let mut prev_bytes_on_depth: [usize; 4] = [0, 0, 0, 0];
-        let mut stack_acc = Value::known(F::zero());
-
-        let stack_acc_pow_of_rand = std::iter::successors(Some(Value::known(F::one())), |coeff| {
-            Some(keccak_rand * coeff)
-        })
-        .take(5)
-        .collect::<Vec<Value<F>>>();
 
         // concat tx_id and format as stack identifier
         let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
@@ -566,25 +559,13 @@ impl Transaction {
                         );
 
                         if !remaining_bytes.is_empty() {
-                            // The circuit recovers the byte count remained on the previous depth
-                            // level by taking it out of the stack_acc
-                            // using the same random coefficient (a power of keccak_rand)
-
-                            // stack_acc = RLC(remaining_bytes[0..depth], keccak_rand);
-                            // stack_acc_pow_of_rand = [keccak_rand^0, keccak_rand^1, keccak_rand^2,
-                            // keccak_rand^3]
                             let byte_remained = *remaining_bytes.last().unwrap();
-                            stack_acc = stack_acc
-                                - stack_acc_pow_of_rand[cur.depth - 1]
-                                    * Value::known(F::from(byte_remained as u64));
 
                             stack_ops.push(RlpStackOp::pop(
                                 id,
                                 cur.depth - 1,
                                 byte_remained,
                                 prev_bytes_on_depth[cur.depth - 1],
-                                stack_acc,
-                                stack_acc_pow_of_rand[cur.depth - 1],
                             ));
                         }
 
@@ -633,8 +614,6 @@ impl Transaction {
                                     id,
                                     cur.depth,
                                     *rem - 1,
-                                    stack_acc,
-                                    stack_acc_pow_of_rand[cur.depth],
                                 ));
                             }
 
@@ -711,11 +690,6 @@ impl Transaction {
                                 // the number of bytes of the new list.
                                 assert!(*rem >= num_bytes_of_new_list);
                                 prev_bytes_on_depth[cur.depth] = *rem + 1;
-                                stack_acc = stack_acc
-                                    + stack_acc_pow_of_rand[cur.depth]
-                                        * Value::known(F::from(
-                                            (*rem - num_bytes_of_new_list) as u64,
-                                        ));
 
                                 *rem -= num_bytes_of_new_list;
                             }
@@ -725,8 +699,6 @@ impl Transaction {
                                 id,
                                 cur.depth + 1,
                                 num_bytes_of_new_list,
-                                stack_acc,
-                                stack_acc_pow_of_rand[cur.depth + 1],
                             ));
 
                             next.depth = cur.depth + 1;
@@ -754,8 +726,6 @@ impl Transaction {
                             id,
                             cur.depth,
                             *rem - 1,
-                            stack_acc,
-                            stack_acc_pow_of_rand[cur.depth],
                         ));
 
                         *rem -= 1;
@@ -790,8 +760,6 @@ impl Transaction {
                             id,
                             cur.depth,
                             *rem - 1,
-                            stack_acc,
-                            stack_acc_pow_of_rand[cur.depth],
                         ));
 
                         *rem -= 1;
@@ -825,8 +793,6 @@ impl Transaction {
                                 id,
                                 cur.depth,
                                 *rem - 1,
-                                stack_acc,
-                                stack_acc_pow_of_rand[cur.depth],
                             ));
                         }
 
@@ -846,9 +812,6 @@ impl Transaction {
                         if let Some(rem) = remaining_bytes.last_mut() {
                             assert!(*rem >= lb_len);
                             prev_bytes_on_depth[cur.depth] = *rem + 1;
-                            stack_acc = stack_acc
-                                + stack_acc_pow_of_rand[cur.depth]
-                                    * Value::known(F::from((*rem - lb_len) as u64));
 
                             *rem -= lb_len;
                         }
@@ -857,8 +820,6 @@ impl Transaction {
                             id,
                             cur.depth + 1,
                             lb_len,
-                            stack_acc,
-                            stack_acc_pow_of_rand[cur.depth + 1],
                         ));
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;

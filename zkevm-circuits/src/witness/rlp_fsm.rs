@@ -784,11 +784,6 @@ pub struct RlpStackOp<F: PrimeField> {
     pub value: usize,
     /// Value Previous
     pub value_prev: usize,
-    /// Stack Accumulator
-    /// accumulates remaining bytes on each depth level (excluding top of stack)
-    pub stack_acc: Value<F>,
-    /// Power of rand for stack accumulator on depth level (address)
-    pub stack_acc_pow_of_rand: Value<F>,
     /// The stack operation performed at step.
     pub stack_op: StackOp,
 }
@@ -800,8 +795,6 @@ impl<F: PrimeField> RlpStackOp<F> {
             depth: 0,
             value,
             value_prev: 0,
-            stack_acc: Value::known(F::ZERO),
-            stack_acc_pow_of_rand: Value::known(F::ONE),
             stack_op: StackOp::Init,
         }
     }
@@ -809,16 +802,12 @@ impl<F: PrimeField> RlpStackOp<F> {
         id: Value<F>,
         depth: usize,
         value: usize,
-        stack_acc: Value<F>,
-        stack_acc_pow_of_rand: Value<F>,
     ) -> Self {
         Self {
             id,
             depth,
             value,
             value_prev: 0,
-            stack_acc,
-            stack_acc_pow_of_rand,
             stack_op: StackOp::Push,
         }
     }
@@ -827,16 +816,12 @@ impl<F: PrimeField> RlpStackOp<F> {
         depth: usize,
         value: usize,
         value_prev: usize,
-        stack_acc: Value<F>,
-        stack_acc_pow_of_rand: Value<F>,
     ) -> Self {
         Self {
             id,
             depth,
             value,
             value_prev,
-            stack_acc,
-            stack_acc_pow_of_rand,
             stack_op: StackOp::Pop,
         }
     }
@@ -844,16 +829,12 @@ impl<F: PrimeField> RlpStackOp<F> {
         id: Value<F>,
         depth: usize,
         value: usize,
-        stack_acc: Value<F>,
-        stack_acc_pow_of_rand: Value<F>,
     ) -> Self {
         Self {
             id,
             depth,
             value,
             value_prev: value + 1,
-            stack_acc,
-            stack_acc_pow_of_rand,
             stack_op: StackOp::Update,
         }
     }
