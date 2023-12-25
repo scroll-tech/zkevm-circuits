@@ -962,10 +962,14 @@ impl Transaction {
             cur = next;
         }
 
-        assert_eq!(stack_ops.len(), witness.len(), "Number of stack_ops must be equal to witness length");
+        assert_eq!(
+            stack_ops.len(),
+            witness.len(),
+            "Number of stack_ops must be equal to witness length"
+        );
 
         // Sort the RlpStackOps and assign to the RlpDecodingTable part of witness
-        stack_ops.sort_by(|a, b|
+        stack_ops.sort_by(|a, b| {
             if (
                 a.tx_id,
                 a.format as u64,
@@ -978,7 +982,7 @@ impl Transaction {
                 // The stack_op is included in the sorting to
                 // ensure that the Init step (with byte_idx = 0) is the first row
                 // before the first update on depth 0 (also with byte_idx = 0)
-                a.stack_op.clone() as u64
+                a.stack_op.clone() as u64,
             ) > (
                 b.tx_id,
                 b.format as u64,
@@ -986,13 +990,13 @@ impl Transaction {
                 b.byte_idx,
                 a.al_idx,
                 a.sk_idx,
-                b.stack_op.clone() as u64
+                b.stack_op.clone() as u64,
             ) {
                 std::cmp::Ordering::Greater
             } else {
                 std::cmp::Ordering::Less
-            }            
-        );
+            }
+        });
 
         for (idx, op) in stack_ops.into_iter().enumerate() {
             witness[idx].rlp_decoding_table = op;

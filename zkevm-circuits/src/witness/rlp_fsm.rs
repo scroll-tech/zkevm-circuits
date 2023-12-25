@@ -765,7 +765,8 @@ pub struct StateMachine<F: Field> {
 
 #[derive(Clone, Debug, Default)]
 pub enum StackOp {
-    #[default] Init,
+    #[default]
+    Init,
     Push,
     Pop,
     Update,
