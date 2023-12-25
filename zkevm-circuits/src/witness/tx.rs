@@ -974,14 +974,9 @@ impl Transaction {
                 a.tx_id,
                 a.format as u64,
                 a.depth,
-                // Using byte_idx alone is sufficient for ensuring ordered al_idx and sk_idx
-                // as access_list is processed in order
                 a.byte_idx,
                 a.al_idx,
                 a.sk_idx,
-                // The stack_op is included in the sorting to
-                // ensure that the Init step (with byte_idx = 0) is the first row
-                // before the first update on depth 0 (also with byte_idx = 0)
                 a.stack_op.clone() as u64,
             ) > (
                 b.tx_id,
