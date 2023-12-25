@@ -814,6 +814,7 @@ impl<F: PrimeField> RlpStackOp<F> {
             sk_idx: 0,
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn push(
         id: Value<F>,
         tx_id: u64,
@@ -837,6 +838,7 @@ impl<F: PrimeField> RlpStackOp<F> {
             sk_idx,
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn pop(
         id: Value<F>,
         tx_id: u64,
@@ -861,6 +863,7 @@ impl<F: PrimeField> RlpStackOp<F> {
             sk_idx,
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         id: Value<F>,
         tx_id: u64,

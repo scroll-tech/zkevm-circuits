@@ -2141,13 +2141,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "rlp_decoding_table.al_idx",
             self.rlp_decoding_table.al_idx,
             row,
-            || Value::known(F::from(witness.rlp_decoding_table.al_idx as u64)),
+            || Value::known(F::from(witness.rlp_decoding_table.al_idx)),
         )?;
         region.assign_advice(
             || "rlp_decoding_table.sk_idx",
             self.rlp_decoding_table.sk_idx,
             row,
-            || Value::known(F::from(witness.rlp_decoding_table.sk_idx as u64)),
+            || Value::known(F::from(witness.rlp_decoding_table.sk_idx)),
         )?;
         region.assign_advice(
             || "rlp_decoding_table.byte_idx",
