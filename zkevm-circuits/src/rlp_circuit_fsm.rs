@@ -1782,7 +1782,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 },
             );
 
-            // Stack depth must be equal or only increment by 1 when not initiating
+            // Stack depth must stay same or only increment by 1 when the stack is not initiating
             cb.condition(
                 not::expr(meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur())),
                 |cb| {
@@ -1800,12 +1800,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 },
             );
 
-
-
-
-
-
-
             // Stack Push
             cb.condition(
                 meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
@@ -1820,29 +1814,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 },
             );
-
-            // Stack Pop
-        //     cb.condition(
-        //         meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
-        //         |cb| {
-        //             // cb.require_zero(
-        //             //     "POP can only happen if there's no more bytes to decode on the higher depth",
-        //             //     meta.query_advice(rlp_decoding_table.value, Rotation::prev()),
-        //             // );
-
-
-
-
-        // // Then in the above example, we "would" make two lookups to the RlpDecodingTable with input exprs as
-
-        // // (tx_id, format, al_idx = 2, sk_idx, depth, value=value_prev - 800, value_prev);
-        // // (tx_id, format, al_idx = 2+1, sk_idx = 0, depth + 1, value=800, value_prev=0);
-
-
-
-
-        //         },
-        //     );
 
             // Stack Update Top
             cb.condition(
@@ -1881,6 +1852,61 @@ impl<F: Field> RlpCircuitConfig<F> {
             );
 
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+        });
+
+        // Additional cross-depth stack constraints in the RlpDecodingTable
+        meta.lookup_any("Each stack PUSH must correspond exactly to a POP into a lower depth level", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
+            ]);
+
+            let input_exprs = vec![
+                meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) - 1.expr(),
+                1.expr(), // is_pop = true
+                meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(),
+            ];
+            let table_exprs = vec![
+                meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()) - meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+            ];
+            input_exprs
+                .into_iter()
+                .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+        // // (al_idx = 2, sk_idx, depth, value=value_prev - 800, value_prev);
+        // // (al_idx = 2+1, sk_idx = 0, depth + 1, value=800, value_prev=0);
+
+        meta.lookup_any("Each stack POP must correspond exactly to a PUSH into a higher depth level", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
+            ]);
+
+            let input_exprs = vec![
+                meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) + 1.expr(),
+                1.expr(), // is_push = true
+                meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()) - meta.query_advice(rlp_decoding_table.value, Rotation::cur()) - 1.expr(),
+                0.expr(), // value_prev = 0
+            ];
+            let table_exprs = vec![
+                meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
+            ];
+            input_exprs
+                .into_iter()
+                .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
         });
 
         debug_assert!(meta.degree() <= 9);

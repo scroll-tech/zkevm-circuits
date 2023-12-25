@@ -15,7 +15,7 @@ use crate::{
         Tag::{EndObject, EndVector},
     },
 };
-use bus_mapping::{circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee}, operation::StackOp};
+use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
     geth_types::{access_list_size, TxType, TxType::PreEip155},
@@ -923,9 +923,6 @@ impl Transaction {
                 RlpTag::Null => unreachable!("Null is not used"),
             };
 
-            // tx1559_debug
-            // let stack_op = stack_ops.remove(0);
-
             witness.push(RlpFsmWitnessRow {
                 rlp_table: RlpTable {
                     tx_id,
@@ -997,14 +994,9 @@ impl Transaction {
             }            
         );
 
-        // tx1559_debug
-        // log::trace!("=> stack_ops: {:?}", stack_ops);
-                
         for (idx, op) in stack_ops.into_iter().enumerate() {
             witness[idx].rlp_decoding_table = op;
         }
-
-        // log::trace!("=> witness: {:?}", witness);
 
         // filling up the `tag_next` col of the witness table
         let mut idx = 0;
