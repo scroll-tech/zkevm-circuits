@@ -953,9 +953,8 @@ impl Transaction {
                     bytes_rlc,
                     gas_cost_acc,
                 },
-                // tx1559_debug
+                // The stack operations will be later sorted and assigned
                 rlp_decoding_table: RlpStackOp::default(),
-                // rlp_decoding_table: stack_op,
             });
 
             witness_table_idx += 1;
@@ -966,7 +965,7 @@ impl Transaction {
             cur = next;
         }
 
-        assert_eq!(stack_ops.len(), witness.len(), "Number of stack_ops must be equal to byte count");
+        assert_eq!(stack_ops.len(), witness.len(), "Number of stack_ops must be equal to witness length");
 
         // Sort the RlpStackOps and assign to the RlpDecodingTable part of witness
         stack_ops.sort_by(|a, b|
@@ -974,6 +973,8 @@ impl Transaction {
                 a.tx_id,
                 a.format as u64,
                 a.depth,
+                // Using byte_idx alone is sufficient for ensuring ordered al_idx and sk_idx
+                // as access_list is processed in order
                 a.byte_idx,
                 a.al_idx,
                 a.sk_idx,
@@ -986,11 +987,8 @@ impl Transaction {
                 b.format as u64,
                 b.depth,
                 b.byte_idx,
-                b.al_idx,
-                b.sk_idx,
-                // The stack_op is included in the sorting to
-                // ensure that the Init step (with byte_idx = 0) is the first row
-                // before the first update on depth 0 (also with byte_idx = 0)
+                a.al_idx,
+                a.sk_idx,
                 b.stack_op.clone() as u64
             ) {
                 std::cmp::Ordering::Greater
@@ -998,10 +996,15 @@ impl Transaction {
                 std::cmp::Ordering::Less
             }            
         );
-        
+
+        // tx1559_debug
+        // log::trace!("=> stack_ops: {:?}", stack_ops);
+                
         for (idx, op) in stack_ops.into_iter().enumerate() {
             witness[idx].rlp_decoding_table = op;
         }
+
+        // log::trace!("=> witness: {:?}", witness);
 
         // filling up the `tag_next` col of the witness table
         let mut idx = 0;
@@ -1012,9 +1015,6 @@ impl Transaction {
                 idx += 1;
             }
         }
-
-        // tx1559_debug
-        log::trace!("=> witness: {:?}", witness);
 
         witness
     }
