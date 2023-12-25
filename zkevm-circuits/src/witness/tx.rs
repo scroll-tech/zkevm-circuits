@@ -15,7 +15,7 @@ use crate::{
         Tag::{EndObject, EndVector},
     },
 };
-use bus_mapping::circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee};
+use bus_mapping::{circuit_input_builder::{self, get_dummy_tx_hash, TxL1Fee}, operation::StackOp};
 use eth_types::{
     evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
     geth_types::{access_list_size, TxType, TxType::PreEip155},
@@ -523,7 +523,7 @@ impl Transaction {
         let mut cur_rom_row = vec![0];
         let mut remaining_bytes = vec![rlp_bytes.len()];
         // initialize stack
-        stack_ops.push(RlpStackOp::init(id, rlp_bytes.len()));
+        stack_ops.push(RlpStackOp::init(id, tx_id, format, rlp_bytes.len()));
         let mut witness_table_idx = 0;
 
         // This map keeps track
@@ -563,9 +563,14 @@ impl Transaction {
 
                             stack_ops.push(RlpStackOp::pop(
                                 id,
+                                tx_id,
+                                format,
+                                cur.byte_idx,
                                 cur.depth - 1,
                                 byte_remained,
                                 prev_bytes_on_depth[cur.depth - 1],
+                                access_list_idx,
+                                storage_key_idx,
                             ));
                         }
 
@@ -612,8 +617,13 @@ impl Transaction {
                                 // add stack op on same depth
                                 stack_ops.push(RlpStackOp::update(
                                     id,
+                                    tx_id,
+                                    format,
+                                    cur.byte_idx,
                                     cur.depth,
                                     *rem - 1,
+                                    access_list_idx,
+                                    storage_key_idx,
                                 ));
                             }
 
@@ -697,8 +707,13 @@ impl Transaction {
 
                             stack_ops.push(RlpStackOp::push(
                                 id,
+                                tx_id,
+                                format,
+                                cur.byte_idx,
                                 cur.depth + 1,
                                 num_bytes_of_new_list,
+                                access_list_idx,
+                                storage_key_idx,
                             ));
 
                             next.depth = cur.depth + 1;
@@ -724,8 +739,13 @@ impl Transaction {
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
                             id,
+                            tx_id,
+                            format,
+                            cur.byte_idx,
                             cur.depth,
                             *rem - 1,
+                            access_list_idx,
+                            storage_key_idx,
                         ));
 
                         *rem -= 1;
@@ -758,8 +778,13 @@ impl Transaction {
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
                             id,
+                            tx_id,
+                            format,
+                            cur.byte_idx,
                             cur.depth,
                             *rem - 1,
+                            access_list_idx,
+                            storage_key_idx,
                         ));
 
                         *rem -= 1;
@@ -791,8 +816,13 @@ impl Transaction {
                         if cur.tag_idx < cur.tag_length {
                             stack_ops.push(RlpStackOp::update(
                                 id,
+                                tx_id,
+                                format,
+                                cur.byte_idx,
                                 cur.depth,
                                 *rem - 1,
+                                access_list_idx,
+                                storage_key_idx,
                             ));
                         }
 
@@ -818,8 +848,13 @@ impl Transaction {
                         remaining_bytes.push(lb_len);
                         stack_ops.push(RlpStackOp::push(
                             id,
+                            tx_id,
+                            format,
+                            cur.byte_idx,
                             cur.depth + 1,
                             lb_len,
+                            access_list_idx,
+                            storage_key_idx,
                         ));
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
@@ -888,7 +923,8 @@ impl Transaction {
                 RlpTag::Null => unreachable!("Null is not used"),
             };
 
-            let stack_op = stack_ops.remove(0);
+            // tx1559_debug
+            // let stack_op = stack_ops.remove(0);
 
             witness.push(RlpFsmWitnessRow {
                 rlp_table: RlpTable {
@@ -917,8 +953,11 @@ impl Transaction {
                     bytes_rlc,
                     gas_cost_acc,
                 },
-                rlp_decoding_table: stack_op,
+                // tx1559_debug
+                rlp_decoding_table: RlpStackOp::default(),
+                // rlp_decoding_table: stack_op,
             });
+
             witness_table_idx += 1;
 
             if cur.tag == EndObject && cur.depth == 0 {
@@ -926,6 +965,44 @@ impl Transaction {
             }
             cur = next;
         }
+
+        assert_eq!(stack_ops.len(), witness.len(), "Number of stack_ops must be equal to byte count");
+
+        // Sort the RlpStackOps and assign to the RlpDecodingTable part of witness
+        stack_ops.sort_by(|a, b|
+            if (
+                a.tx_id,
+                a.format as u64,
+                a.depth,
+                a.byte_idx,
+                a.al_idx,
+                a.sk_idx,
+                // The stack_op is included in the sorting to
+                // ensure that the Init step (with byte_idx = 0) is the first row
+                // before the first update on depth 0 (also with byte_idx = 0)
+                a.stack_op.clone() as u64
+            ) > (
+                b.tx_id,
+                b.format as u64,
+                b.depth,
+                b.byte_idx,
+                b.al_idx,
+                b.sk_idx,
+                // The stack_op is included in the sorting to
+                // ensure that the Init step (with byte_idx = 0) is the first row
+                // before the first update on depth 0 (also with byte_idx = 0)
+                b.stack_op.clone() as u64
+            ) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            }            
+        );
+        
+        for (idx, op) in stack_ops.into_iter().enumerate() {
+            witness[idx].rlp_decoding_table = op;
+        }
+
         // filling up the `tag_next` col of the witness table
         let mut idx = 0;
         for (witness_idx, rom_table_row) in tag_rom_row_map {
@@ -935,6 +1012,9 @@ impl Transaction {
                 idx += 1;
             }
         }
+
+        // tx1559_debug
+        log::trace!("=> witness: {:?}", witness);
 
         witness
     }

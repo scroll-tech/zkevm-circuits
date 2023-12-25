@@ -182,12 +182,12 @@ impl RlpFsmRomTable {
 /// Data decoding table simulates a stack-like structure for constraining remaining_bytes
 #[derive(Clone, Copy, Debug)]
 pub struct RlpDecodingTable {
-    /// Is Write to decoding stack
-    pub is_write: Column<Advice>,
     /// Key1 (Id), concat of tx_id, format
     pub id: Column<Advice>,
     /// Key2 (Address), in this case depth
     pub depth: Column<Advice>,
+    /// Op Counter, byte_idx
+    pub byte_idx: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
     /// Value Previous
@@ -200,15 +200,19 @@ pub struct RlpDecodingTable {
     pub is_stack_pop: Column<Advice>,
     /// Stack Op flag, Update
     pub is_stack_update: Column<Advice>,
+    /// Access list idx
+    pub al_idx: Column<Advice>,
+    /// Storage key idx
+    pub sk_idx: Column<Advice>,
 }
 
 impl RlpDecodingTable {
     /// Construct the decoding table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            is_write: meta.advice_column(),
             id: meta.advice_column(),
             depth: meta.advice_column(),
+            byte_idx: meta.advice_column(),
             value: meta.advice_column(),
             value_prev: meta.advice_column(),
             // tx1559_debug
@@ -218,6 +222,8 @@ impl RlpDecodingTable {
             is_stack_push: meta.advice_column(),
             is_stack_pop: meta.advice_column(),
             is_stack_update: meta.advice_column(),
+            al_idx: meta.advice_column(),
+            sk_idx: meta.advice_column(),
         }
     }
 }
@@ -1671,12 +1677,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("stack constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // Universal Stack Constraints
-            cb.require_equal(
-                "stack ptr (address) must correspond exactly to depth",
-                meta.query_advice(depth, Rotation::cur()),
-                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
-            );
             cb.condition(not::expr(is_end(meta)), |cb| {
                 cb.require_equal(
                     "each row must have a stack operation",
@@ -1715,20 +1715,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                         "stack inits at depth 0",
                         meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
                     );
-                    cb.require_equal(
-                        "stack init pushes all remaining_bytes onto depth 0",
-                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
-                        meta.query_advice(byte_rev_idx, Rotation::cur()),
-                    );
-                    // tx1559_debug
                     // cb.require_equal(
-                    //     "stack_acc accumulates depth 0 bytes at 1",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
-                    //     1.expr()
-                    // );
-                    // cb.require_zero(
-                    //     "stack accumulator starts at 0",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
+                    //     "stack init pushes all remaining_bytes onto depth 0",
+                    //     meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                    //     meta.query_advice(byte_rev_idx, Rotation::cur()),
                     // );
                 },
             );
@@ -1741,28 +1731,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                         "The higher depth must have 0 bytes.",
                         meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
                     );
-                    cb.require_equal(
-                        "PUSH stack operation increases depth",
-                        meta.query_advice(rlp_decoding_table.depth, Rotation::prev()) + 1.expr(),
-                        meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
-                    );
-                    // tx1559_debug
-                    // cb.require_equal(
-                    //     "stack_acc accumulates next depth level at exponent +1 of challenge",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::prev()) * challenges.keccak_input(),
-                    //     meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
-                    // );
-                    // cb.require_equal(
-                    //     "stack_acc accumulates remaining bytes from previous depth level",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc, Rotation::prev())
-                    //             + (meta.query_advice(rlp_decoding_table.value, Rotation::prev())
-                    //                 - meta.query_advice(rlp_decoding_table.value, Rotation::cur())
-                    //                 // 1 byte needs to be subtracted here as the step preceding the PUSH reads one byte from the lower depth
-                    //                 // This byte is already consumed and won't be added to the accumulator
-                    //                 - 1.expr())
-                    //             * meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::prev()),
-                    //     meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
-                    // );
                 },
             );
 
@@ -1770,27 +1738,9 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.condition(
                 meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
                 |cb| {
-                    cb.require_equal(
-                        "POP stack operation decreases depth",
-                        meta.query_advice(rlp_decoding_table.depth, Rotation::prev()),
-                        meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) + 1.expr(),
-                    );
-                    cb.require_zero(
-                        "POP can only happen if there's no more bytes to decode on the higher depth",
-                        meta.query_advice(rlp_decoding_table.value, Rotation::prev()),
-                    );
-                    // tx1559_debug
-                    // cb.require_equal(
-                    //     "stack_acc accumulates lower depth level at exponent -1 of challenge",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::prev()),
-                    //     meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()) * challenges.keccak_input(),
-                    // );
-                    // cb.require_equal(
-                    //     "stack_acc releases remaining bytes from previous depth level",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc, Rotation::prev())
-                    //             - meta.query_advice(rlp_decoding_table.value, Rotation::cur())
-                    //         * meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
-                    //     meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
+                    // cb.require_zero(
+                    //     "POP can only happen if there's no more bytes to decode on the higher depth",
+                    //     meta.query_advice(rlp_decoding_table.value, Rotation::prev()),
                     // );
                 },
             );
@@ -1814,17 +1764,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                         meta.query_advice(rlp_decoding_table.value, Rotation::prev()),
                         meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
                     );
-                    // tx1559_debug
-                    // cb.require_equal(
-                    //     "UPDATE doesn't change stack_acc",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc, Rotation::prev()),
-                    //     meta.query_advice(rlp_decoding_table.stack_acc, Rotation::cur()),
-                    // );
-                    // cb.require_equal(
-                    //     "stack_acc accumulates same depth level at the same exponent of challenge",
-                    //     meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::prev()),
-                    //     meta.query_advice(rlp_decoding_table.stack_acc_pow_of_rand, Rotation::cur()),
-                    // );
                 },
             );
 

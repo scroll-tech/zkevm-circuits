@@ -763,9 +763,9 @@ pub struct StateMachine<F: Field> {
     pub gas_cost_acc: Value<F>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum StackOp {
-    Init,
+    #[default] Init,
     Push,
     Pop,
     Update,
@@ -774,68 +774,113 @@ pub enum StackOp {
 /// Rlp Decoding Witness
 /// Using simulated stack constraints to make sure all bytes in nested structure are correctly
 /// decoded
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RlpStackOp<F: PrimeField> {
     /// Key1 (Id), concat of tx_id, format
     pub id: Value<F>,
+    /// Transaction Id
+    pub tx_id: u64,
+    /// Format
+    pub format: Format,
     /// Key2 (Address), in this case depth
     pub depth: usize,
+    /// Op Counter, similar to rw counter
+    pub byte_idx: usize,
     /// Value
     pub value: usize,
     /// Value Previous
     pub value_prev: usize,
     /// The stack operation performed at step.
     pub stack_op: StackOp,
+    /// Access list index
+    pub al_idx: u64,
+    /// Storage key index
+    pub sk_idx: u64,
 }
 
 impl<F: PrimeField> RlpStackOp<F> {
-    pub fn init(id: Value<F>, value: usize) -> Self {
+    pub fn init(id: Value<F>, tx_id: u64, format: Format, value: usize) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth: 0,
+            byte_idx: 0,
             value,
             value_prev: 0,
             stack_op: StackOp::Init,
+            al_idx: 0,
+            sk_idx: 0,
         }
     }
     pub fn push(
         id: Value<F>,
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
         depth: usize,
         value: usize,
+        al_idx: u64,
+        sk_idx: u64,
     ) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth,
+            byte_idx,
             value,
             value_prev: 0,
             stack_op: StackOp::Push,
+            al_idx,
+            sk_idx,
         }
     }
     pub fn pop(
         id: Value<F>,
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
         depth: usize,
         value: usize,
         value_prev: usize,
+        al_idx: u64,
+        sk_idx: u64,
     ) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth,
+            byte_idx,
             value,
             value_prev,
             stack_op: StackOp::Pop,
+            al_idx,
+            sk_idx,
         }
     }
     pub fn update(
         id: Value<F>,
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
         depth: usize,
         value: usize,
+        al_idx: u64,
+        sk_idx: u64,
     ) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth,
+            byte_idx,
             value,
             value_prev: value + 1,
             stack_op: StackOp::Update,
+            al_idx,
+            sk_idx,
         }
     }
 }
