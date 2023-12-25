@@ -186,8 +186,6 @@ pub struct RlpDecodingTable {
     pub id: Column<Advice>,
     /// Key2 (Address), in this case depth
     pub depth: Column<Advice>,
-    /// Op Counter, byte_idx
-    pub byte_idx: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
     /// Value Previous
@@ -212,12 +210,8 @@ impl RlpDecodingTable {
         Self {
             id: meta.advice_column(),
             depth: meta.advice_column(),
-            byte_idx: meta.advice_column(),
             value: meta.advice_column(),
             value_prev: meta.advice_column(),
-            // tx1559_debug
-            // stack_acc: meta.advice_column_in(SecondPhase),
-            // stack_acc_pow_of_rand: meta.advice_column_in(SecondPhase),
             is_stack_init: meta.advice_column(),
             is_stack_push: meta.advice_column(),
             is_stack_pop: meta.advice_column(),
@@ -1586,6 +1580,66 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
+        // With each access list increments (a new access list or storage key),
+        // it must be accompanied by the correct PUSH onto a new depth in RlpDecodingTable
+        meta.lookup_any("New access list must correspond to a new PUSH to level 3 in RlpDecodingTable", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                meta.query_advice(is_new_access_list_address, Rotation::cur()),
+            ]);
+
+            let input_exprs = vec![
+                3.expr(), // depth for new access list is 3
+                1.expr(), // is_push = true
+                meta.query_advice(rlp_table.access_list_idx, Rotation::cur()) - 1.expr(),
+                0.expr(), // new access list has sk_idx = 0
+            ];
+            let table_exprs = vec![
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
+            ];
+            input_exprs
+                .into_iter()
+                .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+        meta.lookup_any("New access list must correspond to a new PUSH to level 3 in RlpDecodingTable", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                meta.query_advice(is_new_access_list_address, Rotation::cur()),
+            ]);
+
+            let input_exprs = vec![
+                4.expr(), // depth for new access list is 3
+                1.expr(), // is_push = true
+                meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+            ];
+            let table_exprs = vec![
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
+            ];
+            input_exprs
+                .into_iter()
+                .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+
+
+        // Then in the above example, we "would" make two lookups to the RlpDecodingTable with input exprs as
+
+        // (tx_id, format, al_idx = 2, sk_idx, depth, value=value_prev - 800, value_prev);
+        // (tx_id, format, al_idx = 2+1, sk_idx = 0, depth + 1, value=800, value_prev=0);
+
+
+
+
         // Access List Clearing
         // note: right now no other nested structures are defined at these depth levels
         // hence using depth alone is sufficient to determine clearing conditions.
@@ -1936,6 +1990,13 @@ impl<F: Field> RlpCircuitConfig<F> {
         )?;
 
         // assign to rlp decoding table
+
+    // /// Access list idx
+    // pub al_idx: Column<Advice>,
+    // /// Storage key idx
+    // pub sk_idx: Column<Advice>,
+
+
         region.assign_advice(
             || "rlp_decoding_table.id",
             self.rlp_decoding_table.id,
@@ -1943,7 +2004,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             || witness.rlp_decoding_table.id,
         )?;
         region.assign_advice(
-            || "rlp_decoding_table.address",
+            || "rlp_decoding_table.depth",
             self.rlp_decoding_table.depth,
             row,
             || Value::known(F::from(witness.rlp_decoding_table.depth as u64)),
@@ -1960,19 +2021,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || Value::known(F::from(witness.rlp_decoding_table.value_prev as u64)),
         )?;
-        // tx1559_debug
-        // region.assign_advice(
-        //     || "rlp_decoding_table.stack_acc",
-        //     self.rlp_decoding_table.stack_acc,
-        //     row,
-        //     || witness.rlp_decoding_table.stack_acc,
-        // )?;
-        // region.assign_advice(
-        //     || "rlp_decoding_table.stack_acc_pow_of_rand",
-        //     self.rlp_decoding_table.stack_acc_pow_of_rand,
-        //     row,
-        //     || witness.rlp_decoding_table.stack_acc_pow_of_rand,
-        // )?;
+
         region.assign_advice(
             || "rlp_decoding_table.is_stack_init",
             self.rlp_decoding_table.is_stack_init,
@@ -2012,6 +2061,18 @@ impl<F: Field> RlpCircuitConfig<F> {
                     matches!(witness.rlp_decoding_table.stack_op, StackOp::Update) as u64,
                 ))
             },
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.al_idx",
+            self.rlp_decoding_table.al_idx,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.al_idx as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.sk_idx",
+            self.rlp_decoding_table.sk_idx,
+            row,
+            || Value::known(F::from(witness.rlp_decoding_table.sk_idx as u64)),
         )?;
 
         let is_new_access_list_address = witness.state_machine.state == DecodeTagStart
