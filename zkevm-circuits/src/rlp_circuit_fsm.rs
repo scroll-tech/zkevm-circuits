@@ -1606,7 +1606,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
-        meta.lookup_any("New access list must correspond to a new PUSH to level 3 in RlpDecodingTable", |meta| {
+        meta.lookup_any("New storage key must correspond to a new PUSH to level 4 in RlpDecodingTable", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 meta.query_advice(is_new_access_list_address, Rotation::cur()),
