@@ -558,22 +558,6 @@ impl Transaction {
                             0
                         );
 
-                        if !remaining_bytes.is_empty() {
-                            let byte_remained = *remaining_bytes.last().unwrap();
-
-                            stack_ops.push(RlpStackOp::pop(
-                                id,
-                                tx_id,
-                                format,
-                                cur.byte_idx,
-                                cur.depth - 1,
-                                byte_remained,
-                                prev_bytes_on_depth[cur.depth - 1],
-                                access_list_idx,
-                                storage_key_idx,
-                            ));
-                        }
-
                         if cur.depth == 1 {
                             assert_eq!(remaining_bytes.len(), 1);
                             assert_eq!(remaining_bytes[0], 0);
@@ -596,6 +580,22 @@ impl Transaction {
                             // emit GasCost
                             is_output = true;
                             rlp_tag = RlpTag::GasCost;
+                        }
+
+                        if !remaining_bytes.is_empty() {
+                            let byte_remained = *remaining_bytes.last().unwrap();
+
+                            stack_ops.push(RlpStackOp::pop(
+                                id,
+                                tx_id,
+                                format,
+                                cur.byte_idx,
+                                cur.depth - 1,
+                                byte_remained,
+                                prev_bytes_on_depth[cur.depth - 1],
+                                access_list_idx,
+                                storage_key_idx,
+                            ));
                         }
 
                         // state transitions
