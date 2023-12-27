@@ -1738,8 +1738,48 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta| meta.advice_column(),
         );
 
+        // Completeness of RlpDecodingTable in relation to RlpTable
+        // This lookup ensures that the decoding table is a resorting of records in RlpTable by depth, access_list_idx and storage_key_idx
+        // This lookup doesn't include the init row which is constrained in the stack init condition below
+        meta.lookup_any("Every stack op record in decoding table must correspond to a row in Rlp table", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                sum::expr([
+                    meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
+                ]),
+            ]);
+
+            let input_exprs = vec![
+                meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
+            ];
+            let table_exprs = vec![
+                challenges.keccak_input() * meta.query_advice(rlp_table.tx_id, Rotation::cur()) + meta.query_advice(rlp_table.format, Rotation::cur()),
+                meta.query_advice(depth, Rotation::next()),
+                meta.query_advice(byte_idx, Rotation::cur()),
+                meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+                meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+            ];
+            input_exprs
+                .into_iter()
+                .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+
         meta.create_gate("stack constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "Decoding table rows belong to the same section identified by id = (tx_id, format)",
+                meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
+                challenges.keccak_input() * meta.query_advice(rlp_table.tx_id, Rotation::cur()) + meta.query_advice(rlp_table.format, Rotation::cur()),
+            );
 
             cb.condition(not::expr(is_end(meta)), |cb| {
                 cb.require_equal(
@@ -1783,6 +1823,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                         "stack init pushes all remaining_bytes onto depth 0",
                         meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
                         meta.query_advice(byte_rev_idx, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "stack can only init once with the first byte",
+                        meta.query_advice(byte_idx, Rotation::cur()),
+                        1.expr(),
                     );
                 },
             );
@@ -1856,7 +1901,9 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
-        // Additional cross-depth stack constraints in the RlpDecodingTable
+        // Cross-depth stack constraints in the RlpDecodingTable
+        // These two sets of lookups ensure exact correspondence of PUSH and POP records during decoding of the same (tx_id, format)
+        // Two-way lookups are used to ensure the number of PUSHs and POPs are the same
         meta.lookup_any(
             "Each stack PUSH must correspond exactly to a POP into a lower depth level",
             |meta| {
@@ -1885,9 +1932,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                     .collect()
             },
         );
-        // // (al_idx = 2, sk_idx, depth, value=value_prev - 800, value_prev);
-        // // (al_idx = 2+1, sk_idx = 0, depth + 1, value=800, value_prev=0);
-
         meta.lookup_any(
             "Each stack POP must correspond exactly to a PUSH into a higher depth level",
             |meta| {

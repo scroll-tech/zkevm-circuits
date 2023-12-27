@@ -589,7 +589,7 @@ impl Transaction {
                                 id,
                                 tx_id,
                                 format,
-                                cur.byte_idx,
+                                cur.byte_idx + 1,
                                 cur.depth - 1,
                                 byte_remained,
                                 prev_bytes_on_depth[cur.depth - 1],
@@ -606,6 +606,18 @@ impl Transaction {
                         next.state = DecodeTagStart;
                     } else {
                         let byte_value = rlp_bytes[cur.byte_idx];
+
+                        if byte_value > 0x80 && byte_value < 0xb8 {
+                            // detect start of access list address
+                            if cur.tag.is_access_list_address() {
+                                access_list_idx += 1;
+                            }
+                            // detect start of access list storage key
+                            if cur.tag.is_access_list_storage_key() {
+                                storage_key_idx += 1;
+                            }
+                        }
+
                         if let Some(rem) = remaining_bytes.last_mut() {
                             // read one more byte
                             assert!(*rem >= 1);
@@ -619,7 +631,7 @@ impl Transaction {
                                     id,
                                     tx_id,
                                     format,
-                                    cur.byte_idx,
+                                    cur.byte_idx + 1,
                                     cur.depth,
                                     *rem - 1,
                                     access_list_idx,
@@ -654,15 +666,6 @@ impl Transaction {
                         } else if byte_value < 0xb8 {
                             // assertions
                             assert!(!cur.tag.is_list());
-
-                            // detect start of access list address
-                            if cur.tag.is_access_list_address() {
-                                access_list_idx += 1;
-                            }
-                            // detect start of access list storage key
-                            if cur.tag.is_access_list_storage_key() {
-                                storage_key_idx += 1;
-                            }
 
                             // state transitions
                             next.tag_idx = 1;
@@ -705,13 +708,19 @@ impl Transaction {
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
 
+                            // tx1559_debug
+                            // let al_inc = if cur.depth == 2 { 1 } else { 0 };
+                            // let sk_inc = if cur.depth == 3 { 1 } else { 0 };
                             stack_ops.push(RlpStackOp::push(
                                 id,
                                 tx_id,
                                 format,
-                                cur.byte_idx,
+                                cur.byte_idx + 1,
                                 cur.depth + 1,
                                 num_bytes_of_new_list,
+                                // tx1559_debug
+                                // access_list_idx + al_inc,
+                                // storage_key_idx + sk_inc,
                                 access_list_idx,
                                 storage_key_idx,
                             ));
@@ -741,7 +750,7 @@ impl Transaction {
                             id,
                             tx_id,
                             format,
-                            cur.byte_idx,
+                            cur.byte_idx + 1,
                             cur.depth,
                             *rem - 1,
                             access_list_idx,
@@ -780,7 +789,7 @@ impl Transaction {
                             id,
                             tx_id,
                             format,
-                            cur.byte_idx,
+                            cur.byte_idx + 1,
                             cur.depth,
                             *rem - 1,
                             access_list_idx,
@@ -818,7 +827,7 @@ impl Transaction {
                                 id,
                                 tx_id,
                                 format,
-                                cur.byte_idx,
+                                cur.byte_idx + 1,
                                 cur.depth,
                                 *rem - 1,
                                 access_list_idx,
@@ -846,13 +855,20 @@ impl Transaction {
                             *rem -= lb_len;
                         }
                         remaining_bytes.push(lb_len);
+
+                        // tx1559_debug
+                        // let al_inc = if cur.depth == 2 { 1 } else { 0 };
+                        // let sk_inc = if cur.depth == 3 { 1 } else { 0 };
                         stack_ops.push(RlpStackOp::push(
                             id,
                             tx_id,
                             format,
-                            cur.byte_idx,
+                            cur.byte_idx + 1,
                             cur.depth + 1,
                             lb_len,
+                            // tx1559_debug
+                            // access_list_idx + al_inc,
+                            // storage_key_idx + sk_inc,
                             access_list_idx,
                             storage_key_idx,
                         ));
@@ -968,6 +984,7 @@ impl Transaction {
             "Number of stack_ops must be equal to witness length"
         );
 
+        // tx1559_debug
         // Sort the RlpStackOps and assign to the RlpDecodingTable part of witness
         stack_ops.sort_by(|a, b| {
             if (
@@ -1006,6 +1023,8 @@ impl Transaction {
                 idx += 1;
             }
         }
+
+        // log::trace!("=> witness: {:?}", witness);
 
         witness
     }
