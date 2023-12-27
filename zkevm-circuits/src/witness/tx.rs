@@ -708,9 +708,6 @@ impl Transaction {
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
 
-                            // tx1559_debug
-                            // let al_inc = if cur.depth == 2 { 1 } else { 0 };
-                            // let sk_inc = if cur.depth == 3 { 1 } else { 0 };
                             stack_ops.push(RlpStackOp::push(
                                 id,
                                 tx_id,
@@ -718,9 +715,6 @@ impl Transaction {
                                 cur.byte_idx + 1,
                                 cur.depth + 1,
                                 num_bytes_of_new_list,
-                                // tx1559_debug
-                                // access_list_idx + al_inc,
-                                // storage_key_idx + sk_inc,
                                 access_list_idx,
                                 storage_key_idx,
                             ));
@@ -856,9 +850,6 @@ impl Transaction {
                         }
                         remaining_bytes.push(lb_len);
 
-                        // tx1559_debug
-                        // let al_inc = if cur.depth == 2 { 1 } else { 0 };
-                        // let sk_inc = if cur.depth == 3 { 1 } else { 0 };
                         stack_ops.push(RlpStackOp::push(
                             id,
                             tx_id,
@@ -866,9 +857,6 @@ impl Transaction {
                             cur.byte_idx + 1,
                             cur.depth + 1,
                             lb_len,
-                            // tx1559_debug
-                            // access_list_idx + al_inc,
-                            // storage_key_idx + sk_inc,
                             access_list_idx,
                             storage_key_idx,
                         ));
@@ -984,7 +972,6 @@ impl Transaction {
             "Number of stack_ops must be equal to witness length"
         );
 
-        // tx1559_debug
         // Sort the RlpStackOps and assign to the RlpDecodingTable part of witness
         stack_ops.sort_by(|a, b| {
             if (
