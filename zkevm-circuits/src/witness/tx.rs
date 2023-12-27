@@ -1011,8 +1011,6 @@ impl Transaction {
             }
         }
 
-        // log::trace!("=> witness: {:?}", witness);
-
         witness
     }
 
