@@ -1,11 +1,50 @@
 use crate::{abi, Compiler};
 use anyhow::{bail, Context, Result};
-use eth_types::{Address, Bytes, H256, U256};
+use eth_types::{address, AccessList, AccessListItem, Address, Bytes, H256, U256};
 use log::debug;
 use regex::Regex;
-use std::{collections::HashMap, sync::LazyLock};
+use serde::Deserialize;
+use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
 type Label = String;
+
+/// Raw access list to parse
+pub type RawAccessList = Vec<RawAccessListItem>;
+
+/// Raw access list item to parse
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawAccessListItem {
+    address: String,
+    storage_keys: Vec<String>,
+}
+
+impl RawAccessListItem {
+    pub fn new(address: String, storage_keys: Vec<String>) -> Self {
+        Self {
+            address,
+            storage_keys,
+        }
+    }
+}
+
+/// parsed calldata
+#[derive(Debug)]
+pub struct Calldata {
+    pub data: Bytes,
+    pub label: Option<Label>,
+    pub access_list: Option<AccessList>,
+}
+
+impl Calldata {
+    fn new(data: Bytes, label: Option<Label>, access_list: Option<AccessList>) -> Self {
+        Self {
+            data,
+            label,
+            access_list,
+        }
+    }
+}
 
 static YUL_FRAGMENT_PARSER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<code>\{[\S\s]*)"#).unwrap());
@@ -63,47 +102,17 @@ fn decompose_tags(expr: &str) -> HashMap<String, String> {
 
 /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
 /// { LLL }
-pub fn parse_calldata(compiler: &Compiler, as_str: &str) -> Result<(Bytes, Option<Label>)> {
-    let tags = decompose_tags(as_str);
+pub fn parse_calldata(
+    compiler: &Compiler,
+    data: &str,
+    raw_access_list: &Option<RawAccessList>,
+) -> Result<Calldata> {
+    let tags = decompose_tags(data);
     let label = tags.get(":label").cloned();
+    let bytes = parse_call_bytes(compiler, tags)?;
+    let access_list = parse_access_list(raw_access_list)?;
 
-    if let Some(notag) = tags.get("") {
-        let notag = notag.trim();
-        if notag.is_empty() {
-            Ok((Bytes::default(), label))
-        } else if notag.starts_with('{') {
-            Ok((compiler.lll(notag)?, label))
-        } else if let Some(hex) = notag.strip_prefix("0x") {
-            Ok((Bytes::from(hex::decode(hex)?), label))
-        } else {
-            bail!("do not know what to do with calldata (1): '{:?}'", as_str);
-        }
-    } else if let Some(raw) = tags.get(":raw") {
-        if let Some(hex) = raw.strip_prefix("0x") {
-            Ok((Bytes::from(hex::decode(hex)?), label))
-        } else {
-            bail!("bad encoded calldata (3) {:?}", as_str)
-        }
-    } else if let Some(abi) = tags.get(":abi") {
-        Ok((abi::encode_funccall(abi)?, label))
-    } else if let Some(yul) = tags.get(":yul") {
-        let caps = YUL_FRAGMENT_PARSER
-            .captures(yul)
-            .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", as_str))?;
-        Ok((
-            compiler.yul(
-                caps.name("code").unwrap().as_str(),
-                caps.name("version").map(|m| m.as_str()),
-            )?,
-            label,
-        ))
-    } else {
-        bail!(
-            "do not know what to do with calldata: (2) {:?} '{:?}'",
-            tags,
-            as_str
-        )
-    }
+    Ok(Calldata::new(bytes, label, access_list))
 }
 
 /// parse entry as code, can be 0x, :raw or { LLL }
@@ -178,4 +187,61 @@ pub fn parse_u64(as_str: &str) -> Result<u64> {
     } else {
         Ok(U256::from_str_radix(as_str, 10)?.as_u64())
     }
+}
+
+// Parse calldata to bytes
+fn parse_call_bytes(compiler: &Compiler, tags: HashMap<String, String>) -> Result<Bytes> {
+    if let Some(notag) = tags.get("") {
+        let notag = notag.trim();
+        if notag.is_empty() {
+            Ok(Bytes::default())
+        } else if notag.starts_with('{') {
+            Ok(compiler.lll(notag)?)
+        } else if let Some(hex) = notag.strip_prefix("0x") {
+            Ok(Bytes::from(hex::decode(hex)?))
+        } else {
+            bail!("do not know what to do with calldata (1): '{tags:?}'");
+        }
+    } else if let Some(raw) = tags.get(":raw") {
+        if let Some(hex) = raw.strip_prefix("0x") {
+            Ok(Bytes::from(hex::decode(hex)?))
+        } else {
+            bail!("bad encoded calldata (3) {:?}", tags)
+        }
+    } else if let Some(abi) = tags.get(":abi") {
+        Ok(abi::encode_funccall(abi)?)
+    } else if let Some(yul) = tags.get(":yul") {
+        let caps = YUL_FRAGMENT_PARSER
+            .captures(yul)
+            .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", tags))?;
+        Ok(compiler.yul(
+            caps.name("code").unwrap().as_str(),
+            caps.name("version").map(|m| m.as_str()),
+        )?)
+    } else {
+        bail!("do not know what to do with calldata: (2) '{:?}'", tags,)
+    }
+}
+
+// Parse access list
+fn parse_access_list(raw_access_list: &Option<RawAccessList>) -> Result<Option<AccessList>> {
+    if let Some(raw_access_list) = raw_access_list {
+        let mut items = Vec::with_capacity(raw_access_list.len());
+        for raw in raw_access_list {
+            let storage_keys = raw
+                .storage_keys
+                .iter()
+                .map(|key| H256::from_str(key))
+                .collect::<Result<_, _>>()?;
+
+            items.push(AccessListItem {
+                address: address!(raw.address),
+                storage_keys,
+            });
+        }
+
+        return Ok(Some(AccessList(items)));
+    }
+
+    Ok(None)
 }
