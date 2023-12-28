@@ -531,13 +531,6 @@ impl Transaction {
         // operation took place. This is a utility variable for correctly filling the
         // value_prev field in a POP record.
         let mut prev_bytes_on_depth: [usize; 4] = [0, 0, 0, 0];
-        let mut stack_acc = Value::known(F::zero());
-
-        let stack_acc_pow_of_rand = std::iter::successors(Some(Value::known(F::one())), |coeff| {
-            Some(keccak_rand * coeff)
-        })
-        .take(5)
-        .collect::<Vec<Value<F>>>();
 
         // concat tx_id and format as stack identifier
         let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
@@ -548,7 +541,7 @@ impl Transaction {
         let mut cur_rom_row = vec![0];
         let mut remaining_bytes = vec![rlp_bytes.len()];
         // initialize stack
-        stack_ops.push(RlpStackOp::init(id, rlp_bytes.len()));
+        stack_ops.push(RlpStackOp::init(id, tx_id, format, rlp_bytes.len()));
         let mut witness_table_idx = 0;
 
         // This map keeps track
@@ -583,29 +576,6 @@ impl Transaction {
                             0
                         );
 
-                        if !remaining_bytes.is_empty() {
-                            // The circuit recovers the byte count remained on the previous depth
-                            // level by taking it out of the stack_acc
-                            // using the same random coefficient (a power of keccak_rand)
-
-                            // stack_acc = RLC(remaining_bytes[0..depth], keccak_rand);
-                            // stack_acc_pow_of_rand = [keccak_rand^0, keccak_rand^1, keccak_rand^2,
-                            // keccak_rand^3]
-                            let byte_remained = *remaining_bytes.last().unwrap();
-                            stack_acc = stack_acc
-                                - stack_acc_pow_of_rand[cur.depth - 1]
-                                    * Value::known(F::from(byte_remained as u64));
-
-                            stack_ops.push(RlpStackOp::pop(
-                                id,
-                                cur.depth - 1,
-                                byte_remained,
-                                prev_bytes_on_depth[cur.depth - 1],
-                                stack_acc,
-                                stack_acc_pow_of_rand[cur.depth - 1],
-                            ));
-                        }
-
                         if cur.depth == 1 {
                             assert_eq!(remaining_bytes.len(), 1);
                             assert_eq!(remaining_bytes[0], 0);
@@ -630,6 +600,22 @@ impl Transaction {
                             rlp_tag = RlpTag::GasCost;
                         }
 
+                        if !remaining_bytes.is_empty() {
+                            let byte_remained = *remaining_bytes.last().unwrap();
+
+                            stack_ops.push(RlpStackOp::pop(
+                                id,
+                                tx_id,
+                                format,
+                                cur.byte_idx + 1,
+                                cur.depth - 1,
+                                byte_remained,
+                                prev_bytes_on_depth[cur.depth - 1],
+                                access_list_idx,
+                                storage_key_idx,
+                            ));
+                        }
+
                         // state transitions
                         // if cur.depth == 0 then we are at the end of decoding
                         if cur.depth > 0 {
@@ -638,6 +624,18 @@ impl Transaction {
                         next.state = DecodeTagStart;
                     } else {
                         let byte_value = rlp_bytes[cur.byte_idx];
+
+                        if byte_value > 0x80 && byte_value < 0xb8 {
+                            // detect start of access list address
+                            if cur.tag.is_access_list_address() {
+                                access_list_idx += 1;
+                            }
+                            // detect start of access list storage key
+                            if cur.tag.is_access_list_storage_key() {
+                                storage_key_idx += 1;
+                            }
+                        }
+
                         if let Some(rem) = remaining_bytes.last_mut() {
                             // read one more byte
                             assert!(*rem >= 1);
@@ -649,10 +647,13 @@ impl Transaction {
                                 // add stack op on same depth
                                 stack_ops.push(RlpStackOp::update(
                                     id,
+                                    tx_id,
+                                    format,
+                                    cur.byte_idx + 1,
                                     cur.depth,
                                     *rem - 1,
-                                    stack_acc,
-                                    stack_acc_pow_of_rand[cur.depth],
+                                    access_list_idx,
+                                    storage_key_idx,
                                 ));
                             }
 
@@ -683,15 +684,6 @@ impl Transaction {
                         } else if byte_value < 0xb8 {
                             // assertions
                             assert!(!cur.tag.is_list());
-
-                            // detect start of access list address
-                            if cur.tag.is_access_list_address() {
-                                access_list_idx += 1;
-                            }
-                            // detect start of access list storage key
-                            if cur.tag.is_access_list_storage_key() {
-                                storage_key_idx += 1;
-                            }
 
                             // state transitions
                             next.tag_idx = 1;
@@ -729,11 +721,6 @@ impl Transaction {
                                 // the number of bytes of the new list.
                                 assert!(*rem >= num_bytes_of_new_list);
                                 prev_bytes_on_depth[cur.depth] = *rem + 1;
-                                stack_acc = stack_acc
-                                    + stack_acc_pow_of_rand[cur.depth]
-                                        * Value::known(F::from(
-                                            (*rem - num_bytes_of_new_list) as u64,
-                                        ));
 
                                 *rem -= num_bytes_of_new_list;
                             }
@@ -741,10 +728,13 @@ impl Transaction {
 
                             stack_ops.push(RlpStackOp::push(
                                 id,
+                                tx_id,
+                                format,
+                                cur.byte_idx + 1,
                                 cur.depth + 1,
                                 num_bytes_of_new_list,
-                                stack_acc,
-                                stack_acc_pow_of_rand[cur.depth + 1],
+                                access_list_idx,
+                                storage_key_idx,
                             ));
 
                             next.depth = cur.depth + 1;
@@ -770,10 +760,13 @@ impl Transaction {
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
                             id,
+                            tx_id,
+                            format,
+                            cur.byte_idx + 1,
                             cur.depth,
                             *rem - 1,
-                            stack_acc,
-                            stack_acc_pow_of_rand[cur.depth],
+                            access_list_idx,
+                            storage_key_idx,
                         ));
 
                         *rem -= 1;
@@ -806,10 +799,13 @@ impl Transaction {
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
                             id,
+                            tx_id,
+                            format,
+                            cur.byte_idx + 1,
                             cur.depth,
                             *rem - 1,
-                            stack_acc,
-                            stack_acc_pow_of_rand[cur.depth],
+                            access_list_idx,
+                            storage_key_idx,
                         ));
 
                         *rem -= 1;
@@ -841,10 +837,13 @@ impl Transaction {
                         if cur.tag_idx < cur.tag_length {
                             stack_ops.push(RlpStackOp::update(
                                 id,
+                                tx_id,
+                                format,
+                                cur.byte_idx + 1,
                                 cur.depth,
                                 *rem - 1,
-                                stack_acc,
-                                stack_acc_pow_of_rand[cur.depth],
+                                access_list_idx,
+                                storage_key_idx,
                             ));
                         }
 
@@ -864,19 +863,20 @@ impl Transaction {
                         if let Some(rem) = remaining_bytes.last_mut() {
                             assert!(*rem >= lb_len);
                             prev_bytes_on_depth[cur.depth] = *rem + 1;
-                            stack_acc = stack_acc
-                                + stack_acc_pow_of_rand[cur.depth]
-                                    * Value::known(F::from((*rem - lb_len) as u64));
 
                             *rem -= lb_len;
                         }
                         remaining_bytes.push(lb_len);
+
                         stack_ops.push(RlpStackOp::push(
                             id,
+                            tx_id,
+                            format,
+                            cur.byte_idx + 1,
                             cur.depth + 1,
                             lb_len,
-                            stack_acc,
-                            stack_acc_pow_of_rand[cur.depth + 1],
+                            access_list_idx,
+                            storage_key_idx,
                         ));
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
@@ -945,8 +945,6 @@ impl Transaction {
                 RlpTag::Null => unreachable!("Null is not used"),
             };
 
-            let stack_op = stack_ops.remove(0);
-
             witness.push(RlpFsmWitnessRow {
                 rlp_table: RlpTable {
                     tx_id,
@@ -974,8 +972,10 @@ impl Transaction {
                     bytes_rlc,
                     gas_cost_acc,
                 },
-                rlp_decoding_table: stack_op,
+                // The stack operations will be later sorted and assigned
+                rlp_decoding_table: RlpStackOp::default(),
             });
+
             witness_table_idx += 1;
 
             if cur.tag == EndObject && cur.depth == 0 {
@@ -983,6 +983,42 @@ impl Transaction {
             }
             cur = next;
         }
+
+        assert_eq!(
+            stack_ops.len(),
+            witness.len(),
+            "Number of stack_ops must be equal to witness length"
+        );
+
+        // Sort the RlpStackOps and assign to the RlpDecodingTable part of witness
+        stack_ops.sort_by(|a, b| {
+            if (
+                a.tx_id,
+                a.format as u64,
+                a.depth,
+                a.byte_idx,
+                a.al_idx,
+                a.sk_idx,
+                a.stack_op.clone() as u64,
+            ) > (
+                b.tx_id,
+                b.format as u64,
+                b.depth,
+                b.byte_idx,
+                a.al_idx,
+                a.sk_idx,
+                b.stack_op.clone() as u64,
+            ) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            }
+        });
+
+        for (idx, op) in stack_ops.into_iter().enumerate() {
+            witness[idx].rlp_decoding_table = op;
+        }
+
         // filling up the `tag_next` col of the witness table
         let mut idx = 0;
         for (witness_idx, rom_table_row) in tag_rom_row_map {

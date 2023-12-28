@@ -763,8 +763,9 @@ pub struct StateMachine<F: Field> {
     pub gas_cost_acc: Value<F>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum StackOp {
+    #[default]
     Init,
     Push,
     Pop,
@@ -774,87 +775,116 @@ pub enum StackOp {
 /// Rlp Decoding Witness
 /// Using simulated stack constraints to make sure all bytes in nested structure are correctly
 /// decoded
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RlpStackOp<F: PrimeField> {
     /// Key1 (Id), concat of tx_id, format
     pub id: Value<F>,
+    /// Transaction Id
+    pub tx_id: u64,
+    /// Format
+    pub format: Format,
     /// Key2 (Address), in this case depth
     pub depth: usize,
+    /// Op Counter, similar to rw counter
+    pub byte_idx: usize,
     /// Value
     pub value: usize,
     /// Value Previous
     pub value_prev: usize,
-    /// Stack Accumulator
-    /// accumulates remaining bytes on each depth level (excluding top of stack)
-    pub stack_acc: Value<F>,
-    /// Power of rand for stack accumulator on depth level (address)
-    pub stack_acc_pow_of_rand: Value<F>,
     /// The stack operation performed at step.
     pub stack_op: StackOp,
+    /// Access list index
+    pub al_idx: u64,
+    /// Storage key index
+    pub sk_idx: u64,
 }
 
 impl<F: PrimeField> RlpStackOp<F> {
-    pub fn init(id: Value<F>, value: usize) -> Self {
+    pub fn init(id: Value<F>, tx_id: u64, format: Format, value: usize) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth: 0,
+            byte_idx: 0,
             value,
             value_prev: 0,
-            stack_acc: Value::known(F::ZERO),
-            stack_acc_pow_of_rand: Value::known(F::ONE),
             stack_op: StackOp::Init,
+            al_idx: 0,
+            sk_idx: 0,
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn push(
         id: Value<F>,
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
         depth: usize,
         value: usize,
-        stack_acc: Value<F>,
-        stack_acc_pow_of_rand: Value<F>,
+        al_idx: u64,
+        sk_idx: u64,
     ) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth,
+            byte_idx,
             value,
             value_prev: 0,
-            stack_acc,
-            stack_acc_pow_of_rand,
             stack_op: StackOp::Push,
+            al_idx,
+            sk_idx,
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn pop(
         id: Value<F>,
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
         depth: usize,
         value: usize,
         value_prev: usize,
-        stack_acc: Value<F>,
-        stack_acc_pow_of_rand: Value<F>,
+        al_idx: u64,
+        sk_idx: u64,
     ) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth,
+            byte_idx,
             value,
             value_prev,
-            stack_acc,
-            stack_acc_pow_of_rand,
             stack_op: StackOp::Pop,
+            al_idx,
+            sk_idx,
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         id: Value<F>,
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
         depth: usize,
         value: usize,
-        stack_acc: Value<F>,
-        stack_acc_pow_of_rand: Value<F>,
+        al_idx: u64,
+        sk_idx: u64,
     ) -> Self {
         Self {
             id,
+            tx_id,
+            format,
             depth,
+            byte_idx,
             value,
             value_prev: value + 1,
-            stack_acc,
-            stack_acc_pow_of_rand,
             stack_op: StackOp::Update,
+            al_idx,
+            sk_idx,
         }
     }
 }
