@@ -445,12 +445,10 @@ fn parse_raw_access_list(access_list: Option<&Yaml>) -> Result<Option<parse::Raw
                 item.as_hash().map_or(
                     Err(anyhow!("Parsed access list item must be a hash")),
                     |item| {
-                        let address = if let Some(Yaml::String(address)) =
-                            item.get(&Yaml::String("address".to_string()))
-                        {
-                            address.to_string()
-                        } else {
-                            bail!("Parsed access list address must be a string");
+                        let address = match item.get(&Yaml::String("address".to_string())) {
+                            Some(Yaml::Integer(i)) => format!("0x{:040x}", i),
+                            Some(Yaml::String(s)) => s.to_string(),
+                            val => bail!("Failed to parse access list address = {val:?}"),
                         };
 
                         let storage_keys = if let Some(Yaml::Array(storage_keys)) =
@@ -459,11 +457,13 @@ fn parse_raw_access_list(access_list: Option<&Yaml>) -> Result<Option<parse::Raw
                             storage_keys
                                 .iter()
                                 .map(|key| {
-                                    if let Yaml::Integer(key) = key {
-                                        Ok(format!("0x{:064x}", key))
-                                    } else {
-                                        bail!("Parsed access list storage key must be an integer");
-                                    }
+                                    Ok(match key {
+                                        Yaml::Integer(i) => format!("0x{:064x}", i),
+                                        Yaml::String(s) => s.to_string(),
+                                        val => bail!(
+                                            "Failed to parse access list storage key = {val:?}"
+                                        ),
+                                    })
                                 })
                                 .collect::<Result<_>>()?
                         } else {
