@@ -1773,7 +1773,7 @@ impl<F: Field> TxCircuitConfig<F> {
         num_txs: u64,
         cum_num_txs: u64,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<Vec<word::Word<AssignedCell<F, F>>>, Error> {
         let keccak_input = challenges.keccak_input();
         let evm_word = challenges.evm_word();
         let zero_rlc = keccak_input.map(|_| F::zero());
@@ -2333,7 +2333,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 tx_id_next,
                 CallData,
                 idx as u64,
-                Value::known(F::from(*byte as u64)),
+                word::Word::new([Value::known(F::from(*byte as u64)), Value::known(F::zero())]),
             )?;
 
             // 1st phase columns
@@ -2392,8 +2392,10 @@ impl<F: Field> TxCircuitConfig<F> {
         let tx_id_is_zero_chip = IsZeroChip::construct(self.tx_id_is_zero.clone());
         tx_id_is_zero_chip.assign(region, offset, Value::known(F::from(tx_id as u64)))?;
 
-        let value_is_zero_chip = IsZeroChip::construct(self.value_is_zero.clone());
-        value_is_zero_chip.assign(region, offset, value)?;
+        let value_is_zero_lo_chip = IsZeroChip::construct(self.value_is_zero[0].clone());
+        value_is_zero_lo_chip.assign(region, offset, value.lo())?;
+        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_is_zero[0].clone());
+        value_is_zero_hi_chip.assign(region, offset, value.hi())?;
 
         let tx_id_unchanged_chip = IsEqualChip::construct(self.tx_id_unchanged.clone());
         tx_id_unchanged_chip.assign(
@@ -2443,7 +2445,9 @@ impl<F: Field> TxCircuitConfig<F> {
         // let rlp_data = F::from( as u64);
         let tag = F::from(CallData as u64);
         let tx_id_is_zero_chip = IsZeroChip::construct(self.tx_id_is_zero.clone());
-        let value_is_zero_chip = IsZeroChip::construct(self.value_is_zero.clone());
+        let value_is_zero_lo_chip = IsZeroChip::construct(self.value_is_zero[0].clone());
+        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_is_zero[1].clone());
+
         let tx_id_unchanged = IsEqualChip::construct(self.tx_id_unchanged.clone());
         let tag_chip = BinaryNumberChip::construct(self.tx_tag_bits);
 
@@ -2465,7 +2469,9 @@ impl<F: Field> TxCircuitConfig<F> {
             // no need to assign tx_id_is_zero_chip for real prover as tx_id = 0
             tx_id_is_zero_chip.assign(region, offset, Value::known(F::zero()))?;
             // no need to assign value_is_zero_chip for real prover as value = 0
-            value_is_zero_chip.assign(region, offset, Value::known(F::zero()))?;
+            value_is_zero_lo_chip.assign(region, offset, Value::known(F::zero()))?;
+            value_is_zero_hi_chip.assign(region, offset, Value::known(F::zero()))?;
+
             tx_id_unchanged.assign(
                 region,
                 offset,
@@ -2535,7 +2541,7 @@ pub struct TxCircuit<F: Field> {
     /// Size
     pub size: usize,
     /// Tx value cells (exported for PI circuit)
-    pub value_cells: RefCell<Option<Vec<AssignedCell<F, F>>>>,
+    pub value_cells: RefCell<Option<Vec<word::Word<AssignedCell<F, F>>>>>,
     _marker: PhantomData<F>,
 }
 
@@ -2711,7 +2717,7 @@ impl<F: Field> TxCircuit<F> {
         start_l1_queue_index: u64,
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<Vec<word::Word<AssignedCell<F, F>>>, Error> {
         layouter.assign_region(
             || "tx table aux",
             |mut region| {

@@ -805,7 +805,7 @@ impl<F: Field> PiCircuitConfig<F> {
         region: &mut Region<'_, F>,
         public_data: &PublicData,
         block_value_cells: &[AssignedCell<F, F>],
-        tx_value_cells: &[AssignedCell<F, F>],
+        tx_value_cells: &[word::Word<AssignedCell<F, F>>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(PiHashExport<F>, Connections<F>), Error> {
         // 1. Assign data bytes.
@@ -852,7 +852,7 @@ impl<F: Field> PiCircuitConfig<F> {
         offset: usize,
         public_data: &PublicData,
         block_value_cells: &[AssignedCell<F, F>],
-        tx_value_cells: &[AssignedCell<F, F>],
+        tx_value_cells: &[word::Word<AssignedCell<F, F>>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, AssignedCell<F, F>), Error> {
         // Initialise the RLC accumulator and length values.
@@ -985,7 +985,13 @@ impl<F: Field> PiCircuitConfig<F> {
             offset = tmp_offset;
             rpi_rlc_acc = tmp_rpi_rlc_acc;
             rpi_length = tmp_rpi_length;
-            tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
+            //tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
+            let tx_copy_word = word::Word::new([
+                cells[RPI_CELL_IDX + 3].clone(),
+                cells[RPI_CELL_IDX + 4].clone(),
+            ]);
+            tx_copy_cells.push(tx_copy_word);
+
             if i == public_data.max_txs - 1 {
                 data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
                 data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
@@ -993,9 +999,17 @@ impl<F: Field> PiCircuitConfig<F> {
         }
         // Copy tx_hashes to tx table
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
+            // region.constrain_equal(
+            //     tx_hash_cell.cell(),
+            //     tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+            // )?;
             region.constrain_equal(
-                tx_hash_cell.cell(),
-                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+                tx_hash_cell.lo().cell(),
+                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].lo().cell(),
+            )?;
+            region.constrain_equal(
+                tx_hash_cell.hi().cell(),
+                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].hi().cell(),
             )?;
         }
 
@@ -1049,7 +1063,7 @@ impl<F: Field> PiCircuitConfig<F> {
         offset: usize,
         public_data: &PublicData,
         block_value_cells: &[AssignedCell<F, F>],
-        tx_value_cells: &[AssignedCell<F, F>],
+        tx_value_cells: &[word::Word<AssignedCell<F, F>>],
         data_hash_rlc_cell: &AssignedCell<F, F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, AssignedCell<F, F>, Connections<F>), Error> {
@@ -1093,9 +1107,21 @@ impl<F: Field> PiCircuitConfig<F> {
         }
         // copy chain_id to tx table
         for tx_id in 0..public_data.max_txs {
+            // region.constrain_equal(
+            //     rpi_cells[0].0.cell(),
+            //     tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1].cell(),
+            // )?;
             region.constrain_equal(
-                rpi_cells[0].0.cell(),
-                tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1].cell(),
+                rpi_cells[0].1.cell(),
+                tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1]
+                    .lo()
+                    .cell(),
+            )?;
+            region.constrain_equal(
+                rpi_cells[0].2.cell(),
+                tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1]
+                    .hi()
+                    .cell(),
             )?;
         }
         // connections to be done with other sub-circuits.
@@ -1675,7 +1701,7 @@ pub struct PiCircuit<F: Field> {
     _marker: PhantomData<F>,
 
     connections: RefCell<Option<Connections<F>>>,
-    tx_value_cells: RefCell<Option<Vec<AssignedCell<F, F>>>>,
+    tx_value_cells: RefCell<Option<Vec<word::Word<AssignedCell<F, F>>>>>,
 }
 
 impl<F: Field> PiCircuit<F> {
@@ -1727,7 +1753,7 @@ impl<F: Field> PiCircuit<F> {
     }
 
     /// Import tx value cells from Tx circuit
-    pub fn import_tx_values(&self, values: Vec<AssignedCell<F, F>>) {
+    pub fn import_tx_values(&self, values: Vec<word::Word<AssignedCell<F, F>>>) {
         *self.tx_value_cells.borrow_mut() = Some(values);
     }
 

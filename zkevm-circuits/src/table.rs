@@ -239,7 +239,7 @@ impl TxTable {
         max_calldata: usize,
         chain_id: u64,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<Vec<word::Word<AssignedCell<F, F>>>, Error> {
         assert!(
             txs.len() <= max_txs,
             "txs.len() <= max_txs: txs.len()={}, max_txs={}",
@@ -264,8 +264,9 @@ impl TxTable {
             tag: &Column<Fixed>,
             row: &[Value<F>; 4],
             msg: &str,
-        ) -> Result<AssignedCell<F, F>, Error> {
-            let mut value_cell = None;
+        ) -> Result<word::Word<AssignedCell<F, F>>, Error> {
+            let mut value_cell_lo: Option<AssignedCell<F, F>> = None;
+            let mut value_cell_hi: Option<AssignedCell<F, F>> = None;
             for (index, column) in advice_columns.iter().enumerate() {
                 let cell = region.assign_advice(
                     || format!("tx table {msg} row {offset}"),
@@ -273,11 +274,15 @@ impl TxTable {
                     offset,
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
-                // tx_id, index, value
+                // tx_id, index, value_lo, value_hi
                 if index == 2 {
-                    value_cell = Some(cell);
+                    value_cell_lo = Some(cell.clone());
+                }
+                if index == 3 {
+                    value_cell_hi = Some(cell);
                 }
             }
+
             region.assign_fixed(
                 || format!("tx table q_enable row {offset}"),
                 q_enable,
@@ -290,7 +295,10 @@ impl TxTable {
                 offset,
                 || row[1],
             )?;
-            Ok(value_cell.unwrap())
+            Ok(word::Word::new([
+                value_cell_lo.unwrap(),
+                value_cell_hi.unwrap(),
+            ]))
         }
 
         layouter.assign_region(
