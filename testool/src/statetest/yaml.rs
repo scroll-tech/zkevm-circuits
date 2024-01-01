@@ -446,10 +446,14 @@ fn parse_raw_access_list(access_list: Option<&Yaml>) -> Result<Option<parse::Raw
                     Err(anyhow!("Parsed access list item must be a hash")),
                     |item| {
                         let address = match item.get(&Yaml::String("address".to_string())) {
-                            Some(Yaml::Integer(i)) => format!("0x{:040x}", i),
-                            Some(Yaml::String(s)) => s.to_string(),
+                            Some(Yaml::Integer(i)) => format!("{i:x}"),
+                            Some(Yaml::String(s)) => {
+                                assert!(s.starts_with("0x"));
+                                s[2..].to_string()
+                            }
                             val => bail!("Failed to parse access list address = {val:?}"),
                         };
+                        let address = format!("0x{:0>40}", address);
 
                         let storage_keys = if let Some(Yaml::Array(storage_keys)) =
                             item.get(&Yaml::String("storageKeys".to_string()))
@@ -457,13 +461,17 @@ fn parse_raw_access_list(access_list: Option<&Yaml>) -> Result<Option<parse::Raw
                             storage_keys
                                 .iter()
                                 .map(|key| {
-                                    Ok(match key {
-                                        Yaml::Integer(i) => format!("0x{:064x}", i),
-                                        Yaml::String(s) => s.to_string(),
+                                    let key = match key {
+                                        Yaml::Integer(i) => format!("{i:x}"),
+                                        Yaml::String(s) => {
+                                            assert!(s.starts_with("0x"));
+                                            s[2..].to_string()
+                                        }
                                         val => bail!(
                                             "Failed to parse access list storage key = {val:?}"
                                         ),
-                                    })
+                                    };
+                                    Ok(format!("0x{:0>64}", key))
                                 })
                                 .collect::<Result<_>>()?
                         } else {
