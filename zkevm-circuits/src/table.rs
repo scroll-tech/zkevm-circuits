@@ -262,7 +262,7 @@ impl TxTable {
             q_enable: Column<Fixed>,
             advice_columns: &[Column<Advice>],
             tag: &Column<Fixed>,
-            row: &[Value<F>; 4],
+            row: &[Value<F>; 5],
             msg: &str,
         ) -> Result<word::Word<AssignedCell<F, F>>, Error> {
             let mut value_cell_lo: Option<AssignedCell<F, F>> = None;
@@ -313,7 +313,7 @@ impl TxTable {
                     self.q_enable,
                     &advice_columns,
                     &self.tag,
-                    &[(); 4].map(|_| Value::known(F::zero())),
+                    &[(); 5].map(|_| Value::known(F::zero())),
                     "all-zero",
                 )?;
                 offset += 1;
@@ -323,7 +323,7 @@ impl TxTable {
                 // region that has a size parametrized by max_calldata with all
                 // the tx calldata.  This is required to achieve a constant fixed column tag
                 // regardless of the number of input txs or the calldata size of each tx.
-                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                let mut calldata_assignments: Vec<[Value<F>; 5]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs = (txs.len()..max_txs)
                     .map(|tx_id| {
