@@ -1200,20 +1200,25 @@ impl<F: Field> PiCircuitConfig<F> {
             self.raw_public_inputs,
             offset,
         )?;
-        let l1_block_range_hash = public_data.l1_block_range_hash;
-        let l1_block_range_hash_rlc = rlc_be_bytes(&l1_block_range_hash.to_fixed_bytes(), challenges.evm_word());
         l1_block_hashes_bytes_length.unwrap().copy_advice(
             || "l1_block_hashes_bytes_length in the rpi_length_acc col",
             region,
             self.rpi_length_acc,
             offset,
         )?;
-        let l1_block_range_hash_rlc_cell = region.assign_advice(
-            || "l1_block_range_hash_rlc",
-            self.rpi_rlc_acc,
-            offset,
-            || l1_block_range_hash_rlc,
-        )?;
+
+        let l1_block_range_hash_rlc_cell = {
+            let l1_block_range_hash_rlc = rlc_be_bytes(
+                &public_data.l1_block_range_hash.to_fixed_bytes(),
+                challenges.evm_word(),
+            );
+            region.assign_advice(
+                || "l1_block_range_hash_rlc",
+                self.rpi_rlc_acc,
+                offset,
+                || l1_block_range_hash_rlc,
+            )?
+        };
         self.q_keccak.enable(region, offset)?;
         
         Ok((offset + 1, l1_block_range_hash_rlc_cell))
