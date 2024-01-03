@@ -1779,8 +1779,8 @@ impl<F: Field> TxCircuitConfig<F> {
         let zero_rlc = keccak_input.map(|_| F::zero());
         let sign_hash = keccak256(tx.rlp_unsigned.as_slice());
         let hash = keccak256(tx.rlp_signed.as_slice());
-        let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
-        let hash_rlc = rlc_be_bytes(&hash, evm_word);
+        // let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
+        // let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut tx_value_cells = vec![];
         let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
             // l1 msg does not have sign data

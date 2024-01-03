@@ -145,7 +145,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         let rlc_column = meta.advice_column_in(halo2_proofs::plonk::FirstPhase);
         #[cfg(not(feature = "onephase"))]
         let rlc_column = meta.advice_column_in(halo2_proofs::plonk::SecondPhase);
-        let rlc_word_column = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let rlc_column_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
         meta.enable_equality(rlc_column);
 
         meta.enable_equality(sig_table.recovered_addr);
@@ -182,8 +182,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(1)),
                 is_enable.clone() * 64usize.expr(),
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(2)),
-                is_enable.clone() * meta.query_advice(rlc_word_column.lo(), Rotation(2)),
-                is_enable * meta.query_advice(rlc_word_column.hi(), Rotation(2)),
+                is_enable.clone() * meta.query_advice(rlc_column_word.lo(), Rotation(2)),
+                is_enable * meta.query_advice(rlc_column_word.hi(), Rotation(2)),
             ];
             let table = [
                 meta.query_fixed(keccak_table.q_enable, Rotation::cur()),
@@ -507,7 +507,7 @@ impl<F: Field> SigCircuit<F> {
             || "assign rlc_column_word",
             config.rlc_column_word,
             offset,
-        );
+        )?;
 
         ctx.region.constrain_equal(pk_rlc.cell, tmp_cell.cell())?;
 
