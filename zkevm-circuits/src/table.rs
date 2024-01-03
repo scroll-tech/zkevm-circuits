@@ -2457,6 +2457,9 @@ pub struct SigTable {
     pub q_enable: Column<Fixed>,
     /// Random-linear combination of the Keccak256 hash of the message that's signed.
     pub msg_hash_rlc: Column<Advice>,
+    /// the Keccak256 hash of the message that's signed, it is word type
+    pub msg_hash_word: word::Word<Column<Advice>>,
+    // TODO: sig_r_rlc, sig_s_rlc to word as well ?
     /// should be in range [0, 1]
     pub sig_v: Column<Advice>,
     /// Random-linear combination of the signature's `r` component.
@@ -2475,6 +2478,7 @@ impl SigTable {
         Self {
             q_enable: meta.fixed_column(),
             msg_hash_rlc: meta.advice_column_in(SecondPhase),
+            msg_hash_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
             sig_v: meta.advice_column(),
             sig_s_rlc: meta.advice_column_in(SecondPhase),
             sig_r_rlc: meta.advice_column_in(SecondPhase),
@@ -2503,6 +2507,11 @@ impl SigTable {
                             challenge,
                         )
                     });
+
+                    let msg_hash_word =
+                        word::Word::from(Word::from_big_endian(&sign_data.msg_hash.to_bytes()))
+                            .map(Value::<F>::known);
+
                     let sig_r_rlc = evm_word.map(|challenge| {
                         rlc::value(
                             sign_data.signature.0.to_bytes().iter().collect_vec(),
@@ -2542,6 +2551,13 @@ impl SigTable {
                             || value,
                         )?;
                     }
+
+                    msg_hash_word.assign_advice(
+                        &mut region,
+                        || format!("sig table msg_hash_word {offset}"),
+                        self.msg_hash_word,
+                        offset,
+                    )?;
                 }
 
                 Ok(())
@@ -2557,6 +2573,8 @@ impl<F: Field> LookupTable<F> for SigTable {
         vec![
             self.q_enable.into(),
             self.msg_hash_rlc.into(),
+            self.msg_hash_word.lo().into(),
+            self.msg_hash_word.hi().into(),
             self.sig_v.into(),
             self.sig_r_rlc.into(),
             self.sig_s_rlc.into(),
@@ -2569,6 +2587,8 @@ impl<F: Field> LookupTable<F> for SigTable {
         vec![
             String::from("q_enable"),
             String::from("msg_hash_rlc"),
+            String::from("msg_hash_word lo"),
+            String::from("msg_hash_word hi"),
             String::from("sig_v"),
             String::from("sig_r_rlc"),
             String::from("sig_s_rlc"),

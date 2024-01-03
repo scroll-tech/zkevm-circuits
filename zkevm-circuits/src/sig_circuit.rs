@@ -22,7 +22,7 @@ use crate::{
     keccak_circuit::KeccakCircuit,
     sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
-    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
 };
 use eth_types::{
     self,
@@ -77,6 +77,8 @@ pub struct SigCircuitConfig<F: Field> {
     ecdsa_config: FpChip<F>,
     /// An advice column to store RLC witnesses
     rlc_column: Column<Advice>,
+    /// An advice column to store word keccak result
+    rlc_column_word: word::Word<Column<Advice>>,
     /// selector for keccak lookup table
     q_keccak: Selector,
     /// Used to lookup pk->pk_hash(addr)
@@ -143,7 +145,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         let rlc_column = meta.advice_column_in(halo2_proofs::plonk::FirstPhase);
         #[cfg(not(feature = "onephase"))]
         let rlc_column = meta.advice_column_in(halo2_proofs::plonk::SecondPhase);
-
+        let rlc_word_column = word::Word::new([meta.advice_column(), meta.advice_column()]);
         meta.enable_equality(rlc_column);
 
         meta.enable_equality(sig_table.recovered_addr);
@@ -152,6 +154,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         meta.enable_equality(sig_table.sig_v);
         meta.enable_equality(sig_table.is_valid);
         meta.enable_equality(sig_table.msg_hash_rlc);
+        meta.enable_equality(sig_table.msg_hash_word.lo());
+        meta.enable_equality(sig_table.msg_hash_word.hi());
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
@@ -177,7 +181,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
                 is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(1)),
                 is_enable.clone() * 64usize.expr(),
-                is_enable * meta.query_advice(rlc_column, Rotation(2)),
+                is_enable.clone() * meta.query_advice(rlc_column, Rotation(2)),
+                is_enable.clone() * meta.query_advice(rlc_word_column.lo(), Rotation(2)),
+                is_enable * meta.query_advice(rlc_word_column.hi(), Rotation(2)),
             ];
             let table = [
                 meta.query_fixed(keccak_table.q_enable, Rotation::cur()),
@@ -185,6 +191,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
                 meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
                 meta.query_advice(keccak_table.input_len, Rotation::cur()),
                 meta.query_advice(keccak_table.output_rlc, Rotation::cur()),
+                meta.query_advice(keccak_table.output.lo(), Rotation::cur()),
+                meta.query_advice(keccak_table.output.hi(), Rotation::cur()),
             ];
 
             input.into_iter().zip(table).collect()
@@ -196,6 +204,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             sig_table,
             q_keccak,
             rlc_column,
+            rlc_column_word,
         }
     }
 }
@@ -473,6 +482,14 @@ impl<F: Field> SigCircuit<F> {
             offset,
             || is_address_zero.value,
         )?;
+        let rlc_word_0 = word::Word::new([is_address_zero.value, Value::known(F::zero())]);
+        rlc_word_0.assign_advice(
+            &mut ctx.region,
+            || "assign rlc_column_word",
+            config.rlc_column_word,
+            offset,
+        );
+
         ctx.region
             .constrain_equal(is_address_zero.cell, tmp_cell.cell())?;
 
@@ -483,6 +500,15 @@ impl<F: Field> SigCircuit<F> {
             offset + 1,
             || pk_rlc.value,
         )?;
+
+        let rlc_word_0 = word::Word::new([is_address_zero.value, Value::known(F::zero())]);
+        rlc_word_0.assign_advice(
+            &mut ctx.region,
+            || "assign rlc_column_word",
+            config.rlc_column_word,
+            offset,
+        );
+
         ctx.region.constrain_equal(pk_rlc.cell, tmp_cell.cell())?;
 
         // pk_hash_rlc
@@ -709,6 +735,8 @@ impl<F: Field> SigCircuit<F> {
             sign_data_decomposed.pk_hash_cells.clone(),
             evm_challenge_powers.clone(),
         );
+
+        // TODO： calculate pk hash word
 
         // step 4: r,s rlc
         let r_rlc = rlc_chip.gate.inner_product(
