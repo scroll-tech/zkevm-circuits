@@ -61,7 +61,7 @@ impl TxType {
 
     /// If this type is L1Msg or L1BlockHashes or none
     pub fn is_l1_custom_tx(&self) -> bool {
-        matches!(*self, TxType::L1BlockHashes) || matches!(*self, TxType::L1Msg)
+        matches!(*self, TxType::L1BlockHashes | TxType::L1Msg)
     }
 
     /// If this type is Eip155 or not

@@ -297,9 +297,19 @@ impl PublicData {
             + self.max_txs * KECCAK_DIGEST_SIZE
     }
 
-    fn pi_bytes_start_offset(&self) -> usize {
+    fn l1_block_hashes_start_offset(&self) -> usize {
         self.data_bytes_end_offset()
             + 1 // a row is reserved for the keccak256(rlc(data_bytes)) == data_hash lookup.
+            + 1 // new row.
+    }
+
+    fn l1_block_hashes_end_offset(&self) -> usize {
+        self.l1_block_hashes_start_offset() + KECCAK_DIGEST_SIZE * self.max_l1_block_hashes
+    }
+
+    fn pi_bytes_start_offset(&self) -> usize {
+        self.l1_block_hashes_end_offset()
+            + 1 // a row is reserved for the keccak256(rlc(l1_block_range_hash_bytes)) == l1_block_range_hash lookup.
             + 1 // new row.
     }
 
@@ -326,6 +336,8 @@ impl PublicData {
 
     fn constants_end_offset(&self) -> usize {
         self.constants_start_offset() + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD
+            + 2 // for l1_block_hashes_count and num_all_l1_block_hashes
+            + 2 // for last_applied_l1_block and last_applied_l1_block_from_last_block
     }
 }
 
@@ -902,7 +914,7 @@ impl<F: Field> PiCircuitConfig<F> {
             tx_value_cells,
             challenges,
         )?;
-        debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
+        debug_assert_eq!(offset, public_data.l1_block_hashes_start_offset());
 
         // 2. Assign l1 block hashes bytes.
         let (offset, l1_block_range_hash_rlc_cell) = self.assign_l1_block_hashes_bytes(
@@ -911,8 +923,7 @@ impl<F: Field> PiCircuitConfig<F> {
             public_data,
             challenges,
         )?;
-        // TODO: uncomment this assertion once we have a way to compute the offset of l1 block
-        // debug_assert_eq!(offset, public_data.l1_block_hashes_start_offset());
+        debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
         // 3. Assign public input bytes.
         let (offset, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
@@ -1134,10 +1145,21 @@ impl<F: Field> PiCircuitConfig<F> {
         public_data: &PublicData,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, AssignedCell<F, F>), Error> {
-        let (offset, rpi_rlc_acc, rpi_length) = self.assign_rlc_init(region, offset)?;
+        let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
 
-        let q_l1_block_hashes_start_row = offset;
-        let q_l1_block_hashes_end_row = q_l1_block_hashes_start_row + KECCAK_DIGEST_SIZE * public_data.max_l1_block_hashes;
+        for q_offset in public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset() {
+            self.q_not_end.enable(region, q_offset)?;
+        }
+        
+        for q_offset in public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset() {
+            region.assign_fixed(
+                || "q_l1_block_hashes",
+                self.q_l1_block_hashes,
+                q_offset,
+                || Value::known(F::one()),
+            )?;
+        }
+
         let num_l1_block_hashes = public_data.get_num_all_l1_block_hashes();
         let l1_block_hashes = public_data.l1_block_hashes.clone();
         let dummy_l1_block_hash = *DUMMY_L1_BLOCK_HASH;
@@ -1152,7 +1174,7 @@ impl<F: Field> PiCircuitConfig<F> {
         {
             let is_rpi_padding = i >= num_l1_block_hashes;
 
-            let (_, _, _, cells) = self.assign_field(
+            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
                 region,
                 offset,
                 &l1_block_hash.to_fixed_bytes(),
@@ -1162,34 +1184,21 @@ impl<F: Field> PiCircuitConfig<F> {
                 rpi_length,
                 challenges,
             )?;
+            offset = tmp_offset;
+            rpi_rlc_acc = tmp_rpi_rlc_acc;
+            rpi_length = tmp_rpi_length;
 
             if i == public_data.max_l1_block_hashes - 1 {
                 l1_block_hashes_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
                 l1_block_hashes_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
             }
         }
-        for i in q_l1_block_hashes_start_row..q_l1_block_hashes_end_row {
-            region.assign_fixed(
-                || "q_l1_block_hashes",
-                self.q_l1_block_hashes,
-                i,
-                || Value::known(F::one()),
-            )?;
-        }
 
-        assert_eq!(offset, q_l1_block_hashes_end_row + 1);
-
-        // the last row of l1 block hashes bytes part is disabled
-        for i in q_l1_block_hashes_start_row..q_l1_block_hashes_end_row {
-            self.q_not_end.enable(region, i)?;
-        }
-
-        let l1_block_range_hash_row = offset;
         l1_block_hashes_bytes_rlc.unwrap().copy_advice(
             || "l1_block_hashes_bytes_rlc in the rpi col",
             region,
             self.raw_public_inputs,
-            l1_block_range_hash_row,
+            offset,
         )?;
         let l1_block_range_hash = public_data.l1_block_range_hash;
         let l1_block_range_hash_rlc = rlc_be_bytes(&l1_block_range_hash.to_fixed_bytes(), challenges.evm_word());
@@ -1197,15 +1206,15 @@ impl<F: Field> PiCircuitConfig<F> {
             || "l1_block_hashes_bytes_length in the rpi_length_acc col",
             region,
             self.rpi_length_acc,
-            l1_block_range_hash_row,
+            offset,
         )?;
         let l1_block_range_hash_rlc_cell = region.assign_advice(
             || "l1_block_range_hash_rlc",
             self.rpi_rlc_acc,
-            l1_block_range_hash_row,
+            offset,
             || l1_block_range_hash_rlc,
         )?;
-        self.q_keccak.enable(region, l1_block_range_hash_row)?;
+        self.q_keccak.enable(region, offset)?;
         
         Ok((offset + 1, l1_block_range_hash_rlc_cell))
     }

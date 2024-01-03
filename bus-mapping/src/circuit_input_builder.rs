@@ -150,7 +150,7 @@ impl Default for CircuitsParams {
             max_vertical_circuit_rows: 0,
             max_rlp_rows: 1000,
             max_ec_ops: PrecompileEcParams::default(),
-            max_l1_block_hashes: 512,
+            max_l1_block_hashes: 256,
         }
     }
 }

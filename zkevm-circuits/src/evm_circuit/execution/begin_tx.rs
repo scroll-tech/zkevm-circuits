@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
         });
         cb.condition(tx_l1_custom_tx.expr(), |cb| {
-            cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
+            cb.require_zero("l1fee is 0 for l1msg and l1blockhashes", tx_data_gas_cost.expr());
         });
         // the rw delta caused by l1 related handling
         let l1_rw_delta = select::expr(
@@ -1046,7 +1046,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
         let (tx_l1_fee, tx_l2_fee) = if tx_type.is_l1_custom_tx()  {
-            log::trace!("tx is l1msg and l1 fee is 0");
+            log::trace!("tx is l1msg or l1 block hashes and l1 fee is 0");
             (U256::zero(), U256::zero())
         } else {
             (

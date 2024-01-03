@@ -1065,10 +1065,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cb.require_equal(
                     "is_padding_tx = true if caller_address = 0",
                     meta.query_advice(is_padding_tx, Rotation::cur()),
-                    and::expr([
-                        not::expr(meta.query_advice(is_l1_block_hashes, Rotation::cur())),
-                        value_is_zero.expr(Rotation::cur())(meta),
-                    ]),
+                    value_is_zero.expr(Rotation::cur())(meta),
                 );
             });
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -2134,7 +2131,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (
                     "is_padding_tx",
                     self.is_padding_tx,
-                    F::from((tx.caller_address.is_zero() && !tx.tx_type.is_l1_block_hashes()) as u64),
+                    F::from(tx.caller_address.is_zero()),
                 ),
                 (
                     "sv_address",
