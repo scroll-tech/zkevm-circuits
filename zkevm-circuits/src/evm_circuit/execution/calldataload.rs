@@ -157,8 +157,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                             src_id.expr(),
                             TxContextFieldTag::CallData,
                             Some(src_addr.expr() + idx.expr()),
-                            //Word::from_lo_unchecked(buffer_reader.byte(idx)),
-                            buffer_reader.byte(idx),
+                            Word::from_lo_unchecked(buffer_reader.byte(idx)),
+                            // buffer_reader.byte(idx),
                         );
                     },
                 );

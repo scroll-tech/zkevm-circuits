@@ -38,8 +38,8 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
             tx_id.expr(),
             TxContextFieldTag::CallerAddress,
             None, // None because unrelated to calldata
-            //origin.to_word(), used in word hi lo stage2
-            from_bytes::expr(&origin.limbs),
+            origin.to_word(),
+            // from_bytes::expr(&origin.limbs),
         );
 
         // Push the value to the stack

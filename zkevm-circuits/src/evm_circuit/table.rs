@@ -229,8 +229,8 @@ pub(crate) enum Lookup<F> {
         /// field_tag is Calldata, otherwise should be set to 0.
         index: Expression<F>,
         /// Value of the field.
-        // value: Word<Expression<F>>, change to word in stage2
-        value: Expression<F>,
+        value: Word<Expression<F>>,
+        // value: Expression<F>,
     },
     /// Lookup to read-write table, which contains read-write access records of
     /// time-aware data.
@@ -403,9 +403,9 @@ impl<F: Field> Lookup<F> {
                 id.clone(),
                 field_tag.clone(),
                 index.clone(),
-                // value.lo(),
-                // value.hi(),
-                value.clone(),
+                value.lo(),
+                value.hi(),
+                // value.clone(),
             ],
             Self::Rw {
                 counter,

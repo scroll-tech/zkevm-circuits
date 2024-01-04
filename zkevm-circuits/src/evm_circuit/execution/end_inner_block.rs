@@ -10,7 +10,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{BlockContextFieldTag, TxFieldTag::BlockNumber},
-    //util::word::Word,
+    util::word::Word,
 };
 use eth_types::Field;
 use gadgets::util::{not, Expr};
@@ -72,8 +72,8 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
                 last_tx_id.expr(),
                 BlockNumber,
                 None,
-                // Word::from_lo_unchecked(cb.curr.state.block_number.expr()),
-                cb.curr.state.block_number.expr(),
+                Word::from_lo_unchecked(cb.curr.state.block_number.expr()),
+                // cb.curr.state.block_number.expr(),
             );
         });
 

@@ -799,8 +799,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        //self.tx_context_lookup(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
-        self.tx_context_lookup(id, field_tag, index, cell.expr());
+        self.tx_context_lookup(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
+        // self.tx_context_lookup(id, field_tag, index, cell.expr());
         cell
     }
 
@@ -832,8 +832,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         id: Expression<F>,
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
-        //value: Word<Expression<F>>, used in stage2 for tx table to word
-        value: Expression<F>,
+        value: Word<Expression<F>>,
+        //value: Expression<F>,
     ) {
         self.add_lookup(
             "Tx lookup",

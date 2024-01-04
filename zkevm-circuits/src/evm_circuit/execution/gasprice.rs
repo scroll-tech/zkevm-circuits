@@ -24,7 +24,7 @@ pub(crate) struct GasPriceGadget<F> {
     tx_id: Cell<F>,
     gas_price: WordCell<F>,
     // TODO: remove gas_price_rlc in word hi lo stage2 (txtable to word)
-    gas_price_rlc: Cell<F>,
+    // gas_price_rlc: Cell<F>,
     same_context: SameContextGadget<F>,
 }
 
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Query gasprice value
         let gas_price = cb.query_word_unchecked();
-        let gas_price_rlc = cb.query_cell();
+        //let gas_price_rlc = cb.query_cell();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -45,8 +45,8 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
             tx_id.expr(),
             TxContextFieldTag::GasPrice,
             None,
-            //gas_price.to_word(),
-            gas_price_rlc.expr(),
+            gas_price.to_word(),
+            //gas_price_rlc.expr(),
         );
 
         // Push the value to the stack
@@ -66,7 +66,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         Self {
             tx_id,
             gas_price,
-            gas_price_rlc,
+            //gas_price_rlc,
             same_context,
         }
     }
@@ -85,8 +85,8 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
-        self.gas_price_rlc
-            .assign(region, offset, region.word_rlc(gas_price))?;
+        // self.gas_price_rlc
+        //     .assign(region, offset, region.word_rlc(gas_price))?;
 
         self.gas_price.assign_u256(region, offset, gas_price)?;
 
