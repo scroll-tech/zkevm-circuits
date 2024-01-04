@@ -3,7 +3,10 @@ use eth_types::{
     evm_types::{GasCost, OpcodeId},
     Field, U256,
 };
-use halo2_proofs::plonk::Expression;
+use halo2_proofs::{
+    circuit::{Layouter, Region},
+    plonk::{ConstraintSystem, Error, Expression, VirtualCells},
+};
 
 /// Returns the sum of the passed in cells
 pub mod sum {
@@ -221,6 +224,45 @@ pub fn expr_from_u16<F: Field, E: Expr<F>>(u16s: &[E]) -> Expression<F> {
         multiplier *= F::from(2u64.pow(16));
     }
     value
+}
+
+/// Query an expression from the constraint system.
+pub fn query_expression<F: Field, T>(
+    meta: &mut ConstraintSystem<F>,
+    mut f: impl FnMut(&mut VirtualCells<F>) -> T,
+) -> T {
+    let mut expr = None;
+    meta.create_gate("Query expression", |meta| {
+        expr = Some(f(meta));
+        Some(0.expr())
+    });
+    expr.unwrap()
+}
+
+/// Assign into the global circuit. This is a wrapper around `Layouter::assign_region`, but the
+/// closure is called only once, with a region spanning the entire circuit.
+pub fn assign_global<F, A, AR, N, NR>(
+    layouter: &mut impl Layouter<F>,
+    name: N,
+    mut assignment: A,
+) -> Result<AR, Error>
+where
+    F: Field,
+    AR: Default,
+    A: FnMut(Region<'_, F>) -> Result<AR, Error>,
+    N: Fn() -> NR,
+    NR: Into<String>,
+{
+    let mut closure_count = 0;
+    let ret = layouter.assign_region(name, |region| {
+        closure_count += 1;
+        if closure_count == 1 {
+            return Ok(AR::default());
+        }
+        assignment(region)
+    });
+    assert_eq!(closure_count, 2, "assign_region behavior changed");
+    ret
 }
 
 /// Returns 2**by as Field

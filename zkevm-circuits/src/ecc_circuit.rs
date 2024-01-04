@@ -311,6 +311,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 // handle EcAdd ops.
                 for (idx, ec_add_assigned) in assigned_ec_ops.ec_adds_assigned.iter().enumerate() {
                     region.assign_fixed(
+                        || "assign ecc_table enabled",
+                        config.ecc_table.q_enable,
+                        idx,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_fixed(
                         || "assign ecc_table op_type",
                         config.ecc_table.op_type,
                         idx,
@@ -370,6 +376,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                 for (idx, ec_mul_assigned) in assigned_ec_ops.ec_muls_assigned.iter().enumerate() {
                     let idx = idx + self.max_add_ops;
                     region.assign_fixed(
+                        || "assign ecc_table enabled",
+                        config.ecc_table.q_enable,
+                        idx,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_fixed(
                         || "assign ecc_table op_type",
                         config.ecc_table.op_type,
                         idx,
@@ -426,6 +438,12 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     assigned_ec_ops.ec_pairings_assigned.iter().enumerate()
                 {
                     let idx = idx + self.max_add_ops + self.max_mul_ops;
+                    region.assign_fixed(
+                        || "assign ecc_table enabled",
+                        config.ecc_table.q_enable,
+                        idx,
+                        || Value::known(F::one()),
+                    )?;
                     region.assign_fixed(
                         || "assign ecc_table op_type",
                         config.ecc_table.op_type,

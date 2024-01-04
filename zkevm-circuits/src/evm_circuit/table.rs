@@ -2,13 +2,133 @@ pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
+    witness::RwRow,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
-use gadgets::util::Expr;
+use gadgets::{bus::bus_codec::BusMessage, util::Expr};
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
+
+#[derive(Clone, Debug)]
+pub enum MsgExpr<F> {
+    Bytes([Expression<F>; 2]),
+    Lookup(Table, Vec<Expression<F>>),
+}
+
+impl<F: Field> MsgExpr<F> {
+    pub fn bytes(bytes: [Expression<F>; 2]) -> Self {
+        Self::Bytes(bytes)
+    }
+
+    pub fn lookup(lookup: Lookup<F>) -> Self {
+        Self::Lookup(lookup.table(), lookup.input_exprs())
+    }
+
+    pub fn map_exprs(self, f: impl FnMut(Expression<F>) -> Expression<F>) -> Self {
+        match self {
+            Self::Bytes(bytes) => Self::Bytes(bytes.map(f)),
+            Self::Lookup(table, inputs) => Self::Lookup(table, inputs.into_iter().map(f).collect()),
+        }
+    }
+
+    pub fn map_values(self, f: impl FnMut(Expression<F>) -> F) -> MsgF<F> {
+        match self {
+            Self::Bytes(exprs) => {
+                let values = exprs.map(f);
+                MsgF::Bytes(values)
+            }
+            Self::Lookup(table, exprs) => {
+                let values = exprs.into_iter().map(f).collect();
+                MsgF::Lookup(table, values)
+            }
+        }
+    }
+}
+
+impl<F: Field> BusMessage<Expression<F>> for MsgExpr<F> {
+    type IntoIter = std::vec::IntoIter<Expression<F>>;
+
+    fn into_items(self) -> Self::IntoIter {
+        match self {
+            Self::Bytes([byte0, byte1]) => {
+                let tag = 0.expr();
+                vec![tag, byte0, byte1].into_iter()
+            }
+            Self::Lookup(table, mut inputs) => {
+                let tag = (1 + table as u64).expr();
+                inputs.insert(0, tag);
+                inputs.into_iter()
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum MsgF<F> {
+    Bytes([F; 2]),
+    Lookup(Table, Vec<F>),
+}
+
+impl<F: Field> MsgF<F> {
+    pub fn bytes(bytes: [F; 2]) -> Self {
+        Self::Bytes(bytes)
+    }
+
+    pub fn fixed(row: [F; 4]) -> Self {
+        Self::Lookup(Table::Fixed, row.to_vec())
+    }
+
+    pub fn rw(row: RwRow<F>) -> Self {
+        // Same format as `Lookup::input_exprs()`
+        Self::Lookup(
+            Table::Rw,
+            vec![
+                F::one(), // TODO: can remove the "enabled" field.
+                row.rw_counter,
+                row.is_write,
+                row.tag,
+                row.id,
+                row.address,
+                row.field_tag,
+                row.storage_key,
+                row.value,
+                row.value_prev,
+                row.aux1,
+                row.aux2,
+            ],
+        )
+    }
+
+    pub fn tx(id: F, field_tag: F, index: F, value: F) -> Self {
+        Self::Lookup(
+            Table::Tx,
+            vec![
+                F::one(), // TODO: can remove the "enabled" field.
+                id,
+                field_tag,
+                index,
+                value,
+            ],
+        )
+    }
+}
+
+impl<F: Field> BusMessage<F> for MsgF<F> {
+    type IntoIter = std::vec::IntoIter<F>;
+
+    fn into_items(self) -> Self::IntoIter {
+        match self {
+            Self::Bytes([b0, b1]) => vec![F::zero(), b0, b1].into_iter(),
+            Self::Lookup(table, mut inputs) => {
+                let tag = F::from(1 + table as u64);
+                inputs.insert(0, tag);
+                inputs.into_iter()
+            }
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
@@ -146,7 +266,7 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub(crate) enum Table {
+pub enum Table {
     Fixed,
     Tx,
     Rw,
@@ -200,7 +320,7 @@ impl<F: Field> RwValues<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Lookup<F> {
+pub enum Lookup<F> {
     /// Lookup to fixed table, which contains several pre-built tables such as
     /// range tables or bitwise tables.
     Fixed {
@@ -374,6 +494,17 @@ impl<F: Field> Lookup<F> {
             Self::EccTable { .. } => Table::Ecc,
             Self::PowOfRandTable { .. } => Table::PowOfRand,
             Self::Conditional(_, lookup) => lookup.table(),
+        }
+    }
+
+    /// Return the inner lookup (not Conditional), and the condition (or constant 1).
+    pub(crate) fn unconditional(self) -> (Self, Expression<F>) {
+        match self {
+            Self::Conditional(cond, lookup) => {
+                let (lookup, cond2) = lookup.unconditional();
+                (lookup, cond * cond2)
+            }
+            _ => (self, 1.expr()),
         }
     }
 

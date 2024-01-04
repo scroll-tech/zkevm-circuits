@@ -25,7 +25,7 @@ use core::iter::once;
 use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{and, not, split_u256, split_u256_limb64, Expr},
+    util::{and, assign_global, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -114,6 +114,69 @@ impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [
 
     fn annotations(&self) -> Vec<String> {
         vec![]
+    }
+}
+
+/// The DualByteTable used to check the range of two bytes at once.
+#[derive(Clone, Debug)]
+pub struct DualByteTable {
+    /// Enabled.
+    // TODO: this could be removed.
+    pub q_enable: Column<Fixed>,
+    /// Two byte columns containing the 256*256 combinations of two bytes.
+    pub bytes: [Column<Fixed>; 2],
+}
+
+impl DualByteTable {
+    /// Construct a new DualByteTable
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            bytes: [(); 2].map(|_| meta.fixed_column()),
+        }
+    }
+}
+
+/// The table of fixed functions (range checks, XOR, etc).
+#[derive(Clone, Debug)]
+pub struct FixedTable {
+    /// Enabled.
+    // TODO: this could be removed.
+    pub q_enable: Column<Fixed>,
+    /// The tag that selects the function.
+    pub tag: Column<Fixed>,
+    /// The arguments of the function (or 0).
+    pub values: [Column<Fixed>; 3],
+}
+
+impl FixedTable {
+    /// Construct a new FixedTable
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            tag: meta.fixed_column(),
+            values: [(); 3].map(|_| meta.fixed_column()),
+        }
+    }
+}
+
+impl<F: Field> LookupTable<F> for FixedTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.tag.into(),
+            self.values[0].into(),
+            self.values[1].into(),
+            self.values[2].into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tag"),
+            String::from("values[0]"),
+            String::from("values[1]"),
+            String::from("values[2]"),
+        ]
     }
 }
 
@@ -254,15 +317,14 @@ impl TxTable {
             );
         }
 
-        fn assign_row<F: Field>(
-            region: &mut Region<'_, F>,
-            offset: usize,
-            q_enable: Column<Fixed>,
-            advice_columns: &[Column<Advice>],
-            tag: &Column<Fixed>,
-            row: &[Value<F>; 4],
-            msg: &str,
-        ) -> Result<AssignedCell<F, F>, Error> {
+        let assign_row = |region: &mut Region<'_, F>,
+                          offset: usize,
+                          q_enable: Column<Fixed>,
+                          advice_columns: &[Column<Advice>],
+                          tag: &Column<Fixed>,
+                          row: &[Value<F>; 4],
+                          msg: &str|
+         -> Result<AssignedCell<F, F>, Error> {
             let mut value_cell = None;
             for (index, column) in advice_columns.iter().enumerate() {
                 let cell = region.assign_advice(
@@ -289,7 +351,7 @@ impl TxTable {
                 || row[1],
             )?;
             Ok(value_cell.unwrap())
-        }
+        };
 
         layouter.assign_region(
             || "tx table",
@@ -655,6 +717,7 @@ impl RwTable {
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
+
         Ok(())
     }
 
@@ -667,7 +730,8 @@ impl RwTable {
         n_rows: usize,
         challenges: Value<F>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        assign_global(
+            layouter,
             || "rw table",
             |mut region| self.load_with_region(&mut region, rws, n_rows, challenges),
         )
@@ -681,6 +745,7 @@ impl RwTable {
         challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
+
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment(challenges))?;
         }
@@ -1279,6 +1344,8 @@ impl From<BlockContextFieldTag> for usize {
 /// Table with Block header fields
 #[derive(Clone, Debug)]
 pub struct BlockTable {
+    /// Enabled. It is equivalent to tag != Null.
+    pub q_enable: Column<Fixed>,
     /// Tag
     pub tag: Column<Fixed>,
     /// Index
@@ -1291,6 +1358,7 @@ impl BlockTable {
     /// Construct a new BlockTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
@@ -1328,6 +1396,12 @@ impl BlockTable {
                         .count();
                     cum_num_txs += num_txs;
                     for row in block_ctx.table_assignments(num_txs, cum_num_txs, 0, challenges) {
+                        region.assign_fixed(
+                            || format!("block table enabled {offset}"),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         region.assign_fixed(
                             || format!("block table row {offset}"),
                             self.tag,
@@ -2533,6 +2607,8 @@ impl<F: Field> LookupTable<F> for SigTable {
 ///    - output1_rlc <- success {0, 1}
 #[derive(Clone, Copy, Debug)]
 pub struct EccTable {
+    /// Enabled. It is equivalent to op_type != 0.
+    pub q_enable: Column<Fixed>,
     /// Since the current design of the ECC circuit reserves fixed number of rows for EcAdd, EcMul
     /// and EcPairing ops respectively, we already know the `op_type` for each row.
     pub op_type: Column<Fixed>,
@@ -2602,6 +2678,7 @@ impl EccTable {
     /// Construct the ECC table.
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             op_type: meta.fixed_column(),
             is_valid: meta.advice_column(),
             arg1_rlc: meta.advice_column_in(SecondPhase),
@@ -2704,6 +2781,12 @@ impl EccTable {
             || "ecc table dev load",
             |mut region| {
                 for (i, row) in assignments.iter().enumerate() {
+                    region.assign_fixed(
+                        || format!("ecc table row = {i}, enabled"),
+                        self.q_enable,
+                        i,
+                        || Value::known(F::one()),
+                    )?;
                     region.assign_fixed(
                         || format!("ecc table row = {i}, op_type"),
                         self.op_type,

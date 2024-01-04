@@ -2277,9 +2277,10 @@ impl<F: Field> TxCircuitConfig<F> {
         )?;
 
         // fixed columns
+        let tag_f = F::from(usize::from(tag) as u64);
         for (col_anno, col, col_val) in [
             ("q_enable", self.tx_table.q_enable, F::one()),
-            ("tag", self.tx_table.tag, F::from(usize::from(tag) as u64)),
+            ("tag", self.tx_table.tag, tag_f),
         ] {
             region.assign_fixed(|| col_anno, col, offset, || Value::known(col_val))?;
         }
@@ -2548,6 +2549,12 @@ impl<F: Field> TxCircuit<F> {
                     .enumerate()
                     {
                         let row = offset * 3 + j;
+                        region.assign_fixed(
+                            || "block table enabled",
+                            config.block_table.q_enable,
+                            row,
+                            || Value::known(F::one()),
+                        )?;
                         region.assign_fixed(
                             || "block_table.tag",
                             config.block_table.tag,

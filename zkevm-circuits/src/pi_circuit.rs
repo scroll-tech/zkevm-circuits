@@ -1464,7 +1464,11 @@ impl<F: Field> PiCircuitConfig<F> {
 
         let block_table_columns = <BlockTable as LookupTable<F>>::advice_columns(&self.block_table);
 
-        for fixed in [self.q_block_tag, self.is_block_num_txs] {
+        for fixed in [
+            self.q_block_tag,
+            self.is_block_num_txs,
+            self.block_table.q_enable,
+        ] {
             region.assign_fixed(
                 || "block table all-zero row for fixed",
                 fixed,
@@ -1530,6 +1534,12 @@ impl<F: Field> PiCircuitConfig<F> {
                 .into_iter()
                 .zip(tag.iter())
             {
+                region.assign_fixed(
+                    || format!("block table enabled {offset}"),
+                    self.block_table.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 region.assign_fixed(
                     || format!("block table row {offset}"),
                     self.block_table.tag,

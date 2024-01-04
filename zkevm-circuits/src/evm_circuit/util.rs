@@ -1,10 +1,7 @@
 use crate::{
-    evm_circuit::{
-        param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-            N_PHASE2_COLUMNS, N_PHASE2_COPY_COLUMNS,
-        },
-        table::Table,
+    evm_circuit::param::{
+        N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
+        N_PHASE2_COPY_COLUMNS, N_PHASE3_COLUMNS,
     },
     table::RwTableTag,
     util::{query_expression, Challenges, Expr},
@@ -12,6 +9,10 @@ use crate::{
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
+use gadgets::bus::{
+    bus_builder::{BusAssigner, BusBuilder},
+    bus_port::{BusOpExpr, BusOpF, Port},
+};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     halo2curves::group::ff::BatchInvert,
@@ -33,6 +34,8 @@ pub(crate) mod padding_gadget;
 pub(crate) mod precompile_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
+
+use super::table::{MsgExpr, MsgF};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -90,6 +93,48 @@ impl<F: Field> Expr<F> for &Cell<F> {
         self.expression.clone()
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct StepBusOp<F> {
+    op: BusOpExpr<F, MsgExpr<F>>,
+    helper: Cell<F>,
+}
+
+impl<F: Field> StepBusOp<F> {
+    pub(crate) fn connect(
+        self,
+        meta: &mut ConstraintSystem<F>,
+        bus_builder: &mut BusBuilder<F, MsgExpr<F>>,
+        enabled: Expression<F>,
+    ) {
+        Port::connect(meta, bus_builder, enabled, self.op, self.helper.expr());
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        bus_assigner: &mut BusAssigner<F, MsgF<F>>,
+        offset: usize,
+    ) {
+        let count = region.eval(offset, self.op.count());
+        if count.is_zero_vartime() {
+            return;
+        }
+        assert_eq!(count, -F::one(), "count must be 0 or -1");
+
+        let eval = |expr| region.eval(offset, expr);
+        let message = self.op.message().map_values(eval);
+
+        Port::assign(
+            bus_assigner,
+            offset,
+            BusOpF::receive(message),
+            self.helper.column,
+            self.helper.rotation as isize,
+        );
+    }
+}
+
 pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
@@ -196,6 +241,36 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
             });
             Ok(None)
         }
+    }
+
+    pub fn eval(&self, offset: usize, expr: Expression<F>) -> F {
+        let value = expr.evaluate(
+            &|scalar| Value::known(scalar),
+            &|_| unimplemented!("selector column"),
+            &|fixed_query| {
+                Value::known(self.get_fixed(
+                    offset,
+                    fixed_query.column_index(),
+                    fixed_query.rotation(),
+                ))
+            },
+            &|advice_query| {
+                Value::known(self.get_advice(
+                    offset,
+                    advice_query.column_index(),
+                    advice_query.rotation(),
+                ))
+            },
+            &|_| unimplemented!("instance column"),
+            &|challenge| *self.challenges().indexed()[challenge.index()],
+            &|a| -a,
+            &|a, b| a + b,
+            &|a, b| a * b,
+            &|a, scalar| a * Value::known(scalar),
+        );
+        let mut f = F::zero();
+        value.map(|v| f = v);
+        f
     }
 
     pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
@@ -309,10 +384,10 @@ impl<F: Field> StoredExpression<F> {
 pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
+    StoragePhase3,
     StoragePermutation,
     StoragePermutationPhase2,
     LookupByte,
-    Lookup(Table),
 }
 
 impl CellType {
@@ -333,6 +408,7 @@ impl CellType {
         match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
+            2 => CellType::StoragePhase3,
             _ => unreachable!(),
         }
     }
@@ -392,12 +468,10 @@ impl<F: Field> CellManager<F> {
 
         let mut column_idx = 0;
 
-        // Mark columns used for lookups in Phase3
-        for &(table, count) in LOOKUP_CONFIG {
-            for _ in 0usize..count {
-                columns[column_idx].cell_type = CellType::Lookup(table);
-                column_idx += 1;
-            }
+        // Mark columns used for Phase3.
+        for _ in 0..N_PHASE3_COLUMNS {
+            columns[column_idx].cell_type = CellType::StoragePhase3;
+            column_idx += 1;
         }
 
         // Mark columns used for copy constraints on phase2

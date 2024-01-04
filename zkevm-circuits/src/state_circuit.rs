@@ -927,6 +927,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         )
     }
 
+    /// powers of randomness for instance columns
+    fn instance(&self) -> Vec<Vec<F>> {
+        vec![]
+    }
+
     /// Make the assignments to the StateCircuit
     fn synthesize_sub(
         &self,
@@ -1025,11 +1030,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                 Ok(())
             },
         )
-    }
-
-    /// powers of randomness for instance columns
-    fn instance(&self) -> Vec<Vec<F>> {
-        vec![]
     }
 }
 

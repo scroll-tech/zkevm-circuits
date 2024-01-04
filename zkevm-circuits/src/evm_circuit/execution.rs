@@ -1,18 +1,16 @@
 use super::{
-    param::{
-        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, ECC_TABLE_LOOKUPS,
-        EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, MODEXP_TABLE_LOOKUPS,
-        N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS,
-        RW_TABLE_LOOKUPS, SHA256_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+    param::{N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS},
+    util::{
+        instrumentation::Instrument, CachedRegion, CellManager, Inverter, StepBusOp,
+        StoredExpression,
     },
-    util::{instrumentation::Instrument, CachedRegion, CellManager, Inverter, StoredExpression},
     EvmCircuitExports,
 };
 use crate::{
     evm_circuit::{
-        param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
-        table::Table,
+        table::{MsgExpr, MsgF},
         util::{
             constraint_builder::{
                 BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
@@ -21,12 +19,18 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{LookupTable, RwTableTag, TxReceiptFieldTag},
+    table::{RwTableTag, TxReceiptFieldTag},
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
 use eth_types::{Field, ToLittleEndian};
-use gadgets::util::not;
+use gadgets::{
+    bus::{
+        bus_builder::{BusAssigner, BusBuilder},
+        bus_port::{BusOp, BusPortMulti},
+    },
+    util::not,
+};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
@@ -262,8 +266,10 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
+    bytes_port: BusPortMulti<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+    bus_ops_map: HashMap<ExecutionState, Vec<StepBusOp<F>>>,
     instrument: Instrument,
     // internal state gadgets
     begin_tx_gadget: Box<BeginTxGadget<F>>,
@@ -369,25 +375,11 @@ pub(crate) struct ExecutionConfig<F> {
 }
 
 impl<F: Field> ExecutionConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::redundant_closure_call)]
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         challenges: Challenges<Expression<F>>,
-        fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
-        tx_table: &dyn LookupTable<F>,
-        rw_table: &dyn LookupTable<F>,
-        bytecode_table: &dyn LookupTable<F>,
-        block_table: &dyn LookupTable<F>,
-        copy_table: &dyn LookupTable<F>,
-        keccak_table: &dyn LookupTable<F>,
-        sha256_table: &dyn LookupTable<F>,
-        exp_table: &dyn LookupTable<F>,
-        sig_table: &dyn LookupTable<F>,
-        modexp_table: &dyn LookupTable<F>,
-        ecc_table: &dyn LookupTable<F>,
-        pow_of_rand_table: &dyn LookupTable<F>,
+        bus_builder: &mut BusBuilder<F, MsgExpr<F>>,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.fixed_column();
@@ -403,9 +395,9 @@ impl<F: Field> ExecutionConfig<F> {
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < EVM_LOOKUP_COLS {
+                if n < N_PHASE3_COLUMNS {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
+                } else if n < N_PHASE3_COLUMNS + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -508,6 +500,7 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
+        let mut bus_ops_map: HashMap<ExecutionState, Vec<StepBusOp<F>>> = HashMap::new();
 
         macro_rules! configure_gadget {
             () => {
@@ -519,6 +512,7 @@ impl<F: Field> ExecutionConfig<F> {
                 (|| {
                     Box::new(Self::configure_gadget(
                         meta,
+                        bus_builder,
                         advices,
                         q_usable,
                         q_step,
@@ -529,6 +523,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &step_curr,
                         &mut height_map,
                         &mut stored_expressions_map,
+                        &mut bus_ops_map,
                         &mut instrument,
                     ))
                 })()
@@ -537,7 +532,9 @@ impl<F: Field> ExecutionConfig<F> {
 
         let cell_manager = step_curr.cell_manager.clone();
 
-        let config = Self {
+        let bytes_port = Self::configure_bytes_port(meta, bus_builder, q_usable, &cell_manager);
+
+        Self {
             q_usable,
             q_step,
             constants,
@@ -545,6 +542,7 @@ impl<F: Field> ExecutionConfig<F> {
             num_rows_inv,
             q_step_first,
             q_step_last,
+            bytes_port,
             advices,
             // internal states
             begin_tx_gadget: configure_gadget!(),
@@ -650,29 +648,9 @@ impl<F: Field> ExecutionConfig<F> {
             step: step_curr,
             height_map,
             stored_expressions_map,
+            bus_ops_map,
             instrument,
-        };
-
-        Self::configure_lookup(
-            meta,
-            fixed_table,
-            byte_table,
-            tx_table,
-            rw_table,
-            bytecode_table,
-            block_table,
-            copy_table,
-            keccak_table,
-            sha256_table,
-            exp_table,
-            sig_table,
-            modexp_table,
-            ecc_table,
-            pow_of_rand_table,
-            &challenges,
-            &cell_manager,
-        );
-        config
+        }
     }
 
     pub(crate) fn instrument(&self) -> &Instrument {
@@ -682,6 +660,7 @@ impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
+        bus_builder: &mut BusBuilder<F, MsgExpr<F>>,
         advices: [Column<Advice>; STEP_WIDTH],
         q_usable: Column<Fixed>,
         q_step: Column<Advice>,
@@ -692,6 +671,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_curr: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        bus_ops_map: &mut HashMap<ExecutionState, Vec<StepBusOp<F>>>,
         instrument: &mut Instrument,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
@@ -705,7 +685,7 @@ impl<F: Field> ExecutionConfig<F> {
                 G::EXECUTION_STATE,
             );
             cb.annotation(G::NAME, |cb| G::configure(cb));
-            let (_, _, _, height) = cb.build();
+            let (_, _, _, _, height) = cb.build();
             height
         };
 
@@ -722,6 +702,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         Self::configure_gadget_impl(
             meta,
+            bus_builder,
             q_usable,
             q_step,
             num_rows_until_next_step,
@@ -731,6 +712,7 @@ impl<F: Field> ExecutionConfig<F> {
             step_next,
             height_map,
             stored_expressions_map,
+            bus_ops_map,
             instrument,
             G::NAME,
             G::EXECUTION_STATE,
@@ -744,6 +726,7 @@ impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget_impl(
         meta: &mut ConstraintSystem<F>,
+        bus_builder: &mut BusBuilder<F, MsgExpr<F>>,
         q_usable: Column<Fixed>,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
@@ -753,6 +736,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        bus_ops_map: &mut HashMap<ExecutionState, Vec<StepBusOp<F>>>,
         instrument: &mut Instrument,
         name: &'static str,
         execution_state: ExecutionState,
@@ -771,7 +755,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
-        let (state_selector, constraints, stored_expressions, _) = cb.build();
+        let (state_selector, constraints, stored_expressions, bus_ops, _) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
             "execution state already configured"
@@ -783,6 +767,18 @@ impl<F: Field> ExecutionConfig<F> {
             "execution state already configured"
         );
         stored_expressions_map.insert(execution_state, stored_expressions);
+        bus_ops_map.insert(execution_state, bus_ops.clone());
+
+        {
+            let step_enabled = query_expression(meta, |meta| {
+                let q_usable = meta.query_fixed(q_usable, Rotation::cur());
+                let q_step = meta.query_advice(q_step, Rotation::cur());
+                q_usable * q_step * state_selector.clone()
+            });
+            for op in bus_ops {
+                op.connect(meta, bus_builder, step_enabled.clone());
+            }
+        }
 
         // Enforce the logic for this opcode
         let sel_step: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
@@ -919,61 +915,36 @@ impl<F: Field> ExecutionConfig<F> {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn configure_lookup(
+    fn configure_bytes_port(
         meta: &mut ConstraintSystem<F>,
-        fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
-        tx_table: &dyn LookupTable<F>,
-        rw_table: &dyn LookupTable<F>,
-        bytecode_table: &dyn LookupTable<F>,
-        block_table: &dyn LookupTable<F>,
-        copy_table: &dyn LookupTable<F>,
-        keccak_table: &dyn LookupTable<F>,
-        sha256_table: &dyn LookupTable<F>,
-        exp_table: &dyn LookupTable<F>,
-        sig_table: &dyn LookupTable<F>,
-        modexp_table: &dyn LookupTable<F>,
-        ecc_table: &dyn LookupTable<F>,
-        pow_of_rand_table: &dyn LookupTable<F>,
-        challenges: &Challenges<Expression<F>>,
+        bus_builder: &mut BusBuilder<F, MsgExpr<F>>,
+        q_usable: Column<Fixed>,
         cell_manager: &CellManager<F>,
-    ) {
-        for column in cell_manager.columns().iter() {
-            if let CellType::Lookup(table) = column.cell_type {
-                let name = format!("{table:?}");
-                meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
-                    let table_expressions = match table {
-                        Table::Fixed => fixed_table,
-                        Table::Tx => tx_table,
-                        Table::Rw => rw_table,
-                        Table::Bytecode => bytecode_table,
-                        Table::Block => block_table,
-                        Table::Copy => copy_table,
-                        Table::Keccak => keccak_table,
-                        Table::Sha256 => sha256_table,
-                        Table::Exp => exp_table,
-                        Table::Sig => sig_table,
-                        Table::ModExp => modexp_table,
-                        Table::Ecc => ecc_table,
-                        Table::PowOfRand => pow_of_rand_table,
-                    }
-                    .table_exprs(meta);
-                    vec![(
-                        column.expr(),
-                        rlc::expr(&table_expressions, challenges.lookup_input()),
-                    )]
-                });
+    ) -> BusPortMulti<F> {
+        let q_usable = query_expression(meta, |meta| meta.query_fixed(q_usable, Rotation::cur()));
+
+        let byte_columns = {
+            let mut cols = cell_manager
+                .columns()
+                .iter()
+                .filter(|column| column.cell_type == CellType::LookupByte)
+                .map(|column| column.expr())
+                .collect::<Vec<_>>();
+            if cols.len() % 2 != 0 {
+                cols.push(0.expr());
             }
-        }
-        for column in cell_manager.columns().iter() {
-            if let CellType::LookupByte = column.cell_type {
-                meta.lookup_any("Byte lookup", |meta| {
-                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
-                    vec![(column.expr(), byte_table_expression)]
-                });
-            }
-        }
+            cols
+        };
+
+        let ops = byte_columns
+            .chunks(2)
+            .map(|columns| {
+                let message = MsgExpr::bytes([columns[0].clone(), columns[1].clone()]);
+                BusOp::receive(message)
+            })
+            .collect::<Vec<_>>();
+
+        BusPortMulti::connect(meta, bus_builder, q_usable, ops)
     }
 
     pub fn get_num_rows_required_no_padding(&self, block: &Block<F>) -> usize {
@@ -1048,6 +1019,7 @@ impl<F: Field> ExecutionConfig<F> {
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
+        bus_assigner: &mut BusAssigner<F, MsgF<F>>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
@@ -1088,8 +1060,7 @@ impl<F: Field> ExecutionConfig<F> {
                 self.q_step,
                 height - 1,
                 || Value::known(F::zero()),
-            )?;
-            Ok(height)
+            )
         };
 
         let dummy_tx = Transaction::default();
@@ -1189,13 +1160,15 @@ impl<F: Field> ExecutionConfig<F> {
         };
 
         // Step1: assign real steps
-        let (region1_chunk_size, region1_chunk_num) =
-            chunking_fn("region1", step_assignments.len(), 50);
-        let mut region1_is_first_time: Vec<(usize, bool)> = (0..region1_chunk_num)
-            .map(|chunk_idx| (chunk_idx, true))
-            .collect();
-        let region1_height_sum = layouter
-            .assign_regions(
+        {
+            // Prepare the thread states.
+            let (region1_chunk_size, region1_chunk_num) =
+                chunking_fn("region1", step_assignments.len(), 50);
+            let mut region1_is_first_time: Vec<(usize, bool)> = (0..region1_chunk_num)
+                .map(|chunk_idx| (chunk_idx, true))
+                .collect();
+            // Assign in parallel.
+            let bus_assigner_forks = layouter.assign_regions(
                 || "Execution step region1",
                 region1_is_first_time
                     .iter_mut()
@@ -1213,9 +1186,13 @@ impl<F: Field> ExecutionConfig<F> {
                                 .sum::<usize>();
                             if *is_first_time {
                                 *is_first_time = false;
-                                return assign_shape_fn(&mut region, total_height);
+                                assign_shape_fn(&mut region, total_height)?;
+                                return Ok(None);
                             }
                             let mut offset = 0;
+
+                            let mut bus_assigner_fork =
+                                bus_assigner.fork(region.global_offset(0), total_height);
 
                             // Annotate the EVMCircuit columns within it's single region.
                             self.annotate_circuit(&mut region);
@@ -1246,6 +1223,7 @@ impl<F: Field> ExecutionConfig<F> {
 
                                 self.assign_exec_step(
                                     &mut region,
+                                    &mut bus_assigner_fork,
                                     offset,
                                     block,
                                     transaction,
@@ -1260,57 +1238,90 @@ impl<F: Field> ExecutionConfig<F> {
 
                                 offset += height;
                             }
+
+                            bus_assigner_fork.finish_ports(&mut region);
                             debug_assert_eq!(offset, total_height);
-                            Ok(total_height)
+                            Ok(Some(bus_assigner_fork))
                         }
                     })
                     .collect_vec(),
-            )?
-            .into_iter()
-            .sum::<usize>();
+            )?;
+            // Merge the thread results.
+            let mut actual_offset = 0;
+            for bus_assigner_fork in bus_assigner_forks {
+                let bus_assigner_fork = bus_assigner_fork.unwrap();
 
-        debug_assert_eq!(region1_height, region1_height_sum);
+                // Validate the offsets found by assign_regions.
+                assert_eq!(actual_offset, bus_assigner_fork.start_offset());
+                actual_offset += bus_assigner_fork.n_rows();
+
+                bus_assigner.merge(bus_assigner_fork);
+            }
+            assert_eq!(region1_height, actual_offset);
+        }
 
         // part2: assign non-last EndBlock steps when padding needed
+        {
+            // Prepare the thread states.
+            let (region2_chunk_size, region2_chunk_num) =
+                chunking_fn("region2", region2_height, 300);
+            let idxs: Vec<usize> = (0..region2_height).collect();
+            let mut region2_is_first_time = vec![true; region2_chunk_num];
 
-        let (region2_chunk_size, region2_chunk_num) = chunking_fn("region2", region2_height, 300);
-        let idxs: Vec<usize> = (0..region2_height).collect();
-        let mut region2_is_first_time = vec![true; region2_chunk_num];
+            log::trace!(
+                "assign non-last EndBlock in range [{},{})",
+                region1_height,
+                region1_height + region2_height
+            );
+            let bus_assigner_forks = layouter.assign_regions(
+                || "Execution step region2",
+                idxs.chunks(region2_chunk_size)
+                    .zip_eq(region2_is_first_time.iter_mut())
+                    .map(|(rows, is_first_time)| {
+                        |mut region: Region<'_, F>| {
+                            if *is_first_time {
+                                *is_first_time = false;
+                                assign_shape_fn(&mut region, rows.len())?;
+                                return Ok(None);
+                            }
 
-        log::trace!(
-            "assign non-last EndBlock in range [{},{})",
-            region1_height,
-            region1_height + region2_height
-        );
-        layouter.assign_regions(
-            || "Execution step region2",
-            idxs.chunks(region2_chunk_size)
-                .zip_eq(region2_is_first_time.iter_mut())
-                .map(|(rows, is_first_time)| {
-                    |mut region: Region<'_, F>| {
-                        if *is_first_time {
-                            *is_first_time = false;
-                            return assign_shape_fn(&mut region, rows.len());
+                            let mut bus_assigner_fork =
+                                bus_assigner.fork(region.global_offset(0), rows.len());
+
+                            self.assign_same_exec_step_in_range(
+                                &mut region,
+                                &mut bus_assigner_fork,
+                                0,
+                                rows.len(),
+                                block,
+                                &dummy_tx,
+                                &last_call,
+                                end_block_not_last,
+                                1,
+                                challenges,
+                            )?;
+                            for row_idx in 0..rows.len() {
+                                self.assign_q_step(&mut region, &inverter, row_idx, 1)?;
+                            }
+                            bus_assigner_fork.finish_ports(&mut region);
+                            Ok(Some(bus_assigner_fork))
                         }
-                        self.assign_same_exec_step_in_range(
-                            &mut region,
-                            0,
-                            rows.len(),
-                            block,
-                            &dummy_tx,
-                            &last_call,
-                            end_block_not_last,
-                            1,
-                            challenges,
-                        )?;
-                        for row_idx in 0..rows.len() {
-                            self.assign_q_step(&mut region, &inverter, row_idx, 1)?;
-                        }
-                        Ok(rows.len())
-                    }
-                })
-                .collect_vec(),
-        )?;
+                    })
+                    .collect_vec(),
+            )?;
+            // Merge the thread results.
+            let mut actual_offset = region1_height;
+            for bus_assigner_fork in bus_assigner_forks {
+                let bus_assigner_fork = bus_assigner_fork.unwrap();
+
+                // Validate the offsets found by assign_regions.
+                assert_eq!(actual_offset, bus_assigner_fork.start_offset());
+                actual_offset += bus_assigner_fork.n_rows();
+
+                bus_assigner.merge(bus_assigner_fork);
+            }
+            assert_eq!(region1_height + region2_height, actual_offset);
+        }
 
         // part3: assign the last EndBlock at offset `evm_rows - 1`
         // This region don't need to be parallelized
@@ -1325,10 +1336,12 @@ impl<F: Field> ExecutionConfig<F> {
             |mut region| {
                 if region3_is_first_time {
                     region3_is_first_time = false;
-                    return assign_shape_fn(&mut region, region3_height);
+                    assign_shape_fn(&mut region, region3_height)?;
+                    return Ok(());
                 }
                 self.assign_exec_step(
                     &mut region,
+                    bus_assigner,
                     offset,
                     block,
                     &dummy_tx,
@@ -1353,7 +1366,11 @@ impl<F: Field> ExecutionConfig<F> {
                     1,
                     || Value::known(F::zero()),
                 )?;
-                Ok(2) // region height
+
+                bus_assigner.finish_ports(&mut region);
+
+                assert_eq!(region.global_offset(0), region1_height + region2_height);
+                Ok(())
             },
         )?;
 
@@ -1377,20 +1394,8 @@ impl<F: Field> ExecutionConfig<F> {
 
     fn annotate_circuit(&self, region: &mut Region<F>) {
         let groups = [
-            ("EVM_lookup_fixed", FIXED_TABLE_LOOKUPS),
-            ("EVM_lookup_tx", TX_TABLE_LOOKUPS),
-            ("EVM_lookup_rw", RW_TABLE_LOOKUPS),
-            ("EVM_lookup_bytecode", BYTECODE_TABLE_LOOKUPS),
-            ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
-            ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
-            ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
-            ("EVM_lookup_sha256", SHA256_TABLE_LOOKUPS),
-            ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
-            ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
-            ("EVM_lookup_modexp", MODEXP_TABLE_LOOKUPS),
-            ("EVM_lookup_ecc", ECC_TABLE_LOOKUPS),
-            ("EVM_lookup_pow_of_rand", POW_OF_RAND_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
+            ("EVM_adv_phase3", N_PHASE3_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_byte", N_BYTE_LOOKUPS),
             ("EVM_adv_phase1", N_PHASE1_COLUMNS),
@@ -1413,10 +1418,61 @@ impl<F: Field> ExecutionConfig<F> {
         region.name_column(|| "Copy_Constr_const", self.constants);
     }
 
+    fn assign_byte_lookups(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        bus_assigner: &mut BusAssigner<F, MsgF<F>>,
+        offset_begin: usize,
+        offset_end: usize,
+    ) {
+        let byte_columns = self
+            .step
+            .cell_manager
+            .columns()
+            .iter()
+            .filter(|column| column.cell_type == CellType::LookupByte)
+            .map(|column| self.advices[column.index].index())
+            .collect::<Vec<_>>();
+
+        for offset in offset_begin..offset_end {
+            let ops = byte_columns
+                .chunks(2)
+                .map(|columns| {
+                    let byte_0 = region.get_advice(offset, columns[0], Rotation::cur());
+                    let byte_1 = if columns.len() == 2 {
+                        region.get_advice(offset, columns[1], Rotation::cur())
+                    } else {
+                        F::zero()
+                    };
+                    BusOp::receive(MsgF::bytes([byte_0, byte_1]))
+                })
+                .collect::<Vec<_>>();
+
+            self.bytes_port.assign(bus_assigner, offset, ops);
+        }
+    }
+
+    fn assign_bus_lookups(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        bus_assigner: &mut BusAssigner<F, MsgF<F>>,
+        offset: usize,
+        step: &ExecStep,
+    ) {
+        let bus_ops = self
+            .bus_ops_map
+            .get(&step.execution_state)
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state));
+        for bus_op in bus_ops {
+            bus_op.assign(region, bus_assigner, offset);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn assign_same_exec_step_in_range(
         &self,
         region: &mut Region<'_, F>,
+        bus_assigner: &mut BusAssigner<F, MsgF<F>>,
         offset_begin: usize,
         offset_end: usize,
         block: &Block<F>,
@@ -1450,6 +1506,13 @@ impl<F: Field> ExecutionConfig<F> {
             offset_end,
         )?;
 
+        // TODO: accelerate repeated bus assignments.
+        self.assign_byte_lookups(region, bus_assigner, offset_begin, offset_end);
+
+        for offset in offset_begin..offset_end {
+            self.assign_bus_lookups(region, bus_assigner, offset, step);
+        }
+
         Ok(())
     }
 
@@ -1457,6 +1520,7 @@ impl<F: Field> ExecutionConfig<F> {
     fn assign_exec_step(
         &self,
         region: &mut Region<'_, F>,
+        bus_assigner: &mut BusAssigner<F, MsgF<F>>,
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
@@ -1494,7 +1558,13 @@ impl<F: Field> ExecutionConfig<F> {
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)?;
+
+        self.assign_byte_lookups(region, bus_assigner, offset, offset + height);
+
+        self.assign_bus_lookups(region, bus_assigner, offset, step);
+
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -1,6 +1,11 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
+use gadgets::bus::{
+    bus_builder::{BusAssigner, BusBuilder},
+    bus_chip::BusConfig,
+    bus_codec::{BusCodecExpr, BusCodecVal},
+};
 use halo2_proofs::{
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -20,68 +25,40 @@ pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
 use crate::{
+    evm_bus::EVMBusLookups,
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
-        ModExpTable, PowOfRandTable, RwTable, SHA256Table, SigTable, TxTable,
+        BlockTable, BytecodeTable, CopyTable, DualByteTable, EccTable, ExpTable, FixedTable,
+        KeccakTable, LookupTable, ModExpTable, PowOfRandTable, RwTable, SHA256Table, SigTable,
+        TxTable,
     },
-    util::{SubCircuit, SubCircuitConfig},
+    util::{assign_global, SubCircuit, SubCircuitConfig},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
-use table::FixedTableTag;
+use table::{FixedTableTag, MsgExpr, MsgF};
 use witness::Block;
 
 /// EvmCircuitConfig implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
 pub struct EvmCircuitConfig<F> {
-    fixed_table: [Column<Fixed>; 4],
-    byte_table: [Column<Fixed>; 1],
-    pub(crate) execution: Box<ExecutionConfig<F>>,
-    // External tables
-    tx_table: TxTable,
-    rw_table: RwTable,
-    bytecode_table: BytecodeTable,
-    block_table: BlockTable,
-    copy_table: CopyTable,
-    keccak_table: KeccakTable,
-    sha256_table: SHA256Table,
-    exp_table: ExpTable,
-    sig_table: SigTable,
-    modexp_table: ModExpTable,
-    ecc_table: EccTable,
+    dual_byte_table: DualByteTable,
+    fixed_table: FixedTable,
     pow_of_rand_table: PowOfRandTable,
+    pub(crate) execution: Box<ExecutionConfig<F>>,
 }
 
 /// Circuit configuration arguments
 pub struct EvmCircuitConfigArgs<F: Field> {
     /// Challenge
     pub challenges: crate::util::Challenges<Expression<F>>,
-    /// TxTable
-    pub tx_table: TxTable,
-    /// RwTable
-    pub rw_table: RwTable,
-    /// BytecodeTable
-    pub bytecode_table: BytecodeTable,
-    /// BlockTable
-    pub block_table: BlockTable,
-    /// CopyTable
-    pub copy_table: CopyTable,
-    /// KeccakTable
-    pub keccak_table: KeccakTable,
-    /// SHA256Table
-    pub sha256_table: SHA256Table,
-    /// ExpTable
-    pub exp_table: ExpTable,
-    /// SigTable
-    pub sig_table: SigTable,
-    /// ModExpTable
-    pub modexp_table: ModExpTable,
-    /// Ecc Table.
-    pub ecc_table: EccTable,
+    /// The dual byte table.
+    pub dual_byte_table: DualByteTable,
+    /// Fixed Table.
+    pub fixed_table: FixedTable,
     // Power of Randomness Table.
     pub pow_of_rand_table: PowOfRandTable,
 }
@@ -93,122 +70,111 @@ pub struct EvmCircuitExports<V> {
     pub withdraw_root: (Cell, Value<V>),
 }
 
+// Implement this marker trait. Its method is never called.
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
-    type ConfigArgs = EvmCircuitConfigArgs<F>;
+    type ConfigArgs = Unreachable;
 
+    #[allow(clippy::too_many_arguments)]
+    fn new(_: &mut ConstraintSystem<F>, _: Self::ConfigArgs) -> Self {
+        unreachable!()
+    }
+}
+
+/// This type guarantees that SubCircuitConfig::new() is never called.
+pub struct Unreachable {
+    _private: (),
+}
+
+impl<F: Field> EvmCircuitConfig<F> {
     /// Configure EvmCircuitConfig
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub fn new(
         meta: &mut ConstraintSystem<F>,
-        Self::ConfigArgs {
+        bus_builder: &mut BusBuilder<F, MsgExpr<F>>,
+        EvmCircuitConfigArgs {
             challenges,
-            tx_table,
-            rw_table,
-            bytecode_table,
-            block_table,
-            copy_table,
-            keccak_table,
-            sha256_table,
-            exp_table,
-            sig_table,
-            modexp_table,
-            ecc_table,
+            dual_byte_table,
+            fixed_table,
             pow_of_rand_table,
-        }: Self::ConfigArgs,
+        }: EvmCircuitConfigArgs<F>,
     ) -> Self {
-        let fixed_table = [(); 4].map(|_| meta.fixed_column());
-        let byte_table = [(); 1].map(|_| meta.fixed_column());
-        let execution = Box::new(ExecutionConfig::configure(
-            meta,
-            challenges,
-            &fixed_table,
-            &byte_table,
-            &tx_table,
-            &rw_table,
-            &bytecode_table,
-            &block_table,
-            &copy_table,
-            &keccak_table,
-            &sha256_table,
-            &exp_table,
-            &sig_table,
-            &modexp_table,
-            &ecc_table,
-            &pow_of_rand_table,
-        ));
-
-        meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
-        fixed_table.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_any_column(col, || format!("fix_table_{idx}"))
-        });
-        tx_table.annotate_columns(meta);
-        rw_table.annotate_columns(meta);
-        bytecode_table.annotate_columns(meta);
-        block_table.annotate_columns(meta);
-        copy_table.annotate_columns(meta);
-        keccak_table.annotate_columns(meta);
-        exp_table.annotate_columns(meta);
-        sig_table.annotate_columns(meta);
-        modexp_table.annotate_columns(meta);
-        ecc_table.annotate_columns(meta);
-        pow_of_rand_table.annotate_columns(meta);
+        let execution = Box::new(ExecutionConfig::configure(meta, challenges, bus_builder));
 
         Self {
+            dual_byte_table,
             fixed_table,
-            byte_table,
-            execution,
-            tx_table,
-            rw_table,
-            bytecode_table,
-            block_table,
-            copy_table,
-            keccak_table,
-            sha256_table,
-            exp_table,
-            sig_table,
-            modexp_table,
-            ecc_table,
             pow_of_rand_table,
+            execution,
         }
     }
 }
 
 impl<F: Field> EvmCircuitConfig<F> {
     /// Load fixed table
-    pub fn load_fixed_table(
+    fn load_fixed_table(
         &self,
         layouter: &mut impl Layouter<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        assign_global(
+            layouter,
             || "fixed table",
             |mut region| {
+                let table: [Column<Fixed>; 4] =
+                    <FixedTable as LookupTable<F>>::fixed_columns(&self.fixed_table)
+                        .try_into()
+                        .unwrap();
+
                 for (offset, row) in std::iter::once([F::zero(); 4])
                     .chain(fixed_table_tags.iter().flat_map(|tag| tag.build()))
                     .enumerate()
                 {
-                    for (column, value) in self.fixed_table.iter().zip_eq(row) {
+                    for (column, value) in table.iter().zip_eq(row) {
                         region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
                     }
+                    region.assign_fixed(
+                        || "fixed table enabled",
+                        self.fixed_table.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
                 }
-
                 Ok(())
             },
         )
     }
 
-    /// Load byte table
-    pub fn load_byte_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
+    /// Load dual byte table
+    fn load_dual_byte_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        assign_global(
+            layouter,
             || "byte table",
             |mut region| {
-                for offset in 0..256 {
-                    region.assign_fixed(
-                        || "",
-                        self.byte_table[0],
-                        offset,
-                        || Value::known(F::from(offset as u64)),
-                    )?;
+                for i in 0..256 {
+                    let b0 = F::from(i);
+                    for j in 0..256 {
+                        let offset = (i * 256 + j) as usize;
+                        let b1 = F::from(j);
+
+                        region.assign_fixed(
+                            || "",
+                            self.dual_byte_table.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
+                        region.assign_fixed(
+                            || "",
+                            self.dual_byte_table.bytes[0],
+                            offset,
+                            || Value::known(b0),
+                        )?;
+                        region.assign_fixed(
+                            || "",
+                            self.dual_byte_table.bytes[1],
+                            offset,
+                            || Value::known(b1),
+                        )?;
+                    }
                 }
 
                 Ok(())
@@ -284,6 +250,10 @@ impl<F: Field> EvmCircuit<F> {
             }
         }
 
+        // It must fit the dual byte table.
+        // TODO: Find a way to make this smaller in tests.
+        num_rows = num_rows.max(256 * 256);
+
         // It must have one row for EndBlock and at least one unused one
         num_rows + 2
     }
@@ -323,20 +293,37 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         (num_rows_required_for_execution_steps, total_rows)
     }
 
-    /// Make the assignments to the EvmCircuit
+    // TODO: remove.
     fn synthesize_sub(
         &self,
-        config: &Self::Config,
+        _config: &Self::Config,
+        _challenges: &crate::util::Challenges<Value<F>>,
+        _layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        unimplemented!("use synthesize_sub2")
+    }
+}
+
+impl<F: Field> EvmCircuit<F> {
+    /// Make the assignments to the EvmCircuit
+    pub fn synthesize_sub2(
+        &self,
+        config: &EvmCircuitConfig<F>,
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
+        bus_assigner: &mut BusAssigner<F, MsgF<F>>,
     ) -> Result<(), Error> {
         let block = self.block.as_ref().unwrap();
 
+        config.load_dual_byte_table(layouter)?;
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
-        config.load_byte_table(layouter)?;
         config.pow_of_rand_table.assign(layouter, challenges)?;
-        let export = config.execution.assign_block(layouter, block, challenges)?;
+
+        let export = config
+            .execution
+            .assign_block(layouter, bus_assigner, block, challenges)?;
         self.exports.borrow_mut().replace(export);
+
         Ok(())
     }
 }
@@ -443,7 +430,23 @@ use crate::util::Challenges;
 use crate::util::MockChallenges as Challenges;
 
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
-    type Config = (EvmCircuitConfig<F>, Challenges);
+    type Config = (
+        EvmCircuitConfig<F>,
+        BusConfig,
+        EVMBusLookups<F>,
+        Challenges,
+        RwTable,
+        TxTable,
+        BytecodeTable,
+        BlockTable,
+        CopyTable,
+        KeccakTable,
+        SHA256Table,
+        ExpTable,
+        SigTable,
+        ModExpTable,
+        EccTable,
+    );
     type FloorPlanner = SimpleFloorPlanner;
     #[cfg(feature = "circuit-params")]
     type Params = ();
@@ -455,39 +458,85 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let challenges_expr = challenges.exprs(meta);
+        let mut bus_builder = BusBuilder::new(BusCodecExpr::new(challenges_expr.lookup_input()));
+
+        let dual_byte_table = DualByteTable::construct(meta);
+        let fixed_table = FixedTable::construct(meta);
+        fixed_table.annotate_columns(meta);
         let rw_table = RwTable::construct(meta);
+        rw_table.annotate_columns(meta);
         let tx_table = TxTable::construct(meta);
+        tx_table.annotate_columns(meta);
         let bytecode_table = BytecodeTable::construct(meta);
+        bytecode_table.annotate_columns(meta);
         let block_table = BlockTable::construct(meta);
+        block_table.annotate_columns(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
+        copy_table.annotate_columns(meta);
         let keccak_table = KeccakTable::construct(meta);
+        keccak_table.annotate_columns(meta);
         let sha256_table = SHA256Table::construct(meta);
         let exp_table = ExpTable::construct(meta);
+        exp_table.annotate_columns(meta);
         let sig_table = SigTable::construct(meta);
+        sig_table.annotate_columns(meta);
         let modexp_table = ModExpTable::construct(meta);
+        modexp_table.annotate_columns(meta);
         let ecc_table = EccTable::construct(meta);
+        ecc_table.annotate_columns(meta);
         let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+        pow_of_rand_table.annotate_columns(meta);
+
+        let config = EvmCircuitConfig::new(
+            meta,
+            &mut bus_builder,
+            EvmCircuitConfigArgs {
+                challenges: challenges_expr,
+                // Tables assigned by the EVM circuit.
+                dual_byte_table: dual_byte_table.clone(),
+                fixed_table: fixed_table.clone(),
+                pow_of_rand_table,
+            },
+        );
+
+        let evm_lookups = EVMBusLookups::configure(
+            meta,
+            &mut bus_builder,
+            &dual_byte_table,
+            &fixed_table,
+            &rw_table,
+            &tx_table,
+            &bytecode_table,
+            &block_table,
+            &copy_table,
+            &keccak_table,
+            &sha256_table,
+            &exp_table,
+            &sig_table,
+            &modexp_table,
+            &ecc_table,
+            &pow_of_rand_table,
+        );
+        let bus = BusConfig::new(meta, &bus_builder.build());
+
         (
-            EvmCircuitConfig::new(
-                meta,
-                EvmCircuitConfigArgs {
-                    challenges: challenges_expr,
-                    tx_table,
-                    rw_table,
-                    bytecode_table,
-                    block_table,
-                    copy_table,
-                    keccak_table,
-                    sha256_table,
-                    exp_table,
-                    sig_table,
-                    modexp_table,
-                    ecc_table,
-                    pow_of_rand_table,
-                },
-            ),
+            config,
+            bus,
+            evm_lookups,
             challenges,
+            // Tables assigned by external circuits.
+            rw_table,
+            tx_table,
+            bytecode_table,
+            block_table,
+            copy_table,
+            keccak_table,
+            sha256_table,
+            exp_table,
+            sig_table,
+            modexp_table,
+            ecc_table,
         )
     }
 
@@ -497,11 +546,31 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let block = self.block.as_ref().unwrap();
+        let num_rows = Self::get_num_rows_required(block);
 
-        let (config, challenges) = config;
+        let (
+            config,
+            bus,
+            evm_lookups,
+            challenges,
+            rw_table,
+            tx_table,
+            bytecode_table,
+            block_table,
+            copy_table,
+            keccak_table,
+            sha256_table,
+            exp_table,
+            sig_table,
+            modexp_table,
+            ecc_table,
+        ) = config;
         let challenges = challenges.values(&layouter);
 
-        config.tx_table.load(
+        let mut bus_assigner =
+            BusAssigner::new(BusCodecVal::new(challenges.lookup_input()), num_rows);
+
+        tx_table.load(
             &mut layouter,
             &block.txs,
             block.circuits_params.max_txs,
@@ -509,26 +578,20 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             block.chain_id,
             &challenges,
         )?;
+
         block.rws.check_rw_counter_sanity();
-        config.rw_table.load(
+        rw_table.load(
             &mut layouter,
             &block.rws.table_assignments(),
             block.circuits_params.max_rws,
             challenges.evm_word(),
         )?;
-        config
-            .bytecode_table
-            .dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
-        config
-            .block_table
-            .dev_load(&mut layouter, &block.context, &block.txs, &challenges)?;
-        config
-            .copy_table
-            .dev_load(&mut layouter, block, &challenges)?;
-        config
-            .keccak_table
-            .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-        config.sha256_table.dev_load(
+
+        bytecode_table.dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
+        block_table.dev_load(&mut layouter, &block.context, &block.txs, &challenges)?;
+        copy_table.dev_load(&mut layouter, block, &challenges)?;
+        keccak_table.dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
+        sha256_table.dev_load(
             &mut layouter,
             block
                 .get_sha256()
@@ -536,14 +599,10 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                 .map(|evt| (&evt.input, &evt.digest)),
             &challenges,
         )?;
-        config.exp_table.dev_load(&mut layouter, block)?;
-        config
-            .sig_table
-            .dev_load(&mut layouter, block, &challenges)?;
-        config
-            .modexp_table
-            .dev_load(&mut layouter, &block.get_big_modexp())?;
-        config.ecc_table.dev_load(
+        exp_table.dev_load(&mut layouter, block)?;
+        sig_table.dev_load(&mut layouter, block, &challenges)?;
+        modexp_table.dev_load(&mut layouter, &block.get_big_modexp())?;
+        ecc_table.dev_load(
             &mut layouter,
             block.circuits_params.max_ec_ops,
             &block.get_ec_add_ops(),
@@ -552,7 +611,17 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &challenges,
         )?;
 
-        self.synthesize_sub(&config, &challenges, &mut layouter)
+        self.synthesize_sub2(&config, &challenges, &mut layouter, &mut bus_assigner)?;
+
+        evm_lookups.assign(&mut layouter, &mut bus_assigner)?;
+
+        if !bus_assigner.op_counter().is_complete() {
+            log::warn!("Incomplete bus assignment.");
+            log::debug!("Missing bus ops: {:?}", bus_assigner.op_counter());
+        }
+        bus.finish_assigner(&mut layouter, bus_assigner)?;
+
+        Ok(())
     }
 }
 
@@ -561,8 +630,8 @@ mod evm_circuit_stats {
     use crate::{
         evm_circuit::{
             param::{
-                LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
-                N_PHASE2_COPY_COLUMNS,
+                N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+                N_PHASE2_COPY_COLUMNS, N_PHASE3_COLUMNS,
             },
             step::ExecutionState,
             table::FixedTableTag,
@@ -745,34 +814,14 @@ mod evm_circuit_stats {
             N_PHASE1_COLUMNS,
             storage_2,
             N_PHASE2_COLUMNS,
+            storage_3,
+            N_PHASE3_COLUMNS,
             storage_perm,
             N_COPY_COLUMNS,
             storage_perm_2,
             N_PHASE2_COPY_COLUMNS,
             byte_lookup,
-            N_BYTE_LOOKUPS,
-            fixed_table,
-            LOOKUP_CONFIG[0].1,
-            tx_table,
-            LOOKUP_CONFIG[1].1,
-            rw_table,
-            LOOKUP_CONFIG[2].1,
-            bytecode_table,
-            LOOKUP_CONFIG[3].1,
-            block_table,
-            LOOKUP_CONFIG[4].1,
-            copy_table,
-            LOOKUP_CONFIG[5].1,
-            keccak_table,
-            LOOKUP_CONFIG[6].1,
-            exp_table,
-            LOOKUP_CONFIG[7].1,
-            sig_table,
-            LOOKUP_CONFIG[8].1,
-            ecc_table,
-            LOOKUP_CONFIG[9].1,
-            pow_of_rand_table,
-            LOOKUP_CONFIG[10].1
+            N_BYTE_LOOKUPS
         );
     }
 

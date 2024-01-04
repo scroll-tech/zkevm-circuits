@@ -1458,9 +1458,9 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.10.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95b3f3e67048839cb0d0781f445682a35113da7121f7c949db0e2be96a4fbece"
+checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
 dependencies = [
  "humantime",
  "is-terminal",
@@ -2133,6 +2133,7 @@ version = "0.1.0"
 dependencies = [
  "eth-types",
  "halo2_proofs",
+ "itertools 0.11.0",
  "rand",
  "rand_xorshift",
  "sha3 0.10.8",
@@ -5904,3 +5905,8 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "maingate"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=bus-auto#75464fd39a7b276316364deb5995f2c398231b9a"

@@ -1,6 +1,5 @@
 use crate::evm_circuit::{
     step::ExecutionState,
-    table::Table,
     util::{constraint_builder::EVMConstraintBuilder, CellType},
 };
 use eth_types::Field;
@@ -70,6 +69,9 @@ impl Instrument {
                     CellType::StoragePhase2 => {
                         report.storage_2 = data_entry;
                     }
+                    CellType::StoragePhase3 => {
+                        report.storage_3 = data_entry;
+                    }
                     CellType::StoragePermutation => {
                         report.storage_perm = data_entry;
                     }
@@ -78,45 +80,6 @@ impl Instrument {
                     }
                     CellType::LookupByte => {
                         report.byte_lookup = data_entry;
-                    }
-                    CellType::Lookup(Table::Fixed) => {
-                        report.fixed_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Tx) => {
-                        report.tx_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Rw) => {
-                        report.rw_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Bytecode) => {
-                        report.bytecode_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Block) => {
-                        report.block_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Copy) => {
-                        report.copy_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Keccak) => {
-                        report.keccak_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Sha256) => {
-                        report.sha256_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Exp) => {
-                        report.exp_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Sig) => {
-                        report.sig_table = data_entry;
-                    }
-                    CellType::Lookup(Table::ModExp) => {
-                        report.modexp_table = data_entry;
-                    }
-                    CellType::Lookup(Table::Ecc) => {
-                        report.ecc_table = data_entry;
-                    }
-                    CellType::Lookup(Table::PowOfRand) => {
-                        report.pow_of_rand_table = data_entry;
                     }
                 }
             }
@@ -133,6 +96,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) state: ExecutionState,
     pub(crate) storage_1: StateReportRow,
     pub(crate) storage_2: StateReportRow,
+    pub(crate) storage_3: StateReportRow,
     pub(crate) storage_perm: StateReportRow,
     pub(crate) storage_perm_2: StateReportRow,
     pub(crate) byte_lookup: StateReportRow,

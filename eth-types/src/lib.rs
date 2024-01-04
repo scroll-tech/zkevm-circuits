@@ -64,7 +64,11 @@ use crate::evm_types::Storage;
 /// Trait used to reduce verbosity with the declaration of the [`Field`]
 /// trait and its repr.
 pub trait Field:
-    PrimeField<Repr = [u8; 32]> + hash_circuit::hash::Hashable + std::convert::From<Fr> + ScalarField
+    PrimeField<Repr = [u8; 32]>
+    + hash_circuit::hash::Hashable
+    + std::convert::From<Fr>
+    + ScalarField
+    + std::hash::Hash
 {
     /// Re-expose zero element as a function
     fn zero() -> Self {

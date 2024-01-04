@@ -37,6 +37,7 @@ pub mod rlp_circuit_fsm;
 pub mod sig_circuit;
 // we don't use this for aggregation
 //pub mod root_circuit;
+mod evm_bus;
 pub mod modexp_circuit;
 pub mod sha256_circuit;
 pub mod state_circuit;
