@@ -1148,16 +1148,16 @@ impl<F: Field> PiCircuitConfig<F> {
         let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
 
         for q_offset in public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset() {
-            self.q_not_end.enable(region, q_offset)?;
-        }
-        
-        for q_offset in public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset() {
             region.assign_fixed(
                 || "q_l1_block_hashes",
                 self.q_l1_block_hashes,
                 q_offset,
                 || Value::known(F::one()),
             )?;
+        }
+
+        for q_offset in public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset() {
+            self.q_not_end.enable(region, q_offset)?;
         }
 
         let num_l1_block_hashes = public_data.get_num_all_l1_block_hashes();
@@ -1310,7 +1310,7 @@ impl<F: Field> PiCircuitConfig<F> {
         // Copy data_hash value we collected from assigning data bytes.
         region.constrain_equal(data_hash_rlc_cell.cell(), data_hash_cell.cell())?;
 
-        (offset, _, _, cells) = self.assign_field(
+        let (tmp_offset, _, _, cells) = self.assign_field(
             region,
             offset,
             &public_data.l1_block_range_hash.to_fixed_bytes(),
@@ -1320,8 +1320,9 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_length,
             challenges,
         )?;
+        offset = tmp_offset;
         let l1_block_range_hash_cell = cells[RPI_CELL_IDX].clone();
-
+        
         region.constrain_equal(l1_block_range_hash_rlc_cell.cell(), l1_block_range_hash_cell.cell())?;
 
         // Assign row for validating lookup to check:
