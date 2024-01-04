@@ -1536,6 +1536,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     lookup_conditions[&LookupCondition::TxCalldata],
                     Rotation::cur(),
                 ),
+                not::expr(meta.query_advice(is_l1_block_hashes_col, Rotation::cur())),
             ]);
 
             vec![
