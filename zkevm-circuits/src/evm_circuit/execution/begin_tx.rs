@@ -252,7 +252,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO2: contrain calling precompile directly
 
         let intrinsic_gas_cost = cb.query_cell();
-        cb.condition(not::expr(is_precompile.expr()), |cb| {
+        cb.condition(and::expr([
+                not::expr(tx_l1_block_hashes.expr()),
+                not::expr(is_precompile.expr()),
+            ]), |cb| {
             // Calculate gas cost of init code only for EIP-3860 of Shanghai.
             #[cfg(feature = "shanghai")]
             let init_code_gas_cost = select::expr(
