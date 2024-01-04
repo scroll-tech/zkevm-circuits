@@ -1676,7 +1676,9 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             // TODO: check if lo covers msg_hash_rlc, sig(v,r,s)
-            let msg_hash_rlc = meta.query_advice(tx_table.value.lo(), Rotation(6));
+            let msg_hash_lo = meta.query_advice(tx_table.value.lo(), Rotation(6));
+            let msg_hash_hi = meta.query_advice(tx_table.value.hi(), Rotation(6));
+
             let chain_id = meta.query_advice(tx_table.value.lo(), Rotation::cur());
             let sig_v = meta.query_advice(tx_table.value.lo(), Rotation(1));
             let sig_r = meta.query_advice(tx_table.value.lo(), Rotation(2));
@@ -1687,11 +1689,13 @@ impl<F: Field> TxCircuitConfig<F> {
                 + is_pre_eip155(meta) * (sig_v.expr() - 27.expr());
 
             let input_exprs = vec![
-                1.expr(),     // q_enable = true
-                msg_hash_rlc, // msg_hash_rlc
-                v,            // sig_v
-                sig_r,        // sig_r
-                sig_s,        // sig_s
+                1.expr(), // q_enable = true
+                // msg_hash_rlc, // msg_hash_rlc
+                msg_hash_lo,
+                msg_hash_hi,
+                v,     // sig_v
+                sig_r, // sig_r
+                sig_s, // sig_s
                 sv_address,
                 1.expr(), // is_valid
             ];
@@ -1700,7 +1704,9 @@ impl<F: Field> TxCircuitConfig<F> {
             let table_exprs = vec![
                 meta.query_fixed(sig_table.q_enable, Rotation::cur()),
                 // msg_hash_rlc not needed to be looked up for tx circuit?
-                meta.query_advice(sig_table.msg_hash_rlc, Rotation::cur()),
+                // meta.query_advice(sig_table.msg_hash_rlc, Rotation::cur()),
+                meta.query_advice(sig_table.msg_hash_word.lo(), Rotation::cur()),
+                meta.query_advice(sig_table.msg_hash_word.hi(), Rotation::cur()),
                 meta.query_advice(sig_table.sig_v, Rotation::cur()),
                 meta.query_advice(sig_table.sig_r_rlc, Rotation::cur()),
                 meta.query_advice(sig_table.sig_s_rlc, Rotation::cur()),

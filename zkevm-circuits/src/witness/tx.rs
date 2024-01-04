@@ -169,6 +169,9 @@ impl Transaction {
             word::Word::from(Word::from_big_endian(&tx_hash_be_bytes)).map(Value::known);
         let tx_sign_hash_word =
             word::Word::from(Word::from_big_endian(&tx_sign_hash_be_bytes)).map(Value::known);
+        let caller_address_word = word::Word::from(self.caller_address).map(Value::known);
+        let callee_address_word =
+            word::Word::from(self.callee_address.unwrap_or(Address::zero())).map(Value::known);
 
         let ret = vec![
             [
@@ -199,20 +202,22 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallerAddress as u64)),
                 Value::known(F::zero()),
-                Value::known(self.caller_address.to_scalar().unwrap()),
-                Value::known(F::zero()),
+                //Value::known(self.caller_address.to_scalar().unwrap()),
+                caller_address_word.lo(),
+                caller_address_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CalleeAddress as u64)),
                 Value::known(F::zero()),
-                Value::known(
-                    self.callee_address
-                        .unwrap_or(Address::zero())
-                        .to_scalar()
-                        .unwrap(),
-                ),
-                Value::known(F::zero()),
+                // Value::known(
+                //     self.callee_address
+                //         .unwrap_or(Address::zero())
+                //         .to_scalar()
+                //         .unwrap(),
+                // ),
+                callee_address_word.lo(),
+                callee_address_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),

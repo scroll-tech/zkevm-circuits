@@ -13,7 +13,7 @@ use crate::{
     util::{word::WordExpr, Expr},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, H160};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -78,7 +78,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
-        // Assign Origin addr RLC.
+        // Assign Origin addr word.
         self.origin.assign_u256(region, offset, origin)?;
 
         // Assign SameContextGadget witnesses.

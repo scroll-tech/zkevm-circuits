@@ -27,7 +27,7 @@ use crate::{
 use eth_types::{
     self,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Field,
+    Field, Word,
 };
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions, RangeInstructions},
@@ -58,7 +58,7 @@ use halo2_proofs::{
 use ethers_core::utils::keccak256;
 use itertools::Itertools;
 use log::error;
-use std::{iter, marker::PhantomData};
+use std::{iter, iter::Iterator, marker::PhantomData, vec::Vec};
 
 /// Circuit configuration arguments
 pub struct SigCircuitConfigArgs<F: Field> {
@@ -153,7 +153,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         meta.enable_equality(sig_table.sig_s_rlc);
         meta.enable_equality(sig_table.sig_v);
         meta.enable_equality(sig_table.is_valid);
-        meta.enable_equality(sig_table.msg_hash_rlc);
+        //meta.enable_equality(sig_table.msg_hash_rlc);
         meta.enable_equality(sig_table.msg_hash_word.lo());
         meta.enable_equality(sig_table.msg_hash_word.hi());
 
@@ -182,8 +182,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(1)),
                 is_enable.clone() * 64usize.expr(),
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(2)),
-                is_enable.clone() * meta.query_advice(rlc_column_word.lo(), Rotation(2)),
-                is_enable * meta.query_advice(rlc_column_word.hi(), Rotation(2)),
+                //is_enable.clone() * meta.query_advice(rlc_column_word.lo(), Rotation(2)),
+                //is_enable * meta.query_advice(rlc_column_word.hi(), Rotation(2)),
             ];
             let table = [
                 meta.query_fixed(keccak_table.q_enable, Rotation::cur()),
@@ -191,8 +191,8 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
                 meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
                 meta.query_advice(keccak_table.input_len, Rotation::cur()),
                 meta.query_advice(keccak_table.output_rlc, Rotation::cur()),
-                meta.query_advice(keccak_table.output.lo(), Rotation::cur()),
-                meta.query_advice(keccak_table.output.hi(), Rotation::cur()),
+                // meta.query_advice(keccak_table.output.lo(), Rotation::cur()),
+                // meta.query_advice(keccak_table.output.hi(), Rotation::cur()),
             ];
 
             input.into_iter().zip(table).collect()
@@ -680,7 +680,7 @@ impl<F: Field> SigCircuit<F> {
         sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
         assigned_ecdsa: &AssignedECDSA<F, FpChip<F>>,
-    ) -> Result<([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Error> {
+    ) -> Result<(([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Word), Error> {
         // ================================================
         // step 0. powers of aux parameters
         // ================================================
@@ -736,7 +736,26 @@ impl<F: Field> SigCircuit<F> {
             evm_challenge_powers.clone(),
         );
 
-        // TODO： calculate pk hash word
+        // TODO：calculate pk hash word [QuantumCell<F>;32]
+        // let mut hash_value_f: [F; 32] = [F::zero();32];
+        let mut hash_value_f: [F; 32] = [F::zero(); 32];
+        let mut idx = 0;
+        // sign_data_decomposed.pk_hash_cells.split_off(32).iter().map(|qcell| {
+        //    let q_val =  qcell.value();
+        //    let mut val = F::zero();
+        //    q_val.map(|f| val = *f);
+        //    hash_value_f[idx] = val;
+        //    idx += 1;
+        //    val
+        // }).collect::<Vec<F>>();
+
+        // let hash_value = hash_value_f.map(Value::known);
+        //let hash_word = word::Word::new([hash_value[..16] , hash_value[16..32]]);
+
+        //let hash_cells:[Value<&F>;32] =
+        // sign_data_decomposed.pk_hash_cells.split_off(32).iter().map(|qcell|
+        // qcell.value()).collect::<Vec<Value<&F>>>().as_slice().try_into()?;
+        // let pk_hash_word = word::Word::new([ , ]);
 
         // step 4: r,s rlc
         let r_rlc = rlc_chip.gate.inner_product(
@@ -765,7 +784,12 @@ impl<F: Field> SigCircuit<F> {
             s_rlc,
             v: assigned_ecdsa.v,
         };
-        Ok((to_be_keccak_checked, assigned_sig_verif))
+        let sign_message_hash_word = Word::from_big_endian(&sign_data.msg_hash.to_bytes());
+
+        Ok((
+            (to_be_keccak_checked, assigned_sig_verif),
+            sign_message_hash_word,
+        ))
     }
 
     /// Assign witness data to the sig circuit.
@@ -787,12 +811,12 @@ impl<F: Field> SigCircuit<F> {
         let mut first_pass = SKIP_FIRST_PASS;
         let ecdsa_chip = &config.ecdsa_config;
 
-        let assigned_sig_verifs = layouter.assign_region(
+        let (assigned_sig_verifs, msg_hash_words) = layouter.assign_region(
             || "ecdsa chip verification",
             |region| {
                 if first_pass {
                     first_pass = false;
-                    return Ok(vec![]);
+                    return Ok((vec![], vec![]));
                 }
 
                 let mut ctx = ecdsa_chip.new_context(region);
@@ -839,31 +863,39 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 3: compute RLC of keys and messages
                 // ================================================
+                // assigned_sig_values + assigned_keccak_values
+                let (assigned_keccak_sig_values, msg_hash_words): (
+                    Vec<([AssignedValue<F>; 3], AssignedSignatureVerify<F>)>,
+                    //Vec<AssignedSignatureVerify<F>>,
+                    Vec<Word>,
+                ) =
+                    signatures
+                        .iter()
+                        .chain(std::iter::repeat(&SignData::default()))
+                        .take(self.max_verif)
+                        .zip_eq(assigned_ecdsas.iter())
+                        .zip_eq(sign_data_decomposed.iter())
+                        .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
+                            self.assign_sig_verify(
+                                &mut ctx,
+                                &ecdsa_chip.range,
+                                sign_data,
+                                sign_data_decomp,
+                                challenges,
+                                assigned_ecdsa,
+                            )
+                        })
+                        .collect::<Result<
+                            Vec<(([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Word)>,
+                            Error,
+                        >>()?
+                        .into_iter()
+                        .unzip();
+
                 let (assigned_keccak_values, assigned_sig_values): (
                     Vec<[AssignedValue<F>; 3]>,
                     Vec<AssignedSignatureVerify<F>>,
-                ) = signatures
-                    .iter()
-                    .chain(std::iter::repeat(&SignData::default()))
-                    .take(self.max_verif)
-                    .zip_eq(assigned_ecdsas.iter())
-                    .zip_eq(sign_data_decomposed.iter())
-                    .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
-                        self.assign_sig_verify(
-                            &mut ctx,
-                            &ecdsa_chip.range,
-                            sign_data,
-                            sign_data_decomp,
-                            challenges,
-                            assigned_ecdsa,
-                        )
-                    })
-                    .collect::<Result<
-                        Vec<([AssignedValue<F>; 3], AssignedSignatureVerify<F>)>,
-                        Error,
-                    >>()?
-                    .into_iter()
-                    .unzip();
+                ) = assigned_keccak_sig_values.into_iter().unzip();
 
                 // ================================================
                 // step 4: deferred keccak checks
@@ -890,7 +922,7 @@ impl<F: Field> SigCircuit<F> {
                 log::info!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["ECDSA context"]);
-                Ok(assigned_sig_values)
+                Ok((assigned_sig_values, msg_hash_words))
             },
         )?;
 
@@ -899,7 +931,11 @@ impl<F: Field> SigCircuit<F> {
             || "expose sig table",
             |mut region| {
                 // step 5: export as a lookup table
-                for (idx, assigned_sig_verif) in assigned_sig_verifs.iter().enumerate() {
+                for (idx, (assigned_sig_verif, msg_hash_word)) in assigned_sig_verifs
+                    .iter()
+                    .zip(msg_hash_words.iter())
+                    .enumerate()
+                {
                     region.assign_fixed(
                         || "assign sig_table selector",
                         config.sig_table.q_enable,
@@ -940,6 +976,15 @@ impl<F: Field> SigCircuit<F> {
                         config.sig_table.msg_hash_rlc,
                         idx,
                     );
+                    let msg_hash_word = word::Word::from(*msg_hash_word).map(Value::known);
+                    let msg_hash_word_cells = msg_hash_word.assign_advice(
+                        &mut region,
+                        || "assign msg_hash_word",
+                        config.sig_table.msg_hash_word,
+                        idx,
+                    )?;
+                    // TODO: constrain rlc(msg_hash_word) == assigned_sig_verif.msg_hash_rlc
+                    // region.constrain_equal(left, right)
                 }
                 Ok(())
             },
