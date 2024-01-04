@@ -253,7 +253,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let intrinsic_gas_cost = cb.query_cell();
         cb.condition(and::expr([
-                not::expr(tx_l1_block_hashes.expr()),
+                not::expr(tx_l1_block_hashes.is_l1_block_hashes()),
                 not::expr(is_precompile.expr()),
             ]), |cb| {
             // Calculate gas cost of init code only for EIP-3860 of Shanghai.
