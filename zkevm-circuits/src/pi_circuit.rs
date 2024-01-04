@@ -1292,7 +1292,7 @@ impl<F: Field> PiCircuitConfig<F> {
         };
 
         // Assign data_hash
-        (offset, _, _, cells) = self.assign_field(
+        let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
             region,
             offset,
             &public_data.get_data_hash().to_fixed_bytes(),
@@ -1302,6 +1302,7 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_length,
             challenges,
         )?;
+        (offset, rpi_rlc_acc, rpi_length) = (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length);
         let data_hash_cell = cells[RPI_CELL_IDX].clone();
 
         let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
