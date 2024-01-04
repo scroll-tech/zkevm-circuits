@@ -1184,7 +1184,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         meta.lookup_any("l1 block hashes calldata rlc in block table", |meta| {
             let is_data_rlc = is_data_rlc(meta);
-            let block_num = meta.query_advice(tx_table.value, Rotation(16));
+            let block_num = meta.query_advice(tx_table.value, Rotation(18));
             let calldata_rlc = meta.query_advice(tx_table.value, Rotation::cur());
 
             let input_expr = vec![L1BlockHashesCalldataRLC.expr(), block_num, calldata_rlc];
