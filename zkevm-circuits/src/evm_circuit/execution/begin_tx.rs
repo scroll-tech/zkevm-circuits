@@ -125,9 +125,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_eip2930 = TxEip2930Gadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
-        let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_id.expr(), tx_caller_address.expr());
+        let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
         let tx_l1_block_hashes =
-            TxL1BlockHashesGadget::construct(cb, tx_id.expr(), tx_caller_address.expr());
+            TxL1BlockHashesGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
 
         let tx_l1_custom_tx = or::expr([
             tx_l1_msg.is_l1_msg(),
