@@ -24,7 +24,7 @@ use crate::{
             Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength,
             TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
-        TxTable, U16Table, U8Table,
+        TxTable, U16Table, U8Table, UXTable,
     },
     util::{
         is_zero::{IsZeroChip, IsZeroConfig},
@@ -128,7 +128,8 @@ pub struct TxCircuitConfig<F: Field> {
     tx_value_length: Column<Advice>,
     tx_value_rlc: Column<Advice>,
 
-    u8_table: U8Table,
+    //u8_table: U8Table,
+    u8_table: UXTable<8>,
     u16_table: U16Table,
 
     /// Verify if the tx_id is zero or not.
@@ -205,7 +206,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     /// SigTable
     pub sig_table: SigTable,
     /// Reusable u8 lookup table,
-    pub u8_table: U8Table,
+    // pub u8_table: U8Table,
+    pub u8_table: UXTable<8>,
     /// Reusable u16 lookup table,
     pub u16_table: U16Table,
     /// Challenges

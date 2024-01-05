@@ -971,11 +971,11 @@ impl<F: Field> SigCircuit<F> {
                         idx,
                     );
 
-                    assigned_sig_verif.msg_hash_rlc.copy_advice(
-                        &mut region,
-                        config.sig_table.msg_hash_rlc,
-                        idx,
-                    );
+                    // assigned_sig_verif.msg_hash_rlc.copy_advice(
+                    //     &mut region,
+                    //     config.sig_table.msg_hash_rlc,
+                    //     idx,
+                    // );
                     let msg_hash_word = word::Word::from(*msg_hash_word).map(Value::known);
                     let msg_hash_word_cells = msg_hash_word.assign_advice(
                         &mut region,

@@ -7,7 +7,7 @@ mod test;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, RlpFsmRlpTable, U8Table},
+    table::{LookupTable, RlpFsmRlpTable, U8Table, UXTable},
     util::{
         is_zero::{IsZeroChip, IsZeroConfig},
         Challenges, SubCircuit, SubCircuitConfig,
@@ -284,7 +284,8 @@ pub struct RlpCircuitConfig<F> {
     /// ROM table
     rom_table: RlpFsmRomTable,
     /// Range u8 table
-    u8_table: U8Table,
+    // u8_table: U8Table,
+    u8_table: UXTable<8>,
 }
 
 impl<F: Field> RlpCircuitConfig<F> {
@@ -293,7 +294,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         rom_table: RlpFsmRomTable,
         data_table: RlpFsmDataTable,
-        u8_table: U8Table,
+        //u8_table: U8Table,
+        u8_table: UXTable<8>,
         rlp_table: RlpFsmRlpTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
@@ -1894,7 +1896,8 @@ pub struct RlpCircuitConfigArgs<F: Field> {
     /// RLP table.
     pub rlp_table: RlpFsmRlpTable,
     /// u8 table
-    pub u8_table: U8Table,
+    // pub u8_table: U8Table,
+    pub u8_table: UXTable<8>,
     /// Challenge API.
     pub challenges: Challenges<Expression<F>>,
 }
