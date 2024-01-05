@@ -80,24 +80,15 @@ func transferTxs(txs []Transaction) types.Transactions {
 	for _, tx := range txs {
 
 		if tx.Type == "L1BlockHashes" {
-			l1msgTx := &types.L1MessageTx{
-				Gas:        uint64(tx.GasLimit),
-				QueueIndex: uint64(tx.Nonce),
-				To:         tx.To,
-				Value:      toBigInt(tx.Value),
-				Data:       tx.CallData,
-				Sender:     tx.From,
+			l1blockhashesTx := &types.L1BlockHashesTx{
+				FirstAppliedL1Block: uint64(0),
+				BlockHashesRange:    []common.Hash{},
+				LastAppliedL1Block:  uint64(0),
+				To:                  tx.To,
+				Data:                tx.CallData,
+				Sender:              tx.From,
 			}
-			t_txs = append(t_txs, types.NewTx(l1msgTx))
-			// l1blockhashesTx := &types.L1BlockHashesTx{
-			// 	FirstAppliedL1Block: uint64(0),
-			// 	BlockHashesRange:    []common.Hash{},
-			// 	LastAppliedL1Block:  uint64(0),
-			// 	To:                  tx.To,
-			// 	Data:                tx.CallData,
-			// 	Sender:              tx.From,
-			// }
-			// t_txs = append(t_txs, types.NewTx(l1blockhashesTx))
+			t_txs = append(t_txs, types.NewTx(l1blockhashesTx))
 
 			// if no signature, we can only handle it as l1msg tx
 			// notice the type is defined in geth_types
@@ -210,7 +201,6 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		//		Random:      &randao,
 		BaseFee:  toBigInt(config.Block.BaseFee),
 		GasLimit: blockGasLimit,
-		// TODO: add last_applied_l1_block and l1_block_hashes
 	}
 
 	//FIXME: if no history, use random hash instead?
@@ -256,8 +246,8 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		config.LoggerConfig,
 		blockCtx,
 		config.StartL1QueueIndex,
-		// 0,
-		// []common.Hash{},
+		0,
+		[]common.Hash{},
 		blockCtx.Coinbase,
 		stateDB,
 		rootBefore,

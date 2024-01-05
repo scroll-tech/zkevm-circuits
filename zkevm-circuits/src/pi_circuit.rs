@@ -2065,8 +2065,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             + KECCAK_DIGEST_SIZE // pi hash bytes
             + 1 // for coinbase & difficulty start row
             + KECCAK_DIGEST_SIZE // for l1 block range hash
-            + 2 // for l1_block_hashes_count and num_all_l1_block_hashes
-            + 2 // for last_applied_l1_block and last_applied_l1_block_from_last_block
+            + 32 // for l1_block_hashes_count, num_all_l1_block_hashes, last_applied_l1_block and last_applied_l1_block_from_last_block
             + N_BYTES_ACCOUNT_ADDRESS
             + N_BYTES_WORD;
 

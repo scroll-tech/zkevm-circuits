@@ -41,4 +41,4 @@ require (
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 )
 
-// replace github.com/scroll-tech/go-ethereum => ../../../scroll-go-ethereum
+replace github.com/scroll-tech/go-ethereum => github.com/LimeChain/scroll-go-ethereum v0.0.0-20231223062238-eaa38f09ce93
