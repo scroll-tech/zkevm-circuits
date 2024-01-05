@@ -777,13 +777,13 @@ pub enum StackOp {
 /// decoded
 #[derive(Clone, Debug, Default)]
 pub struct RlpStackOp<F: PrimeField> {
-    /// Key1 (Id), concat of tx_id, format
+    /// Key: rlc of (tx_id, format, depth, al_idx, sk_idx)
     pub id: Value<F>,
     /// Transaction Id
     pub tx_id: u64,
     /// Format
     pub format: Format,
-    /// Key2 (Address), in this case depth
+    /// depth
     pub depth: usize,
     /// Op Counter, similar to rw counter
     pub byte_idx: usize,
@@ -799,24 +799,38 @@ pub struct RlpStackOp<F: PrimeField> {
     pub sk_idx: u64,
 }
 
+fn stack_op_id<F: PrimeField>(components: [u64; 5], challenge: Value<F>) -> Value<F> {
+    components.into_iter().fold(Value::known(F::ZERO), |mut rlc, num| {
+        rlc = rlc * challenge + Value::known(F::from(num));
+        rlc
+    })
+}
+
 impl<F: PrimeField> RlpStackOp<F> {
-    pub fn init(id: Value<F>, tx_id: u64, format: Format, value: usize) -> Self {
+    pub fn init(tx_id: u64, format: Format, value: usize, challenge: Value<F>) -> Self {
         Self {
-            id,
+            id: stack_op_id([
+                    tx_id, 
+                    format as u64, 
+                    0, 
+                    0, 
+                    0
+                ], 
+                challenge
+            ),
             tx_id,
             format,
             depth: 0,
             byte_idx: 0,
             value,
             value_prev: 0,
-            stack_op: StackOp::Init,
+            stack_op: StackOp::Push,
             al_idx: 0,
             sk_idx: 0,
         }
     }
     #[allow(clippy::too_many_arguments)]
     pub fn push(
-        id: Value<F>,
         tx_id: u64,
         format: Format,
         byte_idx: usize,
@@ -824,9 +838,18 @@ impl<F: PrimeField> RlpStackOp<F> {
         value: usize,
         al_idx: u64,
         sk_idx: u64,
+        challenge: Value<F>,
     ) -> Self {
         Self {
-            id,
+            id: stack_op_id([
+                    tx_id, 
+                    format as u64, 
+                    depth as u64, 
+                    al_idx, 
+                    sk_idx
+                ], 
+                challenge
+            ),
             tx_id,
             format,
             depth,
@@ -840,7 +863,6 @@ impl<F: PrimeField> RlpStackOp<F> {
     }
     #[allow(clippy::too_many_arguments)]
     pub fn pop(
-        id: Value<F>,
         tx_id: u64,
         format: Format,
         byte_idx: usize,
@@ -849,9 +871,18 @@ impl<F: PrimeField> RlpStackOp<F> {
         value_prev: usize,
         al_idx: u64,
         sk_idx: u64,
+        challenge: Value<F>,
     ) -> Self {
         Self {
-            id,
+            id: stack_op_id([
+                    tx_id, 
+                    format as u64, 
+                    depth as u64, 
+                    al_idx, 
+                    sk_idx
+                ], 
+                challenge
+            ),
             tx_id,
             format,
             depth,
@@ -865,7 +896,6 @@ impl<F: PrimeField> RlpStackOp<F> {
     }
     #[allow(clippy::too_many_arguments)]
     pub fn update(
-        id: Value<F>,
         tx_id: u64,
         format: Format,
         byte_idx: usize,
@@ -873,9 +903,18 @@ impl<F: PrimeField> RlpStackOp<F> {
         value: usize,
         al_idx: u64,
         sk_idx: u64,
+        challenge: Value<F>,
     ) -> Self {
         Self {
-            id,
+            id: stack_op_id([
+                    tx_id, 
+                    format as u64, 
+                    depth as u64, 
+                    al_idx, 
+                    sk_idx
+                ], 
+                challenge
+            ),
             tx_id,
             format,
             depth,

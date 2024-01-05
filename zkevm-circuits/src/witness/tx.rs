@@ -514,8 +514,6 @@ impl Transaction {
         // value_prev field in a POP record.
         let mut prev_bytes_on_depth: [usize; 4] = [0, 0, 0, 0];
 
-        // concat tx_id and format as stack identifier
-        let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
         // When we are decoding a vector of element type `t`, at the beginning
         // we actually do not know the next tag is `EndVector` or not. After we
         // parsed the current tag, if the remaining bytes to decode in this layer
@@ -523,7 +521,7 @@ impl Transaction {
         let mut cur_rom_row = vec![0];
         let mut remaining_bytes = vec![rlp_bytes.len()];
         // initialize stack
-        stack_ops.push(RlpStackOp::init(id, tx_id, format, rlp_bytes.len()));
+        stack_ops.push(RlpStackOp::init(tx_id, format, rlp_bytes.len(), keccak_rand));
         let mut witness_table_idx = 0;
 
         // This map keeps track
@@ -586,7 +584,6 @@ impl Transaction {
                             let byte_remained = *remaining_bytes.last().unwrap();
 
                             stack_ops.push(RlpStackOp::pop(
-                                id,
                                 tx_id,
                                 format,
                                 cur.byte_idx + 1,
@@ -595,6 +592,7 @@ impl Transaction {
                                 prev_bytes_on_depth[cur.depth - 1],
                                 access_list_idx,
                                 storage_key_idx,
+                                keccak_rand,
                             ));
                         }
 
@@ -628,7 +626,6 @@ impl Transaction {
 
                                 // add stack op on same depth
                                 stack_ops.push(RlpStackOp::update(
-                                    id,
                                     tx_id,
                                     format,
                                     cur.byte_idx + 1,
@@ -636,6 +633,7 @@ impl Transaction {
                                     *rem - 1,
                                     access_list_idx,
                                     storage_key_idx,
+                                    keccak_rand,
                                 ));
                             }
 
@@ -708,15 +706,26 @@ impl Transaction {
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
 
+                            let al_inc: u64 = if cur.depth == 2 {
+                                1
+                            } else {
+                                0
+                            };
+                            let sk_inc: u64 = if cur.depth == 3 {
+                                1
+                            } else {
+                                0
+                            };
+
                             stack_ops.push(RlpStackOp::push(
-                                id,
                                 tx_id,
                                 format,
                                 cur.byte_idx + 1,
                                 cur.depth + 1,
                                 num_bytes_of_new_list,
-                                access_list_idx,
-                                storage_key_idx,
+                                access_list_idx + al_inc,
+                                storage_key_idx + sk_inc,
+                                keccak_rand,
                             ));
 
                             next.depth = cur.depth + 1;
@@ -741,7 +750,6 @@ impl Transaction {
 
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
-                            id,
                             tx_id,
                             format,
                             cur.byte_idx + 1,
@@ -749,6 +757,7 @@ impl Transaction {
                             *rem - 1,
                             access_list_idx,
                             storage_key_idx,
+                            keccak_rand
                         ));
 
                         *rem -= 1;
@@ -780,7 +789,6 @@ impl Transaction {
 
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
-                            id,
                             tx_id,
                             format,
                             cur.byte_idx + 1,
@@ -788,6 +796,7 @@ impl Transaction {
                             *rem - 1,
                             access_list_idx,
                             storage_key_idx,
+                            keccak_rand,
                         ));
 
                         *rem -= 1;
@@ -818,7 +827,6 @@ impl Transaction {
                         // add stack op on same depth
                         if cur.tag_idx < cur.tag_length {
                             stack_ops.push(RlpStackOp::update(
-                                id,
                                 tx_id,
                                 format,
                                 cur.byte_idx + 1,
@@ -826,6 +834,7 @@ impl Transaction {
                                 *rem - 1,
                                 access_list_idx,
                                 storage_key_idx,
+                                keccak_rand,
                             ));
                         }
 
@@ -850,15 +859,26 @@ impl Transaction {
                         }
                         remaining_bytes.push(lb_len);
 
+                        let al_inc: u64 = if cur.depth == 2 {
+                            1
+                        } else {
+                            0
+                        };
+                        let sk_inc: u64 = if cur.depth == 3 {
+                            1
+                        } else {
+                            0
+                        };
+
                         stack_ops.push(RlpStackOp::push(
-                            id,
                             tx_id,
                             format,
                             cur.byte_idx + 1,
                             cur.depth + 1,
                             lb_len,
-                            access_list_idx,
-                            storage_key_idx,
+                            access_list_idx + al_inc,
+                            storage_key_idx + sk_inc,
+                            keccak_rand,
                         ));
                         next.depth = cur.depth + 1;
                         next.state = DecodeTagStart;
@@ -978,17 +998,19 @@ impl Transaction {
                 a.tx_id,
                 a.format as u64,
                 a.depth,
-                a.byte_idx,
+                // eip1559_debug
                 a.al_idx,
                 a.sk_idx,
+                a.byte_idx,
                 a.stack_op.clone() as u64,
             ) > (
                 b.tx_id,
                 b.format as u64,
                 b.depth,
-                b.byte_idx,
+                // eip1559_debug
                 a.al_idx,
                 a.sk_idx,
+                b.byte_idx,
                 b.stack_op.clone() as u64,
             ) {
                 std::cmp::Ordering::Greater
@@ -996,6 +1018,13 @@ impl Transaction {
                 std::cmp::Ordering::Less
             }
         });
+
+        // eip1559_debug
+        // // concat tx_id and format as stack identifier
+        // let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
+
+        // eip1559_debug
+        log::trace!("=> sorted stack_ops: {:?}", stack_ops);
 
         for (idx, op) in stack_ops.into_iter().enumerate() {
             witness[idx].rlp_decoding_table = op;
