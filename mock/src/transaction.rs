@@ -3,11 +3,8 @@
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
 use eth_types::{
     geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
-    Transaction, Word, U64, H256,
+    Transaction, Word, U64,
 };
-use std::str::FromStr;
-use ethers_core::utils::keccak256;
-use ethabi::{Token, encode, Function, StateMutability, Param, ParamType};
 use ethers_core::{
     rand::{CryptoRng, RngCore},
     types::{OtherFields, TransactionRequest},
@@ -167,41 +164,23 @@ pub struct MockTransaction {
 
 impl Default for MockTransaction {
     fn default() -> Self {
-       #[allow(deprecated)]
-       let function = Function {
-            name: "appendBlockhashes".to_owned(),
-            inputs: vec![Param { name: "_hashes".to_owned(), kind: ParamType::Array(Box::new(ParamType::FixedBytes(32))), internal_type: None }],
-            outputs: vec![],
-            state_mutability: StateMutability::NonPayable,
-            constant: None,
-        };
-        let function_signature = function.signature();
-        let selector = &keccak256(function_signature.as_bytes())[0..4];
-        let mut v = Vec::new();
-        v.push(H256::from_str("0x5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap());
-        let l1_block_hashes = Some(v.clone())
-            .as_ref()
-            .map_or_else(|| vec![], |hashes| hashes.iter().map(|&h| Token::FixedBytes(h.as_bytes().to_vec())).collect());
-        let params = encode(&[Token::Array(l1_block_hashes)]);
-        let mut l1_block_hashes_calldata = selector.to_vec();
-        l1_block_hashes_calldata.extend(params);
-        
         MockTransaction {
             hash: None,
             nonce: Word::zero(),
             block_hash: Hash::zero(),
             block_number: U64::zero(),
             transaction_index: U64::zero(),
+            //from: AddrOrWallet::Addr(MOCK_ACCOUNTS[0]),
             from: AddrOrWallet::random(&mut OsRng),
             to: None,
             value: Word::zero(),
             gas_price: *MOCK_GASPRICE,
             gas: Word::from(1_000_000u64),
-            input: Bytes::from(l1_block_hashes_calldata.clone()),
+            input: Bytes::default(),
             v: None,
             r: None,
             s: None,
-            transaction_type: U64::from(0x7d),
+            transaction_type: U64::zero(),
             access_list: AccessList::default(),
             max_priority_fee_per_gas: Word::zero(),
             max_fee_per_gas: Word::zero(),

@@ -336,8 +336,7 @@ impl PublicData {
 
     fn constants_end_offset(&self) -> usize {
         self.constants_start_offset() + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD
-            + 2 // for l1_block_hashes_count and num_all_l1_block_hashes
-            + 2 // for last_applied_l1_block and last_applied_l1_block_from_last_block
+            + 32 // for l1_block_hashes_count, num_all_l1_block_hashes, last_applied_l1_block and last_applied_l1_block_from_last_block
     }
 }
 
@@ -868,20 +867,30 @@ impl<F: Field> PiCircuitConfig<F> {
     /// |          |------------------------|--------------------------|
     /// |          | rlc(data_bytes)        | <- q_keccak == 1         |
     /// |----------|------------------------|--------------------------|
+    /// |          | l1_block_hash\[0\]     |                          |
+    /// |          | l1_block_hash\[1\]     |                          |
+    /// | *PART 2* | ...                    |                          |
+    /// |          | l1_block_hash\[n\]     | <- q_l1_block_hashes == 1|
+    /// | ASSIGN   | DUMMY_L1_BLOCK_HASH    |                          |
+    /// | L1 BLOCK | ...                    |                          |
+    /// | HASHES   | DUMMY_L1_BLOCK_HASH    |                          |
+    /// | BYTES    |------------------------|--------------------------|
+    /// |          | rlc(pi_bytes)          | <- q_keccak == 1         |
+    /// |----------|------------------------|--------------------------|
     /// |          | rpi initialise         |                          |
     /// |          | chain_id               |                          |
-    /// | *PART 2* | prev_state_root        |                          |
+    /// | *PART 3* | prev_state_root        |                          |
     /// |          | next_state_root        |                          |
     /// | ASSIGN   | withdraw_trie_root     |                          |
     /// | PI       | data_hash              |                          |
     /// | BYTES    |------------------------|--------------------------|
     /// |          | rlc(pi_bytes)          | <- q_keccak == 1         |
     /// |----------|------------------------|--------------------------|
-    /// | *PART 3* | rpi initialise         |                          |
+    /// | *PART 4* | rpi initialise         |                          |
     /// | ASSIGN   | pi_hash_hi             |                          |
     /// | PI HASH  | pi_hash_lo             |                          |
     /// |----------|------------------------|--------------------------|
-    /// | *PART 4* | rpi initialise         |                          |
+    /// | *PART 5* | rpi initialise         |                          |
     /// | ASSIGN   | coinbase               |                          |
     /// | CONSTS   | difficulty             |                          |
     /// |----------|------------------------|--------------------------|
@@ -1452,9 +1461,7 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        //////////////////////////////////////////////
-        ///////  assign l1 block hashes count ////////
-        //////////////////////////////////////////////
+        // Assign l1 block hashes count
         let last_applied_l1_block = public_data.get_last_applied_l1_block();
         let num_all_l1_block_hashes = public_data.get_num_all_l1_block_hashes() as u64;
         let mut l1_block_hashes_count = num_all_l1_block_hashes;
@@ -1467,46 +1474,37 @@ impl<F: Field> PiCircuitConfig<F> {
                 public_data.last_applied_l1_block - public_data.prev_last_applied_l1_block;
         }
 
-        let l1_block_hashes_count_cell = region.assign_advice(
-            || "field l1 block hashes count",
-            self.l1_block_hashes_count,
-            offset,
-            || Value::known(F::from(l1_block_hashes_count)),
-        )?;
-        offset += 1;
-
-        let num_all_l1_block_hashes_cell = region.assign_advice(
-            || "field l1 block hashes count",
-            self.num_all_l1_block_hashes,
-            offset,
-            || Value::known(F::from(num_all_l1_block_hashes)),
-        )?;
-        offset += 1;
-
-        region.constrain_equal(
-            l1_block_hashes_count_cell.cell(),
-            num_all_l1_block_hashes_cell.cell(),
-        )?;
-
-        let last_applied_l1_block_cell = region.assign_advice(
-            || "field last applied l1 block",
-            self.last_applied_l1_block,
-            offset,
-            || Value::known(F::from(public_data.last_applied_l1_block)),
-        )?;
-        offset += 1;
-
-        let last_applied_l1_block_from_last_block_cell = region.assign_advice(
-            || "field last applied l1 block from last block",
-            self.last_applied_l1_block_from_last_block,
-            offset,
-            || Value::known(F::from(last_applied_l1_block.map(|blk| blk.as_u64()).unwrap_or(0))),
-        )?;
-        offset += 1;
+        let mut cells = vec![];
+        let rpi_cells = [
+            l1_block_hashes_count.to_be_bytes().to_vec(),
+            num_all_l1_block_hashes.to_be_bytes().to_vec(),
+            public_data.last_applied_l1_block.to_be_bytes().to_vec(),
+            last_applied_l1_block.map(|blk| blk.as_u64()).unwrap_or(0).to_be_bytes().to_vec(),
+        ]
+        .iter()
+        .map(|value_be_bytes| {
+            (offset, rpi_rlc_acc, rpi_length, cells) = self.assign_field(
+                region,
+                offset,
+                value_be_bytes,
+                RpiFieldType::Constant,
+                false, // no padding in this case
+                rpi_rlc_acc,
+                rpi_length,
+                challenges,
+            )?;
+            Ok(cells[RPI_CELL_IDX].clone())
+        })
+        .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
 
         region.constrain_equal(
-            last_applied_l1_block_cell.cell(),
-            last_applied_l1_block_from_last_block_cell.cell(),
+            rpi_cells[0].cell(),
+            rpi_cells[1].cell(),
+        )?;
+
+        region.constrain_equal(
+            rpi_cells[2].cell(),
+            rpi_cells[3].cell(),
         )?;
 
         Ok(offset)

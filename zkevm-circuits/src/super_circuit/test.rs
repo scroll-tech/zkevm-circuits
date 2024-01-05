@@ -12,24 +12,15 @@ use log::error;
 use mock::MOCK_DIFFICULTY;
 #[cfg(feature = "scroll")]
 use mock::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
-#[cfg(feature = "scroll")]
-use mock::MOCK_LAST_APPLIED_L1_BLOCK;
 use mock::{eth, TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::env::set_var;
 
 use crate::witness::block_apply_mpt_state;
-
-#[cfg(feature = "scroll")]
-use eth_types::geth_types::TxType;
 #[cfg(feature = "scroll")]
 use eth_types::l2_types::BlockTrace;
-#[cfg(feature = "scroll")]
-use ethers_core::types::U64;
-#[cfg(feature = "scroll")]
-use std::str::FromStr;
-use eth_types::{address, bytecode, word, Bytecode, ToWord, Word, Hash};
+use eth_types::{address, bytecode, word, Bytecode, ToWord, Word};
 
 #[test]
 fn super_circuit_created_from_dummy_block() {
@@ -70,7 +61,7 @@ fn test_super_circuit<
     const MAX_INNER_BLOCKS: usize,
     const MOCK_RANDOMNESS: u64,
 >(
-    mut l2_trace: BlockTrace,
+    l2_trace: BlockTrace,
     circuits_params: CircuitsParams,
 ) {
     set_var("COINBASE", "0x0000000000000000000000000000000000000000");
@@ -78,34 +69,20 @@ fn test_super_circuit<
     let mut difficulty_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
-    l2_trace.header.last_applied_l1_block = Some(MOCK_LAST_APPLIED_L1_BLOCK.into());
-    l2_trace.l1_block_hashes = Some(vec![Hash::from_str("0x5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap()]);
 
     let mut builder =
         CircuitInputBuilder::new_from_l2_trace(circuits_params, l2_trace, false, false)
             .expect("could not handle block tx");
-          
-    builder
-        .apply_l1_block_hashes(
-            Some(90),
-            Some(MOCK_LAST_APPLIED_L1_BLOCK.into()),
-            Some(Hash::from_str("0x2ad93677390840a070c85971a6737477e113895f52fb853a66295ef5655e1af4").unwrap()),
-        )
-        .expect("could not apply l1 block hashes");
 
     builder
         .finalize_building()
         .expect("could not finalize building block");
 
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-    
     block_apply_mpt_state(
         &mut block,
         &builder.mpt_init_state.expect("used non-light mode"),
     );
-
-    block.txs[0].tx_type = TxType::L1BlockHashes;
-    block.txs[0].call_data_gas_cost = 0;
 
     let active_row_num =SuperCircuit::<
         Fr,
