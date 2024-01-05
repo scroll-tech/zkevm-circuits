@@ -1885,26 +1885,29 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             // tx1559_debug
             // Stack Update Top
-            // cb.condition(
-            //     meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
-            //     |cb| {
-            //         cb.require_equal(
-            //             "UPDATE stack operation doesn't change depth",
-            //             meta.query_advice(rlp_decoding_table.depth, Rotation::prev()),
-            //             meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
-            //         );
-            //         cb.require_equal(
-            //             "UPDATE stack operation reads 1 byte",
-            //             meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(),
-            //             meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
-            //         );
-            //         cb.require_equal(
-            //             "UPDATE stack operation doesn't skip bytes",
-            //             meta.query_advice(rlp_decoding_table.value, Rotation::prev()),
-            //             meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
-            //         );
-            //     },
-            // );
+            cb.condition(
+                and::expr([
+                    stack_op_id_check.is_equal_expression.expr(),
+                    meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::next()),
+                ]),
+                |cb| {
+                    // cb.require_equal(
+                    //     "UPDATE stack operation doesn't change depth",
+                    //     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                    //     meta.query_advice(rlp_decoding_table.depth, Rotation::next()),
+                    // );
+                    cb.require_equal(
+                        "UPDATE stack operation reads 1 byte",
+                        meta.query_advice(rlp_decoding_table.value, Rotation::next()) + 1.expr(),
+                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
+                    );
+                    cb.require_equal(
+                        "UPDATE stack operation doesn't skip bytes",
+                        meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
+                    );
+                },
+            );
 
             // tx1559_debug
             // End condition. Last step of decoding.
