@@ -253,6 +253,9 @@ impl CircuitInputBuilder {
         }
         log::debug!("apply_l2_trace done for block {:?}", block_num);
         //self.sdb.list_accounts();
+        if let Some(l1_block_hashes) = block_trace.l1_block_hashes {
+          self.block.l1_block_hashes.extend_from_slice(&l1_block_hashes);
+        }
         Ok(())
     }
 
@@ -362,6 +365,7 @@ impl CircuitInputBuilder {
         builder_block.chain_id = chain_id;
         builder_block.prev_state_root = old_root.to_word();
         builder_block.start_l1_queue_index = l2_trace.start_l1_queue_index;
+
         let mut builder = Self {
             sdb,
             code_db,
@@ -432,6 +436,19 @@ impl CircuitInputBuilder {
         self.apply_l2_trace(l2_trace, !more)?;
         Ok(())
     }
+
+    /// Apply l1 block hashes to the builder
+    pub fn apply_l1_block_hashes(
+      &mut self,
+      prev_last_applied_l1_block: Option<u64>,
+      last_applied_l1_block: Option<u64>,
+      l1_block_range_hash: Option<H256>,
+    ) -> Result<(), Error> {
+    self.block.prev_last_applied_l1_block = prev_last_applied_l1_block;
+    self.block.last_applied_l1_block = last_applied_l1_block;
+    self.block.l1_block_range_hash = l1_block_range_hash;
+    Ok(())
+}
 
     /// make finalize actions on building, must called after
     /// all block trace have been input

@@ -32,6 +32,8 @@ pub enum TxType {
     Eip2930,
     /// L1 Message tx
     L1Msg,
+    /// L1 Block Hashes tx
+    L1BlockHashes,
 }
 
 impl From<TxType> for usize {
@@ -52,7 +54,17 @@ impl TxType {
         matches!(*self, Self::L1Msg)
     }
 
-    /// If this type is EIP-155 or not
+    /// If this type is L1BlockHashes or not
+    pub fn is_l1_block_hashes(&self) -> bool {
+        matches!(*self, TxType::L1BlockHashes)
+    }
+
+    /// If this type is L1Msg or L1BlockHashes or none
+    pub fn is_l1_custom_tx(&self) -> bool {
+        matches!(*self, TxType::L1BlockHashes | TxType::L1Msg)
+    }
+
+    /// If this type is Eip155 or not
     pub fn is_eip155_tx(&self) -> bool {
         matches!(*self, Self::Eip155)
     }
@@ -68,6 +80,7 @@ impl TxType {
             Some(x) if x == U64::from(1) => Self::Eip2930,
             Some(x) if x == U64::from(2) => Self::Eip1559,
             Some(x) if x == U64::from(0x7e) => Self::L1Msg,
+            Some(x) if x == U64::from(0x7d) => Self::L1BlockHashes,
             _ => {
                 if cfg!(feature = "scroll") {
                     if tx.v.is_zero() && tx.r.is_zero() && tx.s.is_zero() {
@@ -107,6 +120,9 @@ impl TxType {
             TxType::L1Msg => {
                 unreachable!("L1 msg does not have signature")
             }
+            TxType::L1BlockHashes => {
+                unreachable!("L1 block hashes does not have signature")
+            }
         };
 
         recovery_id as u8
@@ -141,6 +157,10 @@ pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
         }
         TxType::L1Msg => {
             // L1 msg does not have signature
+            vec![]
+        }
+        TxType::L1BlockHashes => {
+            // L1 block hashes does not have signature
             vec![]
         }
     }

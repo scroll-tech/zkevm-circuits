@@ -27,6 +27,8 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{and, not, split_u256, split_u256_limb64, Expr},
 };
+use ethabi::{Token, encode, Function, StateMutability, Param, ParamType};
+use ethers_core::utils::keccak256;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Fq, G1Affine},
@@ -1267,6 +1269,8 @@ pub enum BlockContextFieldTag {
     /// included in this block which also taking skipped l1 msgs into account.
     /// This could possibly be larger than NumTxs.
     NumAllTxs,
+    /// The L1 Block Hashes Tx Calldata RLC in the block.
+    L1BlockHashesCalldataRLC,
 }
 impl_expr!(BlockContextFieldTag);
 
@@ -1305,6 +1309,16 @@ impl BlockTable {
         txs: &[Transaction],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
+       #[allow(deprecated)]
+        let function = Function {
+            name: "appendBlockhashes".to_owned(),
+            inputs: vec![Param { name: "_hashes".to_owned(), kind: ParamType::Array(Box::new(ParamType::FixedBytes(32))), internal_type: None }],
+            outputs: vec![],
+            state_mutability: StateMutability::NonPayable,
+            constant: None,
+        };
+        let function_signature = function.signature();
+        let selector = &keccak256(function_signature.as_bytes())[0..4];
         layouter.assign_region(
             || "block table",
             |mut region| {
@@ -1327,7 +1341,14 @@ impl BlockTable {
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
                         .count();
                     cum_num_txs += num_txs;
-                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, 0, challenges) {
+                    let l1_block_hashes = block_ctx
+                        .l1_block_hashes
+                        .as_ref()
+                        .map_or_else(|| vec![], |hashes| hashes.iter().map(|&h| Token::FixedBytes(h.as_bytes().to_vec())).collect());
+                    let params = encode(&[Token::Array(l1_block_hashes)]);
+                    let mut l1_block_hashes_calldata = selector.to_vec();
+                    l1_block_hashes_calldata.extend(params);
+                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, 0, l1_block_hashes_calldata, challenges) {
                         region.assign_fixed(
                             || format!("block table row {offset}"),
                             self.tag,

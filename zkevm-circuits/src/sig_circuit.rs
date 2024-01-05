@@ -267,7 +267,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         let ecdsa_verif_count = block
             .txs
             .iter()
-            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .filter(|tx| !tx.tx_type.is_l1_custom_tx())
             .count()
             + block.precompile_events.get_ecrecover_events().len();
         // Reserve one ecdsa verification for padding tx such that the bad case in which some tx

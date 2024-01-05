@@ -92,6 +92,10 @@ pub struct BlockHead {
     pub start_l1_queue_index: u64,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Last applied l1 block
+    pub last_applied_l1_block: Option<u64>,
+    /// L1 block hashes
+    pub l1_block_hashes: Option<Vec<Hash>>,
 }
 impl BlockHead {
     /// Create a new block.
@@ -132,6 +136,8 @@ impl BlockHead {
             },
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             eth_block: eth_block.clone(),
+            last_applied_l1_block: eth_block.last_applied_l1_block.map(|b| b.as_u64()),
+            l1_block_hashes: eth_block.l1_block_hashes.clone(),
         })
     }
 
@@ -174,6 +180,8 @@ impl BlockHead {
             },
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             eth_block: eth_block.clone(),
+            last_applied_l1_block: eth_block.last_applied_l1_block.map(|b| b.as_u64()),
+            l1_block_hashes: eth_block.l1_block_hashes.clone(),
         })
     }
 }
@@ -217,6 +225,14 @@ pub struct Block {
     /// relax mode indicate builder and circuit would skip
     /// some sanity check, used by testing and debugging
     relax_mode: bool,
+    /// Previous last applied l1 block
+    pub prev_last_applied_l1_block: Option<u64>,
+    /// Last applied l1 block
+    pub last_applied_l1_block: Option<u64>,
+    /// Cumulative l1 block hashes array in this chunk
+    pub l1_block_hashes: Vec<Hash>,
+    /// L1 block range hash
+    pub l1_block_range_hash: Option<Hash>,
 }
 
 impl Block {

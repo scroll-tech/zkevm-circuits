@@ -1,5 +1,5 @@
 /// Fixed by the spec
-pub(super) const BLOCK_LEN: usize = 10;
+pub(super) const BLOCK_LEN: usize = 11;
 pub(super) const BYTE_POW_BASE: u64 = 256;
 pub(super) const BLOCK_HEADER_BYTES_NUM: usize = 58;
 pub(super) const KECCAK_DIGEST_SIZE: usize = 32;
@@ -21,3 +21,4 @@ pub(super) const BASE_FEE_OFFSET: usize = 5;
 pub(super) const CHAIN_ID_OFFSET: usize = 6;
 // pub(super) const CUM_NUM_TXS_OFFSET: usize = 8;
 pub(super) const NUM_ALL_TXS_OFFSET: usize = 9;
+// pub(super) const L1_BLOCK_HASHES_CALLDATA_OFFSET: usize = 10;

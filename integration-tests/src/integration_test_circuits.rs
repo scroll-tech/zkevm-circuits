@@ -78,6 +78,8 @@ const MAX_EC_ADD: usize = 10;
 const MAX_EC_MUL: usize = 10;
 /// Max number of EcPairing ops.
 const MAX_EC_PAIRING: usize = 4;
+/// Max number of L1 block hashes.
+const MAX_L1_BLOCK_HASHES: usize = 10;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
@@ -98,6 +100,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
         ec_mul: MAX_EC_MUL,
         ec_pairing: MAX_EC_PAIRING,
     },
+    max_l1_block_hashes: MAX_L1_BLOCK_HASHES,
 };
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;

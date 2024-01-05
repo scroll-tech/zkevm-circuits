@@ -33,6 +33,7 @@ mod step;
 pub use step::ExecStep;
 
 mod l1_msg;
+mod l1_block_hashes;
 mod tx;
 
 pub use tx::Transaction;

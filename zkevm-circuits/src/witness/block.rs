@@ -16,7 +16,7 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256, Hash};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
@@ -24,7 +24,7 @@ use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
     MptUpdates, RwMap, Transaction,
 };
-use crate::util::Challenges;
+use crate::util::{rlc_be_bytes, Challenges};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -74,6 +74,14 @@ pub struct Block<F> {
     pub start_l1_queue_index: u64,
     /// IO to/from precompile calls.
     pub precompile_events: PrecompileEvents,
+    /// Previous last applied l1 block
+    pub prev_last_applied_l1_block: Option<u64>,
+    /// Last applied l1 block
+    pub last_applied_l1_block: Option<u64>,
+    /// Cumulative l1 block hashes array in this chunk
+    pub l1_block_hashes: Vec<Hash>,
+    /// L1 block range hash
+    pub l1_block_range_hash: Option<Hash>,
 }
 
 /// ...
@@ -106,7 +114,7 @@ impl<F: Field> Block<F> {
             .txs
             .iter()
             // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
-            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .filter(|tx| !tx.tx_type.is_l1_custom_tx())
             .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();
@@ -328,6 +336,8 @@ pub struct BlockContext {
     pub chain_id: u64,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// L1 block hashes
+    pub l1_block_hashes: Option<Vec<Hash>>,
 }
 
 impl BlockContext {
@@ -337,6 +347,7 @@ impl BlockContext {
         num_txs: usize,
         cum_num_txs: usize,
         num_all_txs: u64,
+        l1_block_hashes_calldata: Vec<u8>,
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
@@ -394,6 +405,11 @@ impl BlockContext {
                     Value::known(current_block_number),
                     Value::known(F::from(num_all_txs)),
                 ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::L1BlockHashesCalldataRLC as u64)),
+                    Value::known(current_block_number),
+                    rlc_be_bytes(&l1_block_hashes_calldata, challenges.keccak_input()),
+                ]
             ],
             self.block_hash_assignments(randomness),
         ]
@@ -451,6 +467,7 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
                             history_hashes: block.history_hashes.clone(),
                             chain_id: block.chain_id,
                             eth_block: block.eth_block.clone(),
+                            l1_block_hashes: block.l1_block_hashes.clone(),
                         },
                     )
                 })
@@ -575,6 +592,10 @@ pub fn block_convert<F: Field>(
         chain_id,
         start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
+        prev_last_applied_l1_block: block.prev_last_applied_l1_block,
+        last_applied_l1_block: block.last_applied_l1_block,
+        l1_block_range_hash: block.l1_block_range_hash,
+        l1_block_hashes: block.l1_block_hashes.clone(),
     })
 }
 

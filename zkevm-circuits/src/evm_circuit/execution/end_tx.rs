@@ -27,7 +27,7 @@ use crate::{
 use eth_types::{
     evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, geth_types::TxType, Field, ToLittleEndian, ToScalar,
 };
-use gadgets::util::{not, select};
+use gadgets::util::{not, select, or};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -55,7 +55,8 @@ pub(crate) struct EndTxGadget<F> {
     current_cumulative_gas_used: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
     is_persistent: Cell<F>,
-    tx_is_l1msg: IsEqualGadget<F>,
+    tx_is_l1_msg: IsEqualGadget<F>,
+    tx_is_l1_block_hashes: IsEqualGadget<F>,
     tx_l1_fee: Cell<F>,
 }
 
@@ -79,8 +80,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
         let tx_gas_price = cb.tx_context_as_word(tx_id.expr(), TxContextFieldTag::GasPrice, None);
 
-        let tx_is_l1msg =
+        let tx_is_l1_msg =
             IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
+        let tx_is_l1_block_hashes =
+            IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1BlockHashes as u64).expr());
+
+        let tx_l1_custom_tx = or::expr([
+            tx_is_l1_msg.expr(),
+            tx_is_l1_block_hashes.expr(),
+        ]);
 
         // Calculate effective gas to refund
         let gas_used = tx_gas.expr() - cb.curr.state.gas_left.expr();
@@ -99,7 +107,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
-        let gas_fee_refund = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+        let gas_fee_refund = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
             UpdateBalanceGadget::construct(
                 cb,
                 tx_caller_address.expr(),
@@ -121,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
 
-        let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+        let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
             MulWordByU64Gadget::construct(
                 cb,
                 effective_tip,
@@ -131,22 +139,22 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         let effective_fee = cb.query_word_rlc();
 
-        cb.condition(tx_is_l1msg.expr(), |cb| {
+        cb.condition(tx_l1_custom_tx.expr(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_l1_fee.expr());
         });
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
             tx_l1_fee.expr()
                 + select::expr(
-                    tx_is_l1msg.expr(),
+                    tx_l1_custom_tx.expr(),
                     0.expr(),
                     from_bytes::expr(&mul_effective_tip_by_gas_used.product().cells[..16]),
                 ),
             from_bytes::expr(&effective_fee.cells[..16]),
         );
 
-        cb.condition(tx_is_l1msg.expr(), |cb| {
-            cb.require_zero("effective fee is zero for l1 msg", effective_fee.expr());
+        cb.condition(tx_l1_custom_tx.expr(), |cb| {
+            cb.require_zero("effective fee is zero for l1 msg and l1 block hashes", effective_fee.expr());
         });
 
         let coinbase_codehash = cb.query_cell_phase2();
@@ -164,7 +172,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // If coinbase account balance will become positive because of this tx, update its codehash
         // from 0 to the empty codehash.
-        let coinbase_transfer = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
+        let coinbase_transfer = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
             TransferToGadget::construct(
                 cb,
                 coinbase.expr(),
@@ -231,7 +239,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
                         10.expr() - is_first_tx.expr()
-                            + not::expr(tx_is_l1msg.expr())
+                            + not::expr(tx_l1_custom_tx.expr())
                                 * (coinbase_transfer.rw_delta() + 1.expr()),
                     ),
                     ..StepStateTransition::any()
@@ -240,7 +248,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
 
         let rw_counter_delta = 9.expr() - is_first_tx.expr()
-            + not::expr(tx_is_l1msg.expr()) * (coinbase_transfer.rw_delta() + 1.expr());
+            + not::expr(tx_l1_custom_tx.expr()) * (coinbase_transfer.rw_delta() + 1.expr());
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
@@ -277,7 +285,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             current_cumulative_gas_used,
             is_first_tx,
             is_persistent,
-            tx_is_l1msg,
+            tx_is_l1_msg,
+            tx_is_l1_block_hashes,
             tx_l1_fee,
         }
     }
@@ -303,11 +312,17 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             .assign(region, offset, Value::known(F::from(tx.gas)))?;
         self.tx_type
             .assign(region, offset, Value::known(F::from(tx.tx_type as u64)))?;
-        self.tx_is_l1msg.assign(
+        self.tx_is_l1_msg.assign(
             region,
             offset,
             F::from(tx.tx_type as u64),
             F::from(TxType::L1Msg as u64),
+        )?;
+        self.tx_is_l1_block_hashes.assign(
+            region,
+            offset,
+            F::from(tx.tx_type as u64),
+            F::from(TxType::L1BlockHashes as u64),
         )?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
         self.tx_data_gas_cost
@@ -338,7 +353,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        if !tx.tx_type.is_l1_msg() {
+        if !tx.tx_type.is_l1_custom_tx() {
             let (caller_balance, caller_balance_prev) = rws.next().account_value_pair();
             self.gas_fee_refund.assign(
                 region,
@@ -356,7 +371,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             [effective_tip, context.base_fee],
             tx.gas_price,
         )?;
-        let coinbase_reward = if tx.tx_type.is_l1_msg() {
+        let coinbase_reward = if tx.tx_type.is_l1_custom_tx() {
             0.into()
         } else {
             effective_tip * (gas_used - effective_refund)
@@ -368,7 +383,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         self.coinbase_codehash_is_zero
             .assign_value(region, offset, coinbase_codehash_rlc)?;
 
-        if !tx.tx_type.is_l1_msg() {
+        if !tx.tx_type.is_l1_custom_tx() {
             self.mul_effective_tip_by_gas_used.assign(
                 region,
                 offset,
@@ -389,8 +404,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             ),
         )?;
 
-        let tx_l1_fee = if tx.tx_type.is_l1_msg() {
-            log::trace!("tx is l1msg and l1 fee is 0");
+        let tx_l1_fee = if tx.tx_type.is_l1_custom_tx() {
+            log::trace!("tx is l1msg or l1 block hashes and l1 fee is 0");
             0
         } else {
             tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0
@@ -400,7 +415,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_l1_fee,
             coinbase_reward
         );
-        let effective_fee = if tx.tx_type.is_l1_msg() {
+        let effective_fee = if tx.tx_type.is_l1_custom_tx() {
             0.into()
         } else {
             let result = self.coinbase_transfer.assign_from_rws(

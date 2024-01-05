@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use chrono::Utc;
-use eth_types::{l2_types::BlockTrace, Address};
+use eth_types::{l2_types::{BlockTrace, ChunkTrace}, Address};
 use git_version::git_version;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr},
@@ -154,15 +154,20 @@ pub fn metric_of_witness_block(block: &Block<Fr>) -> BatchMetric {
     }
 }
 
-pub fn chunk_trace_to_witness_block(mut chunk_trace: Vec<BlockTrace>) -> Result<Block<Fr>> {
-    if chunk_trace.is_empty() {
+pub fn chunk_trace_to_witness_block(mut chunk_trace: ChunkTrace) -> Result<Block<Fr>> {
+    if chunk_trace.block_traces.is_empty() {
         bail!("Empty chunk trace");
     }
 
     // Check if the trace exceeds the circuit capacity.
-    check_batch_capacity(&mut chunk_trace)?;
+    check_batch_capacity(&mut chunk_trace.block_traces)?;
 
-    block_traces_to_witness_block(chunk_trace)
+    let mut witness_block = block_traces_to_witness_block(chunk_trace.block_traces)?;
+    witness_block.prev_last_applied_l1_block = chunk_trace.prev_last_applied_l1_block;
+    witness_block.last_applied_l1_block = chunk_trace.last_applied_l1_block;
+    witness_block.l1_block_range_hash = chunk_trace.l1_block_range_hash;
+
+    Ok(witness_block)
 }
 
 // Return the output dir.

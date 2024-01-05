@@ -7,7 +7,7 @@ use crate::{
             and,
             common_gadget::{
                 TransferGadgetInfo, TransferWithGasFeeGadget, TxEip2930Gadget, TxL1FeeGadget,
-                TxL1MsgGadget,
+                TxL1MsgGadget, TxL1BlockHashesGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -30,7 +30,7 @@ use crate::{
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
-use gadgets::util::{expr_from_bytes, not, select, Expr};
+use gadgets::util::{expr_from_bytes, not, select, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 // For Shanghai, EIP-3651 (Warm COINBASE) adds 1 write op for coinbase.
@@ -93,6 +93,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_l1_fee: TxL1FeeGadget<F>,
     tx_l1_msg: TxL1MsgGadget<F>,
     tx_eip2930: TxEip2930Gadget<F>,
+    tx_l1_block_hashes: TxL1BlockHashesGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -125,7 +126,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
-        let tx_l1_fee = cb.condition(not::expr(tx_l1_msg.is_l1_msg()), |cb| {
+        let tx_l1_block_hashes =
+            TxL1BlockHashesGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
+
+        let tx_l1_custom_tx = or::expr([
+            tx_l1_msg.is_l1_msg(),
+            tx_l1_block_hashes.is_l1_block_hashes(),
+        ]);
+
+        let tx_l1_fee = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
             cb.require_equal(
                 "tx.nonce == sender.nonce",
                 tx_nonce.expr(),
@@ -133,18 +142,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
             TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
         });
-        cb.condition(tx_l1_msg.is_l1_msg(), |cb| {
-            cb.require_zero("l1fee is 0 for l1msg", tx_data_gas_cost.expr());
+        cb.condition(tx_l1_custom_tx.expr(), |cb| {
+            cb.require_zero("l1fee is 0 for l1msg and l1blockhashes", tx_data_gas_cost.expr());
         });
         // the rw delta caused by l1 related handling
         let l1_rw_delta = select::expr(
-            tx_l1_msg.is_l1_msg(),
-            tx_l1_msg.rw_delta(),
+            tx_l1_custom_tx.expr(),
+            or::expr([
+                tx_l1_msg.rw_delta(),
+                tx_l1_block_hashes.rw_delta(),
+            ]),
             tx_l1_fee.rw_delta(),
         ) + 1.expr();
 
         // the cost caused by l1
-        let l1_fee_cost = select::expr(tx_l1_msg.is_l1_msg(), 0.expr(), tx_l1_fee.tx_l1_fee());
+        let l1_fee_cost = select::expr(tx_l1_custom_tx.expr(), 0.expr(), tx_l1_fee.tx_l1_fee());
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
@@ -215,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
         let tx_fee = cb.query_word_rlc();
         let l2_fee = select::expr(
-            tx_l1_msg.is_l1_msg(),
+            tx_l1_custom_tx.expr(),
             0.expr(),
             from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
         );
@@ -240,7 +252,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO2: contrain calling precompile directly
 
         let intrinsic_gas_cost = cb.query_cell();
-        cb.condition(not::expr(is_precompile.expr()), |cb| {
+        cb.condition(and::expr([
+                not::expr(tx_l1_block_hashes.is_l1_block_hashes()),
+                not::expr(is_precompile.expr()),
+            ]), |cb| {
             // Calculate gas cost of init code only for EIP-3860 of Shanghai.
             #[cfg(feature = "shanghai")]
             let init_code_gas_cost = select::expr(
@@ -720,6 +735,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_l1_fee,
             tx_l1_msg,
             tx_eip2930,
+            tx_l1_block_hashes,
         }
     }
 
@@ -741,7 +757,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let mut rws = StepRws::new(block, step);
 
         let tx_type = tx.tx_type;
-        let caller_code_hash = if tx_type.is_l1_msg() {
+        let caller_code_hash = if tx_type.is_l1_custom_tx() {
             let caller_code_hash_pair = rws.next().account_codehash_pair();
             assert_eq!(
                 caller_code_hash_pair.0, caller_code_hash_pair.1,
@@ -753,7 +769,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         };
         self.tx_l1_msg
             .assign(region, offset, tx_type, caller_code_hash)?;
-
+        self.tx_l1_block_hashes
+            .assign(region, offset, tx_type, caller_code_hash)?;
         ////////////// RWS ////////////////
         // if L1:
         //      CodeHash
@@ -772,7 +789,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // caller addr
         // callee addr
         // coinbase
-        rws.offset_add(if tx_type.is_l1_msg() {
+        rws.offset_add(if tx_type.is_l1_custom_tx()  {
             if caller_code_hash.is_zero() {
                 assert_eq!(
                     tx.nonce, 0,
@@ -1031,8 +1048,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_coinbase_warm
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
-        let (tx_l1_fee, tx_l2_fee) = if tx.tx_type.is_l1_msg() {
-            log::trace!("tx is l1msg and l1 fee is 0");
+        let (tx_l1_fee, tx_l2_fee) = if tx_type.is_l1_custom_tx()  {
+            log::trace!("tx is l1msg or l1 block hashes and l1 fee is 0");
             (U256::zero(), U256::zero())
         } else {
             (

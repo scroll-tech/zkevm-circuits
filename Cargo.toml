@@ -28,7 +28,7 @@ ark-std = "0.3"
 ctor = "0.1"
 env_logger = "0.10"
 ethers = { version = "=2.0.7", features = ["ethers-solc"] }
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7", features = ["scroll"] }
+ethers-core = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc", features = ["scroll"] }
 ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"
 ff = "0.13"
@@ -59,13 +59,14 @@ strum_macros = "0.25"
 subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
+ethabi = "18.0.0"
 
 [patch.crates-io]
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-core = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc" }
+ethers-providers = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc" }
+ethers = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc" }
+ethers-etherscan = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc" }
+ethers-signers  = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.0" }

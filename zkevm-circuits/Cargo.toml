@@ -32,6 +32,7 @@ log.workspace = true
 env_logger.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ethabi.workspace = true
 
 hash-circuit.workspace = true
 misc-precompiled-circuit = { package = "misc-precompiled-circuit", git = "https://github.com/scroll-tech/misc-precompiled-circuit.git", branch = "main" }

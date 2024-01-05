@@ -13,6 +13,7 @@ ethers-core.workspace = true
 rand_chacha.workspace = true
 rand.workspace = true
 log.workspace = true
+ethabi.workspace = true
 
 [features]
 default = []

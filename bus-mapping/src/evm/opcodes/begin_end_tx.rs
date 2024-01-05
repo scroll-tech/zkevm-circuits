@@ -47,7 +47,8 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
 
     let call = state.call()?.clone();
     let caller_address = call.caller_address;
-    if state.tx.tx_type.is_l1_msg() {
+
+    if state.tx.tx_type.is_l1_custom_tx() {
         // for l1 message, no need to add rw op, but we must check
         // caller for its existent status
 
@@ -256,7 +257,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     }
 
     // Transfer with fee
-    let fee = if state.tx.tx_type.is_l1_msg() {
+    let fee = if state.tx.tx_type.is_l1_custom_tx() {
         0.into()
     } else {
         state.tx.gas_price * state.tx.gas + state.tx_ctx.l1_fee
@@ -450,7 +451,7 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let effective_refund_balance = state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
     let caller_balance = caller_balance_prev + effective_refund_balance;
 
-    if !state.tx.tx_type.is_l1_msg() {
+    if !state.tx.tx_type.is_l1_custom_tx() {
         log::trace!(
             "call balance refund {:?}, now {:?}",
             effective_refund_balance,
@@ -475,13 +476,13 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
-    let coinbase_reward = if state.tx.tx_type.is_l1_msg() {
+    let coinbase_reward = if state.tx.tx_type.is_l1_custom_tx() {
         Word::zero()
     } else {
         effective_tip * gas_cost + state.tx_ctx.l1_fee
     };
     log::trace!(
-        "coinbase reward = ({} - {}) * ({} - {} - {}) = {} or 0 for l1 msg",
+        "coinbase reward = ({} - {}) * ({} - {} - {}) = {} or 0 for l1 msg and l1 block hashes",
         state.tx.gas_price,
         block_info.base_fee,
         state.tx.gas,
@@ -507,7 +508,7 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         },
     )?;
 
-    if !state.tx.tx_type.is_l1_msg() {
+    if !state.tx.tx_type.is_l1_custom_tx() {
         state.transfer_to(
             &mut exec_step,
             block_info.coinbase,

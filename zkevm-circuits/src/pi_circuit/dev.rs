@@ -13,10 +13,11 @@ pub struct PiTestCircuit<
     const MAX_TXS: usize,
     const MAX_CALLDATA: usize,
     const MAX_INNER_BLOCKS: usize,
+    const MAX_L1_BLOCK_HASHES: usize,
 >(pub PiCircuit<F>);
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
-    Default for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize, const MAX_L1_BLOCK_HASHES: usize>
+    Default for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>
 {
     fn default() -> Self {
         Self(PiCircuit::<F> {
@@ -31,6 +32,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
                 next_state_root: H256::zero(),
                 withdraw_trie_root: H256::zero(),
                 block_ctxs: Default::default(),
+                prev_last_applied_l1_block: 0,
+                last_applied_l1_block: 0,
+                l1_block_range_hash: H256::zero(),
+                l1_block_hashes: vec![],
+                max_l1_block_hashes: MAX_L1_BLOCK_HASHES,
             },
             connections: Default::default(),
             tx_value_cells: Default::default(),
@@ -39,14 +45,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
-    SubCircuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize, const MAX_L1_BLOCK_HASHES: usize>
+    SubCircuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>
 {
     type Config = PiCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
-        assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
+        assert_eq!(block.circuits_params.max_l1_block_hashes, MAX_L1_BLOCK_HASHES);
 
         Self(PiCircuit::new_from_block(block))
     }
@@ -68,13 +74,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
+        assert_eq!(block.circuits_params.max_txs, MAX_TXS);
+        assert_eq!(block.circuits_params.max_l1_block_hashes, MAX_L1_BLOCK_HASHES);
 
         PiCircuit::min_num_rows_block(block)
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
-    Circuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize, const MAX_L1_BLOCK_HASHES: usize>
+    Circuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>
 {
     type Config = (PiCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;

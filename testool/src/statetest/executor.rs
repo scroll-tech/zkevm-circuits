@@ -442,6 +442,7 @@ pub const MAX_RWS: usize = 1_000_000;
 pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
 pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
 pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
+pub const MAX_L1_BLOCK_HASHES: usize = 10;
 
 // TODO: refactor & usage
 fn get_sub_circuit_limit_l2() -> Vec<usize> {
@@ -483,6 +484,7 @@ fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
             ec_mul: MAX_PRECOMPILE_EC_MUL,
             ec_pairing: MAX_PRECOMPILE_EC_PAIRING,
         },
+        max_l1_block_hashes: MAX_L1_BLOCK_HASHES,
     }
 }
 
@@ -506,6 +508,7 @@ fn get_params_for_super_circuit_test() -> CircuitsParams {
             ec_mul: 50,
             ec_pairing: 2,
         },
+        max_l1_block_hashes: MAX_L1_BLOCK_HASHES,
     }
 }
 
@@ -529,6 +532,7 @@ fn get_params_for_sub_circuit_test() -> CircuitsParams {
             ec_mul: 50,
             ec_pairing: 2,
         },
+        max_l1_block_hashes: MAX_L1_BLOCK_HASHES,
     }
 }
 
@@ -564,7 +568,7 @@ pub fn run_test(
         .iter()
         .any(|(_, acc)| acc.balance.to_be_bytes()[0] != 0u8);
     #[cfg(feature = "scroll")]
-    for (_, acc) in trace_config.accounts.iter_mut() {
+    for (_, acc) in trace_config.clone().accounts.iter_mut() {
         if acc.balance.to_be_bytes()[0] != 0u8 {
             acc.balance = U256::from(1u128 << 127);
             //return Err(StateTestError::SkipTestBalanceOverflow);

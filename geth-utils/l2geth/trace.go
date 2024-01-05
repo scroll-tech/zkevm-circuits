@@ -79,9 +79,20 @@ func transferTxs(txs []Transaction) types.Transactions {
 	t_txs := make([]*types.Transaction, 0, len(txs))
 	for _, tx := range txs {
 
-		// if no signature, we can only handle it as l1msg tx
-		// notice the type is defined in geth_types
-		if tx.Type == "L1Msg" || tx.R == nil || tx.R.ToInt().Cmp(big.NewInt(0)) == 0 {
+		if tx.Type == "L1BlockHashes" {
+			l1blockhashesTx := &types.L1BlockHashesTx{
+				FirstAppliedL1Block: uint64(0),
+				BlockHashesRange:    []common.Hash{},
+				LastAppliedL1Block:  uint64(0),
+				To:                  tx.To,
+				Data:                tx.CallData,
+				Sender:              tx.From,
+			}
+			t_txs = append(t_txs, types.NewTx(l1blockhashesTx))
+
+			// if no signature, we can only handle it as l1msg tx
+			// notice the type is defined in geth_types
+		} else if tx.Type == "L1Msg" || tx.R == nil || tx.R.ToInt().Cmp(big.NewInt(0)) == 0 {
 			l1msgTx := &types.L1MessageTx{
 				Gas:        uint64(tx.GasLimit),
 				QueueIndex: uint64(tx.Nonce),
@@ -235,6 +246,8 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		config.LoggerConfig,
 		blockCtx,
 		config.StartL1QueueIndex,
+		0,
+		[]common.Hash{},
 		blockCtx.Coinbase,
 		stateDB,
 		rootBefore,

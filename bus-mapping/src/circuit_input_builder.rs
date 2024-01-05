@@ -12,6 +12,7 @@ mod l2;
 mod tracer_tests;
 mod transaction;
 
+use std::sync::LazyLock;
 use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
 use crate::{
@@ -29,6 +30,7 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
     self,
+    Hash,
     evm_types::{GasCost, OpcodeId},
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
@@ -51,7 +53,7 @@ use log::warn;
 use mpt_zktrie::state::ZktrieState;
 use std::{
     collections::{BTreeMap, HashMap},
-    iter,
+    iter, str::FromStr,
 };
 pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
@@ -124,6 +126,8 @@ pub struct CircuitsParams {
     /// then if there is 1 ecPairing in the input, we will return 500_000 as the "row usage"
     /// for the ec circuit.
     pub max_vertical_circuit_rows: usize,
+    /// Maximum number of hashes of L1 blocks that the L2 circuit can have
+    pub max_l1_block_hashes: usize,
 }
 
 impl Default for CircuitsParams {
@@ -146,6 +150,7 @@ impl Default for CircuitsParams {
             max_vertical_circuit_rows: 0,
             max_rlp_rows: 1000,
             max_ec_ops: PrecompileEcParams::default(),
+            max_l1_block_hashes: 256,
         }
     }
 }
@@ -553,7 +558,7 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
         // Sanity check for transaction L1 fee.
-        let tx_l1_fee = if tx.tx_type.is_l1_msg() {
+        let tx_l1_fee = if tx.tx_type.is_l1_custom_tx() {
             0
         } else {
             tx.l1_fee()
@@ -756,6 +761,9 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         block.withdraw_root,
         &block.headers,
         block.txs(),
+        block.last_applied_l1_block,
+        block.l1_block_range_hash,
+        &block.l1_block_hashes,
     ));
     // Bytecode Circuit
     for _bytecode in code_db.0.values() {
@@ -771,7 +779,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         "keccak total len after opcodes: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
-
+    
     let inputs_len: usize = keccak_inputs.iter().map(|k| k.len()).sum();
     let inputs_num = keccak_inputs.len();
     let keccak_inputs: Vec<_> = keccak_inputs.into_iter().unique().collect();
@@ -813,6 +821,9 @@ pub fn get_dummy_tx_hash() -> H256 {
     H256(tx_hash)
 }
 
+/// Get the dummy hash
+pub static DUMMY_L1_BLOCK_HASH: LazyLock<Hash> = LazyLock::new(|| Hash::from_str("0x5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6").unwrap());
+
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
     start_l1_queue_index: u64,
@@ -820,6 +831,9 @@ fn keccak_inputs_pi_circuit(
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
+    last_applied_l1_block: Option<u64>,
+    l1_block_range_hash: Option<H256>,
+    l1_block_hashes: &Vec<H256>,
 ) -> Vec<Vec<u8>> {
     let mut total_l1_popped = start_l1_queue_index;
     log::debug!(
@@ -877,9 +891,23 @@ fn keccak_inputs_pi_circuit(
         .chain(after_state_root.to_fixed_bytes())
         .chain(withdraw_trie_root.to_be_bytes())
         .chain(data_hash.to_fixed_bytes())
+        .chain(l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))).to_fixed_bytes())
+        .chain(last_applied_l1_block.unwrap_or(0).to_be_bytes())
         .collect::<Vec<u8>>();
 
-    vec![data_bytes, pi_bytes]
+    let l1_block_hashes = &l1_block_hashes.iter().map(|h| h.as_ref().to_vec()).collect_vec();
+    let l1_block_hashes_bytes = l1_block_hashes.iter().flatten().cloned().collect_vec();
+
+    assert_eq!(
+        hex::encode(&l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))).to_fixed_bytes()),
+        hex::encode(&keccak256(&l1_block_hashes_bytes))
+    );
+
+    vec![
+      data_bytes, 
+      pi_bytes, 
+      l1_block_hashes_bytes,
+    ]
 }
 
 /// Generate the keccak inputs required by the Tx Circuit from the transactions.
@@ -902,7 +930,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if !tx.tx_type.is_l1_msg() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+            if !tx.tx_type.is_l1_custom_tx() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
                 warn!(
                     "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
                     i
@@ -913,7 +941,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
             }
         })
         .map(|(_, tx)| {
-            if tx.tx_type.is_l1_msg() {
+            if tx.tx_type.is_l1_custom_tx() {
                 Ok(SignData::default())
             } else {
                 tx.sign_data()

@@ -34,6 +34,7 @@ pub const MAX_RWS: usize = 1_000_000;
 pub const MAX_PRECOMPILE_EC_ADD: usize = 50;
 pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
 pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
+pub const MAX_L1_BLOCK_HASHES: usize = 256;
 
 /// default params for super circuit
 pub fn get_super_circuit_params() -> CircuitsParams {
@@ -56,6 +57,7 @@ pub fn get_super_circuit_params() -> CircuitsParams {
             ec_mul: MAX_PRECOMPILE_EC_MUL,
             ec_pairing: MAX_PRECOMPILE_EC_PAIRING,
         },
+        max_l1_block_hashes: MAX_L1_BLOCK_HASHES,
     }
 }
 

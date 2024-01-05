@@ -39,6 +39,22 @@ pub struct BlockTrace {
     /// l1 tx queue
     #[serde(rename = "startL1QueueIndex", default)]
     pub start_l1_queue_index: u64,
+    /// L1 block hashes
+    #[serde(rename = "l1BlockHashes", default)]
+    pub l1_block_hashes: Option<Vec<Hash>>,
+}
+
+/// l2 chunk trace
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+pub struct ChunkTrace {
+  /// Block traces
+  pub block_traces: Vec<BlockTrace>,
+  /// Previous last applied block number
+  pub prev_last_applied_l1_block: Option<u64>,
+  /// Last applied block number
+  pub last_applied_l1_block: Option<u64>,
+  /// L1 block range hash
+  pub l1_block_range_hash: Option<Hash>,
 }
 
 impl From<BlockTrace> for EthBlock {
@@ -52,6 +68,7 @@ impl From<BlockTrace> for EthBlock {
         EthBlock {
             transactions: txs,
             difficulty: 0.into(),
+            l1_block_hashes: b.l1_block_hashes,
             ..b.header
         }
     }
@@ -68,6 +85,7 @@ impl From<&BlockTrace> for EthBlock {
         EthBlock {
             transactions: txs,
             difficulty: 0.into(),
+            l1_block_hashes: b.l1_block_hashes.clone(),
             ..b.header.clone()
         }
     }

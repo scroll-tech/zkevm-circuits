@@ -30,14 +30,15 @@ use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 //     )
 // }
 
-fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>(
+fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize, const MAX_L1_BLOCK_HASHES: usize>(
     k: u32,
     block: Block<F>,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
+    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>(PiCircuit::new(
         MAX_TXS,
         MAX_CALLDATA,
         MAX_INNER_BLOCKS,
+        MAX_L1_BLOCK_HASHES,
         &block,
     ));
     let public_inputs = circuit.0.instance();
@@ -91,6 +92,7 @@ fn serial_test_simple_pi() {
     const MAX_TXS: usize = 4;
     const MAX_CALLDATA: usize = 20;
     const MAX_INNER_BLOCKS: usize = 4;
+    const MAX_L1_BLOCK_HASHES: usize = 10;
 
     let mut difficulty_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
@@ -101,7 +103,7 @@ fn serial_test_simple_pi() {
 
     let k = 16;
     assert_eq!(
-        run::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(k, block),
+        run::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>(k, block),
         Ok(())
     );
 }
@@ -111,22 +113,25 @@ fn run_size_check<
     const MAX_TXS: usize,
     const MAX_CALLDATA: usize,
     const MAX_INNER_BLOCKS: usize,
+    const MAX_L1_BLOCK_HASHES: usize,
 >(
     blocks: [Block<F>; 2],
 ) {
-    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
+    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>(PiCircuit::new(
         MAX_TXS,
         MAX_CALLDATA,
         MAX_INNER_BLOCKS,
+        MAX_L1_BLOCK_HASHES,
         &blocks[0],
     ));
     let public_inputs = circuit.0.instance();
     let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
-    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
+    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>(PiCircuit::new(
         MAX_TXS,
         MAX_CALLDATA,
         MAX_INNER_BLOCKS,
+        MAX_L1_BLOCK_HASHES,
         &blocks[1],
     ));
     let public_inputs = circuit.0.instance();
@@ -142,11 +147,12 @@ fn variadic_size_check() {
     const MAX_TXS: usize = 8;
     const MAX_CALLDATA: usize = 200;
     const MAX_INNER_BLOCKS: usize = 4;
+    const MAX_L1_BLOCK_HASHES: usize = 10;
 
     let block_0 = empty_block();
     let block_1 = block_1tx();
     let block_2 = block_2txs();
 
-    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_0, block_2.clone()]);
-    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_1, block_2]);
+    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>([block_0, block_2.clone()]);
+    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_L1_BLOCK_HASHES>([block_1, block_2]);
 }
