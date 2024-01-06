@@ -301,9 +301,6 @@ pub struct RlpCircuitConfig<F> {
     is_same_rlp_instance: Column<Advice>,
 
     /// Boolean to reduce the circuit's degree
-    /// Indicates the start of a nested structure
-    is_begin_object: Column<Advice>,
-    /// Boolean to reduce the circuit's degree
     /// Indicates the start of another new access list item
     is_new_access_list_address: Column<Advice>,
     /// Boolean to reduce the circuit's degree
@@ -395,7 +392,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_case3,
             transit_to_new_rlp_instance,
             is_same_rlp_instance,
-            is_begin_object,
             is_new_access_list_address,
             is_new_access_list_storage_key,
             is_access_list_end,
@@ -403,7 +399,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         ) = (
             meta.fixed_column(),
             meta.fixed_column(),
-            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -1511,21 +1506,9 @@ impl<F: Field> RlpCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "is_begin_object = is_tag_begin_object",
-                meta.query_advice(is_begin_object, Rotation::cur()),
-                is_tag_begin_object(meta),
-            );
-            cb.require_boolean(
-                "is_begin_object is boolean",
-                meta.query_advice(is_begin_object, Rotation::cur()),
-            );
-            cb.require_equal(
                 "is_new_access_list_address",
                 meta.query_advice(is_new_access_list_address, Rotation::cur()),
-                and::expr([
-                    depth_eq_two.expr(),
-                    meta.query_advice(is_begin_object, Rotation::cur()),
-                ])
+                is_access_list_address(meta),
             );
             cb.require_equal(
                 "is_new_access_list_storage_key",
@@ -2047,7 +2030,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_same_rlp_instance,
 
             // access list checks
-            is_begin_object,
             is_new_access_list_address,
             is_new_access_list_storage_key,
             is_access_list_end,
@@ -2163,6 +2145,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         )?;
 
         // RlpDecodingTable assignments
+        // tx1559_debug
         let stack_op_id_next = if let Some(witness_next) = witness_next {
             witness_next.rlp_decoding_table.id
         } else {
@@ -2258,16 +2241,9 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || Value::known(F::from(witness.rlp_decoding_table.byte_idx as u64)),
         )?;
-        let is_begin_object = witness.state_machine.state == DecodeTagStart
-            && witness.state_machine.tag == BeginObject;
-        region.assign_advice(
-            || "is_begin_object",
-            self.is_begin_object,
-            row,
-            || Value::known(F::from(is_begin_object as u64)),
-        )?;
+
         let is_new_access_list_address = witness.state_machine.state == DecodeTagStart
-            && witness.state_machine.tag == BeginObject && witness.state_machine.depth == 2;
+            && witness.state_machine.tag == AccessListAddress;
         region.assign_advice(
             || "is_new_access_list_address",
             self.is_new_access_list_address,
