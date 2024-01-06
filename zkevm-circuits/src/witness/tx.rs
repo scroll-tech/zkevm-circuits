@@ -606,10 +606,6 @@ impl Transaction {
                         let byte_value = rlp_bytes[cur.byte_idx];
 
                         if byte_value > 0x80 && byte_value < 0xb8 {
-                            // detect start of access list address
-                            if cur.tag.is_access_list_address() {
-                                access_list_idx += 1;
-                            }
                             // detect start of access list storage key
                             if cur.tag.is_access_list_storage_key() {
                                 storage_key_idx += 1;
@@ -638,6 +634,16 @@ impl Transaction {
                             }
 
                             *rem -= 1;
+                        }
+
+                        // detect start of access list address
+                        if byte_value >= 0xc0 {
+                            // assertions
+                            assert!(cur.tag.is_begin());
+
+                            if cur.depth == 2 && cur.tag.is_begin() {
+                                access_list_idx += 1;
+                            }
                         }
 
                         if byte_value < 0x80 {
@@ -992,39 +998,34 @@ impl Transaction {
             "Number of stack_ops must be equal to witness length"
         );
 
+        // eip1559_debug
         // Sort the RlpStackOps and assign to the RlpDecodingTable part of witness
-        stack_ops.sort_by(|a, b| {
-            if (
-                a.tx_id,
-                a.format as u64,
-                a.depth,
-                // eip1559_debug
-                a.al_idx,
-                a.sk_idx,
-                a.byte_idx,
-                a.stack_op.clone() as u64,
-            ) > (
-                b.tx_id,
-                b.format as u64,
-                b.depth,
-                // eip1559_debug
-                a.al_idx,
-                a.sk_idx,
-                b.byte_idx,
-                b.stack_op.clone() as u64,
-            ) {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Less
-            }
-        });
+        // stack_ops.sort_by(|a, b| {
+        //     if (
+        //         a.tx_id,
+        //         a.format as u64,
+        //         a.depth,
+        //         a.al_idx,
+        //         a.sk_idx,
+        //         a.byte_idx,
+        //         a.stack_op.clone() as u64,
+        //     ) > (
+        //         b.tx_id,
+        //         b.format as u64,
+        //         b.depth,
+        //         a.al_idx,
+        //         a.sk_idx,
+        //         b.byte_idx,
+        //         b.stack_op.clone() as u64,
+        //     ) {
+        //         std::cmp::Ordering::Greater
+        //     } else {
+        //         std::cmp::Ordering::Less
+        //     }
+        // });
 
         // eip1559_debug
-        // // concat tx_id and format as stack identifier
-        // let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
-
-        // eip1559_debug
-        log::trace!("=> sorted stack_ops: {:?}", stack_ops);
+        // log::trace!("=> sorted stack_ops: {:?}", stack_ops);
 
         for (idx, op) in stack_ops.into_iter().enumerate() {
             witness[idx].rlp_decoding_table = op;
@@ -1039,6 +1040,9 @@ impl Transaction {
                 idx += 1;
             }
         }
+
+        // eip1559_debug
+        // log::trace!("=> witness: {:?}", witness);
 
         witness
     }
