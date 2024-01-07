@@ -748,6 +748,12 @@ impl Transaction {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         assert!(*rem >= 1);
 
+                        let sk_inc = if cur.depth == 4 && cur.tag_idx >= cur.tag_length && *rem - 1 > 0 {
+                            1
+                        } else {
+                            0
+                        };
+
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
                             tx_id,
@@ -756,7 +762,7 @@ impl Transaction {
                             cur.depth,
                             *rem - 1,
                             access_list_idx,
-                            storage_key_idx,
+                            storage_key_idx + sk_inc,
                             keccak_rand
                         ));
 
@@ -1018,13 +1024,6 @@ impl Transaction {
                 std::cmp::Ordering::Less
             }
         });
-
-        // eip1559_debug
-        // // concat tx_id and format as stack identifier
-        // let id = keccak_rand * Value::known(F::from(tx_id)) + Value::known(F::from(format as u64));
-
-        // eip1559_debug
-        log::trace!("=> sorted stack_ops: {:?}", stack_ops);
 
         for (idx, op) in stack_ops.into_iter().enumerate() {
             witness[idx].rlp_decoding_table = op;
