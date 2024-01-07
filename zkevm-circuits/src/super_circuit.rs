@@ -114,7 +114,7 @@ pub struct SuperCircuitConfig<F: Field> {
     tx_table: TxTable,
     poseidon_table: PoseidonTable,
     // u8_table: U8Table,
-    u16_table: U16Table,
+    // u16_table: U16Table,
     ux8_table: UXTable<8>,
     u10_table: UXTable<10>,
     ux16_table: UXTable<16>,
@@ -406,7 +406,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             // u8_table,
             ux8_table,
             u10_table,
-            u16_table,
+            // u16_table,
             ux16_table,
             evm_circuit,
             state_circuit,
@@ -783,7 +783,7 @@ impl<
 
         // config.u8_table.load(&mut layouter)?;
         config.ux8_table.load(&mut layouter)?;
-        config.u16_table.load(&mut layouter)?;
+        config.ux16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

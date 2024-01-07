@@ -3,7 +3,9 @@
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells,
+    },
     poly::Rotation,
 };
 
@@ -37,7 +39,9 @@ pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the bytes representation of the difference between lhs and rhs.
     pub diff: [Column<Advice>; N_BYTES],
     /// Denotes the range within which each byte should lie.
-    pub u8_table: TableColumn,
+    //pub u8_table: TableColumn,
+    pub u8_table: Column<Fixed>,
+
     /// Denotes the range within which both lhs and rhs lie.
     pub range: F,
 }
@@ -68,7 +72,8 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
         lhs: impl FnOnce(&mut VirtualCells<F>) -> Expression<F>,
         rhs: impl FnOnce(&mut VirtualCells<F>) -> Expression<F>,
-        u8_table: TableColumn,
+        //u8_table: TableColumn,
+        u8_table: Column<Fixed>,
     ) -> LtConfig<F, N_BYTES> {
         let lt = meta.advice_column();
         let diff = [(); N_BYTES].map(|_| meta.advice_column());
@@ -94,11 +99,11 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         });
 
         for cell_column in diff {
-            meta.lookup("range check for u8", |meta| {
+            meta.lookup_any("range check for u8", |meta| {
                 let q_enable = q_enable.clone()(meta);
                 vec![(
                     q_enable * meta.query_advice(cell_column, Rotation::cur()),
-                    u8_table,
+                    meta.query_fixed(u8_table, Rotation::cur()),
                 )]
             });
         }

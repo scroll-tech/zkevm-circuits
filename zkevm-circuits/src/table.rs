@@ -3175,37 +3175,40 @@ impl<const MAX: usize> From<RangeTable<MAX>> for TableColumn {
 /// Lookup table for max n bits range check
 #[derive(Clone, Copy, Debug)]
 pub struct UXTable<const N_BITS: usize> {
-    // col: Column<Fixed>,
-    col: TableColumn,
+    /// content col in the table
+    pub col: Column<Fixed>,
+    // col: TableColumn,
 }
 
 impl<const N_BITS: usize> UXTable<N_BITS> {
     /// Construct the UXTable.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            // col: meta.fixed_column(),
-            col: meta.lookup_table_column(),
+            col: meta.fixed_column(),
+            // col: meta.lookup_table_column(),
         }
     }
 
     /// Load the `UXTable` for range check
     pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_table(
+        //layouter.assign_table(
+        layouter.assign_region(
             || format!("assign u{} fixed column", 8),
-            |mut table| {
+            |mut region| {
+                // |mut table| {
                 for i in 0..(1 << N_BITS) {
-                    // region.assign_fixed(
-                    //     || format!("assign {i} in u{N_BITS} fixed column"),
-                    //     self.col,
-                    //     i,
-                    //     || Value::known(F::from(i as u64)),
-                    // )?;
-                    table.assign_cell(
-                        || format!("range at offset = {i}"),
+                    region.assign_fixed(
+                        || format!("assign {i} in u{N_BITS} fixed column"),
                         self.col,
                         i,
                         || Value::known(F::from(i as u64)),
                     )?;
+                    // table.assign_cell(
+                    //     || format!("range at offset = {i}"),
+                    //     self.col,
+                    //     i,
+                    //     || Value::known(F::from(i as u64)),
+                    // )?;
                 }
                 Ok(())
             },
@@ -3216,6 +3219,7 @@ impl<const N_BITS: usize> UXTable<N_BITS> {
 
 impl<F: Field, const N_BITS: usize> LookupTable<F> for UXTable<N_BITS> {
     fn columns(&self) -> Vec<Column<Any>> {
+        // vec![self.col.into()]
         vec![self.col.into()]
     }
 
@@ -3224,12 +3228,15 @@ impl<F: Field, const N_BITS: usize> LookupTable<F> for UXTable<N_BITS> {
     }
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        vec![meta.query_fixed(self.col.inner(), Rotation::cur())]
+        vec![meta.query_fixed(self.col, Rotation::cur())]
     }
 }
 
-impl<const N_BITS: usize> From<UXTable<N_BITS>> for TableColumn {
-    fn from(table: UXTable<N_BITS>) -> TableColumn {
-        table.col
-    }
-}
+// impl<const N_BITS: usize> From<UXTable<N_BITS>> for TableColumn {
+//     fn from(table: UXTable<N_BITS>) -> TableColumn {
+//        //table.col
+//        TableColumn {
+//         inner: table.col,
+//        }
+//     }
+// }

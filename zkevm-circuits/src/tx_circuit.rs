@@ -1056,7 +1056,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cum_num_txs - num_txs
             },
             |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
-            u8_table.into(),
+            u8_table.col,
         );
 
         // last non-padding tx must have tx_id == cum_num_txs
@@ -1094,7 +1094,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             },
             |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
             |meta| meta.query_advice(cum_num_txs, Rotation::cur()),
-            u8_table.into(),
+            u8_table.col,
         );
 
         meta.create_gate("tx_id <= cum_num_txs", |meta| {
