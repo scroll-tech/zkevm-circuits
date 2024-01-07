@@ -193,6 +193,8 @@ pub struct RlpDecodingTable {
     pub value: Column<Advice>,
     /// Value Previous
     pub value_prev: Column<Advice>,
+    /// Stack Op flag, Init
+    pub is_stack_init: Column<Advice>,
     /// Stack Op flag, Push
     pub is_stack_push: Column<Advice>,
     /// Stack Op flag, Pop
@@ -214,6 +216,7 @@ impl RlpDecodingTable {
             byte_idx: meta.advice_column(),
             value: meta.advice_column(),
             value_prev: meta.advice_column(),
+            is_stack_init: meta.advice_column(),
             is_stack_push: meta.advice_column(),
             is_stack_pop: meta.advice_column(),
             is_stack_update: meta.advice_column(),
@@ -1684,6 +1687,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.require_equal(
                     "each row must have a stack operation",
                     sum::expr([
+                        meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
                         meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur()),
@@ -1692,6 +1696,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                 );
             });
 
+            cb.require_boolean(
+                "is_stack_init is binary",
+                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
+            );
             cb.require_boolean(
                 "is_stack_push is binary",
                 meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
@@ -1783,6 +1791,20 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cb.require_equal(
                         "UPDATE stack operation doesn't skip bytes",
                         meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
+                    );
+                },
+            );
+
+            // PUSH onto new depth
+            cb.condition(
+                and::expr([
+                    not::expr(stack_op_id_check.is_equal_expression.expr()),
+                    meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::next()),
+                ]),
+                |cb| {
+                    cb.require_zero(
+                        "PUSH starts with 0 bytes",
                         meta.query_advice(rlp_decoding_table.value_prev, Rotation::next()),
                     );
                 },
@@ -2044,6 +2066,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             self.rlp_decoding_table.value_prev,
             row,
             || Value::known(F::from(witness.rlp_decoding_table.value_prev as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_decoding_table.is_stack_init",
+            self.rlp_decoding_table.is_stack_init,
+            row,
+            || {
+                Value::known(F::from(
+                    matches!(witness.rlp_decoding_table.stack_op, StackOp::Init) as u64,
+                ))
+            },
         )?;
         region.assign_advice(
             || "rlp_decoding_table.is_stack_push",

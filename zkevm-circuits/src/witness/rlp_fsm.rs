@@ -824,7 +824,7 @@ impl<F: PrimeField> RlpStackOp<F> {
             byte_idx: 0,
             value,
             value_prev: 0,
-            stack_op: StackOp::Push,
+            stack_op: StackOp::Init,
             al_idx: 0,
             sk_idx: 0,
         }
