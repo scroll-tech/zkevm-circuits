@@ -800,24 +800,18 @@ pub struct RlpStackOp<F: PrimeField> {
 }
 
 fn stack_op_id<F: PrimeField>(components: [u64; 5], challenge: Value<F>) -> Value<F> {
-    components.into_iter().fold(Value::known(F::ZERO), |mut rlc, num| {
-        rlc = rlc * challenge + Value::known(F::from(num));
-        rlc
-    })
+    components
+        .into_iter()
+        .fold(Value::known(F::ZERO), |mut rlc, num| {
+            rlc = rlc * challenge + Value::known(F::from(num));
+            rlc
+        })
 }
 
 impl<F: PrimeField> RlpStackOp<F> {
     pub fn init(tx_id: u64, format: Format, value: usize, challenge: Value<F>) -> Self {
         Self {
-            id: stack_op_id([
-                    tx_id, 
-                    format as u64, 
-                    0, 
-                    0, 
-                    0
-                ], 
-                challenge
-            ),
+            id: stack_op_id([tx_id, format as u64, 0, 0, 0], challenge),
             tx_id,
             format,
             depth: 0,
@@ -841,14 +835,9 @@ impl<F: PrimeField> RlpStackOp<F> {
         challenge: Value<F>,
     ) -> Self {
         Self {
-            id: stack_op_id([
-                    tx_id, 
-                    format as u64, 
-                    depth as u64, 
-                    al_idx, 
-                    sk_idx
-                ], 
-                challenge
+            id: stack_op_id(
+                [tx_id, format as u64, depth as u64, al_idx, sk_idx],
+                challenge,
             ),
             tx_id,
             format,
@@ -874,14 +863,9 @@ impl<F: PrimeField> RlpStackOp<F> {
         challenge: Value<F>,
     ) -> Self {
         Self {
-            id: stack_op_id([
-                    tx_id, 
-                    format as u64, 
-                    depth as u64, 
-                    al_idx, 
-                    sk_idx
-                ], 
-                challenge
+            id: stack_op_id(
+                [tx_id, format as u64, depth as u64, al_idx, sk_idx],
+                challenge,
             ),
             tx_id,
             format,
@@ -906,14 +890,9 @@ impl<F: PrimeField> RlpStackOp<F> {
         challenge: Value<F>,
     ) -> Self {
         Self {
-            id: stack_op_id([
-                    tx_id, 
-                    format as u64, 
-                    depth as u64, 
-                    al_idx, 
-                    sk_idx
-                ], 
-                challenge
+            id: stack_op_id(
+                [tx_id, format as u64, depth as u64, al_idx, sk_idx],
+                challenge,
             ),
             tx_id,
             format,

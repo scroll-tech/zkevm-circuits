@@ -1790,15 +1790,12 @@ impl<F: Field> RlpCircuitConfig<F> {
                 },
             );
 
-            cb.condition(
-                stack_op_id_check.is_equal_expression.expr(),
-                |cb| {
-                    cb.require_zero(
-                        "When key stays the same, operation can only be UPDATE or POP",
-                        meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::next()),
-                    );
-                },
-            );
+            cb.condition(stack_op_id_check.is_equal_expression.expr(), |cb| {
+                cb.require_zero(
+                    "When key stays the same, operation can only be UPDATE or POP",
+                    meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::next()),
+                );
+            });
 
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });

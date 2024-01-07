@@ -521,7 +521,12 @@ impl Transaction {
         let mut cur_rom_row = vec![0];
         let mut remaining_bytes = vec![rlp_bytes.len()];
         // initialize stack
-        stack_ops.push(RlpStackOp::init(tx_id, format, rlp_bytes.len(), keccak_rand));
+        stack_ops.push(RlpStackOp::init(
+            tx_id,
+            format,
+            rlp_bytes.len(),
+            keccak_rand,
+        ));
         let mut witness_table_idx = 0;
 
         // This map keeps track
@@ -706,16 +711,8 @@ impl Transaction {
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
 
-                            let al_inc: u64 = if cur.depth == 2 {
-                                1
-                            } else {
-                                0
-                            };
-                            let sk_inc: u64 = if cur.depth == 3 {
-                                1
-                            } else {
-                                0
-                            };
+                            let al_inc: u64 = if cur.depth == 2 { 1 } else { 0 };
+                            let sk_inc: u64 = if cur.depth == 3 { 1 } else { 0 };
 
                             stack_ops.push(RlpStackOp::push(
                                 tx_id,
@@ -748,11 +745,12 @@ impl Transaction {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         assert!(*rem >= 1);
 
-                        let sk_inc = if cur.depth == 4 && cur.tag_idx >= cur.tag_length && *rem - 1 > 0 {
-                            1
-                        } else {
-                            0
-                        };
+                        let sk_inc =
+                            if cur.depth == 4 && cur.tag_idx >= cur.tag_length && *rem - 1 > 0 {
+                                1
+                            } else {
+                                0
+                            };
 
                         // add stack op on same depth
                         stack_ops.push(RlpStackOp::update(
@@ -763,7 +761,7 @@ impl Transaction {
                             *rem - 1,
                             access_list_idx,
                             storage_key_idx + sk_inc,
-                            keccak_rand
+                            keccak_rand,
                         ));
 
                         *rem -= 1;
@@ -865,16 +863,8 @@ impl Transaction {
                         }
                         remaining_bytes.push(lb_len);
 
-                        let al_inc: u64 = if cur.depth == 2 {
-                            1
-                        } else {
-                            0
-                        };
-                        let sk_inc: u64 = if cur.depth == 3 {
-                            1
-                        } else {
-                            0
-                        };
+                        let al_inc: u64 = if cur.depth == 2 { 1 } else { 0 };
+                        let sk_inc: u64 = if cur.depth == 3 { 1 } else { 0 };
 
                         stack_ops.push(RlpStackOp::push(
                             tx_id,
