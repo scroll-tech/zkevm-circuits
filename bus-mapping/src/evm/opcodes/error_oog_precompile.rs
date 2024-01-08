@@ -15,7 +15,14 @@ impl ErrorOOGPrecompile {
         geth_step: &GethExecStep,
         call: Call,
     ) -> Result<ExecStep, Error> {
-        let mut exec_step = state.new_step(geth_step)?;
+        Self::gen_ops(state, state.new_step(geth_step)?, call)
+    }
+
+    pub fn gen_ops(
+        state: &mut CircuitInputStateRef,
+        mut exec_step: ExecStep,
+        call: Call,
+    ) -> Result<ExecStep, Error> {
         exec_step.error = Some(ExecError::OutOfGas(OogError::Precompile));
 
         // callee_address
@@ -30,6 +37,12 @@ impl ErrorOOGPrecompile {
             call.call_id,
             CallContextField::CallDataLength,
             call.call_data_length.into(),
+        )?;
+        state.call_context_read(
+            &mut exec_step,
+            call.call_id,
+            CallContextField::IsRoot,
+            (call.is_root as u64).into(),
         )?;
 
         Ok(exec_step)

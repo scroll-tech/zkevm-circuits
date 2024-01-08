@@ -301,6 +301,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         callee_call.code_address().unwrap().to_word(),
                     ),
                     (CallContextField::CallerId, callee_call.caller_id.into()),
+                    (CallContextField::IsRoot, 0.into()),
                     (
                         CallContextField::CallDataOffset,
                         callee_call.call_data_offset.into(),

@@ -52,14 +52,24 @@ impl TxType {
         matches!(*self, Self::L1Msg)
     }
 
-    /// If this type is EIP-155 or not
-    pub fn is_eip155_tx(&self) -> bool {
-        matches!(*self, Self::Eip155)
+    /// If this type is PreEip155
+    pub fn is_pre_eip155(&self) -> bool {
+        matches!(*self, TxType::PreEip155)
     }
 
-    /// If this type is EIP-2930 or not
-    pub fn is_eip2930_tx(&self) -> bool {
-        matches!(*self, Self::Eip2930)
+    /// If this type is EIP155 or not
+    pub fn is_eip155(&self) -> bool {
+        matches!(*self, TxType::Eip155)
+    }
+
+    /// If this type is Eip1559 or not
+    pub fn is_eip1559(&self) -> bool {
+        matches!(*self, TxType::Eip1559)
+    }
+
+    /// If this type is Eip2930 or not
+    pub fn is_eip2930(&self) -> bool {
+        matches!(*self, TxType::Eip2930)
     }
 
     /// Get the type of transaction

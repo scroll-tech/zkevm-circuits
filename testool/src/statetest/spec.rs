@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context};
-use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256};
+use eth_types::{geth_types::Account, AccessList, Address, Bytes, Word, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -57,6 +57,7 @@ pub struct StateTest {
     pub nonce: U256,
     pub value: U256,
     pub data: Bytes,
+    pub access_list: Option<AccessList>,
     pub pre: BTreeMap<Address, Account>,
     pub result: StateTestResult,
     pub exception: bool,
@@ -282,6 +283,7 @@ impl StateTest {
             nonce: U256::zero(),
             value,
             data: data.into(),
+            access_list: None,
             pre,
             result: HashMap::new(),
             exception: false,

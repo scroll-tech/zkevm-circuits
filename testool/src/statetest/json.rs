@@ -76,6 +76,7 @@ struct JsonStateTest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Transaction {
+    access_list: Option<parse::RawAccessList>,
     data: Vec<String>,
     gas_limit: Vec<String>,
     gas_price: String,
@@ -125,12 +126,13 @@ impl<'a> JsonStateTestBuilder<'a> {
             let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
             let nonce = parse::parse_u256(&test.transaction.nonce)?;
             let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
+            let access_list = &test.transaction.access_list;
 
             let data_s: Vec<_> = test
                 .transaction
                 .data
                 .iter()
-                .map(|item| parse::parse_calldata(self.compiler, item))
+                .map(|item| parse::parse_calldata(self.compiler, item, access_list))
                 .collect::<Result<_>>()?;
 
             let gas_limit_s: Vec<_> = test
@@ -171,7 +173,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 }
             }
 
-            for (idx_data, data) in data_s.iter().enumerate() {
+            for (idx_data, calldata) in data_s.iter().enumerate() {
                 for (idx_gas, gas_limit) in gas_limit_s.iter().enumerate() {
                     for (idx_value, value) in value_s.iter().enumerate() {
                         for (data_refs, gas_refs, value_refs, result) in &expects {
@@ -200,7 +202,8 @@ impl<'a> JsonStateTestBuilder<'a> {
                                 gas_price,
                                 gas_limit: *gas_limit,
                                 value: *value,
-                                data: data.0.clone(),
+                                data: calldata.data.clone(),
+                                access_list: calldata.access_list.clone(),
                                 exception: false,
                             });
                         }
@@ -320,6 +323,7 @@ impl<'a> JsonStateTestBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use eth_types::{address, AccessList, AccessListItem};
 
     const JSON: &str = r#"
 {
@@ -364,6 +368,15 @@ mod test {
             }
         },
         "transaction" : {
+            "accessList" : [
+                {
+                    "address" : "0x009e7baea6a6c7c4c2dfeb977efac326af552d87",
+                    "storageKeys" : [
+                        "0x0000000000000000000000000000000000000000000000000000000000000000",
+                        "0x0000000000000000000000000000000000000000000000000000000000000001"
+                    ]
+                }
+            ],
             "data" : [
                 "0x6001",
                 "0x6002"
@@ -416,6 +429,19 @@ mod test {
             nonce: U256::from(0u64),
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
+            access_list: Some(AccessList(vec![AccessListItem {
+                address: address!("0x009e7baea6a6c7c4c2dfeb977efac326af552d87"),
+                storage_keys: vec![
+                    H256::from_str(
+                        "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap(),
+                    H256::from_str(
+                        "0x0000000000000000000000000000000000000000000000000000000000000001",
+                    )
+                    .unwrap(),
+                ],
+            }])),
             pre: BTreeMap::from([(
                 acc095e,
                 Account {

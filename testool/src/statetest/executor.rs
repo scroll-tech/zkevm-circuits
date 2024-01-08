@@ -193,7 +193,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 gas_fee_cap: U256::zero(),
                 gas_tip_cap: U256::zero(),
                 call_data: st.data,
-                access_list: None,
+                access_list: st.access_list,
                 v: sig.v,
                 r: sig.r,
                 s: sig.s,

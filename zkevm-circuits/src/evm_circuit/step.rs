@@ -171,6 +171,8 @@ impl ExecutionState {
                 | Self::PrecompileBn256ScalarMul
                 | Self::PrecompileBn256Pairing
                 | Self::PrecompileBlake2f
+                | Self::ErrorOutOfGasPrecompile
+                | Self::ErrorPrecompileFailed
         )
     }
 
