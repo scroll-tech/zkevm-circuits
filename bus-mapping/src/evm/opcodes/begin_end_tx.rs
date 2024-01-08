@@ -778,7 +778,7 @@ fn gen_tx_eip2930_ops(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
 ) -> Result<(), Error> {
-    if !state.tx.tx_type.is_eip2930_tx() {
+    if !state.tx.tx_type.is_eip2930() {
         return Ok(());
     }
 
