@@ -77,6 +77,30 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
+    /// Create a step right after the ref_step, it shared the same
+    /// exec_state and call context with ref_step
+    pub fn new_next_step(&self, ref_step: &ExecStep) -> Result<ExecStep, Error> {
+        let call_ctx = self.tx_ctx.call_ctx()?;
+        let gas_left = ref_step.gas_left.0 - ref_step.gas_cost.as_u64();
+
+        let step = ExecStep {
+            exec_state: ref_step.exec_state.clone(),
+            pc: ref_step.pc,
+            stack_size: ref_step.stack_size,
+
+            memory_size: call_ctx.memory.len(),
+            call_index: call_ctx.index,
+            reversible_write_counter: call_ctx.reversible_write_counter,
+            rwc: self.block_ctx.rwc,
+            log_id: self.tx_ctx.log_id,
+
+            gas_left: Gas(gas_left),
+            ..Default::default()
+        };
+
+        Ok(step)
+    }
+
     /// Create a new EndTx step
     pub fn new_end_tx_step(&self) -> ExecStep {
         let prev_step = self

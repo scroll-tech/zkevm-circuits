@@ -83,7 +83,7 @@ use self::{pushn::PushN, sha3::Sha3};
 use address::Address;
 use arithmetic::ArithmeticOpcode;
 use balance::Balance;
-use begin_end_tx::BeginEndTx;
+use begin_end_tx::{gen_begin_tx_steps, gen_end_tx_steps};
 use blockhash::Blockhash;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
@@ -481,15 +481,21 @@ pub fn gen_associated_ops(
 pub fn gen_associated_steps(
     state: &mut CircuitInputStateRef,
     execution_step: ExecState,
-) -> Result<ExecStep, Error> {
+) -> Result<Vec<ExecStep>, Error> {
+    fn gen_end_tx_steps_adapt(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
+        let ret = gen_end_tx_steps(state)?;
+        Ok(vec![ret])
+    }
+
     let fn_gen_associated_steps = match execution_step {
-        ExecState::BeginTx | ExecState::EndTx => BeginEndTx::gen_associated_steps,
+        ExecState::BeginTx => gen_begin_tx_steps,
+        ExecState::EndTx => gen_end_tx_steps_adapt,
         _ => {
             unreachable!()
         }
     };
 
-    fn_gen_associated_steps(state, execution_step)
+    fn_gen_associated_steps(state)
 }
 
 #[derive(Debug, Copy, Clone)]

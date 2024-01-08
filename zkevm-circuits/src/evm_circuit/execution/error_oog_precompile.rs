@@ -23,6 +23,7 @@ pub(crate) struct ErrorOOGPrecompileGadget<F> {
     precompile_addr: Cell<F>,
     addr_bits: BinaryNumberGadget<F, 4>,
     call_data_length: Cell<F>,
+    is_root: Cell<F>,
     n_pairs: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     n_words: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     required_gas: Cell<F>,
@@ -44,6 +45,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
 
         // read call data length
         let call_data_length = cb.call_context(None, CallContextFieldTag::CallDataLength);
+        // read is root
+        let is_root = cb.call_context(None, CallContextFieldTag::IsRoot);
+
         let n_pairs = cb.condition(
             addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
             |cb| {
@@ -119,15 +123,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             LtGadget::construct(cb, cb.curr.state.gas_left.expr(), required_gas.expr());
         cb.require_equal("gas_left < required_gas", insufficient_gas.expr(), 1.expr());
 
-        let restore_context = RestoreContextGadget::construct2(
+        let restore_context = super::precompiles::gen_restore_context(
             cb,
+            is_root.expr(),
             false.expr(),
             cb.curr.state.gas_left.expr(),
-            0.expr(),
-            0.expr(), // ReturnDataOffset
             0.expr(), // ReturnDataLength
-            0.expr(),
-            0.expr(),
         );
 
         Self {
@@ -137,6 +138,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             n_pairs,
             n_words,
             addr_bits,
+            is_root,
             call_data_length,
             restore_context,
         }
@@ -167,6 +169,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             offset,
             Value::known(F::from(call.call_data_length)),
         )?;
+
+        // is_root
+        self.is_root
+            .assign(region, offset, Value::known(F::from(call.is_root)))?;
 
         // n_pairs
         let n_pairs = call.call_data_length / 192;
@@ -209,9 +215,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             F::from(required_gas),
         )?;
 
-        // restore context
         self.restore_context
-            .assign(region, offset, block, call, step, 2)
+            .assign(region, offset, block, call, step, 3)
     }
 }
 
