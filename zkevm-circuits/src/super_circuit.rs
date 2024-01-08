@@ -82,7 +82,7 @@ use crate::{
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SHA256Table,
-        SigTable, TxTable, U16Table, U8Table, UXTable,
+        SigTable, TxTable, U16Table, UXTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{circuit_stats, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -210,7 +210,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
 
         // let u8_table = U8Table::construct(meta);
         // log_circuit_info(meta, "u8 table");
-        let u16_table = U16Table::construct(meta);
+        // let u16_table = U16Table::construct(meta);
         // log_circuit_info(meta, "u16 table");
 
         let ux8_table = UXTable::construct(meta);
@@ -271,7 +271,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 rlp_table,
                 sig_table,
                 u8_table: ux8_table,
-                u16_table,
+                u16_table: ux16_table,
                 challenges: challenges_expr.clone(),
             },
         );
@@ -345,7 +345,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             meta,
             ExpCircuitArgs {
                 exp_table,
-                u16_table,
+                u16_table: ux16_table,
             },
         );
         log_circuit_info(meta, "exp circuit");

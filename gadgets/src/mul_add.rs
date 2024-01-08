@@ -19,7 +19,9 @@
 use eth_types::{Field, Word, ToU16LittleEndian};
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells,
+    },
     poly::Rotation,
 };
 
@@ -46,7 +48,8 @@ pub struct MulAddConfig<F> {
     /// Sum of the parts higher than 256-bit in the product.
     pub overflow: Expression<F>,
     /// Lookup table for LtChips and carry_lo/hi.
-    pub u16_table: TableColumn,
+    // pub u16_table: TableColumn,
+    pub u16_table: Column<Fixed>,
     /// Range check of a, b which needs to be in [0, 2^64)
     pub range_check_64: UIntRangeCheckChip<F, { UIntRangeCheckChip::SIZE_U64 }, 8>,
     /// Range check of c, d which needs to be in [0, 2^128)
@@ -118,7 +121,8 @@ impl<F: Field> MulAddChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
-        u16_table: TableColumn,
+        //u16_table: TableColumn,
+        u16_table: Column<Fixed>,
     ) -> MulAddConfig<F> {
         let col0 = meta.advice_column();
         let col1 = meta.advice_column();
@@ -157,9 +161,10 @@ impl<F: Field> MulAddChip<F> {
             carry_cols.append(&mut carry_hi_cols.clone());
 
             for (col, rot) in carry_cols.into_iter() {
-                meta.lookup("mul carry range check lo/hi lookup u16", |meta| {
+                meta.lookup_any("mul carry range check lo/hi lookup u16", |meta| {
                     let q_enable = q_enable.clone()(meta);
-                    vec![(q_enable * meta.query_advice(col, Rotation(rot)), u16_table)]
+                    let u16_expr = meta.query_fixed(u16_table, Rotation::cur());
+                    vec![(q_enable * meta.query_advice(col, Rotation(rot)), u16_expr)]
                 });
             }
         }

@@ -7,7 +7,7 @@ mod test;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, RlpFsmRlpTable, U8Table, UXTable},
+    table::{LookupTable, RlpFsmRlpTable, UXTable},
     util::{
         is_zero::{IsZeroChip, IsZeroConfig},
         Challenges, SubCircuit, SubCircuitConfig,

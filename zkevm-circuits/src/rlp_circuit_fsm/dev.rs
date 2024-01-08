@@ -1,6 +1,6 @@
 use crate::{
     rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
-    table::{RlpFsmRlpTable, U8Table, UXTable},
+    table::{RlpFsmRlpTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Transaction,
 };

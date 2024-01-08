@@ -3,9 +3,7 @@
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
@@ -161,11 +159,12 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
     ) -> Result<(), Error> {
         const RANGE: usize = u8::MAX as usize;
 
-        layouter.assign_table(
+        //layouter.assign_table(
+        layouter.assign_region(
             || "load u8 range check table",
-            |mut table| {
+            |mut region| {
                 for i in 0..=RANGE {
-                    table.assign_cell(
+                    region.assign_fixed(
                         || "assign cell in fixed column",
                         self.config.u8_table,
                         i,
@@ -270,7 +269,7 @@ mod test {
                 let q_enable = meta.complex_selector();
                 let value = meta.advice_column();
                 let check = meta.advice_column();
-                let u8_table = meta.lookup_table_column();
+                let u8_table = meta.fixed_column();
 
                 let lt = LtChip::configure(
                     meta,
@@ -394,7 +393,7 @@ mod test {
                 let q_enable = meta.complex_selector();
                 let (value_a, value_b) = (meta.advice_column(), meta.advice_column());
                 let check = meta.advice_column();
-                let u16_table = meta.lookup_table_column();
+                let u16_table = meta.fixed_column();
 
                 let lt = LtChip::configure(
                     meta,
