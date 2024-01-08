@@ -4,7 +4,7 @@ use crate::{
     copy_circuit::util::number_or_hash_to_word,
     evm_circuit::util::{
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-        rlc,
+        from_bytes, rlc,
     },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
@@ -1682,18 +1682,20 @@ pub struct CopyTable {
     /// 2. The hi/lo limbs of bytecode hash for CopyDataType::Bytecode
     /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
     pub id: word::Word<Column<Advice>>,
-    /// The source/destination address for this copy step.  Can be memory
-    /// address, byte index in the bytecode, tx call data, and tx log data.
+    /// The start source/destination address for this copy step.
+    /// Can be memory address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
     /// The end of the source buffer for the copy event.  Any data read from an
     /// address greater than or equal to this value will be 0.
     pub src_addr_end: Column<Advice>,
+    /// The start of the src/dest address for the copy event.
+    /// Might not aligned by 32 bytes, indicating masked bytes.
+    pub addr_copy_start: Column<Advice>,
+    /// The end of the src/dest address for the copy event.
+    /// Might not aligned by 32 bytes, indicating masked bytes.
+    pub addr_copy_end: Column<Advice>,
     /// The number of non-masked bytes left to be copied.
     pub real_bytes_left: Column<Advice>,
-    /// mask indicates the byte is actual coped or padding to memory word
-    pub value_wrod_rlc: Column<Advice>, // TODO: rm
-    /// mask indicates the byte is actual coped or padding to memory word
-    //pub mask: Column<Advice>,
     /// An accumulator value in the RLC representation. This is used for
     /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
     /// Having an additional column for the `rlc_acc` simplifies the lookup
@@ -1709,8 +1711,90 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 9];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 12];
+pub struct CopyTableRowAssignment<F> {
+    is_first: F,
+    id: word::Word<Value<F>>,
+    addr: F,
+    src_addr_end: F,
+    real_bytes_left: F,
+    rlc_acc: Value<F>,
+    rw_counter: F,
+    rwc_inc_left: F,
+}
+
+impl<F: Field> CopyTableRowAssignment<F> {
+    pub fn assign(
+        &self,
+        table: &CopyTable,
+        region: &mut Region<'_, F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || format!("is_first at row: {offset}"),
+            table.is_first,
+            offset,
+            || Value::known(self.is_first),
+        )?;
+        region.assign_advice(
+            || format!("id_lo at row: {offset}"),
+            table.id.lo(),
+            offset,
+            || self.id.lo(),
+        )?;
+        region.assign_advice(
+            || format!("id_hi at row: {offset}"),
+            table.id.hi(),
+            offset,
+            || self.id.hi(),
+        )?;
+        region.assign_advice(
+            || format!("addr at row: {offset}"),
+            table.addr,
+            offset,
+            || Value::known(self.addr),
+        )?;
+        region.assign_advice(
+            || format!("src_addr_end at row: {offset}"),
+            table.src_addr_end,
+            offset,
+            || Value::known(self.src_addr_end),
+        )?;
+        region.assign_advice(
+            || format!("real_bytes_left at row: {offset}"),
+            table.real_bytes_left,
+            offset,
+            || Value::known(self.real_bytes_left),
+        )?;
+        region.assign_advice(
+            || format!("rlc_acc at row: {offset}"),
+            table.rlc_acc,
+            offset,
+            || self.rlc_acc,
+        )?;
+        region.assign_advice(
+            || format!("rw_counter at row: {offset}"),
+            table.rw_counter,
+            offset,
+            || Value::known(self.rw_counter),
+        )?;
+        region.assign_advice(
+            || format!("rwc_inc_left at row: {offset}"),
+            table.rwc_inc_left,
+            offset,
+            || Value::known(self.rwc_inc_left),
+        )?;
+
+        Ok(())
+    }
+}
+
+pub struct CopyCircuitRowAssignment<F> {
+    is_first: F,
+    value_limbs: [F; 16],
+    value_word: F,
+    value_word_prev: F,
+    value_acc: Value<F>,
+}
 
 /// CopyThread is the state used while generating rows of the copy table.
 struct CopyThread<F: Field> {
@@ -1722,10 +1806,6 @@ struct CopyThread<F: Field> {
     addr_end: u64,
     bytes_left: u64,
     value_acc: Value<F>,
-    //word_rlc: Value<F>,
-    value_word: word::Word<Value<F>>,
-    //word_rlc_prev: Value<F>,
-    value_word_prev: word::Word<Value<F>>,
 }
 
 impl CopyTable {
@@ -1738,24 +1818,75 @@ impl CopyTable {
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
+            addr_copy_start: meta.advice_column(),
+            addr_copy_end: meta.advice_column(),
             real_bytes_left: meta.advice_column(),
-            value_wrod_rlc: meta.advice_column(), // TODO: rm
             rlc_acc: meta.advice_column_in(SecondPhase),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
         }
     }
 
-    /// Generate the copy table and copy circuit assignments from a copy event.
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
-    ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
+    ) -> Vec<(
+        CopyDataType,
+        CopyTableRowAssignment<F>,
+        CopyCircuitRowAssignment<F>,
+    )> {
         assert!(copy_event.src_addr_end >= copy_event.src_addr);
         assert!(
             copy_event.src_type != CopyDataType::Padding
                 && copy_event.dst_type != CopyDataType::Padding,
             "Padding is an internal type"
+        );
+
+        let is_access_list = copy_event.src_type == CopyDataType::AccessListAddresses
+            || copy_event.src_type == CopyDataType::AccessListStorageKeys;
+
+        if is_access_list {
+            Self::assignment_access_list(copy_event, challenges)
+        } else {
+            Self::assignments_inner(copy_event, challenges)
+        }
+    }
+
+    // TODO: move access list to its own table, it messes up the copy circuit logic
+    fn assignment_access_list<F: Field>(
+        copy_event: &CopyEvent,
+        challenges: Challenges<Value<F>>,
+    ) -> Vec<(
+        CopyDataType,
+        CopyTableRowAssignment<F>,
+        CopyCircuitRowAssignment<F>,
+    )> {
+        assert!(
+            copy_event.src_type == CopyDataType::AccessListAddresses
+                || copy_event.src_type == CopyDataType::AccessListStorageKeys,
+            "must be access list copy"
+        );
+
+        let mut assignments = Vec::new();
+
+        todo!();
+
+        assignments
+    }
+
+    /// Generate the copy table and copy circuit assignments from a copy event.
+    fn assignments_inner<F: Field>(
+        copy_event: &CopyEvent,
+        challenges: Challenges<Value<F>>,
+    ) -> Vec<(
+        CopyDataType,
+        CopyTableRowAssignment<F>,
+        CopyCircuitRowAssignment<F>,
+    )> {
+        assert!(
+            copy_event.src_type != CopyDataType::AccessListAddresses
+                && copy_event.src_type != CopyDataType::AccessListStorageKeys,
+            "must not be access list copy"
         );
 
         let mut assignments = Vec::new();
@@ -1776,17 +1907,29 @@ impl CopyTable {
             Value::known(F::zero())
         };
 
-        let read_steps = copy_event.copy_bytes.bytes.iter();
+        assert!(
+            copy_event.copy_bytes.bytes.len() % 32 == 0,
+            "must be aligned by 32 bytes"
+        );
+        let read_steps = copy_event.copy_bytes.bytes.chunks_exact(16);
         let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
-            read_steps.zip(write_steps.iter())
+            assert!(write_steps.len() == read_steps.len());
+            read_steps.zip(write_steps.chunks_exact(16))
         } else {
-            read_steps.zip(copy_event.copy_bytes.bytes.iter())
+            read_steps.zip(copy_event.copy_bytes.bytes.chunks_exact(16))
         };
 
-        let prev_write_bytes: Vec<u8> = copy_event
+        let prev_write_bytes: Vec<[u8; 16]> = copy_event
             .copy_bytes
             .bytes_write_prev
-            .clone()
+            .map(|bytes| {
+                assert_eq!(bytes.len() % 32, 0, "must be aligned by 32 bytes");
+                assert_eq!(bytes.len(), copy_event.copy_bytes.bytes.len());
+                bytes
+                    .chunks_exact(16)
+                    .map(|chunk| chunk.to_vec().try_into().unwrap())
+                    .collect()
+            })
             .unwrap_or_default();
 
         let mut rw_counter = copy_event.rw_counter_start();
@@ -1805,8 +1948,6 @@ impl CopyTable {
             addr_end: copy_event.src_addr_end,
             bytes_left: copy_event.copy_length(),
             value_acc: Value::known(F::zero()),
-            value_word: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
-            value_word_prev: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
         };
 
         let mut writer = CopyThread {
@@ -1818,32 +1959,19 @@ impl CopyTable {
             addr_end: copy_event.dst_addr + copy_event.full_length(),
             bytes_left: reader.bytes_left,
             value_acc: Value::known(F::zero()),
-            value_word: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
-            value_word_prev: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
         };
 
-        let is_access_list = copy_event.src_type == CopyDataType::AccessListAddresses
-            || copy_event.src_type == CopyDataType::AccessListStorageKeys;
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
-                let read_step = CopyStep {
-                    value: read_step.0,
-                    prev_value: read_step.0,
-                    mask: read_step.2,
-                };
-                let write_step = CopyStep {
-                    value: write_step.0,
-                    // Will overwrite if previous values are given.
-                    prev_value: write_step.0,
-                    mask: write_step.2,
-                };
+                let read_step = CopyStep::from(read_step);
+                let write_step = CopyStep::from(write_step);
                 once((true, read_step)).chain(once((false, write_step)))
             })
             .enumerate()
         {
             // re-assign with correct `prev_value` in copy_step
             if !is_read_step && !prev_write_bytes.is_empty() {
-                copy_step.prev_value = *prev_write_bytes.get(step_idx / 2).unwrap();
+                copy_step.prev_half_word = prev_write_bytes[step_idx / 2];
             }
             let copy_step = copy_step;
 
@@ -1863,62 +1991,40 @@ impl CopyTable {
 
             let is_first = step_idx == 0;
             let is_last = step_idx as u64 == copy_event.full_length() * 2 - 1;
+            let is_lo = step_idx % 4 < 2;
 
-            let is_pad = is_read_step && thread.addr >= thread.addr_end;
+            let is_pad: [bool; 16] = (0..16u64)
+                .map(|offset| is_read_step && thread.addr + offset >= thread.addr_end)
+                .collect::<Vec<bool>>()
+                .try_into()
+                .unwrap();
 
-            let [value, value_prev] = if is_access_list {
-                let address_pair = copy_event.access_list[step_idx / 2];
-                [
-                    address_pair.0.to_scalar().unwrap(),
-                    address_pair.1.to_scalar().unwrap(),
-                ]
+            let value_limbs: [F; 16] = copy_step.half_word.map(|b| F::from(b as u64));
+
+            let value_or_pad = is_pad
+                .iter()
+                .zip_eq(value_limbs.iter())
+                .map(|(&pad, &value)| if pad { F::zero() } else { value })
+                .map(Value::known)
+                .collect::<Vec<Value<F>>>();
+            thread.value_acc = value_or_pad.into_iter().zip(copy_step.mask).fold(
+                thread.value_acc,
+                |acc, (value, is_mask)| {
+                    if is_mask {
+                        acc
+                    } else {
+                        acc * Value::known(F::from(256u64)) + value
+                    }
+                },
+            );
+
+            let value_word_limb: F = from_bytes::value(&copy_step.half_word);
+
+            let value_word_limb_prev: F = if is_read_step {
+                value_word_limb // Reader does not change the word.
             } else {
-                [
-                    F::from(copy_step.value as u64),
-                    F::from(copy_step.prev_value as u64),
-                ]
-            }
-            .map(Value::known);
-
-            let value_or_pad = if is_pad {
-                Value::known(F::zero())
-            } else {
-                value
+                from_bytes::value(&copy_step.prev_half_word)
             };
-
-            if !copy_step.mask {
-                thread.front_mask = false;
-                thread.value_acc = thread.value_acc * challenges.keccak_input() + value_or_pad;
-            }
-            if (step_idx / 2) % 32 == 0 {
-                // reset
-                thread.value_word =
-                    word::Word::new([Value::known(F::zero()), Value::known(F::zero())]);
-                thread.value_word_prev =
-                    word::Word::new([Value::known(F::zero()), Value::known(F::zero())]);
-                *value_word_bytes = [0; 32];
-                *value_word_prev_bytes = [0; 32];
-            }
-
-            let word_index = (step_idx as u64 / 2) % 32;
-            value_word_bytes[word_index as usize] = copy_step.value;
-
-            let u256_word = U256::from_big_endian(value_word_bytes);
-            thread.value_word = word::Word::from(u256_word).into_value();
-
-            thread.value_word_prev = if is_read_step {
-                thread.value_word // Reader does not change the word.
-            } else {
-                value_word_prev_bytes[word_index as usize] = copy_step.prev_value;
-                let u256_word_prev = U256::from_big_endian(value_word_prev_bytes);
-                word::Word::from(u256_word_prev).into_value()
-            };
-
-            if is_access_list {
-                let address_pair = copy_event.access_list[step_idx / 2];
-                thread.value_word = word::Word::from(address_pair.0).into_value();
-                thread.value_word_prev = word::Word::from(address_pair.1).into_value();
-            }
 
             // For LOG, format the address including the log_id.
             let addr = if thread.tag == CopyDataType::TxLog {
@@ -1931,43 +2037,31 @@ impl CopyTable {
 
             assignments.push((
                 thread.tag,
-                [
-                    (Value::known(F::from(is_first)), "is_first"),
-                    (thread.id.lo(), "id_lo"),
-                    (thread.id.hi(), "id_hi"),
-                    (Value::known(addr), "addr"),
-                    (Value::known(F::from(thread.addr_end)), "src_addr_end"),
-                    (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
-                    (rlc_acc, "rlc_acc"),
-                    (Value::known(F::from(rw_counter)), "rw_counter"),
-                    (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
-                ],
-                [
-                    (Value::known(F::from(is_last)), "is_last"),
-                    (value, "value"),
-                    (value_prev, "value_prev"),
-                    (thread.value_word.lo(), "value_word lo"),
-                    (thread.value_word.hi(), "value_word hi"),
-                    (thread.value_word_prev.lo(), "value_word_prev lo"),
-                    (thread.value_word_prev.hi(), "value_word_prev hi"),
-                    (thread.value_acc, "value_acc"),
-                    (Value::known(F::from(is_pad)), "is_pad"),
-                    (Value::known(F::from(copy_step.mask)), "mask"),
-                    (Value::known(F::from(thread.front_mask)), "front_mask"),
-                    (Value::known(F::from(word_index)), "word_index"),
-                ],
+                CopyTableRowAssignment {
+                    is_first: F::from(is_first),
+                    id: thread.id,
+                    addr,
+                    src_addr_end: F::from(thread.addr_end),
+                    real_bytes_left: F::from(thread.bytes_left),
+                    rlc_acc,
+                    rw_counter: F::from(rw_counter),
+                    rwc_inc_left: F::from(rwc_inc_left),
+                },
+                CopyCircuitRowAssignment {
+                    is_first: F::from(is_first),
+                    value_limbs,
+                    value_word: value_word_limb,
+                    value_word_prev: value_word_limb_prev,
+                    value_acc: thread.value_acc,
+                },
             ));
 
             // Increment the address.
-            if !thread.front_mask {
-                thread.addr += 1;
-            }
+            thread.addr += 16;
             // Decrement the number of steps left.
-            if !copy_step.mask {
-                thread.bytes_left -= 1;
-            }
+            thread.bytes_left -= copy_step.mask.into_iter().filter(|&b| !b).count() as u64;
             // No word operation for access list data types.
-            let is_row_end = is_access_list || (step_idx / 2) % 32 == 31;
+            let is_row_end = (step_idx / 2) % 2 == 1;
             // Update the RW counter.
             if is_row_end && thread.is_rw {
                 rw_counter += 1;
@@ -2005,7 +2099,6 @@ impl CopyTable {
                 offset += 1;
 
                 let tag_chip = BinaryNumberChip::construct(self.tag);
-                let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
                     for (tag, row, _) in Self::assignments(copy_event, *challenges) {
                         region.assign_fixed(
@@ -2014,14 +2107,7 @@ impl CopyTable {
                             offset,
                             || Value::known(F::one()),
                         )?;
-                        for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
-                            region.assign_advice(
-                                || format!("{label} at row: {offset}"),
-                                column,
-                                offset,
-                                || value,
-                            )?;
-                        }
+                        row.assign(self, &mut region, offset)?;
                         tag_chip.assign(&mut region, offset, &tag)?;
                         offset += 1;
                     }
@@ -2043,6 +2129,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.id.hi().into(),
             self.addr.into(),
             self.src_addr_end.into(),
+            self.addr_copy_start.into(),
+            self.addr_copy_end.into(),
             self.real_bytes_left.into(),
             self.rlc_acc.into(),
             self.rw_counter.into(),
@@ -2059,6 +2147,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("id_hi"),
             String::from("addr"),
             String::from("src_addr_end"),
+            String::from("addr_copy_start"),
+            String::from("addr_copy_end"),
             String::from("real_bytes_left"),
             String::from("rlc_acc"),
             String::from("rw_counter"),
@@ -2078,6 +2168,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.tag.value(Rotation::next())(meta),           // dst_tag
             meta.query_advice(self.addr, Rotation::cur()),    // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
+            meta.query_advice(self.addr_copy_start, Rotation::cur()), // src_addr_copy_start
+            meta.query_advice(self.addr_copy_end, Rotation::cur()), // src_addr_copy_end
             meta.query_advice(self.addr, Rotation::next()),   // dst_addr
             meta.query_advice(self.real_bytes_left, Rotation::cur()), // real_length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
