@@ -3,7 +3,9 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+            },
             math_gadget::IsZeroGadget,
             CachedRegion, Cell,
         },
@@ -39,6 +41,7 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndInnerBlock;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        // `cb.curr.state.block_number` is constrained inside execution.rs
         // The number of txs in the inner block is also the ID of the last tx in the
         // block.
         let last_tx_id = cb.query_cell();
@@ -89,6 +92,14 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
                 cb.next.state.block_number.expr(),
                 cb.curr.state.block_number.expr() + 1.expr(),
             );
+        });
+
+        cb.require_step_state_transition(StepStateTransition {
+            rw_counter: Transition::Same,
+            // We propagate call_id so that EndBlock can get the last tx_id
+            // in order to count processed txs.
+            call_id: Transition::Same,
+            ..StepStateTransition::any()
         });
 
         Self {

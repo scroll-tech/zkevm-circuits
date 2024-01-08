@@ -251,7 +251,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
 
         cb.condition(
-            cb.next.execution_state_selector([ExecutionState::EndBlock]),
+            cb.next
+                .execution_state_selector([ExecutionState::EndInnerBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_offset),

@@ -870,6 +870,7 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndInnerBlock, ExecutionState::EndBlock],
                         ),
                         (
+                            // Empty block can result multiple EndInnerBlock states.
                             "Only EndTx or EndInnerBlock can transit to EndInnerBlock",
                             ExecutionState::EndInnerBlock,
                             vec![ExecutionState::EndTx, ExecutionState::EndInnerBlock],
