@@ -1867,7 +1867,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                 }
             );
-
             cb.condition(
                 not::expr(meta.query_advice(is_stack_al_idx_diff, Rotation::cur())),
                 |cb| {
