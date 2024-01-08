@@ -1,6 +1,6 @@
 use eth_types::{Address, Field, H160, U256};
 use gadgets::{impl_expr, util::Expr};
-use halo2_proofs::{circuit::Value, plonk::Expression};
+use halo2_proofs::{circuit::Value, halo2curves::ff::PrimeField, plonk::Expression};
 use strum_macros::EnumIter;
 
 use crate::util::Challenges;
@@ -54,22 +54,22 @@ impl ValueTagLength for Vec<u8> {
     }
 }
 
-// return the tag length of the top-level BeginList tag
+// return the tag length of the top-level BeginObject tag
 pub(crate) fn get_rlp_len_tag_length(rlp_bytes: &[u8]) -> u32 {
-    let begin_list_byte = if rlp_bytes[0] < 0xc0 {
+    let begin_object_byte = if rlp_bytes[0] < 0xc0 {
         // it's eip2718 (first byte is transaction type)
         rlp_bytes[1]
     } else {
         rlp_bytes[0]
     };
 
-    assert!(begin_list_byte >= 0xc0);
-    if begin_list_byte < 0xf8 {
+    assert!(begin_object_byte >= 0xc0);
+    if begin_object_byte < 0xf8 {
         // list
         1
     } else {
         // long_list
-        (begin_list_byte - 0xf7).into()
+        (begin_object_byte - 0xf7).into()
     }
 }
 
@@ -79,14 +79,14 @@ pub enum Tag {
     #[default]
     /// Tag that marks the beginning of a list
     /// whose value gives the length of bytes of this list.
-    BeginList = 4,
+    BeginObject = 4,
     /// Tag that marks the ending of a list and
     /// it does not consume any byte.
-    EndList,
-    /// Special case of BeginList in which each item's key is
+    EndObject,
+    /// Special case of BeginObject in which each item's key is
     /// an increasing integer starting from 1.
     BeginVector,
-    /// Special case of EndList
+    /// Special case of EndObject
     EndVector,
 
     // Pre EIP-155
@@ -154,18 +154,28 @@ impl Tag {
     pub fn is_list(&self) -> bool {
         matches!(
             self,
-            Self::BeginList | Self::BeginVector | Self::EndList | Self::EndVector
+            Self::BeginObject | Self::BeginVector | Self::EndObject | Self::EndVector
         )
     }
 
-    /// If the tag is BeginList or BeginVector
+    /// If the tag is BeginObject or BeginVector
     pub fn is_begin(&self) -> bool {
-        matches!(self, Self::BeginList | Self::BeginVector)
+        matches!(self, Self::BeginObject | Self::BeginVector)
     }
 
-    /// If the tag is EndList or EndVector
+    /// If the tag is EndObject or EndVector
     pub fn is_end(&self) -> bool {
-        matches!(self, Self::EndList | Self::EndVector)
+        matches!(self, Self::EndObject | Self::EndVector)
+    }
+
+    /// If the tag is AccessListAddress
+    pub fn is_access_list_address(&self) -> bool {
+        matches!(self, Self::AccessListAddress)
+    }
+
+    /// If the tag is AccessListStorageKey
+    pub fn is_access_list_storage_key(&self) -> bool {
+        matches!(self, Self::AccessListStorageKey)
     }
 }
 
@@ -212,8 +222,8 @@ use crate::{
             TxSignEip1559, TxSignEip2930, TxSignPreEip155,
         },
         Tag::{
-            AccessListAddress, AccessListStorageKey, BeginList, BeginVector, ChainId, Data,
-            EndList, EndVector, Gas, GasPrice, MaxFeePerGas, MaxPriorityFeePerGas, Nonce, SigR,
+            AccessListAddress, AccessListStorageKey, BeginObject, BeginVector, ChainId, Data,
+            EndObject, EndVector, Gas, GasPrice, MaxFeePerGas, MaxPriorityFeePerGas, Nonce, SigR,
             SigS, SigV, To, TxType, Value as TxValue, Zero1, Zero2,
         },
     },
@@ -227,7 +237,7 @@ pub(crate) const N_BYTES_CALLDATA: usize = 1 << 24;
 
 fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
+        (BeginObject, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -236,10 +246,10 @@ fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (Data, ChainId, N_BYTES_CALLDATA, vec![7]),
         (ChainId, Zero1, N_BYTES_U64, vec![8]),
         (Zero1, Zero2, 1, vec![9]),
-        (Zero2, EndList, 1, vec![10]),
-        (EndList, EndList, 0, vec![11]),
+        (Zero2, EndObject, 1, vec![10]),
+        (EndObject, EndObject, 0, vec![11]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -249,7 +259,7 @@ fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
+        (BeginObject, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -258,10 +268,10 @@ fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (Data, SigV, N_BYTES_CALLDATA, vec![7]),
         (SigV, SigR, N_BYTES_U64, vec![8]),
         (SigR, SigS, N_BYTES_WORD, vec![9]),
-        (SigS, EndList, N_BYTES_WORD, vec![10]),
-        (EndList, EndList, 0, vec![11]),
+        (SigS, EndObject, N_BYTES_WORD, vec![10]),
+        (EndObject, EndObject, 0, vec![11]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -271,16 +281,16 @@ fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
+        (BeginObject, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
         (TxValue, Data, N_BYTES_WORD, vec![6]),
-        (Data, EndList, N_BYTES_CALLDATA, vec![7]),
-        (EndList, EndList, 0, vec![8]),
+        (Data, EndObject, N_BYTES_CALLDATA, vec![7]),
+        (EndObject, EndObject, 0, vec![8]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -290,7 +300,7 @@ pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
+        (BeginObject, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -299,10 +309,10 @@ pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (Data, SigV, N_BYTES_CALLDATA, vec![7]),
         (SigV, SigR, N_BYTES_U64, vec![8]),
         (SigR, SigS, N_BYTES_WORD, vec![9]),
-        (SigS, EndList, N_BYTES_WORD, vec![10]),
-        (EndList, EndList, 0, vec![11]),
+        (SigS, EndObject, N_BYTES_WORD, vec![10]),
+        (EndObject, EndObject, 0, vec![11]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -312,8 +322,8 @@ pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip2930_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (TxType, BeginObject, 1, vec![1]),
+        (BeginObject, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (ChainId, Nonce, N_BYTES_U64, vec![3]),
         (Nonce, GasPrice, N_BYTES_U64, vec![4]),
         (GasPrice, Gas, N_BYTES_WORD, vec![5]),
@@ -322,9 +332,9 @@ pub fn eip2930_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (TxValue, Data, N_BYTES_WORD, vec![8]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
         (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
-        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
+        (BeginVector, BeginObject, MAX_TAG_LENGTH_OF_LIST, vec![11]),
         (
-            BeginList,
+            BeginObject,
             AccessListAddress,
             MAX_TAG_LENGTH_OF_LIST,
             vec![12],
@@ -350,13 +360,13 @@ pub fn eip2930_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
             N_BYTES_WORD,
             vec![15, 16],
         ), // keep parsing storage_keys
-        (EndVector, EndList, 0, vec![18, 19]),
-        (EndList, EndVector, 0, vec![20]), // finished parsing access_list
-        (EndList, BeginList, 0, vec![11]), // parse another access_list entry
-        (EndVector, EndList, 0, vec![21]),
-        (EndList, EndList, 0, vec![22]),
+        (EndVector, EndObject, 0, vec![18, 19]),
+        (EndObject, EndVector, 0, vec![20]), // finished parsing access_list
+        (EndObject, BeginObject, 0, vec![11]), // parse another access_list entry
+        (EndVector, EndObject, 0, vec![21]),
+        (EndObject, EndObject, 0, vec![22]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -366,8 +376,8 @@ pub fn eip2930_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip2930_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (TxType, BeginObject, 1, vec![1]),
+        (BeginObject, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (ChainId, Nonce, N_BYTES_U64, vec![3]),
         (Nonce, GasPrice, N_BYTES_U64, vec![4]),
         (GasPrice, Gas, N_BYTES_WORD, vec![5]),
@@ -376,9 +386,9 @@ pub fn eip2930_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (TxValue, Data, N_BYTES_WORD, vec![8]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
         (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
-        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
+        (BeginVector, BeginObject, MAX_TAG_LENGTH_OF_LIST, vec![11]),
         (
-            BeginList,
+            BeginObject,
             AccessListAddress,
             MAX_TAG_LENGTH_OF_LIST,
             vec![12],
@@ -404,16 +414,16 @@ pub fn eip2930_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
             N_BYTES_WORD,
             vec![15, 16],
         ), // keep parsing storage_keys
-        (EndVector, EndList, 0, vec![18, 19]),
-        (EndList, EndVector, 0, vec![20]), // finished parsing access_list
-        (EndList, BeginList, 0, vec![11]), // parse another access_list entry
+        (EndVector, EndObject, 0, vec![18, 19]),
+        (EndObject, EndVector, 0, vec![20]), // finished parsing access_list
+        (EndObject, BeginObject, 0, vec![11]), // parse another access_list entry
         (EndVector, SigV, 0, vec![21]),
         (SigV, SigR, N_BYTES_U64, vec![22]),
         (SigR, SigS, N_BYTES_WORD, vec![23]),
-        (SigS, EndList, N_BYTES_WORD, vec![24]),
-        (EndList, EndList, 0, vec![25]),
+        (SigS, EndObject, N_BYTES_WORD, vec![24]),
+        (EndObject, EndObject, 0, vec![25]),
         // used to exit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -423,8 +433,8 @@ pub fn eip2930_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (TxType, BeginObject, 1, vec![1]),
+        (BeginObject, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (ChainId, Nonce, N_BYTES_U64, vec![3]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
@@ -434,9 +444,9 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (TxValue, Data, N_BYTES_WORD, vec![9]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![10, 11]),
         (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![21]), // access_list is none
-        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![12]),
+        (BeginVector, BeginObject, MAX_TAG_LENGTH_OF_LIST, vec![12]),
         (
-            BeginList,
+            BeginObject,
             AccessListAddress,
             MAX_TAG_LENGTH_OF_LIST,
             vec![13],
@@ -462,16 +472,16 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
             N_BYTES_WORD,
             vec![16, 17],
         ), // keep parsing storage_keys
-        (EndVector, EndList, 0, vec![19, 20]),
-        (EndList, EndVector, 0, vec![21]), // finished parsing access_list
-        (EndList, BeginList, 0, vec![12]), // parse another access_list entry
+        (EndVector, EndObject, 0, vec![19, 20]),
+        (EndObject, EndVector, 0, vec![21]), // finished parsing access_list
+        (EndObject, BeginObject, 0, vec![12]), // parse another access_list entry
         (EndVector, SigV, 0, vec![22]),
         (SigV, SigR, N_BYTES_U64, vec![23]),
         (SigR, SigS, N_BYTES_WORD, vec![24]),
-        (SigS, EndList, N_BYTES_WORD, vec![25]),
-        (EndList, EndList, 0, vec![26]),
+        (SigS, EndObject, N_BYTES_WORD, vec![25]),
+        (EndObject, EndObject, 0, vec![26]),
         // used to exit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -481,8 +491,8 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (TxType, BeginObject, 1, vec![1]),
+        (BeginObject, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (ChainId, Nonce, N_BYTES_U64, vec![3]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
@@ -492,9 +502,9 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (TxValue, Data, N_BYTES_WORD, vec![9]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![10, 11]),
         (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![21]), // access_list is none
-        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![12]),
+        (BeginVector, BeginObject, MAX_TAG_LENGTH_OF_LIST, vec![12]),
         (
-            BeginList,
+            BeginObject,
             AccessListAddress,
             MAX_TAG_LENGTH_OF_LIST,
             vec![13],
@@ -520,13 +530,13 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
             N_BYTES_WORD,
             vec![16, 17],
         ), // keep parsing storage_keys
-        (EndVector, EndList, 0, vec![19, 20]),
-        (EndList, EndVector, 0, vec![21]), // finished parsing access_list
-        (EndList, BeginList, 0, vec![12]), // parse another access_list entry
-        (EndVector, EndList, 0, vec![22]),
-        (EndList, EndList, 0, vec![23]),
+        (EndVector, EndObject, 0, vec![19, 20]),
+        (EndObject, EndVector, 0, vec![21]), // finished parsing access_list
+        (EndObject, BeginObject, 0, vec![12]), // parse another access_list entry
+        (EndVector, EndObject, 0, vec![22]),
+        (EndObject, EndObject, 0, vec![23]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -597,6 +607,11 @@ pub enum Format {
 impl From<Format> for usize {
     fn from(value: Format) -> Self {
         value as usize
+    }
+}
+impl From<Format> for u64 {
+    fn from(value: Format) -> Self {
+        value as u64
     }
 }
 
@@ -706,6 +721,14 @@ pub struct RlpTable<F: Field> {
     pub is_output: bool,
     /// If current tag's value is None.
     pub is_none: bool,
+    /// The index of access list address
+    /// Corresponding tag is AccessListAddress
+    pub access_list_idx: u64,
+    /// The index of the storage key
+    /// The combination (access_list_idx, storage_key_idx)
+    /// uniquely identifies a storage key value
+    /// Corresponding tag is AccessListStorageKey
+    pub storage_key_idx: u64,
 }
 
 /// State Machine
@@ -740,6 +763,150 @@ pub struct StateMachine<F: Field> {
     pub gas_cost_acc: Value<F>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub enum StackOp {
+    #[default]
+    Init,
+    Push,
+    Pop,
+    Update,
+}
+
+/// Rlp Decoding Witness
+/// Using simulated stack constraints to make sure all bytes in nested structure are correctly
+/// decoded
+#[derive(Clone, Debug, Default)]
+pub struct RlpStackOp<F: PrimeField> {
+    /// Key: rlc of (tx_id, format, depth, al_idx, sk_idx)
+    pub id: Value<F>,
+    /// Transaction Id
+    pub tx_id: u64,
+    /// Format
+    pub format: Format,
+    /// depth
+    pub depth: usize,
+    /// Op Counter, similar to rw counter
+    pub byte_idx: usize,
+    /// Value
+    pub value: usize,
+    /// Value Previous
+    pub value_prev: usize,
+    /// The stack operation performed at step.
+    pub stack_op: StackOp,
+    /// Access list index
+    pub al_idx: u64,
+    /// Storage key index
+    pub sk_idx: u64,
+}
+
+fn stack_op_id<F: PrimeField>(components: [u64; 5], challenge: Value<F>) -> Value<F> {
+    components
+        .into_iter()
+        .fold(Value::known(F::ZERO), |mut rlc, num| {
+            rlc = rlc * challenge + Value::known(F::from(num));
+            rlc
+        })
+}
+
+impl<F: PrimeField> RlpStackOp<F> {
+    pub fn init(tx_id: u64, format: Format, value: usize, challenge: Value<F>) -> Self {
+        Self {
+            id: stack_op_id([tx_id, format as u64, 0, 0, 0], challenge),
+            tx_id,
+            format,
+            depth: 0,
+            byte_idx: 0,
+            value,
+            value_prev: 0,
+            stack_op: StackOp::Init,
+            al_idx: 0,
+            sk_idx: 0,
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn push(
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
+        depth: usize,
+        value: usize,
+        al_idx: u64,
+        sk_idx: u64,
+        challenge: Value<F>,
+    ) -> Self {
+        Self {
+            id: stack_op_id(
+                [tx_id, format as u64, depth as u64, al_idx, sk_idx],
+                challenge,
+            ),
+            tx_id,
+            format,
+            depth,
+            byte_idx,
+            value,
+            value_prev: 0,
+            stack_op: StackOp::Push,
+            al_idx,
+            sk_idx,
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn pop(
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
+        depth: usize,
+        value: usize,
+        value_prev: usize,
+        al_idx: u64,
+        sk_idx: u64,
+        challenge: Value<F>,
+    ) -> Self {
+        Self {
+            id: stack_op_id(
+                [tx_id, format as u64, depth as u64, al_idx, sk_idx],
+                challenge,
+            ),
+            tx_id,
+            format,
+            depth,
+            byte_idx,
+            value,
+            value_prev,
+            stack_op: StackOp::Pop,
+            al_idx,
+            sk_idx,
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(
+        tx_id: u64,
+        format: Format,
+        byte_idx: usize,
+        depth: usize,
+        value: usize,
+        al_idx: u64,
+        sk_idx: u64,
+        challenge: Value<F>,
+    ) -> Self {
+        Self {
+            id: stack_op_id(
+                [tx_id, format as u64, depth as u64, al_idx, sk_idx],
+                challenge,
+            ),
+            tx_id,
+            format,
+            depth,
+            byte_idx,
+            value,
+            value_prev: value + 1,
+            stack_op: StackOp::Update,
+            al_idx,
+            sk_idx,
+        }
+    }
+}
+
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
 pub struct RlpFsmWitnessRow<F: Field> {
@@ -747,6 +914,8 @@ pub struct RlpFsmWitnessRow<F: Field> {
     pub rlp_table: RlpTable<F>,
     /// The state machine witness.
     pub state_machine: StateMachine<F>,
+    /// The rlp decoding table witness
+    pub rlp_decoding_table: RlpStackOp<F>,
 }
 
 /// The RlpFsmWitnessGen trait is implemented by data types who's RLP encoding can

@@ -4,7 +4,7 @@ use crate::{
         rlp_fsm::{MAX_TAG_LENGTH_OF_LIST, N_BYTES_CALLDATA},
         Format::L1MsgHash,
         RomTableRow,
-        Tag::{BeginList, Data, EndList, Gas, Nonce, Sender, To, TxType, Value as TxValue},
+        Tag::{BeginObject, Data, EndObject, Gas, Nonce, Sender, To, TxType, Value as TxValue},
     },
 };
 use ethers_core::utils::rlp::Encodable;
@@ -20,17 +20,17 @@ impl Encodable for L1MsgTx {
 
 pub fn rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (TxType, BeginList, 1, vec![1]),
-        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![2]),
+        (TxType, BeginObject, 1, vec![1]),
+        (BeginObject, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (Nonce, Gas, N_BYTES_U64, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
         (TxValue, Data, N_BYTES_WORD, vec![6]),
         (Data, Sender, N_BYTES_CALLDATA, vec![7]),
-        (Sender, EndList, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
-        (EndList, EndList, 0, vec![9]),
+        (Sender, EndObject, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
+        (EndObject, EndObject, 0, vec![9]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![]),
+        (EndObject, BeginObject, 0, vec![]),
     ];
 
     rows.into_iter()
