@@ -667,134 +667,133 @@ arith:
         Ok(())
     }
 
-    // TODO: enable test again later
-    // #[test]
-    // fn result_pass() -> Result<()> {
-    //     let mut tc = YamlStateTestBuilder::new(&Compiler::default())
-    //         .load_yaml("", &Template::default().to_string())?;
-    //     let t1 = tc.remove(0);
-    //     run_test(t1, TestSuite::default(), CircuitsConfig::default())?;
-    //     Ok(())
-    // }
+    #[test]
+    fn result_pass() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default())
+            .load_yaml("", &Template::default().to_string())?;
+        let t1 = tc.remove(0);
+        run_test(t1, TestSuite::default(), CircuitsConfig::default())?;
+        Ok(())
+    }
 
-    // #[test]
-    // fn test_result_bad_storage() -> Result<()> {
-    //     let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
-    //         "",
-    //         &Template {
-    //             res_storage: "2".into(),
-    //             ..Default::default()
-    //         }
-    //         .to_string(),
-    //     )?;
-    //     assert_eq!(
-    //         run_test(
-    //             tc.remove(0),
-    //             TestSuite::default(),
-    //             CircuitsConfig::default()
-    //         ),
-    //         Err(StateTestError::StorageMismatch {
-    //             slot: U256::from(0u8),
-    //             expected: U256::from(2u8),
-    //             found: U256::from(1u8)
-    //         })
-    //     );
+    #[test]
+    fn test_result_bad_storage() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
+            "",
+            &Template {
+                res_storage: "2".into(),
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        assert_eq!(
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
+            Err(StateTestError::StorageMismatch {
+                slot: U256::from(0u8),
+                expected: U256::from(2u8),
+                found: U256::from(1u8)
+            })
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // #[test]
-    // fn bad_balance() -> Result<()> {
-    //     let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
-    //         "",
-    //         &Template {
-    //             res_balance: "1000000000002".into(),
-    //             ..Default::default()
-    //         }
-    //         .to_string(),
-    //     )?;
-    //     assert_eq!(
-    //         run_test(
-    //             tc.remove(0),
-    //             TestSuite::default(),
-    //             CircuitsConfig::default()
-    //         ),
-    //         Err(StateTestError::BalanceMismatch {
-    //             expected: U256::from(1000000000002u64),
-    //             found: U256::from(1000000000001u64)
-    //         })
-    //     );
+    #[test]
+    fn bad_balance() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
+            "",
+            &Template {
+                res_balance: "1000000000002".into(),
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        assert_eq!(
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
+            Err(StateTestError::BalanceMismatch {
+                expected: U256::from(1000000000002u64),
+                found: U256::from(1000000000001u64)
+            })
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // #[test]
-    // fn bad_code() -> Result<()> {
-    //     let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
-    //         "",
-    //         &Template {
-    //             res_code: ":raw 0x600200".into(),
-    //             ..Default::default()
-    //         }
-    //         .to_string(),
-    //     )?;
-    //     assert_eq!(
-    //         run_test(
-    //             tc.remove(0),
-    //             TestSuite::default(),
-    //             CircuitsConfig::default()
-    //         ),
-    //         Err(StateTestError::CodeMismatch {
-    //             expected: Bytes::from(&[0x60, 0x02, 0x00]),
-    //             found: Bytes::from(&[0x60, 0x01, 0x00])
-    //         })
-    //     );
+    #[test]
+    fn bad_code() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
+            "",
+            &Template {
+                res_code: ":raw 0x600200".into(),
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        assert_eq!(
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
+            Err(StateTestError::CodeMismatch {
+                expected: Bytes::from(&[0x60, 0x02, 0x00]),
+                found: Bytes::from(&[0x60, 0x01, 0x00])
+            })
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // #[test]
-    // fn bad_nonce() -> Result<()> {
-    //     let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
-    //         "",
-    //         &Template {
-    //             res_nonce: "2".into(),
-    //             ..Default::default()
-    //         }
-    //         .to_string(),
-    //     )?;
+    #[test]
+    fn bad_nonce() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
+            "",
+            &Template {
+                res_nonce: "2".into(),
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
 
-    //     assert_eq!(
-    //         run_test(
-    //             tc.remove(0),
-    //             TestSuite::default(),
-    //             CircuitsConfig::default()
-    //         ),
-    //         Err(StateTestError::NonceMismatch {
-    //             expected: U256::from(2),
-    //             found: U256::from(0)
-    //         })
-    //     );
+        assert_eq!(
+            run_test(
+                tc.remove(0),
+                TestSuite::default(),
+                CircuitsConfig::default()
+            ),
+            Err(StateTestError::NonceMismatch {
+                expected: U256::from(2),
+                found: U256::from(0)
+            })
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // #[test]
-    // fn sstore() -> Result<()> {
-    //     let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
-    //         "",
-    //         &Template {
-    //             pre_code: ":raw 0x607760005500".into(),
-    //             res_code: ":raw 0x607760005500".into(),
-    //             res_storage: "0x77".into(),
-    //             ..Default::default()
-    //         }
-    //         .to_string(),
-    //     )?;
-    //     let config = CircuitsConfig::default();
-    //     run_test(tc.remove(0), TestSuite::default(), config)?;
-    //     Ok(())
-    // }
+    #[test]
+    fn sstore() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
+            "",
+            &Template {
+                pre_code: ":raw 0x607760005500".into(),
+                res_code: ":raw 0x607760005500".into(),
+                res_storage: "0x77".into(),
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        let config = CircuitsConfig::default();
+        run_test(tc.remove(0), TestSuite::default(), config)?;
+        Ok(())
+    }
 
     #[test]
     fn marked_as_exception_and_fails() -> Result<()> {
