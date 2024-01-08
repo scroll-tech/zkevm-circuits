@@ -994,7 +994,6 @@ impl Transaction {
                 a.tx_id,
                 a.format as u64,
                 a.depth,
-                // eip1559_debug
                 a.al_idx,
                 a.sk_idx,
                 a.byte_idx,
@@ -1003,7 +1002,6 @@ impl Transaction {
                 b.tx_id,
                 b.format as u64,
                 b.depth,
-                // eip1559_debug
                 a.al_idx,
                 a.sk_idx,
                 b.byte_idx,
