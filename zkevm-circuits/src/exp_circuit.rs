@@ -10,7 +10,7 @@ pub use dev::ExpCircuit as TestExpCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{ExpTable, LookupTable, U16Table, UXTable},
+    table::{ExpTable, LookupTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };

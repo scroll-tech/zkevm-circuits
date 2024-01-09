@@ -24,7 +24,7 @@ use crate::{
             Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength,
             TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
         },
-        TxTable, U16Table, U8Table, UXTable,
+        TxTable, UXTable,
     },
     util::{
         is_zero::{IsZeroChip, IsZeroConfig},
@@ -130,7 +130,7 @@ pub struct TxCircuitConfig<F: Field> {
 
     //u8_table: U8Table,
     u8_table: UXTable<8>,
-    u16_table: U16Table,
+    u16_table: UXTable<16>,
 
     /// Verify if the tx_id is zero or not.
     tx_id_is_zero: IsZeroConfig<F>,
@@ -209,7 +209,7 @@ pub struct TxCircuitConfigArgs<F: Field> {
     // pub u8_table: U8Table,
     pub u8_table: UXTable<8>,
     /// Reusable u16 lookup table,
-    pub u16_table: U16Table,
+    pub u16_table: UXTable<16>,
     /// Challenges
     pub challenges: crate::util::Challenges<Expression<F>>,
 }
@@ -874,7 +874,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.query_advice(block_num, Rotation::cur()),
         );
 
-        meta.lookup("block_num is non-decreasing till padding txs", |meta| {
+        meta.lookup_any("block_num is non-decreasing till padding txs", |meta| {
             // Block nums like this [1, 3, 5, 4, 0] is rejected by this. But [1, 2, 3, 5, 0] is
             // acceptable.
             let lookup_condition = and::expr([
@@ -888,7 +888,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let block_num_diff = meta.query_advice(block_num, Rotation::next())
                 - meta.query_advice(block_num, Rotation::cur());
 
-            vec![(lookup_condition * block_num_diff, u16_table.into())]
+            vec![(
+                lookup_condition * block_num_diff,
+                meta.query_fixed(u16_table.col, Rotation::cur()),
+            )]
         });
 
         meta.create_gate("num_all_txs in a block", |meta| {
@@ -1155,7 +1158,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         ////////////////////////////////////////////////////////////////////////
         ///////////  CallData length and gas_cost calculation  /////////////////
         ////////////////////////////////////////////////////////////////////////
-        meta.lookup("tx_id_diff must in u16", |meta| {
+        meta.lookup_any("tx_id_diff must in u16", |meta| {
             let q_enable = meta.query_fixed(q_enable, Rotation::next());
             let is_calldata = meta.query_advice(is_calldata, Rotation::cur());
             let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
@@ -1164,8 +1167,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             let lookup_condition =
                 and::expr([q_enable, is_calldata, not::expr(tx_id_next_is_zero)]);
-
-            vec![(lookup_condition * (tx_id_next - tx_id), u16_table.into())]
+            let u16_expr = meta.query_fixed(u16_table.col, Rotation::cur());
+            vec![(lookup_condition * (tx_id_next - tx_id), u16_expr)]
         });
 
         meta.create_gate("last row of call data", |meta| {
@@ -1706,9 +1709,9 @@ impl<F: Field> TxCircuitConfig<F> {
             let table_exprs = vec![
                 meta.query_fixed(sig_table.q_enable, Rotation::cur()),
                 // msg_hash_rlc not needed to be looked up for tx circuit?
-                // meta.query_advice(sig_table.msg_hash_rlc, Rotation::cur()),
-                meta.query_advice(sig_table.msg_hash_word.lo(), Rotation::cur()),
-                meta.query_advice(sig_table.msg_hash_word.hi(), Rotation::cur()),
+                meta.query_advice(sig_table.msg_hash_rlc, Rotation::cur()),
+                // meta.query_advice(sig_table.msg_hash_word.lo(), Rotation::cur()),
+                // meta.query_advice(sig_table.msg_hash_word.hi(), Rotation::cur()),
                 meta.query_advice(sig_table.sig_v, Rotation::cur()),
                 meta.query_advice(sig_table.sig_r_rlc, Rotation::cur()),
                 meta.query_advice(sig_table.sig_s_rlc, Rotation::cur()),

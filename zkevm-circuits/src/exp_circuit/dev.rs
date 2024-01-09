@@ -2,7 +2,7 @@ pub use super::ExpCircuit;
 
 use crate::{
     exp_circuit::{ExpCircuitArgs, ExpCircuitConfig},
-    table::{ExpTable, U16Table, UXTable},
+    table::{ExpTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use eth_types::Field;

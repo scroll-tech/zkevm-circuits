@@ -20,7 +20,7 @@ use eth_types::{Field, Word, ToU16LittleEndian};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
     },
     poly::Rotation,
 };
@@ -511,7 +511,8 @@ mod test {
 
             fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.complex_selector();
-                let u16_table = meta.lookup_table_column();
+                //let u16_table = meta.lookup_table_column();
+                let u16_table = meta.fixed_column();
                 let mul_config =
                     MulAddChip::configure(meta, |meta| meta.query_selector(q_enable), u16_table);
                 Self::Config {
@@ -527,11 +528,12 @@ mod test {
             ) -> Result<(), halo2_proofs::plonk::Error> {
                 let chip = MulAddChip::construct(config.mul_config);
 
-                layouter.assign_table(
+                //layouter.assign_table(
+                layouter.assign_region(
                     || "u16 table",
-                    |mut table| {
+                    |mut region| {
                         for i in 0..=65535 {
-                            table.assign_cell(
+                            region.assign_fixed(
                                 || format!("u16 table row {i}"),
                                 chip.config.u16_table,
                                 i,

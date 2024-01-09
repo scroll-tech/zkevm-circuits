@@ -153,9 +153,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         meta.enable_equality(sig_table.sig_s_rlc);
         meta.enable_equality(sig_table.sig_v);
         meta.enable_equality(sig_table.is_valid);
-        //meta.enable_equality(sig_table.msg_hash_rlc);
-        meta.enable_equality(sig_table.msg_hash_word.lo());
-        meta.enable_equality(sig_table.msg_hash_word.hi());
+        meta.enable_equality(sig_table.msg_hash_rlc);
+        // meta.enable_equality(sig_table.msg_hash_word.lo());
+        // meta.enable_equality(sig_table.msg_hash_word.hi());
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
@@ -483,12 +483,13 @@ impl<F: Field> SigCircuit<F> {
             || is_address_zero.value,
         )?;
         let rlc_word_0 = word::Word::new([is_address_zero.value, Value::known(F::zero())]);
+        // TODO: remove this later
         rlc_word_0.assign_advice(
             &mut ctx.region,
             || "assign rlc_column_word",
             config.rlc_column_word,
             offset,
-        );
+        )?;
 
         ctx.region
             .constrain_equal(is_address_zero.cell, tmp_cell.cell())?;
@@ -737,26 +738,6 @@ impl<F: Field> SigCircuit<F> {
         );
 
         // TODO：calculate pk hash word [QuantumCell<F>;32]
-        // let mut hash_value_f: [F; 32] = [F::zero();32];
-        let mut hash_value_f: [F; 32] = [F::zero(); 32];
-        let mut idx = 0;
-        // sign_data_decomposed.pk_hash_cells.split_off(32).iter().map(|qcell| {
-        //    let q_val =  qcell.value();
-        //    let mut val = F::zero();
-        //    q_val.map(|f| val = *f);
-        //    hash_value_f[idx] = val;
-        //    idx += 1;
-        //    val
-        // }).collect::<Vec<F>>();
-
-        // let hash_value = hash_value_f.map(Value::known);
-        //let hash_word = word::Word::new([hash_value[..16] , hash_value[16..32]]);
-
-        //let hash_cells:[Value<&F>;32] =
-        // sign_data_decomposed.pk_hash_cells.split_off(32).iter().map(|qcell|
-        // qcell.value()).collect::<Vec<Value<&F>>>().as_slice().try_into()?;
-        // let pk_hash_word = word::Word::new([ , ]);
-
         // step 4: r,s rlc
         let r_rlc = rlc_chip.gate.inner_product(
             ctx,
@@ -971,18 +952,18 @@ impl<F: Field> SigCircuit<F> {
                         idx,
                     );
 
-                    // assigned_sig_verif.msg_hash_rlc.copy_advice(
-                    //     &mut region,
-                    //     config.sig_table.msg_hash_rlc,
-                    //     idx,
-                    // );
-                    let msg_hash_word = word::Word::from(*msg_hash_word).map(Value::known);
-                    let msg_hash_word_cells = msg_hash_word.assign_advice(
+                    assigned_sig_verif.msg_hash_rlc.copy_advice(
                         &mut region,
-                        || "assign msg_hash_word",
-                        config.sig_table.msg_hash_word,
+                        config.sig_table.msg_hash_rlc,
                         idx,
-                    )?;
+                    );
+                    // let msg_hash_word = word::Word::from(*msg_hash_word).map(Value::known);
+                    // let msg_hash_word_cells = msg_hash_word.assign_advice(
+                    //     &mut region,
+                    //     || "assign msg_hash_word",
+                    //     config.sig_table.msg_hash_word,
+                    //     idx,
+                    // )?;
                     // TODO: constrain rlc(msg_hash_word) == assigned_sig_verif.msg_hash_rlc
                     // region.constrain_equal(left, right)
                 }

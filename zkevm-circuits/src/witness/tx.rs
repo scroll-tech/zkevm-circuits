@@ -1,5 +1,5 @@
 use crate::{
-    evm_circuit::{step::ExecutionState, util::rlc},
+    evm_circuit::{step::ExecutionState},
     table::TxContextFieldTag,
     util::{rlc_be_bytes, word, Challenges},
     witness::{
@@ -22,7 +22,7 @@ use eth_types::{
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
-    AccessList, Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord,
+    AccessList, Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToWord,
     Word, H256,
 };
 use ethers_core::{

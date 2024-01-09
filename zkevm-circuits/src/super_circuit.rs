@@ -82,7 +82,7 @@ use crate::{
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, ModExpTable,
         MptTable, PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, SHA256Table,
-        SigTable, TxTable, U16Table, UXTable,
+        SigTable, TxTable, UXTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{circuit_stats, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},

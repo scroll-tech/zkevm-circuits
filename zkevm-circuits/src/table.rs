@@ -2456,9 +2456,8 @@ pub struct SigTable {
     /// Indicates whether or not the gates are enabled on the current row.
     pub q_enable: Column<Fixed>,
     /// Random-linear combination of the Keccak256 hash of the message that's signed.
-    // pub msg_hash_rlc: Column<Advice>,
-    /// the Keccak256 hash of the message that's signed, it is word type
-    pub msg_hash_word: word::Word<Column<Advice>>,
+    /// do not change to word hi lo (msg_hash_word) becuase it is related to ecc chip.
+    pub msg_hash_rlc: Column<Advice>,
     // TODO: sig_r_rlc, sig_s_rlc to word as well ?
     /// should be in range [0, 1]
     pub sig_v: Column<Advice>,
@@ -2477,8 +2476,8 @@ impl SigTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
-            //msg_hash_rlc: meta.advice_column_in(SecondPhase),
-            msg_hash_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            msg_hash_rlc: meta.advice_column_in(SecondPhase),
+            // msg_hash_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
             sig_v: meta.advice_column(),
             sig_s_rlc: meta.advice_column_in(SecondPhase),
             sig_r_rlc: meta.advice_column_in(SecondPhase),
@@ -2533,7 +2532,7 @@ impl SigTable {
                         || Value::known(F::one()),
                     )?;
                     for (column_name, column, value) in [
-                        //("msg_hash_rlc", self.msg_hash_rlc, msg_hash_rlc),
+                        ("msg_hash_rlc", self.msg_hash_rlc, msg_hash_rlc),
                         ("sig_v", self.sig_v, sig_v),
                         ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
                         ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
@@ -2552,12 +2551,12 @@ impl SigTable {
                         )?;
                     }
 
-                    msg_hash_word.assign_advice(
-                        &mut region,
-                        || format!("sig table msg_hash_word {offset}"),
-                        self.msg_hash_word,
-                        offset,
-                    )?;
+                    // msg_hash_word.assign_advice(
+                    //     &mut region,
+                    //     || format!("sig table msg_hash_word {offset}"),
+                    //     self.msg_hash_word,
+                    //     offset,
+                    // )?;
                 }
 
                 Ok(())
@@ -2572,9 +2571,9 @@ impl<F: Field> LookupTable<F> for SigTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
-            //self.msg_hash_rlc.into(),
-            self.msg_hash_word.lo().into(),
-            self.msg_hash_word.hi().into(),
+            self.msg_hash_rlc.into(),
+            // self.msg_hash_word.lo().into(),
+            // self.msg_hash_word.hi().into(),
             self.sig_v.into(),
             self.sig_r_rlc.into(),
             self.sig_s_rlc.into(),
