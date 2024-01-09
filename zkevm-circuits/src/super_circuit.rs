@@ -309,6 +309,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 copy_table,
                 q_enable: q_copy_table,
                 challenges: challenges_expr.clone(),
+                u8_table,
             },
         );
         log_circuit_info(meta, "copy circuit");

@@ -1,7 +1,7 @@
 //! Table definitions used cross-circuits
 
 use crate::{
-    copy_circuit::util::number_or_hash_to_word,
+    copy_circuit::{util::number_or_hash_to_word, CopyCircuitConfig},
     evm_circuit::util::{
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         from_bytes, rlc,
@@ -28,7 +28,7 @@ use gadgets::{
     util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
+    circuit::{self, AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Fq, G1Affine},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -1711,19 +1711,22 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
 
+/// CopyTable Row Assignment
 pub struct CopyTableRowAssignment<F> {
-    is_first: F,
-    id: word::Word<Value<F>>,
-    addr: F,
-    src_addr_end: F,
-    real_bytes_left: F,
-    rlc_acc: Value<F>,
-    rw_counter: F,
-    rwc_inc_left: F,
+    pub(crate) is_first: F,
+    pub(crate) id: word::Word<Value<F>>,
+    pub(crate) addr: F,
+    pub(crate) addr_copy_start: F,
+    pub(crate) addr_copy_end: F,
+    pub(crate) src_addr_end: F,
+    pub(crate) real_bytes_left: F,
+    pub(crate) rlc_acc: Value<F>,
+    pub(crate) rw_counter: F,
+    pub(crate) rwc_inc_left: F,
 }
 
 impl<F: Field> CopyTableRowAssignment<F> {
-    pub fn assign(
+    pub(crate) fn assign(
         &self,
         table: &CopyTable,
         region: &mut Region<'_, F>,
@@ -1752,6 +1755,18 @@ impl<F: Field> CopyTableRowAssignment<F> {
             table.addr,
             offset,
             || Value::known(self.addr),
+        )?;
+        region.assign_advice(
+            || format!("addr_copy_start at row: {offset}"),
+            table.addr_copy_start,
+            offset,
+            || Value::known(self.addr_copy_start),
+        )?;
+        region.assign_advice(
+            || format!("addr_copy_end at row: {offset}"),
+            table.addr_copy_end,
+            offset,
+            || Value::known(self.addr_copy_end),
         )?;
         region.assign_advice(
             || format!("src_addr_end at row: {offset}"),
@@ -1788,12 +1803,63 @@ impl<F: Field> CopyTableRowAssignment<F> {
     }
 }
 
+/// CopyTable Circuit Row Assignment
 pub struct CopyCircuitRowAssignment<F> {
-    is_first: F,
-    value_limbs: [F; 16],
-    value_word: F,
-    value_word_prev: F,
-    value_acc: Value<F>,
+    pub(crate) is_last: F,
+    pub(crate) value_limbs: [F; 16],
+    pub(crate) value_word: F,
+    pub(crate) value_word_prev: F,
+    pub(crate) value_acc: Value<F>,
+}
+
+impl<F: Field> CopyCircuitRowAssignment<F> {
+    pub(crate) fn assign(
+        &self,
+        config: &CopyCircuitConfig<F>,
+        region: &mut Region<'_, F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || format!("is_last at row: {offset}"),
+            config.is_last,
+            offset,
+            || Value::known(self.is_last),
+        )?;
+        for (i, (value, col)) in self
+            .value_limbs
+            .iter()
+            .copied()
+            .zip(config.value_limbs)
+            .enumerate()
+        {
+            region.assign_advice(
+                || format!("value_limbs[{i}] at row: {offset}"),
+                col,
+                offset,
+                || Value::known(value),
+            )?;
+        }
+        region.assign_advice(
+            || format!("value_word at row: {offset}"),
+            config.value_word,
+            offset,
+            || Value::known(self.value_word),
+        )?;
+        region.assign_advice(
+            || format!("value_word_prev at row: {offset}"),
+            config.value_word_prev,
+            offset,
+            || Value::known(self.value_word_prev),
+        )?;
+        region.assign_advice(
+            || format!("value_acc at row: {offset}"),
+            config.value_acc,
+            offset,
+            || self.value_acc,
+        )?;
+
+        Ok(())
+    }
 }
 
 /// CopyThread is the state used while generating rows of the copy table.
@@ -1804,6 +1870,8 @@ struct CopyThread<F: Field> {
     front_mask: bool,
     addr: u64,
     addr_end: u64,
+    addr_copy_start: u64,
+    addr_copy_end: u64,
     bytes_left: u64,
     value_acc: Value<F>,
 }
@@ -1827,6 +1895,7 @@ impl CopyTable {
         }
     }
 
+    /// Generate the copy table and copy circuit assignments from a copy event.
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
@@ -1855,7 +1924,7 @@ impl CopyTable {
     // TODO: move access list to its own table, it messes up the copy circuit logic
     fn assignment_access_list<F: Field>(
         copy_event: &CopyEvent,
-        challenges: Challenges<Value<F>>,
+        _challenges: Challenges<Value<F>>,
     ) -> Vec<(
         CopyDataType,
         CopyTableRowAssignment<F>,
@@ -1868,13 +1937,64 @@ impl CopyTable {
         );
 
         let mut assignments = Vec::new();
+        let mut rw_counter = copy_event.rw_counter_start();
+        let mut rwc_inc_left = copy_event.rw_counter_delta();
 
-        todo!();
+        for (idx, (key, val)) in copy_event.access_list.iter().enumerate() {
+            assignments.push((
+                copy_event.src_type,
+                CopyTableRowAssignment {
+                    is_first: F::from(idx == 0),
+                    id: number_or_hash_to_word(&copy_event.src_id),
+                    addr: F::from(idx as u64),
+                    addr_copy_start: F::zero(),
+                    addr_copy_end: F::zero(),
+                    src_addr_end: F::zero(),
+                    real_bytes_left: F::from(copy_event.copy_length() - idx as u64),
+                    rlc_acc: Value::known(F::zero()),
+                    rw_counter: F::from(rw_counter),
+                    rwc_inc_left: F::from(rwc_inc_left),
+                },
+                CopyCircuitRowAssignment {
+                    is_last: F::from(false),
+                    value_limbs: [F::zero(); 16],
+                    value_word: key.to_scalar().unwrap(),
+                    value_word_prev: val.to_scalar().unwrap(),
+                    value_acc: Value::known(F::zero()),
+                },
+            ));
+            rw_counter += 1;
+            rwc_inc_left -= 1;
+
+            assignments.push((
+                copy_event.dst_type,
+                CopyTableRowAssignment {
+                    is_first: F::from(false),
+                    id: number_or_hash_to_word(&copy_event.src_id),
+                    addr: F::from(idx as u64),
+                    addr_copy_start: F::zero(),
+                    addr_copy_end: F::zero(),
+                    src_addr_end: F::zero(),
+                    real_bytes_left: F::from(copy_event.copy_length() - idx as u64),
+                    rlc_acc: Value::known(F::zero()),
+                    rw_counter: F::from(rw_counter),
+                    rwc_inc_left: F::from(rwc_inc_left),
+                },
+                CopyCircuitRowAssignment {
+                    is_last: F::from(idx == copy_event.access_list.len() - 1),
+                    value_limbs: [F::zero(); 16],
+                    value_word: key.to_scalar().unwrap(),
+                    value_word_prev: val.to_scalar().unwrap(),
+                    value_acc: Value::known(F::zero()),
+                },
+            ));
+            rw_counter += 1;
+            rwc_inc_left -= 1;
+        }
 
         assignments
     }
 
-    /// Generate the copy table and copy circuit assignments from a copy event.
     fn assignments_inner<F: Field>(
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
@@ -1918,10 +2038,33 @@ impl CopyTable {
         } else {
             read_steps.zip(copy_event.copy_bytes.bytes.chunks_exact(16))
         };
+        let (read_addr_copy_start, read_addr_copy_end, write_addr_copy_start, write_addr_copy_end) = {
+            // there's at least two steps, 1 word = 32 bytes
+            let write_bytes = if let Some(ref write_bytes) = copy_event.copy_bytes.aux_bytes {
+                write_bytes
+            } else {
+                &copy_event.copy_bytes.bytes
+            };
+
+            let count_leading_masks = |bytes: &[(u8, bool, bool)]| {
+                bytes.iter().take_while(|(_, _, mask)| *mask).count() as u64
+            };
+            let count_trailing_masks = |bytes: &[(u8, bool, bool)]| {
+                bytes.iter().rev().take_while(|(_, _, mask)| *mask).count() as u64
+            };
+
+            (
+                copy_event.src_addr + count_leading_masks(&copy_event.copy_bytes.bytes),
+                copy_event.src_addr_end - count_trailing_masks(&copy_event.copy_bytes.bytes),
+                copy_event.dst_addr + count_leading_masks(write_bytes),
+                copy_event.dst_addr + copy_event.full_length() - count_trailing_masks(write_bytes),
+            )
+        };
 
         let prev_write_bytes: Vec<[u8; 16]> = copy_event
             .copy_bytes
             .bytes_write_prev
+            .as_ref()
             .map(|bytes| {
                 assert_eq!(bytes.len() % 32, 0, "must be aligned by 32 bytes");
                 assert_eq!(bytes.len(), copy_event.copy_bytes.bytes.len());
@@ -1934,10 +2077,6 @@ impl CopyTable {
 
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
-        let mut value_word_read_bytes: [u8; 32] = [0; 32];
-        let mut value_word_write_bytes: [u8; 32] = [0; 32];
-        let mut value_word_read_prev_bytes: [u8; 32] = [0; 32];
-        let mut value_word_write_prev_bytes: [u8; 32] = [0; 32];
 
         let mut reader = CopyThread {
             tag: copy_event.src_type,
@@ -1946,6 +2085,8 @@ impl CopyTable {
             front_mask: true,
             addr: copy_event.src_addr,
             addr_end: copy_event.src_addr_end,
+            addr_copy_start: read_addr_copy_start,
+            addr_copy_end: read_addr_copy_end,
             bytes_left: copy_event.copy_length(),
             value_acc: Value::known(F::zero()),
         };
@@ -1957,6 +2098,8 @@ impl CopyTable {
             front_mask: true,
             addr: copy_event.dst_addr,
             addr_end: copy_event.dst_addr + copy_event.full_length(),
+            addr_copy_start: write_addr_copy_start,
+            addr_copy_end: write_addr_copy_end,
             bytes_left: reader.bytes_left,
             value_acc: Value::known(F::zero()),
         };
@@ -1975,22 +2118,14 @@ impl CopyTable {
             }
             let copy_step = copy_step;
 
-            let (thread, value_word_bytes, value_word_prev_bytes) = if is_read_step {
-                (
-                    &mut reader,
-                    &mut value_word_read_bytes,
-                    &mut value_word_read_prev_bytes,
-                )
+            let thread = if is_read_step {
+                &mut reader
             } else {
-                (
-                    &mut writer,
-                    &mut value_word_write_bytes,
-                    &mut value_word_write_prev_bytes,
-                )
+                &mut writer
             };
 
             let is_first = step_idx == 0;
-            let is_last = step_idx as u64 == copy_event.full_length() * 2 - 1;
+            let is_last = step_idx as u64 == copy_event.full_length() / 16 * 2 - 1;
             let is_lo = step_idx % 4 < 2;
 
             let is_pad: [bool; 16] = (0..16u64)
@@ -2041,6 +2176,8 @@ impl CopyTable {
                     is_first: F::from(is_first),
                     id: thread.id,
                     addr,
+                    addr_copy_start: F::from(thread.addr_copy_start),
+                    addr_copy_end: F::from(thread.addr_copy_end),
                     src_addr_end: F::from(thread.addr_end),
                     real_bytes_left: F::from(thread.bytes_left),
                     rlc_acc,
@@ -2048,7 +2185,7 @@ impl CopyTable {
                     rwc_inc_left: F::from(rwc_inc_left),
                 },
                 CopyCircuitRowAssignment {
-                    is_first: F::from(is_first),
+                    is_last: F::from(is_last),
                     value_limbs,
                     value_word: value_word_limb,
                     value_word_prev: value_word_limb_prev,

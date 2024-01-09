@@ -350,11 +350,35 @@ impl_expr!(CopyDataType, u64::from);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CopyStep {
     /// Byte value copied in this step.
-    pub value: u8,
+    pub half_word: [u8; 16],
     /// Byte value before this step.
-    pub prev_value: u8,
+    pub prev_half_word: [u8; 16],
     /// mask indicates this byte won't be copied.
-    pub mask: bool,
+    pub mask: [bool; 16],
+}
+
+impl From<&[(u8, bool, bool)]> for CopyStep {
+    fn from(steps: &[(u8, bool, bool)]) -> Self {
+        assert_eq!(steps.len(), 16, "steps length should be 16");
+        let bytes: [u8; 16] = steps
+            .iter()
+            .copied()
+            .map(|(v, _, _)| v)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        Self {
+            half_word: bytes,
+            prev_half_word: bytes,
+            mask: steps
+                .iter()
+                .copied()
+                .map(|(_, _, m)| m)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        }
+    }
 }
 
 /// Defines an enum type that can hold either a number or a hash value.

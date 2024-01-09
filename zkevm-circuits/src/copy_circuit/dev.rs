@@ -2,7 +2,7 @@ pub use super::CopyCircuit;
 
 use crate::{
     copy_circuit::{CopyCircuitConfig, CopyCircuitConfigArgs},
-    table::{BytecodeTable, CopyTable, RwTable, TxTable},
+    table::{BytecodeTable, CopyTable, RwTable, TxTable, U8Table},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use eth_types::Field;
@@ -29,6 +29,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         let copy_table = CopyTable::construct(meta, q_enable);
         let challenges = Challenges::construct(meta);
         let challenge_exprs = challenges.exprs(meta);
+        let u8_table = U8Table::construct(meta);
 
         (
             CopyCircuitConfig::new(
@@ -40,6 +41,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
                     copy_table,
                     q_enable,
                     challenges: challenge_exprs,
+                    u8_table,
                 },
             ),
             challenges,
@@ -52,6 +54,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenge_values = config.1.values(&layouter);
+        config.0.u8_table.load(&mut layouter)?;
 
         config.0.tx_table.load(
             &mut layouter,
