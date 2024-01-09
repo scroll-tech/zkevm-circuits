@@ -6,9 +6,7 @@ pub use super::TxCircuit;
 
 use crate::{
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    table::{
-        BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, UXTable,
-    },
+    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, UXTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Transaction,

@@ -19,9 +19,7 @@
 use eth_types::{Field, Word, ToU16LittleEndian};
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 

@@ -10,9 +10,7 @@ use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
