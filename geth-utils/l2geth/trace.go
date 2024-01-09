@@ -44,7 +44,7 @@ type Transaction struct {
 	CallData   hexutil.Bytes   `json:"call_data"`
 	AccessList []struct {
 		Address     common.Address `json:"address"`
-		StorageKeys []common.Hash  `json:"storage_keys"`
+		StorageKeys []common.Hash  `json:"storageKeys"`
 	} `json:"access_list"`
 	Type string       `json:"tx_type"`
 	V    int64        `json:"v"`

@@ -1,7 +1,7 @@
 use super::{CachedRegion, Cell};
 use crate::{
     evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::IsEqualGadget, select,
+        constraint_builder::EVMConstraintBuilder, math_gadget::IsEqualGadget, select, sum,
     },
     table::TxFieldTag,
     util::Expr,
@@ -18,24 +18,27 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
-/// Transaction EIP-2930 gadget to handle optional access-list
+/// Transaction gadget to handle access-list for EIP-1559 and EIP-2930
 #[derive(Clone, Debug)]
-pub(crate) struct TxEip2930Gadget<F> {
+pub(crate) struct TxAccessListGadget<F> {
+    is_eip1559_tx: IsEqualGadget<F>,
     is_eip2930_tx: IsEqualGadget<F>,
     access_list_address_len: Cell<F>,
     access_list_storage_key_len: Cell<F>,
 }
 
-impl<F: Field> TxEip2930Gadget<F> {
+impl<F: Field> TxAccessListGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         tx_id: Expression<F>,
         tx_type: Expression<F>,
     ) -> Self {
-        let is_eip2930_tx = IsEqualGadget::construct(cb, tx_type, (TxType::Eip2930 as u64).expr());
+        let [is_eip1559_tx, is_eip2930_tx] = [TxType::Eip1559, TxType::Eip2930]
+            .map(|val| IsEqualGadget::construct(cb, tx_type.expr(), (val as u64).expr()));
 
-        let [access_list_address_len, access_list_storage_key_len] =
-            cb.condition(is_eip2930_tx.expr(), |cb| {
+        let [access_list_address_len, access_list_storage_key_len] = cb.condition(
+            sum::expr([is_eip1559_tx.expr(), is_eip2930_tx.expr()]),
+            |cb| {
                 let [address_len, storage_key_len] = [
                     TxFieldTag::AccessListAddressesLen,
                     TxFieldTag::AccessListStorageKeysLen,
@@ -73,9 +76,11 @@ impl<F: Field> TxEip2930Gadget<F> {
                 );
 
                 [address_len, storage_key_len]
-            });
+            },
+        );
 
         Self {
+            is_eip1559_tx,
             is_eip2930_tx,
             access_list_address_len,
             access_list_storage_key_len,
@@ -88,6 +93,12 @@ impl<F: Field> TxEip2930Gadget<F> {
         offset: usize,
         tx: &Transaction,
     ) -> Result<(), Error> {
+        self.is_eip1559_tx.assign(
+            region,
+            offset,
+            F::from(tx.tx_type as u64),
+            F::from(TxType::Eip1559 as u64),
+        )?;
         self.is_eip2930_tx.assign(
             region,
             offset,
@@ -114,7 +125,7 @@ impl<F: Field> TxEip2930Gadget<F> {
 
     pub(crate) fn gas_cost(&self) -> Expression<F> {
         select::expr(
-            self.is_eip2930_tx.expr(),
+            sum::expr([self.is_eip1559_tx.expr(), self.is_eip2930_tx.expr()]),
             self.access_list_address_len.expr() * GasCost::ACCESS_LIST_PER_ADDRESS.expr()
                 + self.access_list_storage_key_len.expr()
                     * GasCost::ACCESS_LIST_PER_STORAGE_KEY.expr(),
@@ -122,8 +133,14 @@ impl<F: Field> TxEip2930Gadget<F> {
         )
     }
 
-    pub(crate) fn rw_delta(&self) -> Expression<F> {
-        // TODO
-        0.expr()
+    pub(crate) fn rw_delta_expr(&self) -> Expression<F> {
+        self.access_list_address_len.expr() + self.access_list_storage_key_len.expr()
+    }
+
+    pub(crate) fn rw_delta_value(tx: &Transaction) -> u64 {
+        let (access_list_address_len, access_list_storage_key_len) =
+            access_list_size(&tx.access_list);
+
+        access_list_address_len + access_list_storage_key_len
     }
 }
