@@ -10,7 +10,7 @@ use crate::{
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{AddWordsGadget, IsEqualGadget, LtWordGadget, MulWordByU64Gadget},
-            or, Expr, Word,
+            sum, Expr, Word,
         },
         witness::Transaction,
     },
@@ -79,7 +79,7 @@ impl<F: Field> TxEip1559Gadget<F> {
 
             cb.require_zero(
                 "Sender balance must be sufficient, and gas_fee_cap >= gas_tip_cap",
-                or::expr([
+                sum::expr([
                     is_insufficient_balance.expr(),
                     gas_fee_cap_lt_gas_tip_cap.expr(),
                 ]),
