@@ -253,7 +253,7 @@ impl From<&Transaction> for geth_types::Transaction {
             nonce: Word::from(tx.nonce),
             gas_limit: Word::from(tx.gas),
             value: tx.value,
-            gas_price: tx.gas_price,
+            gas_price: Some(tx.gas_price),
             call_data: tx.input.clone().into(),
             v: tx.signature.v,
             r: tx.signature.r,

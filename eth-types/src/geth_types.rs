@@ -264,7 +264,7 @@ pub struct Transaction {
     /// Transfered value
     pub value: Word,
     /// Gas Price
-    pub gas_price: Word,
+    pub gas_price: Option<Word>,
     /// Gas fee cap
     pub gas_fee_cap: Word,
     /// Gas tip cap
@@ -300,9 +300,9 @@ impl From<&Transaction> for crate::Transaction {
             nonce: tx.nonce,
             gas: tx.gas_limit,
             value: tx.value,
-            gas_price: Some(tx.gas_price),
-            max_priority_fee_per_gas: Some(tx.gas_fee_cap),
-            max_fee_per_gas: Some(tx.gas_tip_cap),
+            gas_price: tx.gas_price,
+            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
+            max_fee_per_gas: Some(tx.gas_fee_cap),
             input: tx.call_data.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.into(),
@@ -323,9 +323,9 @@ impl From<&crate::Transaction> for Transaction {
             nonce: tx.nonce,
             gas_limit: tx.gas,
             value: tx.value,
-            gas_price: tx.gas_price.unwrap_or_default(),
-            gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
-            gas_tip_cap: tx.max_fee_per_gas.unwrap_or_default(),
+            gas_price: tx.gas_price,
+            gas_tip_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
+            gas_fee_cap: tx.max_fee_per_gas.unwrap_or_default(),
             call_data: tx.input.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.as_u64(),
@@ -344,7 +344,7 @@ impl From<&Transaction> for TransactionRequest {
             from: Some(tx.from),
             to: tx.to.map(NameOrAddress::Address),
             gas: Some(tx.gas_limit),
-            gas_price: Some(tx.gas_price),
+            gas_price: tx.gas_price,
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
             nonce: Some(tx.nonce),

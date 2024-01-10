@@ -1,6 +1,6 @@
 //! Mock Transaction definition and builder related methods.
 
-use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
+use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID};
 use eth_types::{
     geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
     Transaction, Word, U64,
@@ -149,7 +149,7 @@ pub struct MockTransaction {
     pub from: AddrOrWallet,
     pub to: Option<AddrOrWallet>,
     pub value: Word,
-    pub gas_price: Word,
+    pub gas_price: Option<Word>,
     pub gas: Word,
     pub input: Bytes,
     pub v: Option<U64>,
@@ -174,7 +174,7 @@ impl Default for MockTransaction {
             from: AddrOrWallet::random(&mut OsRng),
             to: None,
             value: Word::zero(),
-            gas_price: *MOCK_GASPRICE,
+            gas_price: None,
             gas: Word::from(1_000_000u64),
             input: Bytes::default(),
             v: None,
@@ -200,7 +200,7 @@ impl From<MockTransaction> for Transaction {
             from: mock.from.address(),
             to: mock.to.map(|addr| addr.address()),
             value: mock.value,
-            gas_price: Some(mock.gas_price),
+            gas_price: mock.gas_price,
             gas: mock.gas,
             input: mock.input,
             v: mock.v.unwrap_or_default(),
@@ -274,7 +274,7 @@ impl MockTransaction {
 
     /// Set gas_price field for the MockTransaction.
     pub fn gas_price(&mut self, gas_price: Word) -> &mut Self {
-        self.gas_price = gas_price;
+        self.gas_price = Some(gas_price);
         self
     }
 
@@ -337,9 +337,13 @@ impl MockTransaction {
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
-            .gas_price(self.gas_price)
             .chain_id(self.chain_id);
 
+        let tx = if let Some(gas_price) = self.gas_price {
+            tx.gas_price(gas_price)
+        } else {
+            tx
+        };
         let tx = if let Some(to_addr) = self.to.clone() {
             tx.to(to_addr.address())
         } else {
