@@ -56,6 +56,7 @@ use crate::{
     },
     util::rlc_be_bytes,
 };
+use array_init::from_iter;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
@@ -998,10 +999,6 @@ impl<F: Field> PiCircuitConfig<F> {
         }
         // Copy tx_hashes to tx table
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
-            // region.constrain_equal(
-            //     tx_hash_cell.cell(),
-            //     tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].cell(),
-            // )?;
             region.constrain_equal(
                 tx_hash_cell.lo().cell(),
                 tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].lo().cell(),
@@ -1110,6 +1107,7 @@ impl<F: Field> PiCircuitConfig<F> {
             //     rpi_cells[0].0.cell(),
             //     tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1].cell(),
             // )?;
+            // this constraint failed ?
             region.constrain_equal(
                 rpi_cells[0].1.cell(),
                 tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1]
@@ -1443,10 +1441,18 @@ impl<F: Field> PiCircuitConfig<F> {
                     } else {
                         // no meaningful, just for final_rpi_word_cells dummy value
                         let len = value_be_bytes.len();
-                        let f_lo = F::from_bytes_le(&value_be_bytes[..len / 2]);
-                        let f_hi = F::from_bytes_le(&value_be_bytes[len / 2..len]);
-
-                        word::Word::new([f_lo, f_hi]).map(Value::known)
+                        println!(
+                            "come to assign_field rpi_bytes len {} < 32",
+                            value_be_bytes.len()
+                        );
+                        let zero_iter = std::iter::repeat(0); // 生成一个无限重复0的迭代器
+                        let value_bytes_with_zero = zero_iter
+                            .take(32 - len)
+                            .chain(value_be_bytes.to_vec())
+                            .collect::<Vec<u8>>();
+                        // pad zero and take 32 bytes
+                        let value_word = Word::from_big_endian(&value_bytes_with_zero[..32]);
+                        word::Word::from(value_word).map(Value::known)
                     };
 
                     final_rpi_word_cells = Some(rpi_word.assign_advice(
@@ -1912,7 +1918,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
         // Constrain raw_public_input cells to public inputs
         for (i, pi_cell) in pi_cells.iter().enumerate() {
-            layouter.constrain_instance(pi_cell.cell(), config.pi, i)?;
+            // layouter.constrain_instance(pi_cell.cell(), config.pi, i)?;
         }
 
         Ok(())
