@@ -163,6 +163,9 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    // TODO: need to enable for scroll feature after merging this PR
+    // <https://github.com/scroll-tech/go-ethereum/pull/578>.
+    #[cfg(not(feature = "scroll"))]
     #[test]
     fn test_eip1559_tx_for_less_balance() {
         let res = build_ctx(gwei(79_999), gwei(2), gwei(2));
@@ -189,6 +192,9 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    // TODO: need to enable for scroll feature after merging this PR
+    // <https://github.com/scroll-tech/go-ethereum/pull/578>.
+    #[cfg(not(feature = "scroll"))]
     #[test]
     fn test_eip1559_tx_for_gas_fee_cap_lt_gas_tip_cap() {
         let res = build_ctx(gwei(80_000), gwei(1), gwei(2));
