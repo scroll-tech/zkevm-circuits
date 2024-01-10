@@ -369,7 +369,7 @@ fn trace_config_to_witness_block_l1(
             to: tx.to,
             value: tx.value,
             input: tx.call_data,
-            gas_price: Some(tx.gas_price),
+            gas_price: tx.gas_price,
             access_list: tx.access_list,
             nonce: tx.nonce,
             gas: tx.gas_limit,
