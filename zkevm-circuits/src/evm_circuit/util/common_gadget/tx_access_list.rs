@@ -54,8 +54,8 @@ impl<F: Field> TxAccessListGadget<F> {
                     (len, is_len_zero)
                 });
 
-                // Let copy-circuit to write the tx-table's access list addresses into rw-table.
         cb.condition(not::expr(is_address_len_zero.expr()), |cb| {
+                // Let copy-circuit to write the tx-table's access list addresses into rw-table.
                 cb.copy_table_lookup(
                     tx_id.expr(),
                     CopyDataType::AccessListAddresses.expr(),
@@ -69,8 +69,8 @@ impl<F: Field> TxAccessListGadget<F> {
                     address_len.expr(),
                 ); });
 
-                // Let copy-circuit to write the tx-table's access list storage keys into rw-table.
         cb.condition(not::expr(is_storage_key_len_zero.expr()), |cb| {
+                // Let copy-circuit to write the tx-table's access list storage keys into rw-table.
                 cb.copy_table_lookup(
                     tx_id.expr(),
                     CopyDataType::AccessListStorageKeys.expr(),
