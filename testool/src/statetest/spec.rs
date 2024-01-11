@@ -1,4 +1,4 @@
-use crate::utils::L1_MAINNET_CHAIN_ID;
+use crate::utils::ETH_CHAIN_ID;
 use anyhow::{anyhow, bail, Context};
 use eth_types::{
     geth_types::{Account, TxType},
@@ -315,7 +315,7 @@ impl StateTest {
         Ok(state_test)
     }
 
-    /// Parse the transaction type.
+    /// Parse transaction type.
     pub fn tx_type(&self) -> TxType {
         if self.max_priority_fee_per_gas.is_some() {
             // For EIP-1559, both maxPriorityFeePerGas and maxFeePerGas must
@@ -338,7 +338,7 @@ impl StateTest {
             TxType::Eip1559 | TxType::Eip2930 => {
                 // <https://github.com/gakonst/ethers-rs/blob/8421cfdbb4f26be3989bd11e525f8768d4323bfe/ethers-core/src/types/transaction/mod.rs#L40>
                 if v > 1 {
-                    v - L1_MAINNET_CHAIN_ID * 2 - 35
+                    v - ETH_CHAIN_ID * 2 - 35
                 } else {
                     v
                 }
@@ -358,7 +358,7 @@ impl StateTest {
 
     fn build_eip1559_tx(&self) -> TypedTransaction {
         let mut request = Eip1559TransactionRequest::new()
-            .chain_id(L1_MAINNET_CHAIN_ID)
+            .chain_id(ETH_CHAIN_ID)
             .from(self.from)
             .nonce(self.nonce)
             .value(self.value)
@@ -384,7 +384,7 @@ impl StateTest {
 
     fn build_normal_tx_request(&self) -> TransactionRequest {
         let mut request = TransactionRequest::new()
-            .chain_id(L1_MAINNET_CHAIN_ID)
+            .chain_id(ETH_CHAIN_ID)
             .from(self.from)
             .nonce(self.nonce)
             .value(self.value)

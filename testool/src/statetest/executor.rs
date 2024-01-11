@@ -1,5 +1,5 @@
 use super::{AccountMatch, StateTest, StateTestResult};
-use crate::{config::TestSuite, utils::L1_MAINNET_CHAIN_ID};
+use crate::{config::TestSuite, utils::ETH_CHAIN_ID};
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::CodeDB,
@@ -155,7 +155,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     (
         st.id,
         TraceConfig {
-            chain_id: L1_MAINNET_CHAIN_ID,
+            chain_id: ETH_CHAIN_ID,
             history_hashes: vec![U256::from_big_endian(st.env.previous_hash.as_bytes())],
             block_constants: geth_types::BlockConstants {
                 coinbase: st.env.current_coinbase,

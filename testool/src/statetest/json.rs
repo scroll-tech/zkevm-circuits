@@ -140,6 +140,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             // Gas price is replaced with maxFeePerGas for EIP-1559 transaction.
             let gas_price = parse::parse_u256(&test.transaction.gas_price)
                 .unwrap_or_else(|_| max_fee_per_gas.unwrap());
+
             let access_list = &test.transaction.access_list;
 
             let data_s: Vec<_> = test
