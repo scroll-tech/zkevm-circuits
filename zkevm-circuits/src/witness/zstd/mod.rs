@@ -631,7 +631,8 @@ fn process_block_zstd<F: Field>(
             huffman_rows.extend_from_slice(&rows);
 
             let mut stream_offset = byte_offset;
-            for idx in 0..n_streams {
+
+            if n_streams > 1 {
                 let (byte_offset, rows) = process_block_zstd_huffman_jump_table(
                     src, 
                     stream_offset, 
@@ -639,7 +640,9 @@ fn process_block_zstd<F: Field>(
                     randomness
                 );
                 huffman_rows.extend_from_slice(&rows);
+            }
 
+            for idx in 0..n_streams {
                 let (byte_offset, rows) = process_block_zstd_lstream(
                     src, 
                     stream_offset, 
@@ -651,7 +654,7 @@ fn process_block_zstd<F: Field>(
 
                 stream_offset = byte_offset;
             }
-
+            
             (stream_offset, huffman_rows)
         },
         _ => unreachable!("Invalid literals section BlockType")
@@ -826,7 +829,7 @@ fn process_block_zstd_huffman_header<F: Field>(
             fse_data: FseData::default(),
         }],
         header_byte >= 127,
-        n_bytes,
+        n_bytes as usize,
     )
 }
 
@@ -842,8 +845,102 @@ fn process_block_zstd_huffman_code_direct<F: Field>(
     // weight[0] = (Byte[0] >> 4)
     // weight[1] = (Byte[0] & 0xf).
 
-    
+    let value_rlc_iter = src.iter().skip(byte_offset).take(n_bytes).scan(
+        last_row.encoded_data.value_rlc,
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    )
+    .into_iter()
+    .flat_map(|v| vec![v, v]);
+
+    let decoded_value_rlc_iter = src
+        .iter()
+        .skip(byte_offset)
+        .take(n_bytes)
+        .into_iter()
+        .flat_map(|v| vec![v, v])
+        .zip((0..).cycle().take(n_bytes * 2))
+        .scan(
+        last_row.decoded_data.decoded_value_rlc,
+        |acc, (&byte, b_flag)| {
+            let v = if b_flag > 0 { byte & 0xf } else { byte >> 4 };
+            *acc = *acc * randomness + Value::known(F::from(v as u64));
+            Some(*acc)
+        },
+    );
+
+    let tag_value_iter = src
+        .iter()
+        .skip(byte_offset)
+        .take(n_bytes)
+        .into_iter()
+        .flat_map(|v| vec![v, v])
+        .zip((0..).cycle().take(n_bytes * 2))
+        .scan(
+        Value::known(F::zero()),
+        |acc, (&byte, b_flag)| {
+            let v = if b_flag > 0 { byte & 0xf } else { byte >> 4 };
+            *acc = *acc * randomness + Value::known(F::from(v as u64));
+            Some(*acc)
+        },
+    );
+
+    let tag_value = tag_value_iter
+        .clone()
+        .last()
+        .expect("Raw bytes must be of non-zero length");
+
+    (
+        byte_offset + n_bytes,
+        src.iter()
+            .skip(byte_offset)
+            .take(n_bytes)
+            .into_iter()
+            .flat_map(|v| vec![v, v])
+            .zip(tag_value_iter)
+            .zip(value_rlc_iter)
+            .zip(decoded_value_rlc_iter)
+            .zip((0..).cycle().take(n_bytes * 2))
+            .enumerate()
+            .map(
+                |(i, ((((&value_byte, tag_value_acc), value_rlc), decoded_value_rlc), b_flag))| {
+                    ZstdWitnessRow {
+                        instance_idx: last_row.instance_idx,
+                        frame_idx: last_row.frame_idx,
+                        state: ZstdState {
+                            tag: ZstdTag::ZstdBlockHuffmanCode,
+                            tag_next: ZstdTag::ZstdBlockSequenceHeader,
+                            tag_len: (n_bytes * 2) as u64,
+                            tag_idx: (i + 1) as u64,
+                            tag_value,
+                            tag_value_acc,
+                        },
+                        encoded_data: EncodedData {
+                            byte_idx: (byte_offset + i / 2 + 1) as u64,
+                            encoded_len: last_row.encoded_data.encoded_len,
+                            value_byte: if b_flag > 0 { value_byte >> 4 } else { value_byte & 0xf },
+                            value_rlc,
+                            reverse: false,
+                            ..Default::default()
+                        },
+                        decoded_data: DecodedData {
+                            decoded_len: last_row.decoded_data.decoded_len,
+                            decoded_len_acc: last_row.decoded_data.decoded_len + (i as u64) + 1,
+                            total_decoded_len: last_row.decoded_data.total_decoded_len,
+                            decoded_byte: value_byte,
+                            decoded_value_rlc,
+                        },
+                        huffman_data: HuffmanData::default(),
+                        fse_data: FseData::default(),
+                    }
+                },
+            )
+            .collect::<Vec<_>>(),
+    )
 }
+
 fn process_block_zstd_huffman_code_fse<F: Field>(
     src: &[u8],
     byte_offset: usize,
@@ -861,6 +958,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     randomness: Value<F>,
 ) -> (usize, Vec<ZstdWitnessRow<F>>) {
     // compression_debug
+    unimplemented!()
 }
 fn process_block_zstd_lstream<F: Field>(
     src: &[u8],
@@ -870,15 +968,12 @@ fn process_block_zstd_lstream<F: Field>(
     is_last_stream: bool,
 ) -> (usize, Vec<ZstdWitnessRow<F>>) {
     // compression_debug
-    let tag_next = if is_last_stream {
-        ZstdTag::ZstdBlockSequenceHeader
-    } else {
-        ZstdTag::ZstdBlockJumpTable
-    };
-
-
-
-
+    // let tag_next = if is_last_stream {
+    //     ZstdTag::ZstdBlockSequenceHeader
+    // } else {
+    //     ZstdTag::ZstdBlockJumpTable
+    // };
+    unimplemented!()
 }
 
 pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> Vec<ZstdWitnessRow<F>> {
