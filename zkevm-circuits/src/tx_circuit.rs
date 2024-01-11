@@ -83,7 +83,7 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 30;
+pub const TX_LEN: usize = 28;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
@@ -2600,29 +2600,6 @@ impl<F: Field> TxCircuitConfig<F> {
                     ),
                 }),
                 rlc_be_bytes(&tx.max_priority_fee_per_gas.to_be_bytes(), evm_word),
-            ),
-            (
-                MaxPriorityFeePerGas,
-                Some(RlpTableInputValue {
-                    tag: Tag::MaxPriorityFeePerGas.into(),
-                    is_none: tx.max_priority_fee_per_gas.is_zero(),
-                    be_bytes_len: tx.max_priority_fee_per_gas.tag_length(),
-                    be_bytes_rlc: rlc_be_bytes(
-                        &tx.max_priority_fee_per_gas.to_be_bytes(),
-                        keccak_input,
-                    ),
-                }),
-                rlc_be_bytes(&tx.max_priority_fee_per_gas.to_be_bytes(), evm_word),
-            ),
-            (
-                MaxFeePerGas,
-                Some(RlpTableInputValue {
-                    tag: Tag::MaxFeePerGas.into(),
-                    is_none: tx.max_fee_per_gas.is_zero(),
-                    be_bytes_len: tx.max_fee_per_gas.tag_length(),
-                    be_bytes_rlc: rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), keccak_input),
-                }),
-                rlc_be_bytes(&tx.max_fee_per_gas.to_be_bytes(), evm_word),
             ),
             (BlockNumber, None, Value::known(F::from(tx.block_number))),
         ];

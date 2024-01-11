@@ -856,10 +856,11 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndTx, ExecutionState::EndInnerBlock],
                         ),
                         (
-                            "Only ExecutionState which halts or BeginTx can transit to EndTx",
+                            "Only ExecutionState which halts / precompile or BeginTx can transit to EndTx",
                             ExecutionState::EndTx,
                             ExecutionState::iter()
                                 .filter(ExecutionState::halts)
+                                .chain(ExecutionState::iter().filter(ExecutionState::is_precompiled))
                                 .chain(iter::once(ExecutionState::BeginTx))
                                 .collect(),
                         ),

@@ -26,7 +26,7 @@ pub struct SHA256Gadget<F> {
     input_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     is_success: Cell<F>,
     callee_address: Cell<F>,
-    caller_id: Cell<F>,
+    is_root: Cell<F>,
     call_data_offset: Cell<F>,
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
@@ -45,11 +45,11 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
         );
-        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
+        let [is_success, callee_address, is_root, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
                 CallContextFieldTag::CalleeAddress,
-                CallContextFieldTag::CallerId,
+                CallContextFieldTag::IsRoot,
                 CallContextFieldTag::CallDataOffset,
                 CallContextFieldTag::CallDataLength,
                 CallContextFieldTag::ReturnDataOffset,
@@ -85,15 +85,12 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             );
         });
 
-        let restore_context = RestoreContextGadget::construct2(
+        let restore_context = super::gen_restore_context(
             cb,
+            is_root.expr(),
             is_success.expr(),
             gas_cost.expr(),
-            0.expr(),
-            0x00.expr(),                                               // ReturnDataOffset
             select::expr(is_success.expr(), 0x20.expr(), 0x00.expr()), // ReturnDataLength
-            0.expr(),
-            0.expr(),
         );
 
         Self {
@@ -104,7 +101,7 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             input_word_size,
             is_success,
             callee_address,
-            caller_id,
+            is_root,
             call_data_offset,
             call_data_length,
             return_data_offset,
@@ -181,8 +178,8 @@ impl<F: Field> ExecutionGadget<F> for SHA256Gadget<F> {
             offset,
             Value::known(call.code_address.unwrap().to_scalar().unwrap()),
         )?;
-        self.caller_id
-            .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
+        self.is_root
+            .assign(region, offset, Value::known(F::from(call.is_root as u64)))?;
         self.call_data_offset.assign(
             region,
             offset,
