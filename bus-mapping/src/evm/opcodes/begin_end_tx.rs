@@ -780,6 +780,11 @@ fn add_access_list_address_copy_event(
             .collect::<Result<Vec<(_, _)>, Error>>()
     })?;
 
+    // Unnecessary to add copy event if no access-list address.
+    if access_list.is_empty() {
+        return Ok(());
+    }
+
     let tx_id = NumberOrHash::Number(tx_id);
 
     // Use placeholder bytes for copy steps.
@@ -845,6 +850,11 @@ fn add_access_list_storage_key_copy_event(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+
+    // Unnecessary to add copy event if no access-list storage key.
+    if access_list.is_empty() {
+        return Ok(());
+    }
 
     let tx_id = NumberOrHash::Number(state.tx_ctx.id());
 
