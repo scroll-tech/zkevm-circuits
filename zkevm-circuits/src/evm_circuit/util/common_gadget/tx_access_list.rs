@@ -51,13 +51,12 @@ impl<F: Field> TxAccessListGadget<F> {
                     CopyDataType::AccessListAddresses.expr(),
                     tx_id.expr(),
                     CopyDataType::AccessListAddresses.expr(),
-                    0.expr(),
+                    1.expr(),
+                    address_len.expr() + 1.expr(),
+                    1.expr(),
                     address_len.expr(),
                     0.expr(),
                     address_len.expr(),
-                    0.expr(),
-                    // TODO
-                    0.expr(),
                 );
 
                 // Let copy-circuit to write the tx-table's access list storage keys into rw-table.
@@ -66,13 +65,12 @@ impl<F: Field> TxAccessListGadget<F> {
                     CopyDataType::AccessListStorageKeys.expr(),
                     tx_id.expr(),
                     CopyDataType::AccessListStorageKeys.expr(),
-                    0.expr(),
+                    1.expr(),
+                    storage_key_len.expr() + 1.expr(),
+                    1.expr(),
                     storage_key_len.expr(),
                     0.expr(),
                     storage_key_len.expr(),
-                    0.expr(),
-                    // TODO
-                    0.expr(),
                 );
 
                 [address_len, storage_key_len]
