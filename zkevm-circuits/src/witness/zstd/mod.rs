@@ -820,7 +820,7 @@ fn process_block_zstd_huffman_header<F: Field>(
             },
             decoded_data: DecodedData {
                 decoded_len: last_row.decoded_data.decoded_len,
-                decoded_len_acc: last_row.decoded_data.decoded_len_acc + (i as u64) + 1,
+                decoded_len_acc: last_row.decoded_data.decoded_len_acc + 1,
                 total_decoded_len: last_row.decoded_data.total_decoded_len,
                 decoded_byte: header_byte,
                 decoded_value_rlc,
@@ -957,7 +957,9 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
 ) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    // compression_debug
+    // Note: The decompressed size of each stream is equal to (regen_size + 3) / 4
+    // but the compressed bitstream length will be different. 
+    // Jump table provides information on the length of first 3 bitstreams. 
     unimplemented!()
 }
 fn process_block_zstd_lstream<F: Field>(
