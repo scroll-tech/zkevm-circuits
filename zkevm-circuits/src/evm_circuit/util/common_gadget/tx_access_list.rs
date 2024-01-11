@@ -1,7 +1,9 @@
 use super::{CachedRegion, Cell};
 use crate::{
     evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::IsEqualGadget, select, sum,
+        constraint_builder::EVMConstraintBuilder,
+        math_gadget::{IsEqualGadget, IsZeroGadget},
+        not, or, select,
     },
     table::TxFieldTag,
     util::Expr,
@@ -23,8 +25,10 @@ use halo2_proofs::{
 pub(crate) struct TxAccessListGadget<F> {
     is_eip1559_tx: IsEqualGadget<F>,
     is_eip2930_tx: IsEqualGadget<F>,
-    access_list_address_len: Cell<F>,
-    access_list_storage_key_len: Cell<F>,
+    is_address_len_zero: IsZeroGadget<F>,
+    is_storage_key_len_zero: IsZeroGadget<F>,
+    address_len: Cell<F>,
+    storage_key_len: Cell<F>,
 }
 
 impl<F: Field> TxAccessListGadget<F> {
@@ -36,16 +40,22 @@ impl<F: Field> TxAccessListGadget<F> {
         let [is_eip1559_tx, is_eip2930_tx] = [TxType::Eip1559, TxType::Eip2930]
             .map(|val| IsEqualGadget::construct(cb, tx_type.expr(), (val as u64).expr()));
 
-        let [access_list_address_len, access_list_storage_key_len] = cb.condition(
-            sum::expr([is_eip1559_tx.expr(), is_eip2930_tx.expr()]),
+        let (address_len, storage_key_len, is_address_len_zero, is_storage_key_len_zero) = cb.condition(
+            or::expr([is_eip1559_tx.expr(), is_eip2930_tx.expr()]),
             |cb| {
-                let [address_len, storage_key_len] = [
+                let [(address_len, is_address_len_zero), (storage_key_len, is_storage_key_len_zero)] = [
                     TxFieldTag::AccessListAddressesLen,
                     TxFieldTag::AccessListStorageKeysLen,
                 ]
-                .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+                .map(|field_tag| {
+                    let len = cb.tx_context(tx_id.expr(), field_tag, None);
+                    let is_len_zero = IsZeroGadget::construct(cb, len.expr());
+
+                    (len, is_len_zero)
+                });
 
                 // Let copy-circuit to write the tx-table's access list addresses into rw-table.
+        cb.condition(not::expr(is_address_len_zero.expr()), |cb| {
                 cb.copy_table_lookup(
                     tx_id.expr(),
                     CopyDataType::AccessListAddresses.expr(),
@@ -57,9 +67,10 @@ impl<F: Field> TxAccessListGadget<F> {
                     address_len.expr(),
                     0.expr(),
                     address_len.expr(),
-                );
+                ); });
 
                 // Let copy-circuit to write the tx-table's access list storage keys into rw-table.
+        cb.condition(not::expr(is_storage_key_len_zero.expr()), |cb| {
                 cb.copy_table_lookup(
                     tx_id.expr(),
                     CopyDataType::AccessListStorageKeys.expr(),
@@ -72,16 +83,18 @@ impl<F: Field> TxAccessListGadget<F> {
                     0.expr(),
                     storage_key_len.expr(),
                 );
+        });
 
-                [address_len, storage_key_len]
-            },
-        );
+        (address_len, storage_key_len, is_address_len_zero, is_storage_key_len_zero)
+            });
 
         Self {
             is_eip1559_tx,
             is_eip2930_tx,
-            access_list_address_len,
-            access_list_storage_key_len,
+            is_address_len_zero,
+            is_storage_key_len_zero,
+            address_len,
+            storage_key_len,
         }
     }
 
@@ -104,41 +117,37 @@ impl<F: Field> TxAccessListGadget<F> {
             F::from(TxType::Eip2930 as u64),
         )?;
 
-        let (access_list_address_len, access_list_storage_key_len) =
-            access_list_size(&tx.access_list);
+        let (address_len, storage_key_len) = access_list_size(&tx.access_list);
 
-        self.access_list_address_len.assign(
-            region,
-            offset,
-            Value::known(F::from(access_list_address_len)),
-        )?;
-        self.access_list_storage_key_len.assign(
-            region,
-            offset,
-            Value::known(F::from(access_list_storage_key_len)),
-        )?;
+        self.is_address_len_zero
+            .assign(region, offset, F::from(address_len))?;
+        self.is_storage_key_len_zero
+            .assign(region, offset, F::from(storage_key_len))?;
+
+        self.address_len
+            .assign(region, offset, Value::known(F::from(address_len)))?;
+        self.storage_key_len
+            .assign(region, offset, Value::known(F::from(storage_key_len)))?;
 
         Ok(())
     }
 
     pub(crate) fn gas_cost(&self) -> Expression<F> {
         select::expr(
-            sum::expr([self.is_eip1559_tx.expr(), self.is_eip2930_tx.expr()]),
-            self.access_list_address_len.expr() * GasCost::ACCESS_LIST_PER_ADDRESS.expr()
-                + self.access_list_storage_key_len.expr()
-                    * GasCost::ACCESS_LIST_PER_STORAGE_KEY.expr(),
+            or::expr([self.is_eip1559_tx.expr(), self.is_eip2930_tx.expr()]),
+            self.address_len.expr() * GasCost::ACCESS_LIST_PER_ADDRESS.expr()
+                + self.storage_key_len.expr() * GasCost::ACCESS_LIST_PER_STORAGE_KEY.expr(),
             0.expr(),
         )
     }
 
     pub(crate) fn rw_delta_expr(&self) -> Expression<F> {
-        self.access_list_address_len.expr() + self.access_list_storage_key_len.expr()
+        self.address_len.expr() + self.storage_key_len.expr()
     }
 
     pub(crate) fn rw_delta_value(tx: &Transaction) -> u64 {
-        let (access_list_address_len, access_list_storage_key_len) =
-            access_list_size(&tx.access_list);
+        let (address_len, storage_key_len) = access_list_size(&tx.access_list);
 
-        access_list_address_len + access_list_storage_key_len
+        address_len + storage_key_len
     }
 }
