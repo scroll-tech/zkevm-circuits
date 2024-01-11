@@ -6,7 +6,7 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                TransferGadgetInfo, TransferWithGasFeeGadget, TxEip1559Gadget, TxEip2930Gadget,
+                TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget,
                 TxL1FeeGadget, TxL1MsgGadget,
             },
             constraint_builder::{
@@ -99,8 +99,8 @@ pub(crate) struct BeginTxGadget<F> {
     is_coinbase_warm: Cell<F>,
     tx_l1_fee: TxL1FeeGadget<F>,
     tx_l1_msg: TxL1MsgGadget<F>,
+    tx_access_list: TxAccessListGadget<F>,
     tx_eip1559: TxEip1559Gadget<F>,
-    tx_eip2930: TxEip2930Gadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -129,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        let tx_eip2930 = TxEip2930Gadget::construct(cb, tx_id.expr(), tx_type.expr());
+        let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
@@ -244,7 +244,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_call_data_word_length =
             ConstantDivisionGadget::construct(cb, tx_call_data_length.expr() + 31.expr(), 32);
 
-        // TODO1: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
         // TODO2: contrain calling precompile directly
 
@@ -269,7 +268,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     eth_types::evm_types::GasCost::CREATION_TX.expr(),
                     eth_types::evm_types::GasCost::TX.expr(),
                 ) + tx_call_data_gas_cost.expr()
-                    + tx_eip2930.gas_cost()
+                    + tx_access_list.gas_cost()
                     + init_code_gas_cost,
             )
         });
@@ -502,6 +501,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     22.expr()
                         + l1_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
+                        + tx_access_list.rw_delta_expr()
                         + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr(),
                 ),
@@ -620,6 +620,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         23.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
+                            + tx_access_list.rw_delta_expr()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
@@ -681,6 +682,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         8.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
+                            + tx_access_list.rw_delta_expr()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
@@ -754,6 +756,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         21.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
+                            + tx_access_list.rw_delta_expr()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
@@ -815,8 +818,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_coinbase_warm,
             tx_l1_fee,
             tx_l1_msg,
+            tx_access_list,
             tx_eip1559,
-            tx_eip2930,
         }
     }
 
@@ -887,6 +890,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         } else {
             3
         });
+
+        // Add access-list RW offset.
+        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
 
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
@@ -1193,6 +1199,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.tx_data_gas_cost,
         )?;
 
+        self.tx_access_list.assign(region, offset, tx)?;
+
         self.tx_eip1559.assign(
             region,
             offset,
@@ -1202,9 +1210,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .sender_balance_sub_fee_pair
                 .unwrap()
                 .1,
-        )?;
-
-        self.tx_eip2930.assign(region, offset, tx)
+        )
     }
 }
 

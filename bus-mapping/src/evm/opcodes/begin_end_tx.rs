@@ -44,8 +44,9 @@ use ethers_core::utils::get_contract_address;
 pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
     let mut exec_step = state.new_begin_tx_step();
 
-    // Add two copy-events for tx access-list addresses and storage keys if EIP-2930.
-    gen_tx_eip2930_ops(state, &mut exec_step)?;
+    // Add two copy-events for tx access-list addresses and storage keys for
+    // EIP-1559 and EIP-2930.
+    gen_tx_access_list_ops(state, &mut exec_step)?;
 
     let call = state.call()?.clone();
     let caller_address = call.caller_address;
@@ -744,12 +745,13 @@ fn gen_tx_l1_fee_ops(
     Ok(())
 }
 
-// Add two copy-events for tx access-list addresses and storage keys if EIP-2930.
-fn gen_tx_eip2930_ops(
+// Add two copy-events for tx access-list addresses and storage keys for
+// EIP-1559 and EIP-2930.
+fn gen_tx_access_list_ops(
     state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
 ) -> Result<(), Error> {
-    if !state.tx.tx_type.is_eip2930() {
+    if !(state.tx.tx_type.is_eip1559() || state.tx.tx_type.is_eip2930()) {
         return Ok(());
     }
 

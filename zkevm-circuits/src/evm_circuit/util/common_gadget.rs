@@ -31,13 +31,13 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+mod tx_access_list;
 mod tx_eip1559;
-mod tx_eip2930;
 mod tx_l1_fee;
 mod tx_l1_msg;
 
+pub(crate) use tx_access_list::TxAccessListGadget;
 pub(crate) use tx_eip1559::TxEip1559Gadget;
-pub(crate) use tx_eip2930::TxEip2930Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
