@@ -102,12 +102,14 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
-            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"])
-                .unwrap_or_else(|_| U256::zero());
-            let gas_price =
-                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(max_fee_per_gas);
+            let max_priority_fee_per_gas =
+                Self::parse_u256(&yaml_transaction["maxPriorityFeePerGas"]).ok();
+            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"]).ok();
 
-            // TODO handle maxPriorityFeePerGas & maxFeePerGas
+            // Gas price is replaced with maxFeePerGas for EIP-1559 transaction.
+            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"])
+                .unwrap_or_else(|_| max_fee_per_gas.unwrap());
+
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
@@ -187,6 +189,8 @@ impl<'a> YamlStateTestBuilder<'a> {
                                 secret_key: secret_key.clone(),
                                 to,
                                 gas_limit: *gas_limit,
+                                max_priority_fee_per_gas,
+                                max_fee_per_gas,
                                 gas_price,
                                 nonce,
                                 value: *value,
@@ -685,6 +689,8 @@ arith:
             to: Some(ccccc),
             gas_limit: 80000001,
             gas_price: U256::from(10u64),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
             nonce: U256::zero(),
             value: U256::from(2),
             data: Bytes::from(&[1]),

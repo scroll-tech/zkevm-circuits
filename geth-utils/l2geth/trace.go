@@ -43,8 +43,10 @@ type Transaction struct {
 	GasTipCap  *hexutil.Big    `json:"gas_tip_cap"`
 	CallData   hexutil.Bytes   `json:"call_data"`
 	AccessList []struct {
-		Address     common.Address `json:"address"`
-		StorageKeys []common.Hash  `json:"storage_keys"`
+		Address common.Address `json:"address"`
+		// Must be `storageKeys`, since `camelCase` is specified in ethers-rs.
+		// <https://github.com/gakonst/ethers-rs/blob/88095ba47eb6a3507f0db1767353b387b27a6e98/ethers-core/src/types/transaction/eip2930.rs#L75>
+		StorageKeys []common.Hash `json:"storageKeys"`
 	} `json:"access_list"`
 	Type string       `json:"tx_type"`
 	V    int64        `json:"v"`

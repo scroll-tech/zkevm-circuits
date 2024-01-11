@@ -190,10 +190,11 @@ tests = []
 [[skip_paths]]
 desc = "unimplemented"
 paths = [
-    "EIP1559",
-    "stExample/eip1559Filler.yml",
+#   "EIP1559",
+#   "stExample/eip1559Filler.yml",
+    "stEIP1559/valCausesOOFFiller.yml",
     "stExample/mergeTestFiller.yml",
-    "EIP2930",
+#   "EIP2930",
     #"stPreCompiledContracts",
     #"stZeroKnowledge"
 ]
