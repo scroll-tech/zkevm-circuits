@@ -1,3 +1,4 @@
+use bus_mapping::circuit_input_builder::Block;
 use eth_types::Field;
 use halo2_proofs::circuit::Value;
 
@@ -5,6 +6,7 @@ mod params;
 pub use params::*;
 
 mod types;
+use serde::de::value;
 pub use types::*;
 
 #[cfg(test)]
@@ -13,7 +15,7 @@ mod tui;
 use tui::draw_rows;
 
 mod util;
-use util::value_bits_le;
+use util::{value_bits_le, le_bits_to_value};
 
 /// MagicNumber
 fn process_magic_number<F: Field>(
@@ -513,11 +515,137 @@ fn process_block_zstd<F: Field>(
     block_size: usize,
     last_block: bool,
 ) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    unimplemented!();
+    let mut witness_rows = vec![];
+
+    // 1-5 bytes LiteralSectionHeader
+    let (
+        byte_offset, 
+        rows, 
+        literals_block_type, 
+        n_streams, 
+        regen_size, 
+        compressed_size
+    ) = process_block_zstd_literals_header::<F>(
+        src, 
+        byte_offset, 
+        last_row, 
+        randomness
+    );
+    witness_rows.extend_from_slice(&rows);
+
+
+
+
+
+
+    // compression_debug
+    (0usize, vec![])
 }
 
-fn process_block_zstd_literals_header<F: Field>() -> (usize, Vec<ZstdWitnessRow<F>>) {
-    unimplemented!();
+fn process_block_zstd_literals_header<F: Field>(
+    src: &[u8],
+    byte_offset: usize,
+    last_row: &ZstdWitnessRow<F>,
+    randomness: Value<F>,
+) -> (usize, Vec<ZstdWitnessRow<F>>, BlockType, usize, usize, usize) {
+    let lh_bytes = src
+        .iter()
+        .skip(byte_offset)
+        .take(N_MAX_LITERAL_HEADER_BYTES)
+        .cloned()
+        .collect::<Vec<u8>>();
+
+    let literals_block_type = BlockType::from(lh_bytes[0] & 0x3);
+    let size_format = lh_bytes[0] & 3;
+    
+    let [n_bits_fmt, n_bits_regen, n_bits_compressed, n_streams, n_bytes_header]: [usize; 5] = match literals_block_type {
+        BlockType::RawBlock | BlockType::RleBlock => {
+            match size_format {
+                0b00 | 0b10 => [1, 5, 0, 1, 1],
+                0b01 => [2, 12, 0, 1, 2],
+                0b11 => [2, 20, 0, 1, 3],
+                _ => unreachable!("size_format out of bound")
+            }
+        },
+        BlockType::ZstdCompressedBlock => {
+            match size_format {
+                0b00 => [2, 10, 10, 1, 3],
+                0b01 => [2, 10, 10, 4, 3],
+                0b10 => [2, 14, 14, 4, 4],
+                0b11 => [2, 18, 18, 4, 5],
+                _ => unreachable!("size_format out of bound")
+            }
+        },
+        _ => unreachable!("BlockType::Reserved unexpected or treeless literal section")
+    };
+
+    // Bits for representing regenerated_size and compressed_size
+    let sizing_bits = &lh_bytes.clone().into_iter().fold(vec![], |mut acc, b| {
+        acc.extend(value_bits_le(b));
+        acc
+    })[(2 + n_bits_fmt)..(n_bytes_header * N_BITS_PER_BYTE)];
+
+    let regen_size = le_bits_to_value(&sizing_bits[0..n_bits_regen]);
+    let compressed_size = le_bits_to_value(&sizing_bits[n_bits_regen..(n_bits_regen + n_bits_compressed)]);
+
+    let tag_next = match literals_block_type {
+        BlockType::RawBlock => ZstdTag::ZstdBlockLiteralsRawBytes,
+        BlockType::RleBlock => ZstdTag::ZstdBlockLiteralsRleBytes,
+        BlockType::ZstdCompressedBlock => ZstdTag::ZstdBlockHuffmanHeader,
+        _ => unreachable!("BlockType::Reserved unexpected or treeless literal section"),
+    };
+
+    let tag_value_iter = lh_bytes[0..n_bytes_header].iter().scan(Value::known(F::zero()), |acc, &byte| {
+        *acc = *acc * randomness + Value::known(F::from(byte as u64));
+        Some(*acc)
+    });
+    let tag_value = tag_value_iter.clone().last().expect("LiteralsHeader expected");
+
+    let value_rlc_iter = lh_bytes[0..n_bytes_header]
+        .iter()
+        .scan(last_row.encoded_data.value_rlc, |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        });
+
+    (
+        byte_offset + n_bytes_header,
+        lh_bytes[0..n_bytes_header]
+            .iter()
+            .zip(tag_value_iter)
+            .zip(value_rlc_iter)
+            .enumerate()
+            .map(
+                |(i, ((&value_byte, tag_value_acc), value_rlc))| ZstdWitnessRow {
+                    instance_idx: last_row.instance_idx,
+                    frame_idx: last_row.frame_idx,
+                    state: ZstdState {
+                        tag: ZstdTag::ZstdBlockLiteralsHeader,
+                        tag_next,
+                        tag_len: n_bytes_header as u64,
+                        tag_idx: (i + 1) as u64,
+                        tag_value,
+                        tag_value_acc,
+                    },
+                    encoded_data: EncodedData {
+                        byte_idx: (byte_offset + i + 1) as u64,
+                        encoded_len: last_row.encoded_data.encoded_len,
+                        value_byte,
+                        reverse: false,
+                        value_rlc,
+                        ..Default::default()
+                    },
+                    decoded_data: last_row.decoded_data.clone(),
+                    huffman_data: HuffmanData::default(),
+                    fse_data: FseData::default(),
+                },
+            )
+            .collect::<Vec<_>>(),
+        literals_block_type,
+        n_streams,
+        regen_size as usize,
+        compressed_size as usize,
+    )
 }
 
 fn process_block_zstd_huffman_header<F: Field>() -> (usize, Vec<ZstdWitnessRow<F>>) {

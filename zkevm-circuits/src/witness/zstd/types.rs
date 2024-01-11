@@ -52,6 +52,7 @@ impl From<usize> for FseSymbol {
     }
 }
 
+#[derive(Debug)]
 pub enum BlockType {
     RawBlock = 0,
     RleBlock,
@@ -81,6 +82,8 @@ pub enum ZstdTag {
     RawBlockBytes,
     RleBlockBytes,
     ZstdBlockLiteralsHeader,
+    ZstdBlockLiteralsRawBytes,
+    ZstdBlockLiteralsRleBytes,
     ZstdBlockHuffmanHeader,
     ZstdBlockHuffmanCode,
     ZstdBlockJumpTable,
@@ -101,6 +104,8 @@ impl ToString for ZstdTag {
             Self::RawBlockBytes => "RawBlockBytes",
             Self::RleBlockBytes => "RleBlockBytes",
             Self::ZstdBlockLiteralsHeader => "ZstdBlockLiteralsHeader",
+            Self::ZstdBlockLiteralsRawBytes => "ZstdBlockLiteralsRawBytes",
+            Self::ZstdBlockLiteralsRleBytes => "ZstdBlockLiteralsRleBytes",
             Self::ZstdBlockHuffmanHeader => "ZstdBlockHuffmanHeader",
             Self::ZstdBlockHuffmanCode => "ZstdBlockHuffmanCode",
             Self::ZstdBlockJumpTable => "ZstdBlockJumpTable",
