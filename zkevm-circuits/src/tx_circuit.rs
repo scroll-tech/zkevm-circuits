@@ -302,7 +302,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.enable_equality(tx_table.value.hi());
 
         let log_deg = |s: &'static str, meta: &mut ConstraintSystem<F>| {
-            debug_assert!(meta.degree() <= 9);
+            //TODO： decrease degree to old nubmer 9.
+            debug_assert!(meta.degree() <= 10);
             log::info!("after {}, meta.degree: {}", s, meta.degree());
         };
 
@@ -660,9 +661,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 "condition",
                 and::expr([
                     is_data_length(meta),
-                    //not::expr(value_is_zero.expr(Rotation::cur())(meta)),
-                    value_is_zero_lo.expr(Rotation::cur())(meta)
-                        + value_is_zero_hi.expr(Rotation::cur())(meta),
+                    not::expr(value_is_zero_lo.expr(Rotation::cur())(meta)),
+                    not::expr(value_is_zero_hi.expr(Rotation::cur())(meta)),
+                    // not::expr(value_is_zero_lo.expr(Rotation::cur())(meta)
+                    //     * value_is_zero_hi.expr(Rotation::cur())(meta)),
                 ]),
                 meta.query_advice(
                     lookup_conditions[&LookupCondition::TxCalldata],
@@ -1037,7 +1039,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(is_padding_tx, Rotation::cur()),
                     //value_is_zero.expr(Rotation::cur())(meta),
                     value_is_zero_lo.expr(Rotation::cur())(meta)
-                        + value_is_zero_hi.expr(Rotation::cur())(meta),
+                        * value_is_zero_hi.expr(Rotation::cur())(meta),
                 );
             });
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1368,7 +1370,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
                 let value_is_zero = value_is_zero_lo.expr(Rotation::cur())(meta)
-                    + value_is_zero_hi.expr(Rotation::cur())(meta);
+                    * value_is_zero_hi.expr(Rotation::cur())(meta);
 
                 cb.condition(not::expr(value_is_zero), |cb| {
                     cb.require_equal(
@@ -2405,7 +2407,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
         let value_is_zero_lo_chip = IsZeroChip::construct(self.value_is_zero[0].clone());
         value_is_zero_lo_chip.assign(region, offset, value.lo())?;
-        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_is_zero[0].clone());
+        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_is_zero[1].clone());
         value_is_zero_hi_chip.assign(region, offset, value.hi())?;
 
         let tx_id_unchanged_chip = IsEqualChip::construct(self.tx_id_unchanged.clone());

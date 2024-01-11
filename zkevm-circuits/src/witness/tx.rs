@@ -1,5 +1,5 @@
 use crate::{
-    evm_circuit::step::ExecutionState,
+    evm_circuit::{step::ExecutionState, util::rlc},
     table::TxContextFieldTag,
     util::{rlc_be_bytes, word, Challenges},
     witness::{
@@ -162,7 +162,7 @@ impl Transaction {
         let tx_sign_hash_be_bytes = keccak256(&self.rlp_unsigned);
         let (access_list_address_size, access_list_storage_key_size) =
             access_list_size(&self.access_list);
-        let gas_price_word = word::Word::from(self.gas_price.to_word()).map(Value::known);
+        // let gas_price_word = word::Word::from(self.gas_price.to_word()).map(Value::known);
         let value_word = word::Word::from(self.value.to_word()).map(Value::known);
         let tx_hash_word =
             word::Word::from(Word::from_big_endian(&tx_hash_be_bytes)).map(Value::known);
@@ -184,11 +184,12 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::GasPrice as u64)),
                 Value::known(F::zero()),
-                // challenges
-                //     .evm_word()
-                //     .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
-                gas_price_word.lo(),
-                gas_price_word.hi(),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
+                Value::known(F::zero()),
+                // gas_price_word.lo(),
+                // gas_price_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
