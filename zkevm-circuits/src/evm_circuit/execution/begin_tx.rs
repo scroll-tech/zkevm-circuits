@@ -90,13 +90,14 @@ pub(crate) struct BeginTxGadget<F> {
     init_code_rlc: Cell<F>,
     /// RLP gadget for CREATE address.
     create: ContractCreateGadget<F, false>,
-    is_caller_callee_equal: Cell<F>,
-    // EIP-3651 (Warm COINBASE) for Shanghai
-    coinbase: Cell<F>,
     // Caller, callee and a list addresses are added to the access list before
     // coinbase, and may be duplicate.
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
+    is_caller_warm: Cell<F>,
+    is_callee_warm: Cell<F>,
     is_coinbase_warm: Cell<F>,
+    // EIP-3651 (Warm COINBASE) for Shanghai
+    coinbase: Cell<F>,
     tx_l1_fee: TxL1FeeGadget<F>,
     tx_l1_msg: TxL1MsgGadget<F>,
     tx_access_list: TxAccessListGadget<F>,
@@ -280,32 +281,28 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), 0.expr(), None);
         } // rwc_delta += PRECOMPILE_COUNT
 
+        let is_caller_warm = cb.query_bool();
+        let is_callee_warm = cb.query_bool();
+        let is_coinbase_warm = cb.query_bool();
+
         // Prepare access list of caller and callee
         cb.account_access_list_write(
             tx_id.expr(),
             tx_caller_address.expr(),
             1.expr(),
-            0.expr(),
+            is_caller_warm.expr(),
             None,
         ); // rwc_delta += 1
-        let is_caller_callee_equal = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
             call_callee_address.expr(),
             1.expr(),
-            // No extra constraint being used here.
-            // Correctness will be enforced in build_tx_access_list_account_constraints
-            select::expr(
-                is_precompile.expr(),
-                1.expr(),
-                is_caller_callee_equal.expr(),
-            ),
+            is_callee_warm.expr(),
             None,
         ); // rwc_delta += 1
 
         // Query coinbase address for Shanghai.
         let coinbase = cb.query_cell();
-        let is_coinbase_warm = cb.query_bool();
         cb.block_lookup(
             BlockContextFieldTag::Coinbase.expr(),
             cb.curr.state.block_number.expr(),
@@ -813,9 +810,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             init_code_rlc,
             keccak_code_hash,
             create,
-            is_caller_callee_equal,
-            coinbase,
+            is_caller_warm,
+            is_callee_warm,
             is_coinbase_warm,
+            coinbase,
             tx_l1_fee,
             tx_l1_msg,
             tx_access_list,
@@ -908,7 +906,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
         let nonce_rw = rw.account_nonce_pair();
 
-        rws.offset_add(PRECOMPILE_COUNT + 2);
+        rws.offset_add(PRECOMPILE_COUNT);
+
+        let is_caller_warm = rws.next().tx_access_list_value_pair().1;
+        let is_callee_warm = rws.next().tx_access_list_value_pair().1;
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
@@ -1048,11 +1049,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.is_caller_callee_equal.assign(
-            region,
-            offset,
-            Value::known(F::from(caller_address == callee_address)),
-        )?;
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(
@@ -1160,6 +1156,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         )?;
 
+        self.is_caller_warm
+            .assign(region, offset, Value::known(F::from(is_caller_warm)))?;
+        self.is_callee_warm
+            .assign(region, offset, Value::known(F::from(is_callee_warm)))?;
+        self.is_coinbase_warm
+            .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
+
         self.coinbase.assign(
             region,
             offset,
@@ -1170,8 +1173,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.is_coinbase_warm
-            .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
         let (tx_l1_fee, tx_l2_fee) = if tx.tx_type.is_l1_msg() {
             log::trace!("tx is l1msg and l1 fee is 0");
