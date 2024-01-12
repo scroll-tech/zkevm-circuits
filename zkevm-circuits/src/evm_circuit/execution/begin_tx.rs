@@ -28,6 +28,7 @@ use crate::{
         TxFieldTag as TxContextFieldTag,
     },
 };
+use array_init::array_init;
 use bus_mapping::{
     circuit_input_builder::CopyDataType,
     precompile::{is_precompiled, PrecompileCalls},
@@ -90,12 +91,13 @@ pub(crate) struct BeginTxGadget<F> {
     init_code_rlc: Cell<F>,
     /// RLP gadget for CREATE address.
     create: ContractCreateGadget<F, false>,
-    // Caller, callee and a list addresses are added to the access list before
-    // coinbase, and may be duplicate.
-    // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
+    // Caller, callee, coinbase, precompile addresses (9) and optional
+    // access-list addresses are added to the access list.
+    // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#L1098>
     is_caller_warm: Cell<F>,
     is_callee_warm: Cell<F>,
     is_coinbase_warm: Cell<F>,
+    are_precompile_warm: [Cell<F>; PRECOMPILE_COUNT],
     // EIP-3651 (Warm COINBASE) for Shanghai
     coinbase: Cell<F>,
     tx_l1_fee: TxL1FeeGadget<F>,
@@ -277,13 +279,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
-        for addr in 1..=PRECOMPILE_COUNT {
-            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), 0.expr(), None);
-        } // rwc_delta += PRECOMPILE_COUNT
-
         let is_caller_warm = cb.query_bool();
         let is_callee_warm = cb.query_bool();
         let is_coinbase_warm = cb.query_bool();
+        let are_precompile_warm = array_init(|_| cb.query_bool());
+
+        for (addr, is_warm) in (1..=PRECOMPILE_COUNT).zip(are_precompile_warm.iter()) {
+            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), is_warm.expr(), None);
+        } // rwc_delta += PRECOMPILE_COUNT
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -813,6 +816,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_caller_warm,
             is_callee_warm,
             is_coinbase_warm,
+            are_precompile_warm,
             coinbase,
             tx_l1_fee,
             tx_l1_msg,
@@ -906,7 +910,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
         let nonce_rw = rw.account_nonce_pair();
 
-        rws.offset_add(PRECOMPILE_COUNT);
+        let are_precompile_warm: [_; PRECOMPILE_COUNT] =
+            array_init(|_| rws.next().tx_access_list_value_pair().1);
 
         let is_caller_warm = rws.next().tx_access_list_value_pair().1;
         let is_callee_warm = rws.next().tx_access_list_value_pair().1;
@@ -1162,6 +1167,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(is_callee_warm)))?;
         self.is_coinbase_warm
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
+        for (cell, val) in self.are_precompile_warm.iter().zip(are_precompile_warm) {
+            cell.assign(region, offset, Value::known(F::from(val)))?;
+        }
 
         self.coinbase.assign(
             region,
