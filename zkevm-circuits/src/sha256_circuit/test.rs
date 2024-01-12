@@ -131,7 +131,7 @@ fn vk_stable() {
         &params,
         &vk_from_empty,
         strategy,
-        &[],
+        &[&[]],
         &mut transcript,
     )
     .unwrap();
