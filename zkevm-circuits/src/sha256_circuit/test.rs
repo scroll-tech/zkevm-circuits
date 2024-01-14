@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, SimpleFloorPlanner},
     plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ConstraintSystem, Error},
     transcript::{Blake2bRead, Blake2bWrite, Challenge255},
 };
@@ -7,9 +7,10 @@ use rand::rngs::OsRng;
 
 use super::{circuit::*, BLOCK_SIZE};
 
+use crate::util::Challenges;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr},
-    plonk::{Advice, Any, Column, Expression, Fixed},
+    plonk::{Advice, Any, Column, Fixed, SecondPhase},
     poly::{
         commitment::ParamsProver,
         kzg::{
@@ -20,8 +21,6 @@ use halo2_proofs::{
     },
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
-use halo2_proofs::plonk::SecondPhase;
-use crate::util::Challenges;
 
 const CAP_BLK: usize = 24;
 
