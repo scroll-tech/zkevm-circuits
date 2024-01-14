@@ -404,6 +404,31 @@ impl CopyBytes {
     }
 }
 
+/// Transaction access list for copy event
+#[derive(Clone, Debug)]
+pub struct CopyAccessList {
+    /// Access list address
+    pub address: Address,
+    /// If copy data type is address it's always zero, if copy data type is
+    /// storage key, it saves the storage key.
+    pub storage_key: Word,
+    /// If copy data type is address it's always zero, if copy data type is
+    /// storage key, it saves the internal index of storage key, which starts
+    /// from zero for each address list.
+    pub storage_key_index: u64,
+}
+
+impl CopyAccessList {
+    /// Create a copy access list.
+    pub fn new(address: Address, storage_key: Word, storage_key_index: u64) -> Self {
+        Self {
+            address,
+            storage_key,
+            storage_key_index,
+        }
+    }
+}
+
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
 /// CODECOPY, CREATE, etc. More information:
 /// <https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md>.
@@ -431,11 +456,8 @@ pub struct CopyEvent {
     pub rw_counter_start: RWCounter,
     /// Represents the list of bytes related during this copy event
     pub copy_bytes: CopyBytes,
-    /// Represents transaction access list (EIP-2930), if copy data type is
-    /// address, the first item is access list address and second is zero, if
-    /// copy data type is storage key, the first item is access list address and
-    /// second is access list storage key.
-    pub access_list: Vec<(Address, Word)>,
+    /// Represents transaction access list
+    pub access_list: Vec<CopyAccessList>,
 }
 
 pub type CopyEventSteps = Vec<(u8, bool, bool)>;

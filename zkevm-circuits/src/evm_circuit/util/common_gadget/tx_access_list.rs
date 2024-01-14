@@ -61,6 +61,7 @@ impl<F: Field> TxAccessListGadget<F> {
                     CopyDataType::AccessListAddresses.expr(),
                     tx_id.expr(),
                     CopyDataType::AccessListAddresses.expr(),
+                    // Access list address index starts from 1 in tx-table.
                     1.expr(),
                     address_len.expr() + 1.expr(),
                     1.expr(),
@@ -76,9 +77,10 @@ impl<F: Field> TxAccessListGadget<F> {
                     CopyDataType::AccessListStorageKeys.expr(),
                     tx_id.expr(),
                     CopyDataType::AccessListStorageKeys.expr(),
-                    1.expr(),
-                    storage_key_len.expr() + 1.expr(),
-                    1.expr(),
+                    // Access list storage key index starts from 0 in tx-table.
+                    0.expr(),
+                    storage_key_len.expr(),
+                    0.expr(),
                     storage_key_len.expr(),
                     0.expr(),
                     storage_key_len.expr(),
