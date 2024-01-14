@@ -1868,19 +1868,8 @@ impl CopyTable {
 
             let is_pad = is_read_step && thread.addr >= thread.addr_end;
 
-            let [value, value_prev] = if is_access_list {
-                let address_pair = copy_event.access_list[step_idx / 2];
-                [
-                    address_pair.0.to_scalar().unwrap(),
-                    address_pair.1.to_scalar().unwrap(),
-                ]
-            } else {
-                [
-                    F::from(copy_step.value as u64),
-                    F::from(copy_step.prev_value as u64),
-                ]
-            }
-            .map(Value::known);
+            let [value, value_prev] = [copy_step.value, copy_step.prev_value]
+                .map(|val| Value::known(F::from(val as u64)));
 
             let value_or_pad = if is_pad {
                 Value::known(F::zero())
@@ -1903,6 +1892,13 @@ impl CopyTable {
             } else {
                 thread.word_rlc_prev * challenges.evm_word() + value_prev
             };
+
+            if is_access_list {
+                let address_pair = copy_event.access_list[step_idx / 2];
+                [thread.word_rlc, thread.word_rlc_prev] =
+                    [address_pair.0.to_scalar(), address_pair.1.to_scalar()]
+                        .map(|val| Value::known(val.unwrap()));
+            }
 
             let word_index = (step_idx as u64 / 2) % 32;
 

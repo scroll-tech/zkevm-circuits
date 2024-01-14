@@ -459,7 +459,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
                     let tx_id = meta.query_advice(id, CURRENT);
                     let index = meta.query_advice(addr, CURRENT);
-                    let address = meta.query_advice(value, CURRENT);
+                    let address = meta.query_advice(value_word_rlc, CURRENT);
 
                     vec![
                         1.expr(),
@@ -481,7 +481,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * meta.query_advice(is_access_list_address, CURRENT);
 
             let tx_id = meta.query_advice(id, CURRENT);
-            let address = meta.query_advice(value, CURRENT);
+            let address = meta.query_advice(value_word_rlc, CURRENT);
 
             vec![
                 1.expr(),
@@ -511,8 +511,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
                     let tx_id = meta.query_advice(id, CURRENT);
                     let index = meta.query_advice(addr, CURRENT);
-                    let address = meta.query_advice(value, CURRENT);
-                    let storage_key = meta.query_advice(value_prev, CURRENT);
+                    let address = meta.query_advice(value_word_rlc, CURRENT);
+                    let storage_key = meta.query_advice(value_word_rlc_prev, CURRENT);
 
                     vec![
                         1.expr(),
@@ -534,8 +534,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * meta.query_advice(is_access_list_storage_key, CURRENT);
 
             let tx_id = meta.query_advice(id, CURRENT);
-            let address = meta.query_advice(value, CURRENT);
-            let storage_key = meta.query_advice(value_prev, CURRENT);
+            let address = meta.query_advice(value_word_rlc, CURRENT);
+            let storage_key = meta.query_advice(value_word_rlc_prev, CURRENT);
 
             vec![
                 1.expr(),
