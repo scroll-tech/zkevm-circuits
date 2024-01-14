@@ -780,12 +780,14 @@ impl CircuitConfig {
                     final_row,
                 )?;
 
-                region.assign_advice(
-                    || "flush unused row",
-                    self.trans_byte,
-                    final_row,
-                    || Value::known(Fr::zero()),
-                )?;
+                for col in [self.trans_byte, self.copied_data] {
+                    region.assign_advice(
+                        || "flush unused row",
+                        col,
+                        final_row,
+                        || Value::known(Fr::zero()),
+                    )?;
+                }
 
                 region.assign_advice(
                     || "flush unused row",
