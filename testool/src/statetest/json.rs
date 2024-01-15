@@ -137,9 +137,14 @@ impl<'a> JsonStateTestBuilder<'a> {
                 .max_fee_per_gas
                 .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))?;
 
-            // Gas price is replaced with maxFeePerGas for EIP-1559 transaction.
-            let gas_price = parse::parse_u256(&test.transaction.gas_price)
-                .unwrap_or_else(|_| max_fee_per_gas.unwrap());
+            // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
+            // EIP-1559 transaction.
+            // <https://github.com/ethereum/go-ethereum/blob/1485814f89d8206bb4a1c8e10a4a2893920f683a/core/state_transition.go#L167>
+            let gas_price = parse::parse_u256(&test.transaction.gas_price).unwrap_or_else(|_| {
+                max_fee_per_gas
+                    .unwrap()
+                    .min(max_priority_fee_per_gas.unwrap() + env.current_base_fee)
+            });
 
             let access_list = &test.transaction.access_list;
 

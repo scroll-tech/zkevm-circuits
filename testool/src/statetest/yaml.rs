@@ -106,9 +106,14 @@ impl<'a> YamlStateTestBuilder<'a> {
                 Self::parse_u256(&yaml_transaction["maxPriorityFeePerGas"]).ok();
             let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"]).ok();
 
-            // Gas price is replaced with maxFeePerGas for EIP-1559 transaction.
-            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"])
-                .unwrap_or_else(|_| max_fee_per_gas.unwrap());
+            // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
+            // EIP-1559 transaction.
+            // <https://github.com/ethereum/go-ethereum/blob/1485814f89d8206bb4a1c8e10a4a2893920f683a/core/state_transition.go#L167>
+            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| {
+                max_fee_per_gas
+                    .unwrap()
+                    .min(max_priority_fee_per_gas.unwrap() + env.current_base_fee)
+            });
 
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
