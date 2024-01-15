@@ -9,6 +9,9 @@ use std::process::{Command, Stdio};
 #[cfg(any(feature = "enable-stack", feature = "enable-storage"))]
 use eth_types::U256;
 
+/// Chain ID of ETH mainnet
+pub const ETH_CHAIN_ID: u64 = 1;
+
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
     Shanghai = 15,

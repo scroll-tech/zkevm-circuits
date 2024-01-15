@@ -45,6 +45,8 @@ snark-verifier-sdk.workspace = true
 hex.workspace = true
 rayon.workspace = true
 
+bitstream-io = "2.2.0"
+
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
 criterion = "0.3"

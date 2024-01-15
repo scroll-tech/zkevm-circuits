@@ -4,7 +4,7 @@
 
 Testings in `mainnet.rs` enable accessing a RPC node with debug API, and test any block or single transaction from the node. Trace and block witness would be rebuilt from the input data (block or tx) and then being mocking proven by a specified circuit.
 
-The running parameters are specified by enviroment variables:
+The running parameters are specified by environment variables:
 
 * CIRCUIT: the circuit used to launch mocking proven, can be `super` (by default), `evm`, `copy`, `rlp`, `tx`, `state`, and we can use `none` to make a dry-run (no provding but only building of witness)
 * GETH0_URL: the url of RPC node, like "https://eth-goerli.g.alchemy.com/v2/"

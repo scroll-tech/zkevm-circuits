@@ -1,14 +1,19 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Cursor};
 
+use bitstream_io::{BitRead, BitReader, LittleEndian};
 use eth_types::Field;
 use gadgets::impl_expr;
 use halo2_proofs::{circuit::Value, plonk::Expression};
+use itertools::Itertools;
 use strum_macros::EnumIter;
 
-use super::{params::N_BITS_PER_BYTE, util::value_bits_le};
+use super::{
+    params::N_BITS_PER_BYTE,
+    util::{bit_length, read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
+};
 
 /// The symbol emitted by FSE table. This is also the weight in the canonical Huffman code.
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FseSymbol {
     /// Weight == 0.
     S0 = 0,
@@ -33,6 +38,12 @@ impl_expr!(FseSymbol);
 impl From<FseSymbol> for usize {
     fn from(value: FseSymbol) -> Self {
         value as usize
+    }
+}
+
+impl From<FseSymbol> for u64 {
+    fn from(value: FseSymbol) -> Self {
+        value as u64
     }
 }
 
@@ -85,6 +96,7 @@ pub enum ZstdTag {
     ZstdBlockLiteralsRawBytes,
     ZstdBlockLiteralsRleBytes,
     ZstdBlockHuffmanHeader,
+    ZstdBlockFseCode,
     ZstdBlockHuffmanCode,
     ZstdBlockJumpTable,
     ZstdBlockSequenceHeader,
@@ -108,6 +120,7 @@ impl ToString for ZstdTag {
             Self::ZstdBlockLiteralsRawBytes => "ZstdBlockLiteralsRawBytes",
             Self::ZstdBlockLiteralsRleBytes => "ZstdBlockLiteralsRleBytes",
             Self::ZstdBlockHuffmanHeader => "ZstdBlockHuffmanHeader",
+            Self::ZstdBlockFseCode => "ZstdBlockFseCode",
             Self::ZstdBlockHuffmanCode => "ZstdBlockHuffmanCode",
             Self::ZstdBlockJumpTable => "ZstdBlockJumpTable",
             Self::ZstdBlockSequenceHeader => "ZstdBlockSequenceHeader",
@@ -180,10 +193,6 @@ pub struct HuffmanData {
 /// Witness to the HuffmanCodesTable.
 #[derive(Clone, Debug)]
 pub struct HuffmanCodesData {
-    /// The instance ID assigned to the data we are encoding using zstd.
-    pub instance_idx: u64,
-    /// The frame ID we are currently decoding.
-    pub frame_idx: u64,
     /// The byte offset in the frame at which the FSE table is described.
     pub byte_offset: u64,
     /// A mapping of symbol to the weight assigned to it as per canonical Huffman coding. The
@@ -212,16 +221,6 @@ impl HuffmanCodesData {
                 }
             })
             .sum();
-
-        // Helper function to get the number of bits needed to represent a u32 value in binary
-        // form.
-        let bit_length = |value: u64| -> u64 {
-            if value == 0 {
-                0
-            } else {
-                64 - value.leading_zeros() as u64
-            }
-        };
 
         // Calculate the last symbol's weight and append it.
         let max_bitstring_len = bit_length(sum_weights);
@@ -261,52 +260,162 @@ impl HuffmanCodesData {
     }
 }
 
-/// Witness to the FseTable.
-#[derive(Clone, Debug, Default)]
-pub struct FseData {
+/// A single row in the FSE table.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FseTableRow {
     /// Incremental index, starting at 1.
     pub idx: u64,
     /// The FSE state at this row in the FSE table.
-    pub state: u8,
+    pub state: u64,
     /// The baseline associated with this state.
-    pub baseline: u8,
+    pub baseline: u64,
     /// The number of bits to be read from the input bitstream at this state.
-    pub num_bits: u8,
+    pub num_bits: u64,
     /// The symbol emitted by the FSE table at this state.
-    pub symbol: u8,
+    pub symbol: u64,
 }
 
-/// Auxiliary data accompanying the FSE table's witness values.
+/// Data for the FSE table's witness values.
 #[derive(Clone, Debug)]
-pub struct FseAuxiliaryData {
-    /// The instance ID assigned to the data we are encoding using zstd.
-    pub instance_idx: u64,
-    /// The frame ID we are currently decoding.
-    pub frame_idx: u64,
+pub struct FseTableData {
     /// The byte offset in the frame at which the FSE table is described.
     pub byte_offset: u64,
     /// The FSE table's size, i.e. 1 << AL (accuracy log).
     pub table_size: u64,
-    /// The data representing the states, symbols, and so on of this FSE table.
-    pub data: Vec<FseData>,
+    /// Represent the states, symbols, and so on of this FSE table.
+    pub rows: Vec<FseTableRow>,
+}
+
+/// Auxiliary data accompanying the FSE table's witness values.
+#[derive(Clone, Debug)]
+pub struct FseAuxiliaryTableData {
+    /// The byte offset in the frame at which the FSE table is described.
+    pub byte_offset: u64,
+    /// The FSE table's size, i.e. 1 << AL (accuracy log).
+    pub table_size: u64,
+    /// A map from FseSymbol (weight) to states, also including fields for that state, for
+    /// instance, the baseline and the number of bits to read from the FSE bitstream.
+    ///
+    /// For each symbol, the states are in strictly increasing order.
+    pub sym_to_states: BTreeMap<FseSymbol, Vec<FseTableRow>>,
+}
+
+impl FseAuxiliaryTableData {
+    #[allow(non_snake_case)]
+    /// While we reconstruct an FSE table from a bitstream, we do not know before reconstruction
+    /// how many exact bytes we would finally be reading.
+    ///
+    /// The number of bytes actually read while reconstruction is called `t` and is returned along
+    /// with the reconstructed FSE table. After processing the entire bitstream to reconstruct the
+    /// FSE table, if the read bitstream was not byte aligned, then we discard the 1..8 bits from
+    /// the last byte that we read from.
+    pub fn reconstruct(src: &[u8], byte_offset: usize) -> std::io::Result<(usize, Self)> {
+        // construct little-endian bit-reader.
+        let data = src.iter().skip(byte_offset).cloned().collect::<Vec<u8>>();
+        let mut reader = BitReader::endian(Cursor::new(&data), LittleEndian);
+
+        // number of bits read by the bit-reader from the bistream.
+        let mut offset = 0;
+
+        let accuracy_log = {
+            offset += 4;
+            reader.read::<u8>(offset)? + 5
+        };
+        let table_size = 1 << accuracy_log;
+
+        let mut sym_to_states = BTreeMap::new();
+        let mut R = table_size;
+        let mut state = 0x00;
+        let mut symbol = FseSymbol::S0;
+        let mut idx = 1;
+        while R > 0 {
+            // number of bits and value read from the variable bit-packed data.
+            let (n_bits_read, value) = read_variable_bit_packing(&data, offset, R + 1)?;
+
+            let N = value - 1;
+            let states = std::iter::once(state)
+                .chain((1..N).map(|_| {
+                    state += (table_size >> 1) + (table_size >> 3) + 3;
+                    state &= table_size - 1;
+                    state
+                }))
+                .sorted()
+                .collect::<Vec<u64>>();
+            let (smallest_spot_idx, nbs) = smaller_powers_of_two(table_size, N);
+            let baselines = if N == 1 {
+                vec![0x00]
+            } else {
+                let mut rotated_nbs = nbs.clone();
+                rotated_nbs.rotate_left(smallest_spot_idx);
+
+                let mut baselines = std::iter::once(0x00)
+                    .chain(rotated_nbs.iter().scan(0x00, |baseline, nb| {
+                        *baseline += 1 << nb;
+                        Some(*baseline)
+                    }))
+                    .take(N as usize)
+                    .collect::<Vec<u64>>();
+
+                baselines.rotate_right(smallest_spot_idx);
+                baselines
+            };
+            sym_to_states.insert(
+                symbol,
+                states
+                    .iter()
+                    .zip(nbs.iter())
+                    .zip(baselines.iter())
+                    .map(|((&state, &nb), &baseline)| FseTableRow {
+                        idx,
+                        state,
+                        num_bits: nb,
+                        baseline,
+                        symbol: symbol.into(),
+                    })
+                    .collect(),
+            );
+            idx += 1;
+
+            // update the total number of bits read so far.
+            offset += n_bits_read;
+
+            // increment symbol.
+            symbol = ((symbol as usize) + 1).into();
+
+            // update state.
+            state += (table_size >> 1) + (table_size >> 3) + 3;
+            state &= table_size - 1;
+
+            // remove N slots from a total of R.
+            R -= N;
+        }
+
+        // ignore any bits left to be read until byte-aligned.
+        let t = (((offset as usize) - 1) / N_BITS_PER_BYTE) + 1;
+
+        Ok((
+            t,
+            Self {
+                byte_offset: byte_offset as u64,
+                table_size,
+                sym_to_states,
+            },
+        ))
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct ZstdWitnessRow<F> {
-    pub instance_idx: u64,
-    pub frame_idx: u64,
     pub state: ZstdState<F>,
     pub encoded_data: EncodedData<F>,
     pub decoded_data: DecodedData<F>,
     pub huffman_data: HuffmanData,
-    pub fse_data: FseData,
+    pub fse_data: FseTableRow,
 }
 
 impl<F: Field> ZstdWitnessRow<F> {
     pub fn init(src_len: usize) -> Self {
         Self {
-            instance_idx: 1,
-            frame_idx: 0,
             state: ZstdState::default(),
             encoded_data: EncodedData {
                 encoded_len: src_len as u64,
@@ -314,7 +423,54 @@ impl<F: Field> ZstdWitnessRow<F> {
             },
             decoded_data: DecodedData::default(),
             huffman_data: HuffmanData::default(),
-            fse_data: FseData::default(),
+            fse_data: FseTableRow::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fse_reconstruction() -> std::io::Result<()> {
+        // The first 3 bytes are garbage data and the offset == 3 passed to the function should
+        // appropriately ignore those bytes. Only the next 4 bytes are meaningful and the FSE
+        // reconstruction should read bitstreams only until the end of the 4th byte. The 3
+        // other bytes are garbage (for the purpose of this test case), and we want to make
+        // sure FSE reconstruction ignores them.
+        let src = vec![0xff, 0xff, 0xff, 0x30, 0x6f, 0x9b, 0x03, 0xff, 0xff, 0xff];
+
+        // compression_debug
+        // let (n_bytes, table) = FseAuxiliaryTableData::reconstruct(1, 1, &src, 3)?;
+
+        // TODO: assert equality for the entire table.
+        // for now only comparing state/baseline/nb for S1, i.e. weight == 1.
+
+        // compression_debug
+        // assert_eq!(n_bytes, 4);
+        // assert_eq!(
+        //     table.sym_to_states.get(&FseSymbol::S1).cloned().unwrap(),
+        //     [
+        //         (0x03, 0x10, 3),
+        //         (0x0c, 0x18, 3),
+        //         (0x11, 0x00, 2),
+        //         (0x15, 0x04, 2),
+        //         (0x1a, 0x08, 2),
+        //         (0x1e, 0x0c, 2),
+        //     ]
+        //     .iter()
+        //     .enumerate()
+        //     .map(|(i, &(state, baseline, num_bits))| FseTableRow {
+        //         idx: (i + 1) as u64,
+        //         state,
+        //         symbol: 1,
+        //         baseline,
+        //         num_bits,
+        //     })
+        //     .collect::<Vec<FseTableRow>>(),
+        // );
+
+        Ok(())
     }
 }

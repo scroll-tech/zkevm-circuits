@@ -1148,11 +1148,13 @@ impl From<MockTransaction> for Transaction {
             let mut legacy_tx = TransactionRequest::new()
                 .from(mock_tx.from.address())
                 .nonce(mock_tx.nonce)
-                .gas_price(mock_tx.gas_price)
                 .gas(mock_tx.gas)
                 .value(mock_tx.value)
                 .data(mock_tx.input.clone())
                 .chain_id(mock_tx.chain_id);
+            if let Some(gas_price) = mock_tx.gas_price {
+                legacy_tx = legacy_tx.gas_price(gas_price);
+            }
             if !is_create {
                 legacy_tx = legacy_tx.to(mock_tx.to.as_ref().map(|to| to.address()).unwrap());
             }
@@ -1170,7 +1172,7 @@ impl From<MockTransaction> for Transaction {
             tx_type: TxType::Eip155,
             nonce: mock_tx.nonce.as_u64(),
             gas: mock_tx.gas.as_u64(),
-            gas_price: mock_tx.gas_price,
+            gas_price: mock_tx.gas_price.unwrap_or_default(),
             max_fee_per_gas: mock_tx.max_fee_per_gas,
             max_priority_fee_per_gas: mock_tx.max_priority_fee_per_gas,
             caller_address: mock_tx.from.address(),

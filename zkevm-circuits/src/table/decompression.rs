@@ -16,7 +16,10 @@ use strum::IntoEnumIterator;
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
-    witness::{FseAuxiliaryData, FseSymbol, HuffmanCodesData, N_BITS_SYMBOL, N_MAX_SYMBOLS},
+    witness::{
+        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, N_BITS_SYMBOL,
+        N_MAX_SYMBOLS,
+    },
 };
 
 use super::{BitwiseOpTable, LookupTable, Pow2Table, RangeTable, U8Table};
@@ -41,10 +44,6 @@ use super::{BitwiseOpTable, LookupTable, Pow2Table, RangeTable, U8Table};
 pub struct FseTable<F> {
     /// Fixed column to denote whether the constraints will be enabled or not.
     pub q_enabled: Column<Fixed>,
-    /// The encoded/decoded data's instance ID where this FSE table belongs.
-    pub instance_idx: Column<Advice>,
-    /// The frame's ID within the data instance where this FSE table belongs.
-    pub frame_idx: Column<Advice>,
     /// The byte offset within the data instance where the encoded FSE table begins. This is
     /// 1-indexed, i.e. byte_offset == 1 at the first byte.
     pub byte_offset: Column<Advice>,
@@ -77,8 +76,6 @@ impl<F: Field> FseTable<F> {
         let byte_offset = meta.advice_column();
         let table = Self {
             q_enabled,
-            instance_idx: meta.advice_column(),
-            frame_idx: meta.advice_column(),
             byte_offset,
             byte_offset_cmp: ComparatorChip::configure(
                 meta,
@@ -169,8 +166,6 @@ impl<F: Field> FseTable<F> {
                 let condition = meta.query_fixed(table.q_enabled, Rotation::cur());
 
                 [
-                    meta.query_advice(table.instance_idx, Rotation::cur()),
-                    meta.query_advice(table.frame_idx, Rotation::cur()),
                     meta.query_advice(table.byte_offset, Rotation::cur()),
                     meta.query_advice(table.table_size, Rotation::cur()),
                     meta.query_advice(table.state, Rotation::cur()),
@@ -194,21 +189,17 @@ impl<F: Field> FseTable<F> {
     pub fn dev_load(
         &self,
         layouter: &mut impl Layouter<F>,
-        data: Vec<FseAuxiliaryData>,
+        data: Vec<FseTableData>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "FseTable: dev",
             |mut region| {
                 let mut offset = 0;
                 for fse_table in data.iter() {
-                    let instance_idx = Value::known(F::from(fse_table.instance_idx));
-                    let frame_idx = Value::known(F::from(fse_table.frame_idx));
                     let byte_offset = Value::known(F::from(fse_table.byte_offset));
                     let table_size = Value::known(F::from(fse_table.table_size));
-                    for row in fse_table.data.iter() {
+                    for row in fse_table.rows.iter() {
                         for (annotation, column, value) in [
-                            ("instance_idx", self.instance_idx, instance_idx),
-                            ("frame_idx", self.frame_idx, frame_idx),
                             ("byte_offset", self.byte_offset, byte_offset),
                             ("table_size", self.table_size, table_size),
                             ("idx", self.idx, Value::known(row.idx.into())),
@@ -304,21 +295,11 @@ impl<F: Field> FseTable<F> {
 
 impl<F: Field> LookupTable<F> for FseTable<F> {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.instance_idx.into(),
-            self.frame_idx.into(),
-            self.byte_offset.into(),
-            self.table_size.into(),
-        ]
+        vec![self.byte_offset.into(), self.table_size.into()]
     }
 
     fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("instance_idx"),
-            String::from("frame_idx"),
-            String::from("byte_offset"),
-            String::from("table_size"),
-        ]
+        vec![String::from("byte_offset"), String::from("table_size")]
     }
 }
 
@@ -355,10 +336,6 @@ impl<F: Field> LookupTable<F> for FseTable<F> {
 pub struct FseAuxiliaryTable<F> {
     /// Fixed column to denote whether the constraints will be enabled or not.
     pub q_enabled: Column<Fixed>,
-    /// The encoded/decoded data's instance ID where this FSE table belongs.
-    pub instance_idx: Column<Advice>,
-    /// The frame's ID within the data instance where this FSE table belongs.
-    pub frame_idx: Column<Advice>,
     /// The byte offset within the data instance where the encoded FSE table begins. This is
     /// 1-indexed, i.e. byte_offset == 1 at the first byte.
     pub byte_offset: Column<Advice>,
@@ -421,8 +398,6 @@ impl<F: Field> FseAuxiliaryTable<F> {
         let smallest_spot = meta.advice_column();
         let table = Self {
             q_enabled,
-            instance_idx: meta.advice_column(),
-            frame_idx: meta.advice_column(),
             byte_offset,
             byte_offset_cmp: ComparatorChip::configure(
                 meta,
@@ -727,14 +702,96 @@ impl<F: Field> FseAuxiliaryTable<F> {
 
         table
     }
+
+    pub fn dev_load(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        data: Vec<FseAuxiliaryTableData>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "FseAuxiliaryTable: dev load",
+            |mut region| {
+                let mut offset = 0;
+                for table in data.iter() {
+                    let byte_offset = Value::known(F::from(table.byte_offset));
+                    let table_size = Value::known(F::from(table.table_size));
+                    let table_size_rs_1 = Value::known(F::from(table.table_size >> 1));
+                    let table_size_rs_3 = Value::known(F::from(table.table_size >> 3));
+                    for (&symbol, rows) in table.sym_to_states.iter() {
+                        let symbol_count = rows.len() as u64;
+                        let smallest_spot = rows
+                            .iter()
+                            .map(|fse_row| 1 << fse_row.num_bits)
+                            .min()
+                            .expect("symbol should have at least 1 row");
+                        let spot_acc_iter = rows.iter().scan(0, |spot_acc, fse_row| {
+                            *spot_acc += 1 << fse_row.num_bits;
+                            Some(*spot_acc)
+                        });
+                        // TODO: byte_offset_cmp
+                        // TODO: symbol_eq
+                        // TODO: baseline_mark
+                        // TODO: last_baseline
+                        // TODO: q_enabled
+                        for (i, (fse_row, spot_acc)) in rows.iter().zip(spot_acc_iter).enumerate() {
+                            for (annotation, col, value) in [
+                                ("byte_offset", self.byte_offset, byte_offset),
+                                ("table_size", self.table_size, table_size),
+                                ("table_size_rs_1", self.table_size_rs_1, table_size_rs_1),
+                                ("table_size_rs_3", self.table_size_rs_3, table_size_rs_3),
+                                ("symbol", self.symbol, Value::known(F::from(symbol as u64))),
+                                (
+                                    "symbol_count",
+                                    self.symbol_count,
+                                    Value::known(F::from(symbol_count)),
+                                ),
+                                (
+                                    "symbol_count_acc",
+                                    self.symbol_count_acc,
+                                    Value::known(F::from(i as u64 + 1)),
+                                ),
+                                ("state", self.state, Value::known(F::from(fse_row.state))),
+                                (
+                                    "baseline",
+                                    self.baseline,
+                                    Value::known(F::from(fse_row.baseline)),
+                                ),
+                                ("nb", self.nb, Value::known(F::from(fse_row.num_bits))),
+                                (
+                                    "spot",
+                                    self.spot,
+                                    Value::known(F::from(1 << fse_row.num_bits)),
+                                ),
+                                (
+                                    "smallest_spot",
+                                    self.smallest_spot,
+                                    Value::known(F::from(smallest_spot)),
+                                ),
+                                ("spot_acc", self.spot_acc, Value::known(F::from(spot_acc))),
+                                ("idx", self.idx, Value::known(F::from(fse_row.idx))),
+                            ] {
+                                region.assign_advice(
+                                    || format!("FseAuxiliaryTable: {}", annotation),
+                                    col,
+                                    offset,
+                                    || value,
+                                )?;
+                            }
+                            offset += 1;
+                        }
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
 }
 
 impl<F: Field> FseAuxiliaryTable<F> {
     /// Lookup table expressions for (state, symbol) tuple check.
     pub fn table_exprs_state_check(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.instance_idx, Rotation::cur()),
-            meta.query_advice(self.frame_idx, Rotation::cur()),
             meta.query_advice(self.byte_offset, Rotation::cur()),
             meta.query_advice(self.table_size, Rotation::cur()),
             meta.query_advice(self.state, Rotation::cur()),
@@ -747,8 +804,6 @@ impl<F: Field> FseAuxiliaryTable<F> {
     /// Lookup table expressions for (symbol, symbol_count) tuple check.
     pub fn table_exprs_symbol_count_check(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.instance_idx, Rotation::cur()),
-            meta.query_advice(self.frame_idx, Rotation::cur()),
             meta.query_advice(self.byte_offset, Rotation::cur()),
             meta.query_advice(self.table_size, Rotation::cur()),
             meta.query_advice(self.symbol, Rotation::cur()),
@@ -766,10 +821,6 @@ pub struct HuffmanCodesTable<F> {
     pub q_enabled: Column<Fixed>,
     /// Fixed column to mark the first row in the table.
     pub q_first: Column<Fixed>,
-    /// The encoded/decoded data's instance ID where this FSE table belongs.
-    pub instance_idx: Column<Advice>,
-    /// The frame's ID within the data instance where this FSE table belongs.
-    pub frame_idx: Column<Advice>,
     /// The byte offset within the data instance where the encoded FSE table begins. This is
     /// 1-indexed, i.e. byte_offset == 1 at the first byte.
     pub byte_offset: Column<Advice>,
@@ -786,8 +837,7 @@ pub struct HuffmanCodesTable<F> {
     /// Helper column to denote 2 ^ (weight - 1).
     pub pow2_weight: Column<Advice>,
     /// The sum of canonical Huffman code weights. This value does not change over the rows for a
-    /// specific Huffman code, i.e. as long as the tuple (instance_idx, frame_idx, byte_offset) is
-    /// the same.
+    /// specific Huffman code.
     pub sum_weights: Column<Advice>,
     /// The maximum length of a bitstring as per this Huffman code. Again, this value does not
     /// change over the rows for a specific Huffman code.
@@ -813,8 +863,6 @@ impl<F: Field> HuffmanCodesTable<F> {
         let table = Self {
             q_enabled,
             q_first: meta.fixed_column(),
-            instance_idx: meta.advice_column(),
-            frame_idx: meta.advice_column(),
             byte_offset,
             byte_offset_cmp: ComparatorChip::configure(
                 meta,
@@ -1135,8 +1183,6 @@ impl<F: Field> HuffmanCodesTable<F> {
                 let weight_bits = BinaryNumberChip::construct(self.weight_bits);
                 let mut offset = 0;
                 for code in data.iter() {
-                    let instance_idx = Value::known(F::from(code.instance_idx));
-                    let frame_idx = Value::known(F::from(code.frame_idx));
                     let byte_offset = Value::known(F::from(code.byte_offset));
                     let (max_bitstring_len, sym_map) = code.parse_canonical();
                     let max_bitstring_len = Value::known(F::from(max_bitstring_len));
@@ -1161,8 +1207,6 @@ impl<F: Field> HuffmanCodesTable<F> {
                     }
                     for (&symbol, &(weight, bit_value)) in sym_map.iter() {
                         for (annotation, column, value) in [
-                            ("instance_idx", self.instance_idx, instance_idx),
-                            ("frame_idx", self.frame_idx, frame_idx),
                             ("byte_offset", self.byte_offset, byte_offset),
                             (
                                 "max_bitstring_len",
@@ -1272,8 +1316,6 @@ impl<F: Field> HuffmanCodesTable<F> {
 impl<F: Field> LookupTable<F> for HuffmanCodesTable<F> {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.instance_idx.into(),
-            self.frame_idx.into(),
             self.byte_offset.into(),
             self.symbol.into(),
             self.weight.into(),
@@ -1282,8 +1324,6 @@ impl<F: Field> LookupTable<F> for HuffmanCodesTable<F> {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("instance_idx"),
-            String::from("frame_idx"),
             String::from("byte_offset"),
             String::from("symbol"),
             String::from("weight"),
@@ -1304,10 +1344,6 @@ impl<F: Field> LookupTable<F> for HuffmanCodesTable<F> {
 pub struct HuffmanCodesBitstringAccumulationTable {
     /// Fixed column to denote whether the constraints will be enabled or not.
     pub q_enabled: Column<Fixed>,
-    /// The encoded/decoded data's instance ID where this FSE table belongs.
-    pub instance_idx: Column<Advice>,
-    /// The frame's ID within the data instance where this FSE table belongs.
-    pub frame_idx: Column<Advice>,
     /// The byte offset within the data instance where the encoded FSE table begins. This is
     /// 1-indexed, i.e. byte_offset == 1 at the first byte.
     pub byte_offset: Column<Advice>,
@@ -1356,8 +1392,6 @@ impl HuffmanCodesBitstringAccumulationTable {
         let q_enabled = meta.fixed_column();
         let table = Self {
             q_enabled,
-            instance_idx: meta.advice_column(),
-            frame_idx: meta.advice_column(),
             byte_offset: meta.advice_column(),
             byte_idx_1: meta.advice_column(),
             byte_idx_2: meta.advice_column(),
@@ -1608,7 +1642,7 @@ impl HuffmanCodesBitstringAccumulationTable {
         table
     }
 
-    pub fn dev_load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn dev_load<F: Field>(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -1621,8 +1655,6 @@ impl HuffmanCodesBitstringAccumulationTable {
         meta: &mut VirtualCells<F>,
     ) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.instance_idx, Rotation::cur()),
-            meta.query_advice(self.frame_idx, Rotation::cur()),
             meta.query_advice(self.byte_offset, Rotation::cur()),
             meta.query_advice(self.byte_idx_1, Rotation::cur()),
             meta.query_advice(self.byte_1, Rotation::cur()),
@@ -1638,8 +1670,6 @@ impl HuffmanCodesBitstringAccumulationTable {
     /// encoded data.
     pub fn table_exprs_spanned<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.instance_idx, Rotation::cur()),
-            meta.query_advice(self.frame_idx, Rotation::cur()),
             meta.query_advice(self.byte_offset, Rotation::cur()),
             meta.query_advice(self.byte_idx_1, Rotation::cur()),
             meta.query_advice(self.byte_idx_2, Rotation::cur()),
