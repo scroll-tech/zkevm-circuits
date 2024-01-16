@@ -4,7 +4,7 @@ use crate::{
         param::N_BYTES_U64,
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes, U64Word,
+            from_bytes, U64Word, Word,
         },
     },
     util::Expr,
@@ -13,14 +13,16 @@ use bus_mapping::{
     circuit_input_builder::{TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION},
     l2_predeployed::l1_gas_price_oracle,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Transaction L1 fee gadget for L1GasPriceOracle contract
 #[derive(Clone, Debug)]
 pub(crate) struct TxL1FeeGadget<F> {
-    /// Calculated L1 fee of transaction
-    tx_l1_fee_word: U64Word<F>,
+    /// Transaction L1 fee
+    /// It should be an Uint64, but it's also used to check sender balance which
+    /// needs to be added as a Word.
+    tx_l1_fee_word: Word<F>,
     /// Remainder when calculating L1 fee
     remainder_word: U64Word<F>,
     /// Current value of L1 base fee
@@ -96,7 +98,7 @@ impl<F: Field> TxL1FeeGadget<F> {
     ) -> Result<(), Error> {
         let (tx_l1_fee, remainder) = l1_fee.tx_l1_fee(tx_data_gas_cost);
         self.tx_l1_fee_word
-            .assign(region, offset, Some(tx_l1_fee.to_le_bytes()))?;
+            .assign(region, offset, Some(U256::from(tx_l1_fee).to_le_bytes()))?;
         self.remainder_word
             .assign(region, offset, Some(remainder.to_le_bytes()))?;
         self.base_fee_word
@@ -132,7 +134,11 @@ impl<F: Field> TxL1FeeGadget<F> {
     }
 
     pub(crate) fn tx_l1_fee(&self) -> Expression<F> {
-        from_bytes::expr(&self.tx_l1_fee_word.cells)
+        from_bytes::expr(&self.tx_l1_fee_word.cells[..N_BYTES_U64])
+    }
+
+    pub(crate) fn tx_l1_fee_word(&self) -> &Word<F> {
+        &self.tx_l1_fee_word
     }
 
     fn raw_construct(cb: &mut EVMConstraintBuilder<F>, tx_data_gas_cost: Expression<F>) -> Self {
@@ -143,8 +149,8 @@ impl<F: Field> TxL1FeeGadget<F> {
         let fee_overhead_word = cb.query_word_rlc();
         let fee_scalar_word = cb.query_word_rlc();
 
-        let [tx_l1_fee, remainder, base_fee, fee_overhead, fee_scalar] = [
-            &tx_l1_fee_word,
+        let tx_l1_fee = from_bytes::expr(&tx_l1_fee_word.cells[..N_BYTES_U64]);
+        let [remainder, base_fee, fee_overhead, fee_scalar] = [
             &remainder_word,
             &base_fee_word,
             &fee_overhead_word,

@@ -79,15 +79,15 @@ where
         .or(ctx, Existing(s_is_zero), Existing(s_in_range));
 
     // load required constants
-    let zero = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::zero()));
-    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::one()));
+    let zero = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::ZERO));
+    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::ONE));
     let point_at_infinity = EcPoint::construct(
         ecc_chip
             .field_chip()
-            .load_constant(ctx, fe_to_biguint(&CF::zero())),
+            .load_constant(ctx, fe_to_biguint(&CF::ZERO)),
         ecc_chip
             .field_chip()
-            .load_constant(ctx, fe_to_biguint(&CF::zero())),
+            .load_constant(ctx, fe_to_biguint(&CF::ZERO)),
     );
 
     // compute u1 = m * s^{-1} mod n
@@ -179,7 +179,7 @@ where
         let lambda = {
             let a_val = base_chip.get_assigned_value(&dy);
             let b_val = base_chip.get_assigned_value(&dx);
-            let b_inv = b_val.map(|bv| bv.invert().unwrap_or(CF::zero()));
+            let b_inv = b_val.map(|bv| bv.invert().unwrap_or(CF::ZERO));
             let quot_val = a_val.zip(b_inv).map(|(a, bi)| a * bi);
             let quot = base_chip.load_private(ctx, FpConfig::<F, CF>::fe_to_witness(&quot_val));
             // constrain quot * b - a = 0 mod p

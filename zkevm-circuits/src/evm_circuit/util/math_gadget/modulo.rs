@@ -155,37 +155,37 @@ mod tests {
     fn test_mod_n_expected_rem() {
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(0), Word::from(0)],
+            [Word::from(1), Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(548), Word::from(50), Word::from(48)],
+            [Word::from(548), Word::from(50), Word::from(48)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(30), Word::from(50), Word::from(30)],
+            [Word::from(30), Word::from(50), Word::from(30)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
+            [WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
+            [WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, Word::from(2), Word::from(0)],
+            [WORD_CELL_MAX, Word::from(2), Word::from(0)],
             true,
         );
     }
@@ -202,7 +202,7 @@ mod tests {
         // ModGadget, the statement would be invalid in the ModGadget.
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![
+            [
                 Word::from(2),
                 Word::from(3),
                 Word::from(0),
@@ -213,27 +213,27 @@ mod tests {
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(1), Word::from(1)],
+            [Word::from(1), Word::from(1), Word::from(1)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(46), Word::from(50), Word::from(48)],
+            [Word::from(46), Word::from(50), Word::from(48)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
+            [WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
+            [WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
+            [WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
             false,
         );
     }

@@ -138,12 +138,24 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
         layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
         config.0.assign(layouter, &self.proofs, self.row_limit)?;
-        config.1.load(
-            layouter,
-            &self.mpt_updates,
-            self.row_limit,
-            challenges.evm_word(),
-        )?;
+        // use par assignment of mpt table by default.
+        // to use serial version, you must set `PARALLEL_SYN=false`.
+        let use_seq = std::env::var("PARALLEL_SYN").map_or(false, |s| s == *"false");
+        if !use_seq {
+            config.1.load_par(
+                layouter,
+                &self.mpt_updates,
+                self.row_limit,
+                challenges.evm_word(),
+            )?;
+        } else {
+            config.1.load(
+                layouter,
+                &self.mpt_updates,
+                self.row_limit,
+                challenges.evm_word(),
+            )?;
+        }
         Ok(())
     }
 
@@ -156,6 +168,8 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
 impl Circuit<Fr> for MptCircuit<Fr> {
     type Config = (MptCircuitConfig<Fr>, PoseidonTable, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self {

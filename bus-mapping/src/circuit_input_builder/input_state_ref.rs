@@ -16,8 +16,8 @@ use crate::{
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
-        RW,
+        StackOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogField, TxLogOp,
+        TxReceiptField, TxReceiptOp, RW,
     },
     precompile::{is_precompiled, PrecompileCalls},
     state_db::{CodeDB, StateDB},
@@ -75,6 +75,30 @@ impl<'a> CircuitInputStateRef<'a> {
             rwc: self.block_ctx.rwc,
             ..Default::default()
         }
+    }
+
+    /// Create a step right after the ref_step, it shared the same
+    /// exec_state and call context with ref_step
+    pub fn new_next_step(&self, ref_step: &ExecStep) -> Result<ExecStep, Error> {
+        let call_ctx = self.tx_ctx.call_ctx()?;
+        let gas_left = ref_step.gas_left.0 - ref_step.gas_cost.as_u64();
+
+        let step = ExecStep {
+            exec_state: ref_step.exec_state.clone(),
+            pc: ref_step.pc,
+            stack_size: ref_step.stack_size,
+
+            memory_size: call_ctx.memory.len(),
+            call_index: call_ctx.index,
+            reversible_write_counter: call_ctx.reversible_write_counter,
+            rwc: self.block_ctx.rwc,
+            log_id: self.tx_ctx.log_id,
+
+            gas_left: Gas(gas_left),
+            ..Default::default()
+        };
+
+        Ok(step)
     }
 
     /// Create a new EndTx step
@@ -591,7 +615,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
     /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
-    pub fn tx_accesslist_account_write(
+    pub fn tx_access_list_account_write(
         &mut self,
         step: &mut ExecStep,
         tx_id: usize,
@@ -605,6 +629,29 @@ impl<'a> CircuitInputStateRef<'a> {
             TxAccessListAccountOp {
                 tx_id,
                 address,
+                is_warm,
+                is_warm_prev,
+            },
+        )
+    }
+
+    /// Add address storage key to access list for the current transaction.
+    pub fn tx_access_list_storage_key_write(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        address: Address,
+        key: Word,
+        is_warm: bool,
+        is_warm_prev: bool,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::WRITE,
+            TxAccessListAccountStorageOp {
+                tx_id,
+                address,
+                key,
                 is_warm,
                 is_warm_prev,
             },
@@ -1355,7 +1402,7 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(), Error> {
         let call = self.call()?.clone();
         let geth_step = steps
-            .get(0)
+            .first()
             .ok_or(Error::InternalError("invalid index 0"))?;
         let is_err = exec_step.error.is_some();
         let is_return_revert_succ = (geth_step.op == OpcodeId::REVERT
@@ -1525,7 +1572,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let call = self.call()?;
 
-        if matches!(next_step, None) {
+        if next_step.is_none() {
             // enumerating call scope successful cases
             // case 1: call with normal halt opcode termination
             if matches!(

@@ -1,3 +1,4 @@
+#![feature(lazy_cell)]
 //! Integration testing
 
 #![deny(rustdoc::broken_intra_doc_links)]
@@ -12,13 +13,12 @@ use ethers::{
     providers::{Http, Provider},
     signers::{coins_bip39::English, MnemonicBuilder, Signer, Wallet},
 };
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     env::{self, VarError},
     fs::File,
-    sync::Once,
+    sync::{LazyLock, Once},
     time::Duration,
 };
 use url::Url;
@@ -40,40 +40,37 @@ pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";
 
 const GETH0_URL_DEFAULT: &str = "http://52.37.45.56:30303";
 
-lazy_static! {
-    /// URL of the integration test geth0 instance, which contains blocks for which proofs will be
-    /// generated.
-    pub static ref GETH0_URL: String = match env::var("GETH0_URL") {
-        Ok(val) => val,
-        Err(VarError::NotPresent) => GETH0_URL_DEFAULT.to_string(),
-        Err(e) => panic!("Error in GETH0_URL env var: {e:?}"),
-    };
-    /// ..
-    pub static ref START_BLOCK: usize =  match env::var("START_BLOCK") {
-        Ok(val) => str::parse::<usize>(&val).unwrap(),
-        Err(VarError::NotPresent) => 16140010,
-        Err(e) => panic!("Error in START_BLOCK env var: {e:?}"),
-    };
-    /// ..
-    pub static ref END_BLOCK: usize =  match env::var("END_BLOCK") {
-        Ok(val) => str::parse::<usize>(&val).unwrap(),
-        Err(VarError::NotPresent) => 16140010,
-        Err(e) => panic!("Error in END_BLOCK env var: {e:?}"),
-    };
-    /// ..
-    pub static ref TX_ID: String =  match env::var("TX_ID") {
-        Ok(val) => val,
-        Err(VarError::NotPresent) => "".to_string(),
-        Err(e) => panic!("Error in TX_ID env var: {e:?}"),
-    };
-    /// ..
-    pub static ref CIRCUIT: String =  match env::var("CIRCUIT") {
-        Ok(val) => val,
-        Err(VarError::NotPresent) => "super".to_string(),
-        Err(e) => panic!("Error in CIRCUIT env var: {e:?}"),
-    };
-
-}
+/// URL of the integration test geth0 instance, which contains blocks for which proofs will be
+/// generated.
+pub static GETH0_URL: LazyLock<String> = LazyLock::new(|| match env::var("GETH0_URL") {
+    Ok(val) => val,
+    Err(VarError::NotPresent) => GETH0_URL_DEFAULT.to_string(),
+    Err(e) => panic!("Error in GETH0_URL env var: {e:?}"),
+});
+/// ..
+pub static START_BLOCK: LazyLock<usize> = LazyLock::new(|| match env::var("START_BLOCK") {
+    Ok(val) => str::parse::<usize>(&val).unwrap(),
+    Err(VarError::NotPresent) => 16140010,
+    Err(e) => panic!("Error in START_BLOCK env var: {e:?}"),
+});
+/// ..
+pub static END_BLOCK: LazyLock<usize> = LazyLock::new(|| match env::var("END_BLOCK") {
+    Ok(val) => str::parse::<usize>(&val).unwrap(),
+    Err(VarError::NotPresent) => 16140010,
+    Err(e) => panic!("Error in END_BLOCK env var: {e:?}"),
+});
+/// ..
+pub static TX_ID: LazyLock<String> = LazyLock::new(|| match env::var("TX_ID") {
+    Ok(val) => val,
+    Err(VarError::NotPresent) => "".to_string(),
+    Err(e) => panic!("Error in TX_ID env var: {e:?}"),
+});
+/// ..
+pub static CIRCUIT: LazyLock<String> = LazyLock::new(|| match env::var("CIRCUIT") {
+    Ok(val) => val,
+    Err(VarError::NotPresent) => "super".to_string(),
+    Err(e) => panic!("Error in CIRCUIT env var: {e:?}"),
+});
 
 static LOG_INIT: Once = Once::new();
 

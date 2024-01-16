@@ -218,6 +218,9 @@
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::result_large_err)] // it's large, but what can we do?
 #![allow(clippy::collapsible_else_if)]
+#![allow(incomplete_features)]
+#![feature(lazy_cell)]
+#![feature(adt_const_params)]
 
 extern crate alloc;
 extern crate core;

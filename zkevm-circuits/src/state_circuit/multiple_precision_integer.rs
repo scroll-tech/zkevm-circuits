@@ -65,27 +65,12 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
         offset: usize,
         value: Address,
     ) -> Result<(), Error> {
-        for (i, &limb) in value.to_limbs().iter().enumerate() {
-            region.assign_advice(
-                || format!("limb[{i}] in address mpi"),
-                self.limbs[i],
-                offset,
-                || Value::known(F::from(limb as u64)),
-            )?;
-        }
-        Ok(())
+        assign_to_config(region, self, value, offset, "address")
     }
 
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
-        let mut annotations = Vec::new();
-        for (i, _) in self.limbs.iter().enumerate() {
-            annotations.push(format!("MPI_limbs_address_{i}"));
-        }
-        self.limbs
-            .iter()
-            .zip(annotations.iter())
-            .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
+        annotate_columns_in_config(region, self, prefix, "address")
     }
 }
 
@@ -96,28 +81,48 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
         offset: usize,
         value: u32,
     ) -> Result<(), Error> {
-        for (i, &limb) in value.to_limbs().iter().enumerate() {
-            region.assign_advice(
-                || format!("limb[{i}] in u32 mpi"),
-                self.limbs[i],
-                offset,
-                || Value::known(F::from(limb as u64)),
-            )?;
-        }
-        Ok(())
+        assign_to_config(region, self, value, offset, "u32")
     }
 
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
-        let mut annotations = Vec::new();
-        for (i, _) in self.limbs.iter().enumerate() {
-            annotations.push(format!("MPI_limbs_u32_{i}"));
-        }
-        self.limbs
-            .iter()
-            .zip(annotations.iter())
-            .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
+        annotate_columns_in_config(region, self, prefix, "u32")
     }
+}
+
+fn assign_to_config<T: ToLimbs<N>, const N: usize, F: Field>(
+    region: &mut Region<'_, F>,
+    config: &Config<T, N>,
+    value: T,
+    offset: usize,
+    prefix: &str,
+) -> Result<(), Error> {
+    for (i, &limb) in value.to_limbs().iter().enumerate() {
+        region.assign_advice(
+            || format!("limb[{i}] in {prefix} mpi"),
+            config.limbs[i],
+            offset,
+            || Value::known(F::from(limb as u64)),
+        )?;
+    }
+    Ok(())
+}
+
+fn annotate_columns_in_config<T: ToLimbs<N>, const N: usize, F: Field>(
+    region: &mut Region<'_, F>,
+    config: &Config<T, N>,
+    prefix: &str,
+    type_ann: &str,
+) {
+    let mut annotations = Vec::new();
+    for (i, _) in config.limbs.iter().enumerate() {
+        annotations.push(format!("MPI_limbs_{type_ann}_{i}"));
+    }
+    config
+        .limbs
+        .iter()
+        .zip(annotations.iter())
+        .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
 }
 
 pub struct Chip<F: Field, T, const N: usize>
@@ -182,4 +187,19 @@ fn value_from_limbs<F: Field>(limbs: &[Expression<F>]) -> Expression<F> {
     limbs.iter().rev().fold(0u64.expr(), |result, limb| {
         limb.clone() + result * (1u64 << 16).expr()
     })
+}
+
+#[cfg(test)]
+mod test {
+    use super::ToLimbs;
+    use eth_types::Address;
+
+    #[test]
+    pub fn display_limbs() {
+        let val = 10u32;
+        assert_eq!(val.to_limbs(), [10, 0]);
+
+        let val = Address::from_low_u64_be(10);
+        assert_eq!(val.to_limbs(), [10, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
 }

@@ -81,7 +81,7 @@ pub fn unroll_to_hash_input<F: Field, const BYTES_IN_FIELD: usize, const INPUT_L
             if cache.len() == BYTES_IN_FIELD {
                 let mut buf: [u8; 64] = [0; 64];
                 U256::from_big_endian(&cache).to_little_endian(&mut buf[0..32]);
-                msgs.push(F::from_bytes_wide(&buf));
+                msgs.push(F::from_uniform_bytes(&buf));
                 cache.clear();
             }
             (msgs, cache)

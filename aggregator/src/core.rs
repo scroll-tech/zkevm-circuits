@@ -1008,7 +1008,6 @@ pub(crate) fn conditional_constraints(
                     .iter()
                     .skip(1)
                     .take((MAX_AGG_SNARKS + 1) * 2)
-                    .into_iter()
                     .chunks(2)
                     .into_iter()
                 {

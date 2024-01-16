@@ -142,7 +142,7 @@ mod tests {
     fn test_batched_1_in_array_not_iszero() {
         try_test!(
             IsZeroGadgetTestContainer<Fr, 5>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(1),
                 Word::from(0),
@@ -167,14 +167,14 @@ mod tests {
 
     #[test]
     fn test_batched_single_cell_not_iszero() {
-        try_test!(IsZeroGadgetTestContainer<Fr, 1>, vec![WORD_LOW_MAX], false);
+        try_test!(IsZeroGadgetTestContainer<Fr, 1>, [WORD_LOW_MAX], false);
     }
 
     #[test]
     fn test_batched_wordmax_bytes_not_iszero() {
         try_test!(
             IsZeroGadgetTestContainer<Fr, 5>,
-            vec![
+            [
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,
                 WORD_LOW_MAX,

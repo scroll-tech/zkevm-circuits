@@ -46,10 +46,7 @@ impl ZktrieState {
         //proofs: impl IntoIterator<Item = &'d [u8]>,
         //acc_storage_roots: impl IntoIterator<Item = (Address, Hash)>,
     ) -> Self {
-        assert!(
-            *builder::HASH_SCHEME_DONE,
-            "must set hash scheme into zktrie"
-        );
+        builder::init_hash_scheme();
 
         Self {
             zk_db: RefCell::new(ZkMemoryDb::new()),

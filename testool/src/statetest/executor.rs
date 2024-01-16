@@ -1,23 +1,16 @@
 use super::{AccountMatch, StateTest, StateTestResult};
-use crate::config::TestSuite;
+use crate::{config::TestSuite, utils::ETH_CHAIN_ID};
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
     state_db::CodeDB,
 };
-use eth_types::{
-    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
-    U64,
-};
-use ethers_core::{
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
-    utils::keccak256,
-};
+use eth_types::{geth_types, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256, U64};
+use ethers_core::utils::keccak256;
 use ethers_signers::LocalWallet;
 use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit};
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-use std::{collections::HashMap, env, str::FromStr};
+use std::{collections::HashMap, env, str::FromStr, sync::LazyLock};
 use thiserror::Error;
 use zkevm_circuits::{
     bytecode_circuit::circuit::BytecodeCircuit, ecc_circuit::EccCircuit,
@@ -32,7 +25,7 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
         .unwrap_or(default)
 }
 /// Which circuit to test. Default is evm + state.
-pub static CIRCUIT: Lazy<String> = Lazy::new(|| read_env_var("CIRCUIT", "".to_string()));
+pub static CIRCUIT: LazyLock<String> = LazyLock::new(|| read_env_var("CIRCUIT", "".to_string()));
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -147,24 +140,14 @@ fn check_post(
 }
 
 fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
-    let chain_id = 1;
-    let wallet = LocalWallet::from_str(&hex::encode(st.secret_key.0)).unwrap();
-    let mut tx = TransactionRequest::new()
-        .chain_id(chain_id)
-        .from(st.from)
-        .nonce(st.nonce)
-        .value(st.value)
-        .data(st.data.clone())
-        .gas(st.gas_limit)
-        .gas_price(st.gas_price);
+    let tx_type = st.tx_type();
+    let tx = st.build_tx();
 
-    if let Some(to) = st.to {
-        tx = tx.to(to);
-    }
+    let wallet = LocalWallet::from_str(&hex::encode(st.secret_key.0.clone())).unwrap();
+
     let rlp_unsigned = tx.rlp().to_vec();
-    let tx: TypedTransaction = tx.into();
-
     let sig = wallet.sign_transaction_sync(&tx).unwrap();
+    let v = st.normalize_sig_v(sig.v);
     let rlp_signed = tx.rlp_signed(&sig).to_vec();
     let tx_hash = keccak256(tx.rlp_signed(&sig));
     let accounts = st.pre;
@@ -172,7 +155,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     (
         st.id,
         TraceConfig {
-            chain_id: 1,
+            chain_id: ETH_CHAIN_ID,
             history_hashes: vec![U256::from_big_endian(st.env.previous_hash.as_bytes())],
             block_constants: geth_types::BlockConstants {
                 coinbase: st.env.current_coinbase,
@@ -184,18 +167,18 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             },
 
             transactions: vec![geth_types::Transaction {
-                tx_type: TxType::Eip155,
+                tx_type,
                 from: st.from,
                 to: st.to,
                 nonce: st.nonce,
                 value: st.value,
                 gas_limit: U256::from(st.gas_limit),
-                gas_price: st.gas_price,
-                gas_fee_cap: U256::zero(),
-                gas_tip_cap: U256::zero(),
+                gas_price: Some(st.gas_price),
+                gas_fee_cap: st.max_fee_per_gas.unwrap_or_default(),
+                gas_tip_cap: st.max_priority_fee_per_gas.unwrap_or_default(),
                 call_data: st.data,
-                access_list: None,
-                v: sig.v,
+                access_list: st.access_list,
+                v,
                 r: sig.r,
                 s: sig.s,
                 rlp_bytes: rlp_signed,
@@ -338,6 +321,7 @@ fn trace_config_to_witness_block_l1(
     circuits_params: CircuitsParams,
     verbose: bool,
 ) -> Result<Option<(Block<Fr>, CircuitInputBuilder)>, StateTestError> {
+    use eth_types::geth_types::TxType;
     use ethers_signers::Signer;
 
     let geth_traces = external_tracer::trace(&trace_config);
@@ -366,11 +350,18 @@ fn trace_config_to_witness_block_l1(
         .into_iter()
         .enumerate()
         .map(|(index, tx)| eth_types::Transaction {
+            transaction_type: match tx.tx_type {
+                TxType::Eip1559 => Some(2.into()),
+                TxType::Eip2930 => Some(1.into()),
+                _ => None,
+            },
             from: tx.from,
             to: tx.to,
             value: tx.value,
             input: tx.call_data,
-            gas_price: Some(tx.gas_price),
+            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
+            max_fee_per_gas: Some(tx.gas_fee_cap),
+            gas_price: tx.gas_price,
             access_list: tx.access_list,
             nonce: tx.nonce,
             gas: tx.gas_limit,
@@ -557,6 +548,7 @@ pub fn run_test(
     log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
     // get the geth traces
+    #[allow(unused_mut)]
     let (_, mut trace_config, post) = into_traceconfig(st.clone());
 
     let balance_overflow = trace_config

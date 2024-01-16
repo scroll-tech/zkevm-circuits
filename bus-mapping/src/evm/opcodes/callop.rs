@@ -325,6 +325,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         callee_call.code_address().unwrap().to_word(),
                     ),
                     (CallContextField::CallerId, callee_call.caller_id.into()),
+                    (CallContextField::IsRoot, 0.into()),
                     (
                         CallContextField::CallDataOffset,
                         callee_call.call_data_offset.into(),
@@ -406,6 +407,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             log_id: None,
                             rw_counter_start,
                             copy_bytes: CopyBytes::new(copy_steps, None, None),
+                            access_list: vec![],
                         },
                     );
                     Some(input_bytes)
@@ -436,6 +438,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             log_id: None,
                             rw_counter_start,
                             copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
+                            access_list: vec![],
                         },
                     );
                     Some(output_bytes)
@@ -475,6 +478,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                                 Some(write_steps),
                                 Some(prev_bytes),
                             ),
+                            access_list: vec![],
                         },
                     );
                     Some(returned_bytes)
@@ -774,9 +778,6 @@ pub mod tests {
                 address: Word::from(0x2),
                 stack_value: vec![(
                     Word::from(0x20),
-                    #[cfg(feature = "scroll")]
-                    Word::zero(),
-                    #[cfg(not(feature = "scroll"))]
                     word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
                 )],
                 ..Default::default()

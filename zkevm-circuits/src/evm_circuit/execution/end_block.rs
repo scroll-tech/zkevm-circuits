@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -23,7 +25,7 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct EndBlockGadget<F> {
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
@@ -32,7 +34,24 @@ pub(crate) struct EndBlockGadget<F> {
     max_txs: Cell<F>,
     phase2_withdraw_root: Cell<F>,
     phase2_withdraw_root_prev: Cell<F>,
-    pub withdraw_root_assigned: std::cell::RefCell<Option<AssignedCell>>,
+    pub withdraw_root_assigned: Mutex<Option<AssignedCell>>,
+}
+
+impl<F: Clone> Clone for EndBlockGadget<F> {
+    fn clone(&self) -> Self {
+        let withdraw_root_assigned: Option<AssignedCell> =
+            *self.withdraw_root_assigned.lock().unwrap();
+        Self {
+            withdraw_root_assigned: Mutex::new(withdraw_root_assigned),
+            total_txs: self.total_txs.clone(),
+            total_txs_is_max_txs: self.total_txs_is_max_txs.clone(),
+            is_empty_block: self.is_empty_block.clone(),
+            max_rws: self.max_rws.clone(),
+            max_txs: self.max_txs.clone(),
+            phase2_withdraw_root: self.phase2_withdraw_root.clone(),
+            phase2_withdraw_root_prev: self.phase2_withdraw_root_prev.clone(),
+        }
+    }
 }
 
 const EMPTY_BLOCK_N_RWS: u64 = 0;
@@ -172,10 +191,9 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             offset,
             region.word_rlc(block.prev_withdraw_root),
         )?;
-
-        self.withdraw_root_assigned
-            .borrow_mut()
-            .replace(withdraw_root.cell());
+        if let Some(cell) = withdraw_root {
+            *self.withdraw_root_assigned.lock().unwrap() = Some(cell.cell());
+        }
         // TODO: now we do not export withdraw_root_prev for we have only one
         // phase2 cell which is enabled for copy constraint
         // self.withdraw_root_prev_assigned
@@ -185,8 +203,8 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // When rw_indices is not empty, we're at the last row (at a fixed offset),
         // where we need to access the max_rws and max_txs constant.
         if !step.rw_indices.is_empty() {
-            region.constrain_constant(max_rws_assigned, max_rws)?;
-            region.constrain_constant(max_txs_assigned, max_txs)?;
+            region.constrain_constant(max_rws_assigned.unwrap(), max_rws)?;
+            region.constrain_constant(max_txs_assigned.unwrap(), max_txs)?;
         }
         Ok(())
     }

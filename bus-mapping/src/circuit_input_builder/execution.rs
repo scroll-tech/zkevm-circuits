@@ -15,12 +15,12 @@ use crate::{
 use eth_types::{
     evm_types::{memory::MemoryWordRange, Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    GethExecStep, ToLittleEndian, Word, H256, U256,
+    Address, Field, GethExecStep, ToLittleEndian, Word, H256, U256,
 };
 use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
-    arithmetic::{CurveAffine, Field},
+    arithmetic::{CurveAffine, Field as Halo2Field},
     halo2curves::{
         bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
         group::prime::PrimeCurveAffine,
@@ -221,12 +221,19 @@ pub enum CopyDataType {
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
     RlcAcc,
+    /// When copy event is access-list addresses (EIP-2930), source is tx-table
+    /// and destination is rw-table.
+    AccessListAddresses,
+    /// When copy event is access-list storage keys (EIP-2930), source is
+    /// tx-table and destination is rw-table.
+    AccessListStorageKeys,
 }
+
 impl CopyDataType {
     /// How many bits are necessary to represent a copy data type.
     pub const N_BITS: usize = 3usize;
 }
-const NUM_COPY_DATA_TYPES: usize = 6usize;
+const NUM_COPY_DATA_TYPES: usize = 8usize;
 pub struct CopyDataTypeIter {
     idx: usize,
     back_idx: usize,
@@ -241,6 +248,8 @@ impl CopyDataTypeIter {
             3usize => Some(CopyDataType::TxCalldata),
             4usize => Some(CopyDataType::TxLog),
             5usize => Some(CopyDataType::RlcAcc),
+            6usize => Some(CopyDataType::AccessListAddresses),
+            7usize => Some(CopyDataType::AccessListStorageKeys),
             _ => None,
         }
     }
@@ -307,6 +316,8 @@ impl From<CopyDataType> for usize {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
+            CopyDataType::AccessListAddresses => 6,
+            CopyDataType::AccessListStorageKeys => 7,
         }
     }
 }
@@ -320,6 +331,8 @@ impl From<&CopyDataType> for u64 {
             CopyDataType::TxCalldata => 3,
             CopyDataType::TxLog => 4,
             CopyDataType::RlcAcc => 5,
+            CopyDataType::AccessListAddresses => 6,
+            CopyDataType::AccessListStorageKeys => 7,
         }
     }
 }
@@ -391,6 +404,31 @@ impl CopyBytes {
     }
 }
 
+/// Transaction access list for copy event
+#[derive(Clone, Debug)]
+pub struct CopyAccessList {
+    /// Access list address
+    pub address: Address,
+    /// If copy data type is address it's always zero, if copy data type is
+    /// storage key, it saves the storage key.
+    pub storage_key: Word,
+    /// If copy data type is address it's always zero, if copy data type is
+    /// storage key, it saves the internal index of storage key, which starts
+    /// from zero for each address list.
+    pub storage_key_index: u64,
+}
+
+impl CopyAccessList {
+    /// Create a copy access list.
+    pub fn new(address: Address, storage_key: Word, storage_key_index: u64) -> Self {
+        Self {
+            address,
+            storage_key,
+            storage_key_index,
+        }
+    }
+}
+
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
 /// CODECOPY, CREATE, etc. More information:
 /// <https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/copy-proof.md>.
@@ -418,6 +456,8 @@ pub struct CopyEvent {
     pub rw_counter_start: RWCounter,
     /// Represents the list of bytes related during this copy event
     pub copy_bytes: CopyBytes,
+    /// Represents transaction access list
+    pub access_list: Vec<CopyAccessList>,
 }
 
 pub type CopyEventSteps = Vec<(u8, bool, bool)>;
@@ -441,7 +481,10 @@ impl CopyEvent {
 
     /// Whether the destination performs RW lookups in the state circuit.
     pub fn is_destination_rw(&self) -> bool {
-        self.dst_type == CopyDataType::Memory || self.dst_type == CopyDataType::TxLog
+        self.dst_type == CopyDataType::Memory
+            || self.dst_type == CopyDataType::TxLog
+            || self.dst_type == CopyDataType::AccessListAddresses
+            || self.dst_type == CopyDataType::AccessListStorageKeys
     }
 
     /// Whether the RLC of data must be computed.
@@ -459,6 +502,15 @@ impl CopyEvent {
 
     /// The number of RW lookups performed by this copy event.
     pub fn rw_counter_delta(&self) -> u64 {
+        if self.dst_type == CopyDataType::AccessListAddresses
+            || self.dst_type == CopyDataType::AccessListStorageKeys
+        {
+            // For access list, the placeholder is used for copy bytes which
+            // value will be replaced by address and storage key, and no word
+            // operations.
+            return self.full_length();
+        }
+
         (self.is_source_rw() as u64 + self.is_destination_rw() as u64) * (self.full_length() / 32)
     }
 }
@@ -908,6 +960,20 @@ impl PrecompileEvents {
             .cloned()
             .collect()
     }
+    /// Get all SHA256 events.
+    pub fn get_sha256_events(&self) -> Vec<SHA256> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::SHA256(op) = e {
+                    Some(op)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 /// I/O from a precompiled contract call.
@@ -923,6 +989,8 @@ pub enum PrecompileEvent {
     EcPairing(Box<EcPairingOp>),
     /// Represents the I/O from Modexp call.
     ModExp(BigModExp),
+    /// Represents the I/O from SHA256 call.
+    SHA256(SHA256),
 }
 
 impl Default for PrecompileEvent {
@@ -1368,4 +1436,13 @@ impl Default for BigModExp {
             result: Default::default(),
         }
     }
+}
+
+/// Event representating an SHA256 hash in precompile sha256.
+#[derive(Clone, Debug, Default)]
+pub struct SHA256 {
+    /// input bytes
+    pub input: Vec<u8>,
+    /// digest
+    pub digest: [u8; 32],
 }

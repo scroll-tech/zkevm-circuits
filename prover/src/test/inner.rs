@@ -5,19 +5,19 @@ use crate::{
     zkevm::circuit::{SuperCircuit, TargetCircuit},
     WitnessBlock,
 };
-use once_cell::sync::Lazy;
+use std::sync::{LazyLock, Mutex};
 
-static mut INNER_PROVER: Lazy<Prover> = Lazy::new(|| {
+static INNER_PROVER: LazyLock<Mutex<Prover>> = LazyLock::new(|| {
     let params_dir = read_env_var("SCROLL_PROVER_PARAMS_DIR", "./test_params".to_string());
     let prover = Prover::from_params_dir(&params_dir, &[*INNER_DEGREE]);
     log::info!("Constructed inner-prover");
 
-    prover
+    Mutex::new(prover)
 });
 
-static mut INNER_VERIFIER: Lazy<Verifier<<SuperCircuit as TargetCircuit>::Inner>> =
-    Lazy::new(|| {
-        let prover = unsafe { &mut INNER_PROVER };
+static INNER_VERIFIER: LazyLock<Mutex<Verifier<<SuperCircuit as TargetCircuit>::Inner>>> =
+    LazyLock::new(|| {
+        let mut prover = INNER_PROVER.lock().expect("poisoned inner-prover");
         let params = prover.params(*INNER_DEGREE).clone();
 
         let inner_id = read_env_var("INNER_LAYER_ID", LayerId::Inner.id().to_string());
@@ -27,13 +27,13 @@ static mut INNER_VERIFIER: Lazy<Verifier<<SuperCircuit as TargetCircuit>::Inner>
         let verifier = Verifier::new(params, vk);
         log::info!("Constructed inner-verifier");
 
-        verifier
+        Mutex::new(verifier)
     });
 
 pub fn inner_prove(test: &str, witness_block: &WitnessBlock) {
     log::info!("{test}: inner-prove BEGIN");
 
-    let prover = unsafe { &mut INNER_PROVER };
+    let mut prover = INNER_PROVER.lock().expect("poisoned inner-prover");
     let inner_id = read_env_var("INNER_LAYER_ID", LayerId::Inner.id().to_string());
     let inner_id_changed = prover.pk(&inner_id).is_none();
 
@@ -48,7 +48,7 @@ pub fn inner_prove(test: &str, witness_block: &WitnessBlock) {
         .unwrap_or_else(|err| panic!("{test}: failed to generate inner snark: {err}"));
     log::info!("{test}: generated inner snark");
 
-    let verifier = unsafe { &mut INNER_VERIFIER };
+    let mut verifier = INNER_VERIFIER.lock().expect("poisoned inner-verifier");
 
     // Reset VK if inner-layer ID changed.
     if inner_id_changed {

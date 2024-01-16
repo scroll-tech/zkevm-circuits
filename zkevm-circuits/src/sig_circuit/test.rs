@@ -6,7 +6,6 @@ use halo2_proofs::{
     arithmetic::Field as HaloField,
     dev::MockProver,
     halo2curves::{
-        bn256::Fr,
         group::Curve,
         secp256k1::{self, Secp256k1Affine},
     },
@@ -23,7 +22,7 @@ fn test_edge_cases() {
         sign_types::{biguint_to_32bytes_le, recover_pk2, SECP256K1_Q},
         word, ToBigEndian, ToLittleEndian, Word,
     };
-    use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1::Fq};
+    use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField, secp256k1::Fq};
     use num::{BigUint, Integer};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -156,6 +155,7 @@ fn test_edge_cases() {
 fn sign_verify() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
     use crate::sig_circuit::utils::MAX_NUM_SIG;
+    use halo2_proofs::halo2curves::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use sha3::{Digest, Keccak256};
@@ -269,7 +269,7 @@ fn sign_with_rng(
 
 fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
     // SignVerifyChip -> ECDSAChip -> MainGate instance column
-    let circuit = SigCircuit::<Fr> {
+    let circuit = SigCircuit::<F> {
         max_verif,
         signatures,
         _marker: PhantomData,
