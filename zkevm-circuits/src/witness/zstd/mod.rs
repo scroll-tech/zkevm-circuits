@@ -758,88 +758,30 @@ fn process_block_zstd_literals_header<F: Field>(
     )
 }
 
-// fn process_block_zstd_huffman_header<F: Field>(
-//     src: &[u8],
-//     byte_offset: usize,
-//     last_row: &ZstdWitnessRow<F>,
-//     randomness: Value<F>,
-// ) -> (usize, Vec<ZstdWitnessRow<F>>, bool, usize) {
-//     let header_byte = src[byte_offset];
-
-//     let value_rlc =
-//         last_row.encoded_data.value_rlc * randomness + Value::known(F::from(header_byte as u64));
-//     let decoded_value_rlc = 
-//         last_row.decoded_data.decoded_value_rlc + randomness + Value::known(F::from(header_byte as u64));
-//     let tag_value = Value::known(F::from(header_byte as u64));
-
-//     let n_bytes = if header_byte < 128 {
-//         header_byte
-//     } else {
-//         let n_sym = header_byte - 127;
-//         if n_sym.is_odd() {
-//             (n_sym + 1) / 2
-//         } else {
-//             n_sym / 2
-//         }
-//     };
-
-//     (
-//         byte_offset + 1,
-//         vec![ZstdWitnessRow {
-//             instance_idx: last_row.instance_idx,
-//             frame_idx: last_row.frame_idx,
-//             state: ZstdState {
-//                 tag: ZstdTag::ZstdBlockHuffmanHeader,
-//                 tag_next: ZstdTag::ZstdBlockHuffmanCode,
-//                 tag_len: 1 as u64,
-//                 tag_idx: 1 as u64,
-//                 tag_value,
-//                 tag_value_acc: tag_value,
-//             },
-//             encoded_data: EncodedData {
-//                 byte_idx: (byte_offset + 1) as u64,
-//                 encoded_len: last_row.encoded_data.encoded_len,
-//                 value_byte: header_byte,
-//                 reverse: false,
-//                 value_rlc,
-//                 ..Default::default()
-//             },
-//             decoded_data: DecodedData {
-//                 decoded_len: last_row.decoded_data.decoded_len,
-//                 decoded_len_acc: last_row.decoded_data.decoded_len_acc + 1,
-//                 total_decoded_len: last_row.decoded_data.total_decoded_len,
-//                 decoded_byte: header_byte,
-//                 decoded_value_rlc,
-//             },
-//             huffman_data: HuffmanData::default(),
-//             fse_data: FseData::default(),
-//         }],
-//         header_byte >= 127,
-//         n_bytes as usize,
-//     )
-// }
-
 fn process_block_zstd_huffman_header<F: Field>(
     src: &[u8],
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    // A single byte (header_byte) is read.
-    // - if header_byte < 128: canonical weights are represented by FSE table.
-    // - if header_byte >= 128: canonical weights are given by direct representation.
-
-    let header_byte = src
-        .get(byte_offset)
-        .expect("ZBHuffmanHeader byte should exist");
-
-    assert!(
-        *header_byte < 128,
-        "we expect canonical huffman weights to be encoded using FSE"
-    );
+) -> (usize, Vec<ZstdWitnessRow<F>>, bool, usize) {
+    let header_byte = src[byte_offset];
 
     let value_rlc =
-        last_row.encoded_data.value_rlc * randomness + Value::known(F::from(*header_byte as u64));
+        last_row.encoded_data.value_rlc * randomness + Value::known(F::from(header_byte as u64));
+    let decoded_value_rlc = 
+        last_row.decoded_data.decoded_value_rlc + randomness + Value::known(F::from(header_byte as u64));
+    let tag_value = Value::known(F::from(header_byte as u64));
+
+    let n_bytes = if header_byte < 128 {
+        header_byte
+    } else {
+        let n_sym = header_byte - 127;
+        if n_sym.is_odd() {
+            (n_sym + 1) / 2
+        } else {
+            n_sym / 2
+        }
+    };
 
     (
         byte_offset + 1,
@@ -847,24 +789,81 @@ fn process_block_zstd_huffman_header<F: Field>(
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockHuffmanHeader,
                 tag_next: ZstdTag::ZstdBlockFseCode,
-                tag_len: 1,
-                tag_idx: 1,
-                tag_value: Value::known(F::from(*header_byte as u64)),
-                tag_value_acc: Value::known(F::from(*header_byte as u64)),
+                tag_len: 1 as u64,
+                tag_idx: 1 as u64,
+                tag_value,
+                tag_value_acc: tag_value,
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + 1) as u64,
                 encoded_len: last_row.encoded_data.encoded_len,
-                value_byte: *header_byte,
+                value_byte: header_byte,
+                reverse: false,
                 value_rlc,
                 ..Default::default()
             },
-            decoded_data: last_row.decoded_data.clone(),
-            fse_data: FseTableRow::default(),
+            decoded_data: DecodedData {
+                decoded_len: last_row.decoded_data.decoded_len,
+                decoded_len_acc: last_row.decoded_data.decoded_len_acc + 1,
+                total_decoded_len: last_row.decoded_data.total_decoded_len,
+                decoded_byte: header_byte,
+                decoded_value_rlc,
+            },
             huffman_data: HuffmanData::default(),
+            fse_data: FseTableRow::default(),
         }],
+        header_byte >= 127,
+        n_bytes as usize,
     )
 }
+
+// compression_debug
+// fn process_block_zstd_huffman_header<F: Field>(
+//     src: &[u8],
+//     byte_offset: usize,
+//     last_row: &ZstdWitnessRow<F>,
+//     randomness: Value<F>,
+// ) -> (usize, Vec<ZstdWitnessRow<F>>) {
+//     // A single byte (header_byte) is read.
+//     // - if header_byte < 128: canonical weights are represented by FSE table.
+//     // - if header_byte >= 128: canonical weights are given by direct representation.
+
+//     let header_byte = src
+//         .get(byte_offset)
+//         .expect("ZBHuffmanHeader byte should exist");
+
+//     assert!(
+//         *header_byte < 128,
+//         "we expect canonical huffman weights to be encoded using FSE"
+//     );
+
+//     let value_rlc =
+//         last_row.encoded_data.value_rlc * randomness + Value::known(F::from(*header_byte as u64));
+
+//     (
+//         byte_offset + 1,
+//         vec![ZstdWitnessRow {
+//             state: ZstdState {
+//                 tag: ZstdTag::ZstdBlockHuffmanHeader,
+//                 tag_next: ZstdTag::ZstdBlockFseCode,
+//                 tag_len: 1,
+//                 tag_idx: 1,
+//                 tag_value: Value::known(F::from(*header_byte as u64)),
+//                 tag_value_acc: Value::known(F::from(*header_byte as u64)),
+//             },
+//             encoded_data: EncodedData {
+//                 byte_idx: (byte_offset + 1) as u64,
+//                 encoded_len: last_row.encoded_data.encoded_len,
+//                 value_byte: *header_byte,
+//                 value_rlc,
+//                 ..Default::default()
+//             },
+//             decoded_data: last_row.decoded_data.clone(),
+//             fse_data: FseTableRow::default(),
+//             huffman_data: HuffmanData::default(),
+//         }],
+//     )
+// }
 
 fn process_block_zstd_huffman_code_direct<F: Field>(
     src: &[u8],
