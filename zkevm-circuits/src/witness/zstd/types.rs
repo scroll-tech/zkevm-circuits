@@ -83,27 +83,55 @@ impl From<u8> for BlockType {
     }
 }
 
+/// Various tags that we can decode from a zstd encoded data.
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum ZstdTag {
+    /// Null should not occur.
     Null = 0,
+    /// Magic number bytes.
     MagicNumber,
+    /// The frame header's descriptor.
     FrameHeaderDescriptor,
+    /// The frame's content size.
     FrameContentSize,
+    /// The block's header.
     BlockHeader,
+    /// Raw bytes.
     RawBlockBytes,
+    /// Run-length encoded bytes.
     RleBlockBytes,
+    /// Zstd block's literals header.
     ZstdBlockLiteralsHeader,
+    /// Zstd blocks might contain raw bytes
     ZstdBlockLiteralsRawBytes,
+    /// Zstd blocks might contain rle bytes
     ZstdBlockLiteralsRleBytes,
+    /// 1 byte Huffman header
     ZstdBlockHuffmanHeader,
+    /// Zstd block's FSE code.
     ZstdBlockFseCode,
+    /// Zstd block's huffman code.
     ZstdBlockHuffmanCode,
+    /// Zstd block's jump table.
     ZstdBlockJumpTable,
-    ZstdBlockSequenceHeader,
+    /// Literal stream 1.
     Lstream1,
+    /// Literal stream 2.
     Lstream2,
+    /// Literal stream 3.
     Lstream3,
+    /// Literal stream 4.
     Lstream4,
+    /// Beginning of sequence section.
+    ZstdBlockSequenceHeader,
+}
+
+impl_expr!(ZstdTag);
+
+impl From<ZstdTag> for usize {
+    fn from(value: ZstdTag) -> Self {
+        value as usize
+    }
 }
 
 impl ToString for ZstdTag {
