@@ -998,11 +998,12 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
         .skip(byte_offset)
         .take(N_JUMP_TABLE_BYTES)
         .cloned()
-        .collect::<Vec<u8>>();
+        .map(|x| x as u64)
+        .collect::<Vec<u64>>();
 
-    let l1: u64 = (jt_bytes[0] + jt_bytes[1] * 256) as u64;
-    let l2: u64 = (jt_bytes[2] + jt_bytes[3] * 256) as u64;
-    let l3: u64 = (jt_bytes[4] + jt_bytes[5] * 256) as u64;
+    let l1: u64 = jt_bytes[0] + jt_bytes[1] * 256;
+    let l2: u64 = jt_bytes[2] + jt_bytes[3] * 256;
+    let l3: u64 = jt_bytes[4] + jt_bytes[5] * 256;
 
     let (bytes_offset, rows) = 
         process_raw_bytes(
