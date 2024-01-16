@@ -79,6 +79,8 @@ use halo2_proofs::plonk::Fixed;
 use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 
+use halo2_proofs::dev::unwrap_value;
+
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 26;
 /// Offset of TxHash tag in the tx table
@@ -708,38 +710,38 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("hash tag lookup into RLP table condition", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        // meta.create_gate("hash tag lookup into RLP table condition", |meta| {
+        //     let mut cb = BaseConstraintBuilder::default();
 
-            let is_tag_in_tx_hash = sum::expr([
-                is_nonce(meta),
-                is_gas_price(meta),
-                is_gas(meta),
-                is_to(meta),
-                is_value(meta),
-                is_tx_gas_cost(meta),
-                is_data_rlc(meta),
-                is_sig_v(meta),
-                is_sig_r(meta),
-                is_sig_s(meta),
-                is_hash_length(meta),
-                is_hash_rlc(meta),
-            ]);
+        //     let is_tag_in_tx_hash = sum::expr([
+        //         is_nonce(meta),
+        //         is_gas_price(meta),
+        //         is_gas(meta),
+        //         is_to(meta),
+        //         is_value(meta),
+        //         is_tx_gas_cost(meta),
+        //         is_data_rlc(meta),
+        //         is_sig_v(meta),
+        //         is_sig_r(meta),
+        //         is_sig_s(meta),
+        //         is_hash_length(meta),
+        //         is_hash_rlc(meta),
+        //     ]);
 
-            cb.require_equal(
-                "condition",
-                is_tag_in_tx_hash,
-                meta.query_advice(
-                    lookup_conditions[&LookupCondition::RlpHashTag],
-                    Rotation::cur(),
-                ),
-            );
+        //     cb.require_equal(
+        //         "condition",
+        //         is_tag_in_tx_hash,
+        //         meta.query_advice(
+        //             lookup_conditions[&LookupCondition::RlpHashTag],
+        //             Rotation::cur(),
+        //         ),
+        //     );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-            ]))
-        });
+        //     cb.gate(and::expr([
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+        //     ]))
+        // });
 
         meta.create_gate("l1 msg lookup into RLP table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1641,10 +1643,10 @@ impl<F: Field> TxCircuitConfig<F> {
                         lookup_conditions[&LookupCondition::RlpHashTag],
                         Rotation::cur(),
                     ),
-                    meta.query_advice(
-                        lookup_conditions[&LookupCondition::L1MsgHash],
-                        Rotation::cur(),
-                    ),
+                    // meta.query_advice(
+                    //     lookup_conditions[&LookupCondition::L1MsgHash],
+                    //     Rotation::cur(),
+                    // ),
                 ]),
             ]);
             let is_none = meta.query_advice(is_none, Rotation::cur());
@@ -1684,8 +1686,8 @@ impl<F: Field> TxCircuitConfig<F> {
 
             // TODO: check if lo covers msg_hash_rlc, sig(v,r,s)
             let msg_hash_lo = meta.query_advice(tx_table.value.lo(), Rotation(6));
-            let msg_hash_hi = meta.query_advice(tx_table.value.hi(), Rotation(6));
-
+            // let msg_hash_hi = meta.query_advice(tx_table.value.hi(), Rotation(6));
+            println!("lookup sig table");
             let chain_id = meta.query_advice(tx_table.value.lo(), Rotation::cur());
             let sig_v = meta.query_advice(tx_table.value.lo(), Rotation(1));
             let sig_r = meta.query_advice(tx_table.value.lo(), Rotation(2));
@@ -1699,7 +1701,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 1.expr(), // q_enable = true
                 // msg_hash_rlc, // msg_hash_rlc
                 msg_hash_lo,
-                msg_hash_hi,
+                // msg_hash_hi,
                 v,     // sig_v
                 sig_r, // sig_r
                 sig_s, // sig_s
@@ -1746,6 +1748,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.value.lo(), Rotation::next()), // input_rlc
                 meta.query_advice(tx_table.value.lo(), Rotation::cur()),  // input_len
                 meta.query_advice(tx_table.value.lo(), Rotation(2)),      // output_rlc
+                meta.query_advice(tx_table.value.lo(), Rotation(2)),      // output_word
+                meta.query_advice(tx_table.value.hi(), Rotation(2)),      // output_word
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))
@@ -1787,12 +1791,13 @@ impl<F: Field> TxCircuitConfig<F> {
         cum_num_txs: u64,
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<word::Word<AssignedCell<F, F>>>, Error> {
+        println!("assign_fixed_rows in tx circuit");
         let keccak_input = challenges.keccak_input();
         let evm_word = challenges.evm_word();
         let zero_rlc = keccak_input.map(|_| F::zero());
         let sign_hash = keccak256(tx.rlp_unsigned.as_slice());
         let hash = keccak256(tx.rlp_signed.as_slice());
-        // let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
+        let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
         // let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut tx_value_cells = vec![];
         let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
@@ -1848,7 +1853,13 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_rlc: rlc_be_bytes(&tx.caller_address.to_fixed_bytes(), keccak_input),
                 }),
                 //Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
-                word::Word::from(tx.caller_address.to_word()).map(Value::known),
+                // word::Word::from(tx.caller_address.to_word()).map(Value::known),
+
+                //let caller_addrss = tx.caller_address.to_scalar();
+                word::Word::new([
+                    Value::known(tx.caller_address.to_scalar().expect("fx from")),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 CalleeAddress,
@@ -1869,8 +1880,17 @@ impl<F: Field> TxCircuitConfig<F> {
                 //         .to_scalar()
                 //         .expect("tx.to too big"),
                 // ),
-                word::Word::from(tx.callee_address.unwrap_or(Address::zero()).to_word())
-                    .map(Value::known),
+                // word::Word::from(tx.callee_address.unwrap_or(Address::zero()).to_word())
+                //     .map(Value::known),
+                word::Word::new([
+                    Value::known(
+                        tx.callee_address
+                            .unwrap_or(Address::zero())
+                            .to_scalar()
+                            .expect("fx to"),
+                    ),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 IsCreate,
@@ -1968,7 +1988,12 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_rlc: rlc_be_bytes(&tx.r.to_be_bytes(), keccak_input),
                 }),
                 //rlc_be_bytes(&tx.r.to_be_bytes(), evm_word),
-                word::Word::from(tx.r.to_word()).map(Value::known),
+                //word::Word::from(tx.r.to_word()).map(Value::known),
+                word::Word::new([
+                    Value::known(unwrap_value(rlc_be_bytes(&tx.r.to_be_bytes(), evm_word))),
+                    Value::known(F::zero()),
+                    //F::zero(),
+                ]),
             ),
             (
                 SigS,
@@ -1979,7 +2004,16 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_rlc: rlc_be_bytes(&tx.s.to_be_bytes(), keccak_input),
                 }),
                 //rlc_be_bytes(&tx.s.to_be_bytes(), evm_word),
-                word::Word::from(tx.s.to_word()).map(Value::known),
+                //word::Word::from(tx.s.to_word()).map(Value::known),
+                // word::Word::new([
+                //     Value::known(rlc_be_bytes(&tx.s.to_be_bytes(), evm_word)),
+                //     Value::known(F::zero()),
+                // ]),
+                word::Word::new([
+                    Value::known(unwrap_value(rlc_be_bytes(&tx.s.to_be_bytes(), evm_word))),
+                    Value::known(F::zero()),
+                    //F::zero(),
+                ]),
             ),
             (
                 TxSignLength,
@@ -2013,7 +2047,8 @@ impl<F: Field> TxCircuitConfig<F> {
             (
                 TxSignHash,
                 None,
-                word::Word::from(U256::from_big_endian(&sign_hash)).map(Value::known),
+                //word::Word::from(U256::from_big_endian(&sign_hash)).map(Value::known),
+                word::Word::new([sign_hash_rlc, Value::known(F::zero())]),
             ),
             (
                 TxHashLength,
@@ -2170,7 +2205,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
                 (
                     "sv_address",
-                    self.sv_address,
+                    self.sv_address, // not change to word
                     sign_data.get_addr().to_scalar().unwrap(),
                 ),
                 // tx_tag related indicator columns
@@ -2244,8 +2279,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     CallDataRLC,
                     TxDataGasCost,
                     SigV,
-                    SigR,
-                    SigS,
+                    //SigR,
+                    //SigS,
                     TxHashLength,
                     TxHashRLC,
                 ];
@@ -2418,6 +2453,7 @@ impl<F: Field> TxCircuitConfig<F> {
             Value::known(F::from(tx_id_next as u64)),
         )?;
 
+        println!("tx circuit: assign_common_part");
         // fixed columns
         for (col_anno, col, col_val) in [
             ("q_enable", self.tx_table.q_enable, F::one()),
@@ -2735,7 +2771,7 @@ impl<F: Field> TxCircuit<F> {
             || "tx table aux",
             |mut region| {
                 let mut offset = 0;
-
+                println!("tx table assign");
                 let sigs = &sign_datas;
 
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
@@ -2928,7 +2964,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
-
+        println!("synthesize_sub tx circuit");
         let padding_txs = (self.txs.len()..self.max_txs)
             .map(|i| {
                 let mut tx = Transaction::dummy(self.chain_id);
