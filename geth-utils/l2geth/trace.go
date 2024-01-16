@@ -110,10 +110,14 @@ func transferTxs(txs []Transaction) types.Transactions {
 				}
 				t_txs = append(t_txs, types.NewTx(legacyTx))
 			default:
-				// If gas price is specified directly, the tx is treated as legacy type.
 				// if tx.GasPrice != nil {
-				// 	tx.GasFeeCap = tx.GasPrice
-				// 	tx.GasTipCap = tx.GasPrice
+				// 	// Set GasFeeCap and GasTipCap to GasPrice if not exist.
+				// 	if tx.GasFeeCap == nil {
+				// 		tx.GasFeeCap = tx.GasPrice
+				// 	}
+				// 	if tx.GasTipCap == nil {
+				// 		tx.GasTipCap = tx.GasPrice
+				// 	}
 				// }
 
 				// txAccessList := make(types.AccessList, len(tx.AccessList))
