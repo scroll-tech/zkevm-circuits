@@ -1,21 +1,21 @@
 use super::Prover;
 use crate::{
     config::INNER_DEGREE,
-    utils::metric_of_witness_block,
-    zkevm::circuit::{block_traces_to_witness_block, TargetCircuit},
+    utils::{metric_of_witness_block, chunk_trace_to_witness_block},
+    zkevm::circuit::TargetCircuit,
 };
 use anyhow::bail;
-use eth_types::l2_types::BlockTrace;
+use eth_types::l2_types::ChunkTrace;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use zkevm_circuits::witness::Block;
 
 impl<C: TargetCircuit> Prover<C> {
-    pub fn mock_prove_target_circuit(block_trace: BlockTrace) -> anyhow::Result<()> {
-        Self::mock_prove_target_circuit_batch(vec![block_trace])
+    pub fn mock_prove_target_circuit(chunk_trace: ChunkTrace) -> anyhow::Result<()> {
+        Self::mock_prove_target_circuit_batch(chunk_trace)
     }
 
-    pub fn mock_prove_target_circuit_batch(block_traces: Vec<BlockTrace>) -> anyhow::Result<()> {
-        let witness_block = block_traces_to_witness_block(block_traces)?;
+    pub fn mock_prove_target_circuit_batch(chunk_trace: ChunkTrace) -> anyhow::Result<()> {
+        let witness_block = chunk_trace_to_witness_block(chunk_trace)?;
         Self::mock_prove_witness_block(&witness_block)
     }
 
