@@ -6,6 +6,7 @@ pub const N_MAGIC_NUMBER_BYTES: usize = 4;
 
 // Constants for zstd-compressed block
 pub const N_MAX_LITERAL_HEADER_BYTES: usize = 3;
+pub const N_JUMP_TABLE_BYTES: usize = 6;
 
 /// Maximum number of symbols (weights), i.e. symbol in [0, N_MAX_SYMBOLS).
 pub const N_MAX_SYMBOLS: usize = 8;

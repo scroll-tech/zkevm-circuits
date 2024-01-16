@@ -621,7 +621,7 @@ fn process_block_zstd<F: Field>(
             let mut stream_offset = byte_offset;
 
             if n_streams > 1 {
-                let (byte_offset, rows) = process_block_zstd_huffman_jump_table(
+                let (byte_offset, rows, lstream_lens) = process_block_zstd_huffman_jump_table(
                     src, 
                     stream_offset, 
                     huffman_rows.last().expect("last row should exist"),
@@ -986,11 +986,36 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, [u64; 3]) {
     // Note: The decompressed size of each stream is equal to (regen_size + 3) / 4
     // but the compressed bitstream length will be different. 
     // Jump table provides information on the length of first 3 bitstreams. 
-    unimplemented!()
+
+    // Jump table's lengths are all plain bytes
+
+    let jt_bytes = src
+        .iter()
+        .skip(byte_offset)
+        .take(N_JUMP_TABLE_BYTES)
+        .cloned()
+        .collect::<Vec<u8>>();
+
+    let l1: u64 = (jt_bytes[0] + jt_bytes[1] * 256) as u64;
+    let l2: u64 = (jt_bytes[2] + jt_bytes[3] * 256) as u64;
+    let l3: u64 = (jt_bytes[4] + jt_bytes[5] * 256) as u64;
+
+    let (bytes_offset, rows) = 
+        process_raw_bytes(
+            src, 
+            byte_offset, 
+            last_row, 
+            randomness, 
+            N_JUMP_TABLE_BYTES, 
+            ZstdTag::ZstdBlockJumpTable, 
+            ZstdTag::ZstdBlockHuffmanCode,
+        );
+
+    (bytes_offset, rows, [l1, l2, l3])
 }
 fn process_block_zstd_lstream<F: Field>(
     src: &[u8],
