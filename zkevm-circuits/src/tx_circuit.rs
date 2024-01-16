@@ -710,38 +710,38 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        // meta.create_gate("hash tag lookup into RLP table condition", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("hash tag lookup into RLP table condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     let is_tag_in_tx_hash = sum::expr([
-        //         is_nonce(meta),
-        //         is_gas_price(meta),
-        //         is_gas(meta),
-        //         is_to(meta),
-        //         is_value(meta),
-        //         is_tx_gas_cost(meta),
-        //         is_data_rlc(meta),
-        //         is_sig_v(meta),
-        //         is_sig_r(meta),
-        //         is_sig_s(meta),
-        //         is_hash_length(meta),
-        //         is_hash_rlc(meta),
-        //     ]);
+            let is_tag_in_tx_hash = sum::expr([
+                is_nonce(meta),
+                is_gas_price(meta),
+                is_gas(meta),
+                is_to(meta),
+                is_value(meta),
+                is_tx_gas_cost(meta),
+                is_data_rlc(meta),
+                is_sig_v(meta),
+                is_sig_r(meta),
+                is_sig_s(meta),
+                is_hash_length(meta),
+                is_hash_rlc(meta),
+            ]);
 
-        //     cb.require_equal(
-        //         "condition",
-        //         is_tag_in_tx_hash,
-        //         meta.query_advice(
-        //             lookup_conditions[&LookupCondition::RlpHashTag],
-        //             Rotation::cur(),
-        //         ),
-        //     );
+            cb.require_equal(
+                "condition",
+                is_tag_in_tx_hash,
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpHashTag],
+                    Rotation::cur(),
+                ),
+            );
 
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-        //     ]))
-        // });
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+            ]))
+        });
 
         meta.create_gate("l1 msg lookup into RLP table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1643,10 +1643,10 @@ impl<F: Field> TxCircuitConfig<F> {
                         lookup_conditions[&LookupCondition::RlpHashTag],
                         Rotation::cur(),
                     ),
-                    // meta.query_advice(
-                    //     lookup_conditions[&LookupCondition::L1MsgHash],
-                    //     Rotation::cur(),
-                    // ),
+                    meta.query_advice(
+                        lookup_conditions[&LookupCondition::L1MsgHash],
+                        Rotation::cur(),
+                    ),
                 ]),
             ]);
             let is_none = meta.query_advice(is_none, Rotation::cur());
@@ -2279,8 +2279,8 @@ impl<F: Field> TxCircuitConfig<F> {
                     CallDataRLC,
                     TxDataGasCost,
                     SigV,
-                    //SigR,
-                    //SigS,
+                    SigR,
+                    SigS,
                     TxHashLength,
                     TxHashRLC,
                 ];
