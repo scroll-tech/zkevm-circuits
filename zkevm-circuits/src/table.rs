@@ -1905,11 +1905,11 @@ impl CopyTable {
 
             if is_access_list {
                 let access_list = &copy_event.access_list[step_idx / 2];
-                [thread.word_rlc, thread.word_rlc_prev] = [
-                    access_list.address.to_scalar(),
-                    access_list.storage_key.to_scalar(),
-                ]
-                .map(|val| Value::known(val.unwrap()));
+
+                thread.word_rlc = Value::known(access_list.address.to_scalar().unwrap());
+                thread.word_rlc_prev = challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&access_list.storage_key.to_le_bytes(), challenge));
             }
 
             let word_index = (step_idx as u64 / 2) % 32;
