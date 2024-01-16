@@ -775,7 +775,15 @@ fn add_access_list_address_copy_event(
             .map(|item| {
                 // Add RW write operations for access list addresses
                 // (will lookup in copy circuit).
-                state.tx_access_list_account_write(exec_step, tx_id, item.address, true, false)?;
+                let is_warm_prev = !state.sdb.add_account_to_access_list(item.address);
+                state.tx_access_list_account_write(
+                    exec_step,
+                    tx_id,
+                    item.address,
+                    true,
+                    is_warm_prev,
+                )?;
+
                 Ok(CopyAccessList::new(item.address, Word::zero(), 0))
             })
             .collect::<Result<Vec<_>, Error>>()
@@ -835,13 +843,16 @@ fn add_access_list_storage_key_copy_event(
 
                             // Add RW write operations for access list address storage keys
                             // (will lookup in copy circuit).
+                            let is_warm_prev = !state
+                                .sdb
+                                .add_account_storage_to_access_list((item.address, sk));
                             state.tx_access_list_storage_key_write(
                                 exec_step,
                                 tx_id,
                                 item.address,
                                 sk,
                                 true,
-                                false,
+                                is_warm_prev,
                             )?;
 
                             Ok(CopyAccessList::new(item.address, sk, idx as u64))

@@ -571,15 +571,6 @@ impl<'a> CircuitInputBuilder {
         debug_tx.rlp_bytes.clear();
         debug_tx.rlp_unsigned_bytes.clear();
         log::trace!("handle_tx tx {:?}", debug_tx);
-        if let Some(al) = &eth_tx.access_list {
-            for item in &al.0 {
-                self.sdb.add_account_to_access_list(item.address);
-                for k in &item.storage_keys {
-                    self.sdb
-                        .add_account_storage_to_access_list((item.address, (*k).to_word()));
-                }
-            }
-        }
 
         // Generate BeginTx step
         let begin_tx_steps = gen_associated_steps(
