@@ -1,3 +1,4 @@
+use bitstream_io::huffman;
 use bus_mapping::circuit_input_builder::Block;
 use eth_types::Field;
 use halo2_proofs::circuit::Value;
@@ -633,10 +634,11 @@ fn process_block_zstd<F: Field>(
             for idx in 0..n_streams {
                 let (byte_offset, rows) = process_block_zstd_lstream(
                     src, 
-                    stream_offset, 
+                    stream_offset,
+                    n_bytes,
                     huffman_rows.last().expect("last row should exist"),
                     randomness,
-                    idx + 1 == n_streams
+                    idx
                 );
                 huffman_rows.extend_from_slice(&rows);
 
@@ -978,7 +980,130 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
     randomness: Value<F>,
     n_bytes: usize,
 ) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    unimplemented!();
+
+    // compression_debug
+
+    // First, recover the FSE table for generating Huffman weights
+    let (n_fse_bytes, table) = FseAuxiliaryTableData::reconstruct(&src, byte_offset).expect("Reconstructing FSE table should not fail.");
+
+     // Exclude the FSE table representation bytes, then we're left with a bitstream for recovering Huffman weights
+    let byte_offset = byte_offset + n_fse_bytes;
+    let n_bytes = n_bytes - n_fse_bytes;
+
+    // Construct the Huffman bitstream
+    let mut huffman_bitstream = 
+        src
+            .iter()
+            .skip(byte_offset)
+            .take(n_bytes)
+            .rev()
+            .clone()
+            .flat_map(|v|{
+                let mut bits = value_bits_le(*v);
+                bits.reverse();
+                bits
+            })
+            .collect::<Vec<u8>>();
+
+    // Deliminators vector stores the positions where the bitstream is deliminated (a different value is decoded)
+    // The pair (usize, usize) indicates (byte_idx, bit_idx) where a delimination occurs (think of adding an underscore at the position)
+    // The range between two positions is where a new symbol is decoded or a new segment is recognized (i.e. leading zero section, a single sentinel 1-bit)
+    let mut deliminators: Vec<(usize, usize)> = vec![];
+
+    // Add a virtual deliminator in the front
+    deliminators.push((0, 0));
+
+    // Bitstream processing state values
+    let mut current_byte_idx: usize = 1; // byte_idx is 1-indexed
+    let mut current_bit_idx: usize = 0;
+
+    // Helper function for managing idx increment
+    fn increment_idx(mut current_byte_idx: usize, mut current_bit_idx: usize) -> () {
+        current_bit_idx += 1;
+
+        if current_bit_idx > current_byte_idx * N_BITS_PER_BYTE {
+            current_byte_idx += 1;
+        }
+    }
+
+    // Recognize the leading zero section
+    while huffman_bitstream[current_bit_idx] == 0 {
+        increment_idx(current_byte_idx, current_bit_idx);
+    }
+    deliminators.push((current_byte_idx, current_bit_idx)); // indicates the end of leading zeros
+
+    // The next bit is the sentinel bit
+    increment_idx(current_byte_idx, current_bit_idx);
+    deliminators.push((current_byte_idx, current_bit_idx));
+
+    // Now the actual weight-bearing bitstream starts
+    // The Huffman bitstream is decoded by two interleaved states reading the stream in alternating order.
+    // The FSE table for the two independent decoding strands are the same.
+    let mut color: usize = 0; // use 0, 1 (colors) to denote two alternating decoding strands. 
+    let mut prev_state: [u32; 2] = [0, 0];
+    let mut next_nb_to_read: [usize; 2] = [table.accuracy_log as usize, table.accuracy_log as usize];
+    let mut decoded_weights: Vec<u8> = vec![];
+
+
+    fn convert_fse_auxiliary_to_state_table(table: FseAuxiliaryTableData) -> Vec<[u64; 4]> {
+        // pub struct FseAuxiliaryTableData {
+        //     /// The byte offset in the frame at which the FSE table is described.
+        //     pub byte_offset: u64,
+        //     /// The FSE table's size, i.e. 1 << AL (accuracy log).
+        //     pub table_size: u64,
+        //     /// A map from FseSymbol (weight) to states, also including fields for that state, for
+        //     /// instance, the baseline and the number of bits to read from the FSE bitstream.
+        //     ///
+        //     /// For each symbol, the states are in strictly increasing order.
+        //     pub sym_to_states: BTreeMap<FseSymbol, Vec<FseTableRow>>,
+        // }
+
+        /// A single row in the FSE table.
+        // #[derive(Clone, Debug, Default, PartialEq)]
+        // pub struct FseTableRow {
+        //     /// Incremental index, starting at 1.
+        //     pub idx: u64,
+        //     /// The FSE state at this row in the FSE table.
+        //     pub state: u64,
+        //     /// The baseline associated with this state.
+        //     pub baseline: u64,
+        //     /// The number of bits to be read from the input bitstream at this state.
+        //     pub num_bits: u64,
+        //     /// The symbol emitted by the FSE table at this state.
+        //     pub symbol: u64,
+        // }
+        
+        let mut state_table_rows: Vec<[u64; 4]> = vec![];
+        // [u64; 4] represents (state, symbol, baseline, nb)
+
+        // compression_debug
+        // must get the state rows
+        // let v = table.sym_to_states.values().;
+
+        state_table_rows
+    }
+
+    while current_bit_idx + next_nb_to_read[color] < n_bytes * N_BITS_PER_BYTE {
+        let nb = next_nb_to_read[color];
+        let next_state = prev_state[color] + le_bits_to_value(&huffman_bitstream[current_bit_idx..(current_bit_idx + nb)]);
+
+        // compression_debug
+        // TODO: spit out the symbol, baseline, nb_to_read, at the next state
+
+        // Change decoding states
+        prev_state[color] = next_state;
+        // let next_nb_to_read[color] = next bits to read // compression_debug
+        // decoded_weights.push(symbol); // compression_debug
+
+        for _ in 0..nb {
+            increment_idx(current_byte_idx, current_bit_idx);
+            deliminators.push((current_byte_idx, current_bit_idx));
+        }
+
+        color = !color;
+    }
+
+    (0, vec![])
 }
 
 fn process_block_zstd_huffman_jump_table<F: Field>(
@@ -1021,16 +1146,23 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
 fn process_block_zstd_lstream<F: Field>(
     src: &[u8],
     byte_offset: usize,
+    len: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-    is_last_stream: bool,
+    stream_idx: usize,
+    // huffman_code: 
 ) -> (usize, Vec<ZstdWitnessRow<F>>) {
     // compression_debug
-    // let tag_next = if is_last_stream {
-    //     ZstdTag::ZstdBlockSequenceHeader
-    // } else {
-    //     ZstdTag::ZstdBlockJumpTable
-    // };
+    let tag_next = if stream_idx == 3 {
+        ZstdTag::ZstdBlockSequenceHeader
+    } else {
+        match stream_idx {
+            0 => ZstdTag::Lstream2,
+            1 => ZstdTag::Lstream3,
+            2 => ZstdTag::Lstream4,
+            _ => unreachable!("stream_idx value out of range")
+        }
+    };
     unimplemented!()
 }
 
