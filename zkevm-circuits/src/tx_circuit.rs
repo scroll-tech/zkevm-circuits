@@ -129,6 +129,8 @@ pub struct TxCircuitConfig<F: Field> {
     is_none: Column<Advice>,
     tx_value_length: Column<Advice>,
     tx_value_rlc: Column<Advice>,
+    // keccak lookup needs additional output word field, this word field targets for it.
+    tx_hash_word: word::Word<Column<Advice>>,
 
     //u8_table: U8Table,
     u8_table: UXTable<8>,
@@ -265,6 +267,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let rlp_tag = meta.advice_column();
         let tx_value_rlc = meta.advice_column_in(SecondPhase);
         let tx_value_length = meta.advice_column();
+        let tx_hash_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
         let is_none = meta.advice_column();
         let tag_bits = BinaryNumberChip::configure(meta, q_enable, Some(tx_table.tag.into()));
         let tx_type_bits = BinaryNumberChip::configure(meta, q_enable, Some(tx_type.into()));
@@ -797,6 +800,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             rlp_tag,
             tx_value_rlc,
             tx_value_length,
+            tx_hash_word,
             tx_type_bits,
             tx_id_is_zero.clone(),
             is_none,
@@ -1405,6 +1409,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_none,
             tx_value_rlc,
             tx_value_length,
+            tx_hash_word,
             u8_table,
             u16_table,
             tx_id_is_zero,
@@ -1449,6 +1454,7 @@ impl<F: Field> TxCircuitConfig<F> {
         rlp_tag: Column<Advice>,
         tx_value_rlc: Column<Advice>,
         tx_value_length: Column<Advice>,
+        tx_hash_word: word::Word<Column<Advice>>,
         tx_type_bits: BinaryNumberConfig<TxType, 3>,
         tx_id_is_zero: IsZeroConfig<F>,
         is_none: Column<Advice>,
@@ -1748,8 +1754,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.value.lo(), Rotation::next()), // input_rlc
                 meta.query_advice(tx_table.value.lo(), Rotation::cur()),  // input_len
                 meta.query_advice(tx_table.value.lo(), Rotation(2)),      // output_rlc
-                meta.query_advice(tx_table.value.lo(), Rotation(2)),      // output_word
-                meta.query_advice(tx_table.value.hi(), Rotation(2)),      // output_word
+                meta.query_advice(tx_hash_word.lo(), Rotation::cur()),    // output_word lo
+                meta.query_advice(tx_hash_word.hi(), Rotation::cur()),    // output_word hi
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))
@@ -1798,7 +1804,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let sign_hash = keccak256(tx.rlp_unsigned.as_slice());
         let hash = keccak256(tx.rlp_signed.as_slice());
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
-        // let hash_rlc = rlc_be_bytes(&hash, evm_word);
+        let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut tx_value_cells = vec![];
         let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
             // l1 msg does not have sign data
@@ -2082,7 +2088,8 @@ impl<F: Field> TxCircuitConfig<F> {
             (
                 TxFieldTag::TxHash,
                 None,
-                word::Word::from(U256::from_big_endian(&hash)).map(Value::known),
+                //word::Word::from(U256::from_big_endian(&hash)).map(Value::known),
+                word::Word::new([hash_rlc, Value::known(F::zero())]),
             ),
             (
                 TxFieldTag::TxType,
@@ -2142,6 +2149,10 @@ impl<F: Field> TxCircuitConfig<F> {
             ),
             //Value::known(F::from(tx.block_number))),
         ];
+
+        // constructs two hashes' word
+        let sign_hash_word = word::Word::from(U256::from_big_endian(&sign_hash)).map(Value::known);
+        let tx_hash_word = word::Word::from(U256::from_big_endian(&hash)).map(Value::known);
 
         for (tx_tag, rlp_input, tx_value) in fixed_rows {
             let rlp_tag = rlp_input.clone().map_or(Null, |input| input.tag);
@@ -2342,6 +2353,24 @@ impl<F: Field> TxCircuitConfig<F> {
                 *offset,
                 F::from(cum_num_txs - num_txs),
                 F::from(tx.id as u64),
+            )?;
+
+            let hash_word_assign = if tx_tag == TxFieldTag::TxSignLength {
+                sign_hash_word
+            } else if tx_tag == TxFieldTag::TxHashLength {
+                tx_hash_word
+            } else {
+                // for non TxSignLength & non TxHashLength tag, this word value won't lookup, hence
+                // all set zero limbs. word::Word::default() will panic as default
+                // limbs are none.
+                word::Word::new([F::zero(), F::zero()]).map(Value::known)
+            };
+
+            hash_word_assign.assign_advice(
+                region,
+                || "assign sign_hash_word",
+                self.tx_hash_word,
+                *offset,
             )?;
 
             *offset += 1;
