@@ -11,7 +11,7 @@ use crate::{
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{
-        word::{WordCell, WordExpr},
+        word::{Word, Word32Cell, WordExpr},
         Expr,
     },
 };
@@ -22,8 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct GasPriceGadget<F> {
     tx_id: Cell<F>,
-    gas_price: WordCell<F>,
-    // TODO: remove gas_price_rlc in word hi lo stage2 (txtable to word)
+    gas_price: Word32Cell<F>,
     // gas_price_rlc: Cell<F>,
     same_context: SameContextGadget<F>,
 }
@@ -35,8 +34,9 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Query gasprice value
-        let gas_price = cb.query_word_unchecked();
-        //let gas_price_rlc = cb.query_cell();
+        let gas_price = cb.query_word32();
+        // let gas_price_rlc = cb.query_cell();
+        let gas_price_rlc = cb.word_rlc(gas_price.limbs.clone().map(|l| l.expr()));
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -45,8 +45,9 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
             tx_id.expr(),
             TxContextFieldTag::GasPrice,
             None,
-            gas_price.to_word(),
-            //gas_price_rlc.expr(),
+            // gas_price.to_word(),
+            // gas_price_rlc.expr(),
+            Word::from_lo_unchecked(gas_price_rlc.expr()),
         );
 
         // Push the value to the stack

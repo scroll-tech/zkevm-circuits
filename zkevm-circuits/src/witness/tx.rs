@@ -22,7 +22,8 @@ use eth_types::{
     sign_types::{
         biguint_to_32bytes_le, ct_option_ok_or, get_dummy_tx, recover_pk2, SignData, SECP256K1_Q,
     },
-    AccessList, Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToWord, Word, H256,
+    AccessList, Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord,
+    Word, H256,
 };
 use ethers_core::{
     types::TransactionRequest,
@@ -164,13 +165,14 @@ impl Transaction {
             access_list_size(&self.access_list);
         // let gas_price_word = word::Word::from(self.gas_price.to_word()).map(Value::known);
         let value_word = word::Word::from(self.value.to_word()).map(Value::known);
-        let tx_hash_word =
-            word::Word::from(Word::from_big_endian(&tx_hash_be_bytes)).map(Value::known);
-        let tx_sign_hash_word =
-            word::Word::from(Word::from_big_endian(&tx_sign_hash_be_bytes)).map(Value::known);
-        let caller_address_word = word::Word::from(self.caller_address).map(Value::known);
-        let callee_address_word =
-            word::Word::from(self.callee_address.unwrap_or(Address::zero())).map(Value::known);
+        // let tx_hash_word =
+        //     word::Word::from(Word::from_big_endian(&tx_hash_be_bytes)).map(Value::known);
+        // let tx_sign_hash_word =
+        //     word::Word::from(Word::from_big_endian(&tx_sign_hash_be_bytes)).map(Value::known);
+        // let caller_address_word = word::Word::from(self.caller_address).map(Value::known);
+        // let callee_address_word =
+        //     word::Word::from(self.callee_address.unwrap_or(Address::zero())).map(Value::known);
+        println!("Transaction table_assignments_fixed");
 
         let ret = vec![
             [
@@ -188,6 +190,7 @@ impl Transaction {
                     .evm_word()
                     .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
                 Value::known(F::zero()),
+                // can not use word type as tx circuit use rlc value to lookup keccak table
                 // gas_price_word.lo(),
                 // gas_price_word.hi(),
             ],
@@ -202,22 +205,24 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallerAddress as u64)),
                 Value::known(F::zero()),
-                //Value::known(self.caller_address.to_scalar().unwrap()),
-                caller_address_word.lo(),
-                caller_address_word.hi(),
+                Value::known(self.caller_address.to_scalar().unwrap()),
+                Value::known(F::zero()),
+                // caller_address_word.lo(),
+                // caller_address_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CalleeAddress as u64)),
                 Value::known(F::zero()),
-                // Value::known(
-                //     self.callee_address
-                //         .unwrap_or(Address::zero())
-                //         .to_scalar()
-                //         .unwrap(),
-                // ),
-                callee_address_word.lo(),
-                callee_address_word.hi(),
+                Value::known(
+                    self.callee_address
+                        .unwrap_or(Address::zero())
+                        .to_scalar()
+                        .unwrap(),
+                ),
+                Value::known(F::zero()),
+                // callee_address_word.lo(),
+                // callee_address_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -313,9 +318,10 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::TxSignHash as u64)),
                 Value::known(F::zero()),
                 // TODO: check if change to word hi lo ?
-                //rlc_be_bytes(&tx_sign_hash_be_bytes, challenges.evm_word()),
-                tx_sign_hash_word.lo(),
-                tx_sign_hash_word.hi(),
+                rlc_be_bytes(&tx_sign_hash_be_bytes, challenges.evm_word()),
+                Value::known(F::zero()),
+                // tx_sign_hash_word.lo(),
+                // tx_sign_hash_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -335,9 +341,10 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxHash as u64)),
                 Value::known(F::zero()),
-                //rlc_be_bytes(&tx_hash_be_bytes, challenges.evm_word()),
-                tx_hash_word.lo(),
-                tx_hash_word.hi(),
+                rlc_be_bytes(&tx_hash_be_bytes, challenges.evm_word()),
+                Value::known(F::zero()),
+                // tx_hash_word.lo(),
+                // tx_hash_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
