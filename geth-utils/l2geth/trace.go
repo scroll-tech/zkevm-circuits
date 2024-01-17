@@ -12,8 +12,8 @@ import (
 	"github.com/scroll-tech/go-ethereum/core/state"
 	"github.com/scroll-tech/go-ethereum/core/types"
 	"github.com/scroll-tech/go-ethereum/core/vm"
-	"github.com/scroll-tech/go-ethereum/hack"
 	"github.com/scroll-tech/go-ethereum/params"
+	"github.com/scroll-tech/go-ethereum/rollup/tracing"
 	"github.com/scroll-tech/go-ethereum/trie"
 )
 
@@ -233,7 +233,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		return nil, err
 	}
 
-	traceEnv := hack.CreateTraceEnvHelper(
+	traceEnv := tracing.CreateTraceEnvHelper(
 		&chainConfig,
 		config.LoggerConfig,
 		blockCtx,
