@@ -266,9 +266,9 @@ pub struct Transaction {
     /// Gas Price
     pub gas_price: Option<Word>,
     /// Gas fee cap
-    pub gas_fee_cap: Word,
+    pub gas_fee_cap: Option<Word>,
     /// Gas tip cap
-    pub gas_tip_cap: Word,
+    pub gas_tip_cap: Option<Word>,
     /// The compiled code of a contract OR the first 4 bytes of the hash of the
     /// invoked method signature and encoded parameters. For details see
     /// Ethereum Contract ABI
@@ -301,8 +301,8 @@ impl From<&Transaction> for crate::Transaction {
             gas: tx.gas_limit,
             value: tx.value,
             gas_price: tx.gas_price,
-            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
-            max_fee_per_gas: Some(tx.gas_fee_cap),
+            max_priority_fee_per_gas: tx.gas_tip_cap,
+            max_fee_per_gas: tx.gas_fee_cap,
             input: tx.call_data.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.into(),
@@ -324,8 +324,8 @@ impl From<&crate::Transaction> for Transaction {
             gas_limit: tx.gas,
             value: tx.value,
             gas_price: tx.gas_price,
-            gas_tip_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
-            gas_fee_cap: tx.max_fee_per_gas.unwrap_or_default(),
+            gas_tip_cap: tx.max_priority_fee_per_gas,
+            gas_fee_cap: tx.max_fee_per_gas,
             call_data: tx.input.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.as_u64(),
