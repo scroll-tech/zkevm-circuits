@@ -1125,9 +1125,80 @@ fn process_block_zstd_lstream<F: Field>(
         }
     };
 
-    // compression_debug
+    // Add the leading zero and sentinel 1-bit.
+    if deliminators[1] == (1, 0) {
+        // there're no leading zeros
+        decoded_symbols.insert(0, 1);
+    } else {
+        decoded_symbols.insert(0, 0);
+        decoded_symbols.insert(1, 1);
+    }
 
-    (0, vec![])
+    // Witness rows
+    let mut value_rlc = last_row.encoded_data.value_rlc;
+
+    let decoded_value_rlc = last_row.decoded_data.decoded_value_rlc;
+    let decoded_value_rlc_iter = decoded_symbols.iter().scan(
+        last_row.decoded_data.decoded_value_rlc,
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(symbol as u64));
+            Some(*acc)
+        },
+    );
+
+    let tag_value_iter = decoded_symbols.iter().scan(
+        Value::known(F::zero()),
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(symbol as u64));
+            Some(*acc)
+        },
+    );
+
+    let tag_value = tag_value_iter
+        .clone()
+        .last()
+        .expect("Tag value exists");
+
+    let mut witness_rows: Vec<ZstdWitnessRow> = vec![];
+    
+    let mut last_pos = deliminators[0];
+    for (idx, curr_pos) in deliminators.into_iter().skip(1).enumerate() {
+        if curr_pos.0 > last_pos.0 {
+            value_rlc = value_rlc * randomness + Value::known(F::from)
+        }
+        
+        witness_rows.push(ZstdWitnessRow {
+            state: ZstdState {
+                tag: ZstdTag::Lstream,
+                tag_next,
+                tag_len: len as u64,
+                tag_idx: idx as u64,
+                tag_value: tag_value,
+                tag_value_acc: tag_value_iter.next(),
+            },
+            encoded_data: EncodedData {
+                byte_idx: (byte_offset + last_pos.0) as u64,
+                encoded_len: last_row.encoded_data.encoded_len,
+                value_byte: src[byte_offset + last_pos.0],
+                value_rlc,
+                reverse: true,
+                ..Default::default()
+            },
+            decoded_data: DecodedData {
+                decoded_len: last_row.decoded_data.decoded_len,
+                decoded_len_acc: last_row.decoded_data.decoded_len + curr_pos.0 as u64 + 1,
+                total_decoded_len: last_row.decoded_data.total_decoded_len,
+                decoded_byte: decoded_symbols[idx],
+                decoded_value_rlc,
+            },
+            huffman_data: HuffmanData::default(),
+            fse_data: FseTableRow::default(),
+        });
+
+        last_pos = curr_pos;
+    }
+
+    (byte_offset + len, witness_rows)
 }
 
 pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> Vec<ZstdWitnessRow<F>> {
