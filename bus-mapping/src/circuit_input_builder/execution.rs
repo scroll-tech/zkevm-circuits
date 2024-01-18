@@ -405,6 +405,9 @@ impl CopyBytes {
 }
 
 /// Transaction access list for copy event
+/// Save address, storage_key, storage_key_index and is_warm_prev
+/// to column value_word_rlc, value_word_rlc_prev, value and
+/// value_prev in copy circuit.
 #[derive(Clone, Debug)]
 pub struct CopyAccessList {
     /// Access list address
@@ -416,15 +419,24 @@ pub struct CopyAccessList {
     /// storage key, it saves the internal index of storage key, which starts
     /// from zero for each address list.
     pub storage_key_index: u64,
+    /// Identify if address or storage key is warm previously, since the access
+    /// list could have duplicate addresses or storage keys.
+    pub is_warm_prev: bool,
 }
 
 impl CopyAccessList {
     /// Create a copy access list.
-    pub fn new(address: Address, storage_key: Word, storage_key_index: u64) -> Self {
+    pub fn new(
+        address: Address,
+        storage_key: Word,
+        storage_key_index: u64,
+        is_warm_prev: bool,
+    ) -> Self {
         Self {
             address,
             storage_key,
             storage_key_index,
+            is_warm_prev,
         }
     }
 }
