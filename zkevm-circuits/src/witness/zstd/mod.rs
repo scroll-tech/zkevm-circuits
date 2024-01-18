@@ -1010,15 +1010,6 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
     // Witness rows
     let mut value_rlc = last_row.encoded_data.value_rlc;
 
-    let decoded_value_rlc = last_row.decoded_data.decoded_value_rlc;
-    let decoded_value_rlc_iter = decoded_symbols.iter().scan(
-        last_row.decoded_data.decoded_value_rlc,
-        |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(symbol as u64));
-            Some(*acc)
-        },
-    );
-
     let tag_value_iter = decoded_symbols.iter().scan(
         Value::known(F::zero()),
         |acc, &byte| {
