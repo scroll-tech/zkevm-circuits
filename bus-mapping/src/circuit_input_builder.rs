@@ -905,8 +905,8 @@ fn keccak_inputs_pi_circuit(
 
     vec![
       data_bytes, 
-      pi_bytes, 
       l1_block_hashes_bytes,
+      pi_bytes, 
     ]
 }
 

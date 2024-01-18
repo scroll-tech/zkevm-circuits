@@ -314,7 +314,8 @@ impl PublicData {
     }
 
     fn pi_bytes_end_offset(&self) -> usize {
-        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 5
+        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 5 
+          + N_BYTES_U64 // for last_applied_l1_block
     }
 
     fn pi_hash_start_offset(&self) -> usize {
@@ -336,7 +337,7 @@ impl PublicData {
 
     fn constants_end_offset(&self) -> usize {
         self.constants_start_offset() + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD
-            + 32 // for l1_block_hashes_count, num_all_l1_block_hashes, last_applied_l1_block and last_applied_l1_block_from_last_block
+            + 3 * N_BYTES_U64 // for l1_block_hashes_count, num_all_l1_block_hashes and last_applied_l1_block_from_last_block
     }
 }
 
@@ -352,7 +353,7 @@ impl BlockContext {
             base_fee: Default::default(),
             history_hashes: vec![],
             eth_block: Default::default(),
-            l1_block_hashes: None,
+            l1_block_hashes: Some(vec![]),
         }
     }
 }
@@ -935,7 +936,7 @@ impl<F: Field> PiCircuitConfig<F> {
         debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
         // 3. Assign public input bytes.
-        let (offset, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
+        let (offset, last_applied_l1_block_cell, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
             region,
             offset,
             public_data,
@@ -954,7 +955,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // 5. Assign block coinbase and difficulty.
         let offset =
-            self.assign_constants(region, offset, public_data, block_value_cells, challenges)?;
+            self.assign_constants(region, offset, public_data, &last_applied_l1_block_cell, block_value_cells, challenges)?;
         debug_assert_eq!(offset, public_data.constants_end_offset() + 1);
 
         Ok((pi_hash_cells, connections))
@@ -1247,7 +1248,7 @@ impl<F: Field> PiCircuitConfig<F> {
         data_hash_rlc_cell: &AssignedCell<F, F>,
         l1_block_range_hash_rlc_cell: &AssignedCell<F, F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(usize, AssignedCell<F, F>, Connections<F>), Error> {
+    ) -> Result<(usize, AssignedCell<F, F>, AssignedCell<F, F>, Connections<F>), Error> {
         let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
 
         // Enable RLC accumulator consistency check throughout the above rows.
@@ -1314,13 +1315,10 @@ impl<F: Field> PiCircuitConfig<F> {
         (offset, rpi_rlc_acc, rpi_length) = (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length);
         let data_hash_cell = cells[RPI_CELL_IDX].clone();
 
-        let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
-        let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
-
         // Copy data_hash value we collected from assigning data bytes.
         region.constrain_equal(data_hash_rlc_cell.cell(), data_hash_cell.cell())?;
 
-        let (tmp_offset, _, _, cells) = self.assign_field(
+        let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
             region,
             offset,
             &public_data.l1_block_range_hash.to_fixed_bytes(),
@@ -1330,10 +1328,26 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_length,
             challenges,
         )?;
-        offset = tmp_offset;
+        (offset, rpi_rlc_acc, rpi_length) = (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length);
         let l1_block_range_hash_cell = cells[RPI_CELL_IDX].clone();
         
         region.constrain_equal(l1_block_range_hash_rlc_cell.cell(), l1_block_range_hash_cell.cell())?;
+
+        let (tmp_offset, _, _, cells) = self.assign_field(
+            region,
+            offset,
+            &public_data.last_applied_l1_block.to_be_bytes().to_vec(),
+            RpiFieldType::DefaultType,
+            false, // no padding in this case
+            rpi_rlc_acc,
+            rpi_length,
+            challenges,
+        )?;
+        offset = tmp_offset;
+        let last_applied_l1_block_cell = cells[RPI_CELL_IDX].clone();
+
+        let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
+        let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
 
         // Assign row for validating lookup to check:
         // pi_hash == keccak256(rlc(pi_bytes))
@@ -1358,7 +1372,7 @@ impl<F: Field> PiCircuitConfig<F> {
         };
         self.q_keccak.enable(region, offset)?;
 
-        Ok((offset + 1, pi_hash_rlc_cell, connections))
+        Ok((offset + 1, last_applied_l1_block_cell, pi_hash_rlc_cell, connections))
     }
 
     /// Assign the (hi, lo) decomposition of pi_hash.
@@ -1417,6 +1431,7 @@ impl<F: Field> PiCircuitConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         public_data: &PublicData,
+        last_applied_l1_block_cell: &AssignedCell<F, F>,
         block_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<usize, Error> {
@@ -1478,7 +1493,6 @@ impl<F: Field> PiCircuitConfig<F> {
         let rpi_cells = [
             l1_block_hashes_count.to_be_bytes().to_vec(),
             num_all_l1_block_hashes.to_be_bytes().to_vec(),
-            public_data.last_applied_l1_block.to_be_bytes().to_vec(),
             last_applied_l1_block.map(|blk| blk.as_u64()).unwrap_or(0).to_be_bytes().to_vec(),
         ]
         .iter()
@@ -1503,8 +1517,8 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
 
         region.constrain_equal(
+            last_applied_l1_block_cell.cell(),
             rpi_cells[2].cell(),
-            rpi_cells[3].cell(),
         )?;
 
         Ok(offset)
@@ -2059,13 +2073,14 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             + 1 // for l1 block range hash row
             + 1 // for pi bytes start row
             + N_BYTES_U64 // chain_id
-            + 4 * KECCAK_DIGEST_SIZE // state_roots & data hash
+            + 5 * KECCAK_DIGEST_SIZE // state_roots, data hash and l1_block_range_hash
+            + N_BYTES_U64 // last_applied_l1_block
             + 1 // for pi hash row
             + 1 // for pi hash bytes start row
             + KECCAK_DIGEST_SIZE // pi hash bytes
             + 1 // for coinbase & difficulty start row
             + KECCAK_DIGEST_SIZE // for l1 block range hash
-            + 32 // for l1_block_hashes_count, num_all_l1_block_hashes, last_applied_l1_block and last_applied_l1_block_from_last_block
+            + 3 * N_BYTES_U64 // for l1_block_hashes_count, num_all_l1_block_hashes and last_applied_l1_block_from_last_block
             + N_BYTES_ACCOUNT_ADDRESS
             + N_BYTES_WORD;
 

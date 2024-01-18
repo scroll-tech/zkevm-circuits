@@ -168,8 +168,8 @@ impl ChunkHash {
             self.post_state_root.as_bytes(),
             self.withdraw_root.as_bytes(),
             self.data_hash.as_bytes(),
-            self.last_applied_l1_block.to_be_bytes().as_ref(),
             self.l1_block_range_hash.as_bytes(),
+            self.last_applied_l1_block.to_be_bytes().as_ref(),
         ]
         .concat()
     }
