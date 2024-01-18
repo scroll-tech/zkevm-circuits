@@ -738,13 +738,7 @@ fn process_block_zstd_huffman_header<F: Field>(
                 value_rlc,
                 ..Default::default()
             },
-            decoded_data: DecodedData {
-                decoded_len: last_row.decoded_data.decoded_len,
-                decoded_len_acc: last_row.decoded_data.decoded_len_acc + 1,
-                total_decoded_len: last_row.decoded_data.total_decoded_len,
-                decoded_byte: header_byte,
-                decoded_value_rlc,
-            },
+            decoded_data: last_row.decoded_data.clone(),
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),
         }],
@@ -754,6 +748,8 @@ fn process_block_zstd_huffman_header<F: Field>(
 }
 
 // compression_debug
+// waiting on response for whether direct representation will be eliminated from zstd-compressed blocks
+
 // fn process_block_zstd_huffman_header<F: Field>(
 //     src: &[u8],
 //     byte_offset: usize,
@@ -890,13 +886,7 @@ fn process_block_zstd_huffman_code_direct<F: Field>(
                             reverse: false,
                             ..Default::default()
                         },
-                        decoded_data: DecodedData {
-                            decoded_len: last_row.decoded_data.decoded_len,
-                            decoded_len_acc: last_row.decoded_data.decoded_len + (i as u64) + 1,
-                            total_decoded_len: last_row.decoded_data.total_decoded_len,
-                            decoded_byte: value_byte,
-                            decoded_value_rlc,
-                        },
+                        decoded_data: last_row.decoded_data.clone(),
                         huffman_data: HuffmanData::default(),
                         fse_data: FseTableRow::default(),
                     }
@@ -1067,15 +1057,9 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
                 reverse: true,
                 ..Default::default()
             },
-            decoded_data: DecodedData {
-                decoded_len: last_row.decoded_data.decoded_len,
-                decoded_len_acc: last_row.decoded_data.decoded_len + curr_pos.0 as u64 + 1,
-                total_decoded_len: last_row.decoded_data.total_decoded_len,
-                decoded_byte: decoded_symbols[idx],
-                decoded_value_rlc,
-            },
+            decoded_data: last_row.decoded_data.clone(),
             huffman_data: HuffmanData::default(),
-            fse_data: FseTableRow::default(),
+            fse_data: FseTableRow::default(),   // TODO: correct witness assignment
         });
 
         last_pos = curr_pos;
@@ -1094,8 +1078,6 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     // but the compressed bitstream length will be different. 
     // Jump table provides information on the length of first 3 bitstreams. 
 
-    // Jump table's lengths are all plain bytes
-
     let jt_bytes = src
         .iter()
         .skip(byte_offset)
@@ -1108,18 +1090,61 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     let l2: u64 = jt_bytes[2] + jt_bytes[3] * 256;
     let l3: u64 = jt_bytes[4] + jt_bytes[5] * 256;
 
-    let (bytes_offset, rows) = 
-        process_raw_bytes(
-            src, 
-            byte_offset, 
-            last_row, 
-            randomness, 
-            N_JUMP_TABLE_BYTES, 
-            ZstdTag::ZstdBlockJumpTable, 
-            ZstdTag::ZstdBlockHuffmanCode,
-        );
+    let value_rlc_iter = src.iter().skip(byte_offset).take(n_bytes).scan(
+        last_row.encoded_data.value_rlc,
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    );
+    let tag_value_iter = src.iter().skip(byte_offset).take(n_bytes).scan(
+        Value::known(F::zero()),
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    );
+    let tag_value = tag_value_iter
+        .clone()
+        .last()
+        .expect("Raw bytes must be of non-zero length");
 
-    (bytes_offset, rows, [l1, l2, l3])
+    (
+        byte_offset + N_JUMP_TABLE_BYTES,
+        src.iter()
+            .skip(byte_offset)
+            .take(n_bytes)
+            .zip(tag_value_iter)
+            .zip(value_rlc_iter)
+            .enumerate()
+            .map(
+                |(i, ((&value_byte, tag_value_acc), value_rlc))| {
+                    ZstdWitnessRow {
+                        state: ZstdState {
+                            tag,
+                            tag_next,
+                            tag_len: n_bytes as u64,
+                            tag_idx: (i + 1) as u64,
+                            tag_value,
+                            tag_value_acc,
+                        },
+                        encoded_data: EncodedData {
+                            byte_idx: (byte_offset + i + 1) as u64,
+                            encoded_len: last_row.encoded_data.encoded_len,
+                            value_byte,
+                            value_rlc,
+                            reverse: false,
+                            ..Default::default()
+                        },
+                        decoded_data: last_row.decoded_data.clone(),
+                        huffman_data: HuffmanData::default(),
+                        fse_data: FseTableRow::default(),
+                    }
+                },
+            )
+            .collect::<Vec<_>>(),
+        [l1, l2, l3]
+    )
 }
 fn process_block_zstd_lstream<F: Field>(
     src: &[u8],
@@ -1217,15 +1242,6 @@ fn process_block_zstd_lstream<F: Field>(
     // Witness rows
     let mut value_rlc = last_row.encoded_data.value_rlc;
 
-    let decoded_value_rlc = last_row.decoded_data.decoded_value_rlc;
-    let decoded_value_rlc_iter = decoded_symbols.iter().scan(
-        last_row.decoded_data.decoded_value_rlc,
-        |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(symbol as u64));
-            Some(*acc)
-        },
-    );
-
     let tag_value_iter = decoded_symbols.iter().scan(
         Value::known(F::zero()),
         |acc, &byte| {
@@ -1264,14 +1280,8 @@ fn process_block_zstd_lstream<F: Field>(
                 reverse: true,
                 ..Default::default()
             },
-            decoded_data: DecodedData {
-                decoded_len: last_row.decoded_data.decoded_len,
-                decoded_len_acc: last_row.decoded_data.decoded_len + curr_pos.0 as u64 + 1,
-                total_decoded_len: last_row.decoded_data.total_decoded_len,
-                decoded_byte: decoded_symbols[idx],
-                decoded_value_rlc,
-            },
-            huffman_data: HuffmanData::default(),
+            decoded_data: last_row.decoded_data.clone(),
+            huffman_data: HuffmanData::default(),   // TODO: correct witness assignment value
             fse_data: FseTableRow::default(),
         });
 
@@ -1343,6 +1353,7 @@ mod tests {
         Ok(())
     }
 
+    // This test is for dev process and will be deleted 
     #[test]
     fn check_witness_generation() -> Result<(), std::io::Error> {
         let compressed: [u8; 559] = [
