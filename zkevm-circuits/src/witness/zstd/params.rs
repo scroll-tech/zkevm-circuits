@@ -18,6 +18,4 @@ pub const N_MAX_SYMBOLS: usize = 8;
 pub const N_BITS_SYMBOL: usize = 3;
 
 /// Number of bits used to represent the tag in binary form.
-pub const N_BITS_ZSTD_TAG: usize = 6;
-
-pub const MAGIC_NUMBER_BYTES: [u8; N_MAGIC_NUMBER_BYTES] = [0x28, 0xB5, 0x2F, 0xFD];
+pub const N_BITS_ZSTD_TAG: usize = 4;

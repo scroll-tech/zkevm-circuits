@@ -1134,16 +1134,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> Vec<ZstdWitnessRow
     let mut witness_rows = vec![];
     let byte_offset = 0;
 
-    // MagicNumber appears at the start of each frame. Here we assert that the compressed data
-    // consists of a single frame.
-    let find_magic_number = |haystack: &[u8], needle: &[u8], from_offset: usize| -> Option<usize> {
-        (from_offset..haystack.len() - needle.len() + 1)
-            .find(|&i| haystack[i..i + needle.len()] == needle[..])
-    };
-    assert_eq!(find_magic_number(src, &MAGIC_NUMBER_BYTES[..], 0), Some(0));
-    assert_eq!(find_magic_number(src, &MAGIC_NUMBER_BYTES[..], 4), None);
-
-    // 1. FrameHeaderDescriptor and FrameContentSize
+    // FrameHeaderDescriptor and FrameContentSize
     let (byte_offset, rows) = process_frame_header::<F>(
         src,
         byte_offset,
@@ -1189,6 +1180,8 @@ mod tests {
         let compressed = {
             let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0)?;
             encoder.set_pledged_src_size(Some(raw.len() as u64))?;
+            encoder.include_checksum(false)?;
+            encoder.include_magicbytes(false)?;
             encoder.include_contentsize(true)?;
             encoder.write_all(&raw)?;
             encoder.finish()?

@@ -55,7 +55,7 @@ mock = { path = "../mock" }
 pretty_assertions.workspace = true
 cli-table = "0.4"
 paste = "1.0"
-zstd = "0.13"
+zstd = { version = "0.13", features = ["experimental"] }
 crossterm = "0.27.0"
 ratatui = "0.25.0"
 
