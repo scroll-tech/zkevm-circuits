@@ -12,6 +12,28 @@ use super::{
     util::{bit_length, read_variable_bit_packing, smaller_powers_of_two, value_bits_le},
 };
 
+/// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
+/// fields are assigned correctly.
+#[derive(Clone, Debug)]
+pub struct ZstdRomTableRow {
+    /// The current tag.
+    tag: ZstdTag,
+    /// The tag that will be processed after the current tag is finished processing.
+    tag_next: ZstdTag,
+    /// The maximum number of bytes that are needed to represent the current tag.
+    max_len: u64,
+}
+
+impl ZstdRomTableRow {
+    pub(crate) fn values<F: Field>(&self) -> Vec<Value<F>> {
+        vec![
+            Value::known(F::from(usize::from(self.tag) as u64)),
+            Value::known(F::from(usize::from(self.tag_next) as u64)),
+            Value::known(F::from(self.max_len)),
+        ]
+    }
+}
+
 /// The symbol emitted by FSE table. This is also the weight in the canonical Huffman code.
 #[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FseSymbol {

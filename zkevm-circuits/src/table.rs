@@ -48,7 +48,7 @@ use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
-mod decompression;
+pub mod decompression;
 
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {

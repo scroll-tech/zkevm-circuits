@@ -8,7 +8,7 @@ use crate::{
     decompression_circuit::{
         DecompressionCircuit, DecompressionCircuitConfig, DecompressionCircuitConfigArgs,
     },
-    table::{KeccakTable, U8Table},
+    table::{KeccakTable, Pow2Table, U8Table},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 
@@ -26,6 +26,7 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
         let challenges = Challenges::construct(meta);
         let challenge_exprs = challenges.exprs(meta);
         let u8_table = U8Table::construct(meta);
+        let pow2_table = Pow2Table::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
 
         let config = DecompressionCircuitConfig::new(
@@ -33,6 +34,7 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
             DecompressionCircuitConfigArgs {
                 challenges: challenge_exprs,
                 u8_table,
+                pow2_table,
                 keccak_table,
             },
         );

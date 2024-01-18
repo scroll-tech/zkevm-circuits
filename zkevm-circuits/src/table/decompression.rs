@@ -1,3 +1,6 @@
+//! Tables with constraints used for verification of zstd decoding from Huffman Codes and FSE
+//! codes.
+
 use array_init::array_init;
 use eth_types::Field;
 use gadgets::{
@@ -17,8 +20,8 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
     witness::{
-        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, N_BITS_SYMBOL,
-        N_MAX_SYMBOLS,
+        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, ZstdRomTableRow,
+        N_BITS_SYMBOL, N_MAX_SYMBOLS,
     },
 };
 
@@ -384,6 +387,7 @@ pub struct FseAuxiliaryTable<F> {
 }
 
 impl<F: Field> FseAuxiliaryTable<F> {
+    /// Construct the auxiliary table for FSE codes.
     pub fn construct(
         meta: &mut ConstraintSystem<F>,
         bitwise_op_table: BitwiseOpTable,
@@ -703,6 +707,7 @@ impl<F: Field> FseAuxiliaryTable<F> {
         table
     }
 
+    /// Load witness.
     pub fn dev_load(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -852,6 +857,7 @@ pub struct HuffmanCodesTable<F> {
 }
 
 impl<F: Field> HuffmanCodesTable<F> {
+    /// Construct the huffman codes table.
     pub fn construct(
         meta: &mut ConstraintSystem<F>,
         pow2_table: Pow2Table,
@@ -1172,6 +1178,7 @@ impl<F: Field> HuffmanCodesTable<F> {
         table
     }
 
+    /// Load witness to the huffman codes table: dev mode.
     pub fn dev_load(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -1388,6 +1395,7 @@ pub struct HuffmanCodesBitstringAccumulationTable {
 }
 
 impl HuffmanCodesBitstringAccumulationTable {
+    /// Construct the bitstring accumulation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let q_enabled = meta.fixed_column();
         let table = Self {
@@ -1642,6 +1650,7 @@ impl HuffmanCodesBitstringAccumulationTable {
         table
     }
 
+    /// Load witness to the table: dev mode.
     pub fn dev_load<F: Field>(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         Ok(())
     }
@@ -1681,5 +1690,69 @@ impl HuffmanCodesBitstringAccumulationTable {
             meta.query_advice(self.from_start, Rotation::cur()),
             meta.query_advice(self.until_end, Rotation::cur()),
         ]
+    }
+}
+
+/// Read-only Memory table for the Decompression circuit. This table allows us a lookup argument
+/// from the Decompression circuit to check if a given row can occur depending on the row's tag,
+/// next tag and tag length.
+#[derive(Clone, Copy, Debug)]
+pub struct ZstdRomTable {
+    /// Tag of the current field being decoded.
+    pub tag: Column<Fixed>,
+    /// Tag of the following field when the current field is finished decoding.
+    pub tag_next: Column<Fixed>,
+    /// The maximum length in terms of number of bytes that the current tag can take up.
+    pub max_len: Column<Fixed>,
+}
+
+impl<F: Field> LookupTable<F> for ZstdRomTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.tag.into(), self.tag_next.into(), self.max_len.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tag"),
+            String::from("tag_next"),
+            String::from("max_len"),
+        ]
+    }
+}
+
+impl ZstdRomTable {
+    /// Construct the ROM table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tag: meta.fixed_column(),
+            tag_next: meta.fixed_column(),
+            max_len: meta.fixed_column(),
+        }
+    }
+
+    /// Load the ROM table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "Zstd ROM table",
+            |mut region| {
+                let rows: Vec<ZstdRomTableRow> = Vec::new();
+
+                for (offset, row) in rows.iter().enumerate() {
+                    for (&column, value) in <ZstdRomTable as LookupTable<F>>::fixed_columns(self)
+                        .iter()
+                        .zip(row.values::<F>().into_iter())
+                    {
+                        region.assign_fixed(
+                            || format!("zstd rom table row: offset = {offset}"),
+                            column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }
