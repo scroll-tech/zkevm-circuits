@@ -1,17 +1,20 @@
 //! L2 types used to deserialize traces for l2geth.
 
 use crate::{
-    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter, Storage},
-    Block, GethCallTrace, GethExecStep, GethExecTrace, Hash, Transaction, Word, H256,
+    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
+    Block, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
+    Transaction, Word, H256,
 };
 use ethers_core::types::{Address, Bytes, U256, U64};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[cfg(feature = "enable-memory")]
-use crate::Memory;
+use crate::evm_types::Memory;
 #[cfg(feature = "enable-stack")]
-use crate::Stack;
+use crate::evm_types::Stack;
+#[cfg(feature = "enable-storage")]
+use crate::evm_types::Storage;
 
 /// l2 block full trace
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
@@ -205,6 +208,8 @@ pub struct ExecutionResult {
     /// callTrace
     #[serde(rename = "callTrace")]
     pub call_trace: GethCallTrace,
+    /// prestate
+    pub prestate: HashMap<Address, GethPrestateTrace>,
 }
 
 impl From<ExecutionResult> for GethExecTrace {
@@ -217,7 +222,7 @@ impl From<ExecutionResult> for GethExecTrace {
             return_value: e.return_value,
             struct_logs,
             account_after: e.account_after,
-            prestate: None,
+            prestate: e.prestate,
             call_trace: e.call_trace,
         }
     }
@@ -235,9 +240,12 @@ pub struct ExecStep {
     #[serde(default)]
     pub refund: u64,
     pub depth: isize,
-    pub error: Option<String>,
+    pub error: Option<GethExecError>,
+    #[cfg(feature = "enable-stack")]
     pub stack: Option<Vec<Word>>,
+    #[cfg(feature = "enable-memory")]
     pub memory: Option<Vec<Word>>,
+    #[cfg(feature = "enable-storage")]
     pub storage: Option<HashMap<Word, Word>>,
     #[serde(rename = "extraData")]
     pub extra_data: Option<ExtraData>,
@@ -245,12 +253,6 @@ pub struct ExecStep {
 
 impl From<ExecStep> for GethExecStep {
     fn from(e: ExecStep) -> Self {
-        #[cfg(feature = "enable-stack")]
-        let stack = e.stack.map_or_else(Stack::new, Stack::from);
-        #[cfg(feature = "enable-memory")]
-        let memory = e.memory.map_or_else(Memory::default, Memory::from);
-        let storage = e.storage.map_or_else(Storage::empty, Storage::from);
-
         GethExecStep {
             pc: ProgramCounter(e.pc as usize),
             // FIXME
@@ -261,10 +263,11 @@ impl From<ExecStep> for GethExecStep {
             depth: e.depth as u16,
             error: e.error,
             #[cfg(feature = "enable-stack")]
-            stack,
+            stack: e.stack.map_or_else(Stack::new, Stack::from),
             #[cfg(feature = "enable-memory")]
-            memory,
-            storage,
+            memory: e.memory.map_or_else(Memory::default, Memory::from),
+            #[cfg(feature = "enable-storage")]
+            storage: e.storage.map_or_else(Storage::empty, Storage::from),
         }
     }
 }

@@ -1,5 +1,11 @@
 //! Transaction & TransactionContext utility module.
 
+use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
+use crate::{
+    l2_predeployed::l1_gas_price_oracle,
+    state_db::{CodeDB, StateDB},
+    Error,
+};
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, OpcodeId},
     geth_types,
@@ -7,14 +13,6 @@ use eth_types::{
     AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
 use ethers_core::utils::get_contract_address;
-
-use crate::{
-    l2_predeployed::l1_gas_price_oracle,
-    state_db::{CodeDB, StateDB},
-    Error,
-};
-
-use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
 /// Precision of transaction L1 fee
 pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
@@ -54,37 +52,7 @@ impl TransactionContext {
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
     ) -> Result<Self, Error> {
-        // Iterate over geth_trace to inspect and collect each call's is_success, which
-        // is at the top of stack at the step after a call.
-        // let old_call_is_success: Vec<bool> = {
-        //     let mut call_is_success_map = BTreeMap::new();
-        //     let mut call_indices = Vec::new();
-        //     for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-        //         if let Some(geth_next_step) = geth_trace.struct_logs.get(index + 1) {
-        //             // Dive into call
-        //             if geth_step.depth + 1 == geth_next_step.depth {
-        //                 call_indices.push(index);
-        //             // Emerge from call
-        //             } else if geth_step.depth - 1 == geth_next_step.depth {
-        //                 let is_success = !geth_next_step.stack.last()?.is_zero();
-        //                 call_is_success_map.insert(call_indices.pop().unwrap(), is_success);
-        //             // Callee with empty code
-        //             } else if CallKind::try_from(geth_step.op).is_ok() {
-        //                 let is_success = !geth_next_step.stack.last()?.is_zero();
-        //                 call_is_success_map.insert(index, is_success);
-        //             }
-        //         }
-        //     }
-        //
-        //     std::iter::once(!geth_trace.failed)
-        //         .chain(call_is_success_map.into_values())
-        //         .collect()
-        // };
-
-        // println!("old: {:?}", old_call_is_success);
         let call_is_success = geth_trace.call_trace.gen_call_is_success(vec![]);
-        // println!("new: {:?}", call_is_success);
-        // assert_eq!(old_call_is_success, call_is_success);
 
         let mut tx_ctx = Self {
             id: eth_tx
@@ -260,7 +228,7 @@ impl From<&Transaction> for geth_types::Transaction {
             nonce: Word::from(tx.nonce),
             gas_limit: Word::from(tx.gas),
             value: tx.value,
-            gas_price: tx.gas_price,
+            gas_price: Some(tx.gas_price),
             call_data: tx.input.clone().into(),
             v: tx.signature.v,
             r: tx.signature.r,

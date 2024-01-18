@@ -49,15 +49,16 @@ pub struct LoggerConfig {
 impl Default for LoggerConfig {
     fn default() -> Self {
         Self {
-            enable_memory: false,
+            enable_memory: cfg!(feature = "enable-memory"),
             disable_stack: !cfg!(feature = "enable-stack"),
-            disable_storage: false,
+            disable_storage: !cfg!(feature = "enable-storage"),
             enable_return_data: true,
         }
     }
 }
 
 impl LoggerConfig {
+    #[cfg(feature = "enable-memory")]
     pub fn enable_memory() -> Self {
         Self {
             enable_memory: true,

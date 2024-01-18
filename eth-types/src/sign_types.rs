@@ -15,8 +15,9 @@ use ethers_core::{
     utils::keccak256,
 };
 use halo2_proofs::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::CurveAffine,
     halo2curves::{
+        ff::FromUniformBytes,
         group::{
             ff::{Field as GroupField, PrimeField},
             prime::PrimeCurveAffine,
@@ -26,9 +27,9 @@ use halo2_proofs::{
         Coordinates,
     },
 };
-use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use sha3::digest::generic_array::GenericArray;
+use std::sync::LazyLock;
 use subtle::CtOption;
 
 /// Do a secp256k1 signature with a given randomness value.
@@ -45,7 +46,7 @@ pub fn sign(randomness: Fq, sk: Fq, msg_hash: Fq) -> (Fq, Fq, u8) {
     let mut x_bytes = [0u8; 64];
     x_bytes[..32].copy_from_slice(&x.to_bytes());
 
-    let sig_r = Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+    let sig_r = Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
 
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
     (sig_r, sig_s, u8::from(sig_v))
@@ -112,27 +113,27 @@ impl SignData {
     }
 }
 
-lazy_static! {
-    /// This is the sign data of default padding tx
-    static ref SIGN_DATA_DEFAULT: SignData = {
-        let (tx_req, sig) = get_dummy_tx();
-        let tx = Transaction {
-            tx_type: TxType::PreEip155,
-            rlp_unsigned_bytes: tx_req.rlp_unsigned().to_vec(),
-            rlp_bytes: tx_req.rlp_signed(&sig).to_vec(),
-            v: sig.v,
-            r: sig.r,
-            s: sig.s,
-            // other fields are irrelevant to get the sign_data()
-            ..Default::default()
-        };
-
-        let sign_data = tx.sign_data().unwrap();
-        assert_eq!(sign_data.get_addr(), address!("0x7e5f4552091a69125d5dfcb7b8c2659029395bdf"));
-
-        sign_data
+static SIGN_DATA_DEFAULT: LazyLock<SignData> = LazyLock::new(|| {
+    let (tx_req, sig) = get_dummy_tx();
+    let tx = Transaction {
+        tx_type: TxType::PreEip155,
+        rlp_unsigned_bytes: tx_req.rlp_unsigned().to_vec(),
+        rlp_bytes: tx_req.rlp_signed(&sig).to_vec(),
+        v: sig.v,
+        r: sig.r,
+        s: sig.s,
+        // other fields are irrelevant to get the sign_data()
+        ..Default::default()
     };
-}
+
+    let sign_data = tx.sign_data().unwrap();
+    assert_eq!(
+        sign_data.get_addr(),
+        address!("0x7e5f4552091a69125d5dfcb7b8c2659029395bdf")
+    );
+
+    sign_data
+});
 
 impl Default for SignData {
     // Hardcoded valid signature corresponding to a hardcoded private key and
@@ -190,13 +191,10 @@ pub fn recover_pk2(
     ct_option_ok_or(Secp256k1Affine::from_xy(x, y), Error::Signature)
 }
 
-lazy_static! {
-    /// Secp256k1 Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
-    /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
-    pub static ref SECP256K1_Q: BigUint = {
-        BigUint::from_bytes_le(&(Fq::zero() - Fq::one()).to_repr()) + 1u64
-    };
-}
+/// Secp256k1 Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
+/// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
+pub static SECP256K1_Q: LazyLock<BigUint> =
+    LazyLock::new(|| BigUint::from_bytes_le(&(Fq::zero() - Fq::one()).to_repr()) + 1u64);
 
 /// Helper function to convert a `CtOption` into an `Result`.  Similar to
 /// `Option::ok_or`.

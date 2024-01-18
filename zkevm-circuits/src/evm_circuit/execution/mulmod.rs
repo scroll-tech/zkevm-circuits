@@ -58,13 +58,13 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = cb.query_word_rlc();
         let e = cb.query_word_rlc();
 
-        // 1.  k1 * n + a_reduced  == a
+        // 1. k1 * n + a_reduced  == a
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
 
-        // 2.  a_reduced * b + 0 == d * 2^256 + e
+        // 2. a_reduced * b + 0 == d * 2^256 + e
         let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &d, &e], None);
 
-        // 3.  k2 * n + r == d * 2^256 + e
+        // 3. k2 * n + r == d * 2^256 + e
         let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
@@ -211,9 +211,10 @@ mod test {
         test(a.into(), b.into(), n.into(), r.map(Word::from), true)
     }
 
-    fn test_ko_u32(a: u32, b: u32, n: u32, r: Option<u32>) {
-        test(a.into(), b.into(), n.into(), r.map(Word::from), false)
-    }
+    // TODO: re-enable when we have a way to check for errors
+    // fn test_ko_u32(a: u32, b: u32, n: u32, r: Option<u32>) {
+    //     test(a.into(), b.into(), n.into(), r.map(Word::from), false)
+    // }
 
     #[test]
     fn mulmod_simple() {

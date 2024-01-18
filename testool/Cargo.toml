@@ -21,7 +21,6 @@ keccak256 = { path = "../keccak256" }
 log.workspace = true
 itertools.workspace = true
 mock = { path = "../mock" }
-once_cell.workspace = true
 prettytable-rs = "0.10"
 prover = { path = "../prover", optional = true }
 rayon.workspace = true
@@ -41,7 +40,7 @@ urlencoding = "2.1.2"
 ctor.workspace = true
 
 [features]
-default = ["ignore-test-docker", "skip-self-destruct", "shanghai"]
+default = ["ignore-test-docker", "skip-self-destruct", "shanghai", "enable-storage"]
 onephase = ["zkevm-circuits/onephase"]
 ignore-test-docker = []
 skip-self-destruct = []
@@ -50,5 +49,7 @@ scroll = ["bus-mapping/scroll", "eth-types/scroll", "external-tracer/scroll", "m
 parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn", "prover?/parallel_syn"]
 inner-prove = ["prover/test", "parallel_syn", "scroll", "shanghai"]
 chunk-prove = ["prover/test", "parallel_syn", "scroll", "shanghai"]
-enable-stack = ["bus-mapping/enable-stack", "zkevm-circuits/enable-stack", "eth-types/enable-stack"]
-enable-memory = ["bus-mapping/enable-memory", "zkevm-circuits/enable-memory", "eth-types/enable-memory"]
+
+enable-stack = ["zkevm-circuits/enable-stack"]
+enable-memory = ["zkevm-circuits/enable-memory"]
+enable-storage = ["zkevm-circuits/enable-storage"]

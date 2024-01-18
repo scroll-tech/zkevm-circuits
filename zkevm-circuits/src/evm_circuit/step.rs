@@ -9,13 +9,12 @@ use crate::{
     witness::Transaction,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
-use eth_types::evm_types::GasCost;
+use eth_types::{evm_types::GasCost, Field};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::{fmt::Display, iter};
+use std::{fmt::Display, iter, marker::ConstParamTy};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -36,7 +35,7 @@ impl From<PrecompileCalls> for ExecutionState {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(ConstParamTy, Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum ExecutionState {
     // Internal state
     BeginTx,
@@ -80,7 +79,9 @@ pub enum ExecutionState {
     BLOCKHASH,
     BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
     BLOCKCTXU160, // COINBASE
-    BLOCKCTXU256, // DIFFICULTY, BASEFEE
+    BLOCKCTXU256, // BASEFEE, DIFFICULTY (for non-scroll)
+    #[cfg(feature = "scroll")]
+    DIFFICULTY, // DIFFICULTY
     CHAINID,
     SELFBALANCE,
     POP,
@@ -170,6 +171,8 @@ impl ExecutionState {
                 | Self::PrecompileBn256ScalarMul
                 | Self::PrecompileBn256Pairing
                 | Self::PrecompileBlake2f
+                | Self::ErrorOutOfGasPrecompile
+                | Self::ErrorPrecompileFailed
         )
     }
 
@@ -270,11 +273,13 @@ impl ExecutionState {
             Self::BLOCKCTXU160 => vec![OpcodeId::COINBASE],
             Self::BLOCKCTXU256 => {
                 if cfg!(feature = "scroll") {
-                    vec![OpcodeId::DIFFICULTY]
+                    vec![OpcodeId::BASEFEE]
                 } else {
                     vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE]
                 }
             }
+            #[cfg(feature = "scroll")]
+            Self::DIFFICULTY => vec![OpcodeId::DIFFICULTY],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::POP => vec![OpcodeId::POP],
@@ -433,7 +438,7 @@ pub(crate) struct DynamicSelectorHalf<F> {
     pub(crate) target_pairs: Vec<Cell<F>>,
 }
 
-impl<F: FieldExt> DynamicSelectorHalf<F> {
+impl<F: Field> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
         let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
         let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
@@ -567,7 +572,7 @@ pub(crate) struct Step<F> {
     pub(crate) cell_manager: CellManager<F>,
 }
 
-impl<F: FieldExt> Step<F> {
+impl<F: Field> Step<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],

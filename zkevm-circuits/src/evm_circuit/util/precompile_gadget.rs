@@ -21,8 +21,9 @@ impl<F: Field> PrecompileGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         callee_address: Expression<F>,
         input_bytes_rlc: Expression<F>,
-        output_bytes_rlc: Expression<F>,
-        return_bytes_rlc: Expression<F>,
+        // for root call we do not need to constraint output and return
+        output_bytes_rlc: Option<Expression<F>>,
+        return_bytes_rlc: Option<Expression<F>>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
 
@@ -66,16 +67,20 @@ impl<F: Field> PrecompileGadget<F> {
                 next_input_bytes_rlc.expr(),
                 input_bytes_rlc.expr(),
             );
-            cb.require_equal(
-                "equality: RLC(output_bytes)",
-                next_output_bytes_rlc.expr(),
-                output_bytes_rlc.expr(),
-            );
-            cb.require_equal(
-                "equality: RLC(return_bytes)",
-                next_return_bytes_rlc.expr(),
-                return_bytes_rlc.expr(),
-            );
+            if let Some(output_bytes_rlc) = output_bytes_rlc {
+                cb.require_equal(
+                    "equality: RLC(output_bytes)",
+                    next_output_bytes_rlc.expr(),
+                    output_bytes_rlc.expr(),
+                );
+            }
+            if let Some(return_bytes_rlc) = return_bytes_rlc {
+                cb.require_equal(
+                    "equality: RLC(return_bytes)",
+                    next_return_bytes_rlc.expr(),
+                    return_bytes_rlc.expr(),
+                );
+            }
         });
 
         Self { address }

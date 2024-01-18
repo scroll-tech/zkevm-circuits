@@ -23,6 +23,29 @@ use eth_types::l2_types::BlockTrace;
 use eth_types::{address, bytecode, word, Bytecode, ToWord, Word};
 
 #[test]
+fn super_circuit_created_from_dummy_block() {
+    let dummy_block = Block::<Fr> {
+        circuits_params: CircuitsParams {
+            max_rws: 4_000_000,
+            max_copy_rows: 0, // dynamic
+            max_txs: 10,
+            max_calldata: 2_000_000,
+            max_inner_blocks: 8,
+            max_bytecode: 3_000_000,
+            max_mpt_rows: 2_000_000,
+            max_poseidon_rows: 4_000_000,
+            max_keccak_rows: 0,
+            max_exp_steps: 100_000,
+            max_evm_rows: 0,
+            max_rlp_rows: 2_070_000,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let _circuit = SuperCircuit::<Fr, 128, 2_000_000, 64, 0x1000>::new_from_block(&dummy_block);
+}
+
+#[test]
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
     SuperCircuit::<Fr, 1, 32, 64, 0x100>::configure(&mut cs);
@@ -109,7 +132,7 @@ fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
 fn block_1tx_deploy() -> BlockTrace {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let addr_a = wallet_a.address();
@@ -133,7 +156,7 @@ fn block_1tx_deploy() -> BlockTrace {
 fn block_1tx_ctx() -> TestContext<2, 1> {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -177,7 +200,7 @@ pub(crate) fn block_1tx() -> GethData {
 fn block_2tx_ctx() -> TestContext<2, 2> {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = *MOCK_CHAIN_ID;
+    let chain_id = MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -445,6 +468,19 @@ fn serial_test_super_circuit_precompile_invalid_ec_pairing_fq_overflow() {
     const MAX_CALLDATA: usize = 0x180;
 
     let block = precompile_block_trace::block_precompile_invalid_ec_pairing_fq_overflow();
+    let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
+
+    test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
+}
+
+#[ignore]
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_super_circuit_precompile_sha256() {
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 0x180;
+
+    let block = precompile_block_trace::block_precompile_sha256();
     let circuits_params = precomiple_super_circuits_params(MAX_TXS, MAX_CALLDATA);
 
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);

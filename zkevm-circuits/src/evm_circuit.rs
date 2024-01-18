@@ -23,7 +23,7 @@ use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
         BlockTable, BytecodeTable, CopyTable, EccTable, ExpTable, KeccakTable, LookupTable,
-        ModExpTable, PowOfRandTable, RwTable, SigTable, TxTable,
+        ModExpTable, PowOfRandTable, RwTable, SHA256Table, SigTable, TxTable,
     },
     util::{SubCircuit, SubCircuitConfig},
 };
@@ -48,6 +48,7 @@ pub struct EvmCircuitConfig<F> {
     block_table: BlockTable,
     copy_table: CopyTable,
     keccak_table: KeccakTable,
+    sha256_table: SHA256Table,
     exp_table: ExpTable,
     sig_table: SigTable,
     modexp_table: ModExpTable,
@@ -71,6 +72,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub copy_table: CopyTable,
     /// KeccakTable
     pub keccak_table: KeccakTable,
+    /// SHA256Table
+    pub sha256_table: SHA256Table,
     /// ExpTable
     pub exp_table: ExpTable,
     /// SigTable
@@ -105,6 +108,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             block_table,
             copy_table,
             keccak_table,
+            sha256_table,
             exp_table,
             sig_table,
             modexp_table,
@@ -125,6 +129,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &block_table,
             &copy_table,
             &keccak_table,
+            &sha256_table,
             &exp_table,
             &sig_table,
             &modexp_table,
@@ -158,6 +163,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             block_table,
             copy_table,
             keccak_table,
+            sha256_table,
             exp_table,
             sig_table,
             modexp_table,
@@ -283,11 +289,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 }
 
-// the diff is from the num of valid opcodes: self-destruct?
-#[cfg(not(feature = "scroll"))]
 const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3647;
-#[cfg(feature = "scroll")]
-const FIXED_TABLE_ROWS_NO_BITWISE: usize = 3646;
 const FIXED_TABLE_ROWS: usize = FIXED_TABLE_ROWS_NO_BITWISE + 3 * 65536;
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
@@ -382,22 +384,20 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
 pub(crate) mod cached {
     use super::*;
     use halo2_proofs::halo2curves::bn256::Fr;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
     struct Cache {
         cs: ConstraintSystem<Fr>,
         config: (EvmCircuitConfig<Fr>, Challenges),
     }
 
-    lazy_static! {
-        /// Cached values of the ConstraintSystem after the EVM Circuit configuration and the EVM
-        /// Circuit configuration.  These values are calculated just once.
-        static ref CACHE: Cache = {
-            let mut meta = ConstraintSystem::<Fr>::default();
-            let config = EvmCircuit::<Fr>::configure(&mut meta);
-            Cache { cs: meta, config }
-        };
-    }
+    /// Cached values of the ConstraintSystem after the EVM Circuit configuration and the EVM
+    /// Circuit configuration.  These values are calculated just once.
+    static CACHE: LazyLock<Cache> = LazyLock::new(|| {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        let config = EvmCircuit::<Fr>::configure(&mut meta);
+        Cache { cs: meta, config }
+    });
 
     /// Wrapper over the EvmCircuit that behaves the same way and also
     /// implements the halo2 Circuit trait, but reuses the precalculated
@@ -445,6 +445,8 @@ use crate::util::MockChallenges as Challenges;
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -460,6 +462,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let keccak_table = KeccakTable::construct(meta);
+        let sha256_table = SHA256Table::construct(meta);
         let exp_table = ExpTable::construct(meta);
         let sig_table = SigTable::construct(meta);
         let modexp_table = ModExpTable::construct(meta);
@@ -476,6 +479,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     block_table,
                     copy_table,
                     keccak_table,
+                    sha256_table,
                     exp_table,
                     sig_table,
                     modexp_table,
@@ -524,6 +528,14 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
+        config.sha256_table.dev_load(
+            &mut layouter,
+            block
+                .get_sha256()
+                .iter()
+                .map(|evt| (&evt.input, &evt.digest)),
+            &challenges,
+        )?;
         config.exp_table.dev_load(&mut layouter, block)?;
         config
             .sig_table

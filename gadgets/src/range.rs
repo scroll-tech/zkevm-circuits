@@ -9,14 +9,13 @@
 use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
     poly::Rotation,
 };
 
 /// Instruction that the Range chip needs to implement.
-pub trait UIntRangeCheckInstruction<F: FieldExt, const N_2BYTE: usize, const N_EXPR: usize> {
+pub trait UIntRangeCheckInstruction<F: Field, const N_2BYTE: usize, const N_EXPR: usize> {
     /// Assign the expr and u16 le repr witnesses to the Comparator chip's region.
     fn assign(
         &self,

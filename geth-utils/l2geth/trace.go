@@ -2,18 +2,18 @@ package main
 
 import (
 	"fmt"
-	"github.com/scroll-tech/go-ethereum/core"
-	"github.com/scroll-tech/go-ethereum/hack"
 	"math/big"
 
 	"github.com/imdario/mergo"
 	"github.com/scroll-tech/go-ethereum/common"
 	"github.com/scroll-tech/go-ethereum/common/hexutil"
+	"github.com/scroll-tech/go-ethereum/core"
 	"github.com/scroll-tech/go-ethereum/core/rawdb"
 	"github.com/scroll-tech/go-ethereum/core/state"
 	"github.com/scroll-tech/go-ethereum/core/types"
 	"github.com/scroll-tech/go-ethereum/core/vm"
 	"github.com/scroll-tech/go-ethereum/params"
+	"github.com/scroll-tech/go-ethereum/rollup/tracing"
 	"github.com/scroll-tech/go-ethereum/trie"
 )
 
@@ -44,8 +44,10 @@ type Transaction struct {
 	GasTipCap  *hexutil.Big    `json:"gas_tip_cap"`
 	CallData   hexutil.Bytes   `json:"call_data"`
 	AccessList []struct {
-		Address     common.Address `json:"address"`
-		StorageKeys []common.Hash  `json:"storage_keys"`
+		Address common.Address `json:"address"`
+		// Must be `storageKeys`, since `camelCase` is specified in ethers-rs.
+		// <https://github.com/gakonst/ethers-rs/blob/88095ba47eb6a3507f0db1767353b387b27a6e98/ethers-core/src/types/transaction/eip2930.rs#L75>
+		StorageKeys []common.Hash `json:"storageKeys"`
 	} `json:"access_list"`
 	Type string       `json:"tx_type"`
 	V    int64        `json:"v"`
@@ -231,7 +233,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		return nil, err
 	}
 
-	traceEnv := hack.CreateTraceEnvHelper(
+	traceEnv := tracing.CreateTraceEnvHelper(
 		&chainConfig,
 		config.LoggerConfig,
 		blockCtx,

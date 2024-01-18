@@ -27,12 +27,12 @@ pub fn r<F: Field>() -> F {
     }
     let mut r = [0; 64];
     r[..32].copy_from_slice(hasher.finalize().as_slice());
-    F::from_bytes_wide(&r)
+    F::from_uniform_bytes(&r)
 }
 
 /// Returns encoding of big-endian representation of a 256-bit word.
 pub fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
-    vals.fold(F::zero(), |acc, val| {
+    vals.fold(F::ZERO, |acc, val| {
         let byte = F::from(val as u64);
         acc * r + byte
     })
@@ -72,7 +72,7 @@ impl<F: Field> WordConfig<F> {
         byte_lookup: Column<Fixed>,
     ) -> Self {
         // Expression representing `encode(word)`.
-        let mut encode_word_expr = Expression::Constant(F::zero());
+        let mut encode_word_expr = Expression::Constant(F::ZERO);
 
         // Lookup each byte in the witnessed word representation to
         // range-constrain it to 8 bits.
@@ -177,6 +177,8 @@ mod tests {
             // commitment which will be provided as public inputs.
             type Config = (WordConfig<F>, Column<Instance>);
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()

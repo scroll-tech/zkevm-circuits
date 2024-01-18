@@ -218,6 +218,9 @@
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::result_large_err)] // it's large, but what can we do?
 #![allow(clippy::collapsible_else_if)]
+#![allow(incomplete_features)]
+#![feature(lazy_cell)]
+#![feature(adt_const_params)]
 
 extern crate alloc;
 extern crate core;
@@ -226,7 +229,6 @@ pub mod circuit_input_builder;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;
-pub(crate) mod geth_errors;
 pub mod l2_predeployed;
 pub mod mock;
 pub mod operation;

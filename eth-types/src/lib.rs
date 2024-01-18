@@ -3,10 +3,15 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
+#![allow(incomplete_features)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
+#![allow(incomplete_features)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
+// GasCost is used as type parameter
+#![feature(adt_const_params)]
+#![feature(lazy_cell)]
 #![deny(missing_docs)]
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
@@ -23,46 +28,64 @@ pub mod geth_types;
 pub mod l2_types;
 pub mod sign_types;
 
-use crate::evm_types::{storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter};
+use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
 pub use error::Error;
 use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
     types::{
-        transaction::{eip2930::AccessList, response::Transaction},
+        transaction::{
+            eip2930::{AccessList, AccessListItem},
+            response::Transaction,
+        },
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
-use halo2_proofs::{
-    arithmetic::{Field as Halo2Field, FieldExt},
-    halo2curves::{bn256::Fr, group::ff::PrimeField},
+use halo2_base::utils::ScalarField;
+use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use std::{
+    collections::HashMap,
+    fmt,
+    fmt::{Display, Formatter},
+    str::FromStr,
+    sync::LazyLock,
 };
-use once_cell::sync::Lazy;
-use serde::{de, Deserialize, Serialize};
-use std::{collections::HashMap, fmt, str::FromStr};
 
 #[cfg(feature = "enable-memory")]
-use crate::evm_types::memory::Memory;
+use crate::evm_types::Memory;
 #[cfg(feature = "enable-stack")]
-use crate::evm_types::stack::Stack;
+use crate::evm_types::Stack;
+#[cfg(feature = "enable-storage")]
+use crate::evm_types::Storage;
 
-/// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
+/// Trait used to reduce verbosity with the declaration of the [`Field`]
 /// trait and its repr.
 pub trait Field:
-    FieldExt
-    + Halo2Field
-    + PrimeField<Repr = [u8; 32]>
-    + hash_circuit::hash::Hashable
-    + std::convert::From<Fr>
+    PrimeField<Repr = [u8; 32]> + hash_circuit::hash::Hashable + std::convert::From<Fr> + ScalarField
 {
+    /// Re-expose zero element as a function
+    fn zero() -> Self {
+        Self::ZERO
+    }
+
+    /// Re-expose one element as a function
+    fn one() -> Self {
+        Self::ONE
+    }
+
+    /// Expose the lower 128 bits
+    fn get_lower_128(&self) -> u128 {
+        u128::from_le_bytes(self.to_repr().as_ref()[..16].try_into().unwrap())
+    }
 }
 
 // Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
 
-// Impl custom `Field` trait for BN256 Frq to be used and consistent with the
+// Impl custom `Field` trait for BN256 Fq to be used and consistent with the
 // rest of the workspace.
 // impl Field for Fq {}
 
@@ -295,11 +318,11 @@ impl<F: Field> ToScalar<F> for usize {
 
 /// Code hash related
 /// the empty keccak code hash
-pub static KECCAK_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+pub static KECCAK_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
     Hash::from_str("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470").unwrap()
 });
 /// the empty poseidon code hash
-pub static POSEIDON_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+pub static POSEIDON_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
     Hash::from_str("0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864").unwrap()
 });
 /// Struct used to define the storage proof
@@ -351,14 +374,17 @@ struct GethExecStepInternal {
     #[serde(rename = "gasCost")]
     gas_cost: GasCost,
     depth: u16,
-    error: Option<String>,
+    error: Option<GethExecError>,
     // stack is in hex 0x prefixed
+    #[cfg(feature = "enable-stack")]
     #[serde(default)]
     stack: Vec<DebugU256>,
     // memory is in chunks of 32 bytes, in hex
+    #[cfg(feature = "enable-memory")]
     #[serde(default)]
     memory: Vec<DebugU256>,
     // storage is hex -> hex
+    #[cfg(feature = "enable-storage")]
     #[serde(default)]
     storage: HashMap<DebugU256, DebugU256>,
 }
@@ -374,7 +400,7 @@ pub struct GethExecStep {
     pub gas_cost: GasCost,
     pub refund: Gas,
     pub depth: u16,
-    pub error: Option<String>,
+    pub error: Option<GethExecError>,
     // stack is in hex 0x prefixed
     #[cfg(feature = "enable-stack")]
     pub stack: Stack,
@@ -382,7 +408,180 @@ pub struct GethExecStep {
     #[cfg(feature = "enable-memory")]
     pub memory: Memory,
     // storage is hex -> hex
+    #[cfg(feature = "enable-storage")]
     pub storage: Storage,
+}
+
+/// Errors of StructLogger Result from Geth
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum GethExecError {
+    /// out of gas
+    OutOfGas,
+    /// contract creation code storage out of gas
+    CodeStoreOutOfGas,
+    /// max call depth exceeded
+    Depth,
+    /// insufficient balance for transfer
+    InsufficientBalance,
+    /// contract address collision
+    ContractAddressCollision,
+    /// execution reverted
+    ExecutionReverted,
+    /// max initcode size exceeded
+    MaxInitCodeSizeExceeded,
+    /// max code size exceeded
+    MaxCodeSizeExceeded,
+    /// invalid jump destination
+    InvalidJump,
+    /// write protection
+    WriteProtection,
+    /// return data out of bounds
+    ReturnDataOutOfBounds,
+    /// gas uint64 overflow
+    GasUintOverflow,
+    /// invalid code: must not begin with 0xef
+    InvalidCode,
+    /// nonce uint64 overflow
+    NonceUintOverflow,
+    /// stack underflow
+    StackUnderflow {
+        /// stack length
+        stack_len: u64,
+        /// required length
+        required: u64,
+    },
+    /// stack limit reached
+    StackOverflow {
+        /// stack length
+        stack_len: u64,
+        /// stack limit
+        limit: u64,
+    },
+    /// invalid opcode
+    InvalidOpcode(OpcodeId),
+}
+
+impl GethExecError {
+    /// Returns the error as a string constant.
+    pub fn error(self) -> &'static str {
+        match self {
+            GethExecError::OutOfGas => "out of gas",
+            GethExecError::CodeStoreOutOfGas => "contract creation code storage out of gas",
+            GethExecError::Depth => "max call depth exceeded",
+            GethExecError::InsufficientBalance => "insufficient balance for transfer",
+            GethExecError::ContractAddressCollision => "contract address collision",
+            GethExecError::ExecutionReverted => "execution reverted",
+            GethExecError::MaxInitCodeSizeExceeded => "max initcode size exceeded",
+            GethExecError::MaxCodeSizeExceeded => "max code size exceeded",
+            GethExecError::InvalidJump => "invalid jump destination",
+            GethExecError::WriteProtection => "write protection",
+            GethExecError::ReturnDataOutOfBounds => "return data out of bounds",
+            GethExecError::GasUintOverflow => "gas uint64 overflow",
+            GethExecError::InvalidCode => "invalid code: must not begin with 0xef",
+            GethExecError::NonceUintOverflow => "nonce uint64 overflow",
+            GethExecError::StackUnderflow { .. } => "stack underflow",
+            GethExecError::StackOverflow { .. } => "stack limit reached",
+            GethExecError::InvalidOpcode(_) => "invalid opcode",
+        }
+    }
+}
+
+impl Display for GethExecError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            GethExecError::StackUnderflow {
+                stack_len,
+                required,
+            } => {
+                write!(f, "stack underflow ({stack_len} <=> {required})")
+            }
+            GethExecError::StackOverflow { stack_len, limit } => {
+                write!(f, "stack limit reached {stack_len} ({limit})")
+            }
+            GethExecError::InvalidOpcode(op) => {
+                write!(f, "invalid opcode: {op}")
+            }
+            _ => f.write_str(self.error()),
+        }
+    }
+}
+
+impl Serialize for GethExecError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // We serialize the error as a string constant.
+        serializer.serialize_str(self.error())
+    }
+}
+
+impl<'de> Deserialize<'de> for GethExecError {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct GethExecErrorVisitor;
+
+        static STACK_UNDERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
+        static STACK_OVERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
+
+        impl<'de> de::Visitor<'de> for GethExecErrorVisitor {
+            type Value = GethExecError;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                write!(formatter, "a geth struct logger error string constant")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let e = match v {
+                    "out of gas" => GethExecError::OutOfGas,
+                    "contract creation code storage out of gas" => GethExecError::CodeStoreOutOfGas,
+                    "max call depth exceeded" => GethExecError::Depth,
+                    "insufficient balance for transfer" => GethExecError::InsufficientBalance,
+                    "contract address collision" => GethExecError::ContractAddressCollision,
+                    "execution reverted" => GethExecError::ExecutionReverted,
+                    "max initcode size exceeded" => GethExecError::MaxInitCodeSizeExceeded,
+                    "max code size exceeded" => GethExecError::MaxCodeSizeExceeded,
+                    "invalid jump destination" => GethExecError::InvalidJump,
+                    "write protection" => GethExecError::WriteProtection,
+                    "return data out of bounds" => GethExecError::ReturnDataOutOfBounds,
+                    "gas uint64 overflow" => GethExecError::GasUintOverflow,
+                    "invalid code: must not begin with 0xef" => GethExecError::InvalidCode,
+                    "nonce uint64 overflow" => GethExecError::NonceUintOverflow,
+                    _ if v.starts_with("stack underflow") => {
+                        let caps = STACK_UNDERFLOW_RE.captures(v).unwrap();
+                        let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
+                        let required = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
+                        GethExecError::StackUnderflow {
+                            stack_len,
+                            required,
+                        }
+                    }
+                    _ if v.starts_with("stack limit reached") => {
+                        let caps = STACK_OVERFLOW_RE.captures(v).unwrap();
+                        let stack_len = caps.get(1).unwrap().as_str().parse::<u64>().unwrap();
+                        let limit = caps.get(2).unwrap().as_str().parse::<u64>().unwrap();
+                        GethExecError::StackOverflow { stack_len, limit }
+                    }
+                    _ if v.starts_with("invalid opcode") => v
+                        .strip_prefix("invalid opcode: ")
+                        .map(|s| OpcodeId::from_str(s).unwrap())
+                        .map(GethExecError::InvalidOpcode)
+                        .unwrap(),
+                    _ => return Err(E::invalid_value(de::Unexpected::Str(v), &self)),
+                };
+                Ok(e)
+            }
+        }
+
+        deserializer.deserialize_str(GethExecErrorVisitor)
+    }
 }
 
 // Wrapper over u8 that provides formats the byte in hex for [`fmt::Debug`].
@@ -406,8 +605,8 @@ impl<'a> fmt::Debug for DebugWord<'a> {
 
 impl fmt::Debug for GethExecStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut fmt = f.debug_struct("Step");
-        fmt.field("pc", &format_args!("0x{:04x}", self.pc.0))
+        let mut f = f.debug_struct("Step");
+        f.field("pc", &format_args!("0x{:04x}", self.pc.0))
             .field("op", &self.op)
             .field("gas", &format_args!("{}", self.gas.0))
             .field("gas_cost", &format_args!("{}", self.gas_cost.0))
@@ -415,9 +614,12 @@ impl fmt::Debug for GethExecStep {
             .field("depth", &self.depth)
             .field("error", &self.error);
         #[cfg(feature = "enable-stack")]
-        fmt.field("stack", &self.stack);
-        // .field("memory", &self.memory)
-        fmt.field("storage", &self.storage).finish()
+        f.field("stack", &self.stack);
+        #[cfg(feature = "enable-memory")]
+        f.field("memory", &self.memory);
+        #[cfg(feature = "enable-storage")]
+        f.field("storage", &self.storage);
+        f.finish()
     }
 }
 
@@ -444,6 +646,7 @@ impl<'de> Deserialize<'de> for GethExecStep {
                     .map(|dw| dw.to_word())
                     .collect::<Vec<Word>>(),
             ),
+            #[cfg(feature = "enable-storage")]
             storage: Storage(
                 s.storage
                     .iter()
@@ -491,15 +694,26 @@ pub struct GethExecTrace {
     /// Vector of geth execution steps of the trace.
     #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
-    #[serde(rename = "accountAfter", default)]
+    #[serde(
+        rename = "accountAfter",
+        default,
+        deserialize_with = "parse_account_after"
+    )]
     /// List of accounts' (coinbase etc) status AFTER execution
     /// Only viable for scroll mode
     pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
     /// prestate trace
-    pub prestate: Option<HashMap<Address, GethPrestateTrace>>,
+    pub prestate: HashMap<Address, GethPrestateTrace>,
     /// call trace
     #[serde(rename = "callTrace")]
     pub call_trace: GethCallTrace,
+}
+
+fn parse_account_after<'de, D>(d: D) -> Result<Vec<crate::l2_types::AccountProofWrapper>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d).map(|x: Option<_>| x.unwrap_or_default())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -509,7 +723,8 @@ pub struct ResultGethPrestateTraces(pub Vec<ResultGethPrestateTrace>);
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub struct ResultGethPrestateTrace {
-    pub txHash: H256,
+    #[serde(rename = "txHash", default)]
+    pub tx_hash: H256,
     pub result: HashMap<Address, GethPrestateTrace>,
 }
 
@@ -673,6 +888,7 @@ mod tests {
         ]
       }
     ],
+    "prestate": {},
     "callTrace": {
       "calls": [],
       "error": null,
@@ -701,6 +917,7 @@ mod tests {
                         error: None,
                         #[cfg(feature = "enable-stack")]
                         stack: Stack::new(),
+                        #[cfg(feature = "enable-storage")]
                         storage: Storage(word_map!()),
                         #[cfg(feature = "enable-memory")]
                         memory: Memory::new(),
@@ -715,6 +932,7 @@ mod tests {
                         error: None,
                         #[cfg(feature = "enable-stack")]
                         stack: Stack(vec![word!("0x1003e2d2"), word!("0x2a"), word!("0x0")]),
+                        #[cfg(feature = "enable-storage")]
                         storage: Storage(word_map!("0x0" => "0x6f")),
                         #[cfg(feature = "enable-memory")]
                         memory: Memory::from(vec![word!("0x0"), word!("0x0"), word!("0x080")]),
@@ -733,6 +951,7 @@ mod tests {
                             word!("0x40"),
                             word!("0x0")
                         ]),
+                        #[cfg(feature = "enable-storage")]
                         storage: Storage(word_map!()),
                         #[cfg(feature = "enable-memory")]
                         memory: Memory::from(vec![
@@ -757,7 +976,7 @@ mod tests {
                         ]),
                     }
                 ],
-                prestate: None,
+                prestate: HashMap::new(),
                 call_trace: GethCallTrace {
                     calls: Vec::new(),
                     error: None,

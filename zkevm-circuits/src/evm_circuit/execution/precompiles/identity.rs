@@ -28,7 +28,7 @@ pub struct IdentityGadget<F> {
     input_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     is_success: Cell<F>,
     callee_address: Cell<F>,
-    caller_id: Cell<F>,
+    is_root: Cell<F>,
     call_data_offset: Cell<F>,
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
@@ -47,11 +47,11 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
         );
-        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
+        let [is_success, callee_address, is_root, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
                 CallContextFieldTag::CalleeAddress,
-                CallContextFieldTag::CallerId,
+                CallContextFieldTag::IsRoot,
                 CallContextFieldTag::CallDataOffset,
                 CallContextFieldTag::CallDataLength,
                 CallContextFieldTag::ReturnDataOffset,
@@ -84,15 +84,12 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             output_bytes_rlc.expr(),
         );
 
-        let restore_context = RestoreContextGadget::construct2(
+        let restore_context = super::gen_restore_context(
             cb,
+            is_root.expr(),
             is_success.expr(),
             gas_cost.expr(),
-            0.expr(),
-            0x00.expr(),             // ReturnDataOffset
-            call_data_length.expr(), // ReturnDataLength
-            0.expr(),
-            0.expr(),
+            call_data_length.expr(),
         );
 
         Self {
@@ -103,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             input_word_size,
             is_success,
             callee_address,
-            caller_id,
+            is_root,
             call_data_offset,
             call_data_length,
             return_data_offset,
@@ -170,8 +167,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             offset,
             Value::known(call.code_address.unwrap().to_scalar().unwrap()),
         )?;
-        self.caller_id
-            .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
+        self.is_root
+            .assign(region, offset, Value::known(F::from(call.is_root as u64)))?;
         self.call_data_offset.assign(
             region,
             offset,
@@ -199,6 +196,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{
         evm::{OpcodeId, PrecompileCallArgs},
         precompile::PrecompileCalls,
@@ -206,65 +204,62 @@ mod test {
     use eth_types::{bytecode, word, ToWord};
     use itertools::Itertools;
     use mock::TestContext;
+    use std::sync::LazyLock;
 
-    use crate::test_util::CircuitTestBuilder;
-
-    lazy_static::lazy_static! {
-        static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
-            vec![
-                PrecompileCallArgs {
-                    name: "single-byte success",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH1(0xff)
-                        PUSH1(0x00)
-                        MSTORE
-                    },
-                    call_data_offset: 0x1f.into(),
-                    call_data_length: 0x01.into(),
-                    ret_offset: 0x3f.into(),
-                    ret_size: 0x01.into(),
-                    address: PrecompileCalls::Identity.address().to_word(),
-                    ..Default::default()
+    static TEST_VECTOR: LazyLock<Vec<PrecompileCallArgs>> = LazyLock::new(|| {
+        vec![
+            PrecompileCallArgs {
+                name: "single-byte success",
+                setup_code: bytecode! {
+                    // place params in memory
+                    PUSH1(0xff)
+                    PUSH1(0x00)
+                    MSTORE
                 },
-                PrecompileCallArgs {
-                    name: "multi-bytes success (less than 32 bytes)",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH16(word!("0x0123456789abcdef0f1e2d3c4b5a6978"))
-                        PUSH1(0x00)
-                        MSTORE
-                    },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x10.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x10.into(),
-                    address: PrecompileCalls::Identity.address().to_word(),
-                    ..Default::default()
+                call_data_offset: 0x1f.into(),
+                call_data_length: 0x01.into(),
+                ret_offset: 0x3f.into(),
+                ret_size: 0x01.into(),
+                address: PrecompileCalls::Identity.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "multi-bytes success (less than 32 bytes)",
+                setup_code: bytecode! {
+                    // place params in memory
+                    PUSH16(word!("0x0123456789abcdef0f1e2d3c4b5a6978"))
+                    PUSH1(0x00)
+                    MSTORE
                 },
-                PrecompileCallArgs {
-                    name: "multi-bytes success (more than 32 bytes)",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH30(word!("0x0123456789abcdef0f1e2d3c4b5a6978"))
-                        PUSH1(0x00) // place from 0x00 in memory
-                        MSTORE
-                        PUSH30(word!("0xaabbccdd001122331039abcdefefef84"))
-                        PUSH1(0x20) // place from 0x20 in memory
-                        MSTORE
-                    },
-                    // copy 63 bytes from memory addr 0
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x3f.into(),
-                    // return only 35 bytes and write from memory addr 72
-                    ret_offset: 0x48.into(),
-                    ret_size: 0x23.into(),
-                    address: PrecompileCalls::Identity.address().to_word(),
-                    ..Default::default()
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x10.into(),
+                ret_offset: 0x20.into(),
+                ret_size: 0x10.into(),
+                address: PrecompileCalls::Identity.address().to_word(),
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "multi-bytes success (more than 32 bytes)",
+                setup_code: bytecode! {
+                    // place params in memory
+                    PUSH30(word!("0x0123456789abcdef0f1e2d3c4b5a6978"))
+                    PUSH1(0x00) // place from 0x00 in memory
+                    MSTORE
+                    PUSH30(word!("0xaabbccdd001122331039abcdefefef84"))
+                    PUSH1(0x20) // place from 0x20 in memory
+                    MSTORE
                 },
-            ]
-        };
-    }
+                // copy 63 bytes from memory addr 0
+                call_data_offset: 0x00.into(),
+                call_data_length: 0x3f.into(),
+                // return only 35 bytes and write from memory addr 72
+                ret_offset: 0x48.into(),
+                ret_size: 0x23.into(),
+                address: PrecompileCalls::Identity.address().to_word(),
+                ..Default::default()
+            },
+        ]
+    });
 
     #[test]
     fn precompile_identity_test() {

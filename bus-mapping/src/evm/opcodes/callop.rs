@@ -53,6 +53,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let tx_id = state.tx_ctx.id();
         let callee_kind = CallKind::try_from(geth_step.op)?;
         let caller_call = state.call()?.clone();
+        // we need those information but we haven't parse callee's call yet
         let caller_address = match callee_kind {
             CallKind::Call | CallKind::CallCode | CallKind::StaticCall => caller_call.address,
             CallKind::DelegateCall => caller_call.caller_address,
@@ -79,6 +80,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let callee_call = if is_precheck_ok {
             state.parse_call(geth_step)?
         } else {
+            // if precheck not ok, the call won't appear in call trace since it never happens
+            // we need to increase the offset and mannually set the is_success
             state.tx_ctx.call_is_success_offset += 1;
             let mut call = state.parse_call_partial(geth_step)?;
             call.is_success = false;
@@ -322,6 +325,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         callee_call.code_address().unwrap().to_word(),
                     ),
                     (CallContextField::CallerId, callee_call.caller_id.into()),
+                    (CallContextField::IsRoot, 0.into()),
                     (
                         CallContextField::CallDataOffset,
                         callee_call.call_data_offset.into(),
@@ -408,6 +412,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             log_id: None,
                             rw_counter_start,
                             copy_bytes: CopyBytes::new(copy_steps, None, None),
+                            access_list: vec![],
                         },
                     );
                     Some(input_bytes)
@@ -438,6 +443,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             log_id: None,
                             rw_counter_start,
                             copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
+                            access_list: vec![],
                         },
                     );
                     Some(output_bytes)
@@ -477,6 +483,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                                 Some(write_steps),
                                 Some(prev_bytes),
                             ),
+                            access_list: vec![],
                         },
                     );
                     Some(returned_bytes)
@@ -788,9 +795,6 @@ pub mod tests {
                 address: Word::from(0x2),
                 stack_value: vec![(
                     Word::from(0x20),
-                    #[cfg(feature = "scroll")]
-                    Word::zero(),
-                    #[cfg(not(feature = "scroll"))]
                     word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
                 )],
                 ..Default::default()

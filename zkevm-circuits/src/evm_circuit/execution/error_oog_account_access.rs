@@ -139,12 +139,11 @@ mod test {
         Address, Bytecode, ToWord, Word, U256,
     };
     use itertools::Itertools;
-    use lazy_static::lazy_static;
     use mock::TestContext;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
-    }
+    static TEST_ADDRESS: LazyLock<Address> =
+        LazyLock::new(|| address!("0xaabbccddee000000000000000000000000000000"));
 
     #[test]
     fn oog_account_access_root() {

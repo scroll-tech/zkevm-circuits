@@ -1,48 +1,56 @@
+use super::{
+    error_oog_precompile::ErrorOOGPrecompile,
+    precompiles::gen_ops as precompile_gen_ops_for_begin_tx,
+};
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyAccessList, CopyBytes, CopyDataType, CopyEvent, ExecStep,
+        NumberOrHash,
     },
     l2_predeployed::l1_gas_price_oracle,
     operation::{
         AccountField, AccountOp, CallContextField, StorageOp, TxReceiptField, TxRefundOp, RW,
     },
-    precompile::is_precompiled,
+    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
-use core::fmt::Debug;
 use eth_types::{
-    evm_types::{gas_utils::tx_data_gas_cost, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{
+        gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
+        GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED,
+    },
     Bytecode, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
 
-use super::TxExecSteps;
+// #[derive(Clone, Copy, Debug)]
+// pub(crate) struct BeginEndTx;
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct BeginEndTx;
+// impl TxExecSteps for BeginEndTx {
+//     fn gen_associated_steps(
+//         state: &mut CircuitInputStateRef,
+//         execution_step: ExecState,
+//     ) -> Result<ExecStep, Error> {
+//         match execution_step {
+//             ExecState::BeginTx => gen_begin_tx_steps(state),
+//             ExecState::EndTx => gen_end_tx_steps(state),
+//             _ => {
+//                 unreachable!()
+//             }
+//         }
+//     }
+// }
 
-impl TxExecSteps for BeginEndTx {
-    fn gen_associated_steps(
-        state: &mut CircuitInputStateRef,
-        execution_step: ExecState,
-    ) -> Result<ExecStep, Error> {
-        match execution_step {
-            ExecState::BeginTx => gen_begin_tx_steps(state),
-            ExecState::EndTx => gen_end_tx_steps(state),
-            _ => {
-                unreachable!()
-            }
-        }
-    }
-}
-
-pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
+pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
     let mut exec_step = state.new_begin_tx_step();
+
+    // Add two copy-events for tx access-list addresses and storage keys for
+    // EIP-1559 and EIP-2930.
+    gen_tx_access_list_ops(state, &mut exec_step)?;
+
     let call = state.call()?.clone();
-
     let caller_address = call.caller_address;
-
     if state.tx.tx_type.is_l1_msg() {
         // for l1 message, no need to add rw op, but we must check
         // caller for its existent status
@@ -140,7 +148,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     for address in 1..=9 {
         let address = eth_types::Address::from_low_u64_be(address);
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
-        state.tx_accesslist_account_write(
+        state.tx_access_list_account_write(
             &mut exec_step,
             state.tx_ctx.id(),
             address,
@@ -165,7 +173,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     let accessed_addresses = [call.caller_address, call.address];
     for address in accessed_addresses {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
-        state.tx_accesslist_account_write(
+        state.tx_access_list_account_write(
             &mut exec_step,
             state.tx_ctx.id(),
             address,
@@ -186,13 +194,15 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
 
     // Calculate intrinsic gas cost
     let call_data_gas_cost = tx_data_gas_cost(&state.tx.input);
+    let access_list_gas_cost = tx_access_list_gas_cost(&state.tx.access_list);
     let intrinsic_gas_cost = if state.tx.is_create() {
         GasCost::CREATION_TX.as_u64()
     } else {
         GasCost::TX.as_u64()
     } + call_data_gas_cost
+        + access_list_gas_cost
         + init_code_gas_cost;
-    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
+    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, access_list_gas_cost {access_list_gas_cost}, init_code_gas_cost {init_code_gas_cost}, &mut exec_step.gas_cost {:?}", &mut exec_step.gas_cost);
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee account
@@ -228,11 +238,25 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
     if state.tx.is_create()
         && ((!account_code_hash_is_empty_or_zero) || !callee_account.nonce.is_zero())
     {
-        unimplemented!(
-            "deployment collision at {:?}, account {:?}",
-            call.address,
-            callee_account
-        );
+        // since there is a bug in the prestate
+        // tracer: https://github.com/ethereum/go-ethereum/issues/28439
+        // which may also act as the data source for our statedb,
+        // we have to relax the constarint a bit and fix it silently
+        if account_code_hash_is_empty_or_zero && callee_account.nonce == 1.into() {
+            log::warn!(
+                "fix deployment nonce for {:?} silently for the prestate tracer",
+                call.address,
+            );
+            let mut fixed_account = callee_account.clone();
+            fixed_account.nonce = Word::zero();
+            state.sdb.set_account(&call.address, fixed_account);
+        } else {
+            unimplemented!(
+                "deployment collision at {:?}, account {:?}",
+                call.address,
+                callee_account
+            );
+        }
     }
 
     // Transfer with fee
@@ -294,9 +318,12 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
                 log_id: None,
                 rw_counter_start,
                 copy_bytes: CopyBytes::new(bytes, None, None),
+                access_list: vec![],
             },
         );
     }
+
+    let mut precompile_step = None;
 
     // There are 4 branches from here.
     match (
@@ -343,7 +370,132 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
             }
         }
         // 2. Call to precompiled.
-        (_, true, _) => (),
+        (_, true, _) => {
+            // some *pre-handling* for precompile address, like what we have done in callop
+            // the generation of precompile step is in `handle_tx`, right after the generation
+            // of begin_tx step
+
+            // add dummy field which precompile call contexts needed
+            for (field, value) in [
+                (CallContextField::ReturnDataOffset, 0.into()),
+                (CallContextField::ReturnDataLength, 0.into()),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+            }
+
+            // init call context fields like calling normal contract
+            for (field, value) in [
+                (CallContextField::Depth, call.depth.into()),
+                (
+                    CallContextField::CallerAddress,
+                    call.caller_address.to_word(),
+                ),
+                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CallDataOffset,
+                    call.call_data_offset.into(),
+                ),
+                (
+                    CallContextField::CallDataLength,
+                    call.call_data_length.into(),
+                ),
+                (CallContextField::Value, call.value),
+                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                (CallContextField::IsRoot, 1.into()),
+                (CallContextField::IsCreate, call.is_create().to_word()),
+                (CallContextField::CodeHash, account_code_hash),
+            ] {
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
+            }
+
+            let precompile_call: PrecompileCalls = call.address.0[19].into();
+            let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
+                &precompile_call.into(),
+                &state.tx.input,
+                exec_step.gas_left.0 - exec_step.gas_cost.as_u64(),
+            );
+
+            // insert a copy event (input) generate word memory read for input.
+            // we do not handle output / return since it is not part of the mined tx
+            let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
+                std::cmp::min(input_len as u64, call.call_data_length)
+            } else {
+                call.call_data_length
+            };
+            // we copy the truncated part or whole call data
+            let src_addr = call.call_data_offset;
+            let src_addr_end = call.call_data_offset.checked_add(n_input_bytes).unwrap();
+
+            let copy_steps = state
+                .tx
+                .input
+                .iter()
+                .copied()
+                .take(n_input_bytes as usize)
+                .map(|b| (b, false, false))
+                .collect::<Vec<_>>();
+
+            let input_bytes = copy_steps
+                .iter()
+                .filter(|(_, _, is_mask)| !*is_mask)
+                .map(|t| t.0)
+                .collect::<Vec<u8>>();
+            let rw_counter_start = state.block_ctx.rwc;
+            state.push_copy(
+                &mut exec_step,
+                CopyEvent {
+                    src_id: NumberOrHash::Number(state.tx_ctx.id()),
+                    src_type: CopyDataType::TxCalldata,
+                    src_addr,
+                    src_addr_end,
+                    dst_id: NumberOrHash::Number(call.call_id),
+                    dst_type: CopyDataType::RlcAcc,
+                    dst_addr: 0,
+                    log_id: None,
+                    rw_counter_start,
+                    copy_bytes: CopyBytes::new(copy_steps, None, None),
+                    access_list: vec![],
+                },
+            );
+
+            let call_success = call.is_success;
+            // modexp's oog error is handled in ModExpGadget
+            let mut next_step = if has_oog_err && precompile_call != PrecompileCalls::Modexp {
+                let next_step = state.new_next_step(&exec_step)?;
+                log::debug!(
+                    "precompile call ({:?}) runs out of gas: callee_gas_left = {}",
+                    precompile_call,
+                    next_step.gas_left.0,
+                );
+
+                ErrorOOGPrecompile::gen_ops(state, next_step, call)
+            } else {
+                precompile_gen_ops_for_begin_tx(
+                    state,
+                    state.new_next_step(&exec_step)?,
+                    call,
+                    precompile_call,
+                    &input_bytes,
+                    &result,
+                    &[], // notice we suppose return is omitted
+                )
+            }?;
+
+            // adjust gas cost
+            next_step.gas_cost = GasCost(precompile_call_gas_cost);
+
+            // notice we are handling a 'handle_return' process without associated geth step
+            // 1.handle reversion if needed
+            if !call_success {
+                state.handle_reversion(&mut [&mut exec_step, &mut next_step]);
+            }
+            // 2.pop call ctx
+            state.tx_ctx.pop_call_ctx(call_success);
+            precompile_step.replace(next_step);
+        }
         (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code (is_empty_code_hash == true).
             // 4. Call to account with non-empty code (is_empty_code_hash == false).
@@ -377,12 +529,9 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, 
             }
         }
     }
-    log::trace!("begin_tx_step: {:?}", exec_step);
-    if is_precompile && !state.call().unwrap().is_success {
-        state.handle_reversion(&mut [&mut exec_step]);
-    }
+    log::trace!("begin_tx_step: {:?}, {:?}", exec_step, precompile_step);
 
-    Ok(exec_step)
+    Ok(std::iter::once(exec_step).chain(precompile_step).collect())
 }
 
 pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
@@ -594,5 +743,155 @@ fn gen_tx_l1_fee_ops(
             fee_scalar_committed,
         ),
     )?;
+    Ok(())
+}
+
+// Add two copy-events for tx access-list addresses and storage keys for
+// EIP-1559 and EIP-2930.
+fn gen_tx_access_list_ops(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+) -> Result<(), Error> {
+    if !(state.tx.tx_type.is_eip1559() || state.tx.tx_type.is_eip2930()) {
+        return Ok(());
+    }
+
+    add_access_list_address_copy_event(state, exec_step)?;
+    add_access_list_storage_key_copy_event(state, exec_step)?;
+
+    Ok(())
+}
+
+fn add_access_list_address_copy_event(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+) -> Result<(), Error> {
+    let tx_id = state.tx_ctx.id();
+    let rw_counter_start = state.block_ctx.rwc;
+
+    // Build copy access list including addresses.
+    let access_list = state.tx.access_list.clone().map_or(Ok(vec![]), |al| {
+        al.0.iter()
+            .map(|item| {
+                // Add RW write operations for access list addresses
+                // (will lookup in copy circuit).
+                let is_warm_prev = !state.sdb.add_account_to_access_list(item.address);
+                state.tx_access_list_account_write(
+                    exec_step,
+                    tx_id,
+                    item.address,
+                    true,
+                    is_warm_prev,
+                )?;
+
+                Ok(CopyAccessList::new(item.address, Word::zero(), 0))
+            })
+            .collect::<Result<Vec<_>, Error>>()
+    })?;
+
+    // Unnecessary to add copy event if no access-list address.
+    if access_list.is_empty() {
+        return Ok(());
+    }
+
+    let tx_id = NumberOrHash::Number(tx_id);
+
+    // Use placeholder bytes for copy steps.
+    let copy_bytes = CopyBytes::new(vec![(0, false, false); access_list.len()], None, None);
+
+    // Add copy event to copy table.
+    let copy_event = CopyEvent {
+        src_type: CopyDataType::AccessListAddresses,
+        dst_type: CopyDataType::AccessListAddresses,
+        src_id: tx_id.clone(),
+        dst_id: tx_id,
+        // Access list address index starts from 1 in tx-table.
+        src_addr: 1,
+        src_addr_end: access_list.len() as u64 + 1,
+        dst_addr: 1,
+        rw_counter_start,
+        copy_bytes,
+        access_list,
+        log_id: None,
+    };
+
+    state.push_copy(exec_step, copy_event);
+
+    Ok(())
+}
+
+fn add_access_list_storage_key_copy_event(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+) -> Result<(), Error> {
+    let tx_id = state.tx_ctx.id();
+    let rw_counter_start = state.block_ctx.rwc;
+
+    // Build copy access list including addresses and storage keys.
+    let access_list = state
+        .tx
+        .access_list
+        .clone()
+        .map_or(Ok(vec![]), |al| {
+            al.0.iter()
+                .map(|item| {
+                    item.storage_keys
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, &sk)| {
+                            let sk = sk.to_word();
+
+                            // Add RW write operations for access list address storage keys
+                            // (will lookup in copy circuit).
+                            let is_warm_prev = !state
+                                .sdb
+                                .add_account_storage_to_access_list((item.address, sk));
+                            state.tx_access_list_storage_key_write(
+                                exec_step,
+                                tx_id,
+                                item.address,
+                                sk,
+                                true,
+                                is_warm_prev,
+                            )?;
+
+                            Ok(CopyAccessList::new(item.address, sk, idx as u64))
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .collect::<Result<Vec<_>, Error>>()
+        })?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+    // Unnecessary to add copy event if no access-list storage key.
+    if access_list.is_empty() {
+        return Ok(());
+    }
+
+    let tx_id = NumberOrHash::Number(state.tx_ctx.id());
+
+    // Use placeholder bytes for copy steps.
+    let copy_bytes = CopyBytes::new(vec![(0, false, false); access_list.len()], None, None);
+
+    // Add copy event to copy table.
+    let copy_event = CopyEvent {
+        src_type: CopyDataType::AccessListStorageKeys,
+        dst_type: CopyDataType::AccessListStorageKeys,
+        src_id: tx_id.clone(),
+        dst_id: tx_id,
+        // Access list storage key index starts from 0 in tx-table.
+        src_addr: 0,
+        src_addr_end: access_list.len() as u64,
+        dst_addr: 0,
+        rw_counter_start,
+        copy_bytes,
+        access_list,
+        log_id: None,
+    };
+
+    state.push_copy(exec_step, copy_event);
+
     Ok(())
 }

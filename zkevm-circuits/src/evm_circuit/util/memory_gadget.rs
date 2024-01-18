@@ -24,7 +24,6 @@ use eth_types::{
     Field, ToLittleEndian, U256,
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
@@ -42,7 +41,7 @@ pub(crate) mod address_low {
 }
 
 /// Memory address trait to adapt for right and Uint overflow cases.
-pub(crate) trait CommonMemoryAddressGadget<F: FieldExt> {
+pub(crate) trait CommonMemoryAddressGadget<F: Field> {
     fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self;
 
     /// Return the memory address (offset + length).

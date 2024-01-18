@@ -9,6 +9,9 @@ fn main() {
 
     // Build
     let mut build = gobuild::Build::new();
+    if cfg!(target_os = "macos") {
+        build.ldflags("-w");
+    }
     let target_files = if cfg!(feature = "scroll") {
         vec!["./l2geth/trace.go", "./l2geth/lib.go"]
     } else {

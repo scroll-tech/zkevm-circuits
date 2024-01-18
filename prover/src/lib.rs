@@ -1,3 +1,5 @@
+#![feature(lazy_cell)]
+
 pub mod aggregator;
 pub mod common;
 pub mod config;

@@ -13,13 +13,13 @@ use core::fmt::Debug;
 use eth_types::{evm_unimplemented, GethExecStep, ToAddress, ToWord, Word};
 
 #[cfg(any(feature = "enable-memory", feature = "enable-stack"))]
-use crate::util::CHECK_MEM_STACK_LEVEL;
+use crate::util::GETH_TRACE_CHECK_LEVEL;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
-mod arthmetic;
+mod arithmetic;
 mod balance;
 mod begin_end_tx;
 mod blockhash;
@@ -73,7 +73,7 @@ mod error_precompile_failed;
 mod error_return_data_outofbound;
 mod error_write_protection;
 
-#[cfg(test)]
+#[cfg(all(feature = "enable-memory", test))]
 mod memory_expansion_test;
 #[cfg(feature = "test")]
 pub use callop::tests::PrecompileCallArgs;
@@ -81,9 +81,9 @@ pub use callop::tests::PrecompileCallArgs;
 use self::{pushn::PushN, sha3::Sha3};
 
 use address::Address;
-use arthmetic::ArithmeticOpcode;
+use arithmetic::ArithmeticOpcode;
 use balance::Balance;
-use begin_end_tx::BeginEndTx;
+use begin_end_tx::{gen_begin_tx_steps, gen_end_tx_steps};
 use blockhash::Blockhash;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
@@ -176,32 +176,30 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     match opcode_id {
         OpcodeId::PUSH0 => Push0::gen_associated_ops,
         OpcodeId::STOP => Stop::gen_associated_ops,
-        OpcodeId::ADD => ArithmeticOpcode::<{ OpcodeId::ADD.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::MUL => ArithmeticOpcode::<{ OpcodeId::MUL.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SUB => ArithmeticOpcode::<{ OpcodeId::SUB.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::DIV => ArithmeticOpcode::<{ OpcodeId::DIV.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SDIV => ArithmeticOpcode::<{ OpcodeId::SDIV.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::MOD => ArithmeticOpcode::<{ OpcodeId::MOD.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SMOD => ArithmeticOpcode::<{ OpcodeId::SMOD.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::ADDMOD => ArithmeticOpcode::<{ OpcodeId::ADDMOD.as_u8() }, 3>::gen_associated_ops,
-        OpcodeId::MULMOD => ArithmeticOpcode::<{ OpcodeId::MULMOD.as_u8() }, 3>::gen_associated_ops,
-        OpcodeId::SIGNEXTEND => {
-            ArithmeticOpcode::<{ OpcodeId::SIGNEXTEND.as_u8() }, 2>::gen_associated_ops
-        }
-        OpcodeId::LT => ArithmeticOpcode::<{ OpcodeId::LT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::GT => ArithmeticOpcode::<{ OpcodeId::GT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SLT => ArithmeticOpcode::<{ OpcodeId::SLT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SGT => ArithmeticOpcode::<{ OpcodeId::SGT.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::EQ => ArithmeticOpcode::<{ OpcodeId::EQ.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::ISZERO => ArithmeticOpcode::<{ OpcodeId::ISZERO.as_u8() }, 1>::gen_associated_ops,
-        OpcodeId::AND => ArithmeticOpcode::<{ OpcodeId::AND.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::OR => ArithmeticOpcode::<{ OpcodeId::OR.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::XOR => ArithmeticOpcode::<{ OpcodeId::XOR.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::NOT => ArithmeticOpcode::<{ OpcodeId::NOT.as_u8() }, 1>::gen_associated_ops,
-        OpcodeId::BYTE => ArithmeticOpcode::<{ OpcodeId::BYTE.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SHL => ArithmeticOpcode::<{ OpcodeId::SHL.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SHR => ArithmeticOpcode::<{ OpcodeId::SHR.as_u8() }, 2>::gen_associated_ops,
-        OpcodeId::SAR => ArithmeticOpcode::<{ OpcodeId::SAR.as_u8() }, 2>::gen_associated_ops,
+        OpcodeId::ADD => ArithmeticOpcode::<{ OpcodeId::ADD }, 2>::gen_associated_ops,
+        OpcodeId::MUL => ArithmeticOpcode::<{ OpcodeId::MUL }, 2>::gen_associated_ops,
+        OpcodeId::SUB => ArithmeticOpcode::<{ OpcodeId::SUB }, 2>::gen_associated_ops,
+        OpcodeId::DIV => ArithmeticOpcode::<{ OpcodeId::DIV }, 2>::gen_associated_ops,
+        OpcodeId::SDIV => ArithmeticOpcode::<{ OpcodeId::SDIV }, 2>::gen_associated_ops,
+        OpcodeId::MOD => ArithmeticOpcode::<{ OpcodeId::MOD }, 2>::gen_associated_ops,
+        OpcodeId::SMOD => ArithmeticOpcode::<{ OpcodeId::SMOD }, 2>::gen_associated_ops,
+        OpcodeId::ADDMOD => ArithmeticOpcode::<{ OpcodeId::ADDMOD }, 3>::gen_associated_ops,
+        OpcodeId::MULMOD => ArithmeticOpcode::<{ OpcodeId::MULMOD }, 3>::gen_associated_ops,
+        OpcodeId::SIGNEXTEND => ArithmeticOpcode::<{ OpcodeId::SIGNEXTEND }, 2>::gen_associated_ops,
+        OpcodeId::LT => ArithmeticOpcode::<{ OpcodeId::LT }, 2>::gen_associated_ops,
+        OpcodeId::GT => ArithmeticOpcode::<{ OpcodeId::GT }, 2>::gen_associated_ops,
+        OpcodeId::SLT => ArithmeticOpcode::<{ OpcodeId::SLT }, 2>::gen_associated_ops,
+        OpcodeId::SGT => ArithmeticOpcode::<{ OpcodeId::SGT }, 2>::gen_associated_ops,
+        OpcodeId::EQ => ArithmeticOpcode::<{ OpcodeId::EQ }, 2>::gen_associated_ops,
+        OpcodeId::ISZERO => ArithmeticOpcode::<{ OpcodeId::ISZERO }, 1>::gen_associated_ops,
+        OpcodeId::AND => ArithmeticOpcode::<{ OpcodeId::AND }, 2>::gen_associated_ops,
+        OpcodeId::OR => ArithmeticOpcode::<{ OpcodeId::OR }, 2>::gen_associated_ops,
+        OpcodeId::XOR => ArithmeticOpcode::<{ OpcodeId::XOR }, 2>::gen_associated_ops,
+        OpcodeId::NOT => ArithmeticOpcode::<{ OpcodeId::NOT }, 1>::gen_associated_ops,
+        OpcodeId::BYTE => ArithmeticOpcode::<{ OpcodeId::BYTE }, 2>::gen_associated_ops,
+        OpcodeId::SHL => ArithmeticOpcode::<{ OpcodeId::SHL }, 2>::gen_associated_ops,
+        OpcodeId::SHR => ArithmeticOpcode::<{ OpcodeId::SHR }, 2>::gen_associated_ops,
+        OpcodeId::SAR => ArithmeticOpcode::<{ OpcodeId::SAR }, 2>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => Address::gen_associated_ops,
         OpcodeId::BALANCE => Balance::gen_associated_ops,
@@ -221,26 +219,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => Blockhash::gen_associated_ops,
-        OpcodeId::COINBASE => {
-            GetBlockHeaderField::<{ OpcodeId::COINBASE.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::TIMESTAMP => {
-            GetBlockHeaderField::<{ OpcodeId::TIMESTAMP.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::NUMBER => GetBlockHeaderField::<{ OpcodeId::NUMBER.as_u8() }>::gen_associated_ops,
-        OpcodeId::DIFFICULTY => {
-            GetBlockHeaderField::<{ OpcodeId::DIFFICULTY.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::GASLIMIT => {
-            GetBlockHeaderField::<{ OpcodeId::GASLIMIT.as_u8() }>::gen_associated_ops
-        }
-        OpcodeId::CHAINID => {
-            GetBlockHeaderField::<{ OpcodeId::CHAINID.as_u8() }>::gen_associated_ops
-        }
+        OpcodeId::COINBASE => GetBlockHeaderField::<{ OpcodeId::COINBASE }>::gen_associated_ops,
+        OpcodeId::TIMESTAMP => GetBlockHeaderField::<{ OpcodeId::TIMESTAMP }>::gen_associated_ops,
+        OpcodeId::NUMBER => GetBlockHeaderField::<{ OpcodeId::NUMBER }>::gen_associated_ops,
+        OpcodeId::DIFFICULTY => GetBlockHeaderField::<{ OpcodeId::DIFFICULTY }>::gen_associated_ops,
+        OpcodeId::GASLIMIT => GetBlockHeaderField::<{ OpcodeId::GASLIMIT }>::gen_associated_ops,
+        OpcodeId::CHAINID => GetBlockHeaderField::<{ OpcodeId::CHAINID }>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
-        OpcodeId::BASEFEE => {
-            GetBlockHeaderField::<{ OpcodeId::BASEFEE.as_u8() }>::gen_associated_ops
-        }
+        OpcodeId::BASEFEE => GetBlockHeaderField::<{ OpcodeId::BASEFEE }>::gen_associated_ops,
         OpcodeId::POP => StackPopOnlyOpcode::<1>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
@@ -403,7 +389,7 @@ pub fn gen_associated_ops(
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     #[cfg(feature = "enable-memory")]
-    if CHECK_MEM_STACK_LEVEL.should_check() {
+    if GETH_TRACE_CHECK_LEVEL.should_check() {
         let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
         assert!(memory_enabled);
         if memory_enabled {
@@ -433,7 +419,7 @@ pub fn gen_associated_ops(
                         );
                     }
                 }
-                if CHECK_MEM_STACK_LEVEL.should_panic() {
+                if GETH_TRACE_CHECK_LEVEL.should_panic() {
                     panic!("mem wrong");
                 }
                 state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
@@ -441,7 +427,7 @@ pub fn gen_associated_ops(
         }
     }
     #[cfg(feature = "enable-stack")]
-    if CHECK_MEM_STACK_LEVEL.should_check() {
+    if GETH_TRACE_CHECK_LEVEL.should_check() {
         if state.call_ctx()?.stack != geth_steps[0].stack {
             log::error!(
                 "wrong stack before {:?}. len in state {}, len in step {}",
@@ -465,7 +451,7 @@ pub fn gen_associated_ops(
                     );
                 }
             }
-            if CHECK_MEM_STACK_LEVEL.should_panic() {
+            if GETH_TRACE_CHECK_LEVEL.should_panic() {
                 panic!("stack wrong");
             }
             state.call_ctx_mut()?.stack = geth_steps[0].stack.clone();
@@ -533,15 +519,21 @@ pub fn gen_associated_ops(
 pub fn gen_associated_steps(
     state: &mut CircuitInputStateRef,
     execution_step: ExecState,
-) -> Result<ExecStep, Error> {
+) -> Result<Vec<ExecStep>, Error> {
+    fn gen_end_tx_steps_adapt(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
+        let ret = gen_end_tx_steps(state)?;
+        Ok(vec![ret])
+    }
+
     let fn_gen_associated_steps = match execution_step {
-        ExecState::BeginTx | ExecState::EndTx => BeginEndTx::gen_associated_steps,
+        ExecState::BeginTx => gen_begin_tx_steps,
+        ExecState::EndTx => gen_end_tx_steps_adapt,
         _ => {
             unreachable!()
         }
     };
 
-    fn_gen_associated_steps(state, execution_step)
+    fn_gen_associated_steps(state)
 }
 
 #[derive(Debug, Copy, Clone)]

@@ -1,7 +1,9 @@
 use eth_types::{GethExecStep, ToWord, Word};
 
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
+    circuit_input_builder::{
+        Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent, SHA256,
+    },
     operation::CallContextField,
     precompile::{PrecompileAuxData, PrecompileCalls},
     Error,
@@ -28,8 +30,30 @@ pub fn gen_associated_ops(
     output_bytes: &[u8],
     return_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
+    let input_step = state.new_step(&geth_step)?;
+
+    gen_ops(
+        state,
+        input_step,
+        call,
+        precompile,
+        input_bytes,
+        output_bytes,
+        return_bytes,
+    )
+}
+
+/// generate an execstep for the input step
+pub fn gen_ops(
+    state: &mut CircuitInputStateRef,
+    mut exec_step: ExecStep,
+    call: Call,
+    precompile: PrecompileCalls,
+    input_bytes: &[u8],
+    output_bytes: &[u8],
+    return_bytes: &[u8],
+) -> Result<ExecStep, Error> {
     assert_eq!(call.code_address(), Some(precompile.into()));
-    let mut exec_step = state.new_step(&geth_step)?;
     exec_step.stack_size += 1; // since the return value is pushed on the stack
     exec_step.exec_state = ExecState::Precompile(precompile);
 
@@ -46,6 +70,23 @@ pub fn gen_associated_ops(
         PrecompileCalls::Identity => (
             None,
             Some(PrecompileAuxData::Identity {
+                input_bytes: input_bytes.to_vec(),
+                output_bytes: output_bytes.to_vec(),
+                return_bytes: return_bytes.to_vec(),
+            }),
+        ),
+        PrecompileCalls::Sha256 => (
+            if output_bytes.is_empty() {
+                None
+            } else {
+                Some(PrecompileEvent::SHA256(SHA256 {
+                    input: input_bytes.to_vec(),
+                    digest: output_bytes
+                        .try_into()
+                        .expect("output bytes must be 32 bytes"),
+                }))
+            },
+            Some(PrecompileAuxData::SHA256 {
                 input_bytes: input_bytes.to_vec(),
                 output_bytes: output_bytes.to_vec(),
                 return_bytes: return_bytes.to_vec(),
@@ -86,7 +127,7 @@ fn common_call_ctx_reads(
             CallContextField::CalleeAddress,
             call.code_address().unwrap().to_word(),
         ),
-        (CallContextField::CallerId, call.caller_id.into()),
+        (CallContextField::IsRoot, Word::from(call.is_root as u64)),
         (
             CallContextField::CallDataOffset,
             call.call_data_offset.into(),

@@ -15,3 +15,6 @@ log.workspace = true
 [features]
 default = []
 scroll = ["eth-types/scroll", "geth-utils/scroll"]
+enable-stack = []
+enable-memory = []
+enable-storage = []

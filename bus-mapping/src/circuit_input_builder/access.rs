@@ -104,44 +104,12 @@ impl AccessSet {
         self.code.extend(other.code.drain());
     }
 
-    #[cfg(not(feature = "scroll"))]
     pub(crate) fn from_geth_data(geth_data: &GethData) -> Self {
         let mut access_set = AccessSet::default();
         access_set.add_account(geth_data.eth_block.author.unwrap());
         for trace in geth_data.geth_traces.iter() {
-            access_set.extend_from_traces(trace.prestate.as_ref().unwrap());
+            access_set.extend_from_traces(&trace.prestate);
         }
-        access_set
-    }
-
-    #[cfg(feature = "scroll")]
-    pub(crate) fn from_geth_data(geth_data: &GethData) -> Self {
-        let mut access_set = AccessSet::default();
-        access_set.add_account(geth_data.eth_block.author.unwrap());
-        for (addr, storage) in geth_data.block_trace.storage_trace.storage_proofs.iter() {
-            log::info!("add addr {:?} to access_set", addr);
-            access_set.add_account(*addr);
-            access_set.add_code(*addr);
-            for key in storage.keys() {
-                log::info!("add addr {:?} key {:?} to access_set", addr, key);
-                access_set.add_storage(*addr, *key);
-            }
-        }
-        if let Some(ref proofs) = geth_data.block_trace.storage_trace.proofs {
-            for addr in proofs.keys() {
-                log::info!("add addr {:?} to access_set", addr);
-                access_set.add_account(*addr);
-                access_set.add_code(*addr);
-            }
-        }
-        access_set
-    }
-}
-
-impl From<Vec<Access>> for AccessSet {
-    fn from(list: Vec<Access>) -> Self {
-        let mut access_set = AccessSet::default();
-        access_set.extend_from_access(list);
         access_set
     }
 }

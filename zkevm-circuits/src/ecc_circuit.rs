@@ -25,7 +25,6 @@ use halo2_ecc::{
     },
 };
 use halo2_proofs::{
-    arithmetic::Field as Halo2Field,
     circuit::{Layouter, Value},
     halo2curves::{
         bn256::{Fq, Fq12, Fq2, Fr, G1Affine, G2Affine},

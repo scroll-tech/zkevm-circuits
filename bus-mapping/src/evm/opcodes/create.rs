@@ -29,7 +29,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let tx_id = state.tx_ctx.id();
         let caller = state.call()?.clone();
-
         let address = if IS_CREATE2 {
             state.create2_address(&geth_steps[0])?
         } else {
@@ -37,7 +36,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         };
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
-        let callee_value = state.call_ctx()?.stack.last()?;
+        let callee_value = geth_step.stack.last()?;
         if !callee_exists && callee_value.is_zero() {
             state.sdb.get_account_mut(&address).1.storage.clear();
         }
@@ -55,6 +54,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let callee = if is_precheck_ok && !is_address_collision {
             state.parse_call(geth_step)?
         } else {
+            // if precheck not ok, the call won't appear in call trace since it never happens
+            // we need to increase the offset and mannually set the is_success
             state.tx_ctx.call_is_success_offset += 1;
             let mut call = state.parse_call_partial(geth_step)?;
             call.is_success = false;
@@ -395,6 +396,7 @@ fn handle_copy(
             dst_addr: 0,
             log_id: None,
             copy_bytes: CopyBytes::new(copy_steps, None, None),
+            access_list: vec![],
         },
     );
 
