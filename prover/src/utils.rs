@@ -4,13 +4,14 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use chrono::Utc;
-use eth_types::{l2_types::{BlockTrace, ChunkTrace}, Address};
+use eth_types::{l2_types::{BlockTrace, ChunkTrace}, Address, H256};
 use git_version::git_version;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr},
     poly::kzg::commitment::ParamsKZG,
     SerdeFormat,
 };
+use ethers_core::utils::keccak256;
 use log::LevelFilter;
 use log4rs::{
     append::{
@@ -163,9 +164,9 @@ pub fn chunk_trace_to_witness_block(mut chunk_trace: ChunkTrace) -> Result<Block
     check_batch_capacity(&mut chunk_trace.block_traces)?;
 
     let mut witness_block = block_traces_to_witness_block(chunk_trace.block_traces)?;
-    witness_block.prev_last_applied_l1_block = chunk_trace.prev_last_applied_l1_block;
-    witness_block.last_applied_l1_block = chunk_trace.last_applied_l1_block;
-    witness_block.l1_block_range_hash = chunk_trace.l1_block_range_hash;
+    witness_block.prev_last_applied_l1_block = Some(chunk_trace.prev_last_applied_l1_block.unwrap_or(0));
+    witness_block.last_applied_l1_block = Some(chunk_trace.last_applied_l1_block.unwrap_or(0));
+    witness_block.l1_block_range_hash = Some(chunk_trace.l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))));
 
     Ok(witness_block)
 }

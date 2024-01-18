@@ -27,6 +27,8 @@ impl Prover {
 
         let (circuit, _instance) = C::from_witness_block(witness_block)?;
 
+        log::info!("Before generate snark - witness_block - {:?}", witness_block);
+
         Self::assert_if_mock_prover(id, degree, &circuit);
 
         let (params, pk) = self.params_and_pk(id, degree, &C::dummy_inner_circuit())?;

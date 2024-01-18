@@ -48,6 +48,7 @@ impl<C: TargetCircuit> Prover<C> {
 
                 let rng = gen_rng();
                 let witness_block = chunk_trace_to_witness_block(chunk_trace)?;
+                
                 let result = self
                     .inner
                     .gen_inner_snark::<C>(id, rng, &witness_block)

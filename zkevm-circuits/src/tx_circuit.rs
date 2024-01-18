@@ -2862,7 +2862,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
-        8
+        9
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {

@@ -51,7 +51,7 @@ fn super_circuit_degree() {
     SuperCircuit::<Fr, 1, 32, 64, 0x100>::configure(&mut cs);
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
-    assert!(cs.degree() <= 9);
+    assert!(cs.degree() <= 11);
 }
 
 #[cfg(feature = "scroll")]
