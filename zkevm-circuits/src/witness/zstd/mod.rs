@@ -17,75 +17,7 @@ mod tui;
 use tui::draw_rows;
 
 mod util;
-use util::{value_bits_le, le_bits_to_value};
-
-/// MagicNumber
-fn process_magic_number<F: Field>(
-    src: &[u8],
-    byte_offset: usize,
-    last_row: &ZstdWitnessRow<F>,
-    randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    assert_eq!(
-        src.iter()
-            .skip(byte_offset)
-            .take(N_MAGIC_NUMBER_BYTES)
-            .cloned()
-            .collect::<Vec<u8>>(),
-        MAGIC_NUMBER_BYTES.to_vec(),
-    );
-
-    // MagicNumber appears at the start of a new frame.
-    let value_rlc_iter =
-        MAGIC_NUMBER_BYTES
-            .iter()
-            .scan(last_row.encoded_data.value_rlc, |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            });
-    let tag_value_iter = MAGIC_NUMBER_BYTES
-        .iter()
-        .scan(Value::known(F::zero()), |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        });
-    let tag_value = tag_value_iter
-        .clone()
-        .last()
-        .expect("no items in MAGIC_NUMBER_BYTES");
-    (
-        byte_offset + N_MAGIC_NUMBER_BYTES,
-        src.iter()
-            .skip(byte_offset)
-            .take(N_MAGIC_NUMBER_BYTES)
-            .enumerate()
-            .zip(tag_value_iter)
-            .zip(value_rlc_iter)
-            .map(
-                |(((i, &value_byte), tag_value_acc), value_rlc)| ZstdWitnessRow {
-                    state: ZstdState {
-                        tag: ZstdTag::MagicNumber,
-                        tag_next: ZstdTag::FrameHeaderDescriptor,
-                        tag_len: N_MAGIC_NUMBER_BYTES as u64,
-                        tag_idx: (i + 1) as u64,
-                        tag_value,
-                        tag_value_acc,
-                    },
-                    encoded_data: EncodedData {
-                        byte_idx: (byte_offset + i + 1) as u64,
-                        encoded_len: last_row.encoded_data.encoded_len,
-                        value_byte,
-                        value_rlc,
-                        ..Default::default()
-                    },
-                    decoded_data: last_row.decoded_data.clone(),
-                    huffman_data: HuffmanData::default(),
-                    fse_data: FseTableRow::default(),
-                },
-            )
-            .collect::<Vec<_>>(),
-    )
-}
+use util::{value_bits_le, le_bits_to_value, increment_idx};
 
 /// FrameHeaderDescriptor and FrameContentSize
 fn process_frame_header<F: Field>(
@@ -600,7 +532,7 @@ fn process_block_zstd<F: Field>(
             );
             huffman_rows.extend_from_slice(&rows);
 
-            let (bytes_offset, rows) = if is_direct {
+            let (bytes_offset, rows, huffman_codes) = if is_direct {
                 process_block_zstd_huffman_code_direct(
                     src, 
                     byte_offset, 
@@ -638,7 +570,8 @@ fn process_block_zstd<F: Field>(
                     n_bytes,
                     huffman_rows.last().expect("last row should exist"),
                     randomness,
-                    idx
+                    idx,
+                    &huffman_codes
                 );
                 huffman_rows.extend_from_slice(&rows);
 
@@ -873,8 +806,7 @@ fn process_block_zstd_huffman_code_direct<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     n_bytes: usize,
-) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    // compression_debug
+) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData) {
     // For direct representation of huffman weights, each byte (8 bits) represents two weights. 
     // weight[0] = (Byte[0] >> 4)
     // weight[1] = (Byte[0] & 0xf).
@@ -970,6 +902,7 @@ fn process_block_zstd_huffman_code_direct<F: Field>(
                 },
             )
             .collect::<Vec<_>>(),
+            HuffmanCodesData { byte_offset: 0, weights: vec![] }
     )
 }
 
@@ -979,9 +912,9 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     n_bytes: usize,
-) -> (usize, Vec<ZstdWitnessRow<F>>) {
-
-    // compression_debug
+) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData) {
+    // Preserve this value for later construction of HuffmanCodesDataTable
+    let huffman_code_byte_offset = byte_offset;
 
     // First, recover the FSE table for generating Huffman weights
     let (n_fse_bytes, table) = FseAuxiliaryTableData::reconstruct(&src, byte_offset).expect("Reconstructing FSE table should not fail.");
@@ -1017,15 +950,6 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
     let mut current_byte_idx: usize = 1; // byte_idx is 1-indexed
     let mut current_bit_idx: usize = 0;
 
-    // Helper function for managing idx increment
-    fn increment_idx(mut current_byte_idx: usize, mut current_bit_idx: usize) -> () {
-        current_bit_idx += 1;
-
-        if current_bit_idx > current_byte_idx * N_BITS_PER_BYTE {
-            current_byte_idx += 1;
-        }
-    }
-
     // Recognize the leading zero section
     while huffman_bitstream[current_bit_idx] == 0 {
         increment_idx(current_byte_idx, current_bit_idx);
@@ -1040,60 +964,26 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
     // The Huffman bitstream is decoded by two interleaved states reading the stream in alternating order.
     // The FSE table for the two independent decoding strands are the same.
     let mut color: usize = 0; // use 0, 1 (colors) to denote two alternating decoding strands. 
-    let mut prev_state: [u32; 2] = [0, 0];
+    let mut prev_baseline: [u64; 2] = [0, 0];
     let mut next_nb_to_read: [usize; 2] = [table.accuracy_log as usize, table.accuracy_log as usize];
     let mut decoded_weights: Vec<u8> = vec![];
 
-
-    fn convert_fse_auxiliary_to_state_table(table: FseAuxiliaryTableData) -> Vec<[u64; 4]> {
-        // pub struct FseAuxiliaryTableData {
-        //     /// The byte offset in the frame at which the FSE table is described.
-        //     pub byte_offset: u64,
-        //     /// The FSE table's size, i.e. 1 << AL (accuracy log).
-        //     pub table_size: u64,
-        //     /// A map from FseSymbol (weight) to states, also including fields for that state, for
-        //     /// instance, the baseline and the number of bits to read from the FSE bitstream.
-        //     ///
-        //     /// For each symbol, the states are in strictly increasing order.
-        //     pub sym_to_states: BTreeMap<FseSymbol, Vec<FseTableRow>>,
-        // }
-
-        /// A single row in the FSE table.
-        // #[derive(Clone, Debug, Default, PartialEq)]
-        // pub struct FseTableRow {
-        //     /// Incremental index, starting at 1.
-        //     pub idx: u64,
-        //     /// The FSE state at this row in the FSE table.
-        //     pub state: u64,
-        //     /// The baseline associated with this state.
-        //     pub baseline: u64,
-        //     /// The number of bits to be read from the input bitstream at this state.
-        //     pub num_bits: u64,
-        //     /// The symbol emitted by the FSE table at this state.
-        //     pub symbol: u64,
-        // }
-        
-        let mut state_table_rows: Vec<[u64; 4]> = vec![];
-        // [u64; 4] represents (state, symbol, baseline, nb)
-
-        // compression_debug
-        // must get the state rows
-        // let v = table.sym_to_states.values().;
-
-        state_table_rows
-    }
+    // Convert FSE auxiliary data into a state-indexed representation
+    let fse_state_table = table.parse_state_table();
 
     while current_bit_idx + next_nb_to_read[color] < n_bytes * N_BITS_PER_BYTE {
         let nb = next_nb_to_read[color];
-        let next_state = prev_state[color] + le_bits_to_value(&huffman_bitstream[current_bit_idx..(current_bit_idx + nb)]);
+        let next_state = prev_baseline[color] + le_bits_to_value(&huffman_bitstream[current_bit_idx..(current_bit_idx + nb)]);
 
-        // compression_debug
-        // TODO: spit out the symbol, baseline, nb_to_read, at the next state
+        // Lookup the FSE table row for the state
+        let fse_row = fse_state_table.get(&(next_state as u64)).expect("next state should be in fse table");
 
-        // Change decoding states
-        prev_state[color] = next_state;
-        // let next_nb_to_read[color] = next bits to read // compression_debug
-        // decoded_weights.push(symbol); // compression_debug
+        // Decode the symbol
+        decoded_weights.push(fse_row.0 as u8);
+
+        // Preparing for next state
+        prev_baseline[color] = fse_row.1;
+        next_nb_to_read[color] = fse_row.2 as usize;
 
         for _ in 0..nb {
             increment_idx(current_byte_idx, current_bit_idx);
@@ -1103,7 +993,15 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
         color = !color;
     }
 
-    (0, vec![])
+    // Construct HuffmanCodesTable
+    let huffman_codes = HuffmanCodesData {
+        byte_offset: huffman_code_byte_offset as u64,
+        weights: decoded_weights.into_iter().map(|w| FseSymbol::from(w as usize) ).collect()
+    };
+
+    // compression_debug
+    // need to organize the witness rows
+    (0, vec![], huffman_codes)
 }
 
 fn process_block_zstd_huffman_jump_table<F: Field>(
@@ -1150,20 +1048,86 @@ fn process_block_zstd_lstream<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     stream_idx: usize,
-    // huffman_code: 
+    huffman_code: &HuffmanCodesData,
 ) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    // compression_debug
+    let mut lstream_bits = 
+        src
+            .iter()
+            .skip(byte_offset)
+            .take(len)
+            .rev()
+            .clone()
+            .flat_map(|v| {
+                let mut bits = value_bits_le(*v);
+                bits.reverse();
+                bits
+            })
+            .collect::<Vec<u8>>();
+
+    // Deliminators vector stores the positions where the bitstream is deliminated (a different value is decoded)
+    // The pair (usize, usize) indicates (byte_idx, bit_idx) where a delimination occurs (think of adding an underscore at the position)
+    // The range between two positions is where a new symbol is decoded or a new segment is recognized (i.e. leading zero section, a single sentinel 1-bit)
+    let mut deliminators: Vec<(usize, usize)> = vec![];
+
+    // Add a virtual deliminator in the front
+    deliminators.push((0, 0));
+
+    // Bitstream processing state values
+    let mut current_byte_idx: usize = 1; // byte_idx is 1-indexed
+    let mut current_bit_idx: usize = 0;
+
+    // Recognize the leading zero section
+    while lstream_bits[current_bit_idx] == 0 {
+        increment_idx(current_byte_idx, current_bit_idx);
+    }
+    deliminators.push((current_byte_idx, current_bit_idx)); // indicates the end of leading zeros
+
+    // The next bit is the sentinel bit
+    increment_idx(current_byte_idx, current_bit_idx);
+    deliminators.push((current_byte_idx, current_bit_idx));
+
+    // Now the actual symbol-bearing bitstream starts
+    let huffman_bit_value_map = huffman_code.parse_canonical_bit_value_map();
+    let mut bit_value_acc: u64 = 0;
+    let mut cur_bitstring_len: usize = 0;
+    let mut decoded_symbols: Vec<u64> = vec![];
+
+    while current_bit_idx < len * N_BITS_PER_BYTE {
+        if huffman_bit_value_map.1.contains_key(&bit_value_acc) {
+            decoded_symbols.push(huffman_bit_value_map.1.get(&bit_value_acc).unwrap().clone());
+            
+            // Mark the new deliminator
+            for _ in 0..cur_bitstring_len {
+                increment_idx(current_byte_idx, current_bit_idx);
+            }
+            deliminators.push((current_byte_idx, current_bit_idx));
+
+            // Reset decoding state
+            bit_value_acc = 0;
+            cur_bitstring_len = 0;
+        } else {
+            bit_value_acc += (src[current_bit_idx + cur_bitstring_len] as u64) * 2u64.pow(cur_bitstring_len as u32);
+            cur_bitstring_len += 1;
+
+            if cur_bitstring_len > huffman_bit_value_map.0 as usize {
+                unreachable!("read bit len greater than max bitstring len");
+            }
+        }
+    }
+    
+    // Now construct the witness rows
     let tag_next = if stream_idx == 3 {
         ZstdTag::ZstdBlockSequenceHeader
     } else {
         match stream_idx {
-            0 => ZstdTag::Lstream2,
-            1 => ZstdTag::Lstream3,
-            2 => ZstdTag::Lstream4,
+            0 | 1 | 2 => ZstdTag::Lstream,
             _ => unreachable!("stream_idx value out of range")
         }
     };
-    unimplemented!()
+
+    // compression_debug
+
+    (0, vec![])
 }
 
 pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> Vec<ZstdWitnessRow<F>> {
@@ -1179,20 +1143,11 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> Vec<ZstdWitnessRow
     assert_eq!(find_magic_number(src, &MAGIC_NUMBER_BYTES[..], 0), Some(0));
     assert_eq!(find_magic_number(src, &MAGIC_NUMBER_BYTES[..], 4), None);
 
-    // 1. MagicNumber
-    let (byte_offset, rows) = process_magic_number::<F>(
-        src,
-        byte_offset,
-        &ZstdWitnessRow::init(src.len()),
-        randomness,
-    );
-    witness_rows.extend_from_slice(&rows);
-
-    // 2. FrameHeaderDescriptor and FrameContentSize
+    // 1. FrameHeaderDescriptor and FrameContentSize
     let (byte_offset, rows) = process_frame_header::<F>(
         src,
         byte_offset,
-        rows.last().expect("last row expected to exist"),
+        &ZstdWitnessRow::init(src.len()),
         randomness,
     );
     witness_rows.extend_from_slice(&rows);
@@ -1220,6 +1175,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> Vec<ZstdWitnessRow
 
 #[cfg(test)]
 mod tests {
+    use ff::BitViewSized;
     use halo2_proofs::halo2curves::bn256::Fr;
     use hex::FromHex;
     use std::io::Write;
@@ -1239,6 +1195,51 @@ mod tests {
         };
 
         let _witness_rows = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn check_witness_generation() -> Result<(), std::io::Error> {
+        let compressed: [u8; 559] = [
+            0x28, 0xb5, 0x2f, 0xfd, 0x64, 0xae, 0x02, 0x0d, 0x11, 0x00, 0x76, 0x62, 0x5e, 0x23, 0x30, 0x6f,
+            0x9b, 0x03, 0x7d, 0xc7, 0x16, 0x0b, 0xbe, 0xc8, 0xf2, 0xd0, 0x22, 0x4b, 0x6b, 0xbc, 0x54, 0x5d,
+            0xa9, 0xd4, 0x93, 0xef, 0xc4, 0x54, 0x96, 0xb2, 0xe2, 0xa8, 0xa8, 0x24, 0x1c, 0x54, 0x40, 0x29,
+            0x01, 0x55, 0x00, 0x57, 0x00, 0x51, 0x00, 0xcc, 0x51, 0x73, 0x3a, 0x85, 0x9e, 0xf7, 0x59, 0xfc,
+            0xc5, 0xca, 0x6a, 0x7a, 0xd9, 0x82, 0x9c, 0x65, 0xc5, 0x45, 0x92, 0xe3, 0x0d, 0xf3, 0xef, 0x71,
+            0xee, 0xdc, 0xd5, 0xa2, 0xe3, 0x48, 0xad, 0xa3, 0xbc, 0x41, 0x7a, 0x3c, 0xaa, 0xd6, 0xeb, 0xd0,
+            0x77, 0xea, 0xdc, 0x5d, 0x41, 0x06, 0x50, 0x1c, 0x49, 0x0f, 0x07, 0x10, 0x05, 0x88, 0x84, 0x94,
+            0x02, 0xfc, 0x3c, 0xe3, 0x60, 0x25, 0xc0, 0xcb, 0x0c, 0xb8, 0xa9, 0x73, 0xbc, 0x13, 0x77, 0xc6,
+            0xe2, 0x20, 0xed, 0x17, 0x7b, 0x12, 0xdc, 0x24, 0x5a, 0xdf, 0xb4, 0x21, 0x9a, 0xcb, 0x8f, 0xc7,
+            0x58, 0x54, 0x11, 0xa9, 0xf1, 0x47, 0x82, 0x9b, 0xba, 0x60, 0xb4, 0x92, 0x28, 0x0e, 0xfb, 0x8b,
+            0x1e, 0x92, 0x23, 0x6a, 0xcf, 0xbf, 0xe5, 0x45, 0xb5, 0x7e, 0xeb, 0x81, 0xf1, 0x78, 0x4b, 0xad,
+            0x17, 0x4d, 0x81, 0x9f, 0xbc, 0x67, 0xa7, 0x56, 0xee, 0xb4, 0xd9, 0xe1, 0x95, 0x21, 0x66, 0x0c,
+            0x95, 0x83, 0x27, 0xde, 0xac, 0x37, 0x20, 0x91, 0x22, 0x07, 0x0b, 0x91, 0x86, 0x94, 0x1a, 0x7b,
+            0xf6, 0x4c, 0xb0, 0xc0, 0xe8, 0x2e, 0x49, 0x65, 0xd6, 0x34, 0x63, 0x0c, 0x88, 0x9b, 0x1c, 0x48,
+            0xca, 0x2b, 0x34, 0xa9, 0x6b, 0x99, 0x3b, 0xee, 0x13, 0x3b, 0x7c, 0x93, 0x0b, 0xf7, 0x0d, 0x49,
+            0x69, 0x18, 0x57, 0xbe, 0x3b, 0x64, 0x45, 0x1d, 0x92, 0x63, 0x7f, 0xe8, 0xf9, 0xa1, 0x19, 0x7b,
+            0x7b, 0x6e, 0xd8, 0xa3, 0x90, 0x23, 0x82, 0xf4, 0xa7, 0xce, 0xc8, 0xf8, 0x90, 0x15, 0xb3, 0x14,
+            0xf4, 0x40, 0xe7, 0x02, 0x78, 0xd3, 0x17, 0x71, 0x23, 0xb1, 0x19, 0xad, 0x6b, 0x49, 0xae, 0x13,
+            0xa4, 0x75, 0x38, 0x51, 0x47, 0x89, 0x67, 0xb0, 0x39, 0xb4, 0x53, 0x86, 0xa4, 0xac, 0xaa, 0xa3,
+            0x34, 0x89, 0xca, 0x2e, 0xe9, 0xc1, 0xfe, 0xf2, 0x51, 0xc6, 0x51, 0x73, 0xaa, 0xf7, 0x9d, 0x2d,
+            0xed, 0xd9, 0xb7, 0x4a, 0xb2, 0xb2, 0x61, 0xe4, 0xef, 0x98, 0xf7, 0xc5, 0xef, 0x51, 0x9b, 0xd8,
+            0xdc, 0x60, 0x6c, 0x41, 0x76, 0xaf, 0x78, 0x1a, 0x62, 0xb5, 0x4c, 0x1e, 0x21, 0x39, 0x9a, 0x5f,
+            0xac, 0x9d, 0xe0, 0x62, 0xe8, 0xe9, 0x2f, 0x2f, 0x48, 0x02, 0x8d, 0x53, 0xc8, 0x91, 0xf2, 0x1a,
+            0xd2, 0x7c, 0x0a, 0x7c, 0x48, 0xbf, 0xda, 0xa9, 0xe3, 0x38, 0xda, 0x34, 0xce, 0x76, 0xa9, 0xda,
+            0x15, 0x91, 0xde, 0x21, 0xf5, 0x55, 0x46, 0xa8, 0x21, 0x9d, 0x51, 0xcc, 0x18, 0x42, 0x44, 0x81,
+            0x8c, 0x94, 0xb4, 0x50, 0x1e, 0x20, 0x42, 0x82, 0x98, 0xc2, 0x3b, 0x10, 0x48, 0xec, 0xa6, 0x39,
+            0x63, 0x13, 0xa7, 0x01, 0x94, 0x40, 0xff, 0x88, 0x0f, 0x98, 0x07, 0x4a, 0x46, 0x38, 0x05, 0xa9,
+            0xcb, 0xf6, 0xc8, 0x21, 0x59, 0xaa, 0x38, 0x45, 0xbf, 0x5c, 0xf8, 0x55, 0x9e, 0x9f, 0x04, 0xed,
+            0xc8, 0x03, 0x42, 0x2a, 0x4b, 0xf6, 0x78, 0x7e, 0x23, 0x67, 0x15, 0xa2, 0x79, 0x29, 0xf4, 0x9b,
+            0x7e, 0x00, 0xbc, 0x2f, 0x46, 0x96, 0x99, 0xea, 0xf1, 0xee, 0x1c, 0x6e, 0x06, 0x9c, 0xdb, 0xe4,
+            0x8c, 0xc2, 0x05, 0xf7, 0x54, 0x51, 0x84, 0xc0, 0x33, 0x02, 0x01, 0xb1, 0x8c, 0x80, 0xdc, 0x99,
+            0x8f, 0xcb, 0x46, 0xff, 0xd1, 0x25, 0xb5, 0xb6, 0x3a, 0xf3, 0x25, 0xbe, 0x85, 0x50, 0x84, 0xf5,
+            0x86, 0x5a, 0x71, 0xf7, 0xbd, 0xa1, 0x4c, 0x52, 0x4f, 0x20, 0xa3, 0x61, 0x23, 0x77, 0x12, 0xd3,
+            0xb1, 0x58, 0x75, 0x22, 0x01, 0x12, 0x70, 0xec, 0x14, 0x91, 0xf9, 0x85, 0x61, 0xd5, 0x7e, 0x98,
+            0x84, 0xc9, 0x76, 0x84, 0xbc, 0xb8, 0xfe, 0x4e, 0x53, 0xa5, 0x06, 0x82, 0x14, 0x95, 0x51,
+        ];
+
+        let _witness_rows = process::<Fr>(compressed.as_raw_slice(), Value::known(Fr::from(123456789)));
 
         Ok(())
     }

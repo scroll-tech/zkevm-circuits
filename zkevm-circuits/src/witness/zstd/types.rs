@@ -88,8 +88,6 @@ impl From<u8> for BlockType {
 pub enum ZstdTag {
     /// Null should not occur.
     Null = 0,
-    /// Magic number bytes.
-    MagicNumber,
     /// The frame header's descriptor.
     FrameHeaderDescriptor,
     /// The frame's content size.
@@ -103,8 +101,10 @@ pub enum ZstdTag {
     /// Zstd block's literals header.
     ZstdBlockLiteralsHeader,
     /// Zstd blocks might contain raw bytes
+    /// NOTE: might be removed then restricted to raw blocks
     ZstdBlockLiteralsRawBytes,
     /// Zstd blocks might contain rle bytes
+    /// NOTE: might be removed then restricted to rle blocks
     ZstdBlockLiteralsRleBytes,
     /// 1 byte Huffman header
     ZstdBlockHuffmanHeader,
@@ -114,14 +114,8 @@ pub enum ZstdTag {
     ZstdBlockHuffmanCode,
     /// Zstd block's jump table.
     ZstdBlockJumpTable,
-    /// Literal stream 1.
-    Lstream1,
-    /// Literal stream 2.
-    Lstream2,
-    /// Literal stream 3.
-    Lstream3,
-    /// Literal stream 4.
-    Lstream4,
+    /// Literal stream.
+    Lstream,
     /// Beginning of sequence section.
     ZstdBlockSequenceHeader,
 }
@@ -138,7 +132,6 @@ impl ToString for ZstdTag {
     fn to_string(&self) -> String {
         String::from(match self {
             Self::Null => "null",
-            Self::MagicNumber => "MagicNumber",
             Self::FrameHeaderDescriptor => "FrameHeaderDescriptor",
             Self::FrameContentSize => "FrameContentSize",
             Self::BlockHeader => "BlockHeader",
@@ -152,10 +145,7 @@ impl ToString for ZstdTag {
             Self::ZstdBlockHuffmanCode => "ZstdBlockHuffmanCode",
             Self::ZstdBlockJumpTable => "ZstdBlockJumpTable",
             Self::ZstdBlockSequenceHeader => "ZstdBlockSequenceHeader",
-            Self::Lstream1 => "Lstream1",
-            Self::Lstream2 => "Lstream2",
-            Self::Lstream3 => "Lstream3",
-            Self::Lstream4 => "Lstream4",
+            Self::Lstream => "Lstream",
         })
     }
 }
@@ -174,7 +164,7 @@ impl<F: Field> Default for ZstdState<F> {
     fn default() -> Self {
         Self {
             tag: ZstdTag::Null,
-            tag_next: ZstdTag::MagicNumber,
+            tag_next: ZstdTag::FrameHeaderDescriptor,
             tag_len: 0,
             tag_idx: 0,
             tag_value: Value::known(F::zero()),
@@ -231,6 +221,8 @@ pub struct HuffmanCodesData {
 
 /// Denotes the tuple (max_bitstring_len, Map<symbol, (weight, bit_value)>).
 type ParsedCanonicalHuffmanCode = (u64, BTreeMap<u64, (u64, u64)>);
+/// A representation indexed by bit_value as key for easier lookup during decoding. (max_bitstring_len, Map<bit_value, symbol>)
+type ParsedCanonicalHuffmanCodeBitValueMap = (u64, BTreeMap<u64, u64>);
 
 impl HuffmanCodesData {
     /// Reconstruct the bitstrings for each symbol based on the canonical Huffman code weights. The
@@ -286,6 +278,21 @@ impl HuffmanCodesData {
 
         (max_bitstring_len, sym_to_tuple)
     }
+
+    /// Construct a representation indexed by bit_value as key for easier lookup during decoding.
+    pub fn parse_canonical_bit_value_map(&self) -> ParsedCanonicalHuffmanCodeBitValueMap {
+        let mut bit_value_mapping: (u64, BTreeMap<u64, u64>) = (0, BTreeMap::new());
+
+        let parsed_huffman_code = self.parse_canonical();
+
+        bit_value_mapping.0 = parsed_huffman_code.0;
+        bit_value_mapping.1 = parsed_huffman_code.1.into_iter().fold(BTreeMap::new(), |mut acc, (symbol, (_weight, bit_value))| {
+            acc.insert(bit_value, symbol);
+            acc
+        });
+
+        bit_value_mapping
+    }
 }
 
 /// A single row in the FSE table.
@@ -329,6 +336,12 @@ pub struct FseAuxiliaryTableData {
     /// For each symbol, the states are in strictly increasing order.
     pub sym_to_states: BTreeMap<FseSymbol, Vec<FseTableRow>>,
 }
+
+/// Another form of Fse table that has state as key instead of the FseSymbol.
+/// In decoding, symbols are emitted from state-chaining. 
+/// This representation makes it easy to look up decoded symbol from current state.   
+/// Map<state, (symbol, baseline, num_bits)>.
+type FseStateMapping = BTreeMap<u64, (u64, u64, u64)>;
 
 impl FseAuxiliaryTableData {
     #[allow(non_snake_case)]
@@ -432,6 +445,19 @@ impl FseAuxiliaryTableData {
                 sym_to_states,
             },
         ))
+    }
+
+    /// Convert an FseAuxiliaryTableData into a state-mapped representation.
+    /// This makes it easier to lookup state-chaining during decoding.
+    pub fn parse_state_table(&self) -> FseStateMapping {
+        let rows: Vec<FseTableRow> = self.sym_to_states.values().flat_map(|v| v.clone()).collect();
+        let mut state_table: FseStateMapping = BTreeMap::new();
+
+        for row in rows {
+            state_table.insert(row.state, (row.symbol, row.baseline, row.num_bits));
+        }
+
+        state_table
     }
 }
 

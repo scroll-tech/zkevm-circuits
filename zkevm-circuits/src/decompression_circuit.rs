@@ -173,7 +173,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             };
         }
 
-        is_tag!(is_magic_number, MagicNumber);
         is_tag!(is_frame_header_descriptor, FrameHeaderDescriptor);
         is_tag!(is_frame_content_size, FrameContentSize);
         is_tag!(is_block_header, BlockHeader);
@@ -184,10 +183,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         is_tag!(is_zb_fse_code, ZstdBlockFseCode);
         is_tag!(is_zb_huffman_code, ZstdBlockHuffmanCode);
         is_tag!(is_zb_jump_table, ZstdBlockJumpTable);
-        is_tag!(is_lstream_1, Lstream1);
-        is_tag!(is_lstream_2, Lstream2);
-        is_tag!(is_lstream_3, Lstream3);
-        is_tag!(is_lstream_4, Lstream4);
+        is_tag!(is_lstream, Lstream);
 
         meta.create_gate("DecompressionCircuit: all rows", |meta| {
             let mut cb = BaseConstraintBuilder::default();
