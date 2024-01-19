@@ -520,35 +520,33 @@ mod tests {
         // sure FSE reconstruction ignores them.
         let src = vec![0xff, 0xff, 0xff, 0x30, 0x6f, 0x9b, 0x03, 0xff, 0xff, 0xff];
 
-        // compression_debug
-        // let (n_bytes, table) = FseAuxiliaryTableData::reconstruct(1, 1, &src, 3)?;
+        let (n_bytes, table) = FseAuxiliaryTableData::reconstruct(&src, 3)?;
 
         // TODO: assert equality for the entire table.
         // for now only comparing state/baseline/nb for S1, i.e. weight == 1.
 
-        // compression_debug
-        // assert_eq!(n_bytes, 4);
-        // assert_eq!(
-        //     table.sym_to_states.get(&FseSymbol::S1).cloned().unwrap(),
-        //     [
-        //         (0x03, 0x10, 3),
-        //         (0x0c, 0x18, 3),
-        //         (0x11, 0x00, 2),
-        //         (0x15, 0x04, 2),
-        //         (0x1a, 0x08, 2),
-        //         (0x1e, 0x0c, 2),
-        //     ]
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(i, &(state, baseline, num_bits))| FseTableRow {
-        //         idx: (i + 1) as u64,
-        //         state,
-        //         symbol: 1,
-        //         baseline,
-        //         num_bits,
-        //     })
-        //     .collect::<Vec<FseTableRow>>(),
-        // );
+        assert_eq!(n_bytes, 4);
+        assert_eq!(
+            table.sym_to_states.get(&FseSymbol::S1).cloned().unwrap(),
+            [
+                (0x03, 0x10, 3),
+                (0x0c, 0x18, 3),
+                (0x11, 0x00, 2),
+                (0x15, 0x04, 2),
+                (0x1a, 0x08, 2),
+                (0x1e, 0x0c, 2),
+            ]
+            .iter()
+            .enumerate()
+            .map(|(i, &(state, baseline, num_bits))| FseTableRow {
+                idx: (i + 1) as u64,
+                state,
+                symbol: 1,
+                baseline,
+                num_bits,
+            })
+            .collect::<Vec<FseTableRow>>(),
+        );
 
         Ok(())
     }
