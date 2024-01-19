@@ -1081,14 +1081,14 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     let l2: u64 = jt_bytes[2] + jt_bytes[3] * 256;
     let l3: u64 = jt_bytes[4] + jt_bytes[5] * 256;
 
-    let value_rlc_iter = src.iter().skip(byte_offset).take(n_bytes).scan(
+    let value_rlc_iter = src.iter().skip(byte_offset).take(N_JUMP_TABLE_BYTES).scan(
         last_row.encoded_data.value_rlc,
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
         },
     );
-    let tag_value_iter = src.iter().skip(byte_offset).take(n_bytes).scan(
+    let tag_value_iter = src.iter().skip(byte_offset).take(N_JUMP_TABLE_BYTES).scan(
         Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
@@ -1098,13 +1098,13 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     let tag_value = tag_value_iter
         .clone()
         .last()
-        .expect("Raw bytes must be of non-zero length");
+        .expect("Tag value must exist.");
 
     (
         byte_offset + N_JUMP_TABLE_BYTES,
         src.iter()
             .skip(byte_offset)
-            .take(n_bytes)
+            .take(N_JUMP_TABLE_BYTES)
             .zip(tag_value_iter)
             .zip(value_rlc_iter)
             .enumerate()
@@ -1112,9 +1112,9 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                 |(i, ((&value_byte, tag_value_acc), value_rlc))| {
                     ZstdWitnessRow {
                         state: ZstdState {
-                            tag,
-                            tag_next,
-                            tag_len: n_bytes as u64,
+                            tag: ZstdTag::ZstdBlockJumpTable,
+                            tag_next: ZstdTag::Lstream,
+                            tag_len: N_JUMP_TABLE_BYTES as u64,
                             tag_idx: (i + 1) as u64,
                             tag_value,
                             tag_value_acc,
@@ -1137,6 +1137,9 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
         [l1, l2, l3]
     )
 }
+
+
+
 fn process_block_zstd_lstream<F: Field>(
     src: &[u8],
     byte_offset: usize,
