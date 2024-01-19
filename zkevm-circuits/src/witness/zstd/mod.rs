@@ -749,6 +749,7 @@ fn process_block_zstd_huffman_header<F: Field>(
 
 // compression_debug
 // waiting on response for whether direct representation will be eliminated from zstd-compressed blocks
+// this is a reserved code block
 
 // fn process_block_zstd_huffman_header<F: Field>(
 //     src: &[u8],
@@ -808,52 +809,40 @@ fn process_block_zstd_huffman_code_direct<F: Field>(
     // weight[0] = (Byte[0] >> 4)
     // weight[1] = (Byte[0] & 0xf).
 
-    let value_rlc_iter = src.iter().skip(byte_offset).take(n_bytes).scan(
-        last_row.encoded_data.value_rlc,
-        |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        },
-    )
-    .into_iter()
-    .flat_map(|v| vec![v, v]);
-
-    let decoded_value_rlc_iter = src
+    let value_rlc_iter = src
         .iter()
         .skip(byte_offset)
         .take(n_bytes)
-        .into_iter()
-        .flat_map(|v| vec![v, v])
-        .zip((0..).cycle().take(n_bytes * 2))
         .scan(
-        last_row.decoded_data.decoded_value_rlc,
-        |acc, (&byte, b_flag)| {
-            let v = if b_flag > 0 { byte & 0xf } else { byte >> 4 };
-            *acc = *acc * randomness + Value::known(F::from(v as u64));
-            Some(*acc)
-        },
-    );
+            last_row.encoded_data.value_rlc,
+            |acc, &byte| {
+                *acc = *acc * randomness + Value::known(F::from(byte as u64));
+                Some(*acc)
+            },
+        )
+        .into_iter()
+        .flat_map(|v| vec![v, v]);
 
     let tag_value_iter = src
         .iter()
         .skip(byte_offset)
         .take(n_bytes)
-        .into_iter()
-        .flat_map(|v| vec![v, v])
-        .zip((0..).cycle().take(n_bytes * 2))
         .scan(
-        Value::known(F::zero()),
-        |acc, (&byte, b_flag)| {
-            let v = if b_flag > 0 { byte & 0xf } else { byte >> 4 };
-            *acc = *acc * randomness + Value::known(F::from(v as u64));
-            Some(*acc)
-        },
-    );
+            Value::known(F::zero()),
+            |acc, &byte| {
+                *acc = *acc * randomness + Value::known(F::from(byte as u64));
+                Some(*acc)
+            },
+        )
+        .into_iter()
+        .flat_map(|v| vec![v, v]);
 
     let tag_value = tag_value_iter
         .clone()
         .last()
         .expect("Raw bytes must be of non-zero length");
+
+    let mut weights: Vec<u64> = vec![];
 
     (
         byte_offset + n_bytes,
@@ -864,24 +853,25 @@ fn process_block_zstd_huffman_code_direct<F: Field>(
             .flat_map(|v| vec![v, v])
             .zip(tag_value_iter)
             .zip(value_rlc_iter)
-            .zip(decoded_value_rlc_iter)
             .zip((0..).cycle().take(n_bytes * 2))
             .enumerate()
             .map(
-                |(i, ((((&value_byte, tag_value_acc), value_rlc), decoded_value_rlc), b_flag))| {
+                |(i, (((&value_byte, tag_value_acc), value_rlc), b_flag))| {
+                    weights.push(if b_flag > 0 { value_byte >> 4 } else { value_byte & 0xf });
+
                     ZstdWitnessRow {
                         state: ZstdState {
                             tag: ZstdTag::ZstdBlockHuffmanCode,
                             tag_next: ZstdTag::ZstdBlockSequenceHeader,
-                            tag_len: (n_bytes * 2) as u64,
-                            tag_idx: (i + 1) as u64,
+                            tag_len: n_bytes as u64,
+                            tag_idx: (i / 2) as u64,
                             tag_value,
                             tag_value_acc,
                         },
                         encoded_data: EncodedData {
                             byte_idx: (byte_offset + i / 2 + 1) as u64,
                             encoded_len: last_row.encoded_data.encoded_len,
-                            value_byte: if b_flag > 0 { value_byte >> 4 } else { value_byte & 0xf },
+                            value_byte: value_byte,
                             value_rlc,
                             reverse: false,
                             ..Default::default()
@@ -893,10 +883,14 @@ fn process_block_zstd_huffman_code_direct<F: Field>(
                 },
             )
             .collect::<Vec<_>>(),
-            HuffmanCodesData { byte_offset: 0, weights: vec![] }
+            HuffmanCodesData { byte_offset: byte_offset, weights: weights }
     )
 }
 
+
+
+
+// compression_debug
 fn process_block_zstd_huffman_code_fse<F: Field>(
     src: &[u8],
     byte_offset: usize,
@@ -1138,8 +1132,6 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     )
 }
 
-
-
 fn process_block_zstd_lstream<F: Field>(
     src: &[u8],
     byte_offset: usize,
@@ -1148,141 +1140,185 @@ fn process_block_zstd_lstream<F: Field>(
     randomness: Value<F>,
     stream_idx: usize,
     huffman_code: &HuffmanCodesData,
-) -> (usize, Vec<ZstdWitnessRow<F>>) {
-    let mut lstream_bits = 
-        src
-            .iter()
-            .skip(byte_offset)
-            .take(len)
-            .rev()
-            .clone()
-            .flat_map(|v| {
-                let mut bits = value_bits_le(*v);
-                bits.reverse();
-                bits
-            })
-            .collect::<Vec<u8>>();
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>) {
+    // Obtain literal stream bits (reversed).
+    let mut lstream_bits = src
+        .iter()
+        .skip(byte_offset)
+        .take(len)
+        .rev()
+        .clone()
+        .flat_map(|v| {
+            let mut bits = value_bits_le(*v);
+            bits.reverse();
+            bits
+        })
+        .collect::<Vec<u8>>();
 
-    // Deliminators vector stores the positions where the bitstream is deliminated (a different value is decoded)
-    // The pair (usize, usize) indicates (byte_idx, bit_idx) where a delimination occurs (think of adding an underscore at the position)
-    // The range between two positions is where a new symbol is decoded or a new segment is recognized (i.e. leading zero section, a single sentinel 1-bit)
-    let mut deliminators: Vec<(usize, usize)> = vec![];
-
-    // Add a virtual deliminator in the front
-    deliminators.push((0, 0));
-
-    // Bitstream processing state values
-    let mut current_byte_idx: usize = 1; // byte_idx is 1-indexed
+    // Bitstream processing state helper values
+    let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
+    let mut current_byte_idx: usize = 1;
     let mut current_bit_idx: usize = 0;
 
-    // Recognize the leading zero section
+    // accumulators
+    let aux_1 = last_row.encoded_data.value_rlc;
+    let value_rlc_acc = src.iter().skip(byte_offset).take(len).rev().scan(
+        last_row.encoded_data.value_rlc,
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    ).collect::<Vec<Value<F>>>();
+    let tag_value_acc = src.iter().skip(byte_offset).take(len).rev().scan(
+        Value::known(F::zero()),
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    ).collect::<Vec<Value<F>>>();
+    let tag_value = tag_value_acc.last().expect("Tag value exists");
+
+    // Decide the next tag
+    let tag_next = match stream_idx {
+        0 | 1 | 2 => ZstdTag::Lstream,
+        3 => ZstdTag::ZstdBlockSequenceHeader,
+        _ => unreachable!("stream_idx value out of range")
+    };
+
+    // Add a witness row for leading 0s
+    witness_rows.push(ZstdWitnessRow {
+        state: ZstdState {
+            tag: ZstdTag::Lstream,
+            tag_next,
+            tag_len: len as u64,
+            tag_idx: current_byte_idx as u64,
+            tag_value: tag_value,
+            tag_value_acc: tag_value_acc[current_byte_idx - 1],
+        },
+        encoded_data: EncodedData {
+            byte_idx: (byte_offset + len - current_byte_idx) as u64,
+            encoded_len: last_row.encoded_data.encoded_len,
+            value_byte: src[byte_offset + len - current_byte_idx],
+            value_rlc: value_rlc_acc[current_byte_idx - 1],
+            // reverse specific values
+            reverse: true,
+            reverse_len: len,
+            reverse_idx: len - (current_byte_idx - 1),
+            aux_1,
+            aux_2: tag_value
+
+            ..Default::default()
+        },
+        huffman_data: HuffmanData::default(),
+        decoded_data: last_row.decoded_data.clone(),
+        fse_data: FseTableRow::default(),
+    });
+    
+    // Exclude the leading zero section
     while lstream_bits[current_bit_idx] == 0 {
         increment_idx(current_byte_idx, current_bit_idx);
     }
-    deliminators.push((current_byte_idx, current_bit_idx)); // indicates the end of leading zeros
 
-    // The next bit is the sentinel bit
+    // Add a witness row for sentinel 1-bit
+    witness_rows.push(ZstdWitnessRow {
+        state: ZstdState {
+            tag: ZstdTag::Lstream,
+            tag_next,
+            tag_len: len as u64,
+            tag_idx: current_byte_idx as u64,
+            tag_value: tag_value,
+            tag_value_acc: tag_value_acc[current_byte_idx - 1],
+        },
+        encoded_data: EncodedData {
+            byte_idx: (byte_offset + len - current_byte_idx) as u64,
+            encoded_len: last_row.encoded_data.encoded_len,
+            value_byte: src[byte_offset + len - current_byte_idx],
+            value_rlc: value_rlc_acc[current_byte_idx - 1],
+            // reverse specific values
+            reverse: true,
+            reverse_len: len,
+            reverse_idx: len - (current_byte_idx - 1),
+            aux_1,
+            aux_2: tag_value
+
+            ..Default::default()
+        },
+        huffman_data: HuffmanData::default(),
+        decoded_data: last_row.decoded_data.clone(),
+        fse_data: FseTableRow::default(),
+    });
+
+    // Exclude the sentinel 1-bit
     increment_idx(current_byte_idx, current_bit_idx);
-    deliminators.push((current_byte_idx, current_bit_idx));
 
     // Now the actual symbol-bearing bitstream starts
     let huffman_bit_value_map = huffman_code.parse_canonical_bit_value_map();
+    let mut decoded_symbols: Vec<u64> = vec![];
     let mut bit_value_acc: u64 = 0;
     let mut cur_bitstring_len: usize = 0;
-    let mut decoded_symbols: Vec<u64> = vec![];
 
     while current_bit_idx < len * N_BITS_PER_BYTE {
         if huffman_bit_value_map.1.contains_key(&bit_value_acc) {
             decoded_symbols.push(huffman_bit_value_map.1.get(&bit_value_acc).unwrap().clone());
             
-            // Mark the new deliminator
-            for _ in 0..cur_bitstring_len {
+            let from_byte_idx = current_byte_idx;
+            let from_bit_idx = current_bit_idx;
+
+            // advance byte and bit marks to the last bit
+            for _ in 0..(cur_bitstring_len - 1) {
                 increment_idx(current_byte_idx, current_bit_idx);
             }
-            deliminators.push((current_byte_idx, current_bit_idx));
+
+            // Add a witness row for emitted symbol
+            witness_rows.push(ZstdWitnessRow {
+                state: ZstdState {
+                    tag: ZstdTag::Lstream,
+                    tag_next,
+                    tag_len: len as u64,
+                    tag_idx: from_byte_idx as u64,
+                    tag_value: tag_value,
+                    tag_value_acc: tag_value_acc[from_byte_idx - 1],
+                },
+                encoded_data: EncodedData {
+                    byte_idx: (byte_offset + len - from_byte_idx) as u64,
+                    encoded_len: last_row.encoded_data.encoded_len,
+                    value_byte: src[byte_offset + len - from_byte_idx],
+                    value_rlc: value_rlc_acc[from_byte_idx - 1],
+                    // reverse specific values
+                    reverse: true,
+                    reverse_len: len,
+                    reverse_idx: len - (from_byte_idx - 1),
+                    aux_1,
+                    aux_2: tag_value
+
+                    ..Default::default()
+                },
+                huffman_data: HuffmanData {
+                    byte_offset: (byte_offset + len - from_byte_idx) as u64,
+                    bit_value: bit_value_acc,
+                    k: (from_bit_idx, to_bit_idx),
+                },
+                decoded_data: last_row.decoded_data.clone(),
+                fse_data: FseTableRow::default(),
+            });
+
+            // advance byte and bit marks again to get the start of next bitstring
+            increment_idx(current_byte_idx, current_bit_idx);
 
             // Reset decoding state
             bit_value_acc = 0;
             cur_bitstring_len = 0;
         } else {
-            bit_value_acc += (src[current_bit_idx + cur_bitstring_len] as u64) * 2u64.pow(cur_bitstring_len as u32);
+            bit_value_acc = bit_value_acc * 2 + lstream_bits[current_bit_idx + cur_bitstring_len];
             cur_bitstring_len += 1;
 
             if cur_bitstring_len > huffman_bit_value_map.0 as usize {
-                unreachable!("read bit len greater than max bitstring len");
+                panic!("Reading bit len greater than max bitstring len not allowed.");
             }
         }
     }
-    
-    // Now construct the witness rows
-    let tag_next = if stream_idx == 3 {
-        ZstdTag::ZstdBlockSequenceHeader
-    } else {
-        match stream_idx {
-            0 | 1 | 2 => ZstdTag::Lstream,
-            _ => unreachable!("stream_idx value out of range")
-        }
-    };
 
-    // Add the leading zero and sentinel 1-bit.
-    if deliminators[1] == (1, 0) {
-        // there're no leading zeros
-        decoded_symbols.insert(0, 1);
-    } else {
-        decoded_symbols.insert(0, 0);
-        decoded_symbols.insert(1, 1);
-    }
-
-    // Witness rows
-    let mut value_rlc = last_row.encoded_data.value_rlc;
-
-    let tag_value_iter = decoded_symbols.iter().scan(
-        Value::known(F::zero()),
-        |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(symbol as u64));
-            Some(*acc)
-        },
-    );
-
-    let tag_value = tag_value_iter
-        .clone()
-        .last()
-        .expect("Tag value exists");
-
-    let mut witness_rows: Vec<ZstdWitnessRow> = vec![];
-    
-    let mut last_pos = deliminators[0];
-    for (idx, curr_pos) in deliminators.into_iter().skip(1).enumerate() {
-        if curr_pos.0 > last_pos.0 {
-            value_rlc = value_rlc * randomness + Value::known(F::from)
-        }
-        
-        witness_rows.push(ZstdWitnessRow {
-            state: ZstdState {
-                tag: ZstdTag::Lstream,
-                tag_next,
-                tag_len: len as u64,
-                tag_idx: idx as u64,
-                tag_value: tag_value,
-                tag_value_acc: tag_value_iter.next(),
-            },
-            encoded_data: EncodedData {
-                byte_idx: (byte_offset + last_pos.0) as u64,
-                encoded_len: last_row.encoded_data.encoded_len,
-                value_byte: src[byte_offset + last_pos.0],
-                value_rlc,
-                reverse: true,
-                ..Default::default()
-            },
-            decoded_data: last_row.decoded_data.clone(),
-            huffman_data: HuffmanData::default(),   // TODO: correct witness assignment value
-            fse_data: FseTableRow::default(),
-        });
-
-        last_pos = curr_pos;
-    }
-
-    (byte_offset + len, witness_rows)
+    (byte_offset + len, witness_rows.iter().rev().collect::<Vec<ZstdWitnessRow<F>>>(), decoded_symbols)
 }
 
 pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> Vec<ZstdWitnessRow<F>> {
