@@ -722,7 +722,7 @@ fn process_block_zstd_huffman_header<F: Field>(
         vec![ZstdWitnessRow {
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockHuffmanHeader,
-                tag_next: ZstdTag::ZstdBlockFseCode,
+                tag_next: ZstdTag::ZstdBlockHuffmanCode,
                 tag_len: 1 as u64,
                 tag_idx: 1 as u64,
                 tag_value,
