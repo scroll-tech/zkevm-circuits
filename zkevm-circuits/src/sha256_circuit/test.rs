@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, SimpleFloorPlanner},
     plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ConstraintSystem, Error},
     transcript::{Blake2bRead, Blake2bWrite, Challenge255},
 };
@@ -7,9 +7,10 @@ use rand::rngs::OsRng;
 
 use super::{circuit::*, BLOCK_SIZE};
 
+use crate::util::Challenges;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr},
-    plonk::{Advice, Any, Column, Expression, Fixed},
+    plonk::{Advice, Any, Column, Fixed, SecondPhase},
     poly::{
         commitment::ParamsProver,
         kzg::{
@@ -29,7 +30,7 @@ struct MyCircuit {
 }
 
 impl Circuit<Fr> for MyCircuit {
-    type Config = CircuitConfig;
+    type Config = (CircuitConfig, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -59,23 +60,25 @@ impl Circuit<Fr> for MyCircuit {
 
         let dev_table = DevTable {
             s_enable: meta.fixed_column(),
-            input_rlc: meta.advice_column(),
             input_len: meta.advice_column(),
-            hashes_rlc: meta.advice_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
+            hashes_rlc: meta.advice_column_in(SecondPhase),
             is_effect: meta.advice_column(),
         };
         meta.enable_constant(dev_table.s_enable);
 
-        let chng = Expression::Constant(Fr::from(0x100u64));
-        Self::Config::configure(meta, dev_table, chng)
+        let challenges = Challenges::construct(meta);
+        let chng = challenges.exprs(meta).keccak_input();
+        (CircuitConfig::configure(meta, dev_table, chng), challenges)
     }
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        (config, challenges): Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let chng_v = Value::known(Fr::from(0x100u64));
+        let challenges = challenges.values(&layouter);
+        let chng_v = challenges.keccak_input();
         let mut hasher = Hasher::new(config, &mut layouter)?;
 
         for _ in 0..self.blocks {
@@ -114,7 +117,7 @@ fn vk_stable() {
         &params,
         &pk,
         &[circuit],
-        &[],
+        &[&[]],
         OsRng,
         &mut transcript,
     )
@@ -127,7 +130,7 @@ fn vk_stable() {
         &params,
         &vk_from_empty,
         strategy,
-        &[],
+        &[&[]],
         &mut transcript,
     )
     .unwrap();
