@@ -15,7 +15,7 @@ use super::{
 /// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
 /// fields are assigned correctly.
 #[derive(Clone, Debug)]
-pub struct ZstdRomTableRow {
+pub struct ZstdTagRomTableRow {
     /// The current tag.
     tag: ZstdTag,
     /// The tag that will be processed after the current tag is finished processing.
@@ -24,7 +24,7 @@ pub struct ZstdRomTableRow {
     max_len: u64,
 }
 
-impl ZstdRomTableRow {
+impl ZstdTagRomTableRow {
     pub(crate) fn values<F: Field>(&self) -> Vec<Value<F>> {
         vec![
             Value::known(F::from(usize::from(self.tag) as u64)),

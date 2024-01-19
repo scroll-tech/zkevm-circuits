@@ -20,8 +20,8 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
     witness::{
-        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, ZstdRomTableRow,
-        N_BITS_SYMBOL, N_MAX_SYMBOLS,
+        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, ZstdTag,
+        ZstdTagRomTableRow, N_BITS_SYMBOL, N_MAX_SYMBOLS,
     },
 };
 
@@ -1697,7 +1697,7 @@ impl HuffmanCodesBitstringAccumulationTable {
 /// from the Decompression circuit to check if a given row can occur depending on the row's tag,
 /// next tag and tag length.
 #[derive(Clone, Copy, Debug)]
-pub struct ZstdRomTable {
+pub struct ZstdTagRomTable {
     /// Tag of the current field being decoded.
     pub tag: Column<Fixed>,
     /// Tag of the following field when the current field is finished decoding.
@@ -1706,7 +1706,7 @@ pub struct ZstdRomTable {
     pub max_len: Column<Fixed>,
 }
 
-impl<F: Field> LookupTable<F> for ZstdRomTable {
+impl<F: Field> LookupTable<F> for ZstdTagRomTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![self.tag.into(), self.tag_next.into(), self.max_len.into()]
     }
@@ -1720,7 +1720,7 @@ impl<F: Field> LookupTable<F> for ZstdRomTable {
     }
 }
 
-impl ZstdRomTable {
+impl ZstdTagRomTable {
     /// Construct the ROM table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
@@ -1735,10 +1735,10 @@ impl ZstdRomTable {
         layouter.assign_region(
             || "Zstd ROM table",
             |mut region| {
-                let rows: Vec<ZstdRomTableRow> = Vec::new();
+                let rows: Vec<ZstdTagRomTableRow> = Vec::new();
 
                 for (offset, row) in rows.iter().enumerate() {
-                    for (&column, value) in <ZstdRomTable as LookupTable<F>>::fixed_columns(self)
+                    for (&column, value) in <ZstdTagRomTable as LookupTable<F>>::fixed_columns(self)
                         .iter()
                         .zip(row.values::<F>().into_iter())
                     {
@@ -1751,6 +1751,81 @@ impl ZstdRomTable {
                     }
                 }
 
+                Ok(())
+            },
+        )
+    }
+}
+
+/// Read-only Memory table for the Decompression circuit. This table allows us a lookup argument
+/// from the Decompression circuit to check if the next tag is correct based on which block type we
+/// have encountered in the block header. Block type is denoted by 2 bits in the block header.
+#[derive(Clone, Copy, Debug)]
+pub struct ZstdBlockTypeRomTable {
+    /// Lower bit.
+    lo_bit: Column<Fixed>,
+    /// Higher bit.
+    hi_bit: Column<Fixed>,
+    /// Tag that follows.
+    tag_next: Column<Fixed>,
+}
+
+impl<F: Field> LookupTable<F> for ZstdBlockTypeRomTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.lo_bit.into(), self.hi_bit.into(), self.tag_next.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("lo_bit"),
+            String::from("hi_bit"),
+            String::from("tag_next"),
+        ]
+    }
+}
+
+impl ZstdBlockTypeRomTable {
+    /// Construct the ROM table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            lo_bit: meta.fixed_column(),
+            hi_bit: meta.fixed_column(),
+            tag_next: meta.fixed_column(),
+        }
+    }
+
+    /// Load the ROM table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "Zstd BlockType ROM table",
+            |mut region| {
+                for (i, &(lo_bit, hi_bit, tag_next)) in [
+                    (0, 0, ZstdTag::RawBlockBytes),
+                    (0, 1, ZstdTag::RleBlockBytes),
+                    (1, 0, ZstdTag::ZstdBlockLiteralsHeader),
+                ]
+                .iter()
+                .enumerate()
+                {
+                    region.assign_fixed(
+                        || "lo_bit",
+                        self.lo_bit,
+                        i,
+                        || Value::known(F::from(lo_bit)),
+                    )?;
+                    region.assign_fixed(
+                        || "hi_bit",
+                        self.hi_bit,
+                        i,
+                        || Value::known(F::from(hi_bit)),
+                    )?;
+                    region.assign_fixed(
+                        || "tag_next",
+                        self.tag_next,
+                        i,
+                        || Value::known(F::from(tag_next as u64)),
+                    )?;
+                }
                 Ok(())
             },
         )

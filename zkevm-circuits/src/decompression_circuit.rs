@@ -26,17 +26,22 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{decompression::ZstdRomTable, KeccakTable, LookupTable, Pow2Table, U8Table},
+    table::{
+        decompression::{ZstdBlockTypeRomTable, ZstdTagRomTable},
+        KeccakTable, LookupTable, Pow2Table, RangeTable, U8Table,
+    },
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{Block, ZstdTag, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG},
+    witness::{Block, ZstdTag, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES},
 };
 
 /// Tables, challenge API used to configure the Decompression circuit.
 pub struct DecompressionCircuitConfigArgs<F> {
     /// Challenge API.
     pub challenges: Challenges<Expression<F>>,
-    /// U8 table, i.e. RangeTable for 0..8.
+    /// U8 table, i.e. RangeTable for [0, 1 << 8).
     pub u8_table: U8Table,
+    /// RangeTable for [0, 8).
+    pub range_table_0x08: RangeTable<8>,
     /// Power of 2 table.
     pub pow2_table: Pow2Table,
     /// Table from the Keccak circuit.
@@ -82,7 +87,7 @@ pub struct DecompressionCircuitConfig<F> {
     /// The random linear combination of all decoded bytes up to and including the current one.
     decoded_rlc: Column<Advice>,
     /// Block level details are specified in these columns.
-    block_gadget: BlockGadget<F>,
+    block_gadget: BlockGadget,
     /// All zstd tag related columns.
     tag_gadget: ZstdTagGadget<F>,
     /// Columns used to process bytes back-to-front.
@@ -94,17 +99,15 @@ pub struct DecompressionCircuitConfig<F> {
 
 /// Block level details are specified in these columns.
 #[derive(Clone, Debug)]
-pub struct BlockGadget<F> {
+pub struct BlockGadget {
+    /// Boolean column to indicate that we are processing a block.
+    is_block: Column<Advice>,
     /// The incremental index of the byte within this block.
     idx: Column<Advice>,
     /// The number of compressed bytes in the block.
     block_len: Column<Advice>,
-    /// Helper gadget to compare idx <= block_len.
-    idx_cmp_len: ComparatorConfig<F, 1>,
-    /// Column that holds the type of this block throughout the block rows.
-    block_type: Column<Advice>,
     /// Boolean column to mark whether or not this is the last block.
-    last_block: Column<Advice>,
+    is_last_block: Column<Advice>,
 }
 
 /// All tag related columns are placed in this type.
@@ -159,17 +162,45 @@ pub struct ReverseChunk {
 impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
     type ConfigArgs = DecompressionCircuitConfigArgs<F>;
 
+    /// The layout is as follows:
+    ///
+    /// | Tag                     | N(bytes) | Max(N(bytes)) |
+    /// |-------------------------|----------|---------------|
+    /// | FrameHeaderDescriptor   | 1        | 1             |
+    /// | FrameContentSize        | ?        | 8             |
+    /// | BlockHeader             | 3        | 3             |
+    /// | RawBlockBytes           | ?        | ?             |
+    /// | BlockHeader             | 3        | 3             |
+    /// | RleBlockBytes           | ?        | ?             |
+    /// | BlockHeader             | 3        | 3             |
+    /// | ZstdBlockLiteralsHeader | ?        | 5             |
+    /// | ZstdBlockHuffmanHeader  | ?        | ?             |
+    /// | ZstdBlockFseCode        | ?        | ?             |
+    /// | ZstdBlockHuffmanCode    | ?        | ?             |
+    /// | ZstdBlockJumpTable      | ?        | ?             |
+    /// | ZstdBlockLstream        | ?        | ?             |
+    /// | ZstdBlockLstream        | ?        | ?             |
+    /// | ZstdBlockLstream        | ?        | ?             |
+    /// | ZstdBlockLstream        | ?        | ?             |
+    /// | Sequences               | ?        | ?             |
+    ///
+    /// The above layout is for a frame that consists of 3 blocks:
+    /// - Raw Block
+    /// - RLE Block
+    /// - Zstd Compressed Literals Block
     fn new(
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
             challenges,
             u8_table,
+            range_table_0x08,
             pow2_table,
             keccak_table: _,
         }: Self::ConfigArgs,
     ) -> Self {
         // Create the fixed columns read-only memory table for zstd (tag, tag_next, max_len).
-        let rom_table = ZstdRomTable::construct(meta);
+        let tag_rom_table = ZstdTagRomTable::construct(meta);
+        let block_type_rom_table = ZstdBlockTypeRomTable::construct(meta);
 
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -183,22 +214,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         let decoded_len_acc = meta.advice_column();
         let decoded_byte = meta.advice_column();
         let decoded_rlc = meta.advice_column_in(SecondPhase);
-        let block_gadget = {
-            let idx = meta.advice_column();
-            let block_len = meta.advice_column();
-            BlockGadget {
-                idx,
-                block_len,
-                idx_cmp_len: ComparatorChip::configure(
-                    meta,
-                    |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                    |meta| meta.query_advice(idx, Rotation::cur()),
-                    |meta| meta.query_advice(block_len, Rotation::cur()),
-                    u8_table.into(),
-                ),
-                block_type: meta.advice_column(),
-                last_block: meta.advice_column(),
-            }
+        let block_gadget = BlockGadget {
+            is_block: meta.advice_column(),
+            idx: meta.advice_column(),
+            block_len: meta.advice_column(),
+            is_last_block: meta.advice_column(),
         };
         let tag_gadget = {
             let tag = meta.advice_column();
@@ -321,6 +341,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             cb.require_boolean(
                 "reverse is boolean",
                 meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
+            );
+
+            cb.require_boolean(
+                "is_block is boolean",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
             );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -527,23 +552,24 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        meta.lookup_any("ROM table lookup", |meta| {
-            let cond = and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_fixed(q_enable, Rotation::next()),
-                not::expr(meta.query_advice(is_padding, Rotation::cur())),
-                not::expr(meta.query_advice(is_padding, Rotation::next())),
-            ]);
-            vec![
-                meta.query_advice(tag_gadget.tag, Rotation::cur()),
-                meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-                meta.query_advice(tag_gadget.max_len, Rotation::cur()),
-            ]
-            .into_iter()
-            .zip(rom_table.table_exprs(meta))
-            .map(|(arg, table)| (cond.expr() * arg, table))
-            .collect()
-        });
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_advice(is_padding, Rotation::next())),
+                ]);
+                vec![
+                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                    meta.query_advice(tag_gadget.max_len, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(tag_rom_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -793,17 +819,131 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ///////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// ZstdTag::BlockHeader ///////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
+
+        // Note: We only verify the 1st row of BlockHeader for tag_value.
         meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "tag_len == 3",
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                N_BLOCK_HEADER_BYTES.expr(),
+            );
+
+            // The lowest bit (as per little-endian representation) is whether the block is the
+            // last block in the frame or not.
+            //
+            // The next 2 bits denote the block type.
+            cb.require_equal(
+                "last block check",
+                meta.query_advice(value_bits[7], Rotation::cur()),
+                meta.query_advice(
+                    block_gadget.is_last_block,
+                    Rotation(N_BLOCK_HEADER_BYTES as i32),
+                ),
+            );
+            let block_type_bit0 = meta.query_advice(value_bits[6], Rotation::cur());
+            let block_type_bit1 = meta.query_advice(value_bits[5], Rotation::cur());
+            cb.require_zero(
+                "block type cannot be RESERVED, i.e. block_type == 3 not possible",
+                block_type_bit0 * block_type_bit1,
+            );
+            cb.require_equal(
+                "block_idx == 1",
+                meta.query_advice(block_gadget.idx, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                1.expr(),
+            );
+
+            // If this wasn't the first block, then the previous block's last byte should have
+            // block's idx == block length.
+            //
+            // This block is the first block iff the FrameContentSize tag precedes it.
+            cb.condition(
+                not::expr(tag_gadget
+                    .tag_bits
+                    .value_equals(ZstdTag::FrameContentSize, Rotation::prev())(
+                    meta
+                )),
+                |cb| {
+                    cb.require_equal(
+                        "block_idx::prev == block_len::prev",
+                        meta.query_advice(block_gadget.idx, Rotation::prev()),
+                        meta.query_advice(block_gadget.block_len, Rotation::prev()),
+                    );
+                },
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
                 is_block_header(meta),
             ]))
         });
+        meta.create_gate("DecompressionCircuit: while processing a block", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
+            // If byte_idx increments, then block_gadet.idx should also increment.
+            cb.require_equal(
+                "idx in block increments if byte_idx increments",
+                meta.query_advice(block_gadget.idx, Rotation::next())
+                    - meta.query_advice(block_gadget.idx, Rotation::cur()),
+                meta.query_advice(byte_idx, Rotation::next())
+                    - meta.query_advice(byte_idx, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "block_len remains unchanged",
+                meta.query_advice(block_gadget.block_len, Rotation::next()),
+                meta.query_advice(block_gadget.block_len, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "is_last_block remains unchanged",
+                meta.query_advice(block_gadget.is_last_block, Rotation::next()),
+                meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                meta.query_advice(block_gadget.is_block, Rotation::next()),
+            ]))
+        });
+        meta.lookup(
+            "DecompressionCircuit: BlockHeader (BlockSize == BlockHeader >> 3)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                    is_block_header(meta),
+                ]);
+                let range_value = meta.query_advice(tag_gadget.tag_value, Rotation::cur())
+                    - (meta.query_advice(
+                        block_gadget.block_len,
+                        Rotation(N_BLOCK_HEADER_BYTES as i32),
+                    ) * 8.expr());
+                vec![(condition * range_value, range_table_0x08.into())]
+            },
+        );
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for tuple (block_type, tag_next)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                    is_block_header(meta),
+                ]);
+                vec![
+                    meta.query_advice(value_bits[6], Rotation::cur()),
+                    meta.query_advice(value_bits[5], Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                ]
+                .into_iter()
+                .zip(block_type_rom_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
         debug_assert!(meta.degree() <= 9);
 
         ///////////////////////////////////////////////////////////////////////////////////////////
@@ -812,7 +952,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: RawBlock", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -828,7 +972,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: RleBlock", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -844,7 +992,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockLiteralsHeader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -860,7 +1012,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockHuffmanHeader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -876,7 +1032,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockFseCode", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -892,7 +1052,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockHuffmanCode", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -908,7 +1072,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockJumpTable", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -924,7 +1092,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockLstream", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero("dummy", 0.expr());
+            cb.require_equal(
+                "is_block == True",
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
