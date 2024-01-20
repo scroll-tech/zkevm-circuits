@@ -181,7 +181,7 @@ Assign an empty row first, then followed by each tx's data fields except calldat
     - Lookup RLP table to validate the value correspond to any of these tags with the corresponding hash format `L1MsgHash`(for `tx_type==L1Msg`) or `TxHashPreEip155` (for `tx_type==PreEip155`) or `TxHashEip155` (for `tx_type==Eip155`).
 
 - lookup to sig table for signature information `(msg_hash_rlc, v, r, s, sv_address)`
-    - triggerd with tx_tag is ChainID and `is_l1_msg==false`;
+    - triggered with tx_tag is ChainID and `is_l1_msg==false`;
     - lookup `(msg_hash_rlc=TxSignHash, v, r, s, sv_address)` to sig_table. `v` is determined based on `chain_id` and `ty_type` being `Eip155` or `PreEip155`.
 
 - lookup to Keccak table for TxSign and TxHash data length and hash result (LookupCondition::Keccak)
