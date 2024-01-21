@@ -140,12 +140,14 @@ pub struct TxCircuitConfig<F: Field> {
     tx_id_is_zero: IsZeroConfig<F>,
     /// Primarily used to verify if the `CallDataLength` is zero or non-zero
     ///  and `CallData` byte is zero or non-zero.
-    value_is_zero: [IsZeroConfig<F>; 2],
+    value_limb_is_zero: [IsZeroConfig<F>; 2],
+
     /// We use an equality gadget to know whether the tx id changes between
     /// subsequent rows or not.
     tx_id_unchanged: IsEqualConfig<F>,
 
     /// Columns used to reduce degree
+    is_value_zero: Column<Advice>,
     is_tag_block_num: Column<Advice>,
     is_calldata: Column<Advice>,
     is_caller_address: Column<Advice>,
@@ -289,6 +291,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_calldata = meta.advice_column();
         let is_caller_address = meta.advice_column();
         let is_chain_id = meta.advice_column();
+        let is_value_zero = meta.advice_column();
         let is_tag_block_num = meta.advice_column();
         let lookup_conditions = [
             LookupCondition::TxCalldata,
@@ -308,7 +311,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         let log_deg = |s: &'static str, meta: &mut ConstraintSystem<F>| {
             //TODO： decrease degree to old nubmer 9.
-            debug_assert!(meta.degree() <= 10);
+            debug_assert!(meta.degree() <= 9);
             log::info!("after {}, meta.degree: {}", s, meta.degree());
         };
 
@@ -584,8 +587,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 |cb| {
                     cb.require_zero(
                         "CallDataLength != 0",
-                        value_is_zero_lo.expr(Rotation::next())(meta)
-                            + value_is_zero_hi.expr(Rotation::next())(meta),
+                        meta.query_advice(is_value_zero, Rotation::next()),
                     );
                 },
             );
@@ -647,6 +649,23 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        meta.create_gate("is_value_zero", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_boolean(
+                "is_value_zero is bool",
+                meta.query_advice(is_value_zero, Rotation::cur()),
+            );
+            cb.require_equal(
+                "is_value_zero = value_is_zero_lo && value_is_zero_hi",
+                meta.query_advice(is_value_zero, Rotation::cur()),
+                value_is_zero_lo.expr(Rotation::cur())(meta)
+                    * value_is_zero_hi.expr(Rotation::cur())(meta),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         meta.create_gate("is_l1_msg", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -666,10 +685,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 "condition",
                 and::expr([
                     is_data_length(meta),
-                    not::expr(value_is_zero_lo.expr(Rotation::cur())(meta)),
-                    not::expr(value_is_zero_hi.expr(Rotation::cur())(meta)),
-                    // not::expr(value_is_zero_lo.expr(Rotation::cur())(meta)
-                    //     * value_is_zero_hi.expr(Rotation::cur())(meta)),
+                    not::expr(meta.query_advice(is_value_zero, Rotation::cur())),
                 ]),
                 meta.query_advice(
                     lookup_conditions[&LookupCondition::TxCalldata],
@@ -1043,9 +1059,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cb.require_equal(
                     "is_padding_tx = true if caller_address = 0",
                     meta.query_advice(is_padding_tx, Rotation::cur()),
-                    //value_is_zero.expr(Rotation::cur())(meta),
-                    value_is_zero_lo.expr(Rotation::cur())(meta)
-                        * value_is_zero_hi.expr(Rotation::cur())(meta),
+                    meta.query_advice(is_value_zero, Rotation::cur()),
                 );
             });
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1203,9 +1217,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         meta.create_gate("tx call data init", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-
-            let value_is_zero = value_is_zero_lo.expr(Rotation::cur())(meta)
-                + value_is_zero_hi.expr(Rotation::cur())(meta);
+            let value_is_zero = meta.query_advice(is_value_zero, Rotation::cur());
 
             let gas_cost = select::expr(value_is_zero, 4.expr(), 16.expr());
 
@@ -1250,8 +1262,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     1.expr(),
                 );
 
-                let value_next_is_zero = value_is_zero_lo.expr(Rotation::next())(meta)
-                    + value_is_zero_hi.expr(Rotation::next())(meta);
+                let value_next_is_zero = meta.query_advice(is_value_zero, Rotation::next());
 
                 let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
                 // call data gas cost accumulator check.
@@ -1284,8 +1295,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 ]),
                 |cb| {
                     //let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
-                    let value_next_is_zero = value_is_zero_lo.expr(Rotation::next())(meta)
-                        + value_is_zero_hi.expr(Rotation::next())(meta);
+                    let value_next_is_zero = meta.query_advice(is_value_zero, Rotation::next());
+
                     let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
 
                     cb.require_equal(
@@ -1375,8 +1386,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             "caller address == sv_address if it's not zero and tx_type != L1Msg",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
-                let value_is_zero = value_is_zero_lo.expr(Rotation::cur())(meta)
-                    * value_is_zero_hi.expr(Rotation::cur())(meta);
+                let value_is_zero = meta.query_advice(is_value_zero, Rotation::cur());
 
                 cb.condition(not::expr(value_is_zero), |cb| {
                     cb.require_equal(
@@ -1413,8 +1423,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             u8_table,
             u16_table,
             tx_id_is_zero,
-            value_is_zero: [value_is_zero_lo, value_is_zero_hi],
+            value_limb_is_zero: [value_is_zero_lo, value_is_zero_hi],
             tx_id_unchanged,
+            is_value_zero,
             is_calldata,
             is_caller_address,
             tx_id_cmp_cum_num_txs,
@@ -1693,7 +1704,6 @@ impl<F: Field> TxCircuitConfig<F> {
             // TODO: check if lo covers msg_hash_rlc, sig(v,r,s)
             let msg_hash_lo = meta.query_advice(tx_table.value.lo(), Rotation(6));
             // let msg_hash_hi = meta.query_advice(tx_table.value.hi(), Rotation(6));
-            println!("lookup sig table");
             let chain_id = meta.query_advice(tx_table.value.lo(), Rotation::cur());
             let sig_v = meta.query_advice(tx_table.value.lo(), Rotation(1));
             let sig_r = meta.query_advice(tx_table.value.lo(), Rotation(2));
@@ -1797,7 +1807,6 @@ impl<F: Field> TxCircuitConfig<F> {
         cum_num_txs: u64,
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<word::Word<AssignedCell<F, F>>>, Error> {
-        println!("assign_fixed_rows in tx circuit");
         let keccak_input = challenges.keccak_input();
         let evm_word = challenges.evm_word();
         let zero_rlc = keccak_input.map(|_| F::zero());
@@ -2469,11 +2478,19 @@ impl<F: Field> TxCircuitConfig<F> {
         let tx_id_is_zero_chip = IsZeroChip::construct(self.tx_id_is_zero.clone());
         tx_id_is_zero_chip.assign(region, offset, Value::known(F::from(tx_id as u64)))?;
 
-        let value_is_zero_lo_chip = IsZeroChip::construct(self.value_is_zero[0].clone());
+        let value_word_zero =
+            unwrap_value(value.lo()) == F::zero() && unwrap_value(value.hi()) == F::zero();
+        let value_is_zero_lo_chip = IsZeroChip::construct(self.value_limb_is_zero[0].clone());
         value_is_zero_lo_chip.assign(region, offset, value.lo())?;
-        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_is_zero[1].clone());
+        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_limb_is_zero[1].clone());
         value_is_zero_hi_chip.assign(region, offset, value.hi())?;
 
+        region.assign_advice(
+            || "tx circuit: is_value_zero",
+            self.is_value_zero,
+            offset,
+            || Value::known(F::from(value_word_zero as u64)),
+        )?;
         let tx_id_unchanged_chip = IsEqualChip::construct(self.tx_id_unchanged.clone());
         tx_id_unchanged_chip.assign(
             region,
@@ -2482,7 +2499,6 @@ impl<F: Field> TxCircuitConfig<F> {
             Value::known(F::from(tx_id_next as u64)),
         )?;
 
-        println!("tx circuit: assign_common_part");
         // fixed columns
         for (col_anno, col, col_val) in [
             ("q_enable", self.tx_table.q_enable, F::one()),
@@ -2520,11 +2536,10 @@ impl<F: Field> TxCircuitConfig<F> {
         start: usize,
         end: usize,
     ) -> Result<(), Error> {
-        // let rlp_data = F::from( as u64);
         let tag = F::from(CallData as u64);
         let tx_id_is_zero_chip = IsZeroChip::construct(self.tx_id_is_zero.clone());
-        let value_is_zero_lo_chip = IsZeroChip::construct(self.value_is_zero[0].clone());
-        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_is_zero[1].clone());
+        let value_is_zero_lo_chip = IsZeroChip::construct(self.value_limb_is_zero[0].clone());
+        let value_is_zero_hi_chip = IsZeroChip::construct(self.value_limb_is_zero[1].clone());
 
         let tx_id_unchanged = IsEqualChip::construct(self.tx_id_unchanged.clone());
         let tag_chip = BinaryNumberChip::construct(self.tx_tag_bits);
@@ -2562,6 +2577,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.tx_table.index, F::zero()),
                 (self.tx_table.value.lo(), F::zero()),
                 (self.tx_table.value.hi(), F::zero()),
+                // when value is zero, is_value_zero is true
+                (self.is_value_zero, F::one()),
                 (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
                 (self.calldata_gas_cost_acc, F::zero()),
@@ -2800,7 +2817,6 @@ impl<F: Field> TxCircuit<F> {
             || "tx table aux",
             |mut region| {
                 let mut offset = 0;
-                println!("tx table assign");
                 let sigs = &sign_datas;
 
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
@@ -2993,7 +3009,6 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
-        println!("synthesize_sub tx circuit");
         let padding_txs = (self.txs.len()..self.max_txs)
             .map(|i| {
                 let mut tx = Transaction::dummy(self.chain_id);

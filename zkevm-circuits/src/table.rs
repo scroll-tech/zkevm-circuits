@@ -2507,9 +2507,9 @@ impl SigTable {
                         )
                     });
 
-                    let msg_hash_word =
-                        word::Word::from(Word::from_big_endian(&sign_data.msg_hash.to_bytes()))
-                            .map(Value::<F>::known);
+                    // let msg_hash_word =
+                    //     word::Word::from(Word::from_big_endian(&sign_data.msg_hash.to_bytes()))
+                    //         .map(Value::<F>::known);
 
                     let sig_r_rlc = evm_word.map(|challenge| {
                         rlc::value(
