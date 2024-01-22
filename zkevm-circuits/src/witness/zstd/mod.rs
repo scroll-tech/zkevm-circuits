@@ -589,7 +589,7 @@ fn process_block_zstd_literals_header<F: Field>(
         .collect::<Vec<u8>>();
 
     let literals_block_type = BlockType::from(lh_bytes[0] & 0x3);
-    let size_format = lh_bytes[0] & 3;
+    let size_format = (lh_bytes[0] >> 2) & 3;
 
     let [n_bits_fmt, n_bits_regen, n_bits_compressed, n_streams, n_bytes_header]: [usize; 5] = match literals_block_type {
         BlockType::RawBlock | BlockType::RleBlock => {
