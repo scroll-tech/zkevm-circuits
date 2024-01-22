@@ -291,7 +291,7 @@ pub struct HuffmanCodesData {
 type ParsedCanonicalHuffmanCode = (u64, BTreeMap<u64, (u64, u64)>);
 /// A representation indexed by bitstring (String) as key for decoding symbols specifically. 
 /// Huffman code decoding ensures prefix code, thus the explicit articulation of bitstring is necessary.
-type ParsedCanonicalHuffmanCodeBitstringMap = HashMap<String, u64>;
+type ParsedCanonicalHuffmanCodeBitstringMap = (u64, HashMap<String, u64>);
 
 
 impl HuffmanCodesData {
@@ -354,7 +354,6 @@ impl HuffmanCodesData {
         let mut weights: Vec<usize> = self.weights.iter().map(|w| w.clone() as usize).collect();
         let sum_weights: usize = weights.iter().filter_map(|&w| if w > 0 { Some(1 << (w - 1)) } else { None }).sum();
 
-        // let sum_weights: usize = weights.iter().filter(|&&w| w != 0).map(|&w| 1 << (w - 1)).sum();
         let nearest_pow_2: usize = 1 << (sum_weights - 1).next_power_of_two().trailing_zeros();
         weights.push(f64::log2((nearest_pow_2 - sum_weights) as f64).ceil() as usize + 1);
         let max_number_of_bits = nearest_pow_2.trailing_zeros() as usize;
@@ -376,8 +375,10 @@ impl HuffmanCodesData {
                 }
             }
         }
+
+        let max_bitstring_len = bitstring_map.keys().map(|k| k.len()).max().expect("Keys have maximum len");
     
-        bitstring_map
+        (max_bitstring_len as u64, bitstring_map)
     }
 }
 
@@ -635,7 +636,7 @@ mod tests {
             weights,
         };
 
-        let bitstring_map = huffman_codes_data.parse_bitstring_map();
+        let (max_bitstring_len, bitstring_map) = huffman_codes_data.parse_bitstring_map();
 
         let expected_bitstrings: [(&str, u64); 53] = [
             ("01001", 10), ("110", 32), ("00000000", 33), ("0001100", 39), ("001010", 44),
@@ -651,6 +652,7 @@ mod tests {
             ("00010110", 120), ("010001", 121), ("00010111", 122),
         ];
 
+        assert_eq!(max_bitstring_len, 8, "max bitstring len is 8");
         assert_eq!(expected_bitstrings.len(), bitstring_map.len(), "# of bitstring is the same");
         for pair in expected_bitstrings {
             assert_eq!(*bitstring_map.get(pair.0).unwrap(), pair.1, "bitstring mapping is correct");
