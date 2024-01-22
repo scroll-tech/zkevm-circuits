@@ -128,7 +128,10 @@ pub struct TxCircuitConfig<F: Field> {
     // Whether tag's RLP-encoded value is 0x80 = rlp([])
     is_none: Column<Advice>,
     tx_value_length: Column<Advice>,
+    // keccak rlc
     tx_value_rlc: Column<Advice>,
+    // evm word rlc, use for rlp table lookup
+    tx_value_evm_rlc: Column<Advice>,
     // keccak lookup needs additional output word field, this word field targets for it.
     tx_hash_word: word::Word<Column<Advice>>,
 
@@ -268,6 +271,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let tx_type = meta.advice_column();
         let rlp_tag = meta.advice_column();
         let tx_value_rlc = meta.advice_column_in(SecondPhase);
+        let tx_value_evm_rlc = meta.advice_column_in(SecondPhase);
         let tx_value_length = meta.advice_column();
         let tx_hash_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
         let is_none = meta.advice_column();
@@ -815,6 +819,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             q_enable,
             rlp_tag,
             tx_value_rlc,
+            tx_value_evm_rlc,
             tx_value_length,
             tx_hash_word,
             tx_type_bits,
@@ -825,6 +830,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_calldata,
             is_chain_id,
             is_l1_msg,
+            //is_value,
             sv_address,
             calldata_gas_cost_acc,
             calldata_rlc,
@@ -1418,6 +1424,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             rlp_tag,
             is_none,
             tx_value_rlc,
+            tx_value_evm_rlc,
             tx_value_length,
             tx_hash_word,
             u8_table,
@@ -1464,6 +1471,7 @@ impl<F: Field> TxCircuitConfig<F> {
         q_enable: Column<Fixed>,
         rlp_tag: Column<Advice>,
         tx_value_rlc: Column<Advice>,
+        tx_value_evm_rlc: Column<Advice>,
         tx_value_length: Column<Advice>,
         tx_hash_word: word::Word<Column<Advice>>,
         tx_type_bits: BinaryNumberConfig<TxType, 3>,
@@ -1474,6 +1482,7 @@ impl<F: Field> TxCircuitConfig<F> {
         is_calldata: Column<Advice>,
         is_chain_id: Column<Advice>,
         is_l1_msg_col: Column<Advice>,
+        //is_value: VirtualCells<>, // is tx field tag::value
         sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         calldata_rlc: Column<Advice>,
@@ -1631,14 +1640,14 @@ impl<F: Field> TxCircuitConfig<F> {
             let is_none = meta.query_advice(is_none, Rotation::cur());
             let sign_format = is_pre_eip155(meta) * TxSignPreEip155.expr()
                 + is_eip155(meta) * TxSignEip155.expr();
-
             // q_enable, tx_id, format, rlp_tag, tag_value, is_output, is_none
             vec![
                 1.expr(), // q_enable = true
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 sign_format,
                 rlp_tag,
-                meta.query_advice(tx_table.value.lo(), Rotation::cur()), // lo covers tag
+                //meta.query_advice(tx_table.value.lo(), Rotation::cur()), // lo covers tag
+                meta.query_advice(tx_value_evm_rlc, Rotation::cur()),
                 meta.query_advice(tx_value_rlc, Rotation::cur()),
                 meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
@@ -1676,7 +1685,8 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 hash_format,
                 rlp_tag,
-                meta.query_advice(tx_table.value.lo(), Rotation::cur()),
+                //meta.query_advice(tx_table.value.lo(), Rotation::cur()),
+                meta.query_advice(tx_value_evm_rlc, Rotation::cur()),
                 meta.query_advice(tx_value_rlc, Rotation::cur()),
                 meta.query_advice(tx_value_length, Rotation::cur()),
                 1.expr(), // is_output = true
@@ -1845,8 +1855,12 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: tx.gas_price.tag_length(),
                     be_bytes_rlc: rlc_be_bytes(&tx.gas_price.to_be_bytes(), keccak_input),
                 }),
-                //rlc_be_bytes(&tx.gas_price.to_be_bytes(), evm_word),
-                word::Word::from(tx.gas_price).map(Value::known),
+                // rlc_be_bytes(&tx.gas_price.to_be_bytes(), evm_word),
+                // word::Word::from(tx.gas_price).map(Value::known),
+                word::Word::new([
+                    rlc_be_bytes(&tx.gas_price.to_be_bytes(), evm_word),
+                    Value::known(F::zero()),
+                ]),
             ),
             (
                 Gas,
@@ -2162,6 +2176,7 @@ impl<F: Field> TxCircuitConfig<F> {
         // constructs two hashes' word
         let sign_hash_word = word::Word::from(U256::from_big_endian(&sign_hash)).map(Value::known);
         let tx_hash_word = word::Word::from(U256::from_big_endian(&hash)).map(Value::known);
+        let tx_value_evm_rlc = rlc_be_bytes(&tx.value.to_be_bytes(), evm_word);
 
         for (tx_tag, rlp_input, tx_value) in fixed_rows {
             let rlp_tag = rlp_input.clone().map_or(Null, |input| input.tag);
@@ -2258,6 +2273,17 @@ impl<F: Field> TxCircuitConfig<F> {
                 let (col_anno, col, col_val) =
                     ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc);
                 region.assign_advice(|| col_anno, col, *offset, || col_val)?;
+                let value_evm_rlc = if tx_tag == TxFieldTag::Value {
+                    tx_value_evm_rlc
+                } else {
+                    tx_value.lo()
+                };
+                region.assign_advice(
+                    || "tx_value_evm_rlc",
+                    self.tx_value_evm_rlc,
+                    *offset,
+                    || value_evm_rlc,
+                )?;
             }
 
             // lookup conditions
