@@ -637,7 +637,7 @@ fn process_block_zstd_literals_header<F: Field>(
     let tag_next = match literals_block_type {
         BlockType::RawBlock => ZstdTag::ZstdBlockLiteralsRawBytes,
         BlockType::RleBlock => ZstdTag::ZstdBlockLiteralsRleBytes,
-        BlockType::ZstdCompressedBlock => ZstdTag::ZstdBlockHuffmanHeader,
+        BlockType::ZstdCompressedBlock => ZstdTag::ZstdBlockHuffmanCode,
         _ => unreachable!("BlockType::Reserved unexpected or treeless literal section"),
     };
 
@@ -721,7 +721,7 @@ fn process_block_zstd_huffman_header<F: Field>(
         byte_offset + 1,
         vec![ZstdWitnessRow {
             state: ZstdState {
-                tag: ZstdTag::ZstdBlockHuffmanHeader,
+                tag: ZstdTag::ZstdBlockHuffmanCode,
                 tag_next: ZstdTag::ZstdBlockHuffmanCode,
                 tag_len: 1 as u64,
                 tag_idx: 1 as u64,
@@ -900,7 +900,7 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
     let tag_next = if n_streams > 1 {
         ZstdTag::ZstdBlockJumpTable
     } else {
-        ZstdTag::Lstream
+        ZstdTag::ZstdBlockLstream
     };
 
     // First, recover the FSE table for generating Huffman weights
@@ -930,6 +930,7 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
 
     // Witness generation
     let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
+    let accuracy_log = (src[byte_offset] & 0b1111) + 5;
 
     // Add witness rows for FSE representation bytes
     for (idx, byte) in src.iter().skip(byte_offset).take(n_fse_bytes).enumerate() {
@@ -1047,7 +1048,7 @@ fn process_block_zstd_huffman_code_fse<F: Field>(
     // The FSE table for the two independent decoding strands are the same.
     let mut color: usize = 0; // use 0, 1 (colors) to denote two alternating decoding strands. 
     let mut prev_baseline: [u64; 2] = [0, 0];
-    let mut next_nb_to_read: [usize; 2] = [table.accuracy_log as usize, table.accuracy_log as usize];
+    let mut next_nb_to_read: [usize; 2] = [accuracy_log as usize, accuracy_log as usize];
     let mut decoded_weights: Vec<u8> = vec![];
     let mut fse_table_idx: u64 = 1;
 
@@ -1176,7 +1177,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                     ZstdWitnessRow {
                         state: ZstdState {
                             tag: ZstdTag::ZstdBlockJumpTable,
-                            tag_next: ZstdTag::Lstream,
+                            tag_next: ZstdTag::ZstdBlockLstream,
                             tag_len: N_JUMP_TABLE_BYTES as u64,
                             tag_idx: (i + 1) as u64,
                             tag_value,
@@ -1249,7 +1250,7 @@ fn process_block_zstd_lstream<F: Field>(
 
     // Decide the next tag
     let tag_next = match stream_idx {
-        0 | 1 | 2 => ZstdTag::Lstream,
+        0 | 1 | 2 => ZstdTag::ZstdBlockLstream,
         3 => ZstdTag::ZstdBlockSequenceHeader,
         _ => unreachable!("stream_idx value out of range")
     };
@@ -1257,7 +1258,7 @@ fn process_block_zstd_lstream<F: Field>(
     // Add a witness row for leading 0s
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
-            tag: ZstdTag::Lstream,
+            tag: ZstdTag::ZstdBlockLstream,
             tag_next,
             tag_len: len as u64,
             tag_idx: current_byte_idx as u64,
@@ -1290,7 +1291,7 @@ fn process_block_zstd_lstream<F: Field>(
     // Add a witness row for sentinel 1-bit
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
-            tag: ZstdTag::Lstream,
+            tag: ZstdTag::ZstdBlockLstream,
             tag_next,
             tag_len: len as u64,
             tag_idx: current_byte_idx as u64,
@@ -1339,7 +1340,7 @@ fn process_block_zstd_lstream<F: Field>(
             // Add a witness row for emitted symbol
             witness_rows.push(ZstdWitnessRow {
                 state: ZstdState {
-                    tag: ZstdTag::Lstream,
+                    tag: ZstdTag::ZstdBlockLstream,
                     tag_next,
                     tag_len: len as u64,
                     tag_idx: from_byte_idx as u64,

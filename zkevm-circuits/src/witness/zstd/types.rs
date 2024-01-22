@@ -391,8 +391,6 @@ pub struct FseTableData {
 pub struct FseAuxiliaryTableData {
     /// The byte offset in the frame at which the FSE table is described.
     pub byte_offset: u64,
-    /// The FSE table's AL (accuracy log)
-    pub accuracy_log: u8,
     /// The FSE table's size, i.e. 1 << AL (accuracy log).
     pub table_size: u64,
     /// A map from FseSymbol (weight) to states, also including fields for that state, for
@@ -505,7 +503,6 @@ impl FseAuxiliaryTableData {
             t,
             Self {
                 byte_offset: byte_offset as u64,
-                accuracy_log,
                 table_size,
                 sym_to_states,
             },
