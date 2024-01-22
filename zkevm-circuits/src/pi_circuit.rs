@@ -985,12 +985,7 @@ impl<F: Field> PiCircuitConfig<F> {
             offset = tmp_offset;
             rpi_rlc_acc = tmp_rpi_rlc_acc;
             rpi_length = tmp_rpi_length;
-            //tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
-            let tx_copy_word = word::Word::new([
-                cells[RPI_CELL_IDX + 3].clone(),
-                cells[RPI_CELL_IDX + 4].clone(),
-            ]);
-            tx_copy_cells.push(tx_copy_word);
+            tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
 
             if i == public_data.max_txs - 1 {
                 data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
@@ -999,13 +994,10 @@ impl<F: Field> PiCircuitConfig<F> {
         }
         // Copy tx_hashes to tx table
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
+            // tx hash value still use rlc format in tx circuit.
             region.constrain_equal(
-                tx_hash_cell.lo().cell(),
+                tx_hash_cell.cell(),
                 tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].lo().cell(),
-            )?;
-            region.constrain_equal(
-                tx_hash_cell.hi().cell(),
-                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].hi().cell(),
             )?;
         }
 
@@ -1107,7 +1099,6 @@ impl<F: Field> PiCircuitConfig<F> {
             //     rpi_cells[0].0.cell(),
             //     tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1].cell(),
             // )?;
-            // this constraint failed ?
             region.constrain_equal(
                 rpi_cells[0].1.cell(),
                 tx_value_cells[tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX - 1]
@@ -1441,10 +1432,6 @@ impl<F: Field> PiCircuitConfig<F> {
                     } else {
                         // no meaningful, just for final_rpi_word_cells dummy value
                         let len = value_be_bytes.len();
-                        println!(
-                            "come to assign_field rpi_bytes len {} < 32",
-                            value_be_bytes.len()
-                        );
                         let zero_iter = std::iter::repeat(0); // 生成一个无限重复0的迭代器
                         let value_bytes_with_zero = zero_iter
                             .take(32 - len)
@@ -1785,7 +1772,6 @@ impl<F: Field> PiCircuit<F> {
                         (&state_roots.start_state_root, &state_roots.end_state_root)
                     );
 
-                    // TODO: enable this constraint later after pi circuit, tx circuit updated
                     region.constrain_equal(
                         local_conn.start_state_root.lo().cell(),
                         state_roots.start_state_root.0.lo(),
