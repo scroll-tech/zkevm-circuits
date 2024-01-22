@@ -784,7 +784,15 @@ fn add_access_list_address_copy_event(
                     is_warm_prev,
                 )?;
 
-                Ok(CopyAccessList::new(item.address, Word::zero(), 0))
+                // Save address, storage_key, storage_key_index and is_warm_prev
+                // to column value_word_rlc, value_word_rlc_prev, value and
+                // value_prev in copy circuit.
+                Ok(CopyAccessList::new(
+                    item.address,
+                    Word::zero(),
+                    0,
+                    is_warm_prev,
+                ))
             })
             .collect::<Result<Vec<_>, Error>>()
     })?;
@@ -855,7 +863,15 @@ fn add_access_list_storage_key_copy_event(
                                 is_warm_prev,
                             )?;
 
-                            Ok(CopyAccessList::new(item.address, sk, idx as u64))
+                            // Save address, storage_key, storage_key_index and is_warm_prev
+                            // to column value_word_rlc, value_word_rlc_prev, value and
+                            // value_prev in copy circuit.
+                            Ok(CopyAccessList::new(
+                                item.address,
+                                sk,
+                                idx as u64,
+                                is_warm_prev,
+                            ))
                         })
                         .collect::<Result<Vec<_>, _>>()
                 })

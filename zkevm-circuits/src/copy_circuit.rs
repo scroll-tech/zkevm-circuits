@@ -478,6 +478,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             let tx_id = meta.query_advice(id, CURRENT);
             let address = meta.query_advice(value_word_rlc, CURRENT);
+            let is_warm_prev = meta.query_advice(value_prev, CURRENT);
 
             vec![
                 1.expr(),
@@ -488,8 +489,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 address, // access list address
                 0.expr(),
                 0.expr(),
-                1.expr(), // is_warm
-                0.expr(), // is_warm_prev
+                1.expr(),     // is_warm
+                is_warm_prev, // is_warm_prev
                 0.expr(),
                 0.expr(),
             ]
@@ -527,6 +528,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let tx_id = meta.query_advice(id, CURRENT);
             let address = meta.query_advice(value_word_rlc, CURRENT);
             let storage_key = meta.query_advice(value_word_rlc_prev, CURRENT);
+            let is_warm_prev = meta.query_advice(value_prev, CURRENT);
 
             vec![
                 1.expr(),
@@ -536,9 +538,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 tx_id,
                 address, // access list address
                 0.expr(),
-                storage_key, // access list storage key
-                1.expr(),    // is_warm
-                0.expr(),    // is_warm_prev
+                storage_key,  // access list storage key
+                1.expr(),     // is_warm
+                is_warm_prev, // is_warm_prev
                 0.expr(),
                 0.expr(),
             ]

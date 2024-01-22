@@ -22,14 +22,65 @@ pub struct ZstdTagRomTableRow {
     tag_next: ZstdTag,
     /// The maximum number of bytes that are needed to represent the current tag.
     max_len: u64,
+    /// Whether this tag outputs a decoded byte or not.
+    is_output: bool,
 }
 
 impl ZstdTagRomTableRow {
+    pub(crate) fn rows() -> Vec<Self> {
+        use ZstdTag::{
+            BlockHeader, FrameContentSize, FrameHeaderDescriptor, Null, RawBlockBytes,
+            RleBlockBytes, ZstdBlockHuffmanCode, ZstdBlockJumpTable, ZstdBlockLiteralsHeader,
+            ZstdBlockLiteralsRawBytes, ZstdBlockLiteralsRleBytes, ZstdBlockLstream,
+            ZstdBlockSequenceHeader,
+        };
+
+        [
+            (FrameHeaderDescriptor, FrameContentSize, 1, false),
+            (FrameContentSize, BlockHeader, 8, false),
+            (BlockHeader, RawBlockBytes, 3, false),
+            (BlockHeader, RleBlockBytes, 3, false),
+            (BlockHeader, ZstdBlockLiteralsHeader, 3, false),
+            (RawBlockBytes, BlockHeader, 8388607, true), // (1 << 23) - 1
+            (RawBlockBytes, Null, 8388607, true),
+            (RleBlockBytes, BlockHeader, 8388607, true),
+            (RleBlockBytes, Null, 8388607, true),
+            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, 5, false),
+            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRleBytes, 5, false),
+            (
+                ZstdBlockLiteralsRawBytes,
+                ZstdBlockSequenceHeader,
+                1048575,
+                true,
+            ), // (1 << 20) - 1
+            (
+                ZstdBlockLiteralsRleBytes,
+                ZstdBlockSequenceHeader,
+                1048575,
+                true,
+            ),
+            (ZstdBlockLiteralsHeader, ZstdBlockHuffmanCode, 5, false),
+            (ZstdBlockHuffmanCode, ZstdBlockJumpTable, 128, false), // header_byte < 128
+            (ZstdBlockHuffmanCode, ZstdBlockLstream, 128, false),
+            (ZstdBlockJumpTable, ZstdBlockLstream, 6, false),
+            (ZstdBlockLstream, ZstdBlockLstream, 1000, true), // 1kB hard-limit
+            (ZstdBlockLstream, ZstdBlockSequenceHeader, 1000, true),
+        ]
+        .map(|(tag, tag_next, max_len, is_output)| ZstdTagRomTableRow {
+            tag,
+            tag_next,
+            max_len,
+            is_output,
+        })
+        .to_vec()
+    }
+
     pub(crate) fn values<F: Field>(&self) -> Vec<Value<F>> {
         vec![
             Value::known(F::from(usize::from(self.tag) as u64)),
             Value::known(F::from(usize::from(self.tag_next) as u64)),
             Value::known(F::from(self.max_len)),
+            Value::known(F::from(self.is_output as u64)),
         ]
     }
 }
@@ -122,22 +173,16 @@ pub enum ZstdTag {
     RleBlockBytes,
     /// Zstd block's literals header.
     ZstdBlockLiteralsHeader,
-    /// Zstd blocks might contain raw bytes
-    /// NOTE: might be removed then restricted to raw blocks
+    /// Zstd blocks might contain raw bytes.
     ZstdBlockLiteralsRawBytes,
-    /// Zstd blocks might contain rle bytes
-    /// NOTE: might be removed then restricted to rle blocks
+    /// Zstd blocks might contain rle bytes.
     ZstdBlockLiteralsRleBytes,
-    /// 1 byte Huffman header
-    ZstdBlockHuffmanHeader,
-    /// Zstd block's FSE code.
-    ZstdBlockFseCode,
     /// Zstd block's huffman code.
     ZstdBlockHuffmanCode,
     /// Zstd block's jump table.
     ZstdBlockJumpTable,
     /// Literal stream.
-    Lstream,
+    ZstdBlockLstream,
     /// Beginning of sequence section.
     ZstdBlockSequenceHeader,
 }
@@ -162,12 +207,10 @@ impl ToString for ZstdTag {
             Self::ZstdBlockLiteralsHeader => "ZstdBlockLiteralsHeader",
             Self::ZstdBlockLiteralsRawBytes => "ZstdBlockLiteralsRawBytes",
             Self::ZstdBlockLiteralsRleBytes => "ZstdBlockLiteralsRleBytes",
-            Self::ZstdBlockHuffmanHeader => "ZstdBlockHuffmanHeader",
-            Self::ZstdBlockFseCode => "ZstdBlockFseCode",
             Self::ZstdBlockHuffmanCode => "ZstdBlockHuffmanCode",
             Self::ZstdBlockJumpTable => "ZstdBlockJumpTable",
+            Self::ZstdBlockLstream => "ZstdBlockLstream",
             Self::ZstdBlockSequenceHeader => "ZstdBlockSequenceHeader",
-            Self::Lstream => "Lstream",
         })
     }
 }

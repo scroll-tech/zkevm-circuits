@@ -1697,18 +1697,25 @@ impl HuffmanCodesBitstringAccumulationTable {
 /// from the Decompression circuit to check if a given row can occur depending on the row's tag,
 /// next tag and tag length.
 #[derive(Clone, Copy, Debug)]
-pub struct ZstdTagRomTable {
+pub struct TagRomTable {
     /// Tag of the current field being decoded.
     pub tag: Column<Fixed>,
     /// Tag of the following field when the current field is finished decoding.
     pub tag_next: Column<Fixed>,
     /// The maximum length in terms of number of bytes that the current tag can take up.
     pub max_len: Column<Fixed>,
+    /// Whether this tag outputs a decoded byte or not.
+    pub is_output: Column<Fixed>,
 }
 
-impl<F: Field> LookupTable<F> for ZstdTagRomTable {
+impl<F: Field> LookupTable<F> for TagRomTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![self.tag.into(), self.tag_next.into(), self.max_len.into()]
+        vec![
+            self.tag.into(),
+            self.tag_next.into(),
+            self.max_len.into(),
+            self.is_output.into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -1716,17 +1723,19 @@ impl<F: Field> LookupTable<F> for ZstdTagRomTable {
             String::from("tag"),
             String::from("tag_next"),
             String::from("max_len"),
+            String::from("is_output"),
         ]
     }
 }
 
-impl ZstdTagRomTable {
+impl TagRomTable {
     /// Construct the ROM table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tag: meta.fixed_column(),
             tag_next: meta.fixed_column(),
             max_len: meta.fixed_column(),
+            is_output: meta.fixed_column(),
         }
     }
 
@@ -1735,15 +1744,19 @@ impl ZstdTagRomTable {
         layouter.assign_region(
             || "Zstd ROM table",
             |mut region| {
+                // TODO: populate these rows.
                 let rows: Vec<ZstdTagRomTableRow> = Vec::new();
 
                 for (offset, row) in rows.iter().enumerate() {
-                    for (&column, value) in <ZstdTagRomTable as LookupTable<F>>::fixed_columns(self)
-                        .iter()
-                        .zip(row.values::<F>().into_iter())
+                    for (&column, (value, annotation)) in
+                        <Self as LookupTable<F>>::fixed_columns(self).iter().zip(
+                            row.values::<F>()
+                                .into_iter()
+                                .zip(<Self as LookupTable<F>>::annotations(self).iter()),
+                        )
                     {
                         region.assign_fixed(
-                            || format!("zstd rom table row: offset = {offset}"),
+                            || format!("{annotation} at offset={offset}"),
                             column,
                             offset,
                             || value,
@@ -1761,7 +1774,9 @@ impl ZstdTagRomTable {
 /// from the Decompression circuit to check if the next tag is correct based on which block type we
 /// have encountered in the block header. Block type is denoted by 2 bits in the block header.
 #[derive(Clone, Copy, Debug)]
-pub struct ZstdBlockTypeRomTable {
+pub struct BlockTypeRomTable {
+    /// Current tag.
+    tag: Column<Fixed>,
     /// Lower bit.
     lo_bit: Column<Fixed>,
     /// Higher bit.
@@ -1770,13 +1785,19 @@ pub struct ZstdBlockTypeRomTable {
     tag_next: Column<Fixed>,
 }
 
-impl<F: Field> LookupTable<F> for ZstdBlockTypeRomTable {
+impl<F: Field> LookupTable<F> for BlockTypeRomTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![self.lo_bit.into(), self.hi_bit.into(), self.tag_next.into()]
+        vec![
+            self.tag.into(),
+            self.lo_bit.into(),
+            self.hi_bit.into(),
+            self.tag_next.into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("tag"),
             String::from("lo_bit"),
             String::from("hi_bit"),
             String::from("tag_next"),
@@ -1784,10 +1805,11 @@ impl<F: Field> LookupTable<F> for ZstdBlockTypeRomTable {
     }
 }
 
-impl ZstdBlockTypeRomTable {
+impl BlockTypeRomTable {
     /// Construct the ROM table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            tag: meta.fixed_column(),
             lo_bit: meta.fixed_column(),
             hi_bit: meta.fixed_column(),
             tag_next: meta.fixed_column(),
@@ -1799,14 +1821,38 @@ impl ZstdBlockTypeRomTable {
         layouter.assign_region(
             || "Zstd BlockType ROM table",
             |mut region| {
-                for (i, &(lo_bit, hi_bit, tag_next)) in [
-                    (0, 0, ZstdTag::RawBlockBytes),
-                    (0, 1, ZstdTag::RleBlockBytes),
-                    (1, 0, ZstdTag::ZstdBlockLiteralsHeader),
+                for (i, &(tag, lo_bit, hi_bit, tag_next)) in [
+                    (ZstdTag::BlockHeader, 0, 0, ZstdTag::RawBlockBytes),
+                    (ZstdTag::BlockHeader, 0, 1, ZstdTag::RleBlockBytes),
+                    (ZstdTag::BlockHeader, 1, 0, ZstdTag::ZstdBlockLiteralsHeader),
+                    (
+                        ZstdTag::ZstdBlockLiteralsHeader,
+                        0,
+                        0,
+                        ZstdTag::ZstdBlockLiteralsRawBytes,
+                    ),
+                    (
+                        ZstdTag::ZstdBlockLiteralsHeader,
+                        0,
+                        1,
+                        ZstdTag::ZstdBlockLiteralsRleBytes,
+                    ),
+                    (
+                        ZstdTag::ZstdBlockLiteralsHeader,
+                        1,
+                        0,
+                        ZstdTag::ZstdBlockHuffmanCode,
+                    ),
                 ]
                 .iter()
                 .enumerate()
                 {
+                    region.assign_fixed(
+                        || "tag",
+                        self.tag,
+                        i,
+                        || Value::known(F::from(tag as u64)),
+                    )?;
                     region.assign_fixed(
                         || "lo_bit",
                         self.lo_bit,
@@ -1826,6 +1872,114 @@ impl ZstdBlockTypeRomTable {
                         || Value::known(F::from(tag_next as u64)),
                     )?;
                 }
+                Ok(())
+            },
+        )
+    }
+}
+
+/// Read-only memory table for zstd block's literals header.
+#[derive(Clone, Copy, Debug)]
+pub struct LiteralsHeaderRomTable {
+    /// Block type first bit.
+    block_type_bit0: Column<Fixed>,
+    /// Block type second bit.
+    block_type_bit1: Column<Fixed>,
+    /// Size format first bit.
+    size_format_bit0: Column<Fixed>,
+    /// Size format second bit.
+    size_format_bit1: Column<Fixed>,
+    /// Number of bits used for regenerated size.
+    regen_size_bits: Column<Fixed>,
+    /// Number of bits used for compressed size.
+    compr_size_bits: Column<Fixed>,
+    /// Number of bytes occupied by the literals header.
+    n_bytes_header: Column<Fixed>,
+    /// Number of literal streams to be decoded.
+    n_lstreams: Column<Fixed>,
+}
+
+impl<F: Field> LookupTable<F> for LiteralsHeaderRomTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.block_type_bit0.into(),
+            self.block_type_bit1.into(),
+            self.size_format_bit0.into(),
+            self.size_format_bit1.into(),
+            self.regen_size_bits.into(),
+            self.compr_size_bits.into(),
+            self.n_bytes_header.into(),
+            self.n_lstreams.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("block_type_bit0"),
+            String::from("block_type_bit1"),
+            String::from("size_format_bit0"),
+            String::from("size_format_bit1"),
+            String::from("regen_size_bits"),
+            String::from("compr_size_bits"),
+            String::from("n_bytes_header"),
+            String::from("n_lstreams"),
+        ]
+    }
+}
+
+impl LiteralsHeaderRomTable {
+    /// Construct the ROM table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            block_type_bit0: meta.fixed_column(),
+            block_type_bit1: meta.fixed_column(),
+            size_format_bit0: meta.fixed_column(),
+            size_format_bit1: meta.fixed_column(),
+            regen_size_bits: meta.fixed_column(),
+            compr_size_bits: meta.fixed_column(),
+            n_bytes_header: meta.fixed_column(),
+            n_lstreams: meta.fixed_column(),
+        }
+    }
+
+    /// Load the ROM table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "LiteralsHeader ROM table",
+            |mut region| {
+                // Refer: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#literals_section_header
+                for (i, row) in [
+                    [0, 0, 0, 0, 5, 0, 1, 1],   // Raw: 1 byte header
+                    [0, 0, 0, 1, 5, 0, 1, 1],   // Raw: 1 byte header
+                    [0, 0, 1, 0, 12, 0, 2, 1],  // Raw: 2 bytes header
+                    [0, 0, 1, 1, 20, 0, 3, 1],  // Raw: 3 bytes header
+                    [1, 0, 0, 0, 5, 0, 1, 1],   // RLE: 1 byte header
+                    [1, 0, 0, 1, 5, 0, 1, 1],   // RLE: 1 byte header
+                    [1, 0, 1, 0, 12, 0, 2, 1],  // RLE: 2 bytes header
+                    [1, 0, 1, 1, 20, 0, 3, 1],  // RLE: 3 bytes header
+                    [0, 1, 0, 0, 10, 10, 3, 1], // Compressed: 3 bytes header
+                    [0, 1, 1, 0, 10, 10, 3, 4], // Compressed: 3 bytes header
+                    [0, 1, 0, 1, 14, 14, 4, 4], // Compressed: 4 bytes header
+                    [0, 1, 1, 1, 18, 18, 5, 4], // Compressed: 5 bytes header
+                ]
+                .iter()
+                .enumerate()
+                {
+                    for (&column, (&value, annotation)) in
+                        <Self as LookupTable<F>>::fixed_columns(self).iter().zip(
+                            row.iter()
+                                .zip(<Self as LookupTable<F>>::annotations(self).iter()),
+                        )
+                    {
+                        region.assign_fixed(
+                            || format!("{annotation} at offset={i}"),
+                            column,
+                            i,
+                            || Value::known(F::from(value)),
+                        )?;
+                    }
+                }
+
                 Ok(())
             },
         )
