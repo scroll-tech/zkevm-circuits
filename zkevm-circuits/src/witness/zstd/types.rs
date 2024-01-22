@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BinaryHeap, HashMap}, 
+    collections::{BTreeMap, HashMap}, 
     io::Cursor
 };
 
@@ -8,7 +8,6 @@ use eth_types::Field;
 use gadgets::impl_expr;
 use halo2_proofs::{circuit::Value, plonk::Expression};
 use itertools::Itertools;
-use num::Float;
 use strum_macros::EnumIter;
 
 use super::{
