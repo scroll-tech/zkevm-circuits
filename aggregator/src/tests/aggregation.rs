@@ -11,8 +11,6 @@ use crate::{
     tests::mock_chunk::MockChunkCircuit, ChunkHash,
 };
 
-//TODO: renable this test after pi/tx circuit supooort word hi lo feature.
-#[ignore = "renable after all circuits support word hi-lo done"]
 #[test]
 fn test_aggregation_circuit() {
     env_logger::init();
