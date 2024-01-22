@@ -561,8 +561,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.condition(is_none_expr.expr(), |cb| {
                 // value == 0
                 cb.require_equal_word(
-                    "is_none is true => value == 0 (value_hi = value_lo = 0",
-                    tx_table.value.query_advice(meta, Rotation::next()),
+                    "is_none is true => value == 0 (value_hi = value_lo = 0)",
+                    tx_table.value.query_advice(meta, Rotation::cur()),
                     word::Word::zero(),
                 );
             });
