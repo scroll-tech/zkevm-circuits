@@ -1,10 +1,14 @@
-use std::{collections::BTreeMap, io::Cursor};
+use std::{
+    collections::{BTreeMap, BinaryHeap, HashMap}, 
+    io::Cursor
+};
 
 use bitstream_io::{BitRead, BitReader, LittleEndian};
 use eth_types::Field;
 use gadgets::impl_expr;
 use halo2_proofs::{circuit::Value, plonk::Expression};
 use itertools::Itertools;
+use num::Float;
 use strum_macros::EnumIter;
 
 use super::{
@@ -286,8 +290,10 @@ pub struct HuffmanCodesData {
 
 /// Denotes the tuple (max_bitstring_len, Map<symbol, (weight, bit_value)>).
 type ParsedCanonicalHuffmanCode = (u64, BTreeMap<u64, (u64, u64)>);
-/// A representation indexed by bit_value as key for easier lookup during decoding. (max_bitstring_len, Map<bit_value, symbol>)
-type ParsedCanonicalHuffmanCodeBitValueMap = (u64, BTreeMap<u64, u64>);
+/// A representation indexed by bitstring (String) as key for decoding symbols specifically. 
+/// Huffman code decoding ensures prefix code, thus the explicit articulation of bitstring is necessary.
+type ParsedCanonicalHuffmanCodeBitstringMap = HashMap<String, u64>;
+
 
 impl HuffmanCodesData {
     /// Reconstruct the bitstrings for each symbol based on the canonical Huffman code weights. The
@@ -344,19 +350,35 @@ impl HuffmanCodesData {
         (max_bitstring_len, sym_to_tuple)
     }
 
-    /// Construct a representation indexed by bit_value as key for easier lookup during decoding.
-    pub fn parse_canonical_bit_value_map(&self) -> ParsedCanonicalHuffmanCodeBitValueMap {
-        let mut bit_value_mapping: (u64, BTreeMap<u64, u64>) = (0, BTreeMap::new());
+    /// parse bit string map
+    pub fn parse_bitstring_map(&self) -> ParsedCanonicalHuffmanCodeBitstringMap {
+        let mut weights: Vec<usize> = self.weights.iter().map(|w| w.clone() as usize).collect();
+        let sum_weights: usize = weights.iter().filter_map(|&w| if w > 0 { Some(1 << (w - 1)) } else { None }).sum();
 
-        let parsed_huffman_code = self.parse_canonical();
+        // let sum_weights: usize = weights.iter().filter(|&&w| w != 0).map(|&w| 1 << (w - 1)).sum();
+        let nearest_pow_2: usize = 1 << (sum_weights - 1).next_power_of_two().trailing_zeros();
+        weights.push(f64::log2((nearest_pow_2 - sum_weights) as f64).ceil() as usize + 1);
+        let max_number_of_bits = nearest_pow_2.trailing_zeros() as usize;
+        let n = weights.len();
 
-        bit_value_mapping.0 = parsed_huffman_code.0;
-        bit_value_mapping.1 = parsed_huffman_code.1.into_iter().fold(BTreeMap::new(), |mut acc, (symbol, (_weight, bit_value))| {
-            acc.insert(bit_value, symbol);
-            acc
-        });
-
-        bit_value_mapping
+        let bitstring_length: Vec<usize> = weights.iter().map(|&w| if w != 0 { max_number_of_bits - w + 1} else { 0 }).collect();
+    
+        let mut bitstring_map = HashMap::new();
+        let mut cur_bit_value = 0;
+    
+        for bit_len in (1..=max_number_of_bits).rev() {
+            cur_bit_value += 1;
+            cur_bit_value >>= 1;
+    
+            for sym in 0..n {
+                if bitstring_length[sym] == bit_len {
+                    bitstring_map.insert(format!("{:0width$b}", cur_bit_value, width = bit_len), sym as u64);
+                    cur_bit_value += 1;
+                }
+            }
+        }
+    
+        bitstring_map
     }
 }
 
@@ -547,6 +569,8 @@ impl<F: Field> ZstdWitnessRow<F> {
     }
 }
 
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -587,6 +611,51 @@ mod tests {
             })
             .collect::<Vec<FseTableRow>>(),
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_huffman_bitstring_reconstruction() -> std::io::Result<()> {
+        let weights = vec![
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            6, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 3, 0, 2, 0,
+            0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 2,
+            0, 1, 1, 1, 1, 1, 0, 0, 1, 2, 1, 0, 1, 1, 1, 2,
+            0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0,
+            0, 5, 3, 3, 3, 6, 3, 2, 4, 4, 0, 1, 4, 4, 5, 5,
+            2, 0, 4, 4, 5, 3, 1, 3, 1, 3,
+        ]
+        .into_iter()
+        .map(|w| FseSymbol::from(w) )
+        .collect::<Vec<FseSymbol>>();
+
+        let huffman_codes_data = HuffmanCodesData {
+            byte_offset: 0,
+            weights,
+        };
+
+        let bitstring_map = huffman_codes_data.parse_bitstring_map();
+
+        let expected_bitstrings: [(&str, u64); 53] = [
+            ("01001", 10), ("110", 32), ("00000000", 33), ("0001100", 39), ("001010", 44),
+            ("0001101", 46), ("00000001", 50), ("00000010", 58), ("0001110", 59), ("0001111", 63),
+            ("00000011", 65), ("00000100", 66), ("00000101", 67), ("00000110", 68), ("00000111", 69),
+            ("00001000", 72), ("0010000", 73), ("00001001", 74), ("00001010", 76), ("00001011", 77),
+            ("00001100", 78), ("0010001", 79), ("00001101", 82), ("00001110", 83), ("00001111", 84),
+            ("00010000", 85), ("00010001", 87), ("00010010", 91), ("00010011", 93), ("1000", 97), 
+            ("001011", 98), ("001100", 99), ("001101", 100), ("111", 101), ("001110", 102), 
+            ("0010010", 103), ("01010", 104), ("01011", 105), ("00010100", 107), ("01100", 108),
+            ("01101", 109), ("1001", 110), ("1010", 111), ("0010011", 112), ("01110", 114),
+            ("01111", 115), ("1011", 116), ("001111", 117), ("00010101", 118), ("010000", 119),
+            ("00010110", 120), ("010001", 121), ("00010111", 122),
+        ];
+
+        assert_eq!(expected_bitstrings.len(), bitstring_map.len(), "# of bitstring is the same");
+        for pair in expected_bitstrings {
+            assert_eq!(*bitstring_map.get(pair.0).unwrap(), pair.1, "bitstring mapping is correct");
+        }
 
         Ok(())
     }

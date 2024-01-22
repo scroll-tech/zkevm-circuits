@@ -1254,70 +1254,79 @@ fn process_block_zstd_lstream<F: Field>(
     increment_idx(current_byte_idx, current_bit_idx);
 
     // Now the actual symbol-bearing bitstream starts
-    let huffman_bit_value_map = huffman_code.parse_canonical_bit_value_map();
+    let huffman_bitstring_map = huffman_code.parse_bitstring_map();
     let mut decoded_symbols: Vec<u64> = vec![];
     let mut bit_value_acc: u64 = 0;
     let mut cur_bitstring_len: usize = 0;
 
-    while current_bit_idx < len * N_BITS_PER_BYTE {
-        if huffman_bit_value_map.1.contains_key(&bit_value_acc) {
-            decoded_symbols.push(huffman_bit_value_map.1.get(&bit_value_acc).unwrap().clone());
+    // compression_debug
+    // log::trace!("=> huffman_bit_value_map: {:?}", huffman_bit_value_map);
+
+    // compression_debug
+    // while current_bit_idx < len * N_BITS_PER_BYTE {
+    //     // compression_debug
+    //     log::trace!("=> bit_value_acc: {:?}", bit_value_acc);
+    //     log::trace!("=> cur_bitstring_len: {:?}", cur_bitstring_len);
+
+
+    //     if huffman_bit_value_map.1.contains_key(&bit_value_acc) {
+    //         decoded_symbols.push(huffman_bit_value_map.1.get(&bit_value_acc).unwrap().clone());
             
-            let from_byte_idx = current_byte_idx;
-            let from_bit_idx = current_bit_idx;
+    //         let from_byte_idx = current_byte_idx;
+    //         let from_bit_idx = current_bit_idx;
 
-            // advance byte and bit marks to the last bit
-            for _ in 0..(cur_bitstring_len - 1) {
-                increment_idx(current_byte_idx, current_bit_idx);
-            }
+    //         // advance byte and bit marks to the last bit
+    //         for _ in 0..(cur_bitstring_len - 1) {
+    //             increment_idx(current_byte_idx, current_bit_idx);
+    //         }
 
-            // Add a witness row for emitted symbol
-            witness_rows.push(ZstdWitnessRow {
-                state: ZstdState {
-                    tag: ZstdTag::ZstdBlockLstream,
-                    tag_next,
-                    tag_len: len as u64,
-                    tag_idx: from_byte_idx as u64,
-                    tag_value: *tag_value,
-                    tag_value_acc: tag_value_acc[from_byte_idx - 1],
-                },
-                encoded_data: EncodedData {
-                    byte_idx: (byte_offset + len - from_byte_idx) as u64,
-                    encoded_len: last_row.encoded_data.encoded_len,
-                    value_byte: src[byte_offset + len - from_byte_idx],
-                    value_rlc: value_rlc_acc[from_byte_idx - 1],
-                    // reverse specific values
-                    reverse: true,
-                    reverse_len: len as u64,
-                    reverse_idx: (len - (from_byte_idx - 1)) as u64,
-                    aux_1,
-                    aux_2: *tag_value,
-                    ..Default::default()
-                },
-                huffman_data: HuffmanData {
-                    byte_offset: (byte_offset + len - from_byte_idx) as u64,
-                    bit_value: bit_value_acc as u8,
-                    k: (from_bit_idx.rem_euclid(8) as u8, current_bit_idx.rem_euclid(8) as u8),
-                },
-                decoded_data: last_row.decoded_data.clone(),
-                fse_data: FseTableRow::default(),
-            });
+    //         // Add a witness row for emitted symbol
+    //         witness_rows.push(ZstdWitnessRow {
+    //             state: ZstdState {
+    //                 tag: ZstdTag::ZstdBlockLstream,
+    //                 tag_next,
+    //                 tag_len: len as u64,
+    //                 tag_idx: from_byte_idx as u64,
+    //                 tag_value: *tag_value,
+    //                 tag_value_acc: tag_value_acc[from_byte_idx - 1],
+    //             },
+    //             encoded_data: EncodedData {
+    //                 byte_idx: (byte_offset + len - from_byte_idx) as u64,
+    //                 encoded_len: last_row.encoded_data.encoded_len,
+    //                 value_byte: src[byte_offset + len - from_byte_idx],
+    //                 value_rlc: value_rlc_acc[from_byte_idx - 1],
+    //                 // reverse specific values
+    //                 reverse: true,
+    //                 reverse_len: len as u64,
+    //                 reverse_idx: (len - (from_byte_idx - 1)) as u64,
+    //                 aux_1,
+    //                 aux_2: *tag_value,
+    //                 ..Default::default()
+    //             },
+    //             huffman_data: HuffmanData {
+    //                 byte_offset: (byte_offset + len - from_byte_idx) as u64,
+    //                 bit_value: bit_value_acc as u8,
+    //                 k: (from_bit_idx.rem_euclid(8) as u8, current_bit_idx.rem_euclid(8) as u8),
+    //             },
+    //             decoded_data: last_row.decoded_data.clone(),
+    //             fse_data: FseTableRow::default(),
+    //         });
 
-            // advance byte and bit marks again to get the start of next bitstring
-            increment_idx(current_byte_idx, current_bit_idx);
+    //         // advance byte and bit marks again to get the start of next bitstring
+    //         increment_idx(current_byte_idx, current_bit_idx);
 
-            // Reset decoding state
-            bit_value_acc = 0;
-            cur_bitstring_len = 0;
-        } else {
-            bit_value_acc = bit_value_acc * 2 + lstream_bits[current_bit_idx + cur_bitstring_len] as u64;
-            cur_bitstring_len += 1;
+    //         // Reset decoding state
+    //         bit_value_acc = 0;
+    //         cur_bitstring_len = 0;
+    //     } else {
+    //         bit_value_acc = bit_value_acc * 2 + lstream_bits[current_bit_idx + cur_bitstring_len] as u64;
+    //         cur_bitstring_len += 1;
 
-            if cur_bitstring_len > huffman_bit_value_map.0 as usize {
-                panic!("Reading bit len greater than max bitstring len not allowed.");
-            }
-        }
-    }
+    //         if cur_bitstring_len > huffman_bit_value_map.0 as usize {
+    //             panic!("Reading bit len greater than max bitstring len not allowed.");
+    //         }
+    //     }
+    // }
 
     (byte_offset + len, witness_rows.into_iter().rev().collect::<Vec<ZstdWitnessRow<F>>>(), decoded_symbols)
 }
@@ -1428,4 +1437,100 @@ mod tests {
 
         Ok(())
     }
+
+
+
+    // Verify correct decoding of literal bitstream using a HuffmanCode table
+    // Example link: https://nigeltao.github.io/blog/2022/zstandard-part-4-huffman.html
+    #[test]
+    fn decode_literal_bitstream() -> Result<(), std::io::Error> {
+        let huffman_codes = HuffmanCodesData {
+            byte_offset: 0,
+            weights: vec![
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                6, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 3, 0, 2, 0,
+                0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 2,
+                0, 1, 1, 1, 1, 1, 0, 0, 1, 2, 1, 0, 1, 1, 1, 2,
+                0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0,
+                0, 5, 3, 3, 3, 6, 3, 2, 4, 4, 0, 1, 4, 4, 5, 5,
+                2, 0, 4, 4, 5, 3, 1, 3, 1, 3,
+            ]
+            .into_iter()
+            .map(|w| FseSymbol::from(w) )
+            .collect::<Vec<FseSymbol>>()
+        };
+
+        let lstream1: [u8; 85] = [
+            0xcc, 0x51, 0x73, 0x3a, 0x85, 0x9e, 0xf7, 0x59, 
+            0xfc, 0xc5, 0xca, 0x6a, 0x7a, 0xd9, 0x82, 0x9c, 
+            0x65, 0xc5, 0x45, 0x92, 0xe3, 0x0d, 0xf3, 0xef, 
+            0x71, 0xee, 0xdc, 0xd5, 0xa2, 0xe3, 0x48, 0xad, 
+            0xa3, 0xbc, 0x41, 0x7a, 0x3c, 0xaa, 0xd6, 0xeb, 
+            0xd0, 0x77, 0xea, 0xdc, 0x5d, 0x41, 0x06, 0x50, 
+            0x1c, 0x49, 0x0f, 0x07, 0x10, 0x05, 0x88, 0x84, 
+            0x94, 0x02, 0xfc, 0x3c, 0xe3, 0x60, 0x25, 0xc0, 
+            0xcb, 0x0c, 0xb8, 0xa9, 0x73, 0xbc, 0x13, 0x77, 
+            0xc6, 0xe2, 0x20, 0xed, 0x17, 0x7b, 0x12, 0xdc, 
+            0x24, 0x5a, 0xdf, 0xb4, 0x21, 
+            // 0x9a,
+        ];
+
+        let (_byte_offset, _witness_rows, decoded_symbols) = process_block_zstd_lstream::<Fr>(
+            &lstream1,
+            0,
+            85,
+            &ZstdWitnessRow::init(0),
+            Value::known(Fr::from(123456789)),
+            1,
+            &huffman_codes
+        );
+
+        let ascii_symbols: String = decoded_symbols.iter().filter_map(|&s| char::from_u32(s as u32)).collect();
+        
+
+        log::trace!("=> decoded: {:?}", decoded_symbols);
+        log::trace!("=> ascii: {:?}", ascii_symbols);
+
+
+        // 00000000  ++ ++ ++ ++ ++ ++ ++ ++  ++ ++ 76 62 5e 23 30 6f  |++++++++++[L]H[-|
+        // 00000010  9b 03 7d c7 16 0b be c8  f2 d0 22 4b 6b bc 54 5d  |- HUFFMAN CODE -|
+        // 00000020  a9 d4 93 ef c4 54 96 b2  e2 a8 a8 24 1c 54 40 29  |----------------|
+        // 00000030  01 55 00 57 00 51 00 *cc  51 73 3a 85 9e f7 59 fc  |][JUMP][--------|
+        // 00000040  c5 ca 6a 7a d9 82 9c 65  c5 45 92 e3 0d f3 ef 71  |----------------|
+        // 00000050  ee dc d5 a2 e3 48 ad a3  bc 41 7a 3c aa d6 eb d0  | LSTREAM 1 DATA |
+        // 00000060  77 ea dc 5d 41 06 50 1c  49 0f 07 10 05 88 84 94  |----------------|
+        // 00000070  02 fc 3c e3 60 25 c0 cb  0c b8 a9 73 bc 13 77 c6  |----------------|
+        // 00000080  e2 20 ed 17 7b 12 dc 24  5a df b4 21 9a* cb 8f c7  |-----------][---|
+        // 00000090  58 54 11 a9 f1 47 82 9b  ba 60 b4 92 28 0e fb 8b  |----------------|
+        // 000000a0  1e 92 23 6a cf bf e5 45  b5 7e eb 81 f1 78 4b ad  |----------------|
+        // 000000b0  17 4d 81 9f bc 67 a7 56  ee b4 d9 e1 95 21 66 0c  | LSTREAM 2 DATA |
+        // 000000c0  95 83 27 de ac 37 20 91  22 07 0b 91 86 94 1a 7b  |----------------|
+        // 000000d0  f6 4c b0 c0 e8 2e 49 65  d6 34 63 0c 88 9b 1c 48  |----------------|
+        // 000000e0  ca 2b 34 a9 6b 99 3b ee  13 3b 7c 93 0b f7 0d 49  |--][------------|
+        // 000000f0  69 18 57 be 3b 64 45 1d  92 63 7f e8 f9 a1 19 7b  |----------------|
+        // 00000100  7b 6e d8 a3 90 23 82 f4  a7 ce c8 f8 90 15 b3 14  | LSTREAM 3 DATA |
+        // 00000110  f4 40 e7 02 78 d3 17 71  23 b1 19 ad 6b 49 ae 13  |----------------|
+        // 00000120  a4 75 38 51 47 89 67 b0  39 b4 53 86 a4 ac aa a3  |----------------|
+        // 00000130  34 89 ca 2e e9 c1 fe f2  51 c6 51 73 aa f7 9d 2d  |---][-----------|
+        // 00000140  ed d9 b7 4a b2 b2 61 e4  ef 98 f7 c5 ef 51 9b d8  |----------------|
+        // 00000150  dc 60 6c 41 76 af 78 1a  62 b5 4c 1e 21 39 9a 5f  | LSTREAM 4 DATA |
+        // 00000160  ac 9d e0 62 e8 e9 2f 2f  48 02 8d 53 c8 91 f2 1a  |----------------|
+        // 00000170  d2 7c 0a 7c 48 bf da a9  e3 38 da 34 ce 76 a9 da  |----------------|
+        // 00000180  15 91 de 21 f5 55 46 a8  21 9d 51 cc 18 42 44 81  |-----]SS[-- LLT |
+        // 00000190  8c 94 b4 50 1e 20 42 82  98 c2 3b 10 48 ec a6 39  |----][CMOT][MLT]|
+        // 000001a0  63 13 a7 01 94 40 ff 88  0f 98 07 4a 46 38 05 a9  |[---------------|
+        // 000001b0  cb f6 c8 21 59 aa 38 45  bf 5c f8 55 9e 9f 04 ed  |----------------|
+        // 000001c0  c8 03 42 2a 4b f6 78 7e  23 67 15 a2 79 29 f4 9b  |----------------|
+        // 000001d0  7e 00 bc 2f 46 96 99 ea  f1 ee 1c 6e 06 9c db e4  |----------------|
+        // 000001e0  8c c2 05 f7 54 51 84 c0  33 02 01 b1 8c 80 dc 99  | SEQUENCES DATA |
+        // 000001f0  8f cb 46 ff d1 25 b5 b6  3a f3 25 be 85 50 84 f5  |----------------|
+        // 00000200  86 5a 71 f7 bd a1 4c 52  4f 20 a3 61 23 77 12 d3  |----------------|
+        // 00000210  b1 58 75 22 01 12 70 ec  14 91 f9 85 61 d5 7e 98  |----------------|
+        // 00000220  84 c9 76 84 bc b8 fe 4e  53 a5 06 ++ ++ ++ ++     |----------]++++|
+
+        Ok(())
+    }
+
+
 }
