@@ -73,7 +73,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
                 GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
             ),
             // These are handled in PrecompileFailedGadget
-            // addr_bits.value_equals(PrecompileCalls::Sha256),
+            (
+                addr_bits.value_equals(PrecompileCalls::Sha256),
+                GasCost::PRECOMPILE_SHA256_BASE.expr()
+                    + n_words.quotient() * GasCost::PRECOMPILE_SHA256_PER_WORD.expr(),
+            ),
             // addr_bits.value_equals(PrecompileCalls::Ripemd160),
             // addr_bits.value_equals(PrecompileCalls::Blake2F),
             (
@@ -197,6 +201,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
                 let n_words = (call.call_data_length + 31) / 32;
                 precompile_call.base_gas_cost().as_u64()
                     + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD.as_u64()
+            }
+            PrecompileCalls::Sha256 => {
+                let n_words = (call.call_data_length + 31) / 32;
+                precompile_call.base_gas_cost().as_u64()
+                    + n_words * GasCost::PRECOMPILE_SHA256_PER_WORD.as_u64()
             }
             PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::Ecrecover => {
                 precompile_call.base_gas_cost().as_u64()
