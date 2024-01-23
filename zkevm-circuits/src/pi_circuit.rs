@@ -56,7 +56,6 @@ use crate::{
     },
     util::rlc_be_bytes,
 };
-use array_init::from_iter;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
@@ -1904,7 +1903,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
         // Constrain raw_public_input cells to public inputs
         for (i, pi_cell) in pi_cells.iter().enumerate() {
-            // layouter.constrain_instance(pi_cell.cell(), config.pi, i)?;
+            layouter.constrain_instance(pi_cell.cell(), config.pi, i)?;
         }
 
         Ok(())

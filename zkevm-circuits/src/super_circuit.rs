@@ -116,7 +116,7 @@ pub struct SuperCircuitConfig<F: Field> {
     // u8_table: U8Table,
     // u16_table: U16Table,
     ux8_table: UXTable<8>,
-    u10_table: UXTable<10>,
+    ux10_table: UXTable<10>,
     ux16_table: UXTable<16>,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
@@ -405,7 +405,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             poseidon_table,
             // u8_table,
             ux8_table,
-            u10_table,
+            ux10_table: u10_table,
             // u16_table,
             ux16_table,
             evm_circuit,
@@ -781,8 +781,8 @@ impl<
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
 
-        // config.u8_table.load(&mut layouter)?;
         config.ux8_table.load(&mut layouter)?;
+        config.ux10_table.load(&mut layouter)?;
         config.ux16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)

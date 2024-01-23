@@ -950,8 +950,8 @@ impl<F: Field> KeccakCircuitConfig<F> {
                 row.data_rlc,
                 Value::known(F::from(row.length as u64)),
                 row.hash_rlc,
-                //row.hash.lo(),
-                //row.hash.hi(),
+                row.hash.lo(),
+                row.hash.hi(),
             ],
         )?;
 

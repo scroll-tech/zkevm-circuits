@@ -1472,7 +1472,7 @@ impl KeccakTable {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        values: [Value<F>; 4],
+        values: [Value<F>; 6],
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         let mut res = vec![];
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)

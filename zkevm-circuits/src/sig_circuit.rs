@@ -474,7 +474,6 @@ impl<F: Field> SigCircuit<F> {
         // |          |    pk_rlc       |
         // |          |    pk_hash_rlc  |
         config.q_keccak.enable(&mut ctx.region, offset)?;
-        println!("q_keccak enable at offset {}", offset);
 
         // is_address_zero
         let tmp_cell = ctx.region.assign_advice(
@@ -483,13 +482,12 @@ impl<F: Field> SigCircuit<F> {
             offset,
             || is_address_zero.value,
         )?;
-        let rlc_word_0 = word::Word::new([is_address_zero.value, Value::known(F::zero())]);
-        // TODO: remove this later
-        rlc_word_0.assign_advice(
+        let word_zero = word::Word::new([Value::known(F::zero()), Value::known(F::zero())]);
+        word_zero.assign_advice(
             &mut ctx.region,
             || "assign rlc_column_word",
             config.rlc_column_word,
-            offset,
+            offset + 1,
         )?;
 
         ctx.region
@@ -503,12 +501,11 @@ impl<F: Field> SigCircuit<F> {
             || pk_rlc.value,
         )?;
 
-        let rlc_word_0 = word::Word::new([is_address_zero.value, Value::known(F::zero())]);
-        rlc_word_0.assign_advice(
+        word_zero.assign_advice(
             &mut ctx.region,
             || "assign rlc_column_word",
             config.rlc_column_word,
-            offset,
+            offset + 2,
         )?;
 
         ctx.region.constrain_equal(pk_rlc.cell, tmp_cell.cell())?;
