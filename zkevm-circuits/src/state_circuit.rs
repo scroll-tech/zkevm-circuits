@@ -445,18 +445,18 @@ impl<F: Field> StateCircuitConfig<F> {
         Ok(StateCircuitExports {
             start_state_root: (
                 //start_state_root,
-                word::Word::new([start_state_root.hi().cell(), start_state_root.lo().cell()]),
+                word::Word::new([start_state_root.lo().cell(), start_state_root.hi().cell()]),
                 word::Word::new([
-                    start_state_root.hi().value_field(),
                     start_state_root.lo().value_field(),
+                    start_state_root.hi().value_field(),
                 ]),
                 //start_state_root.into_value(),
             ),
             end_state_root: (
-                word::Word::new([end_state_root.hi().cell(), end_state_root.lo().cell()]),
+                word::Word::new([end_state_root.lo().cell(), end_state_root.hi().cell()]),
                 word::Word::new([
-                    end_state_root.hi().value_field(),
                     end_state_root.lo().value_field(),
+                    end_state_root.hi().value_field(),
                 ]),
             ),
         })
@@ -672,17 +672,17 @@ impl<F: Field> StateCircuitConfig<F> {
 
         Ok(StateCircuitExports {
             start_state_root: (
-                word::Word::new([start_state_root.hi().cell(), start_state_root.lo().cell()]),
+                word::Word::new([start_state_root.lo().cell(), start_state_root.hi().cell()]),
                 word::Word::new([
-                    start_state_root.hi().value_field(),
                     start_state_root.lo().value_field(),
+                    start_state_root.hi().value_field(),
                 ]),
             ),
             end_state_root: (
-                word::Word::new([start_state_root.hi().cell(), start_state_root.lo().cell()]),
+                word::Word::new([end_state_root.lo().cell(), end_state_root.hi().cell()]),
                 word::Word::new([
-                    end_state_root.hi().value_field(),
                     end_state_root.lo().value_field(),
+                    end_state_root.hi().value_field(),
                 ]),
             ),
         })

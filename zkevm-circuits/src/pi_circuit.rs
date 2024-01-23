@@ -1116,7 +1116,7 @@ impl<F: Field> PiCircuitConfig<F> {
             //start_state_root: rpi_cells[1].clone(),
             start_state_root: word::Word::new([rpi_cells[1].1.clone(), rpi_cells[1].2.clone()]),
             // end_state_root: rpi_cells[2].clone(),
-            end_state_root: word::Word::new([rpi_cells[2].1.clone(), rpi_cells[1].2.clone()]),
+            end_state_root: word::Word::new([rpi_cells[2].1.clone(), rpi_cells[2].2.clone()]),
             withdraw_root: rpi_cells[3].0.clone(),
         };
 
