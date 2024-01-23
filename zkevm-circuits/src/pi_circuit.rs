@@ -1692,6 +1692,7 @@ pub struct PiCircuit<F: Field> {
     _marker: PhantomData<F>,
 
     connections: RefCell<Option<Connections<F>>>,
+    #[allow(clippy::type_complexity)]
     tx_value_cells: RefCell<Option<Vec<word::Word<AssignedCell<F, F>>>>>,
 }
 

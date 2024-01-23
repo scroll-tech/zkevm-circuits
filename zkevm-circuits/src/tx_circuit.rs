@@ -2662,6 +2662,7 @@ pub struct TxCircuit<F: Field> {
     /// Size
     pub size: usize,
     /// Tx value cells (exported for PI circuit)
+    #[allow(clippy::type_complexity)]
     pub value_cells: RefCell<Option<Vec<word::Word<AssignedCell<F, F>>>>>,
     _marker: PhantomData<F>,
 }

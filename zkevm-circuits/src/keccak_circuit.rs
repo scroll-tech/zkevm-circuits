@@ -955,8 +955,8 @@ impl<F: Field> KeccakCircuitConfig<F> {
             ],
         )?;
 
-        // work around to remove last two items(hi + lo parts), avoid to mistake hash output cells in method
-        // `extract_hash_cells` of aggregation circuit.
+        // work around to remove last two items(hi + lo parts), avoid to mistake hash output cells
+        // in method `extract_hash_cells` of aggregation circuit.
         res.remove(res.len() - 1);
         res.remove(res.len() - 1);
 
