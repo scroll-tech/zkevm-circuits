@@ -30,7 +30,8 @@ pub fn gen_associated_ops(
     output_bytes: &[u8],
     return_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
-    let input_step = state.new_step(&geth_step)?;
+    let mut input_step = state.new_step(&geth_step)?;
+    input_step.stack_size += 1; // since the return value is pushed on the stack
 
     gen_ops(
         state,
@@ -54,7 +55,6 @@ pub fn gen_ops(
     return_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
     assert_eq!(call.code_address(), Some(precompile.into()));
-    exec_step.stack_size += 1; // since the return value is pushed on the stack
     exec_step.exec_state = ExecState::Precompile(precompile);
 
     common_call_ctx_reads(state, &mut exec_step, &call)?;

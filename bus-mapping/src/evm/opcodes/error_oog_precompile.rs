@@ -23,7 +23,6 @@ impl ErrorOOGPrecompile {
         mut exec_step: ExecStep,
         call: Call,
     ) -> Result<ExecStep, Error> {
-        exec_step.stack_size += 1; // since the return value is pushed on the stack
         exec_step.error = Some(ExecError::OutOfGas(OogError::Precompile));
 
         // callee_address

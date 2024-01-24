@@ -1146,19 +1146,6 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(call)
     }
 
-    /// Parse [`Call`] from a *CALL*/CREATE* step
-    pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
-        let is_success = *self
-            .tx_ctx
-            .call_is_success
-            .get(self.tx.calls().len() - self.tx_ctx.call_is_success_offset)
-            .unwrap();
-        let mut call = self.parse_call_partial(step)?;
-        call.is_success = is_success;
-        call.is_persistent = self.call()?.is_persistent && is_success;
-        Ok(call)
-    }
-
     /// Return the reverted version of an op by op_ref only if the original op
     /// was reversible.
     fn get_rev_op_by_ref(&self, op_ref: &OperationRef) -> Option<OpEnum> {

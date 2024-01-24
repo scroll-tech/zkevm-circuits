@@ -67,8 +67,9 @@ where
         let block_head = state.block.headers.get(&state.tx.block_num).unwrap();
         let output = Self::handle(block_head);
 
-        state.stack_write(&mut exec_step, geth_steps[1].stack.last_filled(), output)?;
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, output)?;
 
         Ok(vec![exec_step])
     }
@@ -85,8 +86,9 @@ impl Opcode for Pc {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output: U256 = geth_steps[0].pc.0.into();
 
-        state.stack_write(&mut exec_step, geth_steps[1].stack.last_filled(), output)?;
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, output)?;
 
         Ok(vec![exec_step])
     }
@@ -103,8 +105,9 @@ impl Opcode for Msize {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output: U256 = state.call_ctx()?.memory.len().into();
 
-        state.stack_write(&mut exec_step, geth_steps[1].stack.last_filled(), output)?;
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, output)?;
 
         Ok(vec![exec_step])
     }
@@ -121,8 +124,9 @@ impl Opcode for Gas {
         let mut exec_step = state.new_step(&geth_steps[0])?;
         let output: U256 = geth_steps[1].gas.0.into();
 
-        state.stack_write(&mut exec_step, geth_steps[1].stack.last_filled(), output)?;
+        #[cfg(feature = "enable-stack")]
         assert_eq!(output, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, output)?;
 
         Ok(vec![exec_step])
     }

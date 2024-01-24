@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"

@@ -26,8 +26,6 @@ hash-circuit.workspace = true
 
 [features]
 default = ["warn-unimplemented"]
-enable-stack = []
-enable-memory = []
 warn-unimplemented = []
 shanghai = []
 scroll = []

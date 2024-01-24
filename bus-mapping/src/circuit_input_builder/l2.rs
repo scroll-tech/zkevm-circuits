@@ -8,7 +8,7 @@ use eth_types::{
     self,
     evm_types::OpcodeId,
     l2_types::{BlockTrace, EthBlock, ExecStep, StorageTrace},
-    Address, ToAddress, ToWord, Word, H256,
+    Address, ToWord, Word, H256,
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::{AccountData, ZktrieState};
@@ -51,23 +51,23 @@ fn trace_code(
     code_hash: Option<H256>,
     code: Bytes,
     step: &ExecStep,
+    addr: Address,
     sdb: &StateDB,
-    stack_pos: usize,
 ) {
     // first, try to read from sdb
-    let stack = match step.stack.as_ref() {
-        Some(stack) => stack,
-        None => {
-            log::error!("stack underflow, step {step:?}");
-            return;
-        }
-    };
-    if stack_pos >= stack.len() {
-        log::error!("stack underflow, step {step:?}");
-        return;
-    }
-    let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
-
+    // let stack = match step.stack.as_ref() {
+    //     Some(stack) => stack,
+    //     None => {
+    //         log::error!("stack underflow, step {step:?}");
+    //         return;
+    //     }
+    // };
+    // if stack_pos >= stack.len() {
+    //     log::error!("stack underflow, step {step:?}");
+    //     return;
+    // }
+    // let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
+    //
     let code_hash = code_hash.or_else(|| {
         let (_existed, acc_data) = sdb.get_account(&addr);
         if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
@@ -141,13 +141,24 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
+        let mut call_trace = execution_result.call_trace.flatten_trace(vec![]);
+        call_trace.reverse();
+
         for step in execution_result.exec_steps.iter().rev() {
+            let call = if step.op.is_call_or_create() {
+                call_trace.pop()
+            } else {
+                None
+            };
+
             if let Some(data) = &step.extra_data {
                 match step.op {
                     OpcodeId::CALL
                     | OpcodeId::CALLCODE
                     | OpcodeId::DELEGATECALL
                     | OpcodeId::STATICCALL => {
+                        let call = call.unwrap();
+                        assert_eq!(call.call_type, step.op);
                         let code_idx = if block.transactions[er_idx].to.is_none() {
                             0
                         } else {
@@ -164,13 +175,14 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                             OpcodeId::STATICCALL => data.get_code_hash_at(0),
                             _ => None,
                         };
+                        let addr = call.to.unwrap();
                         trace_code(
                             cdb,
                             code_hash,
                             callee_code.unwrap_or_default(),
                             step,
+                            addr,
                             sdb,
-                            1,
                         );
                     }
                     OpcodeId::CREATE | OpcodeId::CREATE2 => {
@@ -178,12 +190,15 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                         // bustmapping do this job
                     }
                     OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
+                        let call = call.unwrap();
+                        assert_eq!(call.call_type, step.op);
                         let code = data.get_code_at(0);
                         if code.is_none() {
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
-                        trace_code(cdb, None, code.unwrap(), step, sdb, 0);
+                        let addr = call.to.unwrap();
+                        trace_code(cdb, None, code.unwrap(), step, addr, sdb);
                     }
 
                     _ => {}

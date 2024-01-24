@@ -749,15 +749,33 @@ pub struct GethCallTrace {
     #[serde(default)]
     calls: Vec<GethCallTrace>,
     error: Option<String>,
-    // from: Address,
+    from: Address,
     // gas: U256,
     // #[serde(rename = "gasUsed")]
     // gas_used: U256,
     // input: Bytes,
     // output: Bytes,
-    // to: Option<Address>,
+    to: Option<Address>,
     #[serde(rename = "type")]
     call_type: String,
+    // value: U256,
+}
+
+/// Flattened Call Trace
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlatGethCallTrace {
+    // error: Option<String>,
+    /// from
+    pub from: Address,
+    // gas: U256,
+    // #[serde(rename = "gasUsed")]
+    // gas_used: U256,
+    // input: Bytes,
+    // output: Bytes,
+    /// to
+    pub to: Option<Address>,
+    /// call type
+    pub call_type: OpcodeId,
     // value: U256,
 }
 
@@ -769,6 +787,19 @@ impl GethCallTrace {
             call_is_success = call.gen_call_is_success(call_is_success);
         }
         call_is_success
+    }
+
+    /// flatten the call trace as it is.
+    pub fn flatten_trace(&self, mut trace: Vec<FlatGethCallTrace>) -> Vec<FlatGethCallTrace> {
+        trace.push(FlatGethCallTrace {
+            from: self.from,
+            to: self.to,
+            call_type: OpcodeId::from_str(&self.call_type).unwrap(),
+        });
+        for call in &self.calls {
+            trace = call.flatten_trace(trace);
+        }
+        trace
     }
 }
 
@@ -892,6 +923,8 @@ mod tests {
     "callTrace": {
       "calls": [],
       "error": null,
+      "from": "0x000000000000000000000000000000000cafe001",
+      "to": null,
       "type": "CALL"
     }
   }
@@ -980,6 +1013,8 @@ mod tests {
                 call_trace: GethCallTrace {
                     calls: Vec::new(),
                     error: None,
+                    from: address!("0x000000000000000000000000000000000cafe001"),
+                    to: None,
                     call_type: "CALL".to_string(),
                 }
             }
