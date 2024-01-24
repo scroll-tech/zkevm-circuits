@@ -27,10 +27,10 @@ pub struct ChunkHash {
     pub withdraw_root: H256,
     /// the data hash of this chunk
     pub data_hash: H256,
-    /// the l1 block range hash of this chunk
-    pub l1_block_range_hash: H256,
     /// the last applied l1 block number of this chunk
     pub last_applied_l1_block: u64,
+    /// the l1 block range hash of this chunk
+    pub l1_block_range_hash: H256,
     /// if the chunk is a padded chunk
     pub is_padding: bool,
 }
@@ -101,8 +101,8 @@ impl ChunkHash {
             post_state_root,
             withdraw_root: H256(block.withdraw_root.to_be_bytes()),
             data_hash,
-            l1_block_range_hash: block.l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))),
             last_applied_l1_block: block.last_applied_l1_block.unwrap_or(0),
+            l1_block_range_hash: block.l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))),
             is_padding,
         }
     }
@@ -125,8 +125,8 @@ impl ChunkHash {
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
-            l1_block_range_hash: l1_block_range_hash,
             last_applied_l1_block: 0,
+            l1_block_range_hash: l1_block_range_hash,
             is_padding: false,
         }
     }
@@ -144,21 +144,21 @@ impl ChunkHash {
             post_state_root: previous_chunk.post_state_root,
             withdraw_root: previous_chunk.withdraw_root,
             data_hash: previous_chunk.data_hash,
-            l1_block_range_hash: previous_chunk.l1_block_range_hash,
             last_applied_l1_block: previous_chunk.last_applied_l1_block,
+            l1_block_range_hash: previous_chunk.l1_block_range_hash,
             is_padding: true,
         }
     }
 
     /// Public input hash for a given chunk is defined as
-    ///  keccak( chain id || prev state root || post state root || withdraw root || data hash || l1_block_range_hash || last_applied_l1_block )
+    ///  keccak( chain id || prev state root || post state root || withdraw root || data hash || last_applied_l1_block || l1_block_range_hash)
     pub fn public_input_hash(&self) -> H256 {
         let preimage = self.extract_hash_preimage();
         keccak256::<&[u8]>(preimage.as_ref()).into()
     }
 
     /// Extract the preimage for the hash
-    ///  chain id || prev state root || post state root || withdraw root || data hash || l1_block_range_hash || last_applied_l1_block
+    ///  chain id || prev state root || post state root || withdraw root || data hash || last_applied_l1_block || l1_block_range_hash
     pub fn extract_hash_preimage(&self) -> Vec<u8> {
         [
             self.chain_id.to_be_bytes().as_ref(),
@@ -166,8 +166,8 @@ impl ChunkHash {
             self.post_state_root.as_bytes(),
             self.withdraw_root.as_bytes(),
             self.data_hash.as_bytes(),
-            self.l1_block_range_hash.as_bytes(),
             self.last_applied_l1_block.to_be_bytes().as_ref(),
+            self.l1_block_range_hash.as_bytes(),
         ]
         .concat()
     }

@@ -891,8 +891,8 @@ fn keccak_inputs_pi_circuit(
         .chain(after_state_root.to_fixed_bytes())
         .chain(withdraw_trie_root.to_be_bytes())
         .chain(data_hash.to_fixed_bytes())
-        .chain(l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))).to_fixed_bytes())
         .chain(last_applied_l1_block.unwrap_or(0).to_be_bytes())
+        .chain(l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))).to_fixed_bytes())
         .collect::<Vec<u8>>();
 
     let l1_block_hashes = &l1_block_hashes.iter().map(|h| h.as_ref().to_vec()).collect_vec();

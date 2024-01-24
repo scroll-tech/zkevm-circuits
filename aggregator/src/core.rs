@@ -805,10 +805,10 @@ pub(crate) fn conditional_constraints(
                 }
 
                 // 7. the hash input length are correct
-                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                // - first MAX_AGG_SNARKS + 1 hashes all have 176 bytes input
                 // - batch's data_hash length is 32 * number_of_valid_snarks
 
-                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                // - first MAX_AGG_SNARKS + 1 hashes all have 176 bytes input
                 hash_input_len_cells
                     .iter()
                     .skip(1)
@@ -820,7 +820,7 @@ pub(crate) fn conditional_constraints(
                         region.constrain_equal(
                             cur_hash_len.cell(),
                             rlc_config
-                                .one_hundred_and_thirty_six_cell(cur_hash_len.cell().region_index),
+                                .one_hundred_and_seventy_six_cell(cur_hash_len.cell().region_index),
                         )
                     })?;
 
