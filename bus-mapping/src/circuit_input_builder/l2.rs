@@ -51,7 +51,7 @@ fn trace_code(
     code_hash: Option<H256>,
     code: Bytes,
     step: &ExecStep,
-    addr: Address,
+    addr: Option<Address>,
     sdb: &StateDB,
 ) {
     // first, try to read from sdb
@@ -69,14 +69,16 @@ fn trace_code(
     // let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
     //
     let code_hash = code_hash.or_else(|| {
-        let (_existed, acc_data) = sdb.get_account(&addr);
-        if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
-            // they must be same
-            Some(acc_data.code_hash)
-        } else {
-            // let us re-calculate it
-            None
-        }
+        addr.and_then(|addr| {
+            let (_existed, acc_data) = sdb.get_account(&addr);
+            if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
+                // they must be same
+                Some(acc_data.code_hash)
+            } else {
+                // let us re-calculate it
+                None
+            }
+        })
     });
     let code_hash = match code_hash {
         Some(code_hash) => {
@@ -142,18 +144,12 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
         }
 
         let mut call_trace = execution_result.call_trace.flatten_trace(vec![]);
-        call_trace.reverse();
-        let root_call = call_trace.pop().unwrap();
-        if let Some(ref from) = execution_result.from.as_ref().and_then(|acc| acc.address) {
-            assert_eq!(*from, root_call.from);
-        }
-        if let Some(ref to) = execution_result.to.as_ref().and_then(|acc| acc.address) {
-            assert_eq!(*to, root_call.to.unwrap());
-        }
 
         for step in execution_result.exec_steps.iter().rev() {
             let call = if step.op.is_call_or_create() {
-                call_trace.pop()
+                let call = call_trace.pop();
+                log::trace!("call_trace pop: {call:?}, current step: {step:?}");
+                call
             } else {
                 None
             };
@@ -165,7 +161,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     | OpcodeId::DELEGATECALL
                     | OpcodeId::STATICCALL => {
                         let call = call.unwrap();
-                        assert_eq!(call.call_type, step.op);
+                        assert_eq!(call.call_type, step.op, "{call:?}");
                         let code_idx = if block.transactions[er_idx].to.is_none() {
                             0
                         } else {
@@ -188,7 +184,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                             code_hash,
                             callee_code.unwrap_or_default(),
                             step,
-                            addr,
+                            Some(addr),
                             sdb,
                         );
                     }
@@ -197,15 +193,12 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                         // bustmapping do this job
                     }
                     OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
-                        let call = call.unwrap();
-                        assert_eq!(call.call_type, step.op);
                         let code = data.get_code_at(0);
                         if code.is_none() {
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
-                        let addr = call.to.unwrap();
-                        trace_code(cdb, None, code.unwrap(), step, addr, sdb);
+                        trace_code(cdb, None, code.unwrap(), step, None, sdb);
                     }
 
                     _ => {}
