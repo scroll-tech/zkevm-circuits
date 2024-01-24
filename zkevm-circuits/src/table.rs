@@ -1868,18 +1868,23 @@ impl CopyTable {
 
             let is_pad = is_read_step && thread.addr >= thread.addr_end;
 
-            let [value, value_prev] = [copy_step.value, copy_step.prev_value]
-                .map(|val| Value::known(F::from(val as u64)));
+            let [value, value_prev] = if is_access_list {
+                // Save address, storage_key, storage_key_index and is_warm_prev
+                // to column value_word_rlc, value_word_rlc_prev, value and
+                // value_prev in copy circuit.
+                let access_list = &copy_event.access_list[step_idx / 2];
 
-            let value = if copy_event.src_type == CopyDataType::AccessListStorageKeys {
-                // If the copy data type is access list storage key, saves
-                // storage key internal index to the `value` column, it starts
-                // from zero for each access list address.
-                let storage_key_index = copy_event.access_list[step_idx / 2].storage_key_index;
-                Value::known(F::from(storage_key_index))
+                [
+                    F::from(access_list.storage_key_index),
+                    F::from(access_list.is_warm_prev),
+                ]
             } else {
-                value
-            };
+                [
+                    F::from(copy_step.value as u64),
+                    F::from(copy_step.prev_value as u64),
+                ]
+            }
+            .map(Value::known);
 
             let value_or_pad = if is_pad {
                 Value::known(F::zero())
@@ -1904,12 +1909,15 @@ impl CopyTable {
             };
 
             if is_access_list {
+                // Save address, storage_key, storage_key_index and is_warm_prev
+                // to column value_word_rlc, value_word_rlc_prev, value and
+                // value_prev in copy circuit.
                 let access_list = &copy_event.access_list[step_idx / 2];
-                [thread.word_rlc, thread.word_rlc_prev] = [
-                    access_list.address.to_scalar(),
-                    access_list.storage_key.to_scalar(),
-                ]
-                .map(|val| Value::known(val.unwrap()));
+
+                thread.word_rlc = Value::known(access_list.address.to_scalar().unwrap());
+                thread.word_rlc_prev = challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&access_list.storage_key.to_le_bytes(), challenge));
             }
 
             let word_index = (step_idx as u64 / 2) % 32;
