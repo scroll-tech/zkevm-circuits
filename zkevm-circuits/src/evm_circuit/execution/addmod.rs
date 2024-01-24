@@ -241,10 +241,11 @@ mod test {
             STOP
         };
 
-        #[cfg_attr(not(feature = "enable-stack"), allow(unused_mut))]
+        #[allow(unused_mut)]
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         #[cfg(feature = "enable-stack")]
         if let Some(r) = _r {
+            #[allow(unused_mut)]
             let mut last = ctx
                 .geth_traces
                 .first_mut()

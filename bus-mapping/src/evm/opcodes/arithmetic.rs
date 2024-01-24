@@ -4,6 +4,8 @@ use crate::{
     Error,
 };
 use eth_types::{evm_types::OpcodeId, GethExecStep, ToBigEndian, ToLittleEndian, Word, U256, U512};
+#[cfg(feature = "enable-stack")]
+use itertools::Itertools;
 use std::{
     cmp::Ordering,
     ops::{Neg, Rem},

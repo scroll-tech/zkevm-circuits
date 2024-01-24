@@ -10,7 +10,7 @@ use eth_types::{
     address, bytecode,
     evm_types::{stack::Stack, Gas, Memory, OpcodeId},
     geth_types::GethData,
-    word, Bytecode, GethExecError, Hash, ToAddress, ToWord, Word,
+    word, Bytecode, GethExecError, GethExecStep, Hash, ToAddress, ToWord, Word,
 };
 use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
 use pretty_assertions::assert_eq;

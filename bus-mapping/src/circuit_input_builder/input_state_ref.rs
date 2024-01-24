@@ -417,7 +417,6 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn stack_pops(&mut self, step: &mut ExecStep, n: usize) -> Result<Vec<Word>, Error> {
         (0..n)
             .map(|_| self.stack_pop(step))
-            .into_iter()
             .collect::<Result<Vec<Word>, Error>>()
     }
 
