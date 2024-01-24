@@ -143,6 +143,13 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
 
         let mut call_trace = execution_result.call_trace.flatten_trace(vec![]);
         call_trace.reverse();
+        let root_call = call_trace.pop().unwrap();
+        if let Some(ref from) = execution_result.from.as_ref().and_then(|acc| acc.address) {
+            assert_eq!(*from, root_call.from);
+        }
+        if let Some(ref to) = execution_result.to.as_ref().and_then(|acc| acc.address) {
+            assert_eq!(*to, root_call.to.unwrap());
+        }
 
         for step in execution_result.exec_steps.iter().rev() {
             let call = if step.op.is_call_or_create() {
