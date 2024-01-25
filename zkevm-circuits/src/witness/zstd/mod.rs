@@ -691,95 +691,6 @@ fn process_block_zstd_literals_header<F: Field>(
     )
 }
 
-fn process_block_zstd_huffman_code_direct<F: Field>(
-    src: &[u8],
-    byte_offset: usize,
-    last_row: &ZstdWitnessRow<F>,
-    randomness: Value<F>,
-    n_bytes: usize,
-) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData) {
-    // For direct representation of huffman weights, each byte (8 bits) represents two weights. 
-    // weight[0] = (Byte[0] >> 4)
-    // weight[1] = (Byte[0] & 0xf).
-
-    let value_rlc_iter = src
-        .iter()
-        .skip(byte_offset)
-        .take(n_bytes)
-        .scan(
-            last_row.encoded_data.value_rlc,
-            |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            },
-        )
-        .into_iter()
-        .flat_map(|v| vec![v, v]);
-
-    let tag_value_iter = src
-        .iter()
-        .skip(byte_offset)
-        .take(n_bytes)
-        .scan(
-            Value::known(F::zero()),
-            |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
-                Some(*acc)
-            },
-        )
-        .into_iter()
-        .flat_map(|v| vec![v, v]);
-
-    let tag_value = tag_value_iter
-        .clone()
-        .last()
-        .expect("Raw bytes must be of non-zero length");
-
-    let mut weights: Vec<FseSymbol> = vec![];
-
-    (
-        byte_offset + n_bytes,
-        src.iter()
-            .skip(byte_offset)
-            .take(n_bytes)
-            .into_iter()
-            .flat_map(|v| vec![v, v])
-            .zip(tag_value_iter)
-            .zip(value_rlc_iter)
-            .zip((0..).cycle().take(n_bytes * 2))
-            .enumerate()
-            .map(
-                |(i, (((&value_byte, tag_value_acc), value_rlc), b_flag))| {
-                    weights.push(FseSymbol::from((if b_flag > 0 { value_byte >> 4 } else { value_byte & 0xf }) as usize));
-
-                    ZstdWitnessRow {
-                        state: ZstdState {
-                            tag: ZstdTag::ZstdBlockHuffmanCode,
-                            tag_next: ZstdTag::ZstdBlockSequenceHeader,
-                            tag_len: n_bytes as u64,
-                            tag_idx: (i / 2) as u64,
-                            tag_value,
-                            tag_value_acc,
-                        },
-                        encoded_data: EncodedData {
-                            byte_idx: (byte_offset + i / 2 + 1) as u64,
-                            encoded_len: last_row.encoded_data.encoded_len,
-                            value_byte: value_byte,
-                            value_rlc,
-                            reverse: false,
-                            ..Default::default()
-                        },
-                        decoded_data: last_row.decoded_data.clone(),
-                        huffman_data: HuffmanData::default(),
-                        fse_data: FseTableRow::default(),
-                    }
-                },
-            )
-            .collect::<Vec<_>>(),
-            HuffmanCodesData { byte_offset: byte_offset as u64, weights: weights }
-    )
-}
-
 fn process_block_zstd_huffman_code<F: Field>(
     src: &[u8],
     byte_offset: usize,
@@ -812,9 +723,6 @@ fn process_block_zstd_huffman_code<F: Field>(
         }
     };
 
-    // TODO: Awaiting design decision
-    // Currently the FSE decoding is assumed. Direct representation is a reserve possibility
-    // The code for decoding direct representation is above. 
     assert!(header_byte < 128, "FSE encoded huffman weights assumed");
 
     // Get accumulators
