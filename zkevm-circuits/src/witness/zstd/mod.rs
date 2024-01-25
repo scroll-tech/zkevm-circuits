@@ -633,7 +633,7 @@ fn process_block_zstd_literals_header<F: Field>(
     let tag_next = match literals_block_type {
         BlockType::RawBlock => ZstdTag::ZstdBlockLiteralsRawBytes,
         BlockType::RleBlock => ZstdTag::ZstdBlockLiteralsRleBytes,
-        BlockType::ZstdCompressedBlock => ZstdTag::ZstdBlockHuffmanCode,
+        BlockType::ZstdCompressedBlock => ZstdTag::ZstdBlockFseCode,
         _ => unreachable!("BlockType::Reserved unexpected or treeless literal section"),
     };
 
@@ -705,11 +705,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let decoded_data = last_row.decoded_data.clone();
 
     // Get the next tag
-    let tag_next = if n_streams > 1 {
-        ZstdTag::ZstdBlockJumpTable
-    } else {
-        ZstdTag::ZstdBlockLstream
-    };
+    let tag_next = ZstdTag::ZstdBlockHuffmanCode;
 
     // Parse the header byte
     let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
@@ -801,6 +797,11 @@ fn process_block_zstd_huffman_code<F: Field>(
     // Now start decoding the huffman weights using the actual Huffman code section
     let last_value_rlc = witness_rows[witness_rows.len() - 1].encoded_data.value_rlc.clone();
     let aux_1 = last_row.encoded_data.value_rlc;
+    let tag_next = if n_streams > 1 {
+        ZstdTag::ZstdBlockJumpTable
+    } else {
+        ZstdTag::ZstdBlockLstream
+    };
 
     // Bitstream processing state values
     let n_huffman_code_bytes = n_bytes - n_fse_bytes;
