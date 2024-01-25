@@ -94,30 +94,34 @@ struct Args {
 }
 
 fn read_test_ids(file_path: &str) -> Result<Vec<String>> {
-    log::info!("read_test_ids from {}", file_path);
-    let mut test_ids = vec![];
-    let file = File::open(file_path)?;
-    for line in BufReader::new(file).lines() {
-        test_ids.push(line?.trim().to_string());
-    }
-
-    let total = test_ids.len();
-    let start = env::var("TESTOOL_IDS_START")
+    let worker_index = env::var("WORKER_INDEX")
         .ok()
         .and_then(|val| val.parse::<usize>().ok())
-        .unwrap_or(0)
-        .min(total);
-    let len = env::var("TESTOOL_IDS_LEN")
+        .expect("WORKER_INDEX not set");
+    let total_workers = env::var("TOTAL_WORKERS")
         .ok()
         .and_then(|val| val.parse::<usize>().ok())
-        .unwrap_or(total);
-    log::info!("ENV TESTOOL_IDS_START = {start}, TESTOOL_IDS_LEN = {len}");
+        .expect("TOTAL_WORKERS not set");
+    info!("total workers: {total_workers}, worker index: {worker_index}");
 
-    let end = total.min(start + len);
+    info!("read_test_ids from {}", file_path);
+    let mut total_jobs = 0;
+    let test_ids = BufReader::new(File::open(file_path)?)
+        .lines()
+        .map(|r| r.map(|line| line.trim().to_string()))
+        .inspect(|_| total_jobs += 1)
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            if idx % total_workers == worker_index {
+                Some(line)
+            } else {
+                None
+            }
+        })
+        .collect::<Result<Vec<String>, std::io::Error>>()?;
 
-    let result = test_ids[start..end].to_vec();
-    log::info!("read_test_ids total size {}", result.len());
-    Ok(result)
+    info!("read_test_ids {} of {total_jobs}", test_ids.len());
+    Ok(test_ids)
 }
 
 fn write_test_ids(test_ids: &[String]) -> Result<()> {

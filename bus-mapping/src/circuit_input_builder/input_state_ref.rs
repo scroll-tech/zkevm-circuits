@@ -1768,9 +1768,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 if is_precompiled(&code_address) {
                     let precompile_call: PrecompileCalls = code_address[19].into();
                     match precompile_call {
-                        PrecompileCalls::Sha256
-                        | PrecompileCalls::Ripemd160
-                        | PrecompileCalls::Blake2F => {
+                        PrecompileCalls::Ripemd160 | PrecompileCalls::Blake2F => {
                             // Log the precompile address and gas left. Since this failure is mainly
                             // caused by out of gas.
                             log::trace!(

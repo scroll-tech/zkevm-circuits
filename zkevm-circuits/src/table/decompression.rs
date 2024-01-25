@@ -6,6 +6,7 @@ use eth_types::Field;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
+    impl_expr,
     is_equal::{IsEqualChip, IsEqualConfig},
     util::{and, not, Expr},
 };
@@ -15,13 +16,14 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
     witness::{
-        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, ZstdTag,
-        ZstdTagRomTableRow, N_BITS_SYMBOL, N_MAX_SYMBOLS,
+        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, TagRomTableRow, ZstdTag,
+        N_BITS_SYMBOL, N_MAX_SYMBOLS,
     },
 };
 
@@ -1693,6 +1695,387 @@ impl HuffmanCodesBitstringAccumulationTable {
     }
 }
 
+/// Different branches that can be taken while calculating regenerated size and compressed size in
+/// the Literals Header.
+#[derive(Clone, Copy, Debug, EnumIter)]
+pub enum LiteralsHeaderBranch {
+    /// Raw/RLE block type with size_format 00 or 10.
+    RawRle0,
+    /// Raw/RLE block type with size format 10.
+    RawRle1,
+    /// Raw/RLE block type with size format 11.
+    RawRle2,
+    /// Compressed block type with size format 00 or 01.
+    Compressed0,
+    /// Compressed block type with size format 10.
+    Compressed1,
+    /// Compressed block type with size format 11.
+    Compressed2,
+}
+
+impl_expr!(LiteralsHeaderBranch);
+
+impl From<LiteralsHeaderBranch> for usize {
+    fn from(value: LiteralsHeaderBranch) -> Self {
+        value as usize
+    }
+}
+
+/// Helper table to calculate regenerated and compressed size from the Literals Header.
+#[derive(Clone, Debug)]
+pub struct LiteralsHeaderTable {
+    /// Whether to enable.
+    pub q_enable: Column<Fixed>,
+    /// Byte offset at which this literals header is located.
+    pub byte_offset: Column<Advice>,
+    /// The branch taken for this literals header.
+    pub branch: Column<Advice>,
+    /// To identify the branch.
+    pub branch_bits: BinaryNumberConfig<LiteralsHeaderBranch, 3>,
+    /// The first byte of the literals header.
+    pub byte0: Column<Advice>,
+    /// The second byte.
+    pub byte1: Column<Advice>,
+    /// The third byte.
+    pub byte2: Column<Advice>,
+    /// The fourth byte.
+    pub byte3: Column<Advice>,
+    /// The fifth byte.
+    pub byte4: Column<Advice>,
+    /// byte0 >> 3.
+    pub byte0_rs_3: Column<Advice>,
+    /// byte0 >> 4.
+    pub byte0_rs_4: Column<Advice>,
+    /// byte1 >> 6.
+    pub byte1_rs_6: Column<Advice>,
+    /// byte1 & 0b111111.
+    pub byte1_and_63: Column<Advice>,
+    /// byte2 >> 2.
+    pub byte2_rs_2: Column<Advice>,
+    /// byte2 >> 6.
+    pub byte2_rs_6: Column<Advice>,
+    /// byte2 & 0b11.
+    pub byte2_and_3: Column<Advice>,
+    /// byte2 & 0b111111.
+    pub byte2_and_63: Column<Advice>,
+    /// Regenerated size.
+    pub regen_size: Column<Advice>,
+    /// Compressed size.
+    pub compr_size: Column<Advice>,
+}
+
+impl LiteralsHeaderTable {
+    /// Construct and constrain the literals header table.
+    pub fn construct<F: Field>(
+        meta: &mut ConstraintSystem<F>,
+        bitwise_op_table: BitwiseOpTable,
+        range4: RangeTable<4>,
+        range8: RangeTable<8>,
+        range16: RangeTable<16>,
+        range64: RangeTable<64>,
+    ) -> Self {
+        let q_enable = meta.fixed_column();
+        let branch = meta.advice_column();
+        let table = Self {
+            q_enable,
+            byte_offset: meta.advice_column(),
+            branch,
+            branch_bits: BinaryNumberChip::configure(meta, q_enable, Some(branch.into())),
+            byte0: meta.advice_column(),
+            byte1: meta.advice_column(),
+            byte2: meta.advice_column(),
+            byte3: meta.advice_column(),
+            byte4: meta.advice_column(),
+            byte0_rs_3: meta.advice_column(),
+            byte0_rs_4: meta.advice_column(),
+            byte1_rs_6: meta.advice_column(),
+            byte1_and_63: meta.advice_column(),
+            byte2_rs_2: meta.advice_column(),
+            byte2_rs_6: meta.advice_column(),
+            byte2_and_3: meta.advice_column(),
+            byte2_and_63: meta.advice_column(),
+            regen_size: meta.advice_column(),
+            compr_size: meta.advice_column(),
+        };
+
+        macro_rules! is_branch {
+            ($var:ident, $branch_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<F>| {
+                    table
+                        .branch_bits
+                        .value_equals(LiteralsHeaderBranch::$branch_variant, Rotation::cur())(
+                        meta
+                    )
+                };
+            };
+        }
+
+        is_branch!(branch0, RawRle0);
+        is_branch!(branch1, RawRle1);
+        is_branch!(branch2, RawRle2);
+        is_branch!(branch3, Compressed0);
+        is_branch!(branch4, Compressed1);
+        is_branch!(branch5, Compressed2);
+
+        meta.create_gate("LiteralsHeaderTable", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let byte0_rs_3 = meta.query_advice(table.byte0_rs_3, Rotation::cur());
+            let byte0_rs_4 = meta.query_advice(table.byte0_rs_4, Rotation::cur());
+            let byte1_ls_4 = meta.query_advice(table.byte1, Rotation::cur()) * 16.expr();
+            let byte1_and_63_ls_4 =
+                meta.query_advice(table.byte1_and_63, Rotation::cur()) * 16.expr();
+            let byte1_rs_6 = meta.query_advice(table.byte1_rs_6, Rotation::cur());
+            let byte2_rs_2 = meta.query_advice(table.byte2_rs_2, Rotation::cur());
+            let byte2_rs_6 = meta.query_advice(table.byte2_rs_6, Rotation::cur());
+            let byte2_ls_2 = meta.query_advice(table.byte2, Rotation::cur()) * 4.expr();
+            let byte2_ls_12 = meta.query_advice(table.byte2, Rotation::cur()) * 4096.expr();
+            let byte2_and_3_ls_12 =
+                meta.query_advice(table.byte2_and_3, Rotation::cur()) * 4096.expr();
+            let byte2_and_63_ls_12 =
+                meta.query_advice(table.byte2_and_63, Rotation::cur()) * 4096.expr();
+            let byte3_ls_6 = meta.query_advice(table.byte3, Rotation::cur()) * 64.expr();
+            let byte3_ls_2 = meta.query_advice(table.byte3, Rotation::cur()) * 4.expr();
+            let byte4_ls_10 = meta.query_advice(table.byte4, Rotation::cur()) * 1024.expr();
+
+            // regen_size == lh_byte[0] >> 3.
+            // compr_size == 0.
+            cb.condition(branch0(meta), |cb| {
+                cb.require_equal(
+                    "branch0: regenerated size",
+                    meta.query_advice(table.regen_size, Rotation::cur()),
+                    byte0_rs_3,
+                );
+                cb.require_zero(
+                    "branch0: compressed size",
+                    meta.query_advice(table.compr_size, Rotation::cur()),
+                );
+                for col in [table.byte1, table.byte2, table.byte3, table.byte4] {
+                    cb.require_zero("byte[i] == 0", meta.query_advice(col, Rotation::cur()));
+                }
+            });
+
+            // regen_size == (lh_byte[0] >> 4) + (lh_byte[1] << 4).
+            // compr_size == 0.
+            cb.condition(branch1(meta), |cb| {
+                cb.require_equal(
+                    "branch1: regenerated size",
+                    meta.query_advice(table.regen_size, Rotation::cur()),
+                    byte0_rs_4.expr() + byte1_ls_4.expr(),
+                );
+                cb.require_zero(
+                    "branch1: compressed size",
+                    meta.query_advice(table.compr_size, Rotation::cur()),
+                );
+                for col in [table.byte2, table.byte3, table.byte4] {
+                    cb.require_zero("byte[i] == 0", meta.query_advice(col, Rotation::cur()));
+                }
+            });
+
+            // regen_size == (lh_byte[0] >> 4) + (lh_byte[1] << 4) + (lh_byte[2] << 12).
+            // compr_size == 0.
+            cb.condition(branch2(meta), |cb| {
+                cb.require_equal(
+                    "branch2: regenerated size",
+                    meta.query_advice(table.regen_size, Rotation::cur()),
+                    byte0_rs_4.expr() + byte1_ls_4.expr() + byte2_ls_12,
+                );
+                cb.require_zero(
+                    "branch2: compressed size",
+                    meta.query_advice(table.compr_size, Rotation::cur()),
+                );
+                for col in [table.byte3, table.byte4] {
+                    cb.require_zero("byte[i] == 0", meta.query_advice(col, Rotation::cur()));
+                }
+            });
+
+            // regen_size == (lh_byte[0] >> 4) + ((lh_byte[1] & 0b111111) << 4).
+            // compr_size == (lh_byte[1] >> 6) + (lh_byte[2] << 2).
+            cb.condition(branch3(meta), |cb| {
+                cb.require_equal(
+                    "branch3: regenerated size",
+                    meta.query_advice(table.regen_size, Rotation::cur()),
+                    byte0_rs_4.expr() + byte1_and_63_ls_4,
+                );
+                cb.require_equal(
+                    "branch3: compressed size",
+                    meta.query_advice(table.compr_size, Rotation::cur()),
+                    byte1_rs_6 + byte2_ls_2.expr(),
+                );
+                for col in [table.byte3, table.byte4] {
+                    cb.require_zero("byte[i] == 0", meta.query_advice(col, Rotation::cur()));
+                }
+            });
+
+            // regen_size == (lh_byte[0] >> 4) + (lh_byte[1] << 4) + ((lh_byte[2] & 0b11) << 12).
+            // compr_size == (lh_byte[2] >> 2) + (lh_byte[3] << 6).
+            cb.condition(branch4(meta), |cb| {
+                cb.require_equal(
+                    "branch4: regenerated size",
+                    meta.query_advice(table.regen_size, Rotation::cur()),
+                    byte0_rs_4.expr() + byte1_ls_4.expr() + byte2_and_3_ls_12,
+                );
+                cb.require_equal(
+                    "branch4: compressed size",
+                    meta.query_advice(table.compr_size, Rotation::cur()),
+                    byte2_rs_2 + byte3_ls_6,
+                );
+                cb.require_zero(
+                    "byte[i] == 0",
+                    meta.query_advice(table.byte4, Rotation::cur()),
+                );
+            });
+
+            // regen_size == (lh_byte[0] >> 4) + (lh_byte[1] << 4) + ((lh_byte[2] & 0b111111) <<
+            // 12). compr_size == (lh_byte[2] >> 6) + (lh_byte[3] << 2) + (lh_byte[4] <<
+            // 10).
+            cb.condition(branch5(meta), |cb| {
+                cb.require_equal(
+                    "branch5: regenerated size",
+                    meta.query_advice(table.regen_size, Rotation::cur()),
+                    byte0_rs_4 + byte1_ls_4 + byte2_and_63_ls_12,
+                );
+                cb.require_equal(
+                    "branch5: compressed size",
+                    meta.query_advice(table.compr_size, Rotation::cur()),
+                    byte2_rs_6 + byte3_ls_2 + byte4_ls_10,
+                );
+            });
+
+            cb.gate(meta.query_fixed(table.q_enable, Rotation::cur()))
+        });
+        meta.lookup("LiteralsHeaderTable: byte0 >> 3", |meta| {
+            let condition = meta.query_fixed(table.q_enable, Rotation::cur());
+            let range_value = meta.query_advice(table.byte0, Rotation::cur())
+                - (meta.query_advice(table.byte0_rs_3, Rotation::cur()) * 8.expr());
+
+            vec![(condition * range_value, range8.into())]
+        });
+        meta.lookup("LiteralsHeaderTable: byte0 >> 4", |meta| {
+            let condition = meta.query_fixed(table.q_enable, Rotation::cur());
+            let range_value = meta.query_advice(table.byte0, Rotation::cur())
+                - (meta.query_advice(table.byte0_rs_4, Rotation::cur()) * 16.expr());
+
+            vec![(condition * range_value, range16.into())]
+        });
+        meta.lookup("LiteralsHeaderTable: byte1 >> 6", |meta| {
+            let condition = meta.query_fixed(table.q_enable, Rotation::cur());
+            let range_value = meta.query_advice(table.byte1, Rotation::cur())
+                - (meta.query_advice(table.byte1_rs_6, Rotation::cur()) * 64.expr());
+
+            vec![(condition * range_value, range64.into())]
+        });
+        meta.lookup("LiteralsHeaderTable: byte2 >> 2", |meta| {
+            let condition = meta.query_fixed(table.q_enable, Rotation::cur());
+            let range_value = meta.query_advice(table.byte2, Rotation::cur())
+                - (meta.query_advice(table.byte2_rs_2, Rotation::cur()) * 4.expr());
+
+            vec![(condition * range_value, range4.into())]
+        });
+        meta.lookup("LiteralsHeaderTable: byte2 >> 6", |meta| {
+            let condition = meta.query_fixed(table.q_enable, Rotation::cur());
+            let range_value = meta.query_advice(table.byte2, Rotation::cur())
+                - (meta.query_advice(table.byte2_rs_6, Rotation::cur()) * 64.expr());
+
+            vec![(condition * range_value, range64.into())]
+        });
+        meta.lookup_any("LiteralsHeaderTable: byte1 & 63", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(table.q_enable, Rotation::cur()),
+                not::expr(branch0(meta)),
+            ]);
+            [
+                BitwiseOp::AND.expr(),
+                meta.query_advice(table.byte1, Rotation::cur()),
+                63.expr(),
+                meta.query_advice(table.byte1_and_63, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(bitwise_op_table.table_exprs(meta))
+            .map(|(input, table)| (input * condition.clone(), table))
+            .collect::<Vec<_>>()
+        });
+        meta.lookup_any("LiteralsHeaderTable: byte2 & 3", |meta| {
+            let condition = meta.query_fixed(table.q_enable, Rotation::cur());
+            [
+                BitwiseOp::AND.expr(),
+                meta.query_advice(table.byte2, Rotation::cur()),
+                3.expr(),
+                meta.query_advice(table.byte2_and_3, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(bitwise_op_table.table_exprs(meta))
+            .map(|(input, table)| (input * condition.clone(), table))
+            .collect::<Vec<_>>()
+        });
+        meta.lookup_any("LiteralsHeaderTable: byte2 & 63", |meta| {
+            let condition = meta.query_fixed(table.q_enable, Rotation::cur());
+            [
+                BitwiseOp::AND.expr(),
+                meta.query_advice(table.byte2, Rotation::cur()),
+                63.expr(),
+                meta.query_advice(table.byte2_and_63, Rotation::cur()),
+            ]
+            .into_iter()
+            .zip(bitwise_op_table.table_exprs(meta))
+            .map(|(input, table)| (input * condition.clone(), table))
+            .collect::<Vec<_>>()
+        });
+
+        debug_assert!(meta.degree() <= 9);
+
+        table
+    }
+
+    /// Assign witness to the literals header table.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        literals_headers: Vec<Vec<u8>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "LiteralsHeaderTable",
+            |_region| {
+                for (_i, header) in literals_headers.iter().enumerate() {
+                    let _n_bytes_header = header.len();
+                    // TODO: make the appropriate assignment.
+                }
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field> LookupTable<F> for LiteralsHeaderTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.byte_offset.into(),
+            self.branch.into(),
+            self.byte0.into(),
+            self.byte1.into(),
+            self.byte2.into(),
+            self.byte3.into(),
+            self.byte4.into(),
+            self.regen_size.into(),
+            self.compr_size.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("byte_offset"),
+            String::from("branch"),
+            String::from("byte0"),
+            String::from("byte1"),
+            String::from("byte2"),
+            String::from("byte3"),
+            String::from("byte4"),
+            String::from("regen_size"),
+            String::from("compr_size"),
+        ]
+    }
+}
+
 /// Read-only Memory table for the Decompression circuit. This table allows us a lookup argument
 /// from the Decompression circuit to check if a given row can occur depending on the row's tag,
 /// next tag and tag length.
@@ -1744,10 +2127,7 @@ impl TagRomTable {
         layouter.assign_region(
             || "Zstd ROM table",
             |mut region| {
-                // TODO: populate these rows.
-                let rows: Vec<ZstdTagRomTableRow> = Vec::new();
-
-                for (offset, row) in rows.iter().enumerate() {
+                for (offset, row) in TagRomTableRow::rows().iter().enumerate() {
                     for (&column, (value, annotation)) in
                         <Self as LookupTable<F>>::fixed_columns(self).iter().zip(
                             row.values::<F>()
@@ -1889,14 +2269,23 @@ pub struct LiteralsHeaderRomTable {
     size_format_bit0: Column<Fixed>,
     /// Size format second bit.
     size_format_bit1: Column<Fixed>,
-    /// Number of bits used for regenerated size.
-    regen_size_bits: Column<Fixed>,
-    /// Number of bits used for compressed size.
-    compr_size_bits: Column<Fixed>,
     /// Number of bytes occupied by the literals header.
     n_bytes_header: Column<Fixed>,
     /// Number of literal streams to be decoded.
     n_lstreams: Column<Fixed>,
+    /// The branch we take to decompose the literals header. There are a total of 7 branches that
+    /// can be used to decompose the literals header, namely:
+    ///
+    /// - block_type == Raw/RLE and size_format == 00 or 10
+    /// - block_type == Raw/RLE and size_format == 01
+    /// - block_type == Raw/RLE and size_format == 11
+    /// - block_type == Compressed and size_format == 00
+    /// - block_type == Compressed and size_format == 01
+    /// - block_type == Compressed and size_format == 10
+    /// - block_type == Compressed and size_format == 11
+    branch: Column<Fixed>,
+    // size format == 0b11?
+    is_size_format_0b11: Column<Fixed>,
 }
 
 impl<F: Field> LookupTable<F> for LiteralsHeaderRomTable {
@@ -1906,10 +2295,10 @@ impl<F: Field> LookupTable<F> for LiteralsHeaderRomTable {
             self.block_type_bit1.into(),
             self.size_format_bit0.into(),
             self.size_format_bit1.into(),
-            self.regen_size_bits.into(),
-            self.compr_size_bits.into(),
             self.n_bytes_header.into(),
             self.n_lstreams.into(),
+            self.branch.into(),
+            self.is_size_format_0b11.into(),
         ]
     }
 
@@ -1919,10 +2308,10 @@ impl<F: Field> LookupTable<F> for LiteralsHeaderRomTable {
             String::from("block_type_bit1"),
             String::from("size_format_bit0"),
             String::from("size_format_bit1"),
-            String::from("regen_size_bits"),
-            String::from("compr_size_bits"),
             String::from("n_bytes_header"),
             String::from("n_lstreams"),
+            String::from("branch"),
+            String::from("is_size_format_0b11"),
         ]
     }
 }
@@ -1935,10 +2324,10 @@ impl LiteralsHeaderRomTable {
             block_type_bit1: meta.fixed_column(),
             size_format_bit0: meta.fixed_column(),
             size_format_bit1: meta.fixed_column(),
-            regen_size_bits: meta.fixed_column(),
-            compr_size_bits: meta.fixed_column(),
             n_bytes_header: meta.fixed_column(),
             n_lstreams: meta.fixed_column(),
+            branch: meta.fixed_column(),
+            is_size_format_0b11: meta.fixed_column(),
         }
     }
 
@@ -1949,18 +2338,18 @@ impl LiteralsHeaderRomTable {
             |mut region| {
                 // Refer: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#literals_section_header
                 for (i, row) in [
-                    [0, 0, 0, 0, 5, 0, 1, 1],   // Raw: 1 byte header
-                    [0, 0, 0, 1, 5, 0, 1, 1],   // Raw: 1 byte header
-                    [0, 0, 1, 0, 12, 0, 2, 1],  // Raw: 2 bytes header
-                    [0, 0, 1, 1, 20, 0, 3, 1],  // Raw: 3 bytes header
-                    [1, 0, 0, 0, 5, 0, 1, 1],   // RLE: 1 byte header
-                    [1, 0, 0, 1, 5, 0, 1, 1],   // RLE: 1 byte header
-                    [1, 0, 1, 0, 12, 0, 2, 1],  // RLE: 2 bytes header
-                    [1, 0, 1, 1, 20, 0, 3, 1],  // RLE: 3 bytes header
-                    [0, 1, 0, 0, 10, 10, 3, 1], // Compressed: 3 bytes header
-                    [0, 1, 1, 0, 10, 10, 3, 4], // Compressed: 3 bytes header
-                    [0, 1, 0, 1, 14, 14, 4, 4], // Compressed: 4 bytes header
-                    [0, 1, 1, 1, 18, 18, 5, 4], // Compressed: 5 bytes header
+                    [0, 0, 0, 0, 1, 1, 0, 0], // Raw: 1 byte header
+                    [0, 0, 0, 1, 1, 1, 0, 0], // Raw: 1 byte header
+                    [0, 0, 1, 0, 2, 1, 1, 0], // Raw: 2 bytes header
+                    [0, 0, 1, 1, 3, 1, 2, 1], // Raw: 3 bytes header
+                    [1, 0, 0, 0, 1, 1, 0, 0], // RLE: 1 byte header
+                    [1, 0, 0, 1, 1, 1, 0, 0], // RLE: 1 byte header
+                    [1, 0, 1, 0, 2, 1, 1, 0], // RLE: 2 bytes header
+                    [1, 0, 1, 1, 3, 1, 2, 1], // RLE: 3 bytes header
+                    [0, 1, 0, 0, 3, 1, 3, 0], // Compressed: 3 bytes header
+                    [0, 1, 1, 0, 3, 4, 4, 0], // Compressed: 3 bytes header
+                    [0, 1, 0, 1, 4, 4, 5, 0], // Compressed: 4 bytes header
+                    [0, 1, 1, 1, 5, 4, 6, 1], // Compressed: 5 bytes header
                 ]
                 .iter()
                 .enumerate()

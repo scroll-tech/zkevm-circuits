@@ -8,7 +8,9 @@ use crate::{
     decompression_circuit::{
         DecompressionCircuit, DecompressionCircuitConfig, DecompressionCircuitConfigArgs,
     },
-    table::{KeccakTable, Pow2Table, RangeTable, U8Table},
+    table::{
+        decompression::LiteralsHeaderTable, BitwiseOpTable, KeccakTable, Pow2Table, RangeTable,
+    },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 
@@ -25,17 +27,32 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let challenge_exprs = challenges.exprs(meta);
-        let u8_table = U8Table::construct(meta);
-        let range_table_0x08 = RangeTable::construct(meta);
+        let bitwise_op_table = BitwiseOpTable::construct(meta);
+        let range4 = RangeTable::construct(meta);
+        let range8 = RangeTable::construct(meta);
+        let range16 = RangeTable::construct(meta);
+        let range64 = RangeTable::construct(meta);
+        let range128 = RangeTable::construct(meta);
+        let range256 = RangeTable::construct(meta);
         let pow2_table = Pow2Table::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
+        let literals_header_table = LiteralsHeaderTable::construct(
+            meta,
+            bitwise_op_table,
+            range4,
+            range8,
+            range16,
+            range64,
+        );
 
         let config = DecompressionCircuitConfig::new(
             meta,
             DecompressionCircuitConfigArgs {
                 challenges: challenge_exprs,
-                u8_table,
-                range_table_0x08,
+                literals_header_table,
+                range8,
+                range128,
+                range256,
                 pow2_table,
                 keccak_table,
             },
@@ -51,7 +68,6 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = &config.1.values(&layouter);
-        config.0.u8_table.load(&mut layouter)?;
         self.synthesize_sub(&config.0, challenges, &mut layouter)
     }
 }

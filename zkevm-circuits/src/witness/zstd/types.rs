@@ -18,7 +18,7 @@ use super::{
 /// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
 /// fields are assigned correctly.
 #[derive(Clone, Debug)]
-pub struct ZstdTagRomTableRow {
+pub struct TagRomTableRow {
     /// The current tag.
     tag: ZstdTag,
     /// The tag that will be processed after the current tag is finished processing.
@@ -29,13 +29,13 @@ pub struct ZstdTagRomTableRow {
     is_output: bool,
 }
 
-impl ZstdTagRomTableRow {
+impl TagRomTableRow {
     pub(crate) fn rows() -> Vec<Self> {
         use ZstdTag::{
             BlockHeader, FrameContentSize, FrameHeaderDescriptor, Null, RawBlockBytes,
-            RleBlockBytes, ZstdBlockHuffmanCode, ZstdBlockJumpTable, ZstdBlockLiteralsHeader,
-            ZstdBlockLiteralsRawBytes, ZstdBlockLiteralsRleBytes, ZstdBlockLstream,
-            ZstdBlockSequenceHeader,
+            RleBlockBytes, ZstdBlockFseCode, ZstdBlockHuffmanCode, ZstdBlockJumpTable,
+            ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, ZstdBlockLiteralsRleBytes,
+            ZstdBlockLstream, ZstdBlockSequenceHeader,
         };
 
         [
@@ -62,14 +62,15 @@ impl ZstdTagRomTableRow {
                 1048575,
                 true,
             ),
-            (ZstdBlockLiteralsHeader, ZstdBlockHuffmanCode, 5, false),
+            (ZstdBlockLiteralsHeader, ZstdBlockFseCode, 5, false),
+            (ZstdBlockFseCode, ZstdBlockHuffmanCode, 128, false),
             (ZstdBlockHuffmanCode, ZstdBlockJumpTable, 128, false), // header_byte < 128
             (ZstdBlockHuffmanCode, ZstdBlockLstream, 128, false),
             (ZstdBlockJumpTable, ZstdBlockLstream, 6, false),
             (ZstdBlockLstream, ZstdBlockLstream, 1000, true), // 1kB hard-limit
             (ZstdBlockLstream, ZstdBlockSequenceHeader, 1000, true),
         ]
-        .map(|(tag, tag_next, max_len, is_output)| ZstdTagRomTableRow {
+        .map(|(tag, tag_next, max_len, is_output)| Self {
             tag,
             tag_next,
             max_len,
@@ -180,6 +181,8 @@ pub enum ZstdTag {
     ZstdBlockLiteralsRawBytes,
     /// Zstd blocks might contain rle bytes.
     ZstdBlockLiteralsRleBytes,
+    /// Zstd block's huffman header and FSE code.
+    ZstdBlockFseCode,
     /// Zstd block's huffman code.
     ZstdBlockHuffmanCode,
     /// Zstd block's jump table.
@@ -210,6 +213,7 @@ impl ToString for ZstdTag {
             Self::ZstdBlockLiteralsHeader => "ZstdBlockLiteralsHeader",
             Self::ZstdBlockLiteralsRawBytes => "ZstdBlockLiteralsRawBytes",
             Self::ZstdBlockLiteralsRleBytes => "ZstdBlockLiteralsRleBytes",
+            Self::ZstdBlockFseCode => "ZstdBlockFseCode",
             Self::ZstdBlockHuffmanCode => "ZstdBlockHuffmanCode",
             Self::ZstdBlockJumpTable => "ZstdBlockJumpTable",
             Self::ZstdBlockLstream => "ZstdBlockLstream",
