@@ -1159,6 +1159,11 @@ fn process_block_zstd_lstream<F: Field>(
             let from_byte_idx = current_byte_idx;
             let from_bit_idx = current_bit_idx;
 
+            // advance byte and bit marks to the last bit
+             for _ in 0..cur_bitstring_len {
+                (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+            }
+
             // Add a witness row for emitted symbol
             witness_rows.push(ZstdWitnessRow {
                 state: ZstdState {
@@ -1191,10 +1196,7 @@ fn process_block_zstd_lstream<F: Field>(
                 fse_data: FseTableRow::default(),
             });
 
-            // advance byte and bit marks to the last bit
-            for _ in 0..cur_bitstring_len {
-                (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
-            }
+           
 
             // Reset decoding state
             bitstring_acc = String::from("");
