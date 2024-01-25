@@ -2,7 +2,6 @@ use eth_types::Field;
 use halo2_proofs::circuit::Value;
 
 mod params;
-use num::Integer;
 pub use params::*;
 
 mod types;
@@ -701,6 +700,10 @@ fn process_block_zstd_huffman_code<F: Field>(
     // Preserve this value for later construction of HuffmanCodesDataTable
     let huffman_code_byte_offset = byte_offset;
 
+    // Other consistent values
+    let encoded_len = last_row.encoded_data.encoded_len;
+    let decoded_data = last_row.decoded_data.clone();
+
     // Get the next tag
     let tag_next = if n_streams > 1 {
         ZstdTag::ZstdBlockJumpTable
@@ -711,21 +714,10 @@ fn process_block_zstd_huffman_code<F: Field>(
     // Parse the header byte
     let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
     let header_byte = src[byte_offset];
-
-    let n_bytes = if header_byte < 128 {
-        header_byte as usize
-    } else {
-        let n_sym: usize = header_byte as usize - 127;
-        if n_sym.is_odd() {
-            (n_sym + 1) / 2
-        } else {
-            n_sym / 2
-        }
-    };
-
     assert!(header_byte < 128, "FSE encoded huffman weights assumed");
+    let n_bytes = header_byte as usize;
 
-    // Get accumulators
+    // Get value_rlc accumulator
     let mut value_rlc_iter = src.iter().skip(byte_offset).take(n_bytes + 1).scan(
         last_row.encoded_data.value_rlc,
         |acc, &byte| {
@@ -733,81 +725,95 @@ fn process_block_zstd_huffman_code<F: Field>(
             Some(*acc)
         },
     );
+    
+    // Add a witness row for Huffman header
+    let mut huffman_header_row = ZstdWitnessRow {
+        state: ZstdState {
+            tag: ZstdTag::ZstdBlockFseCode,
+            tag_next,
+            tag_len: 0 as u64, // There's no information at this point about the length of FSE table bytes. So this value has to be modified later. 
+            tag_idx: 1 as u64,
+            tag_value: Value::default(), // Must be changed after FSE table length is known
+            tag_value_acc: Value::default(), // Must be changed after FSE table length is known
+        },
+        encoded_data: EncodedData {
+            byte_idx: (byte_offset + 1) as u64,
+            encoded_len,
+            value_byte: header_byte.clone(),
+            value_rlc: value_rlc_iter.next().expect("Next value should exist"),
+            reverse: false,
+            ..Default::default()
+        },
+        decoded_data: decoded_data.clone(),
+        huffman_data: HuffmanData::default(),
+        fse_data: FseTableRow::default(),
+    };
 
-    let mut tag_value_iter = src.iter().skip(byte_offset).take(n_bytes + 1).scan(
+    // Recover the FSE table for generating Huffman weights
+    let (n_fse_bytes, table) = FseAuxiliaryTableData::reconstruct(&src, byte_offset + 1).expect("Reconstructing FSE table should not fail.");
+    
+    // Witness generation
+    let accuracy_log = (src[byte_offset + 1] & 0b1111) + 5;
+
+    let mut tag_value_iter = src.iter().skip(byte_offset).take(n_fse_bytes + 1).scan(
         Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
         },
     );
-
     let tag_value = tag_value_iter
         .clone()
         .last()
-        .expect("Raw bytes must be of non-zero length");
+        .expect("Tag value must exist");
 
-    // Add a witness row for Huffman header
-    witness_rows.push(ZstdWitnessRow {
-        state: ZstdState {
-            tag: ZstdTag::ZstdBlockHuffmanCode,
-            tag_next,
-            tag_len: (n_bytes + 1) as u64, // include the 1 byte from huffman header
-            tag_idx: 1 as u64,
-            tag_value: tag_value,
-            tag_value_acc: tag_value_iter.next().expect("Next value should exist"),
-        },
-        encoded_data: EncodedData {
-            byte_idx: (byte_offset + 1) as u64,
-            encoded_len: last_row.encoded_data.encoded_len,
-            value_byte: header_byte.clone(),
-            value_rlc: value_rlc_iter.next().expect("Next value should exist"),
-            reverse: false,
-            ..Default::default()
-        },
-        decoded_data: last_row.decoded_data.clone(),
-        huffman_data: HuffmanData::default(),
-        fse_data: FseTableRow::default(),
-    });
-
-    // Recover the FSE table for generating Huffman weights
-    let byte_offset = byte_offset + 1;
-    let (n_fse_bytes, table) = FseAuxiliaryTableData::reconstruct(&src, byte_offset).expect("Reconstructing FSE table should not fail.");
-
-    // Witness generation
-    let accuracy_log = (src[byte_offset] & 0b1111) + 5;
+    // Backfill missing data on the huffman header row
+    huffman_header_row.state.tag_len = (n_fse_bytes + 1usize) as u64;
+    huffman_header_row.state.tag_value = tag_value;
+    huffman_header_row.state.tag_value_acc = tag_value_iter.next().expect("Next value should exist");
+    witness_rows.push(huffman_header_row);
 
     // Add witness rows for FSE representation bytes
     for (idx, byte) in src.iter().skip(byte_offset).take(n_fse_bytes).enumerate() {
         witness_rows.push(ZstdWitnessRow {
             state: ZstdState {
-                tag: ZstdTag::ZstdBlockHuffmanCode,
+                tag: ZstdTag::ZstdBlockFseCode,
                 tag_next,
-                tag_len: (n_bytes + 1) as u64,
+                tag_len: (n_fse_bytes + 1) as u64,
                 tag_idx: (idx + 2) as u64, // count the huffman header byte
                 tag_value: tag_value,
                 tag_value_acc: tag_value_iter.next().expect("Next value should exist"),
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + idx + 2) as u64, // count the huffman header byte
-                encoded_len: last_row.encoded_data.encoded_len,
+                encoded_len,
                 value_byte: byte.clone(),
                 value_rlc: value_rlc_iter.next().expect("Next value should exist"),
                 reverse: false,
                 ..Default::default()
             },
-            decoded_data: last_row.decoded_data.clone(),
+            decoded_data: decoded_data.clone(),
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),
         });
     }
 
+    // Now start decoding the huffman weights using the actual Huffman code section
+    let last_value_rlc = witness_rows[witness_rows.len() - 1].encoded_data.value_rlc.clone();
+    let aux_1 = last_row.encoded_data.value_rlc;
+
+    // Bitstream processing state values
+    let n_huffman_code_bytes = n_bytes - n_fse_bytes;
+    let mut last_byte_idx: usize = 1;
+    let mut current_byte_idx: usize = 1; // byte_idx is 1-indexed
+    let mut current_bit_idx: usize = 0;
+
     // Construct the Huffman bitstream
     let huffman_bitstream = 
         src
             .iter()
-            .skip(byte_offset)
-            .take(n_bytes)
+            .skip(byte_offset + n_fse_bytes + 1)
+            .take(n_huffman_code_bytes)
             .rev()
             .clone()
             .flat_map(|v|{
@@ -817,30 +823,49 @@ fn process_block_zstd_huffman_code<F: Field>(
             })
             .collect::<Vec<u8>>();
 
-    // Bitstream processing state values
-    let mut last_byte_idx: usize = 1;
-    let mut current_byte_idx: usize = 1; // byte_idx is 1-indexed
-    let mut current_bit_idx: usize = 0;
+    // Accumulators for Huffman code section
+    let mut value_rlc_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).rev().scan(
+        last_value_rlc,
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    );
+    let mut tag_value_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).scan(
+        Value::known(F::zero()),
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    );
+    let tag_value = tag_value_iter
+        .clone()
+        .last()
+        .expect("Tag value must exist");
 
     let mut next_tag_value_acc = tag_value_iter.next().unwrap();
     let mut next_value_rlc_acc = value_rlc_iter.next().unwrap();
 
-    // Add a witness row for leading 0s
+    // Add a witness row for leading 0s and the sentinel 1-bit
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
             tag: ZstdTag::ZstdBlockHuffmanCode,
             tag_next,
-            tag_len: (n_bytes + 1) as u64, // count huffman header byte
-            tag_idx: ((n_fse_bytes - 1) + current_byte_idx + 1) as u64, 
+            tag_len: n_huffman_code_bytes as u64,
+            tag_idx: 1 as u64, 
             tag_value: tag_value,
             tag_value_acc: next_tag_value_acc,
         },
         encoded_data: EncodedData {
-            byte_idx: (byte_offset + (n_fse_bytes - 1) + current_byte_idx) as u64,
-            encoded_len: last_row.encoded_data.encoded_len,
-            value_byte: src[byte_offset + (n_fse_bytes - 1) + current_byte_idx],
+            byte_idx: (byte_offset + n_fse_bytes + n_huffman_code_bytes - current_byte_idx) as u64,
+            encoded_len,
+            value_byte: src[byte_offset + n_fse_bytes + 1 + current_byte_idx],
             value_rlc: next_value_rlc_acc,
-            reverse: false,
+            reverse: true,
+            reverse_len: n_huffman_code_bytes as u64,
+            reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
+            aux_1,
+            aux_2: tag_value,
             ..Default::default()
         },
         huffman_data: HuffmanData::default(),
@@ -852,36 +877,10 @@ fn process_block_zstd_huffman_code<F: Field>(
     while huffman_bitstream[current_bit_idx] == 0 {
         (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
     }
-    if current_byte_idx > last_byte_idx {
-        next_tag_value_acc = tag_value_iter.next().unwrap();
-        next_value_rlc_acc = value_rlc_iter.next().unwrap();
-        last_byte_idx = current_byte_idx;
-    }
-
-    // Add a witness row for sentinel 1-bit
-    witness_rows.push(ZstdWitnessRow {
-        state: ZstdState {
-            tag: ZstdTag::ZstdBlockHuffmanCode,
-            tag_next,
-            tag_len: (n_bytes + 1) as u64,
-            tag_idx: ((n_fse_bytes - 1) + current_byte_idx + 1) as u64,
-            tag_value: tag_value,
-            tag_value_acc: next_tag_value_acc,
-        },
-        encoded_data: EncodedData {
-            byte_idx: (byte_offset + (n_fse_bytes - 1) + current_byte_idx) as u64,
-            encoded_len: last_row.encoded_data.encoded_len,
-            value_byte: src[byte_offset + (n_fse_bytes - 1) + current_byte_idx],
-            value_rlc: next_value_rlc_acc,
-            reverse: false,
-            ..Default::default()
-        },
-        huffman_data: HuffmanData::default(),
-        decoded_data: last_row.decoded_data.clone(),
-        fse_data: FseTableRow::default(),
-    });
     // Exclude the sentinel 1-bit
     (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+
+    // Update accumulator
     if current_byte_idx > last_byte_idx {
         next_tag_value_acc = tag_value_iter.next().unwrap();
         next_value_rlc_acc = value_rlc_iter.next().unwrap();
@@ -900,7 +899,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     // Convert FSE auxiliary data into a state-indexed representation
     let fse_state_table = table.parse_state_table();
 
-    while current_bit_idx + next_nb_to_read[color] <= (n_bytes - n_fse_bytes) * N_BITS_PER_BYTE {
+    while current_bit_idx + next_nb_to_read[color] <= (n_huffman_code_bytes) * N_BITS_PER_BYTE {
         let nb = next_nb_to_read[color];
         let next_state = prev_baseline[color] + be_bits_to_value(&huffman_bitstream[current_bit_idx..(current_bit_idx + nb)]);
 
@@ -915,15 +914,15 @@ fn process_block_zstd_huffman_code<F: Field>(
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockHuffmanCode,
                 tag_next,
-                tag_len: (n_bytes + 1) as u64,
-                tag_idx: ((n_fse_bytes - 1) + current_byte_idx + 1) as u64,
+                tag_len: (n_huffman_code_bytes) as u64,
+                tag_idx: current_byte_idx as u64,
                 tag_value: tag_value,
                 tag_value_acc: next_tag_value_acc,
             },
             encoded_data: EncodedData {
-                byte_idx: (byte_offset + (n_fse_bytes - 1) + current_byte_idx) as u64,
-                encoded_len: last_row.encoded_data.encoded_len,
-                value_byte: src[byte_offset + (n_fse_bytes - 1) + current_byte_idx],
+                byte_idx: (byte_offset + n_fse_bytes + current_byte_idx) as u64,
+                encoded_len,
+                value_byte: src[byte_offset + n_fse_bytes + current_byte_idx],
                 value_rlc: next_value_rlc_acc,
                 reverse: false,
                 ..Default::default()
@@ -936,7 +935,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 num_bits: fse_row.2,  
             },
             huffman_data: HuffmanData::default(),
-            decoded_data: last_row.decoded_data.clone(),
+            decoded_data: decoded_data.clone(),
         });
 
         // increment fse idx
@@ -965,7 +964,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         weights: decoded_weights.into_iter().map(|w| FseSymbol::from(w as usize) ).collect()
     };
 
-    (byte_offset + n_bytes, witness_rows, huffman_codes, n_bytes)
+    (byte_offset + 1 + n_fse_bytes + n_huffman_code_bytes, witness_rows, huffman_codes, n_bytes)
 }
 
 fn process_block_zstd_huffman_jump_table<F: Field>(
@@ -990,7 +989,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
             .cloned()
             .map(|x| x as u64)
             .collect::<Vec<u64>>();
-        
+
         let l1: u64 = jt_bytes[0] + jt_bytes[1] * 256;
         let l2: u64 = jt_bytes[2] + jt_bytes[3] * 256;
         let l3: u64 = jt_bytes[4] + jt_bytes[5] * 256;
