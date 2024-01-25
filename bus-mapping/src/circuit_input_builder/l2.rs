@@ -10,7 +10,7 @@ use eth_types::{
     l2_types::{BlockTrace, EthBlock, ExecStep, StorageTrace},
     Address, ToAddress, ToWord, Word, H256,
 };
-use ethers_core::types::Bytes;
+use ethers_core::{types::Bytes, utils::keccak256};
 use mpt_zktrie::state::{AccountData, ZktrieState};
 use std::collections::hash_map::{Entry, HashMap};
 
@@ -444,9 +444,9 @@ impl CircuitInputBuilder {
       last_applied_l1_block: Option<u64>,
       l1_block_range_hash: Option<H256>,
     ) -> Result<(), Error> {
-    self.block.prev_last_applied_l1_block = prev_last_applied_l1_block;
-    self.block.last_applied_l1_block = last_applied_l1_block;
-    self.block.l1_block_range_hash = l1_block_range_hash;
+    self.block.prev_last_applied_l1_block = Some(prev_last_applied_l1_block.unwrap_or(0));
+    self.block.last_applied_l1_block = Some(last_applied_l1_block.unwrap_or(0));
+    self.block.l1_block_range_hash = Some(l1_block_range_hash.unwrap_or(H256(keccak256(vec![]))));
     Ok(())
 }
 

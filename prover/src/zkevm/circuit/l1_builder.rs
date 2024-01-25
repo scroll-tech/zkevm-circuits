@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use eth_types::l2_types::BlockTrace;
+use eth_types::{l2_types::BlockTrace, H256};
 use halo2_proofs::halo2curves::bn256::Fr;
 use zkevm_circuits::evm_circuit::witness::Block;
 
@@ -33,7 +33,12 @@ pub fn block_trace_to_witness_block(_block_traces: BlockTrace) -> Result<Block<F
     unimplemented!("Must build with feature scroll")
 }
 
-pub fn block_traces_to_witness_block(_block_traces: Vec<BlockTrace>) -> Result<Block<Fr>> {
+pub fn block_traces_to_witness_block(
+  _block_traces: Vec<BlockTrace>,
+  _prev_last_applied_l1_block: Option<u64>,
+  _last_applied_l1_block: Option<u64>,
+  _l1_block_range_hash: Option<H256>,
+) -> Result<Block<Fr>> {
     unimplemented!("Must build with feature scroll")
 }
 

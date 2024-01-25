@@ -65,7 +65,7 @@ pub fn get_super_circuit_params() -> CircuitsParams {
 pub fn calculate_row_usage_of_trace(
     block_trace: BlockTrace,
 ) -> Result<Vec<zkevm_circuits::super_circuit::SubcircuitRowUsage>> {
-    let witness_block = block_traces_to_witness_block(vec![block_trace])?;
+    let witness_block = block_traces_to_witness_block(vec![block_trace], None, None, None)?;
     calculate_row_usage_of_witness_block(&witness_block)
 }
 
@@ -255,7 +255,12 @@ pub fn block_trace_to_witness_block(block_trace: BlockTrace) -> Result<Block<Fr>
     block_traces_to_witness_block_with_updated_state(vec![], &mut builder)
 }
 
-pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Block<Fr>> {
+pub fn block_traces_to_witness_block(
+    block_traces: Vec<BlockTrace>,
+    prev_last_applied_l1_block: Option<u64>,
+    last_applied_l1_block: Option<u64>,
+    l1_block_range_hash: Option<H256>,
+) -> Result<Block<Fr>> {
     validite_block_traces(&block_traces)?;
     let block_num = block_traces.len();
     let total_tx_num = block_traces
@@ -293,6 +298,13 @@ pub fn block_traces_to_witness_block(block_traces: Vec<BlockTrace>) -> Result<Bl
             block_traces_len > 1,
             false,
         )?;
+        builder
+            .apply_l1_block_hashes(
+                prev_last_applied_l1_block,
+                last_applied_l1_block,
+                l1_block_range_hash,
+            )
+            .expect("could not apply l1 block hashes");
         let witness = block_traces_to_witness_block_with_updated_state(
             traces.collect(), // this is a cold path
             &mut builder,

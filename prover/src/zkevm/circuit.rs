@@ -71,7 +71,7 @@ pub trait TargetCircuit {
     where
         Self: Sized,
     {
-        let witness_block = block_traces_to_witness_block(block_traces)?;
+        let witness_block = block_traces_to_witness_block(block_traces, None, None, None)?;
         Self::from_witness_block(&witness_block)
     }
 
@@ -88,7 +88,7 @@ pub trait TargetCircuit {
     }
 
     fn estimate_rows(block_traces: Vec<BlockTrace>) -> anyhow::Result<usize> {
-        let witness_block = block_traces_to_witness_block(block_traces)?;
+        let witness_block = block_traces_to_witness_block(block_traces, None, None, None)?;
         Ok(Self::estimate_rows_from_witness_block(&witness_block))
     }
 
