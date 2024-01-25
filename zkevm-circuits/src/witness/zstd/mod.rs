@@ -857,7 +857,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag_value_acc: next_tag_value_acc,
         },
         encoded_data: EncodedData {
-            byte_idx: (byte_offset + n_fse_bytes + n_huffman_code_bytes - current_byte_idx) as u64,
+            byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
             encoded_len,
             value_byte: src[byte_offset + n_fse_bytes + 1 + current_byte_idx],
             value_rlc: next_value_rlc_acc,
@@ -920,11 +920,15 @@ fn process_block_zstd_huffman_code<F: Field>(
                 tag_value_acc: next_tag_value_acc,
             },
             encoded_data: EncodedData {
-                byte_idx: (byte_offset + n_fse_bytes + current_byte_idx) as u64,
+                byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
                 encoded_len,
-                value_byte: src[byte_offset + n_fse_bytes + current_byte_idx],
+                value_byte: src[byte_offset + n_fse_bytes + 1 + current_byte_idx],
                 value_rlc: next_value_rlc_acc,
-                reverse: false,
+                reverse: true,
+                reverse_len: n_huffman_code_bytes as u64,
+                reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
+                aux_1,
+                aux_2: tag_value,
                 ..Default::default()
             },
             fse_data: FseTableRow {
@@ -1106,18 +1110,18 @@ fn process_block_zstd_lstream<F: Field>(
         _ => unreachable!("stream_idx value out of range")
     };
 
-    // Add a witness row for leading 0s
+    // Add a witness row for leading 0s and sentinel 1-bit
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
             tag: ZstdTag::ZstdBlockLstream,
             tag_next,
             tag_len: len as u64,
-            tag_idx: current_byte_idx as u64,
+            tag_idx: (len - current_byte_idx + 1) as u64,
             tag_value: *tag_value,
             tag_value_acc: tag_value_acc[current_byte_idx - 1],
         },
         encoded_data: EncodedData {
-            byte_idx: (byte_offset + len - current_byte_idx) as u64,
+            byte_idx: (byte_offset + current_byte_idx) as u64,
             encoded_len: last_row.encoded_data.encoded_len,
             value_byte: src[byte_offset + len - current_byte_idx],
             value_rlc: value_rlc_acc[current_byte_idx - 1],
@@ -1138,35 +1142,6 @@ fn process_block_zstd_lstream<F: Field>(
     while lstream_bits[current_bit_idx] == 0 {
         (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
     }
-
-    // Add a witness row for sentinel 1-bit
-    witness_rows.push(ZstdWitnessRow {
-        state: ZstdState {
-            tag: ZstdTag::ZstdBlockLstream,
-            tag_next,
-            tag_len: len as u64,
-            tag_idx: current_byte_idx as u64,
-            tag_value: *tag_value,
-            tag_value_acc: tag_value_acc[current_byte_idx - 1],
-        },
-        encoded_data: EncodedData {
-            byte_idx: (byte_offset + len - current_byte_idx) as u64,
-            encoded_len: last_row.encoded_data.encoded_len,
-            value_byte: src[byte_offset + len - current_byte_idx],
-            value_rlc: value_rlc_acc[current_byte_idx - 1],
-            // reverse specific values
-            reverse: true,
-            reverse_len: len as u64,
-            reverse_idx: (len - (current_byte_idx - 1)) as u64,
-            aux_1,
-            aux_2: *tag_value,
-            ..Default::default()
-        },
-        huffman_data: HuffmanData::default(),
-        decoded_data: last_row.decoded_data.clone(),
-        fse_data: FseTableRow::default(),
-    });
-
     // Exclude the sentinel 1-bit
     (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
 
@@ -1184,30 +1159,25 @@ fn process_block_zstd_lstream<F: Field>(
             let from_byte_idx = current_byte_idx;
             let from_bit_idx = current_bit_idx;
 
-            // advance byte and bit marks to the last bit
-            for _ in 0..(cur_bitstring_len - 1) {
-                (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
-            }
-
             // Add a witness row for emitted symbol
             witness_rows.push(ZstdWitnessRow {
                 state: ZstdState {
                     tag: ZstdTag::ZstdBlockLstream,
                     tag_next,
                     tag_len: len as u64,
-                    tag_idx: from_byte_idx as u64,
+                    tag_idx: (len - from_byte_idx + 1) as u64,
                     tag_value: *tag_value,
                     tag_value_acc: tag_value_acc[from_byte_idx - 1],
                 },
                 encoded_data: EncodedData {
-                    byte_idx: (byte_offset + len - from_byte_idx) as u64,
+                    byte_idx: (byte_offset + from_byte_idx) as u64,
                     encoded_len: last_row.encoded_data.encoded_len,
                     value_byte: src[byte_offset + len - from_byte_idx],
                     value_rlc: value_rlc_acc[from_byte_idx - 1],
                     // reverse specific values
                     reverse: true,
                     reverse_len: len as u64,
-                    reverse_idx: (len - (from_byte_idx - 1)) as u64,
+                    reverse_idx: (len - from_byte_idx + 1) as u64,
                     aux_1,
                     aux_2: *tag_value,
                     ..Default::default()
@@ -1221,8 +1191,10 @@ fn process_block_zstd_lstream<F: Field>(
                 fse_data: FseTableRow::default(),
             });
 
-            // advance byte and bit marks again to get the start of next bitstring
-            (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+            // advance byte and bit marks to the last bit
+            for _ in 0..cur_bitstring_len {
+                (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+            }
 
             // Reset decoding state
             bitstring_acc = String::from("");
@@ -1241,7 +1213,7 @@ fn process_block_zstd_lstream<F: Field>(
         }
     }
 
-    (byte_offset + len, witness_rows.into_iter().rev().collect::<Vec<ZstdWitnessRow<F>>>(), decoded_symbols)
+    (byte_offset + len, witness_rows, decoded_symbols)
 }
 
 pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>) {
@@ -1450,6 +1422,7 @@ mod tests {
         ];
 
         let (_witness_rows, decoded_literals) = process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
+
         let decoded_literal_string: String = decoded_literals.iter().filter_map(|&s| char::from_u32(s as u32)).collect();
         let expected_literal_string = String::from("Romeo and Juliet\nExcerpt from Act 2, Scene 2\n\nJULIET\nO ,! wherefore art thou?\nDeny thy fatherrefusename;\nOr, ifwilt not, be but sworn my love,\nAnd I'll no longera Capulet.\n\nROMEO\n[Aside] Shall I hear more, or sspeak at this?'Tis that isenemy;\nTyself,gh a Montague.\nWhat's? inor hand,foot,\nNor armaceany opart\nBeing to a man. Osome!in a?which we ca rose\nBy would smell as sweet;\nSo, were he'd,\nRetaindear perfectionhe owes\nWithoitle.dofffor oee\nTake mI t hy word:\nCebe new baptized;\nHencth I never will. manthus bescreen'dnightstumblest on my counsel?\n");
 
