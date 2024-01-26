@@ -1582,7 +1582,7 @@ dependencies = [
 [[package]]
 name = "ethers"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "ethers-addressbook",
  "ethers-contract",
@@ -1597,7 +1597,7 @@ dependencies = [
 [[package]]
 name = "ethers-addressbook"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "ethers-core",
  "once_cell",
@@ -1608,7 +1608,7 @@ dependencies = [
 [[package]]
 name = "ethers-contract"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "ethers-contract-abigen",
  "ethers-contract-derive",
@@ -1626,7 +1626,7 @@ dependencies = [
 [[package]]
 name = "ethers-contract-abigen"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "Inflector",
  "dunce",
@@ -1649,7 +1649,7 @@ dependencies = [
 [[package]]
 name = "ethers-contract-derive"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "Inflector",
  "ethers-contract-abigen",
@@ -1664,7 +1664,7 @@ dependencies = [
 [[package]]
 name = "ethers-core"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "arrayvec",
  "bytes",
@@ -1693,7 +1693,7 @@ dependencies = [
 [[package]]
 name = "ethers-etherscan"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "ethers-core",
  "ethers-solc",
@@ -1708,7 +1708,7 @@ dependencies = [
 [[package]]
 name = "ethers-middleware"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -1734,7 +1734,7 @@ dependencies = [
 [[package]]
 name = "ethers-providers"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -1770,7 +1770,7 @@ dependencies = [
 [[package]]
 name = "ethers-signers"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "async-trait",
  "coins-bip32",
@@ -1788,7 +1788,7 @@ dependencies = [
 [[package]]
 name = "ethers-solc"
 version = "2.0.7"
-source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#40e9bf536667c29971bb6bea79590f13a3f670df"
+source = "git+https://github.com/LimeChain/scroll-ethers-rs.git?branch=LimeChain/l1-block-hashes-poc#301d66b95168483baed288fa869ef80e3bc2f7d3"
 dependencies = [
  "cfg-if 1.0.0",
  "dunce",
