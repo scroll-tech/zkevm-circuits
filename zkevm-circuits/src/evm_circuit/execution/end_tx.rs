@@ -353,7 +353,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        if !tx.tx_type.is_l1_custom_tx() {
+        if !tx.tx_type.is_l1_scroll_tx() {
             let (caller_balance, caller_balance_prev) = rws.next().account_value_pair();
             self.gas_fee_refund.assign(
                 region,
@@ -371,7 +371,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             [effective_tip, context.base_fee],
             tx.gas_price,
         )?;
-        let coinbase_reward = if tx.tx_type.is_l1_custom_tx() {
+        let coinbase_reward = if tx.tx_type.is_l1_scroll_tx() {
             0.into()
         } else {
             effective_tip * (gas_used - effective_refund)
@@ -383,7 +383,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         self.coinbase_codehash_is_zero
             .assign_value(region, offset, coinbase_codehash_rlc)?;
 
-        if !tx.tx_type.is_l1_custom_tx() {
+        if !tx.tx_type.is_l1_scroll_tx() {
             self.mul_effective_tip_by_gas_used.assign(
                 region,
                 offset,
@@ -404,7 +404,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             ),
         )?;
 
-        let tx_l1_fee = if tx.tx_type.is_l1_custom_tx() {
+        let tx_l1_fee = if tx.tx_type.is_l1_scroll_tx() {
             log::trace!("tx is l1msg or l1 block hashes and l1 fee is 0");
             0
         } else {
@@ -415,7 +415,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_l1_fee,
             coinbase_reward
         );
-        let effective_fee = if tx.tx_type.is_l1_custom_tx() {
+        let effective_fee = if tx.tx_type.is_l1_scroll_tx() {
             0.into()
         } else {
             let result = self.coinbase_transfer.assign_from_rws(

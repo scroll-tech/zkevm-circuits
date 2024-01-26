@@ -558,7 +558,7 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
 
         // Sanity check for transaction L1 fee.
-        let tx_l1_fee = if tx.tx_type.is_l1_custom_tx() {
+        let tx_l1_fee = if tx.tx_type.is_l1_scroll_tx() {
             0
         } else {
             tx.l1_fee()
@@ -930,7 +930,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if !tx.tx_type.is_l1_custom_tx() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+            if !tx.tx_type.is_l1_scroll_tx() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
                 warn!(
                     "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
                     i
@@ -941,7 +941,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
             }
         })
         .map(|(_, tx)| {
-            if tx.tx_type.is_l1_custom_tx() {
+            if tx.tx_type.is_l1_scroll_tx() {
                 Ok(SignData::default())
             } else {
                 tx.sign_data()

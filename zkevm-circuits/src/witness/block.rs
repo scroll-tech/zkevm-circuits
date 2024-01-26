@@ -114,7 +114,7 @@ impl<F: Field> Block<F> {
             .txs
             .iter()
             // Since L1Msg tx does not have signature, it do not need to do lookup into sig table
-            .filter(|tx| !tx.tx_type.is_l1_custom_tx())
+            .filter(|tx| !tx.tx_type.is_l1_scroll_tx())
             .map(|tx| tx.sign_data())
             .filter_map(|res| res.ok())
             .collect::<Vec<SignData>>();

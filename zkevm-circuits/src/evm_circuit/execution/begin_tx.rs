@@ -757,7 +757,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let mut rws = StepRws::new(block, step);
 
         let tx_type = tx.tx_type;
-        let caller_code_hash = if tx_type.is_l1_custom_tx() {
+        let caller_code_hash = if tx_type.is_l1_scroll_tx() {
             let caller_code_hash_pair = rws.next().account_codehash_pair();
             assert_eq!(
                 caller_code_hash_pair.0, caller_code_hash_pair.1,
@@ -789,7 +789,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // caller addr
         // callee addr
         // coinbase
-        rws.offset_add(if tx_type.is_l1_custom_tx()  {
+        rws.offset_add(if tx_type.is_l1_scroll_tx()  {
             if caller_code_hash.is_zero() {
                 assert_eq!(
                     tx.nonce, 0,
@@ -1048,7 +1048,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_coinbase_warm
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
-        let (tx_l1_fee, tx_l2_fee) = if tx_type.is_l1_custom_tx()  {
+        let (tx_l1_fee, tx_l2_fee) = if tx_type.is_l1_scroll_tx()  {
             log::trace!("tx is l1msg or l1 block hashes and l1 fee is 0");
             (U256::zero(), U256::zero())
         } else {

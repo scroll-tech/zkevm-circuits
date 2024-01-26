@@ -60,7 +60,7 @@ impl TxType {
     }
 
     /// If this type is L1Msg or L1BlockHashes or none
-    pub fn is_l1_custom_tx(&self) -> bool {
+    pub fn is_l1_scroll_tx(&self) -> bool {
         matches!(*self, TxType::L1BlockHashes | TxType::L1Msg)
     }
 

@@ -927,7 +927,7 @@ pub(super) fn tx_convert(
     }
     let callee_address = tx.to;
     //if tx.is_create() { None } else { Some(tx.to) };
-    let tx_gas_cost = if tx.tx_type.is_l1_custom_tx() {
+    let tx_gas_cost = if tx.tx_type.is_l1_scroll_tx() {
         0
     } else {
         tx_data_gas_cost(&tx.rlp_bytes)

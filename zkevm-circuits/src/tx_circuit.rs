@@ -1843,7 +1843,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
         let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut tx_value_cells = vec![];
-        let rlp_sign_tag_length = if tx.tx_type.is_l1_custom_tx() {
+        let rlp_sign_tag_length = if tx.tx_type.is_l1_scroll_tx() {
             // l1 msg does not have sign data
             0
         } else {
@@ -2590,7 +2590,7 @@ impl<F: Field> TxCircuit<F> {
             .chain(iter::once(&padding_tx))
             .enumerate()
             .map(|(_, tx)| {
-                if tx.tx_type.is_l1_custom_tx() {
+                if tx.tx_type.is_l1_scroll_tx() {
                     Ok(SignData::default())
                 } else {
                     tx.sign_data().map_err(|e| {
@@ -2921,7 +2921,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .iter()
             .chain(padding_txs.iter())
             .map(|tx| {
-                if tx.tx_type.is_l1_custom_tx() {
+                if tx.tx_type.is_l1_scroll_tx() {
                     Ok(SignData::default())
                 } else {
                     tx.sign_data().map_err(|e| {
@@ -2948,7 +2948,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             let pk_hash = keccak(&pk);
             let address = pk_hash.to_address();
             // L1 Msg does not have signature
-            if !tx.tx_type.is_l1_custom_tx() && address != tx.caller_address {
+            if !tx.tx_type.is_l1_scroll_tx() && address != tx.caller_address {
                 log::error!(
                     "pk address from sign data {:?} does not match the one from tx address {:?}",
                     address,
@@ -2988,7 +2988,7 @@ pub(crate) fn get_sign_data(
         .iter()
         .chain(padding_txs.iter())
         .map(|tx| {
-            if tx.tx_type.is_l1_custom_tx() {
+            if tx.tx_type.is_l1_scroll_tx() {
                 // dummy signature
                 Ok(SignData::default())
             } else {
