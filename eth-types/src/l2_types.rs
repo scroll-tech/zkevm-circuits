@@ -42,6 +42,9 @@ pub struct BlockTrace {
     /// L1 block hashes
     #[serde(rename = "l1BlockHashes", default)]
     pub l1_block_hashes: Option<Vec<Hash>>,
+    /// Last applied L1 block number
+    #[serde(rename = "lastAppliedL1Block", default)]
+    pub last_applied_l1_block: Option<U64>,
 }
 
 /// l2 chunk trace
@@ -69,6 +72,7 @@ impl From<BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             l1_block_hashes: b.l1_block_hashes,
+            last_applied_l1_block: b.last_applied_l1_block,
             ..b.header
         }
     }
@@ -86,6 +90,7 @@ impl From<&BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             l1_block_hashes: b.l1_block_hashes.clone(),
+            last_applied_l1_block: b.last_applied_l1_block,
             ..b.header.clone()
         }
     }
