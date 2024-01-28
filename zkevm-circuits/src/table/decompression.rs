@@ -815,7 +815,6 @@ impl<F: Field> FseAuxiliaryTable<F> {
             meta.query_advice(self.table_size, Rotation::cur()),
             meta.query_advice(self.symbol, Rotation::cur()),
             meta.query_advice(self.symbol_count, Rotation::cur()),
-            meta.query_advice(self.symbol_count_acc, Rotation::cur()),
         ]
     }
 }
@@ -1482,7 +1481,13 @@ impl HuffmanCodesBitstringAccumulationTable {
 
                 // Constrain columns that are unchanged from 0 <= bit_idx <= 15.
                 cb.condition(not::expr(is_first), |cb| {
-                    for col in [table.byte_1, table.byte_2, table.bit_value] {
+                    for col in [
+                        table.byte_idx_1,
+                        table.byte_idx_2,
+                        table.byte_1,
+                        table.byte_2,
+                        table.bit_value,
+                    ] {
                         cb.require_equal(
                             "unchanged columns from 0 <= bit_idx <= 15",
                             meta.query_advice(col, Rotation::cur()),
@@ -1508,6 +1513,12 @@ impl HuffmanCodesBitstringAccumulationTable {
                         meta.query_advice(table.bit_value_acc_2, Rotation::cur()),
                     );
                 });
+
+                // TODO: at q_first, we should have either:
+                // - byte_idx_1 == byte_idx_1::prev and byte_idx_2 == byte_idx_2::prev
+                // - OR byte_idx_1 == byte_idx_1::prev + 1 and byte_idx_2 == byte_idx_2::prev + 1.
+
+                // TODO: byte_idx_2 == byte_idx_1 + 1
 
                 cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
             },

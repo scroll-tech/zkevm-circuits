@@ -46,6 +46,7 @@ hex.workspace = true
 rayon.workspace = true
 
 bitstream-io = "2.2.0"
+zstd = { version = "0.13", features = ["experimental"] }
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
@@ -55,9 +56,9 @@ mock = { path = "../mock" }
 pretty_assertions.workspace = true
 cli-table = "0.4"
 paste = "1.0"
-zstd = { version = "0.13", features = ["experimental"] }
 crossterm = "0.27.0"
 ratatui = "0.25.0"
+csv = "1.1"
 
 [features]
 default = ["test", "test-circuits", "shanghai", "debug-annotations", "parallel_syn", "enable-stack", "enable-storage"]
