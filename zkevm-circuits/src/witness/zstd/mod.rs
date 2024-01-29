@@ -5,6 +5,7 @@ mod params;
 pub use params::*;
 
 mod types;
+use rand::random;
 pub use types::*;
 
 #[cfg(test)]
@@ -528,7 +529,7 @@ fn process_block_zstd<F: Field>(
         BlockType::ZstdCompressedBlock => {
             let mut huffman_rows = vec![];
 
-            let (bytes_offset, rows, huffman_codes, n_huffman_bytes, huffman_byte_offset) = process_block_zstd_huffman_code(
+            let (bytes_offset, rows, huffman_codes, n_huffman_bytes, huffman_byte_offset, last_rlc) = process_block_zstd_huffman_code(
                 src,
                 byte_offset,
                 rows.last().expect("last row must exist"),
@@ -552,7 +553,8 @@ fn process_block_zstd<F: Field>(
                 huffman_rows.last().expect("last row should exist"),
                 literal_stream_size,
                 n_streams,
-                randomness
+                randomness,
+                last_rlc,
             );
             huffman_rows.extend_from_slice(&rows);
             stream_offset = bytes_offset;
@@ -697,7 +699,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     n_streams: usize,
-) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize, Value<F>) {
     // Preserve this value for later construction of HuffmanCodesDataTable
     let huffman_code_byte_offset = byte_offset;
 
@@ -796,8 +798,6 @@ fn process_block_zstd_huffman_code<F: Field>(
     }
 
     // Now start decoding the huffman weights using the actual Huffman code section
-    let last_value_rlc = witness_rows[witness_rows.len() - 1].encoded_data.value_rlc.clone();
-    let aux_1 = last_row.encoded_data.value_rlc;
     let tag_next = if n_streams > 1 {
         ZstdTag::ZstdBlockJumpTable
     } else {
@@ -826,14 +826,14 @@ fn process_block_zstd_huffman_code<F: Field>(
             .collect::<Vec<u8>>();
 
     // Accumulators for Huffman code section
-    let mut value_rlc_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).rev().scan(
-        last_value_rlc,
+    let mut value_rlc_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).scan(
+        Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
         },
-    );
-    let mut tag_value_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).scan(
+    ).collect::<Vec<Value<F>>>().into_iter().rev();
+    let mut tag_value_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).rev().scan(
         Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
@@ -847,6 +847,9 @@ fn process_block_zstd_huffman_code<F: Field>(
 
     let mut next_tag_value_acc = tag_value_iter.next().unwrap();
     let mut next_value_rlc_acc = value_rlc_iter.next().unwrap();
+
+    let aux_1 = next_value_rlc_acc.clone();
+    let aux_2 = witness_rows[witness_rows.len() - 1].encoded_data.value_rlc.clone();
 
     // Add a witness row for leading 0s and the sentinel 1-bit
     witness_rows.push(ZstdWitnessRow {
@@ -867,7 +870,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             reverse_len: n_huffman_code_bytes as u64,
             reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
             aux_1,
-            aux_2: tag_value,
+            aux_2,
             ..Default::default()
         },
         huffman_data: HuffmanData::default(),
@@ -930,7 +933,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 reverse_len: n_huffman_code_bytes as u64,
                 reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
                 aux_1,
-                aux_2: tag_value,
+                aux_2,
                 ..Default::default()
             },
             fse_data: FseTableRow {
@@ -952,8 +955,8 @@ fn process_block_zstd_huffman_code<F: Field>(
             (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
         }
         if current_byte_idx > last_byte_idx && current_byte_idx < n_bytes {
-            next_tag_value_acc = tag_value_iter.next().unwrap_or_default();
-            next_value_rlc_acc = value_rlc_iter.next().unwrap_or_default();
+            next_tag_value_acc = tag_value_iter.next().unwrap();
+            next_value_rlc_acc = value_rlc_iter.next().unwrap();
             last_byte_idx = current_byte_idx;
         }
 
@@ -970,7 +973,13 @@ fn process_block_zstd_huffman_code<F: Field>(
         weights: decoded_weights.into_iter().map(|w| FseSymbol::from(w as usize) ).collect()
     };
 
-    (byte_offset + 1 + n_fse_bytes + n_huffman_code_bytes, witness_rows, huffman_codes, n_bytes, huffman_code_byte_offset + 1)
+    // rlc after a reverse section
+    let mul = (0..(n_huffman_code_bytes - 1)).fold(Value::known(F::one()), |acc, _| {
+        acc * randomness
+    });
+    let new_value_rlc_init_value = aux_2 * mul + aux_1;
+
+    (byte_offset + 1 + n_fse_bytes + n_huffman_code_bytes, witness_rows, huffman_codes, n_bytes, huffman_code_byte_offset + 1, new_value_rlc_init_value)
 }
 
 fn process_block_zstd_huffman_jump_table<F: Field>(
@@ -980,6 +989,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     literal_stream_size: usize,
     n_streams: usize,
     randomness: Value<F>,
+    last_rlc: Value<F>,
 ) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>) {
     if n_streams <= 1 {
         (byte_offset, vec![], vec![literal_stream_size as u64])
@@ -1002,7 +1012,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
         let l4: u64 = (literal_stream_size as u64) - l1 - l2 - l3;
 
         let value_rlc_iter = src.iter().skip(byte_offset).take(N_JUMP_TABLE_BYTES).scan(
-            last_row.encoded_data.value_rlc,
+            last_rlc,
             |acc, &byte| {
                 *acc = *acc * randomness + Value::known(F::from(byte as u64));
                 Some(*acc)
@@ -1354,7 +1364,7 @@ mod tests {
             0x54, 0x40, 0x29, 0x01,
         ];
 
-        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes, _huffman_byte_offset) = 
+        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes, _huffman_byte_offset, _last_rlc) = 
             process_block_zstd_huffman_code::<Fr>(
                 &input, 
                 0, 
