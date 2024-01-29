@@ -638,7 +638,7 @@ fn process_block_zstd_literals_header<F: Field>(
     };
 
     let tag_value_iter = lh_bytes.iter().take(n_bytes_header).scan(Value::known(F::zero()), |acc, &byte| {
-        *acc = *acc * randomness + Value::known(F::from(byte as u64));
+        *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
         Some(*acc)
     });
     let tag_value = tag_value_iter.clone().last().expect("LiteralsHeader expected");
@@ -723,7 +723,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     );
     
     // Add a witness row for Huffman header
-    let mut huffman_header_row = ZstdWitnessRow {
+    let mut huffman_header_row: ZstdWitnessRow<F> = ZstdWitnessRow {
         state: ZstdState {
             tag: ZstdTag::ZstdBlockFseCode,
             tag_next,
@@ -754,7 +754,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let mut tag_value_iter = src.iter().skip(byte_offset).take(n_fse_bytes + 1).scan(
         Value::known(F::zero()),
         |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
             Some(*acc)
         },
     );
@@ -1010,7 +1010,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
         let tag_value_iter = src.iter().skip(byte_offset).take(N_JUMP_TABLE_BYTES).scan(
             Value::known(F::zero()),
             |acc, &byte| {
-                *acc = *acc * randomness + Value::known(F::from(byte as u64));
+                *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
                 Some(*acc)
             },
         );
@@ -1258,10 +1258,12 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::{
         fs::{self, File},
         io::Write,
     };
+    use halo2_proofs::halo2curves::bn256::Fr;
 
     #[test]
     #[ignore]
