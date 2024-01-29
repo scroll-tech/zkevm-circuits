@@ -528,7 +528,7 @@ fn process_block_zstd<F: Field>(
         BlockType::ZstdCompressedBlock => {
             let mut huffman_rows = vec![];
 
-            let (bytes_offset, rows, huffman_codes, n_huffman_bytes) = process_block_zstd_huffman_code(
+            let (bytes_offset, rows, huffman_codes, n_huffman_bytes, huffman_byte_offset) = process_block_zstd_huffman_code(
                 src,
                 byte_offset,
                 rows.last().expect("last row must exist"),
@@ -567,7 +567,8 @@ fn process_block_zstd<F: Field>(
                     huffman_rows.last().expect("last row should exist"),
                     randomness,
                     idx,
-                    &huffman_codes
+                    &huffman_codes,
+                    huffman_byte_offset,
                 );
                 huffman_rows.extend_from_slice(&rows);
                 literals.extend_from_slice(&symbols);
@@ -696,7 +697,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     n_streams: usize,
-) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize) {
     // Preserve this value for later construction of HuffmanCodesDataTable
     let huffman_code_byte_offset = byte_offset;
 
@@ -969,7 +970,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         weights: decoded_weights.into_iter().map(|w| FseSymbol::from(w as usize) ).collect()
     };
 
-    (byte_offset + 1 + n_fse_bytes + n_huffman_code_bytes, witness_rows, huffman_codes, n_bytes)
+    (byte_offset + 1 + n_fse_bytes + n_huffman_code_bytes, witness_rows, huffman_codes, n_bytes, huffman_code_byte_offset + 1)
 }
 
 fn process_block_zstd_huffman_jump_table<F: Field>(
@@ -1066,6 +1067,7 @@ fn process_block_zstd_lstream<F: Field>(
     randomness: Value<F>,
     stream_idx: usize,
     huffman_code: &HuffmanCodesData,
+    huffman_code_byte_offset: usize,
 ) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>) {
     // Obtain literal stream bits (reversed).
     let lstream_bits = src
@@ -1189,15 +1191,13 @@ fn process_block_zstd_lstream<F: Field>(
                     ..Default::default()
                 },
                 huffman_data: HuffmanData {
-                    byte_offset: (byte_offset + len - from_byte_idx) as u64,
+                    byte_offset: huffman_code_byte_offset as u64,
                     bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap(),
                     k: (from_bit_idx.rem_euclid(8) as u8, current_bit_idx.rem_euclid(8) as u8),
                 },
                 decoded_data: last_row.decoded_data.clone(),
                 fse_data: FseTableRow::default(),
             });
-
-           
 
             // Reset decoding state
             bitstring_acc = String::from("");
@@ -1354,7 +1354,7 @@ mod tests {
             0x54, 0x40, 0x29, 0x01,
         ];
 
-        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes) = 
+        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes, _huffman_byte_offset) = 
             process_block_zstd_huffman_code::<Fr>(
                 &input, 
                 0, 
@@ -1428,7 +1428,8 @@ mod tests {
             &ZstdWitnessRow::init(0),
             Value::known(Fr::from(123456789)),
             1,
-            &huffman_codes
+            &huffman_codes,
+            0,
         );
 
         let ascii_symbols: String = decoded_symbols.iter().filter_map(|&s| char::from_u32(s as u32)).collect();
