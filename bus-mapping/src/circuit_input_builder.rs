@@ -12,7 +12,6 @@ mod l2;
 mod tracer_tests;
 mod transaction;
 
-use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
 use crate::{
     error::Error,
@@ -947,29 +946,6 @@ pub struct BuilderClient<P: JsonRpcClient> {
     circuits_params: CircuitsParams,
 }
 
-/// Get State Accesses from TxExecTraces
-pub fn get_state_accesses(
-    eth_block: &EthBlock,
-    geth_traces: &[eth_types::GethExecTrace],
-) -> Result<AccessSet, Error> {
-    let mut block_access_trace = vec![Access::new(
-        None,
-        RW::WRITE,
-        AccessValue::Account {
-            address: eth_block
-                .author
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-        },
-    )];
-    for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-        let geth_trace = &geth_traces[tx_index];
-        let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
-        block_access_trace.extend(tx_access_trace);
-    }
-
-    Ok(AccessSet::from(block_access_trace))
-}
-
 /// Build a partial StateDB from step 3
 pub fn build_state_code_db(
     proofs: Vec<eth_types::EIP1186ProofResponse>,
@@ -1061,11 +1037,26 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     }
 
     /// Step 2. Get State Accesses from TxExecTraces
-    pub fn get_state_accesses(
-        eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<AccessSet, Error> {
-        get_state_accesses(eth_block, geth_traces)
+    pub async fn get_state_accesses(&self, eth_block: &EthBlock) -> Result<AccessSet, Error> {
+        let mut access_set = AccessSet::default();
+        access_set.add_account(
+            eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+        );
+        let traces = self
+            .cli
+            .trace_block_prestate_by_hash(
+                eth_block
+                    .hash
+                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+            )
+            .await?;
+        for trace in traces.into_iter() {
+            access_set.extend_from_traces(&trace);
+        }
+
+        Ok(access_set)
     }
 
     /// Step 3. Query geth for all accounts, storage keys, and codes from
@@ -1317,7 +1308,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let mut access_set = AccessSet::default();
         for block_num in block_num_begin..block_num_end {
             let (eth_block, geth_traces, _, _) = self.get_block(block_num).await?;
-            let mut access_list = Self::get_state_accesses(&eth_block, &geth_traces)?;
+            let mut access_list = self.get_state_accesses(&eth_block).await?;
             access_set.extend(&mut access_list);
             blocks_and_traces.push((eth_block, geth_traces));
         }

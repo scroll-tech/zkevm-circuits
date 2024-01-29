@@ -9,6 +9,7 @@ use eth_types::{
 pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
 use serde::Serialize;
+use serde_json::json;
 use std::collections::HashMap;
 
 use crate::util::GETH_TRACE_CHECK_LEVEL;
@@ -20,6 +21,18 @@ use crate::util::GETH_TRACE_CHECK_LEVEL;
 /// If the type returns an error during serialization.
 pub fn serialize<T: serde::Serialize>(t: &T) -> serde_json::Value {
     serde_json::to_value(t).expect("Types never fail to serialize.")
+}
+
+fn merge_json_object(a: &mut serde_json::Value, b: serde_json::Value) {
+    if let serde_json::Value::Object(a) = a {
+        if let serde_json::Value::Object(b) = b {
+            for (k, v) in b {
+                merge_json_object(a.entry(k.clone()).or_insert(serde_json::Value::Null), v);
+            }
+            return;
+        }
+    }
+    *a = b;
 }
 
 #[derive(Serialize)]
@@ -45,9 +58,10 @@ pub(crate) struct GethLoggerConfig {
 impl Default for GethLoggerConfig {
     fn default() -> Self {
         Self {
-            enable_memory: cfg!(feature = "enable-memory"),
-            disable_stack: !cfg!(feature = "enable-stack"),
-            disable_storage: !cfg!(feature = "enable-storage"),
+            enable_memory: cfg!(feature = "enable-memory") && GETH_TRACE_CHECK_LEVEL.should_check(),
+            disable_stack: !cfg!(feature = "enable-stack") && GETH_TRACE_CHECK_LEVEL.should_check(),
+            disable_storage: !cfg!(feature = "enable-storage")
+                && GETH_TRACE_CHECK_LEVEL.should_check(),
             enable_return_data: true,
             timeout: None,
         }
@@ -145,26 +159,83 @@ impl<P: JsonRpcClient> GethClient<P> {
             timeout: Some("300s".to_string()),
             ..Default::default()
         });
-        let resp: ResultGethExecTraces = self
+        let mut struct_logs: Vec<serde_json::Value> = self
             .0
-            .request("debug_traceBlockByNumber", [num, cfg])
+            .request("debug_traceBlockByNumber", [num.clone(), cfg])
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))?;
+        let mux_trace: Vec<serde_json::Value> = self
+            .0
+            .request(
+                "debug_traceBlockByNumber",
+                [
+                    num,
+                    json!({
+                        "tracer": "muxTracer",
+                        "tracerConfig": {
+                            "callTracer": {},
+                            "prestateTracer": {}
+                        }
+                    }),
+                ],
+            )
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
+
+        for (struct_log, mux) in struct_logs.iter_mut().zip(mux_trace.into_iter()) {
+            merge_json_object(
+                struct_log,
+                json!({
+                    "result": {
+                        "prestate": mux["result"]["prestateTracer"],
+                        "callTrace": mux["result"]["callTracer"],
+                    }
+                }),
+            );
+        }
+
+        let resp: ResultGethExecTraces =
+            serde_json::from_value(serde_json::Value::Array(struct_logs))
+                .map_err(|e| Error::JSONRpcError(e.into()))?;
+
         Ok(resp.0.into_iter().map(|step| step.result).collect())
     }
     /// ..
     pub async fn trace_tx_by_hash(&self, hash: H256) -> Result<GethExecTrace, Error> {
         let hash = serialize(&hash);
-        let cfg = GethLoggerConfig {
-            enable_memory: cfg!(feature = "enable-memory") && GETH_TRACE_CHECK_LEVEL.should_check(),
-            ..Default::default()
-        };
+        let cfg = GethLoggerConfig::default();
         let cfg = serialize(&cfg);
-        let resp: GethExecTrace = self
+        let mut struct_logs: serde_json::Value = self
             .0
-            .request("debug_traceTransaction", [hash, cfg])
+            .request("debug_traceTransaction", [hash.clone(), cfg])
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))?;
+        let mux_trace: serde_json::Value = self
+            .0
+            .request(
+                "debug_traceTransaction",
+                [
+                    hash,
+                    json!({
+                        "tracer": "muxTracer",
+                        "tracerConfig": {
+                            "callTracer": {},
+                            "prestateTracer": {}
+                        }
+                    }),
+                ],
+            )
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
+        merge_json_object(
+            &mut struct_logs,
+            json!({
+                "prestate": mux_trace["prestateTracer"],
+                "callTrace": mux_trace["callTracer"],
+            }),
+        );
+        let resp =
+            serde_json::from_value(struct_logs).map_err(|e| Error::JSONRpcError(e.into()))?;
         Ok(resp)
     }
 

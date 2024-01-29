@@ -466,7 +466,7 @@ impl CircuitConfig {
     ) -> Result<BlockInheritments, Error> {
         // if no padding or the padding is in padding size pos, this block is not final
         let is_final = if let Some(pos) = padding_pos {
-            pos <= 24
+            pos < 56
         } else {
             false
         };
@@ -1199,13 +1199,21 @@ mod tests {
     }
 
     #[test]
-    fn sha256_padding_continue() {
-        let circuit = MyCircuit(vec![(vec![b'a'; 62], None)]);
-        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{e:#?}"),
-        };
-        assert_eq!(prover.verify(), Ok(()));
+    fn sha256_padding() {
+        for sz in [32usize, 37, 55, 56, 58, 62, 64] {
+            let circuit = MyCircuit(vec![
+                (vec![0xff; sz], None),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
+            ]);
+            let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{e:#?}"),
+            };
+            assert_eq!(prover.verify(), Ok(()));
+        }
     }
 
     #[test]

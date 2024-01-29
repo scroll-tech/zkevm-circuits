@@ -27,6 +27,10 @@ pub struct TagRomTableRow {
     max_len: u64,
     /// Whether this tag outputs a decoded byte or not.
     is_output: bool,
+    /// Whether this tag belongs to a ``block`` in zstd or not.
+    is_block: bool,
+    /// Whether this tag is processed from back-to-front or not.
+    is_reverse: bool,
 }
 
 impl TagRomTableRow {
@@ -39,42 +43,34 @@ impl TagRomTableRow {
         };
 
         [
-            (FrameHeaderDescriptor, FrameContentSize, 1, false),
-            (FrameContentSize, BlockHeader, 8, false),
-            (BlockHeader, RawBlockBytes, 3, false),
-            (BlockHeader, RleBlockBytes, 3, false),
-            (BlockHeader, ZstdBlockLiteralsHeader, 3, false),
-            (RawBlockBytes, BlockHeader, 8388607, true), // (1 << 23) - 1
-            (RawBlockBytes, Null, 8388607, true),
-            (RleBlockBytes, BlockHeader, 8388607, true),
-            (RleBlockBytes, Null, 8388607, true),
-            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, 5, false),
-            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRleBytes, 5, false),
-            (
-                ZstdBlockLiteralsRawBytes,
-                ZstdBlockSequenceHeader,
-                1048575,
-                true,
-            ), // (1 << 20) - 1
-            (
-                ZstdBlockLiteralsRleBytes,
-                ZstdBlockSequenceHeader,
-                1048575,
-                true,
-            ),
-            (ZstdBlockLiteralsHeader, ZstdBlockFseCode, 5, false),
-            (ZstdBlockFseCode, ZstdBlockHuffmanCode, 128, false),
-            (ZstdBlockHuffmanCode, ZstdBlockJumpTable, 128, false), // header_byte < 128
-            (ZstdBlockHuffmanCode, ZstdBlockLstream, 128, false),
-            (ZstdBlockJumpTable, ZstdBlockLstream, 6, false),
-            (ZstdBlockLstream, ZstdBlockLstream, 1000, true), // 1kB hard-limit
-            (ZstdBlockLstream, ZstdBlockSequenceHeader, 1000, true),
+            (FrameHeaderDescriptor, FrameContentSize, 1),
+            (FrameContentSize, BlockHeader, 8),
+            (BlockHeader, RawBlockBytes, 3),
+            (BlockHeader, RleBlockBytes, 3),
+            (BlockHeader, ZstdBlockLiteralsHeader, 3),
+            (RawBlockBytes, BlockHeader, 8388607), // (1 << 23) - 1
+            (RawBlockBytes, Null, 8388607),
+            (RleBlockBytes, BlockHeader, 8388607),
+            (RleBlockBytes, Null, 8388607),
+            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, 5),
+            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRleBytes, 5),
+            (ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader, 1048575), // (1 << 20) - 1
+            (ZstdBlockLiteralsRleBytes, ZstdBlockSequenceHeader, 1048575),
+            (ZstdBlockLiteralsHeader, ZstdBlockFseCode, 5),
+            (ZstdBlockFseCode, ZstdBlockHuffmanCode, 128),
+            (ZstdBlockHuffmanCode, ZstdBlockJumpTable, 128), // header_byte < 128
+            (ZstdBlockHuffmanCode, ZstdBlockLstream, 128),
+            (ZstdBlockJumpTable, ZstdBlockLstream, 6),
+            (ZstdBlockLstream, ZstdBlockLstream, 1000), // 1kB hard-limit
+            (ZstdBlockLstream, ZstdBlockSequenceHeader, 1000),
         ]
-        .map(|(tag, tag_next, max_len, is_output)| Self {
+        .map(|(tag, tag_next, max_len)| Self {
             tag,
             tag_next,
             max_len,
-            is_output,
+            is_output: tag.is_output(),
+            is_block: tag.is_block(),
+            is_reverse: tag.is_reverse(),
         })
         .to_vec()
     }
@@ -85,6 +81,8 @@ impl TagRomTableRow {
             Value::known(F::from(usize::from(self.tag_next) as u64)),
             Value::known(F::from(self.max_len)),
             Value::known(F::from(self.is_output as u64)),
+            Value::known(F::from(self.is_block as u64)),
+            Value::known(F::from(self.is_reverse as u64)),
         ]
     }
 }
@@ -191,6 +189,68 @@ pub enum ZstdTag {
     ZstdBlockLstream,
     /// Beginning of sequence section.
     ZstdBlockSequenceHeader,
+}
+
+impl ZstdTag {
+    fn is_output(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::FrameHeaderDescriptor => false,
+            Self::FrameContentSize => false,
+            Self::BlockHeader => false,
+            Self::RawBlockBytes => true,
+            Self::RleBlockBytes => true,
+            Self::ZstdBlockLiteralsHeader => false,
+            Self::ZstdBlockLiteralsRawBytes => true,
+            Self::ZstdBlockLiteralsRleBytes => true,
+            Self::ZstdBlockFseCode => false,
+            Self::ZstdBlockHuffmanCode => false,
+            Self::ZstdBlockJumpTable => false,
+            Self::ZstdBlockLstream => true,
+            Self::ZstdBlockSequenceHeader => false,
+            // TODO: more tags
+        }
+    }
+
+    fn is_block(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::FrameHeaderDescriptor => false,
+            Self::FrameContentSize => false,
+            Self::BlockHeader => false,
+            Self::RawBlockBytes => true,
+            Self::RleBlockBytes => true,
+            Self::ZstdBlockLiteralsHeader => true,
+            Self::ZstdBlockLiteralsRawBytes => true,
+            Self::ZstdBlockLiteralsRleBytes => true,
+            Self::ZstdBlockFseCode => true,
+            Self::ZstdBlockHuffmanCode => true,
+            Self::ZstdBlockJumpTable => true,
+            Self::ZstdBlockLstream => true,
+            Self::ZstdBlockSequenceHeader => true,
+            // TODO: more tags
+        }
+    }
+
+    fn is_reverse(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::FrameHeaderDescriptor => false,
+            Self::FrameContentSize => true,
+            Self::BlockHeader => true,
+            Self::RawBlockBytes => false,
+            Self::RleBlockBytes => false,
+            Self::ZstdBlockLiteralsHeader => false,
+            Self::ZstdBlockLiteralsRawBytes => false,
+            Self::ZstdBlockLiteralsRleBytes => false,
+            Self::ZstdBlockFseCode => false,
+            Self::ZstdBlockHuffmanCode => true,
+            Self::ZstdBlockJumpTable => false,
+            Self::ZstdBlockLstream => true,
+            Self::ZstdBlockSequenceHeader => false,
+            // TODO: more tags
+        }
+    }
 }
 
 impl_expr!(ZstdTag);

@@ -1,7 +1,11 @@
 //! Transaction & TransactionContext utility module.
 
-use std::collections::BTreeMap;
-
+use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
+use crate::{
+    l2_predeployed::l1_gas_price_oracle,
+    state_db::{CodeDB, StateDB},
+    Error,
+};
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, Memory, OpcodeId},
     geth_types,
@@ -9,14 +13,6 @@ use eth_types::{
     AccessList, Address, GethExecTrace, Signature, Word, H256,
 };
 use ethers_core::utils::get_contract_address;
-
-use crate::{
-    l2_predeployed::l1_gas_price_oracle,
-    state_db::{CodeDB, StateDB},
-    Error,
-};
-
-use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
 /// Precision of transaction L1 fee
 pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
@@ -38,6 +34,9 @@ pub struct TransactionContext {
     pub(crate) calls: Vec<CallContext>,
     /// Call `is_success` indexed by `call_index`.
     pub(crate) call_is_success: Vec<bool>,
+    /// Call `is_success` offset, since some calls are not included in the
+    /// `call_is_success`
+    pub(crate) call_is_success_offset: usize,
     /// Reversion groups by failure calls. We keep the reversion groups in a
     /// stack because it's possible to encounter a revert within a revert,
     /// and in such case, we must only process the reverted operation once:
@@ -53,32 +52,7 @@ impl TransactionContext {
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
     ) -> Result<Self, Error> {
-        // Iterate over geth_trace to inspect and collect each call's is_success, which
-        // is at the top of stack at the step after a call.
-        let call_is_success = {
-            let mut call_is_success_map = BTreeMap::new();
-            let mut call_indices = Vec::new();
-            for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-                if let Some(geth_next_step) = geth_trace.struct_logs.get(index + 1) {
-                    // Dive into call
-                    if geth_step.depth + 1 == geth_next_step.depth {
-                        call_indices.push(index);
-                    // Emerge from call
-                    } else if geth_step.depth - 1 == geth_next_step.depth {
-                        let is_success = !geth_next_step.stack.last()?.is_zero();
-                        call_is_success_map.insert(call_indices.pop().unwrap(), is_success);
-                    // Callee with empty code
-                    } else if CallKind::try_from(geth_step.op).is_ok() {
-                        let is_success = !geth_next_step.stack.last()?.is_zero();
-                        call_is_success_map.insert(index, is_success);
-                    }
-                }
-            }
-
-            std::iter::once(!geth_trace.failed)
-                .chain(call_is_success_map.into_values())
-                .collect()
-        };
+        let call_is_success = geth_trace.call_trace.gen_call_is_success(vec![]);
 
         let mut tx_ctx = Self {
             id: eth_tx
@@ -89,6 +63,7 @@ impl TransactionContext {
             log_id: 0,
             is_last_tx,
             call_is_success,
+            call_is_success_offset: 0,
             calls: Vec::new(),
             reversion_groups: Vec::new(),
             l1_fee: geth_trace.l1_fee,
@@ -100,6 +75,7 @@ impl TransactionContext {
             } else {
                 eth_tx.input.to_vec()
             },
+            !geth_trace.failed,
         );
 
         Ok(tx_ctx)
@@ -153,8 +129,8 @@ impl TransactionContext {
     }
 
     /// Push a new call context and its index into the call stack.
-    pub(crate) fn push_call_ctx(&mut self, call_idx: usize, call_data: Vec<u8>) {
-        if !self.call_is_success[call_idx] {
+    pub(crate) fn push_call_ctx(&mut self, call_idx: usize, call_data: Vec<u8>, is_success: bool) {
+        if !is_success {
             self.reversion_groups
                 .push(ReversionGroup::new(vec![(call_idx, 0)], Vec::new()))
         } else if let Some(reversion_group) = self.reversion_groups.last_mut() {
@@ -186,10 +162,10 @@ impl TransactionContext {
     }
 
     /// Pop the last entry in the call stack.
-    pub(crate) fn pop_call_ctx(&mut self) {
+    pub(crate) fn pop_call_ctx(&mut self, is_success: bool) {
         let call = self.calls.pop().expect("calls should not be empty");
         // Accumulate reversible_write_counter if call is success
-        if self.call_is_success[call.index] {
+        if is_success {
             if let Some(caller) = self.calls.last_mut() {
                 caller.reversible_write_counter += call.reversible_write_counter;
             }

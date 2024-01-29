@@ -493,7 +493,7 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 state.handle_reversion(&mut [&mut exec_step, &mut next_step]);
             }
             // 2.pop call ctx
-            state.tx_ctx.pop_call_ctx();
+            state.tx_ctx.pop_call_ctx(call_success);
             precompile_step.replace(next_step);
         }
         (_, _, is_empty_code_hash) => {

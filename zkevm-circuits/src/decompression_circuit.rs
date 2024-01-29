@@ -28,13 +28,15 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
         decompression::{
-            BlockTypeRomTable, FseAuxiliaryTable, HuffmanCodesBitstringAccumulationTable,
+            BitstringAccumulationTable, BlockTypeRomTable, FseAuxiliaryTable,
             LiteralsHeaderRomTable, LiteralsHeaderTable, TagRomTable,
         },
-        KeccakTable, LookupTable, Pow2Table, RangeTable,
+        KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{Block, ZstdTag, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES},
+    witness::{
+        Block, ZstdTag, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_JUMP_TABLE_BYTES,
+    },
 };
 
 /// Tables, challenge API used to configure the Decompression circuit.
@@ -44,7 +46,7 @@ pub struct DecompressionCircuitConfigArgs<F> {
     /// Lookup table for FSE table by symbol.
     pub fse_aux_table: FseAuxiliaryTable<F>,
     /// Lookup table to validate bitstring values within or spanned over bytes.
-    pub bs_acc_table: HuffmanCodesBitstringAccumulationTable,
+    pub bs_acc_table: BitstringAccumulationTable,
     /// Lookup table to get regenerated and compressed size from LiteralsHeader.
     pub literals_header_table: LiteralsHeaderTable,
     /// RangeTable for [0, 8).
@@ -57,6 +59,8 @@ pub struct DecompressionCircuitConfigArgs<F> {
     pub pow2_table: Pow2Table,
     /// Table from the Keccak circuit.
     pub keccak_table: KeccakTable,
+    /// Power of randomness table.
+    pub pow_rand_table: PowOfRandTable,
 }
 
 /// The Decompression circuit's configuration. The columns used to constrain the Decompression
@@ -101,8 +105,6 @@ pub struct DecompressionCircuitConfig<F> {
     block_gadget: BlockGadget<F>,
     /// All zstd tag related columns.
     tag_gadget: TagGadget<F>,
-    /// Columns used to process bytes back-to-front.
-    reverse_chunk: ReverseChunk,
     /// Auxiliary columns, multi-purpose depending on the current tag.
     aux_fields: AuxFields,
     /// Fields used to decode from bitstream.
@@ -146,6 +148,18 @@ pub struct TagGadget<F> {
     max_len: Column<Advice>,
     /// Whether this tag outputs a decoded byte or not.
     is_output: Column<Advice>,
+    /// Whether this tag is processed from back-to-front.
+    is_reverse: Column<Advice>,
+    /// Randomness exponentiated by the tag's length. This is used to then accumulate the value
+    /// RLC post processing of this tag.
+    rand_pow_tag_len: Column<Advice>,
+    /// The RLC of bytes within this tag. This is accounted for only for tags processed in reverse
+    /// order.
+    tag_rlc: Column<Advice>,
+    /// Helper column to accumulate the RLC value of bytes within this tag. This is different from
+    /// tag_value and tag_value_acc since tag_value_acc may use 256 as the multiplier for the tag
+    /// value, however the tag_rlc always uses the keccak randomness.
+    tag_rlc_acc: Column<Advice>,
     /// Helper gadget to check whether max_len < 0x20.
     mlen_lt_0x20: LtConfig<F, 1>,
     /// A boolean column to indicate that tag has been changed on this row.
@@ -160,25 +174,6 @@ pub struct TagGadget<F> {
     is_literals_header: Column<Advice>,
     /// Helper column to reduce the circuit degree. Set when tag == FseCode.
     is_fse_code: Column<Advice>,
-}
-
-/// Columns related to processing little-endian chunk of bytes.
-#[derive(Clone, Debug)]
-pub struct ReverseChunk {
-    /// Boolean indicator whether we are processing a chunk of bytes in back-to-front order, i.e.
-    /// little endian representation.
-    is_reverse: Column<Advice>,
-    /// The number of bytes in this reverse chunk.
-    r_len: Column<Advice>,
-    /// The reverse index within this chunk, that starts at r_len and decrements to 1 on the final
-    /// byte of the chunk.
-    r_idx: Column<Advice>,
-    /// Stores the value_rlc that was seen just before the start of the reverse chunk.
-    value_rlc_before: Column<Advice>,
-    /// Stores the value_rlc for bytes in this chunk.
-    value_rlc_chunk: Column<Advice>,
-    /// Stores the value for randomness ^ (r_len + 1).
-    rand_pow: Column<Advice>,
 }
 
 /// Auxiliary columns that can be used for different purposes given the current tag that we are
@@ -257,6 +252,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             range256,
             pow2_table,
             keccak_table: _,
+            pow_rand_table,
         }: Self::ConfigArgs,
     ) -> Self {
         // Create the fixed columns read-only memory table for zstd (tag, tag_next, max_len).
@@ -308,8 +304,12 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 tag_value_acc: meta.advice_column_in(SecondPhase),
                 tag_len,
                 tag_idx,
+                rand_pow_tag_len: meta.advice_column_in(SecondPhase),
                 max_len,
                 is_output: meta.advice_column(),
+                is_reverse: meta.advice_column(),
+                tag_rlc: meta.advice_column_in(SecondPhase),
+                tag_rlc_acc: meta.advice_column_in(SecondPhase),
                 mlen_lt_0x20: LtChip::configure(
                     meta,
                     |meta| meta.query_fixed(q_enable, Rotation::cur()),
@@ -336,14 +336,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 is_literals_header: meta.advice_column(),
                 is_fse_code: meta.advice_column(),
             }
-        };
-        let reverse_chunk = ReverseChunk {
-            is_reverse: meta.advice_column(),
-            r_len: meta.advice_column(),
-            r_idx: meta.advice_column(),
-            value_rlc_before: meta.advice_column_in(SecondPhase),
-            value_rlc_chunk: meta.advice_column_in(SecondPhase),
-            rand_pow: meta.advice_column(),
         };
         let aux_fields = AuxFields {
             aux1: meta.advice_column(),
@@ -394,40 +386,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         is_tag!(is_zb_lstream, ZstdBlockLstream);
         is_tag!(_is_zb_sequence_header, ZstdBlockSequenceHeader);
 
-        let constrain_value_rlc =
-            |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>, is_reverse: bool| {
-                let byte_idx_curr = meta.query_advice(byte_idx, Rotation::cur());
-                let byte_idx_next = meta.query_advice(byte_idx, Rotation::next());
-                let is_new_byte = byte_idx_next - byte_idx_curr;
-
-                let value_rlc_curr = meta.query_advice(value_rlc, Rotation::cur());
-                let value_rlc_next = meta.query_advice(value_rlc, Rotation::next());
-
-                if is_reverse {
-                    let value_byte_curr = meta.query_advice(value_byte, Rotation::cur());
-                    cb.require_equal(
-                        "value_rlc' in reverse chunk",
-                        value_rlc_curr,
-                        select::expr(
-                            is_new_byte.expr(),
-                            value_rlc_next.expr() * challenges.keccak_input() + value_byte_curr,
-                            value_rlc_next,
-                        ),
-                    );
-                } else {
-                    let value_byte_next = meta.query_advice(value_byte, Rotation::next());
-                    cb.require_equal(
-                        "value_rlc' in normal chunk",
-                        value_rlc_next,
-                        select::expr(
-                            is_new_byte,
-                            value_rlc_curr.expr() * challenges.keccak_input() + value_byte_next,
-                            value_rlc_curr,
-                        ),
-                    );
-                }
-            };
-
         meta.create_gate("DecompressionCircuit: all rows", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -440,16 +398,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 "is_padding transitions from 0 -> 1 only once",
                 meta.query_advice(is_padding, Rotation::next())
                     - meta.query_advice(is_padding, Rotation::cur()),
-            );
-
-            cb.require_boolean(
-                "reverse is boolean",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-            );
-
-            cb.require_boolean(
-                "is_block is boolean",
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
             );
 
             cb.require_boolean(
@@ -489,23 +437,35 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             cb.require_equal(
                 "verify value byte's bits decomposition",
                 meta.query_advice(value_byte, Rotation::cur()),
-                bits[0].expr()
-                    + 2.expr() * bits[1].expr()
-                    + 4.expr() * bits[2].expr()
-                    + 8.expr() * bits[3].expr()
-                    + 16.expr() * bits[4].expr()
-                    + 32.expr() * bits[5].expr()
-                    + 64.expr() * bits[6].expr()
-                    + 128.expr() * bits[7].expr(),
+                select::expr(
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
+                    bits[7].expr()
+                        + bits[6].expr() * 2.expr()
+                        + bits[5].expr() * 4.expr()
+                        + bits[4].expr() * 8.expr()
+                        + bits[3].expr() * 16.expr()
+                        + bits[2].expr() * 32.expr()
+                        + bits[1].expr() * 64.expr()
+                        + bits[0].expr() * 128.expr(),
+                    bits[0].expr()
+                        + bits[1].expr() * 2.expr()
+                        + bits[2].expr() * 4.expr()
+                        + bits[3].expr() * 8.expr()
+                        + bits[4].expr() * 16.expr()
+                        + bits[5].expr() * 32.expr()
+                        + bits[6].expr() * 64.expr()
+                        + bits[7].expr() * 128.expr(),
+                ),
             );
             for bit in bits {
                 cb.require_boolean("every value bit is boolean", bit.expr());
             }
 
+            let is_new_byte = meta.query_advice(byte_idx, Rotation::next())
+                - meta.query_advice(byte_idx, Rotation::cur());
             cb.require_boolean(
                 "byte_idx' == byte_idx or byte_idx' == byte_idx + 1",
-                meta.query_advice(byte_idx, Rotation::next())
-                    - meta.query_advice(byte_idx, Rotation::cur()),
+                is_new_byte.expr(),
             );
 
             cb.require_equal(
@@ -520,109 +480,21 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(decoded_len, Rotation::next()),
             );
 
-            cb.condition(
-                and::expr([
-                    not::expr(meta.query_advice(reverse_chunk.is_reverse, Rotation::cur())),
-                    not::expr(meta.query_advice(reverse_chunk.is_reverse, Rotation::next())),
-                ]),
-                |cb| {
-                    constrain_value_rlc(meta, cb, false);
-                },
+            cb.require_boolean(
+                "is_tag_change is boolean",
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
             );
 
-            let is_tag_change = meta.query_advice(tag_gadget.is_tag_change, Rotation::cur());
-            cb.require_boolean("is_tag_change is boolean", is_tag_change.expr());
-            cb.condition(is_tag_change, |cb| {
+            // We also need to validate that ``is_tag_change`` was assigned correctly. Tag changes
+            // on the next row iff:
+            // - tag_idx == tag_len
+            // - byte_idx' == byte_idx + 1
+            let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, None);
+            cb.condition(and::expr([tidx_eq_tlen, is_new_byte]), |cb| {
                 cb.require_equal(
-                    "tag_idx == 1",
-                    meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
+                    "is_tag_change should be set",
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
                     1.expr(),
-                );
-                cb.require_equal(
-                    "tag_value_acc == byte value",
-                    meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
-                    meta.query_advice(value_byte, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "tag == tag_next::prev",
-                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
-                    meta.query_advice(tag_gadget.tag_next, Rotation::prev()),
-                );
-                cb.require_equal(
-                    "tag_idx::prev == tag_len::prev",
-                    meta.query_advice(tag_gadget.tag_idx, Rotation::prev()),
-                    meta.query_advice(tag_gadget.tag_len, Rotation::prev()),
-                );
-                cb.require_equal(
-                    "tag_value::prev == tag_value_acc::prev",
-                    meta.query_advice(tag_gadget.tag_value, Rotation::prev()),
-                    meta.query_advice(tag_gadget.tag_value_acc, Rotation::prev()),
-                );
-                let (lt, eq) = tag_gadget.len_cmp_max.expr(meta, None);
-                cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
-            });
-
-            // We also ensure that is_tag_change was in fact assigned True when the tag changed.
-            // The tag changes on the next row iff tag_idx == tag_len.
-            //
-            // And validate tag_value_acc calculation.
-            let (tidx_lt_tlen, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, None);
-            cb.require_equal(
-                "is_tag_change' == True",
-                meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
-                tidx_eq_tlen,
-            );
-            cb.condition(tidx_lt_tlen, |cb| {
-                // tag_value_acc changes only when byte_idx increments.
-                let tag_value_acc_curr =
-                    meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur());
-                let tag_value_acc_next =
-                    meta.query_advice(tag_gadget.tag_value_acc, Rotation::next());
-                let byte_idx_curr = meta.query_advice(byte_idx, Rotation::cur());
-                let byte_idx_next = meta.query_advice(byte_idx, Rotation::next());
-                let is_new_byte = byte_idx_next - byte_idx_curr;
-
-                // tag_value_acc is accumulated using either 256 or keccak_randomness, depending on
-                // the max_len of this tag.
-                let multiplier = select::expr(
-                    tag_gadget.mlen_lt_0x20.is_lt(meta, None),
-                    256.expr(),
-                    challenges.keccak_input(),
-                );
-                cb.require_equal(
-                    "tag_value_acc' check",
-                    tag_value_acc_next,
-                    select::expr(
-                        is_new_byte.expr(),
-                        tag_value_acc_curr.expr() * multiplier
-                            + meta.query_advice(value_byte, Rotation::next()),
-                        tag_value_acc_curr,
-                    ),
-                );
-                cb.require_equal(
-                    "tag_idx' check",
-                    meta.query_advice(tag_gadget.tag_idx, Rotation::next()),
-                    meta.query_advice(tag_gadget.tag_idx, Rotation::cur()) + is_new_byte,
-                );
-                cb.require_equal(
-                    "tag' == tag",
-                    meta.query_advice(tag_gadget.tag, Rotation::next()),
-                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "tag_next' == tag_next",
-                    meta.query_advice(tag_gadget.tag_next, Rotation::next()),
-                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "tag_len' == tag_len",
-                    meta.query_advice(tag_gadget.tag_len, Rotation::next()),
-                    meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-                );
-                cb.require_equal(
-                    "tag_value' == tag_value",
-                    meta.query_advice(tag_gadget.tag_value, Rotation::next()),
-                    meta.query_advice(tag_gadget.tag_value, Rotation::cur()),
                 );
             });
 
@@ -630,6 +502,204 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_advice(is_padding, Rotation::cur())),
             ]))
+        });
+
+        debug_assert!(meta.degree() <= 9);
+
+        meta.create_gate("DecompressionCircuit: start processing a new tag", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // Whether the previous tag was processed from back-to-front.
+            let was_reverse = meta.query_advice(tag_gadget.is_reverse, Rotation::prev());
+
+            // Validations for the end of the previous tag:
+            //
+            // - tag_idx::prev == tag_len::prev
+            // - tag_value::prev == tag_value_acc::prev
+            // - tag::cur == tag_next::prev
+            // - if was_reverse: tag_rlc_acc::prev == value_byte::prev
+            // - if was_not_reverse: tag_rlc_acc::prev == tag_rlc::prev
+            cb.require_equal(
+                "tag_idx::prev == tag_len::prev",
+                meta.query_advice(tag_gadget.tag_idx, Rotation::prev()),
+                meta.query_advice(tag_gadget.tag_len, Rotation::prev()),
+            );
+            cb.require_equal(
+                "tag_value::prev == tag_value_acc::prev",
+                meta.query_advice(tag_gadget.tag_value, Rotation::prev()),
+                meta.query_advice(tag_gadget.tag_value_acc, Rotation::prev()),
+            );
+            cb.require_equal(
+                "tag == tag_next::prev",
+                meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                meta.query_advice(tag_gadget.tag_next, Rotation::prev()),
+            );
+            cb.condition(was_reverse.expr(), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc on the last row for tag processed back-to-front",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
+                    meta.query_advice(value_byte, Rotation::prev()),
+                );
+            });
+            cb.condition(not::expr(was_reverse), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc == tag_rlc on the last row of tag if tag processed front-to-back",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
+                    meta.query_advice(tag_gadget.tag_rlc, Rotation::prev()),
+                );
+            });
+
+            // Whether the new tag is processed from back-to-front.
+            let is_reverse = meta.query_advice(tag_gadget.is_reverse, Rotation::cur());
+
+            // Validations for the new tag:
+            //
+            // - tag_idx == 1
+            // - tag_len <= max_len(tag)
+            // - tag_value_acc == value_byte
+            // - value_rlc == value_rlc::prev * rand_pow_tag_len::prev + tag_rlc::prev
+            // - if is_reverse: tag_rlc_acc == tag_rlc on the first row
+            // - if is_not_reverse: tag_rlc_acc == value_byte
+            cb.require_equal(
+                "tag_idx == 1",
+                meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
+                1.expr(),
+            );
+            let (lt, eq) = tag_gadget.len_cmp_max.expr(meta, None);
+            cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
+            cb.require_equal(
+                "tag_value_acc == value_byte",
+                meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
+                meta.query_advice(value_byte, Rotation::cur()),
+            );
+            cb.require_equal(
+                "value_rlc calculation",
+                meta.query_advice(value_rlc, Rotation::cur()),
+                meta.query_advice(value_rlc, Rotation::prev())
+                    * meta.query_advice(tag_gadget.rand_pow_tag_len, Rotation::prev())
+                    + meta.query_advice(tag_gadget.tag_rlc, Rotation::prev()),
+            );
+            cb.condition(is_reverse.expr(), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc == tag_rlc on the first row of tag processed back-to-front",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_rlc, Rotation::cur()),
+                );
+            });
+            cb.condition(not::expr(is_reverse), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc on the first row for tag processed from front-to-back",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                    meta.query_advice(value_byte, Rotation::cur()),
+                );
+            });
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+            ]))
+        });
+        meta.create_gate(
+            "DecompressionCircuit: processing bytes within a tag",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+
+                // The fields tag, tag_len, tag_value and value_rlc remain the same while we are
+                // processing the same tag.
+                for col in [
+                    tag_gadget.tag,
+                    tag_gadget.tag_len,
+                    tag_gadget.tag_value,
+                    tag_gadget.rand_pow_tag_len,
+                    tag_gadget.tag_rlc,
+                    value_rlc,
+                ] {
+                    cb.require_equal(
+                        "column remains the same",
+                        meta.query_advice(col, Rotation::cur()),
+                        meta.query_advice(col, Rotation::prev()),
+                    );
+                }
+
+                // tag_idx incremental check.
+                let byte_idx_curr = meta.query_advice(byte_idx, Rotation::cur());
+                let byte_idx_prev = meta.query_advice(byte_idx, Rotation::prev());
+                let is_new_byte = byte_idx_curr - byte_idx_prev;
+                cb.require_equal(
+                    "tag_idx increments if byte_idx increments",
+                    meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_idx, Rotation::prev()) + is_new_byte.expr(),
+                );
+
+                // tag_value_acc calculation.
+                let tag_value_acc_prev =
+                    meta.query_advice(tag_gadget.tag_value_acc, Rotation::prev());
+                let value_byte_curr = meta.query_advice(value_byte, Rotation::cur());
+                cb.require_equal(
+                    "tag_value calculation depending on whether new byte",
+                    meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
+                    select::expr(
+                        is_new_byte.expr(),
+                        tag_value_acc_prev.expr() * 256.expr() + value_byte_curr.expr(),
+                        tag_value_acc_prev,
+                    ),
+                );
+
+                // tag_rlc_acc calculation depending on whether is_reverse or not.
+                let is_reverse = meta.query_advice(tag_gadget.is_reverse, Rotation::cur());
+                cb.condition(not::expr(is_new_byte.expr()), |cb| {
+                    cb.require_equal(
+                        "tag_rlc_acc remains the same if not a new byte",
+                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::next()),
+                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                    );
+                });
+                cb.condition(
+                    and::expr([is_new_byte.expr(), not::expr(is_reverse.expr())]),
+                    |cb| {
+                        cb.require_equal(
+                            "tag_rlc_acc == tag_rlc_acc::prev * r + byte",
+                            meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                            meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev())
+                                * challenges.keccak_input()
+                                + value_byte_curr,
+                        );
+                    },
+                );
+                let value_byte_prev = meta.query_advice(value_byte, Rotation::prev());
+                cb.condition(and::expr([is_new_byte, is_reverse]), |cb| {
+                    cb.require_equal(
+                        "tag_rlc_acc::prev = tag_rlc_acc * r + byte::prev",
+                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
+                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur())
+                            * challenges.keccak_input()
+                            + value_byte_prev,
+                    );
+                });
+
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+                ]))
+            },
+        );
+        meta.lookup_any("DecompressionCircuit: randomness power tag_len", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+            ]);
+            [
+                1.expr(),                                                        // enabled
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),          // exponent
+                meta.query_advice(tag_gadget.rand_pow_tag_len, Rotation::cur()), // exponentiation
+            ]
+            .into_iter()
+            .zip(pow_rand_table.table_exprs(meta))
+            .map(|(value, table)| (condition.expr() * value, table))
+            .collect()
         });
 
         debug_assert!(meta.degree() <= 9);
@@ -691,12 +761,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "value_rlc == value_byte",
-                meta.query_advice(value_rlc, Rotation::cur()),
-                meta.query_advice(value_byte, Rotation::cur()),
-            );
-
-            cb.require_equal(
                 "byte_idx == 1",
                 meta.query_advice(byte_idx, Rotation::cur()),
                 1.expr(),
@@ -709,8 +773,8 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             );
 
             cb.require_zero(
-                "is_reverse == 0 on first compressed byte",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
+                "value_rlc starts at 0",
+                meta.query_advice(value_rlc, Rotation::cur()),
             );
 
             cb.require_zero(
@@ -731,24 +795,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        meta.create_gate("DecompressionCircuit: last row", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "byte_idx == encoded_len",
-                meta.query_advice(byte_idx, Rotation::cur()),
-                meta.query_advice(encoded_len, Rotation::cur()),
-            );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(is_padding, Rotation::next())
-                    - meta.query_advice(is_padding, Rotation::cur()),
-            ]))
-        });
-
-        debug_assert!(meta.degree() <= 9);
-
         meta.lookup_any(
             "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
             |meta| {
@@ -761,6 +807,8 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
                     meta.query_advice(tag_gadget.max_len, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_output, Rotation::cur()),
+                    meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
                 ]
                 .into_iter()
                 .zip(tag_rom_table.table_exprs(meta))
@@ -768,137 +816,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 .collect()
             },
         );
-
-        debug_assert!(meta.degree() <= 9);
-
-        ///////////////////////////////////////////////////////////////////////////////////////////
-        //////////////////////////// Processing bytes back-to-front ///////////////////////////////
-        ///////////////////////////////////////////////////////////////////////////////////////////
-        meta.create_gate(
-            "DecompressionCircuit: reverse chunk boundary begin",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "value_rlc' == value_rlc_chunk'",
-                    meta.query_advice(value_rlc, Rotation::next()),
-                    meta.query_advice(reverse_chunk.value_rlc_chunk, Rotation::next()),
-                );
-
-                cb.require_equal(
-                    "value_rlc_before' == value_rlc",
-                    meta.query_advice(reverse_chunk.value_rlc_before, Rotation::next()),
-                    meta.query_advice(value_rlc, Rotation::cur()),
-                );
-
-                cb.require_equal(
-                    "r_idx' == r_len'",
-                    meta.query_advice(reverse_chunk.r_idx, Rotation::next()),
-                    meta.query_advice(reverse_chunk.r_len, Rotation::next()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    not::expr(meta.query_advice(is_padding, Rotation::next())),
-                    not::expr(meta.query_advice(reverse_chunk.is_reverse, Rotation::cur())),
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::next()),
-                ]))
-            },
-        );
-
-        debug_assert!(meta.degree() <= 9);
-
-        meta.create_gate("DecompressionCircuit: reverse chunk boundary end", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "r_idx == 1",
-                meta.query_advice(reverse_chunk.r_idx, Rotation::cur()),
-                1.expr(),
-            );
-
-            cb.require_equal(
-                "value_rlc == value_byte",
-                meta.query_advice(value_rlc, Rotation::cur()),
-                meta.query_advice(value_byte, Rotation::cur()),
-            );
-
-            let rlc_before_chunk =
-                meta.query_advice(reverse_chunk.value_rlc_before, Rotation::cur());
-            let rand_pow = meta.query_advice(reverse_chunk.rand_pow, Rotation::cur());
-            let rlc_chunk = meta.query_advice(reverse_chunk.value_rlc_chunk, Rotation::cur());
-            cb.require_equal(
-                "value_rlc' at reverse boundary end",
-                meta.query_advice(value_rlc, Rotation::next()),
-                rlc_before_chunk * rand_pow
-                    + rlc_chunk * challenges.keccak_input()
-                    + meta.query_advice(value_byte, Rotation::next()),
-            );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_padding, Rotation::next())),
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                not::expr(meta.query_advice(reverse_chunk.is_reverse, Rotation::next())),
-            ]))
-        });
-
-        debug_assert!(meta.degree() <= 9);
-
-        meta.lookup_any(
-            "DecompressionCircuit: rand ^ (r_len + 1) check at boundary end",
-            |meta| {
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    not::expr(meta.query_advice(is_padding, Rotation::next())),
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                    not::expr(meta.query_advice(reverse_chunk.is_reverse, Rotation::next())),
-                ]);
-
-                [
-                    meta.query_advice(reverse_chunk.r_len, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(reverse_chunk.rand_pow, Rotation::cur()),
-                ]
-                .into_iter()
-                .zip(pow2_table.table_exprs(meta))
-                .map(|(input, table)| (input * condition.clone(), table))
-                .collect::<Vec<_>>()
-            },
-        );
-
-        debug_assert!(meta.degree() <= 9);
-
-        meta.create_gate("DecompressionCircuit: reverse chunk", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "value_rlc_before unchanged",
-                meta.query_advice(reverse_chunk.value_rlc_before, Rotation::cur()),
-                meta.query_advice(reverse_chunk.value_rlc_before, Rotation::next()),
-            );
-
-            cb.require_equal(
-                "value_rlc_chunk unchanged",
-                meta.query_advice(reverse_chunk.value_rlc_chunk, Rotation::cur()),
-                meta.query_advice(reverse_chunk.value_rlc_chunk, Rotation::next()),
-            );
-
-            cb.require_equal(
-                "r_len unchanged",
-                meta.query_advice(reverse_chunk.r_len, Rotation::cur()),
-                meta.query_advice(reverse_chunk.r_len, Rotation::next()),
-            );
-
-            // value_rlc updates only if byte_idx' == byte_idx + 1.
-            constrain_value_rlc(meta, &mut cb, true /* reverse */);
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_padding, Rotation::next())),
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::next()),
-            ]))
-        });
 
         debug_assert!(meta.degree() <= 9);
 
@@ -919,10 +836,15 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
                 1.expr(),
             );
-
-            cb.require_zero(
-                "not reverse",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
+            cb.require_equal(
+                "tag_value_acc == value_byte",
+                meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
+                meta.query_advice(value_byte, Rotation::cur()),
+            );
+            cb.require_equal(
+                "tag_rlc_acc == value_byte",
+                meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                meta.query_advice(value_byte, Rotation::cur()),
             );
 
             // Structure of the Frame's header descriptor.
@@ -1010,33 +932,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     meta.query_advice(decoded_len, Rotation::cur()),
                 );
 
-                cb.require_equal(
-                    "is reverse",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                    1.expr(),
-                );
-
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-                    is_frame_content_size(meta),
-                ]))
-            },
-        );
-        meta.create_gate(
-            "DecompressionCircuit: FrameContentSize (other bytes)",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "is reverse",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                    1.expr(),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
                     is_frame_content_size(meta),
                 ]))
             },
@@ -1058,30 +956,25 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 N_BLOCK_HEADER_BYTES.expr(),
             );
 
-            // The 3 bytes of block header are in reverse order, so the tag_value is calculated
-            // appropriately.
-            for rotation in [0, 1, 2] {
-                cb.require_equal(
-                    "is_reverse == true",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation(rotation)),
-                    1.expr(),
-                );
-            }
-
             // The lowest bit (as per little-endian representation) is whether the block is the
             // last block in the frame or not.
             //
             // The next 2 bits denote the block type.
+            //
+            // But block header is expressed in the reverse order, which helps us in calculating
+            // the tag_value appropriately.
             cb.require_equal(
                 "last block check",
-                meta.query_advice(value_bits[7], Rotation::cur()),
+                meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
                 meta.query_advice(
                     block_gadget.is_last_block,
                     Rotation(N_BLOCK_HEADER_BYTES as i32),
                 ),
             );
-            let block_type_bit0 = meta.query_advice(value_bits[6], Rotation::cur());
-            let block_type_bit1 = meta.query_advice(value_bits[5], Rotation::cur());
+            let block_type_bit0 =
+                meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
+            let block_type_bit1 =
+                meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
             cb.require_zero(
                 "block type cannot be RESERVED, i.e. block_type == 3 not possible",
                 block_type_bit0.expr() * block_type_bit1.expr(),
@@ -1256,8 +1149,8 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]);
                 [
                     meta.query_advice(tag_gadget.tag, Rotation::cur()),
-                    meta.query_advice(value_bits[6], Rotation::cur()),
-                    meta.query_advice(value_bits[5], Rotation::cur()),
+                    meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
+                    meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
                     meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
                 ]
                 .into_iter()
@@ -1266,6 +1159,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 .collect()
             },
         );
+
         debug_assert!(meta.degree() <= 9);
 
         ///////////////////////////////////////////////////////////////////////////////////////////
@@ -1273,17 +1167,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ///////////////////////////////////////////////////////////////////////////////////////////
         meta.create_gate("DecompressionCircuit: RawBlock", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "is_block == True",
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                1.expr(),
-            );
-
-            cb.require_zero(
-                "not reverse",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-            );
 
             cb.require_equal(
                 "value byte == decoded byte",
@@ -1307,17 +1190,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         // BlockHeader tag.
         meta.create_gate("DecompressionCircuit: RleBlock", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "is_block == True",
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                1.expr(),
-            );
-
-            cb.require_zero(
-                "not reverse",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-            );
 
             cb.require_equal(
                 "value byte == decoded byte",
@@ -1354,17 +1226,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
-                cb.require_equal(
-                    "is_block == True",
-                    meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                    1.expr(),
-                );
-
-                cb.require_zero(
-                    "not reverse",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                );
-
                 let block_type_bit0 = meta.query_advice(value_bits[7], Rotation::cur());
                 let block_type_bit1 = meta.query_advice(value_bits[6], Rotation::cur());
                 cb.require_zero(
@@ -1383,17 +1244,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             "DecompressionCircuit: ZstdBlockLiteralsHeader (other bytes)",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "is_block == True",
-                    meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                    1.expr(),
-                );
-
-                cb.require_zero(
-                    "not reverse",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                );
 
                 for col in [
                     aux_fields.aux1,
@@ -1540,17 +1390,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "is_block == True",
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                1.expr(),
-            );
-
-            cb.require_zero(
-                "not reverse",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-            );
-
-            cb.require_equal(
                 "value_byte == decoded_byte",
                 meta.query_advice(value_byte, Rotation::cur()),
                 meta.query_advice(decoded_byte, Rotation::cur()),
@@ -1586,17 +1425,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ///////////////////////////////////////////////////////////////////////////////////////////
         meta.create_gate("DecompressionCircuit: ZstdBlock RLE bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "is_block == True",
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                1.expr(),
-            );
-
-            cb.require_zero(
-                "not reverse",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-            );
 
             cb.require_equal(
                 "value_byte == decoded_byte",
@@ -1641,17 +1469,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             "DecompressionCircuit: ZstdBlockFseCode (huffman header)",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "is_block == True",
-                    meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                    1.expr(),
-                );
-
-                cb.require_zero(
-                    "not reverse",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                );
 
                 // The huffman header is a single byte, which we have included as a part of the
                 // FSE code tag. We expect value_byte < 128 because the huffman code is encoded
@@ -1756,17 +1573,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
-                cb.require_equal(
-                    "is_block == True",
-                    meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                    1.expr(),
-                );
-
-                cb.require_zero(
-                    "not reverse",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                );
-
                 // - The auxiliary field aux1 is used to mark the tag length of the next tag
                 // (ZstdBlockHuffmanCode). We want to make sure it remains the same throughout this
                 // tag.
@@ -1861,6 +1667,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     start,    // bit index start
                     1.expr(), // denotes that this bit index is a part of the bitstring
                     1.expr(), // denotes that this bit index is a part of the bitstring
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
                 ]
                 .into_iter()
                 .zip(bs_acc_table.table_exprs_contained(meta))
@@ -1891,6 +1698,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     end,                                                 // bit index at end
                     1.expr(),                                            // from start
                     1.expr(),                                            // to end
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
                 ]
                 .into_iter()
                 .zip(bs_acc_table.table_exprs_contained(meta))
@@ -1922,6 +1730,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     start,                                               // bit index start
                     1.expr(),                                            // from start
                     1.expr(),                                            // to end
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), //  is reverse
                 ]
                 .into_iter()
                 .zip(bs_acc_table.table_exprs_spanned(meta))
@@ -1954,6 +1763,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     end,                                                 // bit index at end
                     1.expr(),                                            // from start
                     1.expr(),                                            // to end
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
                 ]
                 .into_iter()
                 .zip(bs_acc_table.table_exprs_spanned(meta))
@@ -2001,18 +1811,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
-                cb.require_equal(
-                    "is_block == True",
-                    meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                    1.expr(),
-                );
-
-                cb.require_equal(
-                    "is_reverse == True",
-                    meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                    1.expr(),
-                );
-
                 // Check that the aux1 field was assigned correctly for the FseCode tag. This field
                 // should equal the tag length of the HuffmanCode tag.
                 cb.condition(
@@ -2042,18 +1840,14 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "is_block == True",
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                1.expr(),
-            );
-
-            cb.require_zero(
-                "not reverse",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
+                "tag_len == 6",
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                N_JUMP_TABLE_BYTES.expr(),
             );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
                 is_zb_jump_table(meta),
             ]))
         });
@@ -2066,17 +1860,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockLstream", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_equal(
-                "is_block == True",
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                1.expr(),
-            );
-
-            cb.require_equal(
-                "is reverse",
-                meta.query_advice(reverse_chunk.is_reverse, Rotation::cur()),
-                1.expr(),
-            );
+            cb.require_zero("dummy constraint", 0.expr());
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -2101,7 +1885,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             decoded_rlc,
             block_gadget,
             tag_gadget,
-            reverse_chunk,
             aux_fields,
             bitstream_decoder,
         }
