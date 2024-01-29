@@ -95,6 +95,8 @@ fn process_frame_header<F: Field>(
                 tag_idx: 1,
                 tag_value: Value::known(F::from(*fhd_byte as u64)),
                 tag_value_acc: Value::known(F::from(*fhd_byte as u64)),
+                tag_rlc: Value::known(F::zero()),
+                tag_rlc_acc: Value::known(F::zero()),
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + 1) as u64,
@@ -128,6 +130,8 @@ fn process_frame_header<F: Field>(
                             tag_idx: (i + 1) as u64,
                             tag_value: fcs_tag_value,
                             tag_value_acc,
+                            tag_rlc: Value::known(F::zero()),
+                            tag_rlc_acc: Value::known(F::zero()),
                         },
                         encoded_data: EncodedData {
                             byte_idx: (byte_offset + 2 + i) as u64,
@@ -258,6 +262,8 @@ fn process_block_header<F: Field>(
                         tag_idx: (i + 1) as u64,
                         tag_value,
                         tag_value_acc,
+                        tag_rlc: Value::known(F::zero()),
+                        tag_rlc_acc: Value::known(F::zero()),
                     },
                     encoded_data: EncodedData {
                         byte_idx: (byte_offset + i + 1) as u64,
@@ -333,6 +339,8 @@ fn process_raw_bytes<F: Field>(
                             tag_idx: (i + 1) as u64,
                             tag_value,
                             tag_value_acc,
+                            tag_rlc: Value::known(F::zero()),
+                            tag_rlc_acc: Value::known(F::zero()),
                         },
                         encoded_data: EncodedData {
                             byte_idx: (byte_offset + i + 1) as u64,
@@ -393,6 +401,8 @@ fn process_rle_bytes<F: Field>(
                     tag_idx: (i + 1) as u64,
                     tag_value,
                     tag_value_acc: tag_value,
+                    tag_rlc: Value::known(F::zero()),
+                    tag_rlc_acc: Value::known(F::zero()),
                 },
                 encoded_data: EncodedData {
                     byte_idx: (byte_offset + 1) as u64,
@@ -670,6 +680,8 @@ fn process_block_zstd_literals_header<F: Field>(
                         tag_idx: (i + 1) as u64,
                         tag_value,
                         tag_value_acc,
+                        tag_rlc: Value::known(F::zero()),
+                        tag_rlc_acc: Value::known(F::zero()),
                     },
                     encoded_data: EncodedData {
                         byte_idx: (byte_offset + i + 1) as u64,
@@ -733,6 +745,8 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag_idx: 1 as u64,
             tag_value: Value::default(), // Must be changed after FSE table length is known
             tag_value_acc: Value::default(), // Must be changed after FSE table length is known
+            tag_rlc: Value::known(F::zero()),
+            tag_rlc_acc: Value::known(F::zero()),
         },
         encoded_data: EncodedData {
             byte_idx: (byte_offset + 1) as u64,
@@ -781,6 +795,8 @@ fn process_block_zstd_huffman_code<F: Field>(
                 tag_idx: (idx + 2) as u64, // count the huffman header byte
                 tag_value: tag_value,
                 tag_value_acc: tag_value_iter.next().expect("Next value should exist"),
+                tag_rlc: Value::known(F::zero()),
+                tag_rlc_acc: Value::known(F::zero()),
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + idx + 2) as u64, // count the huffman header byte
@@ -859,6 +875,8 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag_idx: 1 as u64, 
             tag_value: tag_value,
             tag_value_acc: next_tag_value_acc,
+            tag_rlc: Value::known(F::zero()),
+            tag_rlc_acc: Value::known(F::zero()),
         },
         encoded_data: EncodedData {
             byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
@@ -922,6 +940,8 @@ fn process_block_zstd_huffman_code<F: Field>(
                 tag_idx: current_byte_idx as u64,
                 tag_value: tag_value,
                 tag_value_acc: next_tag_value_acc,
+                tag_rlc: Value::known(F::zero()),
+                tag_rlc_acc: Value::known(F::zero()),
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
@@ -1047,6 +1067,8 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                                 tag_idx: (i + 1) as u64,
                                 tag_value,
                                 tag_value_acc,
+                                tag_rlc: Value::known(F::zero()),
+                                tag_rlc_acc: Value::known(F::zero()),
                             },
                             encoded_data: EncodedData {
                                 byte_idx: (byte_offset + i + 1) as u64,
@@ -1131,6 +1153,8 @@ fn process_block_zstd_lstream<F: Field>(
             tag_idx: current_byte_idx as u64,
             tag_value: *tag_value,
             tag_value_acc: tag_value_acc[current_byte_idx - 1],
+            tag_rlc: Value::known(F::zero()),
+            tag_rlc_acc: Value::known(F::zero()),
         },
         encoded_data: EncodedData {
             byte_idx: (byte_offset + current_byte_idx) as u64,
@@ -1185,6 +1209,8 @@ fn process_block_zstd_lstream<F: Field>(
                     tag_idx: from_byte_idx as u64,
                     tag_value: *tag_value,
                     tag_value_acc: tag_value_acc[from_byte_idx - 1],
+                    tag_rlc: Value::known(F::zero()),
+                    tag_rlc_acc: Value::known(F::zero()),
                 },
                 encoded_data: EncodedData {
                     byte_idx: (byte_offset + from_byte_idx) as u64,
