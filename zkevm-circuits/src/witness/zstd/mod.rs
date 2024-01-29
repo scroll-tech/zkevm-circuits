@@ -5,7 +5,6 @@ mod params;
 pub use params::*;
 
 mod types;
-use rand::random;
 pub use types::*;
 
 #[cfg(test)]
