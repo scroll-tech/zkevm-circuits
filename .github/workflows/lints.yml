@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-12-10
+          toolchain: nightly-2023-12-03
           components: clippy
       # Go cache for building geth-utils
       - name: Go cache

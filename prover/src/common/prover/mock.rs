@@ -1,10 +1,10 @@
 use super::Prover;
 use crate::utils::read_env_var;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-use once_cell::sync::Lazy;
 use snark_verifier_sdk::CircuitExt;
+use std::sync::LazyLock;
 
-pub static MOCK_PROVE: Lazy<bool> = Lazy::new(|| read_env_var("MOCK_PROVE", false));
+pub static MOCK_PROVE: LazyLock<bool> = LazyLock::new(|| read_env_var("MOCK_PROVE", false));
 
 impl Prover {
     pub fn assert_if_mock_prover<C: CircuitExt<Fr>>(id: &str, degree: u32, circuit: &C) {

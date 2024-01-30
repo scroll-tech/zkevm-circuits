@@ -180,7 +180,7 @@ impl RwMap {
             .collect();
         let padding_length = Self::padding_len(rows.len(), target_len);
         let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
-        (padding.chain(rows.into_iter()).collect(), padding_length)
+        (padding.chain(rows).collect(), padding_length)
     }
     /// Build Rws for assignment
     #[inline(always)]

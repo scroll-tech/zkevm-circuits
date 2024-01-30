@@ -6,22 +6,17 @@ use crate::{
         math_gadget::{IsEqualGadget, IsZeroGadget},
         select,
     },
-    table::{AccountFieldTag, TxFieldTag::TxType as TxTypeField},
+    table::AccountFieldTag,
     util::Expr,
 };
 use eth_types::{geth_types::TxType, Field, U256};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 /// L1 Msg Transaction gadget for some extra handling
 #[derive(Clone, Debug)]
 pub(crate) struct TxL1MsgGadget<F> {
     /// tx is l1 msg tx
     tx_is_l1msg: IsEqualGadget<F>,
-    /// tx type
-    tx_type: Cell<F>,
     /// caller is empty
     is_caller_empty: IsZeroGadget<F>,
     caller_codehash: Cell<F>,
@@ -30,10 +25,9 @@ pub(crate) struct TxL1MsgGadget<F> {
 impl<F: Field> TxL1MsgGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        tx_id: Expression<F>,
+        tx_type: Expression<F>,
         caller_address: Expression<F>,
     ) -> Self {
-        let tx_type = cb.tx_context(tx_id.expr(), TxTypeField, None);
         let tx_is_l1msg =
             IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1Msg as u64).expr());
         let caller_codehash = cb.query_cell_phase2();
@@ -71,7 +65,6 @@ impl<F: Field> TxL1MsgGadget<F> {
         );
 
         Self {
-            tx_type,
             tx_is_l1msg,
             caller_codehash,
             is_caller_empty,
@@ -85,8 +78,6 @@ impl<F: Field> TxL1MsgGadget<F> {
         tx_type: TxType,
         code_hash: U256,
     ) -> Result<(), Error> {
-        self.tx_type
-            .assign(region, offset, Value::known(F::from(tx_type as u64)))?;
         self.tx_is_l1msg.assign(
             region,
             offset,

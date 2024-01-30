@@ -1,10 +1,12 @@
-use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::CallContextField,
     Error,
 };
+
 use eth_types::{GethExecStep, Word};
+
+use super::Opcode;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatasize;

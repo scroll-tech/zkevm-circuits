@@ -29,7 +29,7 @@ The bytecode circuit aims at constraining the correctness of the above bytecode 
 
 ## Architecture and Design
 
-Raw `bytes` with the Keccak codehash of it `code_hash=keccak(&bytes[...])` are feed into `unroll_with_codehash` that runs over all the bytes and unroll them into `UnrolledBytecode{bytes, rows}`, which fits the bytecode table layout. This means each row contains `(code_hash, tag, index, is_code, value)`. (The only difference is that here `code_hash` is not RLCed yet.) Notice that only `PUSHx` will be followed by non-instruction bytes, so `is_code = push_rindex==0`, i.e. `unroll_with_codehash` computes `push_rindex` that decays from push size to zero and when it is zero it means the byte is an instruction code. With `UnrolledBytecode`, we contrain its rows via `BytecodeCircuit`, so the architecture looks like
+Raw `bytes` with the Keccak codehash of it `code_hash=keccak(&bytes[...])` are feed into `unroll_with_codehash` that runs over all the bytes and unroll them into `UnrolledBytecode{bytes, rows}`, which fits the bytecode table layout. This means each row contains `(code_hash, tag, index, is_code, value)`. (The only difference is that here `code_hash` is not RLCed yet.) Notice that only `PUSHx` will be followed by non-instruction bytes, so `is_code = push_rindex==0`, i.e. `unroll_with_codehash` computes `push_rindex` that decays from push size to zero and when it is zero it means the byte is an instruction code. With `UnrolledBytecode`, we constrain its rows via `BytecodeCircuit`, so the architecture looks like
 
 ```mermaid
 stateDiagram

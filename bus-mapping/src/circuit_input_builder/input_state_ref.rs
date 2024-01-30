@@ -16,8 +16,8 @@ use crate::{
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
-        RW,
+        StackOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogField, TxLogOp,
+        TxReceiptField, TxReceiptOp, RW,
     },
     precompile::{is_precompiled, PrecompileCalls},
     state_db::{CodeDB, StateDB},
@@ -75,6 +75,30 @@ impl<'a> CircuitInputStateRef<'a> {
             rwc: self.block_ctx.rwc,
             ..Default::default()
         }
+    }
+
+    /// Create a step right after the ref_step, it shared the same
+    /// exec_state and call context with ref_step
+    pub fn new_next_step(&self, ref_step: &ExecStep) -> Result<ExecStep, Error> {
+        let call_ctx = self.tx_ctx.call_ctx()?;
+        let gas_left = ref_step.gas_left.0 - ref_step.gas_cost.as_u64();
+
+        let step = ExecStep {
+            exec_state: ref_step.exec_state.clone(),
+            pc: ref_step.pc,
+            stack_size: ref_step.stack_size,
+
+            memory_size: call_ctx.memory.len(),
+            call_index: call_ctx.index,
+            reversible_write_counter: call_ctx.reversible_write_counter,
+            rwc: self.block_ctx.rwc,
+            log_id: self.tx_ctx.log_id,
+
+            gas_left: Gas(gas_left),
+            ..Default::default()
+        };
+
+        Ok(step)
     }
 
     /// Create a new EndTx step
@@ -393,7 +417,6 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn stack_pops(&mut self, step: &mut ExecStep, n: usize) -> Result<Vec<Word>, Error> {
         (0..n)
             .map(|_| self.stack_pop(step))
-            .into_iter()
             .collect::<Result<Vec<Word>, Error>>()
     }
 
@@ -620,7 +643,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
     /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
-    pub fn tx_accesslist_account_write(
+    pub fn tx_access_list_account_write(
         &mut self,
         step: &mut ExecStep,
         tx_id: usize,
@@ -634,6 +657,29 @@ impl<'a> CircuitInputStateRef<'a> {
             TxAccessListAccountOp {
                 tx_id,
                 address,
+                is_warm,
+                is_warm_prev,
+            },
+        )
+    }
+
+    /// Add address storage key to access list for the current transaction.
+    pub fn tx_access_list_storage_key_write(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        address: Address,
+        key: Word,
+        is_warm: bool,
+        is_warm_prev: bool,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::WRITE,
+            TxAccessListAccountStorageOp {
+                tx_id,
+                address,
+                key,
                 is_warm,
                 is_warm_prev,
             },
@@ -1083,11 +1129,10 @@ impl<'a> CircuitInputStateRef<'a> {
             last_callee_return_data_length: 0,
             last_callee_memory: Memory::default(),
         };
-
         Ok(call)
     }
 
-    /// Parse [`Call`] from a *CALL*/CREATE* step
+    /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
             .tx_ctx
@@ -1400,10 +1445,8 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(), Error> {
         let call = self.call()?.clone();
         let geth_step = steps
-            .get(0)
+            .first()
             .ok_or(Error::InternalError("invalid index 0"))?;
-        #[cfg(feature = "enable-stack")]
-        assert_eq!(self.caller_ctx()?.stack, geth_step_next.stack);
         let is_err = exec_step.error.is_some();
         let is_return_revert_succ = (geth_step.op == OpcodeId::REVERT
             || geth_step.op == OpcodeId::RETURN)
@@ -1443,6 +1486,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step_next = steps
             .get(1)
             .ok_or(Error::InternalError("invalid index 1"))?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(self.caller_ctx()?.stack, geth_step_next.stack);
         self.call_context_read(
             exec_step,
             call.call_id,
@@ -1577,7 +1622,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let call = self.call()?;
 
-        if matches!(next_step, None) {
+        if next_step.is_none() {
             // enumerating call scope successful cases
             // case 1: call with normal halt opcode termination
             if matches!(
@@ -1599,6 +1644,9 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
+        // let next_result = next_step
+        //     .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
+        //     .unwrap_or_else(Word::zero);
 
         let call_ctx = self.call_ctx()?;
         #[cfg(feature = "enable-stack")]
@@ -1782,9 +1830,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 if is_precompiled(&code_address) {
                     let precompile_call: PrecompileCalls = code_address[19].into();
                     match precompile_call {
-                        PrecompileCalls::Sha256
-                        | PrecompileCalls::Ripemd160
-                        | PrecompileCalls::Blake2F => {
+                        PrecompileCalls::Ripemd160 | PrecompileCalls::Blake2F => {
                             // Log the precompile address and gas left. Since this failure is mainly
                             // caused by out of gas.
                             log::trace!(

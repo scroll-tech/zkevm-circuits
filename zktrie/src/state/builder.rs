@@ -6,22 +6,18 @@ use eth_types::{
 use std::{
     convert::TryFrom,
     io::{Error, ErrorKind, Read},
+    sync::Once,
 };
 
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    halo2curves::{bn256::Fr, group::ff::PrimeField},
-};
+use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
 use hash_circuit::hash::Hashable;
 
-use lazy_static::lazy_static;
-
-lazy_static! {
-    /// Use this boolean to initialize the hash scheme.
-    pub static ref HASH_SCHEME_DONE: bool = {
+/// Init hash scheme
+pub fn init_hash_scheme() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
         zktrie::init_hash_scheme(hash_scheme);
-        true
-    };
+    });
 }
 
 static FILED_ERROR_READ: &str = "invalid input field";

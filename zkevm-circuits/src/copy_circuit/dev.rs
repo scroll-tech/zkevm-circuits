@@ -14,6 +14,8 @@ use halo2_proofs::{
 impl<F: Field> Circuit<F> for CopyCircuit<F> {
     type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

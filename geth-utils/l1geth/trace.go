@@ -114,8 +114,10 @@ type Transaction struct {
 	GasTipCap  *hexutil.Big    `json:"gas_tip_cap"`
 	CallData   hexutil.Bytes   `json:"call_data"`
 	AccessList []struct {
-		Address     common.Address `json:"address"`
-		StorageKeys []common.Hash  `json:"storage_keys"`
+		Address common.Address `json:"address"`
+		// Must be `storageKeys`, since `camelCase` is specified in ethers-rs.
+		// <https://github.com/gakonst/ethers-rs/blob/88095ba47eb6a3507f0db1767353b387b27a6e98/ethers-core/src/types/transaction/eip2930.rs#L75>
+		StorageKeys []common.Hash `json:"storageKeys"`
 	} `json:"access_list"`
 }
 
@@ -169,10 +171,14 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]core.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
-		// If gas price is specified directly, the tx is treated as legacy type.
 		if tx.GasPrice != nil {
-			tx.GasFeeCap = tx.GasPrice
-			tx.GasTipCap = tx.GasPrice
+			// Set GasFeeCap and GasTipCap to GasPrice if not exist.
+			if tx.GasFeeCap == nil {
+				tx.GasFeeCap = tx.GasPrice
+			}
+			if tx.GasTipCap == nil {
+				tx.GasTipCap = tx.GasPrice
+			}
 		}
 
 		txAccessList := make(types.AccessList, len(tx.AccessList))

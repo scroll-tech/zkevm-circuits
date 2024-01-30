@@ -3,10 +3,15 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
+#![allow(incomplete_features)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
+#![allow(incomplete_features)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
+// GasCost is used as type parameter
+#![feature(adt_const_params)]
+#![feature(lazy_cell)]
 #![deny(missing_docs)]
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
@@ -23,29 +28,29 @@ pub mod geth_types;
 pub mod l2_types;
 pub mod sign_types;
 
+use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_proofs::{
-    arithmetic::{Field as Halo2Field, FieldExt},
-    halo2curves::{bn256::Fr, group::ff::PrimeField},
-};
-
-use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
     types::{
-        transaction::{eip2930::AccessList, response::Transaction},
+        transaction::{
+            eip2930::{AccessList, AccessListItem},
+            response::Transaction,
+        },
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
-use once_cell::sync::Lazy;
+use halo2_base::utils::ScalarField;
+use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{
     collections::HashMap,
     fmt,
     fmt::{Display, Formatter},
     str::FromStr,
+    sync::LazyLock,
 };
 
 #[cfg(feature = "enable-memory")]
@@ -55,22 +60,32 @@ use crate::evm_types::Stack;
 #[cfg(feature = "enable-storage")]
 use crate::evm_types::Storage;
 
-/// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
+/// Trait used to reduce verbosity with the declaration of the [`Field`]
 /// trait and its repr.
 pub trait Field:
-    FieldExt
-    + Halo2Field
-    + PrimeField<Repr = [u8; 32]>
-    + hash_circuit::hash::Hashable
-    + std::convert::From<Fr>
+    PrimeField<Repr = [u8; 32]> + hash_circuit::hash::Hashable + std::convert::From<Fr> + ScalarField
 {
+    /// Re-expose zero element as a function
+    fn zero() -> Self {
+        Self::ZERO
+    }
+
+    /// Re-expose one element as a function
+    fn one() -> Self {
+        Self::ONE
+    }
+
+    /// Expose the lower 128 bits
+    fn get_lower_128(&self) -> u128 {
+        u128::from_le_bytes(self.to_repr().as_ref()[..16].try_into().unwrap())
+    }
 }
 
 // Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
 
-// Impl custom `Field` trait for BN256 Frq to be used and consistent with the
+// Impl custom `Field` trait for BN256 Fq to be used and consistent with the
 // rest of the workspace.
 // impl Field for Fq {}
 
@@ -303,11 +318,11 @@ impl<F: Field> ToScalar<F> for usize {
 
 /// Code hash related
 /// the empty keccak code hash
-pub static KECCAK_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+pub static KECCAK_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
     Hash::from_str("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470").unwrap()
 });
 /// the empty poseidon code hash
-pub static POSEIDON_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+pub static POSEIDON_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
     Hash::from_str("0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864").unwrap()
 });
 /// Struct used to define the storage proof
@@ -508,10 +523,10 @@ impl<'de> Deserialize<'de> for GethExecError {
     {
         struct GethExecErrorVisitor;
 
-        static STACK_UNDERFLOW_RE: Lazy<regex::Regex> =
-            Lazy::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
-        static STACK_OVERFLOW_RE: Lazy<regex::Regex> =
-            Lazy::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
+        static STACK_UNDERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
+        static STACK_OVERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
 
         impl<'de> de::Visitor<'de> for GethExecErrorVisitor {
             type Value = GethExecError;
@@ -664,6 +679,7 @@ pub struct ResultGethExecTrace {
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GethExecTrace {
     /// L1 fee
     #[serde(default)]
@@ -733,15 +749,33 @@ pub struct GethCallTrace {
     #[serde(default)]
     calls: Vec<GethCallTrace>,
     error: Option<String>,
-    // from: Address,
+    from: Address,
     // gas: U256,
     // #[serde(rename = "gasUsed")]
     // gas_used: U256,
     // input: Bytes,
     // output: Bytes,
-    // to: Option<Address>,
+    to: Option<Address>,
     #[serde(rename = "type")]
     call_type: String,
+    // value: U256,
+}
+
+/// Flattened Call Trace
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlatGethCallTrace {
+    // error: Option<String>,
+    /// from
+    pub from: Address,
+    // gas: U256,
+    // #[serde(rename = "gasUsed")]
+    // gas_used: U256,
+    // input: Bytes,
+    // output: Bytes,
+    /// to
+    pub to: Option<Address>,
+    /// call type
+    pub call_type: OpcodeId,
     // value: U256,
 }
 
@@ -753,6 +787,19 @@ impl GethCallTrace {
             call_is_success = call.gen_call_is_success(call_is_success);
         }
         call_is_success
+    }
+
+    /// flatten the call trace as it is.
+    pub fn flatten_trace(&self, mut trace: Vec<FlatGethCallTrace>) -> Vec<FlatGethCallTrace> {
+        trace.push(FlatGethCallTrace {
+            from: self.from,
+            to: self.to,
+            call_type: OpcodeId::from_str(&self.call_type).unwrap(),
+        });
+        for call in &self.calls {
+            trace = call.flatten_trace(trace);
+        }
+        trace
     }
 }
 
@@ -876,6 +923,8 @@ mod tests {
     "callTrace": {
       "calls": [],
       "error": null,
+      "from": "0x000000000000000000000000000000000cafe001",
+      "to": null,
       "type": "CALL"
     }
   }
@@ -964,6 +1013,8 @@ mod tests {
                 call_trace: GethCallTrace {
                     calls: Vec::new(),
                     error: None,
+                    from: address!("0x000000000000000000000000000000000cafe001"),
+                    to: None,
                     call_type: "CALL".to_string(),
                 }
             }

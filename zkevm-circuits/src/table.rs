@@ -28,7 +28,6 @@ use gadgets::{
     util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Layouter, Region, Value},
     halo2curves::bn256::{Fq, G1Affine},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -146,8 +145,6 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
-    /// Gas cost for access list (EIP 2930)
-    AccessListGasCost,
     /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID
@@ -177,8 +174,22 @@ pub enum TxFieldTag {
     TxHash,
     /// TxType: Type of the transaction
     TxType,
+    /// Access list address
+    AccessListAddress,
+    /// Access list storage key
+    AccessListStorageKey,
+    /// Access list address count (EIP-2930)
+    AccessListAddressesLen,
+    /// Access list all storage key count (EIP-2930)
+    AccessListStorageKeysLen,
+    /// RLC of access list (EIP-2930)
+    AccessListRLC,
     /// The block number in which this tx is included.
     BlockNumber,
+    /// Max Priority Fee Per Gas (EIP1559)
+    MaxPriorityFeePerGas,
+    /// Max Fee Per Gas (EIP1559)
+    MaxFeePerGas,
 }
 impl_expr!(TxFieldTag);
 
@@ -204,6 +215,8 @@ pub struct TxTable {
     pub index: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
+    /// Access list address
+    pub access_list_address: Column<Advice>,
 }
 
 impl TxTable {
@@ -217,6 +230,7 @@ impl TxTable {
             tag,
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
+            access_list_address: meta.advice_column(),
         }
     }
 
@@ -253,7 +267,7 @@ impl TxTable {
             q_enable: Column<Fixed>,
             advice_columns: &[Column<Advice>],
             tag: &Column<Fixed>,
-            row: &[Value<F>; 4],
+            row: &[Value<F>; 5],
             msg: &str,
         ) -> Result<AssignedCell<F, F>, Error> {
             let mut value_cell = None;
@@ -296,20 +310,20 @@ impl TxTable {
                     self.q_enable,
                     &advice_columns,
                     &self.tag,
-                    &[(); 4].map(|_| Value::known(F::zero())),
+                    &[(); 5].map(|_| Value::known(F::zero())),
                     "all-zero",
                 )?;
                 offset += 1;
 
                 // Tx Table contains an initial region that has a size parametrized by max_txs
-                // with all the tx data except for calldata, and then a second
+                // with all the tx data except for calldata and access list, and then a second
                 // region that has a size parametrized by max_calldata with all
-                // the tx calldata.  This is required to achieve a constant fixed column tag
-                // regardless of the number of input txs or the calldata size of each tx.
-                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
-                // Assign Tx data (all tx fields except for calldata)
+                // the tx calldata and access list.  This is required to achieve a constant fixed
+                // column tag regardless of the number of input txs or the
+                // calldata/access list size of each tx.
+
+                // Assign Tx data (all tx fields except for calldata and access list)
                 let padding_txs = (txs.len()..max_txs)
-                    .into_iter()
                     .map(|tx_id| {
                         let mut padding_tx = Transaction::dummy(chain_id);
                         padding_tx.id = tx_id + 1;
@@ -320,7 +334,6 @@ impl TxTable {
                 for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
                     debug_assert_eq!(i + 1, tx.id);
                     let tx_data = tx.table_assignments_fixed(*challenges);
-                    let tx_calldata = tx.table_assignments_dyn(*challenges);
                     for row in tx_data {
                         tx_value_cells.push(assign_row(
                             &mut region,
@@ -333,21 +346,39 @@ impl TxTable {
                         )?);
                         offset += 1;
                     }
-                    calldata_assignments.extend(tx_calldata.iter());
                 }
-                // Assign Tx calldata
-                for row in calldata_assignments.into_iter() {
-                    assign_row(
-                        &mut region,
-                        offset,
-                        self.q_enable,
-                        &advice_columns,
-                        &self.tag,
-                        &row,
-                        "",
-                    )?;
-                    offset += 1;
+
+                // Assign dynamic calldata and access list section
+                for tx in txs.iter().chain(padding_txs.iter()) {
+                    for row in tx.table_assignments_dyn(*challenges).into_iter() {
+                        assign_row(
+                            &mut region,
+                            offset,
+                            self.q_enable,
+                            &advice_columns,
+                            &self.tag,
+                            &row,
+                            "",
+                        )?;
+                        offset += 1;
+                    }
+                    for row in tx
+                        .table_assignments_access_list_dyn(*challenges)
+                        .into_iter()
+                    {
+                        assign_row(
+                            &mut region,
+                            offset,
+                            self.q_enable,
+                            &advice_columns,
+                            &self.tag,
+                            &row,
+                            "",
+                        )?;
+                        offset += 1;
+                    }
                 }
+
                 Ok(tx_value_cells)
             },
         )
@@ -362,6 +393,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tag.into(),
             self.index.into(),
             self.value.into(),
+            self.access_list_address.into(),
         ]
     }
 
@@ -372,6 +404,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             String::from("tag"),
             String::from("index"),
             String::from("value"),
+            String::from("access_list_address"),
         ]
     }
 
@@ -382,6 +415,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
             meta.query_advice(self.value, Rotation::cur()),
+            meta.query_advice(self.access_list_address, Rotation::cur()),
         ]
     }
 }
@@ -604,7 +638,7 @@ impl<F: Field> LookupTable<F> for RwTable {
 }
 impl RwTable {
     /// Construct a new RwTable
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             rw_counter: meta.advice_column(),
@@ -760,7 +794,7 @@ impl<F: Field> LookupTable<F> for MptTable {
 
 impl MptTable {
     /// Construct a new MptTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             address: meta.advice_column(),
@@ -803,6 +837,46 @@ impl MptTable {
             || "mpt table zkevm",
             |mut region| self.load_with_region(&mut region, updates, max_mpt_rows, randomness),
         )
+    }
+
+    pub(crate) fn load_par<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        updates: &MptUpdates,
+        max_mpt_rows: usize,
+        randomness: Value<F>,
+    ) -> Result<(), Error> {
+        let num_threads = std::thread::available_parallelism().unwrap().get();
+        let chunk_size = (max_mpt_rows + num_threads - 1) / num_threads;
+        let mpt_update_rows = updates
+            .table_assignments(randomness)
+            .into_iter()
+            .chain(repeat(MptUpdateRow::padding()))
+            .take(max_mpt_rows)
+            .collect_vec();
+        let mut is_first_passes = vec![true; num_threads];
+        let assignments = mpt_update_rows
+            .chunks(chunk_size)
+            .zip(is_first_passes.iter_mut())
+            .map(|(mpt_update_rows, is_first_pass)| {
+                |mut region: Region<'_, F>| -> Result<(), Error> {
+                    if *is_first_pass {
+                        *is_first_pass = false;
+                        let last_off = mpt_update_rows.len() - 1;
+                        self.assign(&mut region, last_off, &mpt_update_rows[last_off])?;
+                        return Ok(());
+                    }
+                    for (offset, row) in mpt_update_rows.iter().enumerate() {
+                        self.assign(&mut region, offset, row)?;
+                    }
+                    Ok(())
+                }
+            })
+            .collect_vec();
+
+        layouter.assign_regions(|| "mpt table zkevm", assignments)?;
+
+        Ok(())
     }
 
     pub(crate) fn load_with_region<F: Field>(
@@ -881,7 +955,7 @@ impl PoseidonTable {
     pub(crate) const INPUT_WIDTH: usize = Self::WIDTH - 1;
 
     /// Construct a new PoseidonTable
-    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             hash_id: meta.advice_column(),
@@ -1143,7 +1217,7 @@ impl BytecodeTable {
     }
 
     /// A sub-table of bytecode without is_code nor push_rlc.
-    fn columns_mini<F: Field>(&self) -> Vec<Column<Any>> {
+    fn columns_mini(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
             self.code_hash.into(),
@@ -1155,7 +1229,7 @@ impl BytecodeTable {
 
     /// The expressions of the sub-table of bytecode without is_code nor push_rlc.
     pub fn table_exprs_mini<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        self.columns_mini::<F>()
+        self.columns_mini()
             .iter()
             .map(|&column| meta.query_any(column, Rotation::cur()))
             .collect()
@@ -1489,6 +1563,127 @@ impl KeccakTable {
     }
 }
 
+/// SHA256 Table, used to verify SHA256 hashing from RLC'ed input in precompile.
+#[derive(Clone, Debug)]
+pub struct SHA256Table {
+    /// True when the row is enabled
+    pub q_enable: Column<Fixed>,
+    /// True when the row is final
+    pub is_final: Column<Advice>,
+    /// Byte array input as `RLC(reversed(input))`
+    pub input_rlc: Column<Advice>, // RLC of input bytes
+    /// Byte array input length
+    pub input_len: Column<Advice>,
+    /// RLC of the hash result
+    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+}
+
+impl<F: Field> LookupTable<F> for SHA256Table {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.is_final.into(),
+            self.input_rlc.into(),
+            self.input_len.into(),
+            self.output_rlc.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enable"),
+            String::from("is_final"),
+            String::from("input_rlc"),
+            String::from("input_len"),
+            String::from("output_rlc"),
+        ]
+    }
+}
+
+impl SHA256Table {
+    /// Construct a new KeccakTable
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            is_final: meta.advice_column(),
+            input_len: meta.advice_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
+            output_rlc: meta.advice_column_in(SecondPhase),
+        }
+    }
+
+    /// Generate the sha256 table assignments from a byte array pair of input/output.
+    /// Used only for dev_load
+    pub fn assignments<F: Field>(
+        entry: (&[u8], &[u8; 32]),
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 4]> {
+        let (input, output) = entry;
+        let input_len = Value::known(F::from(input.len() as u64));
+        let input_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
+        let output_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(&Word::from_big_endian(output).to_le_bytes(), challenge));
+
+        vec![[Value::known(F::one()), input_rlc, input_len, output_rlc]]
+    }
+
+    /// Provide this function for the case that we want to consume a sha256
+    /// table but without running the full sha256 circuit
+    pub fn dev_load<'a, F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        entries: impl IntoIterator<Item = (&'a Vec<u8>, &'a [u8; 32])> + Clone,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "sha256 table dev",
+            |mut region| {
+                let mut offset = 0;
+                for column in <Self as LookupTable<F>>::advice_columns(self) {
+                    region.assign_fixed(
+                        || "sha256 table all-zero row",
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_advice(
+                        || "sha256 table all-zero row",
+                        column,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let table_columns = <Self as LookupTable<F>>::advice_columns(self);
+                for (input, digest) in entries.clone() {
+                    for row in Self::assignments((input, digest), challenges) {
+                        region.assign_fixed(
+                            || format!("table row {offset}"),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
+                        for (&column, value) in table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("table row {offset}"),
+                                column,
+                                offset,
+                                || value,
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
+}
+
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
 /// TxLogs and TxCallData.
 #[derive(Clone, Copy, Debug)]
@@ -1606,7 +1801,7 @@ impl CopyTable {
             .copy_bytes
             .bytes_write_prev
             .clone()
-            .unwrap_or(vec![]);
+            .unwrap_or_default();
 
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
@@ -1637,6 +1832,8 @@ impl CopyTable {
             word_rlc_prev: Value::known(F::zero()),
         };
 
+        let is_access_list = copy_event.src_type == CopyDataType::AccessListAddresses
+            || copy_event.src_type == CopyDataType::AccessListStorageKeys;
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
@@ -1671,13 +1868,29 @@ impl CopyTable {
 
             let is_pad = is_read_step && thread.addr >= thread.addr_end;
 
-            let value = Value::known(F::from(copy_step.value as u64));
+            let [value, value_prev] = if is_access_list {
+                // Save address, storage_key, storage_key_index and is_warm_prev
+                // to column value_word_rlc, value_word_rlc_prev, value and
+                // value_prev in copy circuit.
+                let access_list = &copy_event.access_list[step_idx / 2];
+
+                [
+                    F::from(access_list.storage_key_index),
+                    F::from(access_list.is_warm_prev),
+                ]
+            } else {
+                [
+                    F::from(copy_step.value as u64),
+                    F::from(copy_step.prev_value as u64),
+                ]
+            }
+            .map(Value::known);
+
             let value_or_pad = if is_pad {
                 Value::known(F::zero())
             } else {
                 value
             };
-            let value_prev = Value::known(F::from(copy_step.prev_value as u64));
 
             if !copy_step.mask {
                 thread.front_mask = false;
@@ -1694,6 +1907,18 @@ impl CopyTable {
             } else {
                 thread.word_rlc_prev * challenges.evm_word() + value_prev
             };
+
+            if is_access_list {
+                // Save address, storage_key, storage_key_index and is_warm_prev
+                // to column value_word_rlc, value_word_rlc_prev, value and
+                // value_prev in copy circuit.
+                let access_list = &copy_event.access_list[step_idx / 2];
+
+                thread.word_rlc = Value::known(access_list.address.to_scalar().unwrap());
+                thread.word_rlc_prev = challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&access_list.storage_key.to_le_bytes(), challenge));
+            }
 
             let word_index = (step_idx as u64 / 2) % 32;
 
@@ -1740,9 +1965,10 @@ impl CopyTable {
             if !copy_step.mask {
                 thread.bytes_left -= 1;
             }
+            // No word operation for access list data types.
+            let is_row_end = is_access_list || (step_idx / 2) % 32 == 31;
             // Update the RW counter.
-            let is_word_end = (step_idx / 2) % 32 == 31;
-            if is_word_end && thread.is_rw {
+            if is_row_end && thread.is_rw {
                 rw_counter += 1;
                 rwc_inc_left -= 1;
             }
@@ -2078,6 +2304,10 @@ pub struct RlpFsmRlpTable {
     pub is_output: Column<Advice>,
     /// Whether or not the current tag's value was nil.
     pub is_none: Column<Advice>,
+    /// Index of access list address
+    pub access_list_idx: Column<Advice>,
+    /// Index of storage key in an access list item
+    pub storage_key_idx: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
@@ -2092,6 +2322,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             self.tag_length.into(),
             self.is_output.into(),
             self.is_none.into(),
+            self.access_list_idx.into(),
+            self.storage_key_idx.into(),
         ]
     }
 
@@ -2106,6 +2338,8 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             String::from("tag_length"),
             String::from("is_output"),
             String::from("is_none"),
+            String::from("access_list_idx"),
+            String::from("storage_key_idx"),
         ]
     }
 }
@@ -2123,6 +2357,8 @@ impl RlpFsmRlpTable {
             tag_length: meta.advice_column(),
             is_output: meta.advice_column(),
             is_none: meta.advice_column(),
+            access_list_idx: meta.advice_column(),
+            storage_key_idx: meta.advice_column(),
         }
     }
 
@@ -2189,6 +2425,16 @@ impl RlpFsmRlpTable {
                             "is_none",
                             self.is_none.into(),
                             Value::known(F::from(row.is_none as u64)),
+                        ),
+                        (
+                            "access_list_idx",
+                            self.access_list_idx.into(),
+                            Value::known(F::from(row.access_list_idx)),
+                        ),
+                        (
+                            "storage_key_idx",
+                            self.storage_key_idx.into(),
+                            Value::known(F::from(row.storage_key_idx)),
                         ),
                     ];
 
@@ -2332,15 +2578,14 @@ impl<F: Field> LookupTable<F> for SigTable {
     }
 }
 
-/// 1. if EcAdd(P, Q) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 1. if EcAdd(P, Q) == R then: (arg1_rlc, arg2_rlc, arg3_rlc, arg4_rlc) \mapsto (output1_rlc,
+///    output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = rlc(Q.x), arg4_rlc = rlc(Q.x),
 ///           output1_rlc = rlc(R.x), output2_rlc = rlc(R.y),
 ///
-/// 2. if EcMul(P, s) == R then:
-///     (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
+/// 2. if EcMul(P, s) == R then: (arg1_rlc, arg2_rlc, arg3_rlc) \mapsto (output1_rlc, output2_rlc).
 ///
 ///     where arg1_rlc = rlc(P.x), arg2_rlc = rlc(P.y),
 ///           arg3_rlc = s
@@ -2596,7 +2841,7 @@ impl ModExpTable {
 
         let mut bytes = [0u8; 64];
         remainder.to_little_endian(&mut bytes[..32]);
-        F::from_bytes_wide(&bytes)
+        F::from_uniform_bytes(&bytes)
     }
 
     /// fill a blank 4-row region start from offset for empty lookup
@@ -2654,6 +2899,7 @@ impl ModExpTable {
 
                     for i in 0..3 {
                         for (limbs, &col) in [base_limbs, exp_limbs, modulus_limbs, result_limbs]
+                            .iter()
                             .zip([&self.base, &self.exp, &self.modulus, &self.result])
                         {
                             region.assign_advice(
@@ -2666,13 +2912,10 @@ impl ModExpTable {
                     }
 
                     // native is not used by lookup (and in fact it can be omitted in dev)
-                    for (word, &col) in [
-                        &event.base,
-                        &event.exponent,
-                        &event.modulus,
-                        &event.result,
-                    ]
-                    .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                    for (word, &col) in
+                        [&event.base, &event.exponent, &event.modulus, &event.result]
+                            .iter()
+                            .zip([&self.base, &self.exp, &self.modulus, &self.result])
                     {
                         region.assign_advice(
                             || format!("modexp table native row {}", offset + 3),

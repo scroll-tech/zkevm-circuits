@@ -80,6 +80,7 @@ fn gen_copy_event(
         rw_counter_start,
         //fetch pre write bytes of CopyBytes
         copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
+        access_list: vec![],
     })
 }
 

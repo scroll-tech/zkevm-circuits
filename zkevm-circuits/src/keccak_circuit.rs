@@ -1027,7 +1027,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let rows_per_chunk = (NUM_ROUNDS + 1) * get_num_rows_per_round();
-        let aux_tables_rows = vec![
+        let aux_tables_rows = [
             normalize_table_size(6),
             normalize_table_size(4),
             normalize_table_size(3),

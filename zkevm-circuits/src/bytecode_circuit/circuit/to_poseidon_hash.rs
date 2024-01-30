@@ -677,7 +677,6 @@ impl<F: Field> SubCircuitConfig<F> for ToHashBlockCircuitConfig<F, HASHBLOCK_BYT
 #[cfg(any(feature = "test", test))]
 #[cfg(test)]
 pub mod tests {
-    use super::*;
     // use super::super::tests::get_randomness;
     // use crate::{bytecode_circuit::dev::test_bytecode_circuit_unrolled,
     // util::DEFAULT_RAND}; use eth_types::Bytecode;
@@ -686,7 +685,7 @@ pub mod tests {
 
     #[test]
     fn bytecode_unrolling_to_input() {
-        let bt = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        let bt = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
         let out = unroll_to_hash_input::<Fr, 4, 2>(bt.iter().copied().take(6));
         assert_eq!(out.len(), 1);

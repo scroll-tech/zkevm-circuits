@@ -401,7 +401,6 @@ impl CircuitExt<Fr> for AggregationCircuit {
         config.0.flex_gate().basic_gates[0]
             .iter()
             .map(|gate| gate.q_enable)
-            .into_iter()
             .chain(
                 [
                     config.0.rlc_config.selector,

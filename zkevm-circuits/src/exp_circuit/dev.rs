@@ -14,6 +14,8 @@ use halo2_proofs::{
 impl<F: Field> Circuit<F> for ExpCircuit<F> {
     type Config = (ExpCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

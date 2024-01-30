@@ -33,7 +33,6 @@ pub use external_tracer::LoggerConfig;
 /// ```rust
 /// use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
 /// use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
-/// use lazy_static::lazy_static;
 /// use mock::test_ctx::{helpers::*, TestContext};
 /// // code_a calls code
 /// // jump to 0x10 which is outside the code (and also not marked with
@@ -95,7 +94,6 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
-
     #[cfg(feature = "scroll")]
     block_trace: BlockTrace,
 }
@@ -108,6 +106,8 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
             accounts: ctx.accounts.into(),
+            #[cfg(feature = "scroll")]
+            block_trace: ctx.block_trace,
         }
     }
 }

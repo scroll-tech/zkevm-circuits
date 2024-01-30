@@ -16,13 +16,13 @@ link to the original HackMD file: https://hackmd.io/@dieGzUCgSGmRZFQ7SDxXCA/BJF7
 
 ## Purpose and Design
 
-The [Ethereum Virtual Machine] (EVM) is a state machine that defines the rules of valid state transition in the Ethereum protocol. This means that it specifies a deterministic function under which the next valid EVM state is computed from the current EVM state. The execution part of EVM uses [opcodes] to realize these state transitions, which results in an <i>Exection trace</i>.
+The [Ethereum Virtual Machine] (EVM) is a state machine that defines the rules of valid state transition in the Ethereum protocol. This means that it specifies a deterministic function under which the next valid EVM state is computed from the current EVM state. The execution part of EVM uses [opcodes] to realize these state transitions, which results in an <i>Execution trace</i>.
 
 ![EVMExecutionTrace-Circuit](https://hackmd.io/_uploads/SJyjmfR_3.png)
 
 The execution trace consists of each step of execution defined by the opcode. EVM Circuit aims at constructing a constraint system corresponding to this execution trace, that can be proved by some backend zk-proof system such as Halo2. 
 
-The high-level design idea of EVM Circuit is somewhat reminiscent of the design of EVM itself (such as [go-ethereum]). In go-ethereum, an `Intepreter` loops over all instruction opcodes along the execution trace. At each instruction, the `Intepreter` helps to check relevant context information such as gas, stack, memory etc., and then sends the opcode to a `JumpTable` from which it fetches detailed `operation` that this opcode should do. 
+The high-level design idea of EVM Circuit is somewhat reminiscent of the design of EVM itself (such as [go-ethereum]). In go-ethereum, an `Interpreter` loops over all instruction opcodes along the execution trace. At each instruction, the `Interpreter` helps to check relevant context information such as gas, stack, memory etc., and then sends the opcode to a `JumpTable` from which it fetches detailed `operation` that this opcode should do. 
 
 Analogously, in EVM Circuit, we build <i>execution steps</i> according to the steps in the execution trace, with witnesses for both the opcode and the execution context. For each execution step, a set of constraints is imposed to check context information. For each opcode, a set of constraints is imposed to check the opcode's behavior. Within an execution trace, the same opcode should have the same constraints. We use a selector to "turn on" all steps for the same opcode within a trace and we prove their behavior using our backend proof system. This is possible thanks to how our backend proof system (Halo2) works. The overall proof is obtained by applying this scheme to the list of all opcodes that appear in the execution trace.
 
@@ -117,7 +117,7 @@ The backend proof system is based on Halo2, so all constraints are implemented a
 
 #### CellTypes
 
-`Challenge` API is a feature of Halo2 that can produce SNARK's random challenges based on different phases of the proof in the transcript. In alignment with the `Challenge` API, EVM Circuit classifies its cells based on different phases of the proof. This results in `CellType`, which currently contains `StoragePhase1`, `StoragePhase2`, `StoragePermutation` and `Lookup` for different types of lookup tables, etc. . A given column in EVM Circuit will consist of cells with the same `CellType`. Columns under a given `CellType` will be horizontally layouted in a consecutive way to occupy a region. Cells that are of the same `CellType` will be subject to the same random challenge produced by `Challenge` API when Random Linear Combination (RLC) is applied to them.
+`Challenge` API is a feature of Halo2 that can produce SNARK's random challenges based on different phases of the proof in the transcript. In alignment with the `Challenge` API, EVM Circuit classifies its cells based on different phases of the proof. This results in `CellType`, which currently contains `StoragePhase1`, `StoragePhase2`, `StoragePermutation` and `Lookup` for different types of lookup tables, etc. . A given column in EVM Circuit will consist of cells with the same `CellType`. Columns under a given `CellType` will be horizontally layouted in a consecutive way to occupy a region. Cells that are of the same `CellType` will be subject to the same random challenge produced by `Challenge` API when a Random Linear Combination (RLC) is applied to them.
 
 #### Behavior of CellManager within columns of the same CellType
 
@@ -153,12 +153,12 @@ Then we enable an advice column:
 A few extra columns are enabled for various purposes, including:
 
 - `constants`, a fixed column, hold constant values used for copy constraints
-- `num_rows_until_next_step`, an advice column, count the number of rows until next step
+- `num_rows_until_next_step`, an advice column, count the number of rows until the next step
 - `num_rows_inv`, an advice column, for a constraint that enforces `q_step:= num_rows_until_next_step == 0`
 
-In alignment with the `Challenge` API of Halo2, we classify all above columns as in phase 1 columns using Halo2's phase convention.
+In alignment with the `Challenge` API of Halo2, we classify all the above columns as in phase 1 columns using Halo2's phase convention.
 
-After that, a rectangular region of advice columns is arranged for the execution step specific constraints that corresponds to an `ExecutionGadget`. The width of this region is set to be a constant `STEP_WIDTH`. The step height is not fixed, so it is dynamic. This part is handled by `CellManager`. 
+After that, a rectangular region of advice columns is arranged for the execution step specific constraints that correspond to an `ExecutionGadget`. The width of this region is set to be a constant `STEP_WIDTH`. The step height is not fixed, so it is dynamic. This part is handled by `CellManager`. 
 
 For each step, `CellManager` allocates an area of advice columns with a given height and the number of advice columns as its width. The allocation process is in alignment with `Challenge` API. So within the area allocated to advice columns, `CellManager` marks columns in consecutive regions from left to right as
 
@@ -245,7 +245,7 @@ For the EVM Circuit, there are internal and external lookup tables. We summarize
 
 #### Lookup into the table
 
-We use `Lookup::input_exprs`  method to extract input expressions from an EVM execution trace that we want to do lookup, and we use `LookupTable::table_exprs` method to extract table expressions from a recorded lookup table. The lookup argument aims at proving the former expression lies in the latter ones. This is done by first RLC (Random Linear Combine) both sides of expressions using the same random challenge and then lookup the RLC expression. Here each column of a lookup table corresponds to one lookup expression, and EVM Step's lookup input expressions must correspond to the table expressions. See the following illustration:
+We use `Lookup::input_exprs`  method to extract input expressions from an EVM execution trace that we want to do lookup, and we use `LookupTable::table_exprs` method to extract table expressions from a recorded lookup table. The lookup argument aims to prove that the former expression lies in the latter ones. This is done by first RLC (Random Linear Combine) on both sides of expressions using the same random challenge and then lookup the RLC expression. Here each column of a lookup table corresponds to one lookup expression, and EVM Step's lookup input expressions must correspond to the table expressions. See the following illustration:
 
 ![evm-circuit-lookup](https://hackmd.io/_uploads/rynmiTWF2.png)
 
@@ -255,7 +255,7 @@ At the execution level, the input expression RLCs enter EVM Circuit's lookup cel
 
 At each step, `CellManager` allocates a region with columns consisting of `CellType::Lookup(table)` that are for various types of lookups. Cells in these columns are filled with the RLC result of input expressions induced by the execution trace. This is done by the `add_lookup` method in `ConstraintBuilder`. 
 
-The number of columns allocated for one type of lookup (corresponding lookup will be into a particular lookup table) follows the configuration setting in `LOOKUP_CONFIG`. These numbers are tunable in order to make the circuit more "compact", i.e., with less unused cells, so that performance can be improved.
+The number of columns allocated for one type of lookup (the corresponding lookup will be into a particular lookup table) follows the configuration setting in `LOOKUP_CONFIG`. These numbers are tunable in order to make the circuit more "compact", i.e., with less unused cells, so that performance can be improved.
 
 #### Challenge used for EVM Circuit's lookup cells
 
@@ -269,7 +269,7 @@ Due to page limit we only discuss some examples here.
 
 #### `SameContextGadget`
 
-This gadget is applied to every execution step in order to check the correct transition from current state to next state. The constraints include
+This gadget is applied to every execution step in order to check the correct transition from the current state to the next state. The constraints include
 - lookup to Bytecode Table and Fixed Table (with `tag=FixedTableTag::ResponsibleOpcode`) for the correctness of the current opcode;
 - check remaining gas is sufficient;
 - check correct step state transition, such as change of `rw_counter`, `program_counter`, `stack_pointer` etc.
@@ -334,7 +334,7 @@ Then the constraints are
 $b=\mu_{s}[1]$, $n=\mu_{s}[2]$, 
 $r=\mu_{s}'[0]$;
     - Exceptions: 
-        - 1. stack undeflow: $1022 \leq$ stack\_pointer $\leq 1024$; 
+        - 1. stack underflow: $1022 \leq$ stack\_pointer $\leq 1024$; 
         - 2. out of gas: Remaining gas is not enough.
 
 
@@ -354,7 +354,7 @@ Note that the data to be copied to memory that exceeds return data size ($||\mu_
 
 For RETURNDATACOPY opcode, EVM Circuit does the following type of constraint checks together with witness assignments:
 
-- Constraints for stack pop of `dest_offset`, `data_offset` and `size`. This means they are assigned from the step's rw data (via bus mapping) and then they are checked by doing RwTable lookups with `tag=RwTableTag::Stack`, as well as verifying correct stack pointer update;
+- Constraints for stack pop of `dest_offset`, `data_offset` and `size`. This means they are assigned from the step's rw data (via bus mapping) and then they are checked by doing RwTable lookups with `tag=RwTableTag::Stack`, as well as verifying the correct stack pointer update;
 - Constraints for call context related data including `last_callee_id`, `return_data_offset` (offset for $\mu_{o}$) and `return_data_size` ($\|\mu_o\|$). These are assigned and then checked by RwTable lookups with `tag=RwTableTag::CallContext`. Here return data means the output data from last call, from which we fetch data that is to be copied into memory;
 - Constraints for ensuring no out-of-bound errors happen with `return_data_size`;
 - Constraints for memory related behavior. This includes memory address and expansion via `dest_offset` and `size`, as well as gas cost for memory expansion;

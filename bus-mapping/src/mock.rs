@@ -55,7 +55,7 @@ impl BlockData {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
-        let access_set: AccessSet = AccessSet::from_geth_data(&geth_data);
+        let access_set = AccessSet::from_geth_data(&geth_data);
         // Initialize all accesses accounts to zero
         for addr in access_set.state.keys() {
             sdb.set_account(addr, state_db::Account::zero());

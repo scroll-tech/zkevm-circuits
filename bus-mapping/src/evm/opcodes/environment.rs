@@ -6,55 +6,55 @@ use crate::{
 use eth_types::{evm_types::OpcodeId, GethExecStep, ToWord, Word, U256};
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct GetBlockHeaderField<const OP: u8>;
+pub(crate) struct GetBlockHeaderField<const OP: OpcodeId>;
 
 trait BlockHeaderToField {
     fn handle(block_head: &BlockHead) -> Word;
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::COINBASE.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::COINBASE }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.coinbase.to_word()
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::TIMESTAMP.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::TIMESTAMP }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.timestamp
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::NUMBER.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::NUMBER }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.number
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::DIFFICULTY.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::DIFFICULTY }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.difficulty
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::GASLIMIT.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::GASLIMIT }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.gas_limit.into()
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::CHAINID.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::CHAINID }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.chain_id.into()
     }
 }
 
-impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::BASEFEE.as_u8() }> {
+impl BlockHeaderToField for GetBlockHeaderField<{ OpcodeId::BASEFEE }> {
     fn handle(block_head: &BlockHead) -> Word {
         block_head.base_fee
     }
 }
 
-impl<const OP: u8> Opcode for GetBlockHeaderField<OP>
+impl<const OP: OpcodeId> Opcode for GetBlockHeaderField<OP>
 where
     Self: BlockHeaderToField,
 {
@@ -129,5 +129,48 @@ impl Opcode for Gas {
         state.stack_push(&mut exec_step, output)?;
 
         Ok(vec![exec_step])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::mock::BlockData;
+    use eth_types::{bytecode, geth_types::GethData, Bytecode};
+    use mock::TestContext;
+
+    fn test_trace(code: Bytecode) {
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(code)
+            .unwrap()
+            .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_difficulty() {
+        test_trace(bytecode! {
+            DIFFICULTY
+            STOP
+        });
+    }
+
+    #[test]
+    fn gas_limit_opcode_impl() {
+        test_trace(bytecode! {
+            GASLIMIT
+            STOP
+        });
+    }
+
+    #[test]
+    fn basefee_opcode_impl() {
+        test_trace(bytecode! {
+            BASEFEE
+            STOP
+        });
     }
 }

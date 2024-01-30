@@ -2,7 +2,6 @@
 
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
     plonk::{ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
@@ -13,7 +12,7 @@ use crate::util::Expr;
 use super::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 
 /// Instruction that the IsEqual chip needs to implement.
-pub trait IsEqualInstruction<F: FieldExt> {
+pub trait IsEqualInstruction<F: Field> {
     /// Assign lhs and rhs witnesses to the IsEqual chip's region.
     fn assign(
         &self,
@@ -121,7 +120,6 @@ mod tests {
 
     use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr as Fp,
@@ -142,7 +140,7 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuit<F: FieldExt, const RHS: u64> {
+    struct TestCircuit<F: Field, const RHS: u64> {
         values: Vec<u64>,
         checks: Vec<bool>,
         _marker: PhantomData<F>,
@@ -151,6 +149,8 @@ mod tests {
     impl<F: Field, const RHS: u64> Circuit<F> for TestCircuit<F, RHS> {
         type Config = TestCircuitConfig<F, RHS>;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()

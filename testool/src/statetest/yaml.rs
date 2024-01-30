@@ -3,17 +3,15 @@ use super::{
     spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
 use crate::{utils::MainnetFork, Compiler};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     str::FromStr,
 };
 use yaml_rust::Yaml;
-
-type Label = String;
 
 #[derive(Debug, Clone)]
 enum Ref {
@@ -76,7 +74,7 @@ impl<'a> YamlStateTestBuilder<'a> {
 
             // parse pre (account states before executing the transaction)
             let pre: BTreeMap<Address, Account> = self
-                .parse_accounts(&yaml_test["pre"])?
+                .parse_accounts(&yaml_test["pre"], None)?
                 .into_iter()
                 .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
                 .collect();
@@ -104,12 +102,19 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
-            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"])
-                .unwrap_or_else(|_| U256::zero());
-            let gas_price =
-                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(max_fee_per_gas);
+            let max_priority_fee_per_gas =
+                Self::parse_u256(&yaml_transaction["maxPriorityFeePerGas"]).ok();
+            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"]).ok();
 
-            // TODO handle maxPriorityFeePerGas & maxFeePerGas
+            // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
+            // EIP-1559 transaction.
+            // <https://github.com/ethereum/go-ethereum/blob/1485814f89d8206bb4a1c8e10a4a2893920f683a/core/state_transition.go#L167>
+            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| {
+                max_fee_per_gas
+                    .unwrap()
+                    .min(max_priority_fee_per_gas.unwrap() + env.current_base_fee)
+            });
+
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
@@ -143,7 +148,10 @@ impl<'a> YamlStateTestBuilder<'a> {
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
                 let gas_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"])?;
-                let result = self.parse_accounts(&expect["result"])?;
+
+                // Pass the account addresses before transaction as expected for result.
+                let expected_addresses = pre.keys().collect();
+                let result = self.parse_accounts(&expect["result"], Some(&expected_addresses))?;
 
                 if MainnetFork::in_network_range(&networks)? {
                     expects.push((exception, data_refs, gas_refs, value_refs, result));
@@ -152,14 +160,14 @@ impl<'a> YamlStateTestBuilder<'a> {
 
             // generate all the tests defined in the transaction by generating product of
             // data x gas x value
-            for (idx_data, data) in data_s.iter().enumerate() {
+            for (idx_data, calldata) in data_s.iter().enumerate() {
                 for (idx_gas, gas_limit) in gas_limit_s.iter().enumerate() {
                     for (idx_value, value) in value_s.iter().enumerate() {
                         // find the first result that fulfills the pattern
                         for (exception, data_refs, gas_refs, value_refs, result) in &expects {
                             // check if this result can be applied to the current test
                             let mut data_label = String::new();
-                            if let Some(label) = &data.1 {
+                            if let Some(label) = &calldata.label {
                                 if !data_refs.contains_label(label) {
                                     continue;
                                 }
@@ -189,10 +197,13 @@ impl<'a> YamlStateTestBuilder<'a> {
                                 secret_key: secret_key.clone(),
                                 to,
                                 gas_limit: *gas_limit,
+                                max_priority_fee_per_gas,
+                                max_fee_per_gas,
                                 gas_price,
                                 nonce,
                                 value: *value,
-                                data: data.0.clone(),
+                                data: calldata.data.clone(),
+                                access_list: calldata.access_list.clone(),
                                 exception: *exception,
                             });
                             break;
@@ -210,7 +221,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         Ok(Env {
             current_base_fee: Self::parse_u256(&yaml["currentBaseFee"])
                 .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
-            current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
+            current_coinbase: Self::parse_address(&yaml["currentCoinbase"], None)?,
             current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
             current_number: Self::parse_u64(&yaml["currentNumber"])?,
@@ -220,7 +231,11 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 
     /// parse a vector of address=>(storage,balance,code,nonce) entry
-    fn parse_accounts(&mut self, yaml: &Yaml) -> Result<HashMap<Address, AccountMatch>> {
+    fn parse_accounts(
+        &mut self,
+        yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>,
+    ) -> Result<HashMap<Address, AccountMatch>> {
         let mut accounts = HashMap::new();
         for (address, account) in yaml.as_hash().context("parse_hash")?.iter() {
             let acc_storage = &account["storage"];
@@ -235,7 +250,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 }
             }
 
-            let address = Self::parse_address(address)?;
+            let address = Self::parse_address(address, expected_addresses)?;
             let account = AccountMatch {
                 address,
                 balance: if acc_balance.is_badvalue() {
@@ -289,12 +304,26 @@ impl<'a> YamlStateTestBuilder<'a> {
         tags
     }
     /// returns the element as an address
-    fn parse_address(yaml: &Yaml) -> Result<Address> {
+    fn parse_address(
+        yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>,
+    ) -> Result<Address> {
         if let Some(as_str) = yaml.as_str() {
             parse::parse_address(as_str)
         } else if let Some(as_i64) = yaml.as_i64() {
-            let hex = format!("{as_i64:0>40}");
-            Ok(Address::from_slice(&hex::decode(hex)?))
+            // Try to convert the integer to hex if has expected addresses for
+            // accounts after transaction (result).
+            // e.g. 10 -> 0xa
+            if let Some(expected_addresses) = expected_addresses {
+                let address = Address::from_slice(&hex::decode(format!("{as_i64:040x}"))?);
+                if expected_addresses.contains(&address) {
+                    return Ok(address);
+                }
+            }
+
+            // Format as a hex string directly for accounts before transaction (pre).
+            // e.g. 10 -> 0x10
+            Ok(Address::from_slice(&hex::decode(format!("{as_i64:0>40}"))?))
         } else if let Yaml::Real(as_real) = yaml {
             Ok(Address::from_str(as_real)?)
         } else {
@@ -322,12 +351,15 @@ impl<'a> YamlStateTestBuilder<'a> {
 
     /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
     /// { LLL }
-    fn parse_calldata(&mut self, yaml: &Yaml) -> Result<(Bytes, Option<Label>)> {
+    fn parse_calldata(&mut self, yaml: &Yaml) -> Result<parse::Calldata> {
         if let Some(as_str) = yaml.as_str() {
-            return parse::parse_calldata(self.compiler, as_str);
-        } else if let Some(as_map) = yaml.as_hash() {
+            return parse::parse_calldata(self.compiler, as_str, &None);
+        }
+        if let Some(as_map) = yaml.as_hash() {
             if let Some(Yaml::String(data)) = as_map.get(&Yaml::String("data".to_string())) {
-                return parse::parse_calldata(self.compiler, data);
+                let raw_access_list =
+                    parse_raw_access_list(as_map.get(&Yaml::String("accessList".to_string())))?;
+                return parse::parse_calldata(self.compiler, data, &raw_access_list);
             } else {
                 bail!("do not know what to do with calldata(3): {:?}", yaml);
             }
@@ -435,6 +467,59 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 }
 
+fn parse_raw_access_list(access_list: Option<&Yaml>) -> Result<Option<parse::RawAccessList>> {
+    if let Some(Yaml::Array(access_items)) = access_list {
+        let access_list = access_items
+            .iter()
+            .map(|item| {
+                item.as_hash().map_or(
+                    Err(anyhow!("Parsed access list item must be a hash")),
+                    |item| {
+                        let address = match item.get(&Yaml::String("address".to_string())) {
+                            Some(Yaml::Integer(i)) => format!("{i:x}"),
+                            Some(Yaml::String(s)) => {
+                                assert!(s.starts_with("0x"));
+                                s[2..].to_string()
+                            }
+                            val => bail!("Failed to parse access list address = {val:?}"),
+                        };
+                        let address = format!("0x{:0>40}", address);
+
+                        let storage_keys = if let Some(Yaml::Array(storage_keys)) =
+                            item.get(&Yaml::String("storageKeys".to_string()))
+                        {
+                            storage_keys
+                                .iter()
+                                .map(|key| {
+                                    let key = match key {
+                                        Yaml::Integer(i) => format!("{i:x}"),
+                                        Yaml::String(s) => {
+                                            assert!(s.starts_with("0x"));
+                                            s[2..].to_string()
+                                        }
+                                        val => bail!(
+                                            "Failed to parse access list storage key = {val:?}"
+                                        ),
+                                    };
+                                    Ok(format!("0x{:0>64}", key))
+                                })
+                                .collect::<Result<_>>()?
+                        } else {
+                            bail!("Parsed access list storage keys must be an array");
+                        };
+
+                        Ok(parse::RawAccessListItem::new(address, storage_keys))
+                    },
+                )
+            })
+            .collect::<Result<_>>()?;
+
+        return Ok(Some(access_list));
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -442,7 +527,7 @@ mod test {
         config::TestSuite,
         statetest::{run_test, CircuitsConfig, StateTestError},
     };
-    use eth_types::address;
+    use eth_types::{address, AccessList, AccessListItem};
 
     const TEMPLATE: &str = r#"
 arith:
@@ -468,7 +553,12 @@ arith:
   transaction:
     data:
     - :raw 0x00
-    - :label data1 :raw 0x01
+    - data: :label data1 :raw 0x01
+      accessList:
+      - address: 0xF00000000000000000000000000000000000F101
+        storageKeys:
+        - 0x60A7
+        - 0xBEEF
     gasLimit:
     - '80000000'
     - '80000001'
@@ -594,17 +684,19 @@ arith:
     }
 
     #[test]
-    fn parse() -> Result<()> {
+    fn test_yaml_parse() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
-        let current = tc.remove(0);
+
+        // Check the last test.
+        let current = tc.pop().unwrap();
 
         let a94f5 = address!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
         let ccccc = address!("cccccccccccccccccccccccccccccccccccccccc");
 
         let expected = StateTest {
             path: "".into(),
-            id: "arith_d0_g0_v0".into(),
+            id: "arith_d1(data1)_g1_v1".into(),
             env: Env {
                 current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
@@ -621,11 +713,17 @@ arith:
             )?),
             from: a94f5,
             to: Some(ccccc),
-            gas_limit: 80000000,
+            gas_limit: 80000001,
             gas_price: U256::from(10u64),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
             nonce: U256::zero(),
-            value: U256::one(),
-            data: Bytes::from(&[0]),
+            value: U256::from(2),
+            data: Bytes::from(&[1]),
+            access_list: Some(AccessList(vec![AccessListItem {
+                address: address!("0xf00000000000000000000000000000000000f101"),
+                storage_keys: vec![H256::from_low_u64_be(0x60a7), H256::from_low_u64_be(0xbeef)],
+            }])),
             pre: BTreeMap::from([
                 (
                     ccccc,
@@ -634,7 +732,6 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01, 0x00]),
                         nonce: U256::zero(),
-
                         storage: HashMap::from([(U256::zero(), U256::one())]),
                     },
                 ),
@@ -645,7 +742,6 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::default(),
                         nonce: U256::zero(),
-
                         storage: HashMap::new(),
                     },
                 ),
@@ -654,10 +750,10 @@ arith:
                 ccccc,
                 AccountMatch {
                     address: ccccc,
-                    balance: Some(U256::from(1000000000001u64)),
-                    nonce: Some(U256::from(0)),
-                    code: Some(Bytes::from(&[0x60, 0x01, 0x00])),
-                    storage: HashMap::from([(U256::zero(), U256::one())]),
+                    balance: Some(U256::from(10u64)),
+                    nonce: None,
+                    code: None,
+                    storage: HashMap::new(),
                 },
             )]),
             exception: false,

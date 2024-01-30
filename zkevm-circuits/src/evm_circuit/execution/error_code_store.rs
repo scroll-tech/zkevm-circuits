@@ -134,6 +134,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         address,
@@ -145,16 +146,12 @@ mod test {
         Word,
         // word,
     };
-
-    use lazy_static::lazy_static;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
-
-    use crate::test_util::CircuitTestBuilder;
+    use std::sync::LazyLock;
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
-    lazy_static! {
-        static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
-    }
+    static CALLER_ADDRESS: LazyLock<Address> =
+        LazyLock::new(|| address!("0x00bbccddee000000000000000000000000002400"));
 
     const MAXCODESIZE: u64 = 0x6000u64;
 

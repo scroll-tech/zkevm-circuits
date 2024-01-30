@@ -169,9 +169,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         let shf_lt256 = pop1
             .to_le_bytes()
             .iter()
-            .fold(Some(0_u64), |acc, val| {
-                acc.and_then(|acc| acc.checked_add(u64::from(*val)))
-            })
+            .try_fold(0_u64, |acc, val| acc.checked_add(u64::from(*val)))
             .unwrap()
             - shf0;
         let divisor = if shf_lt256 == 0 {

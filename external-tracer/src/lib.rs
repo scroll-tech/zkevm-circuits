@@ -65,6 +65,13 @@ impl LoggerConfig {
             ..Self::default()
         }
     }
+
+    pub fn enable_stack() -> Self {
+        Self {
+            disable_stack: false,
+            ..Self::default()
+        }
+    }
 }
 
 /// Configuration structure for `params.ChainConfig`

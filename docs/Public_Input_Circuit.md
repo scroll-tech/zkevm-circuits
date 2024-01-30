@@ -134,7 +134,7 @@ The columns of PI circuit are explained as follows:
 - `is_rlc_keccak`: Fixed Column. This is true when the row is not for storing keccak hi/lo byte cells. This is because on these rows we accumulate Keccak input.
 - `q_keccak`: Selector Column. This selector is enabled at the row for computing keccak hash. This happens when the `rpi_bytes` column is at the row (1) after all `data_bytes` fields are assigned; (2) after all `pi_bytes` fields are assigned.
 - `q_block_tag`: Fixed Column. This is to connect with the Block Table and is used to indicate that the current row is not the last row of the block table.
-- `cum_num_txs`: Advice Column. This is used to record the cumulative number of transations;
+- `cum_num_txs`: Advice Column. This is used to record the cumulative number of transactions;
 - `is_block_num_txs`: Fixed Column. This is true when the current row corresponds to the block table tag is `NumTxs`.
 
 
@@ -149,7 +149,7 @@ The columns of PI circuit are explained as follows:
     - when `is_rpi_padding` is true: `rpi_rlc_acc` keeps the same
 
 - correct accumulation of `rpi_length` when `q_not_end` is enabled
-    - when `is_rpi_padding` is false: `rpi_length` increase by 1
+    - when `is_rpi_padding` is false: `rpi_length` increases by 1
     - when `is_rpi_padding` is true: `rpi_length` keeps the same
 
 - constraints for padding 

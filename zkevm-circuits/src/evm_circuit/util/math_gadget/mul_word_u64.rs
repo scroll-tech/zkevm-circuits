@@ -145,43 +145,43 @@ mod tests {
         // 0 * 0 = 0
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![Word::from(0), Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
         // max * 0 = 0
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![Word::MAX, Word::from(0), Word::from(0)],
+            [Word::MAX, Word::from(0), Word::from(0)],
             true,
         );
         // 1 * 1 = 1
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![Word::from(1), Word::from(1), Word::from(1)],
+            [Word::from(1), Word::from(1), Word::from(1)],
             true,
         );
         // max * 1 = max
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![Word::MAX, Word::from(1), Word::MAX],
+            [Word::MAX, Word::from(1), Word::MAX],
             true,
         );
         // 2 * 2 = 4
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![Word::from(2), Word::from(2), Word::from(4)],
+            [Word::from(2), Word::from(2), Word::from(4)],
             true,
         );
         // 22222 * 500 = 11111000
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![Word::from(22222), Word::from(500), Word::from(11111000)],
+            [Word::from(22222), Word::from(500), Word::from(11111000)],
             true,
         );
         // low_max * 2 = low_max << 1
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(2), WORD_LOW_MAX << 1],
+            [WORD_LOW_MAX, Word::from(2), WORD_LOW_MAX << 1],
             true,
         );
     }
@@ -190,13 +190,13 @@ mod tests {
     fn test_mulwordu64_unexpect() {
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![Word::MAX, Word::from(1), Word::from(1)],
+            [Word::MAX, Word::from(1), Word::from(1)],
             false,
         );
         // high_max * 2 = overflow
         try_test!(
             MulWordByU64TestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(2), WORD_HIGH_MAX << 1],
+            [WORD_HIGH_MAX, Word::from(2), WORD_HIGH_MAX << 1],
             false,
         );
     }

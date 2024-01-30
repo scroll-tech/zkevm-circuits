@@ -66,7 +66,7 @@ impl Default for MockBlock {
             size: Word::zero(),
             mix_hash: Hash::zero(),
             nonce: H64::zero(),
-            chain_id: *MOCK_CHAIN_ID,
+            chain_id: MOCK_CHAIN_ID,
         }
     }
 }

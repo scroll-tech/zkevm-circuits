@@ -40,9 +40,9 @@ impl Opcode for Blockhash {
         } else {
             0.into()
         };
-        state.stack_push(&mut exec_step, block_hash)?;
         #[cfg(feature = "enable-stack")]
         assert_eq!(block_hash, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, block_hash)?;
 
         Ok(vec![exec_step])
     }

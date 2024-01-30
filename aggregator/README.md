@@ -133,19 +133,19 @@ This is done via comparing the `data_rlc` of `chunk_{i-1}` and ` chunk_{i}`.
 
 Our keccak table uses $2^{19}$ rows. Each keccak round takes `300` rows. When the number of round is less than $2^{19}/300$, the cell manager will fill in the rest of the rows with dummy hashes. 
 
-The only hash that uses dynamic number of rounds is the last hash. 
+The only hash that uses a dynamic number of rounds is the last hash. 
 Suppose we target for `MAX_AGG_SNARK = 10`. Then, the last hash function will take no more than `32 * 10 /136 = 3` rounds. 
 
 We also know in the circuit if a chunk is an empty one or not. This is given by a flag `is_padding`. 
 
 For the input of the final data hash
-- we extract `32 * MAX_AGG_SNARK` number of cells (__static__ here) from the last hash. We then compute the RLC of those `32 * MAX_AGG_SNARK` when the corresponding `is_padding` is not set. We constrain this RLC matches the `data_rlc` from the keccak table.
+- we extract `32 * MAX_AGG_SNARK` number of cells (__static__ here) from the last hash. We then compute the RLC of those `32 * MAX_AGG_SNARK` when the corresponding `is_padding` is not set. We constrain this RLC match the `data_rlc` from the keccak table.
 
 For the output of the final data hash
-- we extract all three hash digest cells from last 3 rounds. We then constraint that the actual data hash matches one of the three hash digest cells with proper flags defined as follows.
-    - if the num_of_valid_snarks <= 4, which only needs 1 keccak-f round. Therefore the batch's data hash (input, len, data_rlc, output_rlc) are in the first 300 keccak rows;
-    - else if the num_of_valid_snarks <= 8, which needs 2 keccak-f rounds. Therefore the batch's data hash (input, len, data_rlc, output_rlc) are in the 2nd 300 keccak rows;
-    - else the num_of_valid_snarks <= 12, which needs 3 keccak-f rounds. Therefore the batch's data hash (input, len, data_rlc, output_rlc) are in the 3rd 300 keccak rows;
+- we extract all three hash digest cells from the last 3 rounds. We then constraint that the actual data hash matches one of the three hash digest cells with proper flags defined as follows.
+    - if the num_of_valid_snarks <= 4, which only needs 1 keccak-f round. Therefore the batch's data hash (input, len, data_rlc, output_rlc) is in the first 300 keccak rows;
+    - else if the num_of_valid_snarks <= 8, which needs 2 keccak-f rounds. Therefore the batch's data hash (input, len, data_rlc, output_rlc) is in the 2nd 300 keccak rows;
+    - else the num_of_valid_snarks <= 12, which needs 3 keccak-f rounds. Therefore the batch's data hash (input, len, data_rlc, output_rlc) is in the 3rd 300 keccak rows;
 
 |#valid snarks | offset of data hash | flags|
 |---| ---| ---|

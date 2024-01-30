@@ -31,9 +31,13 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+mod tx_access_list;
+mod tx_eip1559;
 mod tx_l1_fee;
 mod tx_l1_msg;
 
+pub(crate) use tx_access_list::TxAccessListGadget;
+pub(crate) use tx_eip1559::TxEip1559Gadget;
 pub(crate) use tx_l1_fee::TxL1FeeGadget;
 pub(crate) use tx_l1_msg::TxL1MsgGadget;
 
@@ -284,13 +288,17 @@ impl<F: Field> RestoreContextGadget<F> {
                 [U256::zero(); 9]
             } else {
                 field_tags
+                    .iter()
                     .zip([0, 1, 2, 3, 4, 5, 6, 7, 8])
-                    .map(|(field_tag, i)| {
+                    .map(|(&field_tag, i)| {
                         let idx = step.rw_indices[i + rw_offset];
                         let rw = block.rws[idx];
                         debug_assert_eq!(rw.field_tag(), Some(field_tag as u64));
                         rw.call_context_value()
                     })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
             };
 
         for (cell, value) in [
@@ -585,6 +593,11 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
         value: U256,
         gas_fee: U256,
     ) -> Result<(), Error> {
+        assert!(
+            sender_balance_sub_fee >= prev_sender_balance_sub_value,
+            "fee must be subtracted before value"
+        );
+
         if let Either::Left(value_is_zero) = &self.value_is_zero {
             value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
         }
@@ -603,6 +616,12 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
             sender_balance_sub_value,
         )
     }
+
+    /// Return sender balance before subtracting fee and value.
+    pub(crate) fn sender_balance_prev(&self) -> &Word<F> {
+        // Fee is subtracted before value.
+        self.sender_sub_fee.balance_prev()
+    }
 }
 
 impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
@@ -620,6 +639,11 @@ impl<F: Field> TransferFromAssign<F> for TransferFromWithGasFeeGadget<F> {
         } else {
             (0.into(), 0.into())
         };
+        assert!(
+            sender_balance_sub_fee_pair.0 >= sender_balance_sub_value_pair.1,
+            "fee must be subtracted before value"
+        );
+
         self.assign(
             region,
             offset,
@@ -916,6 +940,11 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             from,
             to,
         }
+    }
+
+    /// Return sender balance before subtracting fee and value.
+    pub(crate) fn sender_balance_prev(&self) -> &Word<F> {
+        self.from.sender_balance_prev()
     }
 }
 
@@ -1809,13 +1838,11 @@ pub(crate) fn get_copy_bytes(
 ) -> Vec<u8> {
     // read real copy bytes from padded memory words
     let padded_bytes: Vec<u8> = (0..copy_rwc_inc)
-        .map(|_| {
+        .flat_map(|_| {
             let mut bytes = rws.next().memory_word_pair().0.to_le_bytes();
             bytes.reverse();
             bytes
         })
-        .into_iter()
-        .flatten()
         .collect();
     let values: Vec<u8> = if copy_size == 0 {
         vec![0; 0]

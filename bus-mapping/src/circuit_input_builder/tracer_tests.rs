@@ -10,11 +10,11 @@ use eth_types::{
     address, bytecode,
     evm_types::{stack::Stack, Gas, Memory, OpcodeId},
     geth_types::GethData,
-    word, Bytecode, GethExecError, Hash, ToAddress, ToWord, Word,
+    word, Bytecode, GethExecError, GethExecStep, Hash, ToAddress, ToWord, Word,
 };
-use lazy_static::lazy_static;
 use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
 use pretty_assertions::assert_eq;
+use std::sync::LazyLock;
 
 // Helper struct that contains a CircuitInputBuilder, a particular tx and a
 // particular execution step so that we can easily get a
@@ -71,12 +71,11 @@ impl CircuitInputBuilderTx {
     }
 }
 
-lazy_static! {
-    static ref ADDR_A: Address = Address::zero();
-    static ref WORD_ADDR_A: Word = ADDR_A.to_word();
-    static ref ADDR_B: Address = address!("0x0000000000000000000000000000000000000123");
-    static ref WORD_ADDR_B: Word = ADDR_B.to_word();
-}
+static ADDR_A: LazyLock<Address> = LazyLock::new(Address::zero);
+static WORD_ADDR_A: LazyLock<Word> = LazyLock::new(|| ADDR_A.to_word());
+static ADDR_B: LazyLock<Address> =
+    LazyLock::new(|| address!("0x0000000000000000000000000000000000000123"));
+static WORD_ADDR_B: LazyLock<Word> = LazyLock::new(|| ADDR_B.to_word());
 
 fn mock_internal_create() -> Call {
     Call {
