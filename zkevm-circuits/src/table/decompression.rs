@@ -22,291 +22,12 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
     witness::{
-        FseAuxiliaryTableData, FseSymbol, FseTableData, HuffmanCodesData, TagRomTableRow, ZstdTag,
-        N_BITS_SYMBOL, N_MAX_SYMBOLS,
+        FseAuxiliaryTableData, FseSymbol, HuffmanCodesData, TagRomTableRow, ZstdTag, N_BITS_SYMBOL,
+        N_MAX_SYMBOLS,
     },
 };
 
 use super::{BitwiseOpTable, LookupTable, Pow2Table, RangeTable, U8Table};
-
-/// The finite state entropy table in its default view, i.e. when the ``state`` increments.
-///
-/// | State | Symbol | Baseline | Nb  |
-/// |-------|--------|----------|-----|
-/// | 0x00  | s0     | 0x04     | 1   |
-/// | 0x01  | s0     | 0x06     | 1   |
-/// | 0x02  | s0     | 0x08     | 1   |
-/// | ...   | ...    | ...      | ... |
-/// | 0x1d  | s0     | 0x03     | 0   |
-/// | 0x1e  | s1     | 0x0c     | 2   |
-/// | 0x1f  | s2     | 0x10     | 4   |
-///
-/// An example for FseTable with AL (accuracy log) 5, i.e. 1 << 5 states is demonstrated above. For
-/// more details, refer the [zstd worked example][doclink]
-///
-/// [doclink]: https://nigeltao.github.io/blog/2022/zstandard-part-5-fse.html#state-machine
-#[derive(Clone, Debug)]
-pub struct FseTable<F> {
-    /// Fixed column to denote whether the constraints will be enabled or not.
-    pub q_enabled: Column<Fixed>,
-    /// The byte offset within the data instance where the encoded FSE table begins. This is
-    /// 1-indexed, i.e. byte_offset == 1 at the first byte.
-    pub byte_offset: Column<Advice>,
-    /// Helper gadget to know when we are done handling a single canonical Huffman code.
-    pub byte_offset_cmp: ComparatorConfig<F, 8>,
-    /// The size of the FSE table that starts at byte_offset.
-    pub table_size: Column<Advice>,
-    /// Incremental index for this specific FSE table.
-    pub idx: Column<Advice>,
-    /// Incremental state that starts at 0x00 and increments by 1 until it reaches table_size - 1
-    /// at the final row.
-    pub state: Column<Advice>,
-    /// Denotes the weight from the canonical Huffman code representation of the Huffman code. This
-    /// is also the symbol emitted from the FSE table at this row's state.
-    pub symbol: Column<Advice>,
-    /// Denotes the baseline field.
-    pub baseline: Column<Advice>,
-    /// The number of bits to be read from bitstream at this state.
-    pub nb: Column<Advice>,
-}
-
-impl<F: Field> FseTable<F> {
-    /// Construct the FSE table with its columns constrained.
-    pub fn construct(
-        meta: &mut ConstraintSystem<F>,
-        aux_table: FseAuxiliaryTable<F>,
-        u8_table: U8Table,
-    ) -> Self {
-        let q_enabled = meta.fixed_column();
-        let byte_offset = meta.advice_column();
-        let table = Self {
-            q_enabled,
-            byte_offset,
-            byte_offset_cmp: ComparatorChip::configure(
-                meta,
-                |meta| meta.query_fixed(q_enabled, Rotation::cur()),
-                |meta| meta.query_advice(byte_offset, Rotation::cur()),
-                |meta| meta.query_advice(byte_offset, Rotation::next()),
-                u8_table.into(),
-            ),
-            table_size: meta.advice_column(),
-            idx: meta.advice_column(),
-            state: meta.advice_column(),
-            symbol: meta.advice_column(),
-            baseline: meta.advice_column(),
-            nb: meta.advice_column(),
-        };
-
-        // Constraints common to all rows.
-        meta.create_gate("FseTable: all rows", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            let (gt, eq) = table.byte_offset_cmp.expr(meta, None);
-            cb.require_equal("byte offset is increasing", gt + eq, 1.expr());
-
-            cb.gate(meta.query_fixed(table.q_enabled, Rotation::cur()))
-        });
-
-        // Constraints while we are in the same instance of FseTable.
-        meta.create_gate("FseTable: while traversing the same table", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            // Table size remains unchanged.
-            cb.require_equal(
-                "while byte_offset' == byte_offset: table_size remain unchanged",
-                meta.query_advice(table.table_size, Rotation::next()),
-                meta.query_advice(table.table_size, Rotation::cur()),
-            );
-
-            // Index is incremental.
-            cb.require_equal(
-                "idx' == idx + 1",
-                meta.query_advice(table.idx, Rotation::next()),
-                meta.query_advice(table.idx, Rotation::cur()) + 1.expr(),
-            );
-
-            // State is incremental.
-            cb.require_equal(
-                "state' == state + 1",
-                meta.query_advice(table.state, Rotation::next()),
-                meta.query_advice(table.state, Rotation::cur()) + 1.expr(),
-            );
-
-            let (_gt, eq) = table.byte_offset_cmp.expr(meta, None);
-            cb.gate(and::expr([
-                meta.query_fixed(table.q_enabled, Rotation::cur()),
-                eq,
-            ]))
-        });
-
-        // Constraints for last row of an FSE table.
-        meta.create_gate("FseTable: last row of the table", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            // Constraint for idx == table_size.
-            cb.require_equal(
-                "idx == table_size",
-                meta.query_advice(table.idx, Rotation::cur()),
-                meta.query_advice(table.table_size, Rotation::cur()),
-            );
-
-            // Constraint for state == table_size - 1.
-            cb.require_equal(
-                "state == table_size - 1",
-                meta.query_advice(table.state, Rotation::cur()) + 1.expr(),
-                meta.query_advice(table.table_size, Rotation::cur()),
-            );
-
-            let (gt, _eq) = table.byte_offset_cmp.expr(meta, None);
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                gt,
-            ]))
-        });
-
-        // Validate the (state, symbol) tuple against auxiliary table.
-        meta.lookup_any(
-            "FseTable: validate (state, symbol) against auxiliary table",
-            |meta| {
-                let condition = meta.query_fixed(table.q_enabled, Rotation::cur());
-
-                [
-                    meta.query_advice(table.byte_offset, Rotation::cur()),
-                    meta.query_advice(table.table_size, Rotation::cur()),
-                    meta.query_advice(table.state, Rotation::cur()),
-                    meta.query_advice(table.symbol, Rotation::cur()),
-                    meta.query_advice(table.baseline, Rotation::cur()),
-                    meta.query_advice(table.nb, Rotation::cur()),
-                ]
-                .into_iter()
-                .zip(aux_table.table_exprs_state_check(meta))
-                .map(|(input, table)| (input * condition.expr(), table))
-                .collect::<Vec<_>>()
-            },
-        );
-
-        debug_assert!(meta.degree() <= 9);
-
-        table
-    }
-
-    /// Dev mode: load witness to the FSE table.
-    pub fn dev_load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        data: Vec<FseTableData>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "FseTable: dev",
-            |mut region| {
-                let mut offset = 0;
-                for fse_table in data.iter() {
-                    let byte_offset = Value::known(F::from(fse_table.byte_offset));
-                    let table_size = Value::known(F::from(fse_table.table_size));
-                    for row in fse_table.rows.iter() {
-                        for (annotation, column, value) in [
-                            ("byte_offset", self.byte_offset, byte_offset),
-                            ("table_size", self.table_size, table_size),
-                            ("idx", self.idx, Value::known(row.idx.into())),
-                            ("state", self.state, Value::known(F::from(row.state as u64))),
-                            (
-                                "symbol",
-                                self.symbol,
-                                Value::known(F::from(row.symbol as u64)),
-                            ),
-                            (
-                                "baseline",
-                                self.baseline,
-                                Value::known(F::from(row.baseline as u64)),
-                            ),
-                            ("nb", self.nb, Value::known(F::from(row.num_bits as u64))),
-                        ] {
-                            region.assign_advice(
-                                || format!("FseTable(dev): {annotation}"),
-                                column,
-                                offset,
-                                || value,
-                            )?;
-                        }
-
-                        offset += 1;
-                    }
-                }
-
-                let cmp_chip = ComparatorChip::construct(self.byte_offset_cmp.clone());
-                offset = 0;
-
-                // if there is a single table.
-                if data.len() == 1 {
-                    let byte_offset = data[0].byte_offset;
-                    let n_rows = data[0].table_size;
-                    for _ in 0..n_rows - 1 {
-                        cmp_chip.assign(
-                            &mut region,
-                            offset,
-                            F::from(byte_offset),
-                            F::from(byte_offset),
-                        )?;
-                        offset += 1;
-                    }
-                    cmp_chip.assign(&mut region, offset, F::from(byte_offset), F::zero())?;
-                }
-
-                // if there are multiple tables.
-                if data.len() > 1 {
-                    for window in data.windows(2) {
-                        let byte_offset_1 = window[0].byte_offset;
-                        let byte_offset_2 = window[1].byte_offset;
-                        let n_rows = window[0].table_size;
-                        for _ in 0..n_rows - 1 {
-                            cmp_chip.assign(
-                                &mut region,
-                                offset,
-                                F::from(byte_offset_1),
-                                F::from(byte_offset_1),
-                            )?;
-                            offset += 1;
-                        }
-                        cmp_chip.assign(
-                            &mut region,
-                            offset,
-                            F::from(byte_offset_1),
-                            F::from(byte_offset_2),
-                        )?;
-                        offset += 1;
-                    }
-                    // handle the last table.
-                    if let Some(last_table) = data.last() {
-                        let byte_offset = last_table.byte_offset;
-                        let n_rows = last_table.table_size;
-                        for _ in 0..n_rows - 1 {
-                            cmp_chip.assign(
-                                &mut region,
-                                offset,
-                                F::from(byte_offset),
-                                F::from(byte_offset),
-                            )?;
-                            offset += 1;
-                        }
-                        cmp_chip.assign(&mut region, offset, F::from(byte_offset), F::zero())?;
-                    }
-                }
-
-                Ok(())
-            },
-        )
-    }
-}
-
-impl<F: Field> LookupTable<F> for FseTable<F> {
-    fn columns(&self) -> Vec<Column<Any>> {
-        vec![self.byte_offset.into(), self.table_size.into()]
-    }
-
-    fn annotations(&self) -> Vec<String> {
-        vec![String::from("byte_offset"), String::from("table_size")]
-    }
-}
 
 /// An auxiliary table used to ensure that the FSE table was reconstructed appropriately. Contrary
 /// to the FseTable where the state is incremental, in the Auxiliary table we club together rows by
@@ -338,7 +59,7 @@ impl<F: Field> LookupTable<F> for FseTable<F> {
 ///
 /// [doclink]: https://nigeltao.github.io/blog/2022/zstandard-part-5-fse.html#fse-reconstruction
 #[derive(Clone, Debug)]
-pub struct FseAuxiliaryTable<F> {
+pub struct FseTable<F> {
     /// Fixed column to denote whether the constraints will be enabled or not.
     pub q_enabled: Column<Fixed>,
     /// The byte offset within the data instance where the encoded FSE table begins. This is
@@ -388,7 +109,7 @@ pub struct FseAuxiliaryTable<F> {
     pub baseline_mark: Column<Advice>,
 }
 
-impl<F: Field> FseAuxiliaryTable<F> {
+impl<F: Field> FseTable<F> {
     /// Construct the auxiliary table for FSE codes.
     pub fn construct(
         meta: &mut ConstraintSystem<F>,
@@ -795,7 +516,7 @@ impl<F: Field> FseAuxiliaryTable<F> {
     }
 }
 
-impl<F: Field> FseAuxiliaryTable<F> {
+impl<F: Field> FseTable<F> {
     /// Lookup table expressions for (state, symbol) tuple check.
     pub fn table_exprs_state_check(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
@@ -827,6 +548,8 @@ pub struct HuffmanCodesTable<F> {
     pub q_enabled: Column<Fixed>,
     /// Fixed column to mark the first row in the table.
     pub q_first: Column<Fixed>,
+    /// Set when this is the start of a new huffman code.
+    pub is_start: Column<Advice>,
     /// The byte offset within the data instance where the encoded FSE table begins. This is
     /// 1-indexed, i.e. byte_offset == 1 at the first byte.
     pub byte_offset: Column<Advice>,
@@ -878,6 +601,7 @@ impl<F: Field> HuffmanCodesTable<F> {
                 |meta| meta.query_advice(byte_offset, Rotation::next()),
                 u8_table.into(),
             ),
+            is_start: meta.advice_column(),
             symbol: meta.advice_column(),
             weight,
             weight_bits: BinaryNumberChip::configure(meta, q_enabled, Some(weight.into())),
@@ -889,6 +613,8 @@ impl<F: Field> HuffmanCodesTable<F> {
             last_bit_values: array_init(|_| meta.advice_column()),
             first_lbvs: array_init(|_| meta.advice_column()),
         };
+
+        // TODO: constrain is_start
 
         // All rows
         meta.create_gate("HuffmanCodesTable: all rows", |meta| {
@@ -1018,8 +744,8 @@ impl<F: Field> HuffmanCodesTable<F> {
 
                 // For all rows (except the first row of a canonical Huffman code representation, we
                 // want to ensure the last_bit_values was assigned correctly.
-                let (_gt, is_not_first) = table.byte_offset_cmp.expr(meta, Some(Rotation::prev()));
-                cb.condition(is_not_first, |cb| {
+                let is_start = meta.query_advice(table.is_start, Rotation::cur());
+                cb.condition(not::expr(is_start.expr()), |cb| {
                     for (symbol, &last_bit_value) in
                         FseSymbol::iter().zip(table.last_bit_values.iter())
                     {
@@ -1087,7 +813,14 @@ impl<F: Field> HuffmanCodesTable<F> {
             // i.e. lbv_2 * 2 - lbv_1 is boolean.
             //
             // Note: we only do this check for weight > 0, hence we skip the FseSymbol::S0.
-            for i in FseSymbol::iter().skip(1) {
+            for i in [
+                FseSymbol::S1,
+                FseSymbol::S2,
+                FseSymbol::S3,
+                FseSymbol::S4,
+                FseSymbol::S5,
+                FseSymbol::S6,
+            ] {
                 let i = i as usize;
                 let lbv_1 = meta.query_advice(table.first_lbvs[i], Rotation::cur());
                 let lbv_2 = meta.query_advice(table.last_bit_values[i + 1], Rotation::cur());
@@ -1132,6 +865,13 @@ impl<F: Field> HuffmanCodesTable<F> {
         // TODO: add the padding column.
         meta.create_gate("HuffmanCodesTable: new huffman code", |meta| {
             let mut cb = BaseConstraintBuilder::default();
+
+            // Marks the start of a new huffman code.
+            cb.require_equal(
+                "is_start == 1",
+                meta.query_advice(table.is_start, Rotation::next()),
+                1.expr(),
+            );
 
             // Canonical Huffman code starts with the weight of the first symbol, i.e. 0x00.
             cb.require_equal(
