@@ -809,7 +809,7 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
     let addr_d = address!("0x000000000000000000000000000000000000DDDD");
 
     // 4 accounts and 3 txs.
-    TestContext::<4, 1>::new(
+    TestContext::<4, 3>::new(
         Some(vec![Word::zero()]),
         |accs| {
             accs[0].address(addr_a).balance(Word::from(1u64 << 24));
@@ -831,14 +831,14 @@ pub(crate) fn block_invalid_precompile() -> BlockTrace {
                 .from(wallet_a.clone())
                 .to(accs[1].address)
                 .gas(Word::from(2_000_000u64));
-            // txs[1]
-            //     .from(wallet_a.clone())
-            //     .to(accs[2].address)
-            //     .gas(Word::from(2_000_000u64));
-            // txs[2]
-            //     .from(wallet_a.clone())
-            //     .to(accs[3].address)
-            //     .gas(Word::from(2_000_000u64));
+            txs[1]
+                .from(wallet_a.clone())
+                .to(accs[2].address)
+                .gas(Word::from(2_000_000u64));
+            txs[2]
+                .from(wallet_a.clone())
+                .to(accs[3].address)
+                .gas(Word::from(2_000_000u64));
         },
         |block, _tx| block.number(0xcafeu64),
     )
