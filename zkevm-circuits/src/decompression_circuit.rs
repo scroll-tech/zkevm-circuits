@@ -2366,70 +2366,41 @@ impl<F: Field> DecompressionCircuitConfig<F> {
     /// Assign witness to the decompression circuit.
     pub(crate) fn assign(
         &self,
-        _layouter: &mut impl Layouter<F>,
-        _witness_rows: Vec<ZstdWitnessRow<F>>,
-        _challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+        witness_rows: Vec<ZstdWitnessRow<F>>,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        // let dt_rows = inputs
-        //     .iter()
-        //     .flat_map(|input| input.gen_data_table(challenges))
-        //     .collect::<Vec<_>>();
-        // let sm_rows = inputs
-        //     .iter()
-        //     .flat_map(|input| input.gen_sm_witness(challenges))
-        //     .collect::<Vec<_>>();
+        layouter.assign_region(
+            || "Decompression table region",
+            |mut region| {
+                for (i, row) in witness_rows.iter().enumerate() {
+                    region.assign_fixed(
+                        || "q_enable",
+                        self.q_enable,
+                        i,
+                        || Value::known(F::one()),
+                    )?;
 
-        // debug_assert!(sm_rows.len() <= last_row);
+//     region.assign_advice(
+//         || "rlp_table.tx_id",
+//         self.rlp_table.tx_id,
+//         row,
+//         || Value::known(F::from(witness.rlp_table.tx_id)),
+//     )?;
+//     region.assign_advice(
+//         || "rlp_table.format",
+//         self.rlp_table.format,
+//         row,
+//         || Value::known(F::from(witness.rlp_table.format as u64)),
+//     )?;
 
-        // self.rom_table.load(layouter)?;
 
-        // log::debug!("num_sm_rows: {}", sm_rows.len());
-        // log::debug!("num_dt_rows: {}", dt_rows.len());
+                }
 
-        // layouter.assign_region(
-        //     || "RLP data table region",
-        //     |mut region| {
-        //         for (i, dt_row) in dt_rows.iter().enumerate() {
-        //             let dt_row_next = if i == dt_rows.len() - 1 {
-        //                 None
-        //             } else {
-        //                 Some(&dt_rows[i + 1])
-        //             };
-        //             self.assign_dt_row(&mut region, i, dt_row, dt_row_next)?;
-        //         }
-        //         // assign padding rows
-        //         Ok(())
-        //     },
-        // )?;
-        // layouter.assign_region(
-        //     || "RLP sm region",
-        //     |mut region| {
-        //         for (i, sm_row) in sm_rows.iter().enumerate() {
-        //             let sm_row_next = if i == sm_rows.len() - 1 {
-        //                 None
-        //             } else {
-        //                 Some(&sm_rows[i + 1])
-        //             };
-        //             let sm_row_prev = if i == 0 { None } else { Some(&sm_rows[i - 1]) };
-        //             self.assign_sm_row(&mut region, i, sm_row, sm_row_next, sm_row_prev)?;
-        //         }
-        //         for i in sm_rows.len()..last_row {
-        //             self.assign_sm_end_row(&mut region, i)?;
-        //         }
-        //         region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(F::one()))?;
-        //         region.assign_fixed(
-        //             || "q_last",
-        //             self.q_last,
-        //             last_row - 1,
-        //             || Value::known(F::one()),
-        //         )?;
-
-        //         Ok(())
-        //     },
-        // )?;
-
-        // Ok(())
-
+                Ok(())
+            }
+        )?;
+        
         Ok(())
     }
 }
