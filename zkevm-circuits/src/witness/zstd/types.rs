@@ -615,15 +615,22 @@ impl FseAuxiliaryTableData {
 }
 
 #[derive(Clone, Debug)]
+/// Row witness value for decompression circuit
 pub struct ZstdWitnessRow<F> {
+    /// Current decoding state during Zstd decompression
     pub state: ZstdState<F>,
+    /// Data on compressed data
     pub encoded_data: EncodedData<F>,
+    /// Data on decompressed data
     pub decoded_data: DecodedData<F>,
+    /// Huffman code bitstring marker that devides bitstream into symbol segments
     pub huffman_data: HuffmanData,
+    /// Fse decoding state transition data
     pub fse_data: FseTableRow,
 }
 
 impl<F: Field> ZstdWitnessRow<F> {
+    /// Construct the first row of witnesses for decompression circuit
     pub fn init(src_len: usize) -> Self {
         Self {
             state: ZstdState::default(),

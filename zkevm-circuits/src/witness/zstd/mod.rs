@@ -1254,6 +1254,7 @@ fn process_block_zstd_lstream<F: Field>(
     (byte_offset + len, witness_rows, decoded_symbols)
 }
 
+/// Process a slice of bytes into decompression circuit witness rows
 pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>) {
     let mut witness_rows = vec![];
     let mut literals: Vec<u64> = vec![];
