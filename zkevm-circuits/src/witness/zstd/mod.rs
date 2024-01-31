@@ -224,7 +224,7 @@ fn process_block_header<F: Field>(
     };
 
     let tag_value_iter = bh_bytes.iter().scan(Value::known(F::zero()), |acc, &byte| {
-        *acc = *acc * randomness + Value::known(F::from(byte as u64));
+        *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
         Some(*acc)
     });
     let tag_value = tag_value_iter.clone().last().expect("BlockHeader expected");
