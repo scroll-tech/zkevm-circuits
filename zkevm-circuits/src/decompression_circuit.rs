@@ -2380,19 +2380,227 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::one()),
                     )?;
+                    region.assign_fixed(
+                        || "q_first",
+                        self.q_first,
+                        i,
+                        || Value::known(F::from((i == 0) as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "is_padding",
+                        self.is_padding,
+                        i,
+                        || Value::known(F::zero()),
+                    )?;
+                    region.assign_advice(
+                        || "byte_idx",
+                        self.byte_idx,
+                        i,
+                        || Value::known(F::from(row.encoded_data.byte_idx)),
+                    )?;
+                    region.assign_advice(
+                        || "encoded_len",
+                        self.encoded_len,
+                        i,
+                        || Value::known(F::from(row.encoded_data.encoded_len)),
+                    )?;
+                    region.assign_advice(
+                        || "value_byte",
+                        self.value_byte,
+                        i,
+                        || Value::known(F::from(row.encoded_data.value_byte as u64)),
+                    )?;
 
-//     region.assign_advice(
-//         || "rlp_table.tx_id",
-//         self.rlp_table.tx_id,
-//         row,
-//         || Value::known(F::from(witness.rlp_table.tx_id)),
-//     )?;
-//     region.assign_advice(
-//         || "rlp_table.format",
-//         self.rlp_table.format,
-//         row,
-//         || Value::known(F::from(witness.rlp_table.format as u64)),
-//     )?;
+                    // let value_bits = array_init(|_| meta.advice_column());
+                    // let value_rlc = meta.advice_column_in(SecondPhase);
+                    // let decoded_len = meta.advice_column();
+                    // let decoded_len_acc = meta.advice_column();
+                    // let decoded_byte = meta.advice_column();
+                    // let decoded_rlc = meta.advice_column_in(SecondPhase);
+
+
+                    // Tag Gadget
+                    region.assign_advice(
+                        || "tag_gadget.tag",
+                        self.tag_gadget.tag,
+                        i,
+                        || Value::known(F::from(row.state.tag as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.tag_next",
+                        self.tag_gadget.tag_next,
+                        i,
+                        || Value::known(F::from(row.state.tag_next as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.tag_len",
+                        self.tag_gadget.tag_len,
+                        i,
+                        || Value::known(F::from(row.state.tag_len as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.tag_idx",
+                        self.tag_gadget.tag_idx,
+                        i,
+                        || Value::known(F::from(row.state.tag_idx as u64)),
+                    )?;
+
+                    // TagGadget {
+                    //     tag_bits: BinaryNumberChip::configure(meta, q_enable, Some(tag.into())),
+                    //     tag_value: meta.advice_column_in(SecondPhase),
+                    //     tag_value_acc: meta.advice_column_in(SecondPhase),
+                    //     rand_pow_tag_len: meta.advice_column_in(SecondPhase),
+                    //     max_len,
+                    //     is_output: meta.advice_column(),
+                    //     is_reverse: meta.advice_column(),
+                    //     tag_rlc: meta.advice_column_in(SecondPhase),
+                    //     tag_rlc_acc: meta.advice_column_in(SecondPhase),
+                    //     mlen_lt_0x20: LtChip::configure(
+                    //         meta,
+                    //         |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    //         |meta| meta.query_advice(max_len, Rotation::cur()),
+                    //         |_meta| 0x20.expr(),
+                    //         range256.into(),
+                    //     ),
+                    //     is_tag_change: meta.advice_column(),
+                    //     idx_cmp_len: ComparatorChip::configure(
+                    //         meta,
+                    //         |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    //         |meta| meta.query_advice(tag_idx, Rotation::cur()),
+                    //         |meta| meta.query_advice(tag_len, Rotation::cur()),
+                    //         range256.into(),
+                    //     ),
+                    //     len_cmp_max: ComparatorChip::configure(
+                    //         meta,
+                    //         |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    //         |meta| meta.query_advice(tag_len, Rotation::cur()),
+                    //         |meta| meta.query_advice(max_len, Rotation::cur()),
+                    //         range256.into(),
+                    //     ),
+                    //     is_block_header: meta.advice_column(),
+                    //     is_literals_header: meta.advice_column(),
+                    //     is_fse_code: meta.advice_column(),
+                    //     is_huffman_code: meta.advice_column(),
+                    // }
+
+
+                    // Block Gadget
+
+                    // let block_gadget = {
+                    //     let block_idx = meta.advice_column();
+                    //     let block_len = meta.advice_column();
+                    //     BlockGadget {
+                    //         is_block: meta.advice_column(),
+                    //         idx: block_idx,
+                    //         block_len,
+                    //         is_last_block: meta.advice_column(),
+                    //         idx_cmp_len: ComparatorChip::configure(
+                    //             meta,
+                    //             |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    //             |meta| meta.query_advice(block_idx, Rotation::cur()),
+                    //             |meta| meta.query_advice(block_len, Rotation::cur()),
+                    //             range256.into(),
+                    //         ),
+                    //     }
+                    // };
+
+
+                    // Aux Fields
+
+                    // let aux_fields = AuxFields {
+                    //     aux1: meta.advice_column(),
+                    //     aux2: meta.advice_column(),
+                    //     aux3: meta.advice_column(),
+                    //     aux4: meta.advice_column(),
+                    //     aux5: meta.advice_column(),
+                    // };
+
+
+                    // Bitstream Decoder
+
+                    region.assign_advice(
+                        || "bitstream_decoder.bit_index_start",
+                        self.bitstream_decoder.bit_index_start,
+                        i,
+                        || Value::known(F::from(row.huffman_data.k.0 as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "bitstream_decoder.bit_index_end",
+                        self.bitstream_decoder.bit_index_end,
+                        i,
+                        || Value::known(F::from(row.huffman_data.k.1 as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "bitstream_decoder.bit_value",
+                        self.bitstream_decoder.bit_value,
+                        i,
+                        || Value::known(F::from(row.huffman_data.bit_value as u64)),
+                    )?;
+                    // compression_debug
+                    // region.assign_advice(
+                    //     || "bitstream_decoder.decoded_symbol",
+                    //     self.bitstream_decoder.decoded_symbol,
+                    //     i,
+                    //     || Value::known(F::from(row.huffman_data.bit_value as u64)),
+                    // )?;
+
+                    // let bitstream_decoder = {
+                    //     BitstreamDecoder {
+                    //         bit_index_start: meta.advice_column(),
+                    //         bit_index_end,
+                    //         bitstream_contained: LtChip::configure(
+                    //             meta,
+                    //             |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    //             |meta| meta.query_advice(bit_index_end, Rotation::cur()),
+                    //             |_| 8.expr(),
+                    //             range256.into(),
+                    //         ),
+                    //         bit_value: meta.advice_column(),
+                    //         decoded_symbol: meta.advice_column(),
+                    //     }
+                    // };
+
+                    
+                    // FSE Gadget
+
+                    // region.assign_advice(
+                    //     || "fse_gadget.is_emit",
+                    //     self.fse_gadget.is_emit,
+                    //     i,
+                    //     || Value::known(F::from(is_emit as u64)),
+                    // )?;
+                    region.assign_advice(
+                        || "fse_gadget.num_emitted",
+                        self.fse_gadget.num_emitted,
+                        i,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_advice(
+                        || "fse_gadget.state",
+                        self.fse_gadget.state,
+                        i,
+                        || Value::known(F::from(row.fse_data.state as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "fse_gadget.baseline",
+                        self.fse_gadget.baseline,
+                        i,
+                        || Value::known(F::from(row.fse_data.baseline as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "fse_gadget.symbol",
+                        self.fse_gadget.symbol,
+                        i,
+                        || Value::known(F::from(row.fse_data.symbol as u64)),
+                    )?;
+
+                    // let fse_gadget = FseGadget {
+                    //     is_emit: meta.advice_column(),
+                    //     num_emitted: meta.advice_column(),
+                    //     state: meta.advice_column(),
+                    //     baseline: meta.advice_column(),
+                    //     symbol: meta.advice_column(),
+                    // };
 
 
                 }
