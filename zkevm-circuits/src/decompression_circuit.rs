@@ -695,7 +695,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     );
                 }
 
-                // compression_debug
                 // tag_idx incremental check.
                 let byte_idx_curr = meta.query_advice(byte_idx, Rotation::cur());
                 let byte_idx_prev = meta.query_advice(byte_idx, Rotation::prev());
@@ -847,24 +846,22 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: first row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
+            cb.require_equal(
+                "byte_idx == 1",
+                meta.query_advice(byte_idx, Rotation::cur()),
+                1.expr(),
+            );
+            cb.require_equal(
+                "tag == FrameHeaderDescriptor",
+                meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                ZstdTag::FrameHeaderDescriptor.expr(),
+            );
+
             // compression_debug
-            // cb.require_equal(
-            //     "byte_idx == 1",
-            //     meta.query_advice(byte_idx, Rotation::cur()),
-            //     1.expr(),
-            // );
-
-            // cb.require_equal(
-            //     "tag == FrameHeaderDescriptor",
-            //     meta.query_advice(tag_gadget.tag, Rotation::cur()),
-            //     ZstdTag::FrameHeaderDescriptor.expr(),
-            // );
-
             // cb.require_zero(
             //     "value_rlc starts at 0",
             //     meta.query_advice(value_rlc, Rotation::cur()),
             // );
-
             // cb.require_zero(
             //     "decoded_rlc initialises at 0",
             //     meta.query_advice(decoded_rlc, Rotation::cur()),
@@ -873,9 +870,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //     "decoded_len_acc initialises at 0",
             //     meta.query_advice(decoded_len_acc, Rotation::cur()),
             // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
