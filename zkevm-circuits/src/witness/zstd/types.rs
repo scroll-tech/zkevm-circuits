@@ -290,6 +290,7 @@ pub struct ZstdState<F> {
     pub tag_idx: u64,
     pub tag_value: Value<F>,
     pub tag_value_acc: Value<F>,
+    pub is_tag_change: bool,
     // Unlike tag_value, tag_rlc only uses challenge as multiplier
     pub tag_rlc: Value<F>,
     pub tag_rlc_acc: Value<F>,
@@ -304,6 +305,7 @@ impl<F: Field> Default for ZstdState<F> {
             tag_idx: 0,
             tag_value: Value::known(F::zero()),
             tag_value_acc: Value::known(F::zero()),
+            is_tag_change: false,
             tag_rlc: Value::known(F::zero()),
             tag_rlc_acc: Value::known(F::zero()),
         }

@@ -522,9 +522,10 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 cb.require_boolean("every value bit is boolean", bit.expr());
             }
 
+            let is_new_byte = meta.query_advice(byte_idx, Rotation::next())
+                - meta.query_advice(byte_idx, Rotation::cur());
+            
             // compression_debug
-            // let is_new_byte = meta.query_advice(byte_idx, Rotation::next())
-            //     - meta.query_advice(byte_idx, Rotation::cur());
             // cb.require_boolean(
             //     "byte_idx' == byte_idx or byte_idx' == byte_idx + 1",
             //     is_new_byte.expr(),
@@ -560,9 +561,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //         1.expr(),
             //     );
             // });
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -2602,7 +2600,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
 
 
-                    // let value_bits = array_init(|_| meta.advice_column());
+
                     // let value_rlc = meta.advice_column_in(SecondPhase);
                     // let decoded_len = meta.advice_column();
                     // let decoded_len_acc = meta.advice_column();
@@ -2640,6 +2638,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         self.tag_gadget.is_reverse,
                         i,
                         || Value::known(F::from(row.encoded_data.reverse as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.is_tag_change",
+                        self.tag_gadget.is_tag_change,
+                        i,
+                        || Value::known(F::from(row.state.is_tag_change as u64)),
                     )?;
 
                     let tag_bits = BinaryNumberChip::construct(self.tag_gadget.tag_bits);
