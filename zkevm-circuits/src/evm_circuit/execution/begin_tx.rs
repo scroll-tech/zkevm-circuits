@@ -1622,6 +1622,27 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    /// from failed testtool case
+    #[test]
+    fn begin_tx_precompile_fail_modexp() {
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(address!("0x0000000000000000000000000000000000000005"))
+                    .input(Bytes::from_str("0x00000000008000000000000000000000000000000000000000000000000000000000000400000000000000000000000a").unwrap());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
     /// testool case EmptyTransaction3_d0_g0_v0
     #[test]
     fn begin_tx_create_empty_tx() {

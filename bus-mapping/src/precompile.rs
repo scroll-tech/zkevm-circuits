@@ -287,8 +287,11 @@ impl ModExpAuxData {
     /// Create a new instance of modexp auxiliary data.
     pub fn new(input: &[u8], output: &[u8], return_bytes: &[u8]) -> Self {
         let mut resized_input = input.to_vec();
+        if resized_input.len() < 96 {
+            resized_input.resize(96, 0);
+        }
 
-        let (input_valid, [base_len, exp_len, modulus_len]) = Self::check_input(input);
+        let (input_valid, [base_len, exp_len, modulus_len]) = Self::check_input(&resized_input);
 
         let base_mem_len = if input_valid { base_len.as_usize() } else { 0 };
         let exp_mem_len = if input_valid { exp_len.as_usize() } else { 0 };

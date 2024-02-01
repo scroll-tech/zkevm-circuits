@@ -2371,6 +2371,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         // emissions are the weights for the subsequent decoded values. We verify the weight of a
         // Huffman symbol (i.e. decoded_value) by doing a lookup to the HuffmanCodesTable:
         // - (huffman_tree_byte_offset, huffman_symbol, weight)
+        //
+        // Lastly, on the last row of HuffmanCode tag, we want to make sure we have emitted N - 1
+        // symbols (weights), where N is the total number of huffman symbols that are being encoded
+        // in that Huffman table. As per the canonical Huffman code representation, we only need to
+        // emit N - 1 weights and the weight of the last symbol can be calculated.
 
         // compression_debug
         // meta.lookup_any(
@@ -2414,16 +2419,33 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //             meta.query_advice(fse_gadget.symbol, Rotation::cur()),
         //         ]
         //         .into_iter()
-        //         .zip(huffman_codes_table.table_exprs(meta))
+        //         .zip(huffman_codes_table.table_exprs_canonical_weight(meta))
         //         .map(|(value, table)| (condition.expr() * value, table))
         //         .collect()
         //     },
         // );
 
-        // TODO: on the last row of HuffmanCode tag, we want to make sure we have emitted N - 1
-        // symbols (weights), where N is the total number of huffman symbols that are being encoded
-        // in that Huffman table. As per the canonical Huffman code representation, we only need to
-        // emit N - 1 weights and the weight of the last symbol can be calculated.
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockHuffmanCode (num symbols in huffman code)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
+                ]);
+                [
+                    meta.query_advice(aux_fields.aux3, Rotation::cur()), /* huffman header byte
+                                                                          * offset */
+                    meta.query_advice(fse_gadget.num_emitted, Rotation::cur()), /* num symbols
+                                                                                 * emitted */
+                    1.expr(), // is_last
+                ]
+                .into_iter()
+                .zip(huffman_codes_table.table_exprs_weights_count(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 

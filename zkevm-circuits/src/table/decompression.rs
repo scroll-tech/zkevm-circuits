@@ -1061,20 +1061,24 @@ impl<F: Field> HuffmanCodesTable<F> {
     }
 }
 
-impl<F: Field> LookupTable<F> for HuffmanCodesTable<F> {
-    fn columns(&self) -> Vec<Column<Any>> {
+impl<F: Field> HuffmanCodesTable<F> {
+    /// Lookup the canonical weight assigned to a symbol in the Huffman code with the header at
+    /// the given byte_offset.
+    pub fn table_exprs_canonical_weight(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            self.byte_offset.into(),
-            self.symbol.into(),
-            self.weight.into(),
+            meta.query_advice(self.byte_offset, Rotation::cur()),
+            meta.query_advice(self.symbol, Rotation::cur()),
+            meta.query_advice(self.weight, Rotation::cur()),
         ]
     }
 
-    fn annotations(&self) -> Vec<String> {
+    /// Lookup the number of symbols that are present in the canonical representation of the
+    /// Huffman code.
+    pub fn table_exprs_weights_count(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            String::from("byte_offset"),
-            String::from("symbol"),
-            String::from("weight"),
+            meta.query_advice(self.byte_offset, Rotation::cur()),
+            meta.query_advice(self.symbol, Rotation::cur()),
+            // TODO: add is_last to mark the last row of a specific Huffman code.
         ]
     }
 }
