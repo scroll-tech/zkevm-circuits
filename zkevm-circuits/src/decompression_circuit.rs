@@ -1509,32 +1509,26 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlock Raw bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_equal(
-            //     "value_byte == decoded_byte",
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            //     meta.query_advice(decoded_byte, Rotation::cur()),
-            // );
-
-            // cb.condition(
-            //     meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-            //     |cb| {
-            //         cb.require_equal(
-            //             "tag_len == regen_size",
-            //             meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-            //             meta.query_advice(aux_fields.aux1, Rotation::prev()),
-            //         );
-            //     },
-            // );
-
-            // cb.require_equal(
-            //     "byte_idx increments",
-            //     meta.query_advice(byte_idx, Rotation::cur()),
-            //     meta.query_advice(byte_idx, Rotation::prev()) + 1.expr(),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "value_byte == decoded_byte",
+                meta.query_advice(value_byte, Rotation::cur()),
+                meta.query_advice(decoded_byte, Rotation::cur()),
+            );
+            cb.condition(
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                |cb| {
+                    cb.require_equal(
+                        "tag_len == regen_size",
+                        meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                        meta.query_advice(aux_fields.aux1, Rotation::prev()),
+                    );
+                },
+            );
+            cb.require_equal(
+                "byte_idx increments",
+                meta.query_advice(byte_idx, Rotation::cur()),
+                meta.query_advice(byte_idx, Rotation::prev()) + 1.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1550,37 +1544,31 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlock RLE bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_equal(
-            //     "value_byte == decoded_byte",
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            //     meta.query_advice(decoded_byte, Rotation::cur()),
-            // );
-
-            // let is_tag_change = meta.query_advice(tag_gadget.is_tag_change, Rotation::cur());
-            // cb.condition(is_tag_change.expr(), |cb| {
-            //     cb.require_equal(
-            //         "tag_len == regen_size",
-            //         meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-            //         meta.query_advice(aux_fields.aux1, Rotation::prev()),
-            //     );
-            // });
-
-            // cb.condition(not::expr(is_tag_change), |cb| {
-            //     cb.require_equal(
-            //         "byte_idx remains the same",
-            //         meta.query_advice(byte_idx, Rotation::cur()),
-            //         meta.query_advice(byte_idx, Rotation::prev()),
-            //     );
-            //     cb.require_equal(
-            //         "decoded byte remains the same",
-            //         meta.query_advice(decoded_byte, Rotation::cur()),
-            //         meta.query_advice(decoded_byte, Rotation::prev()),
-            //     );
-            // });
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "value_byte == decoded_byte",
+                meta.query_advice(value_byte, Rotation::cur()),
+                meta.query_advice(decoded_byte, Rotation::cur()),
+            );
+            let is_tag_change = meta.query_advice(tag_gadget.is_tag_change, Rotation::cur());
+            cb.condition(is_tag_change.expr(), |cb| {
+                cb.require_equal(
+                    "tag_len == regen_size",
+                    meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                    meta.query_advice(aux_fields.aux1, Rotation::prev()),
+                );
+            });
+            cb.condition(not::expr(is_tag_change), |cb| {
+                cb.require_equal(
+                    "byte_idx remains the same",
+                    meta.query_advice(byte_idx, Rotation::cur()),
+                    meta.query_advice(byte_idx, Rotation::prev()),
+                );
+                cb.require_equal(
+                    "decoded byte remains the same",
+                    meta.query_advice(decoded_byte, Rotation::cur()),
+                    meta.query_advice(decoded_byte, Rotation::prev()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
