@@ -12,7 +12,7 @@ mod tui;
 #[cfg(test)]
 use tui::draw_rows;
 
-mod util;
+pub mod util;
 use util::{value_bits_le, le_bits_to_value, be_bits_to_value, increment_idx};
 
 /// FrameHeaderDescriptor and FrameContentSize

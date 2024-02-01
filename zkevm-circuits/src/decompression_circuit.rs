@@ -34,7 +34,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_JUMP_TABLE_BYTES, process,
+        Block, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_JUMP_TABLE_BYTES, process, value_bits_le
     },
 };
 
@@ -494,35 +494,35 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             let bits = value_bits.map(|bit| meta.query_advice(bit, Rotation::cur()));
 
-            // compression_debug
             // This is also sufficient to check that value_byte is in 0..=255
-            // cb.require_equal(
-            //     "verify value byte's bits decomposition",
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            //     select::expr(
-            //         meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
-            //         bits[7].expr()
-            //             + bits[6].expr() * 2.expr()
-            //             + bits[5].expr() * 4.expr()
-            //             + bits[4].expr() * 8.expr()
-            //             + bits[3].expr() * 16.expr()
-            //             + bits[2].expr() * 32.expr()
-            //             + bits[1].expr() * 64.expr()
-            //             + bits[0].expr() * 128.expr(),
-            //         bits[0].expr()
-            //             + bits[1].expr() * 2.expr()
-            //             + bits[2].expr() * 4.expr()
-            //             + bits[3].expr() * 8.expr()
-            //             + bits[4].expr() * 16.expr()
-            //             + bits[5].expr() * 32.expr()
-            //             + bits[6].expr() * 64.expr()
-            //             + bits[7].expr() * 128.expr(),
-            //     ),
-            // );
-            // for bit in bits {
-            //     cb.require_boolean("every value bit is boolean", bit.expr());
-            // }
+            cb.require_equal(
+                "verify value byte's bits decomposition",
+                meta.query_advice(value_byte, Rotation::cur()),
+                select::expr(
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
+                    bits[7].expr()
+                        + bits[6].expr() * 2.expr()
+                        + bits[5].expr() * 4.expr()
+                        + bits[4].expr() * 8.expr()
+                        + bits[3].expr() * 16.expr()
+                        + bits[2].expr() * 32.expr()
+                        + bits[1].expr() * 64.expr()
+                        + bits[0].expr() * 128.expr(),
+                    bits[0].expr()
+                        + bits[1].expr() * 2.expr()
+                        + bits[2].expr() * 4.expr()
+                        + bits[3].expr() * 8.expr()
+                        + bits[4].expr() * 16.expr()
+                        + bits[5].expr() * 32.expr()
+                        + bits[6].expr() * 64.expr()
+                        + bits[7].expr() * 128.expr(),
+                ),
+            );
+            for bit in bits {
+                cb.require_boolean("every value bit is boolean", bit.expr());
+            }
 
+            // compression_debug
             // let is_new_byte = meta.query_advice(byte_idx, Rotation::next())
             //     - meta.query_advice(byte_idx, Rotation::cur());
             // cb.require_boolean(
@@ -2572,12 +2572,35 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.encoded_data.encoded_len)),
                     )?;
+
+                    // Byte value and bits decomposition
                     region.assign_advice(
                         || "value_byte",
                         self.value_byte,
                         i,
                         || Value::known(F::from(row.encoded_data.value_byte as u64)),
                     )?;
+                    let bits = value_bits_le(row.encoded_data.value_byte);
+                    let is_reverse = row.encoded_data.reverse;
+                    for (idx, col) in self.value_bits.iter().rev().enumerate() {
+                        region.assign_advice(
+                            || "value_bits",
+                            *col,
+                            i,
+                            || Value::known(
+                                F::from(
+                                    (if is_reverse { bits[idx] } else { bits[N_BITS_PER_BYTE - idx - 1] }) as u64
+                                )
+                            ),
+                        )?;
+                    }
+                    
+
+
+
+
+
+
 
                     // let value_bits = array_init(|_| meta.advice_column());
                     // let value_rlc = meta.advice_column_in(SecondPhase);
@@ -2611,6 +2634,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         self.tag_gadget.tag_idx,
                         i,
                         || Value::known(F::from(row.state.tag_idx as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.is_reverse",
+                        self.tag_gadget.is_reverse,
+                        i,
+                        || Value::known(F::from(row.encoded_data.reverse as u64)),
                     )?;
 
                     let tag_bits = BinaryNumberChip::construct(self.tag_gadget.tag_bits);
@@ -2650,33 +2679,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(is_huffman_code)),
                     )?;
-
-
-// compression_debug
-            // cb.require_equal(
-            //     "degree reduction: is_block_header check",
-            //     is_block_header(meta),
-            //     meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "degree reduction: is_literals_header check",
-            //     is_zb_literals_header(meta),
-            //     meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "degree reduction: is_fse_code check",
-            //     is_zb_fse_code(meta),
-            //     meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "degree reduction: is_huffman_code check",
-            //     is_zb_huffman_code(meta),
-            //     meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-            // );
-
 
 
 
