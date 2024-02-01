@@ -1285,15 +1285,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: RawBlock", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_equal(
-            //     "value byte == decoded byte",
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            //     meta.query_advice(decoded_byte, Rotation::cur()),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "value byte == decoded byte",
+                meta.query_advice(value_byte, Rotation::cur()),
+                meta.query_advice(decoded_byte, Rotation::cur()),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -2598,6 +2594,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
 
                     // Block Gadget
+                    // compression_debug
                     region.assign_advice(
                         || "block_gadget.block_idx",
                         self.block_gadget.idx,
