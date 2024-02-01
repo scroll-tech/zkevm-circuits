@@ -1345,14 +1345,10 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 let block_type_bit0 = meta.query_advice(value_bits[7], Rotation::cur());
                 let block_type_bit1 = meta.query_advice(value_bits[6], Rotation::cur());
-                // compression_debug
-                // cb.require_zero(
-                //     "block type cannot be TREELESS, i.e. block_type == 3 not possible",
-                //     block_type_bit0 * block_type_bit1,
-                // );
-
-                // compression_debug
-                cb.require_zero("dummy constraint", 0.expr());
+                cb.require_zero(
+                    "block type cannot be TREELESS, i.e. block_type == 3 not possible",
+                    block_type_bit0 * block_type_bit1,
+                );
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
@@ -1372,16 +1368,12 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     aux_fields.aux3,
                     aux_fields.aux4,
                 ] {
-                    // compression_debug
-                    // cb.require_equal(
-                    //     "aux fields remain the same",
-                    //     meta.query_advice(col, Rotation::cur()),
-                    //     meta.query_advice(col, Rotation::prev()),
-                    // );
+                    cb.require_equal(
+                        "aux fields remain the same",
+                        meta.query_advice(col, Rotation::cur()),
+                        meta.query_advice(col, Rotation::prev()),
+                    );
                 }
-
-                // compression_debug
-                cb.require_zero("dummy constraint", 0.expr());
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
