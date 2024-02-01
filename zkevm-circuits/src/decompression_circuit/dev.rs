@@ -19,6 +19,7 @@ use crate::{
 
 impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
     type Config = (DecompressionCircuitConfig<F>, Challenges);
+
     type FloorPlanner = SimpleFloorPlanner;
     #[cfg(feature = "circuit-params")]
     type Params = ();
