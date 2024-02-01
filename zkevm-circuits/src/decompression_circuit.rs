@@ -913,16 +913,16 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             // FrameHeaderDescriptor is a single byte.
             // compression_debug
-            // cb.require_equal(
-            //     "tag_idx == 1",
-            //     meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
-            //     1.expr(),
-            // );
-            // cb.require_equal(
-            //     "tag_len == 1",
-            //     meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-            //     1.expr(),
-            // );
+            cb.require_equal(
+                "tag_idx == 1",
+                meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
+                1.expr(),
+            );
+            cb.require_equal(
+                "tag_len == 1",
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                1.expr(),
+            );
             // cb.require_equal(
             //     "tag_value_acc == value_byte",
             //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
@@ -944,32 +944,31 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // | 3          | Reserved_Bit            | 0              |
             // | 2          | Content_Checksum_Flag   | 0              |
             // | 1-0        | Dictionary_ID_Flag      | 0              |
-            // compression_debug
-            // cb.require_equal(
-            //     "FHD: Single_Segment_Flag",
-            //     meta.query_advice(value_bits[5], Rotation::cur()),
-            //     1.expr(),
-            // );
-            // cb.require_zero(
-            //     "FHD: Unused_Bit",
-            //     meta.query_advice(value_bits[4], Rotation::cur()),
-            // );
-            // cb.require_zero(
-            //     "FHD: Reserved_Bit",
-            //     meta.query_advice(value_bits[3], Rotation::cur()),
-            // );
-            // cb.require_zero(
-            //     "FHD: Content_Checksum_Flag",
-            //     meta.query_advice(value_bits[2], Rotation::cur()),
-            // );
-            // cb.require_zero(
-            //     "FHD: Dictionary_ID_Flag",
-            //     meta.query_advice(value_bits[1], Rotation::cur()),
-            // );
-            // cb.require_zero(
-            //     "FHD: Dictionary_ID_Flag",
-            //     meta.query_advice(value_bits[0], Rotation::cur()),
-            // );
+            cb.require_equal(
+                "FHD: Single_Segment_Flag",
+                meta.query_advice(value_bits[5], Rotation::cur()),
+                1.expr(),
+            );
+            cb.require_zero(
+                "FHD: Unused_Bit",
+                meta.query_advice(value_bits[4], Rotation::cur()),
+            );
+            cb.require_zero(
+                "FHD: Reserved_Bit",
+                meta.query_advice(value_bits[3], Rotation::cur()),
+            );
+            cb.require_zero(
+                "FHD: Content_Checksum_Flag",
+                meta.query_advice(value_bits[2], Rotation::cur()),
+            );
+            cb.require_zero(
+                "FHD: Dictionary_ID_Flag",
+                meta.query_advice(value_bits[1], Rotation::cur()),
+            );
+            cb.require_zero(
+                "FHD: Dictionary_ID_Flag",
+                meta.query_advice(value_bits[0], Rotation::cur()),
+            );
 
             // Checks for the next tag, i.e. FrameContentSize.
             let fcs_flag0 = meta.query_advice(value_bits[7], Rotation::cur());
@@ -983,15 +982,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     select::expr(fcs_flag0, 4.expr(), 2.expr()),
                 ),
             );
-            // compression_debug
-            // cb.require_equal(
-            //     "tag_len' == fcs_field_size",
-            //     meta.query_advice(tag_gadget.tag_len, Rotation::next()),
-            //     fcs_field_size,
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "tag_len' == fcs_field_size",
+                meta.query_advice(tag_gadget.tag_len, Rotation::next()),
+                fcs_field_size,
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
