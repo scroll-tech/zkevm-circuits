@@ -1719,11 +1719,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 // processing the Huffman data.
                 for col in [aux_fields.aux1, aux_fields.aux2, aux_fields.aux3, aux_fields.aux4] {
                     // compression_debug
-                    // cb.require_equal(
-                    //     "aux fields aux1, aux2, aux3, aux4 remain the same",
-                    //     meta.query_advice(col, Rotation::cur()),
-                    //     meta.query_advice(col, Rotation::prev()),
-                    // );
+                    cb.require_equal(
+                        "aux fields aux1, aux2, aux3, aux4 remain the same",
+                        meta.query_advice(col, Rotation::cur()),
+                        meta.query_advice(col, Rotation::prev()),
+                    );
                 }
 
                 // The decoded symbol keeps incrementing in the FSE code reconstruction. Since
@@ -2433,15 +2433,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockJumpTable", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_equal(
-            //     "tag_len == 6",
-            //     meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-            //     N_JUMP_TABLE_BYTES.expr(),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "tag_len == 6",
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                N_JUMP_TABLE_BYTES.expr(),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -2458,7 +2454,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlockLstream", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
             cb.require_zero("dummy constraint", 0.expr());
 
             cb.gate(and::expr([
