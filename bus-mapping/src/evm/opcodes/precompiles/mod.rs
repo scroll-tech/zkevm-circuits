@@ -30,8 +30,7 @@ pub fn gen_associated_ops(
     output_bytes: &[u8],
     return_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
-    let mut input_step = state.new_step(&geth_step)?;
-    input_step.stack_size += 1; // since the return value is pushed on the stack
+    let input_step = state.new_step(&geth_step)?;
 
     gen_ops(
         state,
