@@ -576,7 +576,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // Whether the previous tag was processed from back-to-front.
             let was_reverse = meta.query_advice(tag_gadget.is_reverse, Rotation::prev());
 
-            // compression_debug
             // Validations for the end of the previous tag:
             //
             // - tag_idx::prev == tag_len::prev
@@ -584,21 +583,22 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // - tag::cur == tag_next::prev
             // - if was_reverse: tag_rlc_acc::prev == value_byte::prev
             // - if was_not_reverse: tag_rlc_acc::prev == tag_rlc::prev
-            // cb.require_equal(
-            //     "tag_idx::prev == tag_len::prev",
-            //     meta.query_advice(tag_gadget.tag_idx, Rotation::prev()),
-            //     meta.query_advice(tag_gadget.tag_len, Rotation::prev()),
-            // );
+            cb.require_equal(
+                "tag_idx::prev == tag_len::prev",
+                meta.query_advice(tag_gadget.tag_idx, Rotation::prev()),
+                meta.query_advice(tag_gadget.tag_len, Rotation::prev()),
+            );
+            // compression_debug
             // cb.require_equal(
             //     "tag_value::prev == tag_value_acc::prev",
             //     meta.query_advice(tag_gadget.tag_value, Rotation::prev()),
             //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::prev()),
             // );
-            // cb.require_equal(
-            //     "tag == tag_next::prev",
-            //     meta.query_advice(tag_gadget.tag, Rotation::cur()),
-            //     meta.query_advice(tag_gadget.tag_next, Rotation::prev()),
-            // );
+            cb.require_equal(
+                "tag == tag_next::prev",
+                meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                meta.query_advice(tag_gadget.tag_next, Rotation::prev()),
+            );
             // cb.condition(was_reverse.expr(), |cb| {
             //     cb.require_equal(
             //         "tag_rlc_acc on the last row for tag processed back-to-front",
@@ -626,11 +626,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // - value_rlc == value_rlc::prev * rand_pow_tag_len::prev + tag_rlc::prev
             // - if is_reverse: tag_rlc_acc == tag_rlc on the first row
             // - if is_not_reverse: tag_rlc_acc == value_byte
-            // cb.require_equal(
-            //     "tag_idx == 1",
-            //     meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
-            //     1.expr(),
-            // );
+            cb.require_equal(
+                "tag_idx == 1",
+                meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
+                1.expr(),
+            );
             // let (lt, eq) = tag_gadget.len_cmp_max.expr(meta, None);
             // cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
             // cb.require_equal(
@@ -665,7 +665,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                // not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                // compression_debug
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
                 meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
             ]))
         });
@@ -680,16 +682,17 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     tag_gadget.tag,
                     tag_gadget.tag_len,
                     tag_gadget.tag_value,
-                    tag_gadget.rand_pow_tag_len,
-                    tag_gadget.tag_rlc,
-                    value_rlc,
+                    // compression_debug
+                    // tag_gadget.rand_pow_tag_len,
+                    // tag_gadget.tag_rlc,
+                    // value_rlc,
                 ] {
                     // compression_debug
-                    // cb.require_equal(
-                    //     "column remains the same",
-                    //     meta.query_advice(col, Rotation::cur()),
-                    //     meta.query_advice(col, Rotation::prev()),
-                    // );
+                    cb.require_equal(
+                        "column remains the same",
+                        meta.query_advice(col, Rotation::cur()),
+                        meta.query_advice(col, Rotation::prev()),
+                    );
                 }
 
                 // compression_debug
@@ -697,11 +700,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 let byte_idx_curr = meta.query_advice(byte_idx, Rotation::cur());
                 let byte_idx_prev = meta.query_advice(byte_idx, Rotation::prev());
                 let is_new_byte = byte_idx_curr - byte_idx_prev;
-                // cb.require_equal(
-                //     "tag_idx increments if byte_idx increments",
-                //     meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
-                //     meta.query_advice(tag_gadget.tag_idx, Rotation::prev()) + is_new_byte.expr(),
-                // );
+                cb.require_equal(
+                    "tag_idx increments if byte_idx increments",
+                    meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_idx, Rotation::prev()) + is_new_byte.expr(),
+                );
 
                 // compression_debug
                 // tag_value_acc calculation.
@@ -2644,6 +2647,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         self.tag_gadget.is_tag_change,
                         i,
                         || Value::known(F::from(row.state.is_tag_change as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.tag_value",
+                        self.tag_gadget.tag_value,
+                        i,
+                        || row.state.tag_value,
                     )?;
 
                     let tag_bits = BinaryNumberChip::construct(self.tag_gadget.tag_bits);
