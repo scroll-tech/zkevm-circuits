@@ -1041,12 +1041,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_equal(
-            //     "tag_len == 3",
-            //     meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-            //     N_BLOCK_HEADER_BYTES.expr(),
-            // );
+            cb.require_equal(
+                "tag_len == 3",
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                N_BLOCK_HEADER_BYTES.expr(),
+            );
 
             // The lowest bit (as per little-endian representation) is whether the block is the
             // last block in the frame or not.
@@ -1069,15 +1068,15 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             let block_type_bit1 =
                 meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
             // compression_debug
-            // cb.require_zero(
-            //     "block type cannot be RESERVED, i.e. block_type == 3 not possible",
-            //     block_type_bit0.expr() * block_type_bit1.expr(),
-            // );
-            // cb.require_equal(
-            //     "block_idx == 1",
-            //     meta.query_advice(block_gadget.idx, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-            //     1.expr(),
-            // );
+            cb.require_zero(
+                "block type cannot be RESERVED, i.e. block_type == 3 not possible",
+                block_type_bit0.expr() * block_type_bit1.expr(),
+            );
+            cb.require_equal(
+                "block_idx == 1",
+                meta.query_advice(block_gadget.idx, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                1.expr(),
+            );
 
             // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear with
             // block type 00 or 01, i.e. the block_type_bit1 is 0.
@@ -2589,15 +2588,41 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
 
 
-
-
-
-
                     // let value_rlc = meta.advice_column_in(SecondPhase);
                     // let decoded_len = meta.advice_column();
                     // let decoded_len_acc = meta.advice_column();
                     // let decoded_byte = meta.advice_column();
                     // let decoded_rlc = meta.advice_column_in(SecondPhase);
+
+
+
+
+                    // Block Gadget
+                    region.assign_advice(
+                        || "block_gadget.block_idx",
+                        self.block_gadget.idx,
+                        i,
+                        || Value::known(F::one()),
+                    )?;
+
+                    // let block_gadget = {
+                    //     let block_idx = meta.advice_column();
+                    //     let block_len = meta.advice_column();
+                    //     BlockGadget {
+                    //         is_block: meta.advice_column(),
+                    //         idx: block_idx,
+                    //         block_len,
+                    //         is_last_block: meta.advice_column(),
+                    //         // compression_debug
+                    //         // idx_cmp_len: ComparatorChip::configure(
+                    //         //     meta,
+                    //         //     |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    //         //     |meta| meta.query_advice(block_idx, Rotation::cur()),
+                    //         //     |meta| meta.query_advice(block_len, Rotation::cur()),
+                    //         //     range256.into(),
+                    //         // ),
+                    //     }
+                    // };
 
 
                     // Tag Gadget
