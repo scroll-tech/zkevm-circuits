@@ -449,49 +449,40 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: all rows", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_boolean(
-            //     "is_padding is boolean",
-            //     meta.query_advice(is_padding, Rotation::cur()),
-            // );
-
-            // cb.require_boolean(
-            //     "is_padding transitions from 0 -> 1 only once",
-            //     meta.query_advice(is_padding, Rotation::next())
-            //         - meta.query_advice(is_padding, Rotation::cur()),
-            // );
-
-            // cb.require_boolean(
-            //     "is_last_block is boolean",
-            //     meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "degree reduction: is_block_header check",
-            //     is_block_header(meta),
-            //     meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "degree reduction: is_literals_header check",
-            //     is_zb_literals_header(meta),
-            //     meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "degree reduction: is_fse_code check",
-            //     is_zb_fse_code(meta),
-            //     meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "degree reduction: is_huffman_code check",
-            //     is_zb_huffman_code(meta),
-            //     meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_boolean(
+                "is_padding is boolean",
+                meta.query_advice(is_padding, Rotation::cur()),
+            );
+            // compression_debug TODO: Sound?
+            cb.require_boolean(
+                "is_padding transitions from 0 -> 1 only once",
+                meta.query_advice(is_padding, Rotation::next())
+                    - meta.query_advice(is_padding, Rotation::cur()),
+            );
+            cb.require_boolean(
+                "is_last_block is boolean",
+                meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
+            );
+            cb.require_equal(
+                "degree reduction: is_block_header check",
+                is_block_header(meta),
+                meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
+            );
+            cb.require_equal(
+                "degree reduction: is_literals_header check",
+                is_zb_literals_header(meta),
+                meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
+            );
+            cb.require_equal(
+                "degree reduction: is_fse_code check",
+                is_zb_fse_code(meta),
+                meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+            );
+            cb.require_equal(
+                "degree reduction: is_huffman_code check",
+                is_zb_huffman_code(meta),
+                meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+            );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
@@ -2629,6 +2620,65 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     let idx_cmp_len_chip = ComparatorChip::construct(self.tag_gadget.idx_cmp_len.clone());
                     // idx_cmp_len.assign(&mut region, i, F::from(row.state.tag_len), F::from(row.state.tag_idx))?;
                     idx_cmp_len_chip.assign(&mut region, i, F::one(), F::one())?;
+
+                    let is_block_header = (row.state.tag == ZstdTag::BlockHeader) as u64;
+                    let is_literals_header = (row.state.tag == ZstdTag::ZstdBlockLiteralsHeader) as u64;
+                    let is_fse_code = (row.state.tag == ZstdTag::ZstdBlockFseCode) as u64;
+                    let is_huffman_code = (row.state.tag == ZstdTag::ZstdBlockHuffmanCode) as u64;
+
+                    region.assign_advice(
+                        || "tag_gadget.is_block_header",
+                        self.tag_gadget.is_block_header,
+                        i,
+                        || Value::known(F::from(is_block_header)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.is_literals_header",
+                        self.tag_gadget.is_literals_header,
+                        i,
+                        || Value::known(F::from(is_literals_header)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.is_fse_code",
+                        self.tag_gadget.is_fse_code,
+                        i,
+                        || Value::known(F::from(is_fse_code)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.is_huffman_code",
+                        self.tag_gadget.is_huffman_code,
+                        i,
+                        || Value::known(F::from(is_huffman_code)),
+                    )?;
+
+
+// compression_debug
+            // cb.require_equal(
+            //     "degree reduction: is_block_header check",
+            //     is_block_header(meta),
+            //     meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
+            // );
+
+            // cb.require_equal(
+            //     "degree reduction: is_literals_header check",
+            //     is_zb_literals_header(meta),
+            //     meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
+            // );
+
+            // cb.require_equal(
+            //     "degree reduction: is_fse_code check",
+            //     is_zb_fse_code(meta),
+            //     meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+            // );
+
+            // cb.require_equal(
+            //     "degree reduction: is_huffman_code check",
+            //     is_zb_huffman_code(meta),
+            //     meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+            // );
+
+
+
 
 
                     // TagGadget {

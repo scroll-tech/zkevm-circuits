@@ -159,7 +159,7 @@ impl From<u8> for BlockType {
 }
 
 /// Various tags that we can decode from a zstd encoded data.
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, PartialEq)]
 pub enum ZstdTag {
     /// Null should not occur.
     Null = 0,
