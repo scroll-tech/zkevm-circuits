@@ -1308,27 +1308,23 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: RleBlock", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_equal(
-            //     "value byte == decoded byte",
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            //     meta.query_advice(decoded_byte, Rotation::cur()),
-            // );
+            cb.require_equal(
+                "value byte == decoded byte",
+                meta.query_advice(value_byte, Rotation::cur()),
+                meta.query_advice(decoded_byte, Rotation::cur()),
+            );
 
-            // cb.require_equal(
-            //     "decoded byte remains the same",
-            //     meta.query_advice(decoded_byte, Rotation::cur()),
-            //     meta.query_advice(decoded_byte, Rotation::prev()),
-            // );
+            cb.require_equal(
+                "decoded byte remains the same",
+                meta.query_advice(decoded_byte, Rotation::cur()),
+                meta.query_advice(decoded_byte, Rotation::prev()),
+            );
 
-            // cb.require_equal(
-            //     "byte idx remains the same",
-            //     meta.query_advice(byte_idx, Rotation::cur()),
-            //     meta.query_advice(byte_idx, Rotation::prev()),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "byte idx remains the same",
+                meta.query_advice(byte_idx, Rotation::cur()),
+                meta.query_advice(byte_idx, Rotation::prev()),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
