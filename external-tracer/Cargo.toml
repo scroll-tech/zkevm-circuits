@@ -8,7 +8,8 @@ license.workspace = true
 eth-types = { path = "../eth-types" }
 geth-utils = { path = "../geth-utils" }
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["unbounded_depth"] }
+serde_stacker.workspace = true
 log.workspace = true
 
 [features]

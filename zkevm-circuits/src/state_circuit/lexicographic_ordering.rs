@@ -119,7 +119,7 @@ impl Config {
             limb_difference_inverse,
         };
 
-        lookup.range_check_u16(meta, "limb_difference fits into u16", |meta| {
+        lookup.range_check_u16(meta, "limb fits into u16", |meta| {
             meta.query_advice(limb_difference, Rotation::cur())
         });
 

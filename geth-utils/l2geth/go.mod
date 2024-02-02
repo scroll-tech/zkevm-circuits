@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/imdario/mergo v0.3.16
-	github.com/scroll-tech/go-ethereum v1.10.14-0.20231123003536-35313dc92055
+	github.com/scroll-tech/go-ethereum v1.10.14-0.20240117040348-01dcf0ea2b48
 )
 
 require (
@@ -30,13 +30,13 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/tsdb v0.10.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	github.com/scroll-tech/zktrie v0.6.0 // indirect
+	github.com/scroll-tech/zktrie v0.7.1 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
-	golang.org/x/crypto v0.14.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/crypto v0.18.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 )

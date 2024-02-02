@@ -174,7 +174,7 @@ In the Keccak Circuit, it corresponds to the column $\verb"data_rlc"$.
 #### output_rlc (hash_rlc)
 We are given the Keccak hash output being the $256$-bit word
 $$A[3][0] || A[2][0] || A[1][0] || A[0][0] \ .$$
-We divide each of above $4$ words into byte representation as $A[i][0]=\overline{A[i][0][7], ..., A[i][0][0]}$. This gives $32$ bytes $A[0][0][0..7]$, $A[1][0][0..7]$, $A[2][0][0..7]$, $A[3][0][0..7]$ for $i=0,1,2,3$. Then RLC using Keccak output $\verb"challenge"$ (= the challenge for evm word, i.e., after `FirstPhase`) to obtain $$\verb"ouput_rlc"=A[0][0][0]+A[0][0][1]*\verb"challenge"+...+A[3][0][7] * \verb"challenge"^{31} \ .$$
+We divide each of above $4$ words into byte representation as $A[i][0]=\overline{A[i][0][7], ..., A[i][0][0]}$. This gives $32$ bytes $A[0][0][0..7]$, $A[1][0][0..7]$, $A[2][0][0..7]$, $A[3][0][0..7]$ for $i=0,1,2,3$. Then RLC using Keccak output $\verb"challenge"$ (= the challenge for evm word, i.e., after `FirstPhase`) to obtain $$\verb"output_rlc"=A[0][0][0]+A[0][0][1]*\verb"challenge"+...+A[3][0][7] * \verb"challenge"^{31} \ .$$
 which is the output of Keccak hash's RLC that we use in our zkevm-circuits' Keccak table. In the Keccak Circuit, it corresponds to the column $\verb"hash_rlc"$.
 
 ## The Keccak table

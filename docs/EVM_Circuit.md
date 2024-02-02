@@ -16,13 +16,13 @@ link to the original HackMD file: https://hackmd.io/@dieGzUCgSGmRZFQ7SDxXCA/BJF7
 
 ## Purpose and Design
 
-The [Ethereum Virtual Machine] (EVM) is a state machine that defines the rules of valid state transition in the Ethereum protocol. This means that it specifies a deterministic function under which the next valid EVM state is computed from the current EVM state. The execution part of EVM uses [opcodes] to realize these state transitions, which results in an <i>Exection trace</i>.
+The [Ethereum Virtual Machine] (EVM) is a state machine that defines the rules of valid state transition in the Ethereum protocol. This means that it specifies a deterministic function under which the next valid EVM state is computed from the current EVM state. The execution part of EVM uses [opcodes] to realize these state transitions, which results in an <i>Execution trace</i>.
 
 ![EVMExecutionTrace-Circuit](https://hackmd.io/_uploads/SJyjmfR_3.png)
 
 The execution trace consists of each step of execution defined by the opcode. EVM Circuit aims at constructing a constraint system corresponding to this execution trace, that can be proved by some backend zk-proof system such as Halo2. 
 
-The high-level design idea of EVM Circuit is somewhat reminiscent of the design of EVM itself (such as [go-ethereum]). In go-ethereum, an `Intepreter` loops over all instruction opcodes along the execution trace. At each instruction, the `Intepreter` helps to check relevant context information such as gas, stack, memory etc., and then sends the opcode to a `JumpTable` from which it fetches detailed `operation` that this opcode should do. 
+The high-level design idea of EVM Circuit is somewhat reminiscent of the design of EVM itself (such as [go-ethereum]). In go-ethereum, an `Interpreter` loops over all instruction opcodes along the execution trace. At each instruction, the `Interpreter` helps to check relevant context information such as gas, stack, memory etc., and then sends the opcode to a `JumpTable` from which it fetches detailed `operation` that this opcode should do. 
 
 Analogously, in EVM Circuit, we build <i>execution steps</i> according to the steps in the execution trace, with witnesses for both the opcode and the execution context. For each execution step, a set of constraints is imposed to check context information. For each opcode, a set of constraints is imposed to check the opcode's behavior. Within an execution trace, the same opcode should have the same constraints. We use a selector to "turn on" all steps for the same opcode within a trace and we prove their behavior using our backend proof system. This is possible thanks to how our backend proof system (Halo2) works. The overall proof is obtained by applying this scheme to the list of all opcodes that appear in the execution trace.
 
@@ -334,7 +334,7 @@ Then the constraints are
 $b=\mu_{s}[1]$, $n=\mu_{s}[2]$, 
 $r=\mu_{s}'[0]$;
     - Exceptions: 
-        - 1. stack undeflow: $1022 \leq$ stack\_pointer $\leq 1024$; 
+        - 1. stack underflow: $1022 \leq$ stack\_pointer $\leq 1024$; 
         - 2. out of gas: Remaining gas is not enough.
 
 

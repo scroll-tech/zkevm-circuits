@@ -13,6 +13,7 @@ import (
 	"github.com/scroll-tech/go-ethereum/core/types"
 	"github.com/scroll-tech/go-ethereum/core/vm"
 	"github.com/scroll-tech/go-ethereum/params"
+	"github.com/scroll-tech/go-ethereum/rollup/tracing"
 	"github.com/scroll-tech/go-ethereum/trie"
 )
 
@@ -43,8 +44,10 @@ type Transaction struct {
 	GasTipCap  *hexutil.Big    `json:"gas_tip_cap"`
 	CallData   hexutil.Bytes   `json:"call_data"`
 	AccessList []struct {
-		Address     common.Address `json:"address"`
-		StorageKeys []common.Hash  `json:"storage_keys"`
+		Address common.Address `json:"address"`
+		// Must be `storageKeys`, since `camelCase` is specified in ethers-rs.
+		// <https://github.com/gakonst/ethers-rs/blob/88095ba47eb6a3507f0db1767353b387b27a6e98/ethers-core/src/types/transaction/eip2930.rs#L75>
+		StorageKeys []common.Hash `json:"storageKeys"`
 	} `json:"access_list"`
 	Type string       `json:"tx_type"`
 	V    int64        `json:"v"`
@@ -108,10 +111,14 @@ func transferTxs(txs []Transaction) types.Transactions {
 				}
 				t_txs = append(t_txs, types.NewTx(legacyTx))
 			default:
-				// If gas price is specified directly, the tx is treated as legacy type.
 				// if tx.GasPrice != nil {
-				// 	tx.GasFeeCap = tx.GasPrice
-				// 	tx.GasTipCap = tx.GasPrice
+				// 	// Set GasFeeCap and GasTipCap to GasPrice if not exist.
+				// 	if tx.GasFeeCap == nil {
+				// 		tx.GasFeeCap = tx.GasPrice
+				// 	}
+				// 	if tx.GasTipCap == nil {
+				// 		tx.GasTipCap = tx.GasPrice
+				// 	}
 				// }
 
 				// txAccessList := make(types.AccessList, len(tx.AccessList))
@@ -230,7 +237,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		return nil, err
 	}
 
-	traceEnv := core.CreateTraceEnvHelper(
+	traceEnv := tracing.CreateTraceEnvHelper(
 		&chainConfig,
 		config.LoggerConfig,
 		blockCtx,

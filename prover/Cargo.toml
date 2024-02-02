@@ -33,7 +33,7 @@ rand_xorshift.workspace = true
 serde.workspace = true
 serde_derive = "1.0"
 serde_json = { workspace = true, features = ["unbounded_depth"] }
-serde_stacker = "0.1"
+serde_stacker.workspace = true
 sha2 ="0.10.2"
 
 [features]

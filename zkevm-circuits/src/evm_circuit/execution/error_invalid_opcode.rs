@@ -85,7 +85,7 @@ mod test {
         &[0xf6],
         &[0xfe],
         // Multiple invalid opcodes
-        &[0x5c, 0x5e],
+        &[0x0c, 0x5e],
     ];
 
     #[test]

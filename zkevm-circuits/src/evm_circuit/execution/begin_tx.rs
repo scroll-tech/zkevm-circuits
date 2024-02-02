@@ -6,8 +6,8 @@ use crate::{
         util::{
             and,
             common_gadget::{
-                TransferGadgetInfo, TransferWithGasFeeGadget, TxEip2930Gadget, TxL1FeeGadget,
-                TxL1MsgGadget,
+                TransferGadgetInfo, TransferWithGasFeeGadget, TxAccessListGadget, TxEip1559Gadget,
+                TxL1FeeGadget, TxL1MsgGadget,
             },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -28,6 +28,7 @@ use crate::{
         TxFieldTag as TxContextFieldTag,
     },
 };
+use array_init::array_init;
 use bus_mapping::{
     circuit_input_builder::CopyDataType,
     precompile::{is_precompiled, PrecompileCalls},
@@ -90,16 +91,19 @@ pub(crate) struct BeginTxGadget<F> {
     init_code_rlc: Cell<F>,
     /// RLP gadget for CREATE address.
     create: ContractCreateGadget<F, false>,
-    is_caller_callee_equal: Cell<F>,
+    // Caller, callee, coinbase, precompile addresses (9) and optional
+    // access-list addresses are added to the access list.
+    // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#L1098>
+    is_caller_warm: Cell<F>,
+    is_callee_warm: Cell<F>,
+    is_coinbase_warm: Cell<F>,
+    are_precompile_warm: [Cell<F>; PRECOMPILE_COUNT],
     // EIP-3651 (Warm COINBASE) for Shanghai
     coinbase: Cell<F>,
-    // Caller, callee and a list addresses are added to the access list before
-    // coinbase, and may be duplicate.
-    // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
-    is_coinbase_warm: Cell<F>,
     tx_l1_fee: TxL1FeeGadget<F>,
     tx_l1_msg: TxL1MsgGadget<F>,
-    tx_eip2930: TxEip2930Gadget<F>,
+    tx_access_list: TxAccessListGadget<F>,
+    tx_eip1559: TxEip1559Gadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -135,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        let tx_eip2930 = TxEip2930Gadget::construct(cb, tx_id.expr(), tx_type.expr());
+        let tx_access_list = TxAccessListGadget::construct(cb, tx_id.expr(), tx_type.expr());
         let is_call_data_empty = IsZeroGadget::construct(cb, tx_call_data_length.expr());
 
         let tx_l1_msg = TxL1MsgGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
@@ -244,7 +248,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_call_data_word_length =
             ConstantDivisionGadget::construct(cb, tx_call_data_length.expr() + 31.expr(), 32);
 
-        // TODO1: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
         // TODO2: contrain calling precompile directly
 
@@ -269,7 +272,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     eth_types::evm_types::GasCost::CREATION_TX.expr(),
                     eth_types::evm_types::GasCost::TX.expr(),
                 ) + tx_call_data_gas_cost.expr()
-                    + tx_eip2930.gas_cost()
+                    + tx_access_list.gas_cost()
                     + init_code_gas_cost,
             )
         });
@@ -277,8 +280,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
-        for addr in 1..=PRECOMPILE_COUNT {
-            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), 0.expr(), None);
+        let is_caller_warm = cb.query_bool();
+        let is_callee_warm = cb.query_bool();
+        let is_coinbase_warm = cb.query_bool();
+        let are_precompile_warm = array_init(|_| cb.query_bool());
+
+        for (addr, is_warm) in (1..=PRECOMPILE_COUNT).zip(are_precompile_warm.iter()) {
+            cb.account_access_list_write(tx_id.expr(), addr.expr(), 1.expr(), is_warm.expr(), None);
         } // rwc_delta += PRECOMPILE_COUNT
 
         // Prepare access list of caller and callee
@@ -286,27 +294,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             tx_caller_address.expr(),
             1.expr(),
-            0.expr(),
+            is_caller_warm.expr(),
             None,
         ); // rwc_delta += 1
-        let is_caller_callee_equal = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
             call_callee_address.expr(),
             1.expr(),
-            // No extra constraint being used here.
-            // Correctness will be enforced in build_tx_access_list_account_constraints
-            select::expr(
-                is_precompile.expr(),
-                1.expr(),
-                is_caller_callee_equal.expr(),
-            ),
+            is_callee_warm.expr(),
             None,
         ); // rwc_delta += 1
 
         // Query coinbase address for Shanghai.
         let coinbase = cb.query_cell();
-        let is_coinbase_warm = cb.query_bool();
         cb.block_lookup(
             BlockContextFieldTag::Coinbase.expr(),
             cb.curr.state.block_number.expr(),
@@ -357,6 +357,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_value.clone(),
             tx_fee.clone(),
             &mut reversion_info,
+        );
+
+        // Construct EIP-1559 gadget to check sender balance.
+        let tx_eip1559 = TxEip1559Gadget::construct(
+            cb,
+            tx_id.expr(),
+            tx_type.expr(),
+            tx_gas.expr(),
+            tx_l1_fee.tx_l1_fee_word(),
+            &tx_value,
+            transfer_with_gas_fee.sender_balance_prev(),
         );
 
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
@@ -491,6 +502,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     22.expr()
                         + l1_rw_delta.expr()
                         + transfer_with_gas_fee.rw_delta()
+                        + tx_access_list.rw_delta_expr()
                         + SHANGHAI_RW_DELTA.expr()
                         + PRECOMPILE_COUNT.expr(),
                 ),
@@ -609,6 +621,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         23.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
+                            + tx_access_list.rw_delta_expr()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
@@ -670,6 +683,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         8.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
+                            + tx_access_list.rw_delta_expr()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
@@ -743,6 +757,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         21.expr()
                             + l1_rw_delta.expr()
                             + transfer_with_gas_fee.rw_delta()
+                            + tx_access_list.rw_delta_expr()
                             + SHANGHAI_RW_DELTA.expr()
                             + PRECOMPILE_COUNT.expr(),
                     ),
@@ -799,12 +814,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             init_code_rlc,
             keccak_code_hash,
             create,
-            is_caller_callee_equal,
-            coinbase,
+            is_caller_warm,
+            is_callee_warm,
             is_coinbase_warm,
+            are_precompile_warm,
+            coinbase,
             tx_l1_fee,
             tx_l1_msg,
-            tx_eip2930,
+            tx_access_list,
+            tx_eip1559,
         }
     }
 
@@ -878,6 +896,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             3
         });
 
+        // Add access-list RW offset.
+        rws.offset_add(TxAccessListGadget::<F>::rw_delta_value(tx) as usize);
+
         let rw = rws.next();
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
         debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
@@ -889,7 +910,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Nonce as u64));
         let nonce_rw = rw.account_nonce_pair();
 
-        rws.offset_add(PRECOMPILE_COUNT + 2);
+        let are_precompile_warm: [_; PRECOMPILE_COUNT] =
+            array_init(|_| rws.next().tx_access_list_value_pair().1);
+
+        let is_caller_warm = rws.next().tx_access_list_value_pair().1;
+        let is_callee_warm = rws.next().tx_access_list_value_pair().1;
 
         #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
@@ -1029,11 +1054,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.is_caller_callee_equal.assign(
-            region,
-            offset,
-            Value::known(F::from(caller_address == callee_address)),
-        )?;
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(
@@ -1141,6 +1161,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         )?;
 
+        self.is_caller_warm
+            .assign(region, offset, Value::known(F::from(is_caller_warm)))?;
+        self.is_callee_warm
+            .assign(region, offset, Value::known(F::from(is_callee_warm)))?;
+        self.is_coinbase_warm
+            .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
+        for (cell, val) in self.are_precompile_warm.iter().zip(are_precompile_warm) {
+            cell.assign(region, offset, Value::known(F::from(val)))?;
+        }
+
         self.coinbase.assign(
             region,
             offset,
@@ -1151,8 +1181,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.is_coinbase_warm
-            .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
         let (tx_l1_fee, tx_l2_fee) = if tx.tx_type.is_l1_msg() {
             log::trace!("tx is l1msg and l1 fee is 0");
@@ -1180,7 +1208,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.tx_data_gas_cost,
         )?;
 
-        self.tx_eip2930.assign(region, offset, tx)
+        self.tx_access_list.assign(region, offset, tx)?;
+
+        self.tx_eip1559.assign(
+            region,
+            offset,
+            tx,
+            tx_l1_fee,
+            transfer_assign_result
+                .sender_balance_sub_fee_pair
+                .unwrap()
+                .1,
+        )
     }
 }
 
@@ -1575,6 +1614,27 @@ mod test {
                     .from(accs[0].address)
                     .to(address!("0x0000000000000000000000000000000000000003"))
                     .input(Bytes::from(vec![0x01, 0x02, 0x03]));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    /// from failed testtool case
+    #[test]
+    fn begin_tx_precompile_fail_modexp() {
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(address!("0x0000000000000000000000000000000000000005"))
+                    .input(Bytes::from_str("0x00000000008000000000000000000000000000000000000000000000000000000000000400000000000000000000000a").unwrap());
             },
             |block, _tx| block.number(0xcafeu64),
         )

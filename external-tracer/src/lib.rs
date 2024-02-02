@@ -109,8 +109,10 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
 
     log::trace!("trace: {}", trace_string);
 
-    let trace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
-    Ok(trace)
+    let mut deserializer = serde_json::Deserializer::from_str(&trace_string);
+    deserializer.disable_recursion_limit();
+    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
+    serde::Deserialize::deserialize(deserializer).map_err(Error::SerdeError)
 }
 
 /// Creates a l2-trace for the specified config
@@ -136,7 +138,10 @@ pub fn l2trace(config: &TraceConfig) -> Result<BlockTrace, Error> {
 
     log::trace!("trace: {}", trace_string);
 
-    serde_json::from_str(&trace_string).map_err(Error::SerdeError)
+    let mut deserializer = serde_json::Deserializer::from_str(&trace_string);
+    deserializer.disable_recursion_limit();
+    let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
+    serde::Deserialize::deserialize(deserializer).map_err(Error::SerdeError)
 }
 
 #[cfg(feature = "scroll")]

@@ -47,8 +47,43 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
-        let callee_call = state.parse_call(geth_step)?;
+        let callee_kind = CallKind::try_from(geth_step.op)?;
         let caller_call = state.call()?.clone();
+        // we need those information but we haven't parse callee's call yet
+        let caller_address = match callee_kind {
+            CallKind::Call | CallKind::CallCode | CallKind::StaticCall => caller_call.address,
+            CallKind::DelegateCall => caller_call.caller_address,
+            CallKind::Create | CallKind::Create2 => {
+                unreachable!("CREATE opcode handled in create.rs")
+            }
+        };
+        let (found, sender_account) = state.sdb.get_account(&caller_address);
+        debug_assert!(found);
+        let caller_balance = sender_account.balance;
+        let call_value = match callee_kind {
+            CallKind::Call | CallKind::CallCode => geth_step.stack.nth_last(2)?,
+            CallKind::DelegateCall => caller_call.value,
+            CallKind::StaticCall => Word::zero(),
+            CallKind::Create | CallKind::Create2 => {
+                unreachable!("CREATE opcode handled in create.rs")
+            }
+        };
+        // Precheck is OK when depth is in range and caller balance is sufficient.
+        let is_call_or_callcode = matches!(callee_kind, CallKind::Call | CallKind::CallCode);
+        let is_precheck_ok =
+            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call_value);
+
+        let callee_call = if is_precheck_ok {
+            state.parse_call(geth_step)?
+        } else {
+            // if precheck not ok, the call won't appear in call trace since it never happens
+            // we need to increase the offset and mannually set the is_success
+            state.tx_ctx.call_is_success_offset += 1;
+            let mut call = state.parse_call_partial(geth_step)?;
+            call.is_success = false;
+            call.is_persistent = false;
+            call
+        };
 
         // For both CALLCODE and DELEGATECALL opcodes, `call.address` is caller
         // address which is different from callee_address (code address).
@@ -145,17 +180,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         ] {
             state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
         }
-
-        let (found, sender_account) = state.sdb.get_account(&callee_call.caller_address);
-        debug_assert!(found);
-
-        let caller_balance = sender_account.balance;
-        let is_call_or_callcode =
-            callee_call.kind == CallKind::Call || callee_call.kind == CallKind::CallCode;
-
-        // Precheck is OK when depth is in range and caller balance is sufficient.
-        let is_precheck_ok =
-            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= callee_call.value);
 
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
@@ -469,11 +493,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         callee_gas_left_with_stipend,
                     );
 
-                    let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
-                        state,
-                        &geth_steps[1],
-                        callee_call.clone(),
-                    )?;
+                    let mut oog_step =
+                        ErrorOOGPrecompile::gen_associated_ops(state, &geth_steps[1], callee_call)?;
 
                     oog_step.gas_left = Gas(callee_gas_left_with_stipend);
                     oog_step.gas_cost = GasCost(precompile_call_gas_cost);
@@ -486,7 +507,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     let mut precompile_step = precompile_associated_ops(
                         state,
                         geth_steps[1].clone(),
-                        callee_call.clone(),
+                        callee_call,
                         precompile_call,
                         &input_bytes.unwrap_or_default(),
                         &output_bytes.unwrap_or_default(),

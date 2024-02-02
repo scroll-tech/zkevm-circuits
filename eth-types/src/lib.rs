@@ -702,6 +702,11 @@ pub struct GethExecTrace {
     /// List of accounts' (coinbase etc) status AFTER execution
     /// Only viable for scroll mode
     pub account_after: Vec<crate::l2_types::AccountProofWrapper>,
+    /// prestate trace
+    pub prestate: HashMap<Address, GethPrestateTrace>,
+    /// call trace
+    #[serde(rename = "callTrace")]
+    pub call_trace: GethCallTrace,
 }
 
 fn parse_account_after<'de, D>(d: D) -> Result<Vec<crate::l2_types::AccountProofWrapper>, D::Error>
@@ -735,6 +740,36 @@ pub struct GethPrestateTrace {
     pub code: Option<Bytes>,
     /// storage
     pub storage: Option<HashMap<U256, U256>>,
+}
+
+/// The call trace returned by geth RPC debug_trace* methods.
+/// using callTracer
+#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+pub struct GethCallTrace {
+    #[serde(default)]
+    calls: Vec<GethCallTrace>,
+    error: Option<String>,
+    // from: Address,
+    // gas: U256,
+    // #[serde(rename = "gasUsed")]
+    // gas_used: U256,
+    // input: Bytes,
+    // output: Bytes,
+    // to: Option<Address>,
+    #[serde(rename = "type")]
+    call_type: String,
+    // value: U256,
+}
+
+impl GethCallTrace {
+    /// generate the call_is_success vec
+    pub fn gen_call_is_success(&self, mut call_is_success: Vec<bool>) -> Vec<bool> {
+        call_is_success.push(self.error.is_none());
+        for call in &self.calls {
+            call_is_success = call.gen_call_is_success(call_is_success);
+        }
+        call_is_success
+    }
 }
 
 #[macro_export]
@@ -850,7 +885,13 @@ mod tests {
             "00000000000000000000000000000000000000000000003635c9adc5dea00000"
         ]
       }
-    ]
+    ],
+    "prestate": {},
+    "callTrace": {
+      "calls": [],
+      "error": null,
+      "type": "CALL"
+    }
   }
         "#;
         let trace: GethExecTrace =
@@ -933,6 +974,12 @@ mod tests {
                         ]),
                     }
                 ],
+                prestate: HashMap::new(),
+                call_trace: GethCallTrace {
+                    calls: Vec::new(),
+                    error: None,
+                    call_type: "CALL".to_string(),
+                }
             }
         );
     }

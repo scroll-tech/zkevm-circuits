@@ -215,7 +215,7 @@ impl RlpDecodingTable {
     /// Construct the decoding table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            id: meta.advice_column(),
+            id: meta.advice_column_in(SecondPhase),
             tx_id: meta.advice_column(),
             format: meta.advice_column(),
             depth: meta.advice_column(),

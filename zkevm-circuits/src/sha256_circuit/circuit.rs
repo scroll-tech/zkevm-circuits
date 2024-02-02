@@ -270,12 +270,12 @@ impl CircuitConfig {
         sha256_table: impl SHA256Table,
         spec_challenge: Expression<Fr>,
     ) -> Self {
-        let helper = meta.advice_column(); // index 3
-        let trans_byte = meta.advice_column(); // index 4
+        let copied_data = meta.advice_column();
+        let trans_byte = meta.advice_column();
 
         let bytes_rlc = sha256_table.hashes_rlc();
         let byte_counter = sha256_table.input_len();
-        let copied_data = sha256_table.input_rlc();
+        let helper = sha256_table.input_rlc();
         let s_output = sha256_table.s_enable();
         let s_final_block = sha256_table.is_effect();
 
@@ -290,6 +290,7 @@ impl CircuitConfig {
         let byte_range = meta.lookup_table_column();
         let table16 = Table16Chip::configure(meta);
 
+        meta.enable_equality(helper);
         meta.enable_equality(copied_data);
         meta.enable_equality(bytes_rlc);
         meta.enable_equality(s_final_block);
@@ -465,7 +466,7 @@ impl CircuitConfig {
     ) -> Result<BlockInheritments, Error> {
         // if no padding or the padding is in padding size pos, this block is not final
         let is_final = if let Some(pos) = padding_pos {
-            pos <= 24
+            pos < 56
         } else {
             false
         };
@@ -763,7 +764,7 @@ impl CircuitConfig {
                 input_block.bytes_rlc.copy_advice(
                     || "copy input rlc",
                     &mut region,
-                    self.copied_data,
+                    self.helper,
                     final_row,
                 )?;
                 input_block.byte_counter.copy_advice(
@@ -779,12 +780,14 @@ impl CircuitConfig {
                     final_row,
                 )?;
 
-                region.assign_advice(
-                    || "flush unused row",
-                    self.trans_byte,
-                    final_row,
-                    || Value::known(Fr::zero()),
-                )?;
+                for col in [self.trans_byte, self.copied_data] {
+                    region.assign_advice(
+                        || "flush unused row",
+                        col,
+                        final_row,
+                        || Value::known(Fr::zero()),
+                    )?;
+                }
 
                 region.assign_advice(
                     || "flush unused row",
@@ -1196,13 +1199,21 @@ mod tests {
     }
 
     #[test]
-    fn sha256_padding_continue() {
-        let circuit = MyCircuit(vec![(vec![b'a'; 62], None)]);
-        let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{e:#?}"),
-        };
-        assert_eq!(prover.verify(), Ok(()));
+    fn sha256_padding() {
+        for sz in [32usize, 37, 55, 56, 58, 62, 64] {
+            let circuit = MyCircuit(vec![
+                (vec![0xff; sz], None),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
+                (vec![], Some(DIGEST_NIL)),
+            ]);
+            let prover = match MockProver::<Fr>::run(17, &circuit, vec![]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{e:#?}"),
+            };
+            assert_eq!(prover.verify(), Ok(()));
+        }
     }
 
     #[test]

@@ -1869,10 +1869,14 @@ impl CopyTable {
             let is_pad = is_read_step && thread.addr >= thread.addr_end;
 
             let [value, value_prev] = if is_access_list {
-                let address_pair = copy_event.access_list[step_idx / 2];
+                // Save address, storage_key, storage_key_index and is_warm_prev
+                // to column value_word_rlc, value_word_rlc_prev, value and
+                // value_prev in copy circuit.
+                let access_list = &copy_event.access_list[step_idx / 2];
+
                 [
-                    address_pair.0.to_scalar().unwrap(),
-                    address_pair.1.to_scalar().unwrap(),
+                    F::from(access_list.storage_key_index),
+                    F::from(access_list.is_warm_prev),
                 ]
             } else {
                 [
@@ -1903,6 +1907,18 @@ impl CopyTable {
             } else {
                 thread.word_rlc_prev * challenges.evm_word() + value_prev
             };
+
+            if is_access_list {
+                // Save address, storage_key, storage_key_index and is_warm_prev
+                // to column value_word_rlc, value_word_rlc_prev, value and
+                // value_prev in copy circuit.
+                let access_list = &copy_event.access_list[step_idx / 2];
+
+                thread.word_rlc = Value::known(access_list.address.to_scalar().unwrap());
+                thread.word_rlc_prev = challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&access_list.storage_key.to_le_bytes(), challenge));
+            }
 
             let word_index = (step_idx as u64 / 2) % 32;
 

@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     str::FromStr,
 };
@@ -74,7 +74,7 @@ impl<'a> YamlStateTestBuilder<'a> {
 
             // parse pre (account states before executing the transaction)
             let pre: BTreeMap<Address, Account> = self
-                .parse_accounts(&yaml_test["pre"])?
+                .parse_accounts(&yaml_test["pre"], None)?
                 .into_iter()
                 .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
                 .collect();
@@ -102,12 +102,19 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
-            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"])
-                .unwrap_or_else(|_| U256::zero());
-            let gas_price =
-                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(max_fee_per_gas);
+            let max_priority_fee_per_gas =
+                Self::parse_u256(&yaml_transaction["maxPriorityFeePerGas"]).ok();
+            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"]).ok();
 
-            // TODO handle maxPriorityFeePerGas & maxFeePerGas
+            // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
+            // EIP-1559 transaction.
+            // <https://github.com/ethereum/go-ethereum/blob/1485814f89d8206bb4a1c8e10a4a2893920f683a/core/state_transition.go#L167>
+            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| {
+                max_fee_per_gas
+                    .unwrap()
+                    .min(max_priority_fee_per_gas.unwrap() + env.current_base_fee)
+            });
+
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
@@ -141,7 +148,10 @@ impl<'a> YamlStateTestBuilder<'a> {
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
                 let gas_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"])?;
-                let result = self.parse_accounts(&expect["result"])?;
+
+                // Pass the account addresses before transaction as expected for result.
+                let expected_addresses = pre.keys().collect();
+                let result = self.parse_accounts(&expect["result"], Some(&expected_addresses))?;
 
                 if MainnetFork::in_network_range(&networks)? {
                     expects.push((exception, data_refs, gas_refs, value_refs, result));
@@ -187,6 +197,8 @@ impl<'a> YamlStateTestBuilder<'a> {
                                 secret_key: secret_key.clone(),
                                 to,
                                 gas_limit: *gas_limit,
+                                max_priority_fee_per_gas,
+                                max_fee_per_gas,
                                 gas_price,
                                 nonce,
                                 value: *value,
@@ -209,7 +221,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         Ok(Env {
             current_base_fee: Self::parse_u256(&yaml["currentBaseFee"])
                 .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
-            current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
+            current_coinbase: Self::parse_address(&yaml["currentCoinbase"], None)?,
             current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
             current_number: Self::parse_u64(&yaml["currentNumber"])?,
@@ -219,7 +231,11 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 
     /// parse a vector of address=>(storage,balance,code,nonce) entry
-    fn parse_accounts(&mut self, yaml: &Yaml) -> Result<HashMap<Address, AccountMatch>> {
+    fn parse_accounts(
+        &mut self,
+        yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>,
+    ) -> Result<HashMap<Address, AccountMatch>> {
         let mut accounts = HashMap::new();
         for (address, account) in yaml.as_hash().context("parse_hash")?.iter() {
             let acc_storage = &account["storage"];
@@ -234,7 +250,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 }
             }
 
-            let address = Self::parse_address(address)?;
+            let address = Self::parse_address(address, expected_addresses)?;
             let account = AccountMatch {
                 address,
                 balance: if acc_balance.is_badvalue() {
@@ -288,12 +304,26 @@ impl<'a> YamlStateTestBuilder<'a> {
         tags
     }
     /// returns the element as an address
-    fn parse_address(yaml: &Yaml) -> Result<Address> {
+    fn parse_address(
+        yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>,
+    ) -> Result<Address> {
         if let Some(as_str) = yaml.as_str() {
             parse::parse_address(as_str)
         } else if let Some(as_i64) = yaml.as_i64() {
-            let hex = format!("{as_i64:0>40}");
-            Ok(Address::from_slice(&hex::decode(hex)?))
+            // Try to convert the integer to hex if has expected addresses for
+            // accounts after transaction (result).
+            // e.g. 10 -> 0xa
+            if let Some(expected_addresses) = expected_addresses {
+                let address = Address::from_slice(&hex::decode(format!("{as_i64:040x}"))?);
+                if expected_addresses.contains(&address) {
+                    return Ok(address);
+                }
+            }
+
+            // Format as a hex string directly for accounts before transaction (pre).
+            // e.g. 10 -> 0x10
+            Ok(Address::from_slice(&hex::decode(format!("{as_i64:0>40}"))?))
         } else if let Yaml::Real(as_real) = yaml {
             Ok(Address::from_str(as_real)?)
         } else {
@@ -685,6 +715,8 @@ arith:
             to: Some(ccccc),
             gas_limit: 80000001,
             gas_price: U256::from(10u64),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
             nonce: U256::zero(),
             value: U256::from(2),
             data: Bytes::from(&[1]),
