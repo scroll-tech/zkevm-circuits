@@ -2,6 +2,7 @@ pub use super::block::{Block, BlockContext};
 use crate::{
     circuit_input_builder::{self, BlockHead, CircuitInputBuilder, CircuitsParams},
     error::Error,
+    precompile::is_precompiled,
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{
@@ -143,11 +144,21 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
-        let mut call_trace = execution_result.call_trace.flatten_trace(vec![]);
+        // filter all precompile calls
+        let mut call_trace = execution_result
+            .call_trace
+            .flatten_trace(vec![])
+            .into_iter()
+            .filter(|call| {
+                !call
+                    .to
+                    .map(|ref addr| is_precompiled(addr))
+                    .unwrap_or(false)
+            });
 
-        for step in execution_result.exec_steps.iter().rev() {
+        for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
             let call = if step.op.is_call_or_create() {
-                let call = call_trace.pop();
+                let call = call_trace.next();
                 log::trace!("call_trace pop: {call:?}, current step: {step:?}");
                 call
             } else {
@@ -160,6 +171,16 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     | OpcodeId::CALLCODE
                     | OpcodeId::DELEGATECALL
                     | OpcodeId::STATICCALL => {
+                        if idx + 1 < execution_result.exec_steps.len() {
+                            let next_step = &execution_result.exec_steps[idx + 1];
+                            // the call doesn't have inner steps, it could be:
+                            // - a call to a precompiled contract
+                            // - a call to an empty account
+                            // - a call that !is_precheck_ok
+                            if next_step.depth == step.depth {
+                                continue;
+                            }
+                        }
                         let call = call.unwrap();
                         assert_eq!(call.call_type, step.op, "{call:?}");
                         let code_idx = if block.transactions[er_idx].to.is_none() {
