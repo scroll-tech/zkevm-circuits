@@ -477,10 +477,7 @@ fn copy_circuit_invalid_sha3() {
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
-    assert_error_matches(
-        test_copy_circuit_from_block(block),
-        vec!["rw lookup"],
-    );
+    assert_error_matches(test_copy_circuit_from_block(block), vec!["rw lookup"]);
 }
 
 #[test]
