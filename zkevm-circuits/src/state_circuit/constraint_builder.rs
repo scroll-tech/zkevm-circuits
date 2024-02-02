@@ -222,7 +222,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // The address is aligned.
         let inv_32 = F::from(32).invert().unwrap();
         self.add_lookup(
-            "address % 32 == 0",
+            "limb fits into u16",
             vec![(q.address.limbs[0].clone() * inv_32, q.lookups.u16.clone())],
         );
 

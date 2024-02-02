@@ -425,7 +425,7 @@ fn copy_circuit_invalid_calldatacopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["Memory word lookup", "Tx calldata lookup"],
+        vec!["rw lookup", "rw lookup"],
     );
 }
 
@@ -443,7 +443,7 @@ fn copy_circuit_invalid_codecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["Memory word lookup", "Bytecode lookup"],
+        vec!["rw lookup", "Bytecode lookup"],
     );
 }
 
@@ -461,7 +461,7 @@ fn copy_circuit_invalid_extcodecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["Memory word lookup", "Bytecode lookup"],
+        vec!["rw lookup", "Bytecode lookup"],
     );
 }
 
@@ -479,7 +479,7 @@ fn copy_circuit_invalid_sha3() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["Memory word lookup"],
+        vec!["rw lookup"],
     );
 }
 

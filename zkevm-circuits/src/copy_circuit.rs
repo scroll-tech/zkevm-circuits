@@ -361,7 +361,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         // memory word lookup
-        meta.lookup_any("Memory word lookup", |meta| {
+        meta.lookup_any("rw lookup", |meta| {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_memory, CURRENT)
                 * is_word_end.is_equal_expression.expr();
@@ -433,7 +433,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        meta.lookup_any("Tx calldata lookup", |meta| {
+        meta.lookup_any("rw lookup", |meta| {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_tx_calldata, CURRENT)
                 * meta.query_advice(non_pad_non_mask, CURRENT);
