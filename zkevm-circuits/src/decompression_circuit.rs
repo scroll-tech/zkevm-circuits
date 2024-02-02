@@ -361,19 +361,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 //     range256.into(),
                 // ),
                 is_tag_change: meta.advice_column(),
-                // compression_debug
-                // idx_cmp_len: ComparatorChip::configure(
-                //     meta,
-                //     |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                //     |meta| meta.query_advice(tag_idx, Rotation::cur()),
-                //     |meta| meta.query_advice(tag_len, Rotation::cur()),
-                //     range256.into(),
-                // ),
                 idx_cmp_len: ComparatorChip::configure(
                     meta,
                     |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                    |meta| 1.expr(),
-                    |meta| 1.expr(),
+                    |meta| meta.query_advice(tag_idx, Rotation::cur()),
+                    |meta| meta.query_advice(tag_len, Rotation::cur()),
                     range256.into(),
                 ),
                 // len_cmp_max: ComparatorChip::configure(
@@ -522,39 +514,42 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 cb.require_boolean("every value bit is boolean", bit.expr());
             }
 
-            let is_new_byte = meta.query_advice(byte_idx, Rotation::next())
-                - meta.query_advice(byte_idx, Rotation::cur());
+            let is_new_byte = meta.query_advice(byte_idx, Rotation::cur())
+                - meta.query_advice(byte_idx, Rotation::prev());
             
+            cb.require_boolean(
+                "byte_idx' == byte_idx or byte_idx' == byte_idx + 1",
+                is_new_byte.expr(),
+            );
+
+            cb.require_equal(
+                "encoded length remains the same",
+                meta.query_advice(encoded_len, Rotation::cur()),
+                meta.query_advice(encoded_len, Rotation::prev()),
+            );
+
+            cb.require_equal(
+                "decoded length remains the same",
+                meta.query_advice(decoded_len, Rotation::cur()),
+                meta.query_advice(decoded_len, Rotation::prev()),
+            );
+
+            cb.require_boolean(
+                "is_tag_change is boolean",
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+            );
+
             // compression_debug
-            // cb.require_boolean(
-            //     "byte_idx' == byte_idx or byte_idx' == byte_idx + 1",
-            //     is_new_byte.expr(),
-            // );
-
-            // cb.require_equal(
-            //     "encoded length remains the same",
-            //     meta.query_advice(encoded_len, Rotation::cur()),
-            //     meta.query_advice(encoded_len, Rotation::next()),
-            // );
-
-            // cb.require_equal(
-            //     "decoded length remains the same",
-            //     meta.query_advice(decoded_len, Rotation::cur()),
-            //     meta.query_advice(decoded_len, Rotation::next()),
-            // );
-
-            // cb.require_boolean(
-            //     "is_tag_change is boolean",
-            //     meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-            // );
-
             // compression_debug
             // We also need to validate that ``is_tag_change`` was assigned correctly. Tag changes
             // on the next row iff:
             // - tag_idx == tag_len
             // - byte_idx' == byte_idx + 1
-            // let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, None);
-            // cb.condition(and::expr([tidx_eq_tlen, is_new_byte]), |cb| {
+            // let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, Some(Rotation::prev()));
+            // cb.condition(and::expr([
+            //     tidx_eq_tlen, 
+            //     is_new_byte
+            // ]), |cb| {
             //     cb.require_equal(
             //         "is_tag_change should be set",
             //         meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
@@ -564,7 +559,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
             ]))
         });
 
@@ -1787,6 +1782,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]))
             },
         );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockFseCode (contained bitstream start)",
@@ -1819,6 +1815,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockFseCode (contained bitstream end)",
@@ -1851,6 +1848,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockFseCode (spanned bitstream start)",
@@ -1884,6 +1882,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockFseCode (spanned bitstring end)",
@@ -1918,6 +1917,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockFseCode (symbol count check)",
@@ -2166,6 +2166,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]))
             },
         );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockHuffmanCode (leading 0s and sentinel bit start)",
@@ -2194,6 +2195,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockHuffmanCode (leading 0s and sentinel bit end)",
@@ -2225,6 +2227,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockHuffmanCode (contained bitstream start)",
@@ -2256,6 +2259,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockHuffmanCode (contained bitstream end)",
@@ -2287,6 +2291,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockHuffmanCode (spanned bitstream start)",
@@ -2319,6 +2324,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         .collect()
         //     },
         // );
+
         // compression_debug
         // meta.lookup_any(
         //     "DecompressionCircuit: ZstdBlockHuffmanCode (spanned bitstring end)",
@@ -2665,8 +2671,8 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
                     // compression_debug
                     let idx_cmp_len_chip = ComparatorChip::construct(self.tag_gadget.idx_cmp_len.clone());
-                    // idx_cmp_len.assign(&mut region, i, F::from(row.state.tag_len), F::from(row.state.tag_idx))?;
-                    idx_cmp_len_chip.assign(&mut region, i, F::one(), F::one())?;
+                    idx_cmp_len_chip.assign(&mut region, i, F::from(row.state.tag_idx), F::from(row.state.tag_len))?;
+                    // idx_cmp_len_chip.assign(&mut region, i, F::one(), F::one())?;
 
                     let is_block_header = (row.state.tag == ZstdTag::BlockHeader) as u64;
                     let is_literals_header = (row.state.tag == ZstdTag::ZstdBlockLiteralsHeader) as u64;
@@ -2899,7 +2905,14 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
             let (rows, _decoded_literals) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
             witness_rows.extend_from_slice(&rows);
         }
-        
+
+        // compression_debug
+        for row in witness_rows.clone() {
+            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;",
+                row.state.tag, row.state.tag_next, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol,
+            );
+        }
+
         config.assign(layouter, witness_rows, challenges)
     }
 }
