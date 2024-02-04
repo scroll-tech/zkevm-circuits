@@ -158,6 +158,27 @@ impl From<u8> for BlockType {
     }
 }
 
+/// The type of Lstream.
+#[derive(Clone, Copy, Debug, EnumIter)]
+pub enum LstreamNum {
+    /// Lstream 1.
+    Lstream1 = 0,
+    /// Lstream 2.
+    Lstream2,
+    /// Lstream 3.
+    Lstream3,
+    /// Lstream 4.
+    Lstream4,
+}
+
+impl From<LstreamNum> for usize {
+    fn from(value: LstreamNum) -> Self {
+        value as usize
+    }
+}
+
+impl_expr!(LstreamNum);
+
 /// Various tags that we can decode from a zstd encoded data.
 #[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, Hash)]
 pub enum ZstdTag {
