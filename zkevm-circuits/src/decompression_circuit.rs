@@ -113,9 +113,7 @@ pub struct DecompressionCircuitConfig<F> {
     /// Huffman tree's config.
     huffman_tree_config: HuffmanConfig,
     /// Fields used to decode from bitstream.
-    /// compression_debug
-    bitstream_decoder: BitstreamDecoder,
-    // bitstream_decoder: BitstreamDecoder<F>,
+    bitstream_decoder: BitstreamDecoder<F>,
     /// Fields related to the application of FSE table to bitstream.
     fse_decoder: FseDecoder,
     /// Literal stream tag related configs.
@@ -240,9 +238,7 @@ struct HuffmanConfig {
 /// Fields used while decoding from bitstream while not being byte-aligned, i.e. the bitstring
 /// could span over two bytes.
 #[derive(Clone, Debug)]
-// compression_debug
-// pub struct BitstreamDecoder<F> {
-pub struct BitstreamDecoder {
+pub struct BitstreamDecoder<F> {
     /// The bit-index where the bittsring begins. 0 <= bit_index_start < 8.
     bit_index_start: Column<Advice>,
     /// The bit-index where the bitstring ends. 0 <= bit_index_end < 16.
@@ -250,8 +246,7 @@ pub struct BitstreamDecoder {
     /// Helper gadget to know if the bitstring was contained in a single byte. We compare
     /// bit_index_end with 8 and if bit_index_end < 8 then the bitstring is contained. Otherwise it
     /// spans over two bytes.
-    /// compression_debug
-    // bitstream_contained: LtConfig<F, 1>,
+    bitstream_contained: LtConfig<F, 1>,
     /// The accumulated binary value of the bitstring.
     bit_value: Column<Advice>,
     /// The symbol that this bitstring decodes to. We are using this for decoding using FSE table
@@ -453,14 +448,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             BitstreamDecoder {
                 bit_index_start: meta.advice_column(),
                 bit_index_end,
-                // compression_debug
-                // bitstream_contained: LtChip::configure(
-                //     meta,
-                //     |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                //     |meta| meta.query_advice(bit_index_end, Rotation::cur()),
-                //     |_| 8.expr(),
-                //     range256.into(),
-                // ),
+                bitstream_contained: LtChip::configure(
+                    meta,
+                    |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    |meta| meta.query_advice(bit_index_end, Rotation::cur()),
+                    |_| 8.expr(),
+                    range256.into(),
+                ),
                 bit_value: meta.advice_column(),
                 decoded_symbol: meta.advice_column(),
             }
@@ -1504,45 +1498,45 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         // Is it the case of zstd compressed block, i.e. block type == 0b10. Since we
         //         // already know that block type == 0b11 (TREELESS) will not occur, we can skip the
         //         // check for not::expr(value_bits[7]).
-        //         let is_compressed = meta.query_advice(value_bits[6], Rotation::cur());
+                let is_compressed = meta.query_advice(value_bits[6], Rotation::cur());
 
                 // Is the size format == 0b11.
                 let is_size_format_0b11 =
                     meta.query_advice(literals_header.sf_max, Rotation::cur());
 
-        //         let byte0 = meta.query_advice(value_byte, Rotation::cur());
-        //         let byte1 = select::expr(
-        //             is_compressed.expr(),
-        //             meta.query_advice(value_byte, Rotation(1)),
-        //             select::expr(
-        //                 meta.query_advice(value_bits[5], Rotation::cur()),
-        //                 meta.query_advice(value_byte, Rotation(1)),
-        //                 0.expr(),
-        //             ),
-        //         );
-        //         let byte2 = select::expr(
-        //             is_compressed.expr(),
-        //             meta.query_advice(value_byte, Rotation(2)),
-        //             select::expr(
-        //                 meta.query_advice(value_bits[5], Rotation::cur()),
-        //                 meta.query_advice(value_byte, Rotation(2)),
-        //                 0.expr(),
-        //             ),
-        //         );
-        //         let byte3 = select::expr(
-        //             is_compressed.expr(),
-        //             select::expr(
-        //                 meta.query_advice(value_bits[5], Rotation::cur()),
-        //                 meta.query_advice(value_byte, Rotation(3)),
-        //                 0.expr(),
-        //             ),
-        //             0.expr(),
-        //         );
-        //         let byte4 = select::expr(
-        //             is_compressed * is_size_format_0b11,
-        //             meta.query_advice(value_byte, Rotation(4)),
-        //             0.expr(),
-        //         );
+                let byte0 = meta.query_advice(value_byte, Rotation::cur());
+                let byte1 = select::expr(
+                    is_compressed.expr(),
+                    meta.query_advice(value_byte, Rotation(1)),
+                    select::expr(
+                        meta.query_advice(value_bits[5], Rotation::cur()),
+                        meta.query_advice(value_byte, Rotation(1)),
+                        0.expr(),
+                    ),
+                );
+                let byte2 = select::expr(
+                    is_compressed.expr(),
+                    meta.query_advice(value_byte, Rotation(2)),
+                    select::expr(
+                        meta.query_advice(value_bits[5], Rotation::cur()),
+                        meta.query_advice(value_byte, Rotation(2)),
+                        0.expr(),
+                    ),
+                );
+                let byte3 = select::expr(
+                    is_compressed.expr(),
+                    select::expr(
+                        meta.query_advice(value_bits[5], Rotation::cur()),
+                        meta.query_advice(value_byte, Rotation(3)),
+                        0.expr(),
+                    ),
+                    0.expr(),
+                );
+                let byte4 = select::expr(
+                    is_compressed * is_size_format_0b11,
+                    meta.query_advice(value_byte, Rotation(4)),
+                    0.expr(),
+                );
 
                 [
                     meta.query_advice(byte_idx, Rotation::cur()), // byte offset
@@ -3092,26 +3086,26 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     //     || Value::known(F::from(is_emit as u64)),
                     // )?;
                     region.assign_advice(
-                        || "fse_gadget.num_emitted",
-                        self.fse_gadget.num_emitted,
+                        || "fse_decoder.num_emitted",
+                        self.fse_decoder.num_emitted,
                         i,
                         || Value::known(F::one()),
                     )?;
                     region.assign_advice(
-                        || "fse_gadget.state",
-                        self.fse_gadget.state,
+                        || "fse_decoder.state",
+                        self.fse_decoder.state,
                         i,
                         || Value::known(F::from(row.fse_data.state as u64)),
                     )?;
                     region.assign_advice(
-                        || "fse_gadget.baseline",
-                        self.fse_gadget.baseline,
+                        || "fse_decoder.baseline",
+                        self.fse_decoder.baseline,
                         i,
                         || Value::known(F::from(row.fse_data.baseline as u64)),
                     )?;
                     region.assign_advice(
-                        || "fse_gadget.symbol",
-                        self.fse_gadget.symbol,
+                        || "fse_decoder.symbol",
+                        self.fse_decoder.symbol,
                         i,
                         || Value::known(F::from(row.fse_data.symbol as u64)),
                     )?;
