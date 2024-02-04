@@ -541,7 +541,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             );
 
             // compression_debug
-            // compression_debug
             // We also need to validate that ``is_tag_change`` was assigned correctly. Tag changes
             // on the next row iff:
             // - tag_idx == tag_len
@@ -627,8 +626,8 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
                 1.expr(),
             );
-            // let (lt, eq) = tag_gadget.len_cmp_max.expr(meta, None);
-            // cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
+            let (lt, eq) = tag_gadget.len_cmp_max.expr(meta, None);
+            cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
             // cb.require_equal(
             //     "tag_value_acc == value_byte",
             //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),

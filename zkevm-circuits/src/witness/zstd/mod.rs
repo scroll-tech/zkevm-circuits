@@ -88,7 +88,7 @@ fn process_frame_header<F: Field>(
     let fcs_tag_value_iter = fcs_bytes
         .iter()
         .scan(Value::known(F::zero()), |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
             Some(*acc)
         });
     let fcs_tag_value = fcs_tag_value_iter
