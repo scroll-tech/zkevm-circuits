@@ -181,8 +181,7 @@ pub struct TagGadget<F> {
     // Check: tag_idx <= tag_len.
     idx_cmp_len: ComparatorConfig<F, 3>,
     // Check: tag_len <= max_len.
-    // compression_debug
-    // len_cmp_max: ComparatorConfig<F, 1>,
+    len_cmp_max: ComparatorConfig<F, 3>,
     /// Helper column to reduce the circuit degree. Set when tag == BlockHeader.
     is_block_header: Column<Advice>,
     /// Helper column to reduce the circuit degree. Set when tag == LiteralsHeader.
@@ -368,6 +367,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     |meta| meta.query_fixed(q_enable, Rotation::cur()),
                     |meta| meta.query_advice(tag_idx, Rotation::cur()),
                     |meta| meta.query_advice(tag_len, Rotation::cur()),
+                    range256.into(),
+                ),
+                len_cmp_max: ComparatorChip::configure(
+                    meta,
+                    |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    |meta| meta.query_advice(tag_len, Rotation::cur()),
+                    |meta| meta.query_advice(max_len, Rotation::cur()),
                     range256.into(),
                 ),
                 is_block_header: meta.advice_column(),
@@ -2687,6 +2693,9 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     let idx_cmp_len_chip = ComparatorChip::construct(self.tag_gadget.idx_cmp_len.clone());
                     idx_cmp_len_chip.assign(&mut region, i, F::from(row.state.tag_idx), F::from(row.state.tag_len))?;
 
+                    let len_cmp_max_chip = ComparatorChip::construct(self.tag_gadget.len_cmp_max.clone());
+                    len_cmp_max_chip.assign(&mut region, i, F::from(row.state.tag_len), F::from(row.state.max_tag_len))?;
+
                     let max_tag_len = row.state.max_tag_len;
                     let mlen_lt_0x20_chip = LtChip::construct(self.tag_gadget.mlen_lt_0x20.clone());
                     mlen_lt_0x20_chip.assign(&mut region, i, F::from(max_tag_len), F::from(0x20 as u64))?;
@@ -2732,20 +2741,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     //     is_output: meta.advice_column(),
                     //     tag_rlc: meta.advice_column_in(SecondPhase),
                     //     tag_rlc_acc: meta.advice_column_in(SecondPhase),
-                    //     mlen_lt_0x20: LtChip::configure(
-                    //         meta,
-                    //         |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                    //         |meta| meta.query_advice(max_len, Rotation::cur()),
-                    //         |_meta| 0x20.expr(),
-                    //         range256.into(),
-                    //     ),
-                    //     len_cmp_max: ComparatorChip::configure(
-                    //         meta,
-                    //         |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                    //         |meta| meta.query_advice(tag_len, Rotation::cur()),
-                    //         |meta| meta.query_advice(max_len, Rotation::cur()),
-                    //         range256.into(),
-                    //     ),
                     // }
 
 
