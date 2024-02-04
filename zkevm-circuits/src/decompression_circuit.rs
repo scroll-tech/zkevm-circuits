@@ -13,7 +13,7 @@ use eth_types::Field;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
-    less_than::{LtChip, LtConfig},
+    less_than::{LtChip, LtConfig, LtInstruction},
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
@@ -29,8 +29,7 @@ use crate::{
         decompression::{
             BitstringAccumulationTable, BlockTypeRomTable, FseTable, HuffmanCodesTable,
             LiteralsHeaderRomTable, LiteralsHeaderTable, TagRomTable,
-        },
-        KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable,
+        }, KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
@@ -116,6 +115,11 @@ pub struct DecompressionCircuitConfig<F> {
     // bitstream_decoder: BitstreamDecoder<F>,
     /// Fields related to the application of FSE table to bitstream.
     fse_gadget: FseGadget,
+
+    /// Internal Tables
+    range8: RangeTable<8>,
+    range128: RangeTable<128>,
+    range256: RangeTable<256>,
 }
 
 /// Block level details are specified in these columns.
@@ -171,14 +175,13 @@ pub struct TagGadget<F> {
     /// value, however the tag_rlc always uses the keccak randomness.
     tag_rlc_acc: Column<Advice>,
     /// Helper gadget to check whether max_len < 0x20.
-    /// compression_debug
-    // mlen_lt_0x20: LtConfig<F, 1>,
+    mlen_lt_0x20: LtConfig<F, 3>,
     /// A boolean column to indicate that tag has been changed on this row.
     is_tag_change: Column<Advice>,
     // Check: tag_idx <= tag_len.
-    idx_cmp_len: ComparatorConfig<F, 1>,
-    // compression_debug
+    idx_cmp_len: ComparatorConfig<F, 3>,
     // Check: tag_len <= max_len.
+    // compression_debug
     // len_cmp_max: ComparatorConfig<F, 1>,
     /// Helper column to reduce the circuit degree. Set when tag == BlockHeader.
     is_block_header: Column<Advice>,
@@ -352,14 +355,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 is_reverse: meta.advice_column(),
                 tag_rlc: meta.advice_column_in(SecondPhase),
                 tag_rlc_acc: meta.advice_column_in(SecondPhase),
-                // compression_debug
-                // mlen_lt_0x20: LtChip::configure(
-                //     meta,
-                //     |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                //     |meta| meta.query_advice(max_len, Rotation::cur()),
-                //     |_meta| 0x20.expr(),
-                //     range256.into(),
-                // ),
+                mlen_lt_0x20: LtChip::configure(
+                    meta,
+                    |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    |meta| meta.query_advice(max_len, Rotation::cur()),
+                    |_meta| 0x20.expr(),
+                    range256.into(),
+                ),
                 is_tag_change: meta.advice_column(),
                 idx_cmp_len: ComparatorChip::configure(
                     meta,
@@ -368,13 +370,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     |meta| meta.query_advice(tag_len, Rotation::cur()),
                     range256.into(),
                 ),
-                // len_cmp_max: ComparatorChip::configure(
-                //     meta,
-                //     |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                //     |meta| meta.query_advice(tag_len, Rotation::cur()),
-                //     |meta| meta.query_advice(max_len, Rotation::cur()),
-                //     range256.into(),
-                // ),
                 is_block_header: meta.advice_column(),
                 is_literals_header: meta.advice_column(),
                 is_fse_code: meta.advice_column(),
@@ -545,7 +540,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // on the next row iff:
             // - tag_idx == tag_len
             // - byte_idx' == byte_idx + 1
-            // let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, Some(Rotation::prev()));
+            // let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, None);
             // cb.condition(and::expr([
             //     tidx_eq_tlen, 
             //     is_new_byte
@@ -2511,6 +2506,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             aux_fields,
             bitstream_decoder,
             fse_gadget,
+            range8,
+            range128,
+            range256,
         }
     }
 }
@@ -2622,6 +2620,17 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     // };
 
 
+
+
+
+
+
+
+
+
+
+
+
                     // Tag Gadget
                     region.assign_advice(
                         || "tag_gadget.tag",
@@ -2636,16 +2645,22 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(row.state.tag_next as u64)),
                     )?;
                     region.assign_advice(
-                        || "tag_gadget.tag_len",
-                        self.tag_gadget.tag_len,
+                        || "tag_gadget.max_len",
+                        self.tag_gadget.max_len,
                         i,
-                        || Value::known(F::from(row.state.tag_len as u64)),
+                        || Value::known(F::from(row.state.max_tag_len as u64)),
                     )?;
                     region.assign_advice(
                         || "tag_gadget.tag_idx",
                         self.tag_gadget.tag_idx,
                         i,
                         || Value::known(F::from(row.state.tag_idx as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.tag_len",
+                        self.tag_gadget.tag_len,
+                        i,
+                        || Value::known(F::from(row.state.tag_len as u64)),
                     )?;
                     region.assign_advice(
                         || "tag_gadget.is_reverse",
@@ -2669,10 +2684,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     let tag_bits = BinaryNumberChip::construct(self.tag_gadget.tag_bits);
                     tag_bits.assign(&mut region, i, &row.state.tag)?;
 
-                    // compression_debug
                     let idx_cmp_len_chip = ComparatorChip::construct(self.tag_gadget.idx_cmp_len.clone());
                     idx_cmp_len_chip.assign(&mut region, i, F::from(row.state.tag_idx), F::from(row.state.tag_len))?;
-                    // idx_cmp_len_chip.assign(&mut region, i, F::one(), F::one())?;
+
+                    let max_tag_len = row.state.max_tag_len;
+                    let mlen_lt_0x20_chip = LtChip::construct(self.tag_gadget.mlen_lt_0x20.clone());
+                    mlen_lt_0x20_chip.assign(&mut region, i, F::from(max_tag_len), F::from(0x20 as u64))?;
 
                     let is_block_header = (row.state.tag == ZstdTag::BlockHeader) as u64;
                     let is_literals_header = (row.state.tag == ZstdTag::ZstdBlockLiteralsHeader) as u64;
@@ -2708,13 +2725,11 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
 
                     // TagGadget {
-                    //     tag_bits: BinaryNumberChip::configure(meta, q_enable, Some(tag.into())),
                     //     tag_value: meta.advice_column_in(SecondPhase),
                     //     tag_value_acc: meta.advice_column_in(SecondPhase),
                     //     rand_pow_tag_len: meta.advice_column_in(SecondPhase),
                     //     max_len,
                     //     is_output: meta.advice_column(),
-                    //     is_reverse: meta.advice_column(),
                     //     tag_rlc: meta.advice_column_in(SecondPhase),
                     //     tag_rlc_acc: meta.advice_column_in(SecondPhase),
                     //     mlen_lt_0x20: LtChip::configure(
@@ -2724,14 +2739,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     //         |_meta| 0x20.expr(),
                     //         range256.into(),
                     //     ),
-                    //     is_tag_change: meta.advice_column(),
-                    //     idx_cmp_len: ComparatorChip::configure(
-                    //         meta,
-                    //         |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                    //         |meta| meta.query_advice(tag_idx, Rotation::cur()),
-                    //         |meta| meta.query_advice(tag_len, Rotation::cur()),
-                    //         range256.into(),
-                    //     ),
                     //     len_cmp_max: ComparatorChip::configure(
                     //         meta,
                     //         |meta| meta.query_fixed(q_enable, Rotation::cur()),
@@ -2739,11 +2746,25 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     //         |meta| meta.query_advice(max_len, Rotation::cur()),
                     //         range256.into(),
                     //     ),
-                    //     is_block_header: meta.advice_column(),
-                    //     is_literals_header: meta.advice_column(),
-                    //     is_fse_code: meta.advice_column(),
-                    //     is_huffman_code: meta.advice_column(),
                     // }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
                     // Block Gadget

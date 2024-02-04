@@ -12,7 +12,7 @@ use crate::{
         decompression::{
             BitstringAccumulationTable, FseTable, HuffmanCodesTable, LiteralsHeaderTable,
         },
-        BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable,
+        BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
@@ -79,6 +79,9 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = &config.1.values(&layouter);
+        config.0.range8.load(&mut layouter)?;
+        config.0.range128.load(&mut layouter)?;
+        config.0.range256.load(&mut layouter)?;
         self.synthesize_sub(&config.0, challenges, &mut layouter)
     }
 }

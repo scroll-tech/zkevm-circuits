@@ -159,7 +159,7 @@ impl From<u8> for BlockType {
 }
 
 /// Various tags that we can decode from a zstd encoded data.
-#[derive(Clone, Copy, Debug, EnumIter, PartialEq)]
+#[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq, Hash)]
 pub enum ZstdTag {
     /// Null should not occur.
     Null = 0,
@@ -286,6 +286,7 @@ impl ToString for ZstdTag {
 pub struct ZstdState<F> {
     pub tag: ZstdTag,
     pub tag_next: ZstdTag,
+    pub max_tag_len: u64,
     pub tag_len: u64,
     pub tag_idx: u64,
     pub tag_value: Value<F>,
@@ -301,6 +302,7 @@ impl<F: Field> Default for ZstdState<F> {
         Self {
             tag: ZstdTag::Null,
             tag_next: ZstdTag::FrameHeaderDescriptor,
+            max_tag_len: 0,
             tag_len: 0,
             tag_idx: 0,
             tag_value: Value::known(F::zero()),

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use eth_types::Field;
 use halo2_proofs::circuit::Value;
 
@@ -6,6 +7,7 @@ pub use params::*;
 
 mod types;
 pub use types::*;
+pub use types::ZstdTag::*;
 
 #[cfg(test)]
 mod tui;
@@ -14,6 +16,26 @@ use tui::draw_rows;
 
 pub mod util;
 use util::{value_bits_le, le_bits_to_value, be_bits_to_value, increment_idx};
+
+const TAG_MAX_LEN: [(ZstdTag, u64); 13] = [
+    (FrameHeaderDescriptor, 1),
+    (FrameContentSize, 8),
+    (BlockHeader, 3),
+    (RawBlockBytes, 8388607), // (1 << 23) - 1
+    (RleBlockBytes, 8388607),
+    (ZstdBlockLiteralsHeader, 5),
+    (ZstdBlockLiteralsRawBytes, 1048575), // (1 << 20) - 1
+    (ZstdBlockLiteralsRleBytes, 1048575),
+    (ZstdBlockLiteralsHeader, 5),
+    (ZstdBlockFseCode, 128),
+    (ZstdBlockHuffmanCode, 128), // header_byte < 128
+    (ZstdBlockJumpTable, 6),
+    (ZstdBlockLstream, 1000), // 1kB hard-limit
+];
+
+fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
+    TAG_MAX_LEN.iter().filter(|record| record.0 == tag).next().unwrap().1
+}
 
 /// FrameHeaderDescriptor and FrameContentSize
 fn process_frame_header<F: Field>(
@@ -91,6 +113,7 @@ fn process_frame_header<F: Field>(
             state: ZstdState {
                 tag: ZstdTag::FrameHeaderDescriptor,
                 tag_next: ZstdTag::FrameContentSize,
+                max_tag_len: lookup_max_tag_len(ZstdTag::FrameHeaderDescriptor),
                 tag_len: 1,
                 tag_idx: 1,
                 tag_value: Value::known(F::from(*fhd_byte as u64)),
@@ -127,6 +150,7 @@ fn process_frame_header<F: Field>(
                         state: ZstdState {
                             tag: ZstdTag::FrameContentSize,
                             tag_next: ZstdTag::BlockHeader,
+                            max_tag_len: lookup_max_tag_len(ZstdTag::FrameContentSize),
                             tag_len: fcs_tag_len as u64,
                             tag_idx: (i + 1) as u64,
                             tag_value: fcs_tag_value,
@@ -266,6 +290,7 @@ fn process_block_header<F: Field>(
                     state: ZstdState {
                         tag: ZstdTag::BlockHeader,
                         tag_next,
+                        max_tag_len: lookup_max_tag_len(ZstdTag::BlockHeader),
                         tag_len: N_BLOCK_HEADER_BYTES as u64,
                         tag_idx: (i + 1) as u64,
                         tag_value,
@@ -344,6 +369,7 @@ fn process_raw_bytes<F: Field>(
                         state: ZstdState {
                             tag,
                             tag_next,
+                            max_tag_len: lookup_max_tag_len(tag),
                             tag_len: n_bytes as u64,
                             tag_idx: (i + 1) as u64,
                             tag_value,
@@ -407,6 +433,7 @@ fn process_rle_bytes<F: Field>(
                 state: ZstdState {
                     tag,
                     tag_next,
+                    max_tag_len: lookup_max_tag_len(tag),
                     tag_len: n_bytes as u64,
                     tag_idx: (i + 1) as u64,
                     tag_value,
@@ -687,6 +714,7 @@ fn process_block_zstd_literals_header<F: Field>(
                     state: ZstdState {
                         tag: ZstdTag::ZstdBlockLiteralsHeader,
                         tag_next,
+                        max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockLiteralsHeader),
                         tag_len: n_bytes_header as u64,
                         tag_idx: (i + 1) as u64,
                         tag_value,
@@ -753,6 +781,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         state: ZstdState {
             tag: ZstdTag::ZstdBlockFseCode,
             tag_next,
+            max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockFseCode),
             tag_len: 0 as u64, // There's no information at this point about the length of FSE table bytes. So this value has to be modified later. 
             tag_idx: 1 as u64,
             tag_value: Value::default(), // Must be changed after FSE table length is known
@@ -804,6 +833,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockFseCode,
                 tag_next,
+                max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockFseCode),
                 tag_len: (n_fse_bytes + 1) as u64,
                 tag_idx: (idx + 2) as u64, // count the huffman header byte
                 tag_value: tag_value,
@@ -885,6 +915,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         state: ZstdState {
             tag: ZstdTag::ZstdBlockHuffmanCode,
             tag_next,
+            max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockHuffmanCode),
             tag_len: n_huffman_code_bytes as u64,
             tag_idx: 1 as u64, 
             tag_value: tag_value,
@@ -951,6 +982,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockHuffmanCode,
                 tag_next,
+                max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockHuffmanCode),
                 tag_len: (n_huffman_code_bytes) as u64,
                 tag_idx: current_byte_idx as u64,
                 tag_value: tag_value,
@@ -1079,6 +1111,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                             state: ZstdState {
                                 tag: ZstdTag::ZstdBlockJumpTable,
                                 tag_next: ZstdTag::ZstdBlockLstream,
+                                max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockJumpTable),
                                 tag_len: N_JUMP_TABLE_BYTES as u64,
                                 tag_idx: (i + 1) as u64,
                                 tag_value,
@@ -1166,6 +1199,7 @@ fn process_block_zstd_lstream<F: Field>(
         state: ZstdState {
             tag: ZstdTag::ZstdBlockLstream,
             tag_next,
+            max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockLstream),
             tag_len: len as u64,
             tag_idx: current_byte_idx as u64,
             tag_value: *tag_value,
@@ -1223,6 +1257,7 @@ fn process_block_zstd_lstream<F: Field>(
                 state: ZstdState {
                     tag: ZstdTag::ZstdBlockLstream,
                     tag_next,
+                    max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockLstream),
                     tag_len: len as u64,
                     tag_idx: from_byte_idx as u64,
                     tag_value: *tag_value,
