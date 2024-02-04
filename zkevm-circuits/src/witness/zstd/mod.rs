@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use eth_types::Field;
 use halo2_proofs::circuit::Value;
 
@@ -134,7 +133,7 @@ fn process_frame_header<F: Field>(
                 decoded_len_acc: 0,
                 total_decoded_len: last_row.decoded_data.total_decoded_len + fcs,
                 decoded_byte: 0,
-                decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
+                decoded_value_rlc: Value::known(F::zero()),
             },
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),

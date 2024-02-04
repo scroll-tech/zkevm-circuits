@@ -2799,6 +2799,13 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.encoded_data.encoded_len)),
                     )?;
+                    
+                    region.assign_advice(
+                        || "encoded_len",
+                        self.encoded_len,
+                        i,
+                        || Value::known(F::from(row.encoded_data.encoded_len)),
+                    )?;
 
                     // Byte value and bits decomposition
                     region.assign_advice(
@@ -2821,16 +2828,33 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                             ),
                         )?;
                     }
+
+                    region.assign_advice(
+                        || "decoded_len",
+                        self.decoded_len,
+                        i,
+                        || Value::known(F::from(row.decoded_data.decoded_len)),
+                    )?;
+                    region.assign_advice(
+                        || "decoded_len_acc",
+                        self.decoded_len_acc,
+                        i,
+                        || Value::known(F::from(row.decoded_data.decoded_len_acc)),
+                    )?;
+                    region.assign_advice(
+                        || "decoded_byte",
+                        self.decoded_byte,
+                        i,
+                        || Value::known(F::from(row.decoded_data.decoded_byte as u64)),
+                    )?;
+                    region.assign_advice(
+                        || "decoded_rlc",
+                        self.decoded_rlc,
+                        i,
+                        || row.decoded_data.decoded_value_rlc,
+                    )?;
                     
-
-
-
-
                     // let value_rlc = meta.advice_column_in(SecondPhase);
-                    // let decoded_len = meta.advice_column();
-                    // let decoded_len_acc = meta.advice_column();
-                    // let decoded_byte = meta.advice_column();
-                    // let decoded_rlc = meta.advice_column_in(SecondPhase);
 
 
 
@@ -2968,14 +2992,10 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(is_huffman_code)),
                     )?;
 
-
-
-
                     // TagGadget {
                     //     tag_value: meta.advice_column_in(SecondPhase),
                     //     tag_value_acc: meta.advice_column_in(SecondPhase),
                     //     rand_pow_tag_len: meta.advice_column_in(SecondPhase),
-                    //     max_len,
                     //     is_output: meta.advice_column(),
                     //     tag_rlc: meta.advice_column_in(SecondPhase),
                     //     tag_rlc_acc: meta.advice_column_in(SecondPhase),
