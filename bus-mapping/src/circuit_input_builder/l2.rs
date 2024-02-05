@@ -158,6 +158,18 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
 
         for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
             let call = if step.op.is_call_or_create() {
+                if let Some(next_step) = execution_result.exec_steps.get(idx + 1) {
+                    // the call doesn't have inner steps, it could be:
+                    // - a call to a precompiled contract
+                    // - a call to an empty account
+                    // - a call that !is_precheck_ok
+                    if next_step.depth == step.depth {
+                        continue;
+                    }
+                } else {
+                    // this is the final step, no inner steps
+                    continue;
+                }
                 let call = call_trace.next();
                 log::trace!("call_trace pop: {call:?}, current step: {step:?}");
                 call
@@ -171,19 +183,6 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     | OpcodeId::CALLCODE
                     | OpcodeId::DELEGATECALL
                     | OpcodeId::STATICCALL => {
-                        if idx + 1 < execution_result.exec_steps.len() {
-                            let next_step = &execution_result.exec_steps[idx + 1];
-                            // the call doesn't have inner steps, it could be:
-                            // - a call to a precompiled contract
-                            // - a call to an empty account
-                            // - a call that !is_precheck_ok
-                            if next_step.depth == step.depth {
-                                continue;
-                            }
-                        } else {
-                            // this is the final step, no inner steps
-                            continue;
-                        }
                         let call = call.unwrap();
                         assert_eq!(call.call_type, step.op, "{call:?}");
                         let code_idx = if block.transactions[er_idx].to.is_none() {
