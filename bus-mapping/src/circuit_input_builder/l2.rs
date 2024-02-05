@@ -144,16 +144,18 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
-        // filter all precompile calls
+        // filter all precompile calls and empty calls
         let mut call_trace = execution_result
             .call_trace
             .flatten_trace(vec![])
             .into_iter()
             .filter(|call| {
-                !call
+                let is_call_to_precompile = call
                     .to
                     .map(|ref addr| is_precompiled(addr))
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                let is_call_to_empty = call.gas_used.is_zero();
+                !(is_call_to_precompile || is_call_to_empty)
             })
             .rev();
         log::trace!("call_trace: {call_trace:?}");
@@ -166,12 +168,12 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     // - a call to an empty account
                     // - a call that !is_precheck_ok
                     if next_step.depth == step.depth {
-                        log::trace!("skip call step: {step:?}");
+                        log::trace!("skip call step due to no inner step, curr: {step:?}, next: {next_step:?}");
                         continue;
                     }
                 } else {
                     // this is the final step, no inner steps
-                    log::trace!("skip call step: {step:?}");
+                    log::trace!("skip call step due this is the final step: {step:?}");
                     continue;
                 }
                 let call = call_trace.next();
