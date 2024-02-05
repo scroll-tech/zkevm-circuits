@@ -39,15 +39,19 @@ impl Opcode for ErrorCreationCode {
         let byte = state.call_ctx()?.memory.0[offset.as_usize()];
         assert!(byte == 0xef);
 
-        let offset = offset.as_u64();
-        let shift = offset % 32;
-        let slot = offset - shift;
+        let shift = offset.as_u64() % 32;
+        let slot = offset.as_u64() - shift;
 
         //state.memory_read(&mut exec_step, offset.try_into()?, byte)?;
         state.memory_read_word(&mut exec_step, slot.into())?;
 
         // refer to return_revert Case C
-        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
+        state.handle_return(
+            (Some(offset), Some(length)),
+            &mut [&mut exec_step],
+            geth_steps,
+            true,
+        )?;
         Ok(vec![exec_step])
     }
 }
