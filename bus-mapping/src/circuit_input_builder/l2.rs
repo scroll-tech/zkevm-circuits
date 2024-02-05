@@ -154,7 +154,9 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     .to
                     .map(|ref addr| is_precompiled(addr))
                     .unwrap_or(false)
-            });
+            })
+            .rev();
+        log::trace!("call_trace: {call_trace:?}");
 
         for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
             let call = if step.op.is_call_or_create() {
@@ -164,10 +166,12 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     // - a call to an empty account
                     // - a call that !is_precheck_ok
                     if next_step.depth == step.depth {
+                        log::trace!("skip call step: {step:?}");
                         continue;
                     }
                 } else {
                     // this is the final step, no inner steps
+                    log::trace!("skip call step: {step:?}");
                     continue;
                 }
                 let call = call_trace.next();
