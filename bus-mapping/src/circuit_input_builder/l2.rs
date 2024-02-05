@@ -180,6 +180,9 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                             if next_step.depth == step.depth {
                                 continue;
                             }
+                        } else {
+                            // this is the final step, no inner steps
+                            continue;
                         }
                         let call = call.unwrap();
                         assert_eq!(call.call_type, step.op, "{call:?}");
