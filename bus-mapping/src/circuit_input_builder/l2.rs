@@ -150,11 +150,23 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             .flatten_trace(vec![])
             .into_iter()
             .filter(|call| {
-                let is_call_to_precompile = call
+                let (is_call_to_precompile, is_callee_code_empty) = call
                     .to
-                    .map(|ref addr| is_precompiled(addr))
-                    .unwrap_or(false);
-                let is_call_to_empty = call.gas_used.is_zero() && !call.call_type.is_create();
+                    .map(|ref addr| {
+                        (
+                            is_precompiled(addr),
+                            execution_result
+                                .prestate
+                                .get(addr)
+                                .unwrap()
+                                .code
+                                .as_ref()
+                                .unwrap()
+                                .is_empty(),
+                        )
+                    })
+                    .unwrap_or((false, false));
+                let is_call_to_empty = !call.call_type.is_create() && is_callee_code_empty;
                 !(is_call_to_precompile || is_call_to_empty)
             })
             .rev();
