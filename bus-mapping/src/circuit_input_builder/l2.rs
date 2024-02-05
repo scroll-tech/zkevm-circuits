@@ -167,7 +167,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     // - a call to a precompiled contract
                     // - a call to an empty account
                     // - a call that !is_precheck_ok
-                    if next_step.depth == step.depth {
+                    if next_step.depth != step.depth + 1 {
                         log::trace!("skip call step due to no inner step, curr: {step:?}, next: {next_step:?}");
                         continue;
                     }
