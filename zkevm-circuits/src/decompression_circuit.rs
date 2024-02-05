@@ -963,12 +963,12 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     not::expr(meta.query_advice(is_padding, Rotation::cur())),
                 ]);
 
-        //         vec![(
-        //             condition * meta.query_advice(decoded_byte, Rotation::cur()),
-        //             range256.into(),
-        //         )]
-        //     },
-        // );
+                vec![(
+                    condition * meta.query_advice(decoded_byte, Rotation::cur()),
+                    range256.into(),
+                )]
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
