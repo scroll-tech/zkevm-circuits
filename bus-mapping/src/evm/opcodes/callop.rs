@@ -500,7 +500,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                     let mut oog_step =
                         ErrorOOGPrecompile::gen_associated_ops(state, &geth_steps[1], callee_call)?;
-                    oog_step.stack_size += 1; // since the return value is pushed on the stack
 
                     oog_step.gas_left = Gas(callee_gas_left_with_stipend);
                     oog_step.gas_cost = GasCost(precompile_call_gas_cost);
