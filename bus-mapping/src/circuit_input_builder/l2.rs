@@ -154,7 +154,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     .to
                     .map(|ref addr| is_precompiled(addr))
                     .unwrap_or(false);
-                let is_call_to_empty = call.gas_used.is_zero();
+                let is_call_to_empty = call.gas_used.is_zero() && !call.call_type.is_create();
                 !(is_call_to_precompile || is_call_to_empty)
             })
             .rev();
