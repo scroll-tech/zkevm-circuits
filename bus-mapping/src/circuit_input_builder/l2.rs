@@ -166,7 +166,8 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                         )
                     })
                     .unwrap_or((false, false));
-                let is_call_to_empty = !call.call_type.is_create() && is_callee_code_empty;
+                let is_call_to_empty =
+                    call.gas_used.is_zero() && !call.call_type.is_create() && is_callee_code_empty;
                 !(is_call_to_precompile || is_call_to_empty)
             })
             .rev();
