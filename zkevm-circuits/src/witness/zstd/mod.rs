@@ -1258,15 +1258,15 @@ fn process_block_zstd_lstream<F: Field>(
             let from_bit_idx = current_bit_idx;
 
             // advance byte and bit marks to the last bit
-             for _ in 0..cur_bitstring_len {
+             for _ in 0..(cur_bitstring_len - 1) {
                 (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
             }
-
             let end_bit_idx = if current_byte_idx > from_byte_idx {
                 current_bit_idx.rem_euclid(8) + 8
             } else {
                 current_bit_idx.rem_euclid(8)
             };
+            (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
 
             // Add a witness row for emitted symbol
             witness_rows.push(ZstdWitnessRow {

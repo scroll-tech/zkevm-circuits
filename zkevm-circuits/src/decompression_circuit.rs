@@ -2399,84 +2399,84 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ///////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////////// ZstdTag::ZstdBlockJumpTable ///////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
-        
-        // compression_debug
-        // meta.create_gate("DecompressionCircuit: ZstdBlockJumpTable", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("DecompressionCircuit: ZstdBlockJumpTable", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     cb.require_equal(
-        //         "tag_len == 6",
-        //         meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-        //         N_JUMP_TABLE_BYTES.expr(),
-        //     );
+            cb.require_equal(
+                "tag_len == 6",
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                N_JUMP_TABLE_BYTES.expr(),
+            );
 
-        //     // Length of Lstream1.
-        //     let len1 = meta.query_advice(value_byte, Rotation(0))
-        //         + 256.expr() * meta.query_advice(value_byte, Rotation(1));
-        //     // Length of Lstream 2.
-        //     let len2 = meta.query_advice(value_byte, Rotation(2))
-        //         + 256.expr() * meta.query_advice(value_byte, Rotation(3));
-        //     // Length of Lstream3.
-        //     let len3 = meta.query_advice(value_byte, Rotation(4))
-        //         + 256.expr() * meta.query_advice(value_byte, Rotation(5));
+            // Length of Lstream1.
+            let len1 = meta.query_advice(value_byte, Rotation(0))
+                + 256.expr() * meta.query_advice(value_byte, Rotation(1));
+            // Length of Lstream 2.
+            let len2 = meta.query_advice(value_byte, Rotation(2))
+                + 256.expr() * meta.query_advice(value_byte, Rotation(3));
+            // Length of Lstream3.
+            let len3 = meta.query_advice(value_byte, Rotation(4))
+                + 256.expr() * meta.query_advice(value_byte, Rotation(5));
 
-        //     cb.require_equal(
-        //         "length of Lstream1",
-        //         meta.query_advice(lstream_config.len_lstream1, Rotation::cur()),
-        //         len1.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "length of lstream2",
-        //         meta.query_advice(lstream_config.len_lstream2, Rotation::cur()),
-        //         len2.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "length of lstream3",
-        //         meta.query_advice(lstream_config.len_lstream3, Rotation::cur()),
-        //         len3.expr(),
-        //     );
-        //     // To calculate the size of Lstream4, we have:
-        //     // - TotalStreamsSize == CompressedSize - HuffmanTreeDescriptionSize
-        //     // - Stream4_Size == TotalStreamsSize - Stream1_Size - Stream2_Size - Stream3_Size
-        //     //
-        //     // The HuffmanTreeDescriptionSize can be calculated as:
-        //     // - HuffmanTreeDescriptionSize == byte_idx(JumpTable) - byte_idx(HuffmanTree)
-        //     cb.require_equal(
-        //         "length of lstream4",
-        //         meta.query_advice(lstream_config.len_lstream4, Rotation::cur())
-        //             + len1
-        //             + len2
-        //             + len3
-        //             + meta.query_advice(byte_idx, Rotation::cur()),
-        //         meta.query_advice(literals_header.compr_size, Rotation::cur())
-        //             + meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //     );
+            cb.require_equal(
+                "length of Lstream1",
+                meta.query_advice(lstream_config.len_lstream1, Rotation::cur()),
+                len1.expr(),
+            );
+            cb.require_equal(
+                "length of lstream2",
+                meta.query_advice(lstream_config.len_lstream2, Rotation::cur()),
+                len2.expr(),
+            );
+            cb.require_equal(
+                "length of lstream3",
+                meta.query_advice(lstream_config.len_lstream3, Rotation::cur()),
+                len3.expr(),
+            );
+            // To calculate the size of Lstream4, we have:
+            // - TotalStreamsSize == CompressedSize - HuffmanTreeDescriptionSize
+            // - Stream4_Size == TotalStreamsSize - Stream1_Size - Stream2_Size - Stream3_Size
+            //
+            // The HuffmanTreeDescriptionSize can be calculated as:
+            // - HuffmanTreeDescriptionSize == byte_idx(JumpTable) - byte_idx(HuffmanTree)
+            
+            // compression_debug
+            // cb.require_equal(
+            //     "length of lstream4",
+            //     meta.query_advice(lstream_config.len_lstream4, Rotation::cur())
+            //         + len1
+            //         + len2
+            //         + len3
+            //         + meta.query_advice(byte_idx, Rotation::cur()),
+            //     meta.query_advice(literals_header.compr_size, Rotation::cur())
+            //         + meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+            // );
 
-        //     for col in [
-        //         lstream_config.len_lstream1,
-        //         lstream_config.len_lstream2,
-        //         lstream_config.len_lstream3,
-        //         lstream_config.len_lstream4,
-        //     ] {
-        //         cb.require_equal(
-        //             "Lstream config gets transferred to Lstream section",
-        //             meta.query_advice(col, Rotation::cur()),
-        //             meta.query_advice(col, Rotation(N_JUMP_TABLE_BYTES as i32)),
-        //         );
-        //     }
+            for col in [
+                lstream_config.len_lstream1,
+                lstream_config.len_lstream2,
+                lstream_config.len_lstream3,
+                lstream_config.len_lstream4,
+            ] {
+                cb.require_equal(
+                    "Lstream config gets transferred to Lstream section",
+                    meta.query_advice(col, Rotation::cur()),
+                    meta.query_advice(col, Rotation(N_JUMP_TABLE_BYTES as i32)),
+                );
+            }
 
-        //     cb.require_equal(
-        //         "first lstream that follows jump table is Lstream1",
-        //         meta.query_advice(lstream_config.lstream, Rotation(N_JUMP_TABLE_BYTES as i32)),
-        //         LstreamNum::Lstream1.expr(),
-        //     );
+            cb.require_equal(
+                "first lstream that follows jump table is Lstream1",
+                meta.query_advice(lstream_config.lstream, Rotation(N_JUMP_TABLE_BYTES as i32)),
+                LstreamNum::Lstream1.expr(),
+            );
 
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //         is_zb_jump_table(meta),
-        //     ]))
-        // });
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                is_zb_jump_table(meta),
+            ]))
+        });
         meta.create_gate(
             "DecompressionCircuit: LstreamConfig data unchanged",
             |meta| {
@@ -2831,18 +2831,18 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             // if bitstring is byte-aligned.
             // compression_debug
-            // cb.condition(is_byte_aligned, |cb| {
-            //     cb.require_equal(
-            //         "byte-aligned bitstring: bit_index_start",
-            //         meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
-            //         0.expr(),
-            //     );
-            //     cb.require_equal(
-            //         "byte-aligned bitstring: byte_idx",
-            //         meta.query_advice(byte_idx, Rotation::next()),
-            //         meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
-            //     );
-            // });
+            cb.condition(is_byte_aligned, |cb| {
+                cb.require_equal(
+                    "byte-aligned bitstring: bit_index_start",
+                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
+                    0.expr(),
+                );
+                cb.require_equal(
+                    "byte-aligned bitstring: byte_idx",
+                    meta.query_advice(byte_idx, Rotation::next()),
+                    meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
+                );
+            });
 
             // if bitstring is spanned.
             cb.condition(is_spanned, |cb| {
@@ -3042,8 +3042,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     // Tag Gadget
 
                     // pub struct TagGadget<F> {
-                    //     /// Whether this tag outputs a decoded byte or not.
-                    //     is_output: Column<Advice>,
                     //     /// Randomness exponentiated by the tag's length. This is used to then accumulate the value
                     //     /// RLC post processing of this tag.
                     //     rand_pow_tag_len: Column<Advice>,
@@ -3139,6 +3137,13 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     let is_huffman_tree_section = is_fse_code + is_huffman_code + is_jumptable + is_lstream;
 
                     region.assign_advice(
+                        || "tag_gadget.is_output",
+                        self.tag_gadget.is_output,
+                        i,
+                        || Value::known(F::zero()),
+                    )?;
+
+                    region.assign_advice(
                         || "tag_gadget.is_block_header",
                         self.tag_gadget.is_block_header,
                         i,
@@ -3209,16 +3214,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     // Bitstream Decoder
                     // bitstream_decoder,
                     //     pub struct BitstreamDecoder<F> {
-                    //         /// The bit-index where the bittsring begins. 0 <= bit_index_start < 8.
-                    //         bit_index_start: Column<Advice>,
-                    //         /// The bit-index where the bitstring ends. 0 <= bit_index_end < 16.
-                    //         bit_index_end: Column<Advice>,
-                    //         /// Helper gadget to know if the bitstring was contained in a single byte. We compare
-                    //         /// bit_index_end with 8 and if bit_index_end < 8 then the bitstring is contained. Otherwise it
-                    //         /// spans over two bytes.
-                            // bitstring_contained: ComparatorConfig<F, 1>,
-                    //         /// The accumulated binary value of the bitstring.
-                    //         bit_value: Column<Advice>,
                     //         /// The symbol that this bitstring decodes to. We are using this for decoding using FSE table
                     //         /// or a Huffman Tree. So this symbol represents the decoded value that the bitstring maps to.
                     //         decoded_symbol: Column<Advice>,
@@ -3275,12 +3270,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
                     // fse_decoder,
                     //     pub struct FseDecoder {
-                    //         /// The FSE state we are at.
-                    //         state: Column<Advice>,
-                    //         /// The baseline value at ``state``.
-                    //         baseline: Column<Advice>,
-                    //         /// The symbol emitted while transitioning from ``state`` to a new state.
-                    //         symbol: Column<Advice>,
                     //         /// Number of symbols we have emitted.
                     //         num_emitted: Column<Advice>,
                     //         /// An accumulator that keeps a count of the number of states assigned for each symbol,
@@ -3312,7 +3301,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.fse_data.symbol as u64)),
                     )?;
-
 
                     // Lstream Config
                     let is_four_streams: u64 = if aux_data[2] > 0 { 1 } else { 0 };
@@ -3401,8 +3389,8 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
 
         // compression_debug
         for row in witness_rows.clone() {
-            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;",
-                row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol,
+            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;",
+                row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.stream_idx, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol,
             );
         }
 
