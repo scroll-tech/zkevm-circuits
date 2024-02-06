@@ -2440,7 +2440,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // The HuffmanTreeDescriptionSize can be calculated as:
             // - HuffmanTreeDescriptionSize == byte_idx(JumpTable) - byte_idx(HuffmanTree)
             
-            // compression_debug
+            // TODO: incorrect size? compression_debug
             // cb.require_equal(
             //     "length of lstream4",
             //     meta.query_advice(lstream_config.len_lstream4, Rotation::cur())

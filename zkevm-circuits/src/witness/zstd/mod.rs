@@ -135,6 +135,7 @@ fn process_frame_header<F: Field>(
                 decoded_byte: 0,
                 decoded_value_rlc: Value::known(F::zero()),
             },
+            bitstream_read_data: BitstreamReadRow::default(),
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),
         })
@@ -176,6 +177,7 @@ fn process_frame_header<F: Field>(
                             decoded_byte: 0,
                             decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
                         },
+                        bitstream_read_data: BitstreamReadRow::default(),
                         huffman_data: HuffmanData::default(),
                         fse_data: FseTableRow::default(),
                     },
@@ -306,6 +308,7 @@ fn process_block_header<F: Field>(
                         value_rlc,
                         ..Default::default()
                     },
+                    bitstream_read_data: BitstreamReadRow::default(),
                     decoded_data: last_row.decoded_data.clone(),
                     huffman_data: HuffmanData::default(),
                     fse_data: FseTableRow::default(),
@@ -392,6 +395,7 @@ fn process_raw_bytes<F: Field>(
                             decoded_byte: value_byte,
                             decoded_value_rlc,
                         },
+                        bitstream_read_data: BitstreamReadRow::default(),
                         huffman_data: HuffmanData::default(),
                         fse_data: FseTableRow::default(),
                     }
@@ -456,6 +460,7 @@ fn process_rle_bytes<F: Field>(
                     decoded_byte: value_byte,
                     decoded_value_rlc,
                 },
+                bitstream_read_data: BitstreamReadRow::default(),
                 huffman_data: HuffmanData::default(),
                 fse_data: FseTableRow::default(),
             })
@@ -730,6 +735,7 @@ fn process_block_zstd_literals_header<F: Field>(
                         value_rlc,
                         ..Default::default()
                     },
+                    bitstream_read_data: BitstreamReadRow::default(),
                     decoded_data: last_row.decoded_data.clone(),
                     huffman_data: HuffmanData::default(),
                     fse_data: FseTableRow::default(),
@@ -797,6 +803,11 @@ fn process_block_zstd_huffman_code<F: Field>(
             reverse: false,
             ..Default::default()
         },
+        bitstream_read_data: BitstreamReadRow {
+            bit_start_idx: 0usize,
+            bit_end_idx: 7usize,
+            bit_value: header_byte as u64,
+        },
         decoded_data: decoded_data.clone(),
         huffman_data: HuffmanData::default(),
         fse_data: FseTableRow::default(),
@@ -849,6 +860,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 reverse: false,
                 ..Default::default()
             },
+            bitstream_read_data: BitstreamReadRow::default(),
             decoded_data: decoded_data.clone(),
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),
@@ -909,6 +921,11 @@ fn process_block_zstd_huffman_code<F: Field>(
     let aux_1 = next_value_rlc_acc.clone();
     let aux_2 = witness_rows[witness_rows.len() - 1].encoded_data.value_rlc.clone();
 
+    let mut padding_end_idx: usize = 0;
+    while huffman_bitstream[padding_end_idx] == 0 {
+        padding_end_idx += 1;
+    }
+
     // Add a witness row for leading 0s and the sentinel 1-bit
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
@@ -934,6 +951,11 @@ fn process_block_zstd_huffman_code<F: Field>(
             aux_1,
             aux_2,
             ..Default::default()
+        },
+        bitstream_read_data: BitstreamReadRow {
+            bit_value: 1u64,
+            bit_start_idx: 0usize,
+            bit_end_idx: padding_end_idx,
         },
         huffman_data: HuffmanData::default(),
         decoded_data: last_row.decoded_data.clone(),
@@ -968,7 +990,11 @@ fn process_block_zstd_huffman_code<F: Field>(
 
     while current_bit_idx + next_nb_to_read[color] <= (n_huffman_code_bytes) * N_BITS_PER_BYTE {
         let nb = next_nb_to_read[color];
-        let next_state = prev_baseline[color] + be_bits_to_value(&huffman_bitstream[current_bit_idx..(current_bit_idx + nb)]);
+        let bitstring_value = be_bits_to_value(&huffman_bitstream[current_bit_idx..(current_bit_idx + nb)]);
+        let next_state = prev_baseline[color] + bitstring_value;
+
+        let from_bit_idx = current_bit_idx.rem_euclid(8);
+        let to_bit_idx = if nb > 0 { from_bit_idx + (nb - 1) } else  { from_bit_idx };
 
         // Lookup the FSE table row for the state
         let fse_row = fse_state_table.get(&(next_state as u64)).expect("next state should be in fse table");
@@ -1001,6 +1027,11 @@ fn process_block_zstd_huffman_code<F: Field>(
                 aux_1,
                 aux_2,
                 ..Default::default()
+            },
+            bitstream_read_data: BitstreamReadRow {
+                bit_value: bitstring_value,
+                bit_start_idx: from_bit_idx,
+                bit_end_idx: to_bit_idx,
             },
             fse_data: FseTableRow {
                 idx: fse_table_idx,
@@ -1127,6 +1158,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                                 reverse: false,
                                 ..Default::default()
                             },
+                            bitstream_read_data: BitstreamReadRow::default(),
                             decoded_data: last_row.decoded_data.clone(),
                             huffman_data: HuffmanData::default(),
                             fse_data: FseTableRow::default(),
@@ -1232,6 +1264,11 @@ fn process_block_zstd_lstream<F: Field>(
             stream_idx: stream_idx,
             k: (0, padding_end_idx as u8),
         },
+        bitstream_read_data: BitstreamReadRow {
+            bit_value: 1u64,
+            bit_start_idx: 0usize,
+            bit_end_idx: padding_end_idx as usize,
+        },
         decoded_data: last_row.decoded_data.clone(),
         fse_data: FseTableRow::default(),
     });
@@ -1300,6 +1337,11 @@ fn process_block_zstd_lstream<F: Field>(
                     bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap(),
                     stream_idx: stream_idx,
                     k: (from_bit_idx.rem_euclid(8) as u8, end_bit_idx as u8),
+                },
+                bitstream_read_data: BitstreamReadRow {
+                    bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap() as u64,
+                    bit_start_idx: from_bit_idx.rem_euclid(8) as usize,
+                    bit_end_idx: end_bit_idx as usize,
                 },
                 decoded_data: last_row.decoded_data.clone(),
                 fse_data: FseTableRow::default(),

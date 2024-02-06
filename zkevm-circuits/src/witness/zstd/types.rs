@@ -503,6 +503,17 @@ pub struct FseTableRow {
     pub symbol: u64,
 }
 
+// Used for tracking bit markers for non-byte-aligned bitstream decoding
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BitstreamReadRow {
+    /// Start of the bit location within a byte [0, 8)
+    pub bit_start_idx: usize,
+    /// End of the bit location within a byte (0, 16)
+    pub bit_end_idx: usize,
+    /// The value of the bitstring
+    pub bit_value: u64,
+}
+
 /// Data for the FSE table's witness values.
 #[derive(Clone, Debug)]
 pub struct FseTableData {
@@ -664,6 +675,8 @@ pub struct ZstdWitnessRow<F> {
     pub huffman_data: HuffmanData,
     /// Fse decoding state transition data
     pub fse_data: FseTableRow,
+    /// Bitstream reader
+    pub bitstream_read_data: BitstreamReadRow,
 }
 
 impl<F: Field> ZstdWitnessRow<F> {
@@ -678,6 +691,7 @@ impl<F: Field> ZstdWitnessRow<F> {
             decoded_data: DecodedData::default(),
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),
+            bitstream_read_data: BitstreamReadRow::default(),
         }
     }
 }
