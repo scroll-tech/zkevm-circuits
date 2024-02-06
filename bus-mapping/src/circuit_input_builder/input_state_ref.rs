@@ -1629,6 +1629,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let call = self.call()?;
+        trace!("get_step_err: step:\n\tstep:{step:?}\n\tnext_step:{next_step:?}\n\tcall:{call:?}");
 
         if next_step.is_none() {
             // enumerating call scope successful cases
@@ -1668,7 +1669,7 @@ impl<'a> CircuitInputStateRef<'a> {
         };
 
         // Return from a call with a failure
-        if step.depth == next_depth + 1 && !next_success {
+        if step.depth == next_depth + 1 && !call.is_success {
             if !matches!(step.op, OpcodeId::RETURN) {
                 // Without calling RETURN
                 return Ok(match step.op {
@@ -1735,7 +1736,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Return from a call without calling RETURN or STOP and having success
         // is unexpected.
         if step.depth == next_depth + 1
-            && next_success
+            && call.is_success
             && !matches!(
                 step.op,
                 OpcodeId::RETURN | OpcodeId::STOP | OpcodeId::SELFDESTRUCT
