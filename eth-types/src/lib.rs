@@ -754,7 +754,7 @@ pub struct GethCallTrace {
     #[serde(rename = "gasUsed")]
     gas_used: U256,
     // input: Bytes,
-    output: Bytes,
+    output: Option<Bytes>,
     to: Option<Address>,
     #[serde(rename = "type")]
     call_type: String,
@@ -771,8 +771,8 @@ pub struct FlatGethCallTrace {
     /// gas used
     pub gas_used: U256,
     // input: Bytes,
-    /// output
-    pub output: Bytes,
+    /// has_output
+    pub has_output: bool,
     /// to
     pub to: Option<Address>,
     /// call type
@@ -795,7 +795,7 @@ impl GethCallTrace {
         trace.push(FlatGethCallTrace {
             from: self.from,
             to: self.to,
-            output: self.output.clone(),
+            has_output: self.output.as_ref().map(|x| !x.is_empty()).unwrap_or(false),
             gas_used: self.gas_used,
             call_type: OpcodeId::from_str(&self.call_type).unwrap(),
         });

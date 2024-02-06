@@ -155,7 +155,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             .flatten_trace(vec![])
             .into_iter()
             .filter(|call| {
-                if call.call_type.is_create() && !call.output.is_empty() {
+                if call.call_type.is_create() && call.has_output {
                     created.insert(call.to.unwrap());
                 }
                 let (is_call_to_precompile, is_callee_code_empty) = call
