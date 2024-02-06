@@ -777,9 +777,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //     );
             // });
 
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
-
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 // not::expr(meta.query_advice(is_padding, Rotation::cur())),
@@ -799,12 +796,10 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     tag_gadget.tag,
                     tag_gadget.tag_len,
                     tag_gadget.tag_value,
-                    // compression_debug
-                    // tag_gadget.rand_pow_tag_len,
-                    // tag_gadget.tag_rlc,
-                    // value_rlc,
+                    tag_gadget.rand_pow_tag_len,
+                    tag_gadget.tag_rlc,
+                    value_rlc,
                 ] {
-                    // compression_debug
                     cb.require_equal(
                         "column remains the same",
                         meta.query_advice(col, Rotation::cur()),
@@ -822,7 +817,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     meta.query_advice(tag_gadget.tag_idx, Rotation::prev()) + is_new_byte.expr(),
                 );
 
-                // compression_debug
                 // tag_value_acc calculation.
                 let multiplier = select::expr(
                     tag_gadget.mlen_lt_0x20.is_lt(meta, None),
@@ -846,14 +840,14 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 // tag_rlc_acc calculation depending on whether is_reverse or not.
                 let is_reverse = meta.query_advice(tag_gadget.is_reverse, Rotation::cur());
+                cb.condition(not::expr(is_new_byte.expr()), |cb| {
+                    cb.require_equal(
+                        "tag_rlc_acc remains the same if not a new byte",
+                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::next()),
+                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                    );
+                });
                 // compression_debug
-                // cb.condition(not::expr(is_new_byte.expr()), |cb| {
-                //     cb.require_equal(
-                //         "tag_rlc_acc remains the same if not a new byte",
-                //         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::next()),
-                //         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
-                //     );
-                // });
                 // cb.condition(
                 //     and::expr([is_new_byte.expr(), not::expr(is_reverse.expr())]),
                 //     |cb| {
@@ -878,9 +872,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 //             + value_byte_prev,
                 //     );
                 // });
-
-                // compression_debug
-                cb.require_zero("dummy constraint", 0.expr());
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
