@@ -2902,8 +2902,11 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         witness_rows: Vec<ZstdWitnessRow<F>>,
+        aux_data: Vec<u64>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
+        let mut jump_table_idx: usize = 0;
+
         layouter.assign_region(
             || "Decompression table region",
             |mut region| {
@@ -3309,39 +3312,49 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(row.fse_data.symbol as u64)),
                     )?;
 
-                    
 
-                    // LStream Config
+                    // Lstream Config
+                    let is_four_streams: u64 = if aux_data[2] > 0 { 1 } else { 0 };
+                    region.assign_advice(
+                        || "lstream_config.lstream_kind",
+                        self.lstream_config.lstream_kind,
+                        i,
+                        || Value::known(F::from(is_four_streams)),
+                    )?;
+                    region.assign_advice(
+                        || "lstream_config.lstream",
+                        self.lstream_config.lstream,
+                        i,
+                        || Value::known(F::from(row.huffman_data.stream_idx as u64)),
+                    )?;
 
-                    // lstream_config,
-                    //     struct LstreamConfig {
-                    //         /// A boolean used to identify whether we will have a single literal stream or 4 literal
-                    //         /// streams. It is set when we have 4 literal streams.
-                    //         lstream_kind: Column<Advice>,
-                    //         /// The Lstream type we are currently processing.
-                    //         lstream: Column<Advice>,
-                    //         /// The Lstream type we are currently processing.
-                    //         lstream_num: BinaryNumberConfig<LstreamNum, 2>,
-                    //         /// Number of bytes in Lstream1.
-                    //         len_lstream1: Column<Advice>,
-                    //         /// Number of bytes in Lstream2.
-                    //         len_lstream2: Column<Advice>,
-                    //         /// Number of bytes in Lstream3.
-                    //         len_lstream3: Column<Advice>,
-                    //         /// Number of bytes in Lstream4.
-                    //         len_lstream4: Column<Advice>,
-                    //     }
+                    let lstream_num_chip = BinaryNumberChip::construct(self.lstream_config.lstream_num);
+                    lstream_num_chip.assign(&mut region, i, &row.huffman_data.stream_idx.into())?;
 
-
-
-
-
-
-
-
-
-
-
+                    region.assign_advice(
+                        || "lstream_config.len_lstream1",
+                        self.lstream_config.len_lstream1,
+                        i,
+                        || Value::known(F::from(aux_data[0])),
+                    )?;
+                    region.assign_advice(
+                        || "lstream_config.len_lstream2",
+                        self.lstream_config.len_lstream2,
+                        i,
+                        || Value::known(F::from(aux_data[1])),
+                    )?;
+                    region.assign_advice(
+                        || "lstream_config.len_lstream3",
+                        self.lstream_config.len_lstream3,
+                        i,
+                        || Value::known(F::from(aux_data[2])),
+                    )?;
+                    region.assign_advice(
+                        || "lstream_config.len_lstream4",
+                        self.lstream_config.len_lstream4,
+                        i,
+                        || Value::known(F::from(aux_data[3])),
+                    )?;
                 }
 
                 Ok(())
@@ -3377,10 +3390,12 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
+        let mut data: Vec<u64> = vec![];
 
         for idx in 0..self.compressed_frames.len() {
-            let (rows, _decoded_literals) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
+            let (rows, _decoded_literals, aux_data) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
             witness_rows.extend_from_slice(&rows);
+            data.extend_from_slice(&aux_data);
         }
 
         // compression_debug
@@ -3390,6 +3405,6 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
             );
         }
 
-        config.assign(layouter, witness_rows, challenges)
+        config.assign(layouter, witness_rows, data, challenges)
     }
 }

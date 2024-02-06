@@ -190,7 +190,7 @@ fn process_block<F: Field>(
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>) {
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, last_block, block_type, block_size) =
@@ -198,7 +198,7 @@ fn process_block<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     let last_row = rows.last().expect("last row expected to exist");
-    let (_byte_offset, rows, literals) = match block_type {
+    let (_byte_offset, rows, literals, lstream_len) = match block_type {
         BlockType::RawBlock => process_block_raw(
             src,
             byte_offset,
@@ -227,7 +227,7 @@ fn process_block<F: Field>(
     };
     witness_rows.extend_from_slice(&rows);
 
-    (byte_offset, witness_rows, last_block, literals)
+    (byte_offset, witness_rows, last_block, literals, lstream_len)
 }
 
 fn process_block_header<F: Field>(
@@ -470,7 +470,7 @@ fn process_block_raw<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -487,7 +487,7 @@ fn process_block_raw<F: Field>(
         tag_next,
     );
 
-    (byte_offset, rows, vec![])
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
 }
 
 fn process_block_rle<F: Field>(
@@ -497,7 +497,7 @@ fn process_block_rle<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -514,7 +514,7 @@ fn process_block_rle<F: Field>(
         tag_next,
     );
 
-    (byte_offset, rows, vec![])
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
 }
 
 #[allow(unused_variables)]
@@ -525,7 +525,7 @@ fn process_block_zstd<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
@@ -545,7 +545,7 @@ fn process_block_zstd<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     // Depending on the literals block type, decode literals section accordingly
-    let (bytes_offset, rows, literals) = match literals_block_type {
+    let (bytes_offset, rows, literals, lstream_len): (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) = match literals_block_type {
         BlockType::RawBlock => {
             let (byte_offset, rows) = process_raw_bytes(
                 src, 
@@ -557,7 +557,7 @@ fn process_block_zstd<F: Field>(
                 ZstdTag::ZstdBlockSequenceHeader,
             );
 
-            (byte_offset, rows, vec![])
+            (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
         },
         BlockType::RleBlock => {
             let (byte_offset, rows) = process_rle_bytes(
@@ -570,7 +570,7 @@ fn process_block_zstd<F: Field>(
                 ZstdTag::ZstdBlockSequenceHeader,
             );
 
-            (byte_offset, rows, vec![])
+            (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
         },
         BlockType::ZstdCompressedBlock => {
             let mut huffman_rows = vec![];
@@ -624,13 +624,13 @@ fn process_block_zstd<F: Field>(
                 stream_offset = byte_offset;
             }
             
-            (stream_offset, huffman_rows, literals)
+            (stream_offset, huffman_rows, literals, lstream_lens)
         },
         _ => unreachable!("Invalid literals section BlockType")
     };
     witness_rows.extend_from_slice(&rows);
 
-    (bytes_offset, witness_rows, literals)
+    (bytes_offset, witness_rows, literals, lstream_len)
 }
 
 fn process_block_zstd_literals_header<F: Field>(
@@ -1193,6 +1193,12 @@ fn process_block_zstd_lstream<F: Field>(
         _ => unreachable!("stream_idx value out of range")
     };
 
+    let mut padding_end_idx = 0;
+    while lstream_bits[padding_end_idx] == 0 {
+        padding_end_idx += 1;
+    }
+    padding_end_idx += 1;
+
     // Add a witness row for leading 0s and sentinel 1-bit
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
@@ -1220,7 +1226,12 @@ fn process_block_zstd_lstream<F: Field>(
             aux_2: *tag_value,
             ..Default::default()
         },
-        huffman_data: HuffmanData::default(),
+        huffman_data: HuffmanData {
+            byte_offset: huffman_code_byte_offset as u64,
+            bit_value: 1u8,
+            stream_idx: stream_idx,
+            k: (0, padding_end_idx as u8),
+        },
         decoded_data: last_row.decoded_data.clone(),
         fse_data: FseTableRow::default(),
     });
@@ -1287,6 +1298,7 @@ fn process_block_zstd_lstream<F: Field>(
                 huffman_data: HuffmanData {
                     byte_offset: huffman_code_byte_offset as u64,
                     bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap(),
+                    stream_idx: stream_idx,
                     k: (from_bit_idx.rem_euclid(8) as u8, end_bit_idx as u8),
                 },
                 decoded_data: last_row.decoded_data.clone(),
@@ -1314,9 +1326,10 @@ fn process_block_zstd_lstream<F: Field>(
 }
 
 /// Process a slice of bytes into decompression circuit witness rows
-pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>) {
+pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
     let mut witness_rows = vec![];
     let mut literals: Vec<u64> = vec![];
+    let mut aux_data: Vec<u64> = vec![];
     let byte_offset = 0;
 
     // FrameHeaderDescriptor and FrameContentSize
@@ -1329,7 +1342,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
     witness_rows.extend_from_slice(&rows);
 
     loop {
-        let (_byte_offset, rows, last_block, new_literals) = process_block::<F>(
+        let (_byte_offset, rows, last_block, new_literals, auxiliary_info) = process_block::<F>(
             src,
             byte_offset,
             rows.last().expect("last row expected to exist"),
@@ -1337,6 +1350,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
         );
         witness_rows.extend_from_slice(&rows);
         literals.extend_from_slice(&new_literals);
+        aux_data.extend_from_slice(&auxiliary_info);
 
         if last_block {
             // TODO: Recover this assertion after the sequence section decoding is completed.
@@ -1348,7 +1362,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
     #[cfg(test)]
     let _ = draw_rows(&witness_rows);
 
-    (witness_rows, literals)
+    (witness_rows, literals, aux_data)
 }
 
 #[cfg(test)]
@@ -1430,7 +1444,7 @@ mod tests {
             encoder.finish()?
         };
 
-        let (_witness_rows, _decoded_literals) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+        let (_witness_rows, _decoded_literals, _aux_data) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
 
         Ok(())
     }
@@ -1577,7 +1591,7 @@ mod tests {
             0x84, 0xc9, 0x76, 0x84, 0xbc, 0xb8, 0xfe, 0x4e, 0x53, 0xa5, 0x06, 0x82, 0x14, 0x95, 0x51,
         ];
 
-        let (_witness_rows, decoded_literals) = process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
+        let (_witness_rows, decoded_literals, _aux_data) = process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
 
         let decoded_literal_string: String = decoded_literals.iter().filter_map(|&s| char::from_u32(s as u32)).collect();
         let expected_literal_string = String::from("Romeo and Juliet\nExcerpt from Act 2, Scene 2\n\nJULIET\nO ,! wherefore art thou?\nDeny thy fatherrefusename;\nOr, ifwilt not, be but sworn my love,\nAnd I'll no longera Capulet.\n\nROMEO\n[Aside] Shall I hear more, or sspeak at this?'Tis that isenemy;\nTyself,gh a Montague.\nWhat's? inor hand,foot,\nNor armaceany opart\nBeing to a man. Osome!in a?which we ca rose\nBy would smell as sweet;\nSo, were he'd,\nRetaindear perfectionhe owes\nWithoitle.dofffor oee\nTake mI t hy word:\nCebe new baptized;\nHencth I never will. manthus bescreen'dnightstumblest on my counsel?\n");

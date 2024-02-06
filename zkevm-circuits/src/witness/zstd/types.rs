@@ -176,6 +176,17 @@ impl From<LstreamNum> for usize {
         value as usize
     }
 }
+impl From<usize> for LstreamNum {
+    fn from(value: usize) -> LstreamNum {
+        match value {
+            0 => LstreamNum::Lstream1,
+            1 => LstreamNum::Lstream2,
+            2 => LstreamNum::Lstream3,
+            3 => LstreamNum::Lstream4,
+            _ => unreachable!("Wrong stream_idx"),
+        }
+    }
+}
 
 impl_expr!(LstreamNum);
 
@@ -367,6 +378,7 @@ pub struct DecodedData<F> {
 pub struct HuffmanData {
     pub byte_offset: u64,
     pub bit_value: u8,
+    pub stream_idx: usize,
     pub k: (u8, u8),
 }
 
