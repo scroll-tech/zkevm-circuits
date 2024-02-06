@@ -82,6 +82,7 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
         config.0.range8.load(&mut layouter)?;
         config.0.range128.load(&mut layouter)?;
         config.0.range256.load(&mut layouter)?;
+        config.0.tag_rom_table.load(&mut layouter)?;
         self.synthesize_sub(&config.0, challenges, &mut layouter)
     }
 }

@@ -123,6 +123,7 @@ pub struct DecompressionCircuitConfig<F> {
     range8: RangeTable<8>,
     range128: RangeTable<128>,
     range256: RangeTable<256>,
+    tag_rom_table: TagRomTable,
 }
 
 /// Block level details are specified in these columns.
@@ -1005,28 +1006,28 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             not::expr(meta.query_advice(is_padding, Rotation::next())),
-        //         ]);
-        //         [
-        //             meta.query_advice(tag_gadget.tag, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.max_len, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_output, Rotation::cur()),
-        //             meta.query_advice(block_gadget.is_block, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
-        //         ]
-        //         .into_iter()
-        //         .zip(tag_rom_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_advice(is_padding, Rotation::next())),
+                ]);
+                [
+                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                    meta.query_advice(tag_gadget.max_len, Rotation::cur()),
+                    // compression_debug
+                    // meta.query_advice(tag_gadget.is_output, Rotation::cur()),
+                    // meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                    // meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(tag_rom_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -1218,14 +1219,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // });
 
             // Validate that for an RLE block: value_byte == decoded_byte.
-            // compression_debug
-            // cb.condition(block_type_bit0, |cb| {
-            //     cb.require_equal(
-            //         "for RLE block, value_byte == decoded_byte",
-            //         meta.query_advice(value_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-            //         meta.query_advice(decoded_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-            //     );
-            // });
+            cb.condition(block_type_bit0, |cb| {
+                cb.require_equal(
+                    "for RLE block, value_byte == decoded_byte",
+                    meta.query_advice(value_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                    meta.query_advice(decoded_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                );
+            });
 
             // If this wasn't the first block, then the previous block's last byte should have
             // block's idx == block length.
@@ -1239,9 +1239,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //     meta.query_advice(block_gadget.idx, Rotation::prev()),
             //     meta.query_advice(block_gadget.block_len, Rotation::prev()),
             // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -2882,6 +2879,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             range8,
             range128,
             range256,
+            tag_rom_table,
         }
     }
 }
