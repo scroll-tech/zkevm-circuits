@@ -129,12 +129,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_l1_block_hashes =
             TxL1BlockHashesGadget::construct(cb, tx_type.expr(), tx_caller_address.expr());
 
-        let tx_l1_custom_tx = or::expr([
+        let tx_is_l1_scroll_tx = or::expr([
             tx_l1_msg.is_l1_msg(),
             tx_l1_block_hashes.is_l1_block_hashes(),
         ]);
 
-        let tx_l1_fee = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
+        let tx_l1_fee = cb.condition(not::expr(tx_is_l1_scroll_tx.expr()), |cb| {
             cb.require_equal(
                 "tx.nonce == sender.nonce",
                 tx_nonce.expr(),
@@ -142,12 +142,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
             TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr())
         });
-        cb.condition(tx_l1_custom_tx.expr(), |cb| {
+        cb.condition(tx_is_l1_scroll_tx.expr(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg and l1blockhashes", tx_data_gas_cost.expr());
         });
         // the rw delta caused by l1 related handling
         let l1_rw_delta = select::expr(
-            tx_l1_custom_tx.expr(),
+            tx_is_l1_scroll_tx.expr(),
             or::expr([
                 tx_l1_msg.rw_delta(),
                 tx_l1_block_hashes.rw_delta(),
@@ -156,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         ) + 1.expr();
 
         // the cost caused by l1
-        let l1_fee_cost = select::expr(tx_l1_custom_tx.expr(), 0.expr(), tx_l1_fee.tx_l1_fee());
+        let l1_fee_cost = select::expr(tx_is_l1_scroll_tx.expr(), 0.expr(), tx_l1_fee.tx_l1_fee());
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
@@ -227,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
         let tx_fee = cb.query_word_rlc();
         let l2_fee = select::expr(
-            tx_l1_custom_tx.expr(),
+            tx_is_l1_scroll_tx.expr(),
             0.expr(),
             from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
         );

@@ -932,7 +932,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
         .filter(|(i, tx)| {
             if !tx.tx_type.is_l1_scroll_tx() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
                 warn!(
-                    "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
+                    "tx {} is not signed and is not L1Msg or L1BlockHashes, skipping tx circuit keccak input",
                     i
                 );
                 false

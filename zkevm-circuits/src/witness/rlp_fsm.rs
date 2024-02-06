@@ -135,6 +135,14 @@ pub enum Tag {
     // L1MsgHash
     /// Sender
     Sender,
+
+    // L1BlockHashes
+    /// First applied L1 block
+    FirstAppliedL1Block,
+    /// Last applied L1 block
+    LastAppliedL1Block,
+    /// Block range hash
+    BlockRangeHash,
 }
 
 impl From<Tag> for usize {

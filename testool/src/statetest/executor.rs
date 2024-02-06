@@ -200,6 +200,9 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 rlp_bytes: rlp_signed,
                 rlp_unsigned_bytes: rlp_unsigned,
                 hash: tx_hash.into(),
+                first_applied_l1_block: None,
+                last_applied_l1_block: None,
+                block_range_hash: None,
             }],
             accounts,
             logger_config: LoggerConfig {

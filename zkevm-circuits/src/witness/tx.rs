@@ -95,6 +95,12 @@ pub struct Transaction {
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
     pub steps: Vec<ExecStep>,
+    /// First applied L1 block
+    pub first_applied_l1_block: Option<Word>,
+    /// Last applied L1 block
+    pub last_applied_l1_block: Option<Word>,
+    /// Block range hash
+    pub block_range_hash: Option<Vec<H256>>,
 }
 
 impl Transaction {
@@ -908,6 +914,9 @@ impl From<MockTransaction> for Transaction {
             access_list,
             calls: vec![],
             steps: vec![],
+            first_applied_l1_block: Default::default(),
+            last_applied_l1_block: Default::default(),
+            block_range_hash: Default::default(),
         }
     }
 }
@@ -958,6 +967,9 @@ pub(super) fn tx_convert(
         l1_fee: tx.l1_fee,
         l1_fee_committed: tx.l1_fee_committed,
         access_list: tx.access_list.clone(),
+        first_applied_l1_block: tx.first_applied_l1_block,
+        last_applied_l1_block: tx.last_applied_l1_block,
+        block_range_hash: tx.block_range_hash.clone(),
         calls: tx
             .calls()
             .iter()

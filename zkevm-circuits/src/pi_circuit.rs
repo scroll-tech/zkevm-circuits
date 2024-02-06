@@ -7,8 +7,8 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
+use ethabi::{encode, Token};
 use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
-use ethabi::{Token, encode, Function, StateMutability, Param, ParamType};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::{get_dummy_tx_hash, DUMMY_L1_BLOCK_HASH};
@@ -50,8 +50,8 @@ use crate::{
     table::{
         BlockContextFieldTag,
         BlockContextFieldTag::{
-            BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumAllTxs, NumTxs, Number,
-            Timestamp, L1BlockHashesCalldataRLC,
+            BaseFee, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, L1BlockHashesCalldataRLC,
+            NumAllTxs, NumTxs, Number, Timestamp,
         },
     },
     util::rlc_be_bytes,
@@ -159,7 +159,8 @@ impl PublicData {
     }
 
     fn get_last_applied_l1_block(&self) -> Option<U64> {
-        self.block_ctxs.ctxs
+        self.block_ctxs
+            .ctxs
             .last_key_value()
             .map(|(_, blk)| blk.eth_block.last_applied_l1_block.unwrap_or(U64::zero()))
     }
@@ -314,8 +315,7 @@ impl PublicData {
     }
 
     fn pi_bytes_end_offset(&self) -> usize {
-        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 5 
-          + N_BYTES_U64 // for last_applied_l1_block
+        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 5 + N_BYTES_U64 // for last_applied_l1_block
     }
 
     fn pi_hash_start_offset(&self) -> usize {
@@ -336,8 +336,7 @@ impl PublicData {
     }
 
     fn constants_end_offset(&self) -> usize {
-        self.constants_start_offset() + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD
-            + 3 * N_BYTES_U64 // for l1_block_hashes_count, num_all_l1_block_hashes and last_applied_l1_block_from_last_block
+        self.constants_start_offset() + N_BYTES_ACCOUNT_ADDRESS + N_BYTES_WORD + 3 * N_BYTES_U64 // for l1_block_hashes_count, num_all_l1_block_hashes and last_applied_l1_block_from_last_block
     }
 }
 
@@ -417,7 +416,7 @@ pub struct PiCircuitConfig<F: Field> {
 
     // The number of l1 block hashes computed by last_applied_l1_block - prev_last_applied_l1_block
     l1_block_hashes_count: Column<Advice>, // RLC(rpi) as the input to Keccak table
-     // The count of the l1 block hashes in the chunk
+    // The count of the l1 block hashes in the chunk
     num_all_l1_block_hashes: Column<Advice>,
     // The last_applied_l1_block from the prover's perspective
     last_applied_l1_block: Column<Advice>,
@@ -662,7 +661,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_tx_hashes, Rotation::cur()))
         });
 
-         meta.create_gate("padding l1 block hashes", |meta| {
+        meta.create_gate("padding l1 block hashes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_boolean(
@@ -927,25 +926,22 @@ impl<F: Field> PiCircuitConfig<F> {
         debug_assert_eq!(offset, public_data.l1_block_hashes_start_offset());
 
         // 2. Assign l1 block hashes bytes.
-        let (offset, l1_block_range_hash_rlc_cell) = self.assign_l1_block_hashes_bytes(
-            region,
-            offset,
-            public_data,
-            challenges,
-        )?;
+        let (offset, l1_block_range_hash_rlc_cell) =
+            self.assign_l1_block_hashes_bytes(region, offset, public_data, challenges)?;
         debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
         // 3. Assign public input bytes.
-        let (offset, last_applied_l1_block_cell, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
-            region,
-            offset,
-            public_data,
-            block_value_cells,
-            tx_value_cells,
-            &data_hash_rlc_cell,
-            &l1_block_range_hash_rlc_cell,
-            challenges,
-        )?;
+        let (offset, last_applied_l1_block_cell, pi_hash_rlc_cell, connections) = self
+            .assign_pi_bytes(
+                region,
+                offset,
+                public_data,
+                block_value_cells,
+                tx_value_cells,
+                &data_hash_rlc_cell,
+                &l1_block_range_hash_rlc_cell,
+                challenges,
+            )?;
         debug_assert_eq!(offset, public_data.pi_hash_start_offset());
 
         // 4. Assign public input hash (hi, lo) decomposition.
@@ -954,8 +950,14 @@ impl<F: Field> PiCircuitConfig<F> {
         debug_assert_eq!(offset, public_data.constants_start_offset());
 
         // 5. Assign block coinbase and difficulty.
-        let offset =
-            self.assign_constants(region, offset, public_data, &last_applied_l1_block_cell, block_value_cells, challenges)?;
+        let offset = self.assign_constants(
+            region,
+            offset,
+            public_data,
+            &last_applied_l1_block_cell,
+            block_value_cells,
+            challenges,
+        )?;
         debug_assert_eq!(offset, public_data.constants_end_offset() + 1);
 
         Ok((pi_hash_cells, connections))
@@ -1108,6 +1110,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
             }
         }
+
         // Copy tx_hashes to tx table
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
             region.constrain_equal(
@@ -1157,7 +1160,9 @@ impl<F: Field> PiCircuitConfig<F> {
     ) -> Result<(usize, AssignedCell<F, F>), Error> {
         let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
 
-        for q_offset in public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset() {
+        for q_offset in
+            public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset()
+        {
             region.assign_fixed(
                 || "q_l1_block_hashes",
                 self.q_l1_block_hashes,
@@ -1166,7 +1171,9 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
-        for q_offset in public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset() {
+        for q_offset in
+            public_data.l1_block_hashes_start_offset()..public_data.l1_block_hashes_end_offset()
+        {
             self.q_not_end.enable(region, q_offset)?;
         }
 
@@ -1176,11 +1183,11 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut l1_block_hashes_bytes_rlc = None;
         let mut l1_block_hashes_bytes_length = None;
 
-        for (i, l1_block_hash) in l1_block_hashes  
-            .into_iter()  
-            .chain(std::iter::repeat(dummy_l1_block_hash))  
-            .take(public_data.max_l1_block_hashes)  
-            .enumerate() 
+        for (i, l1_block_hash) in l1_block_hashes
+            .into_iter()
+            .chain(std::iter::repeat(dummy_l1_block_hash))
+            .take(public_data.max_l1_block_hashes)
+            .enumerate()
         {
             let is_rpi_padding = i >= num_l1_block_hashes;
 
@@ -1230,7 +1237,7 @@ impl<F: Field> PiCircuitConfig<F> {
             )?
         };
         self.q_keccak.enable(region, offset)?;
-        
+
         Ok((offset + 1, l1_block_range_hash_rlc_cell))
     }
 
@@ -1248,7 +1255,15 @@ impl<F: Field> PiCircuitConfig<F> {
         data_hash_rlc_cell: &AssignedCell<F, F>,
         l1_block_range_hash_rlc_cell: &AssignedCell<F, F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(usize, AssignedCell<F, F>, AssignedCell<F, F>, Connections<F>), Error> {
+    ) -> Result<
+        (
+            usize,
+            AssignedCell<F, F>,
+            AssignedCell<F, F>,
+            Connections<F>,
+        ),
+        Error,
+    > {
         let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
 
         // Enable RLC accumulator consistency check throughout the above rows.
@@ -1318,7 +1333,7 @@ impl<F: Field> PiCircuitConfig<F> {
         // Copy data_hash value we collected from assigning data bytes.
         region.constrain_equal(data_hash_rlc_cell.cell(), data_hash_cell.cell())?;
 
-         let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
+        let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
             region,
             offset,
             &public_data.last_applied_l1_block.to_be_bytes().to_vec(),
@@ -1343,8 +1358,11 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         offset = tmp_offset;
         let l1_block_range_hash_cell = cells[RPI_CELL_IDX].clone();
-        
-        region.constrain_equal(l1_block_range_hash_rlc_cell.cell(), l1_block_range_hash_cell.cell())?;
+
+        region.constrain_equal(
+            l1_block_range_hash_rlc_cell.cell(),
+            l1_block_range_hash_cell.cell(),
+        )?;
 
         let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
         let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
@@ -1372,7 +1390,12 @@ impl<F: Field> PiCircuitConfig<F> {
         };
         self.q_keccak.enable(region, offset)?;
 
-        Ok((offset + 1, last_applied_l1_block_cell, pi_hash_rlc_cell, connections))
+        Ok((
+            offset + 1,
+            last_applied_l1_block_cell,
+            pi_hash_rlc_cell,
+            connections,
+        ))
     }
 
     /// Assign the (hi, lo) decomposition of pi_hash.
@@ -1484,7 +1507,8 @@ impl<F: Field> PiCircuitConfig<F> {
         if public_data.prev_last_applied_l1_block != 0 {
             assert!(
                 public_data.last_applied_l1_block >= public_data.prev_last_applied_l1_block,
-                "last_applied_l1_block should be greater or equal than prev_last_applied_l1_block");
+                "last_applied_l1_block should be greater or equal than prev_last_applied_l1_block"
+            );
             l1_block_hashes_count =
                 public_data.last_applied_l1_block - public_data.prev_last_applied_l1_block;
         }
@@ -1493,7 +1517,11 @@ impl<F: Field> PiCircuitConfig<F> {
         let rpi_cells = [
             l1_block_hashes_count.to_be_bytes().to_vec(),
             num_all_l1_block_hashes.to_be_bytes().to_vec(),
-            last_applied_l1_block.map(|blk| blk.as_u64()).unwrap_or(0).to_be_bytes().to_vec(),
+            last_applied_l1_block
+                .map(|blk| blk.as_u64())
+                .unwrap_or(0)
+                .to_be_bytes()
+                .to_vec(),
         ]
         .iter()
         .map(|value_be_bytes| {
@@ -1511,15 +1539,9 @@ impl<F: Field> PiCircuitConfig<F> {
         })
         .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
 
-        region.constrain_equal(
-            rpi_cells[0].cell(),
-            rpi_cells[1].cell(),
-        )?;
+        region.constrain_equal(rpi_cells[0].cell(), rpi_cells[1].cell())?;
 
-        region.constrain_equal(
-            last_applied_l1_block_cell.cell(),
-            rpi_cells[2].cell(),
-        )?;
+        region.constrain_equal(last_applied_l1_block_cell.cell(), rpi_cells[2].cell())?;
 
         Ok(offset)
     }
@@ -1792,17 +1814,6 @@ impl<F: Field> PiCircuitConfig<F> {
         let block_ctxs = &public_data.block_ctxs;
         let num_all_txs_in_blocks = public_data.get_num_all_txs();
 
-        #[allow(deprecated)]
-        let function = Function {
-            name: "appendBlockhashes".to_owned(),
-            inputs: vec![Param { name: "_hashes".to_owned(), kind: ParamType::Array(Box::new(ParamType::FixedBytes(32))), internal_type: None }],
-            outputs: vec![],
-            state_mutability: StateMutability::NonPayable,
-            constant: None,
-        };
-        let function_signature = function.signature();
-        let selector = &keccak256(function_signature.as_bytes())[0..4];
-
         for block_ctx in block_ctxs.ctxs.values().cloned().chain(
             (block_ctxs.ctxs.len()..public_data.max_inner_blocks).map(|_| {
                 BlockContext::padding(
@@ -1823,14 +1834,33 @@ impl<F: Field> PiCircuitConfig<F> {
                 .cloned()
                 .unwrap_or(0);
             let tag = [
-                Coinbase, Timestamp, Number, Difficulty, GasLimit, BaseFee, ChainId, NumTxs,
-                CumNumTxs, NumAllTxs, L1BlockHashesCalldataRLC,
+                Coinbase,
+                Timestamp,
+                Number,
+                Difficulty,
+                GasLimit,
+                BaseFee,
+                ChainId,
+                NumTxs,
+                CumNumTxs,
+                NumAllTxs,
+                L1BlockHashesCalldataRLC,
             ];
 
-            let l1_block_hashes = block_ctx
-                .l1_block_hashes
-                .as_ref()
-                .map_or_else(|| vec![], |hashes| hashes.iter().map(|&h| Token::FixedBytes(h.as_bytes().to_vec())).collect());
+            // Generate the L1BlockHashes Tx CallData
+            let fn_selector: u32 = 0x9295b80c;
+            let selector = fn_selector.to_be_bytes();
+            let selector = &selector[..];
+
+            let l1_block_hashes = block_ctx.l1_block_hashes.as_ref().map_or_else(
+                || vec![],
+                |hashes| {
+                    hashes
+                        .iter()
+                        .map(|&h| Token::FixedBytes(h.as_bytes().to_vec()))
+                        .collect()
+                },
+            );
             let params = encode(&[Token::Array(l1_block_hashes)]);
             let mut l1_block_hashes_calldata = selector.to_vec();
             l1_block_hashes_calldata.extend(params);
@@ -1842,7 +1872,13 @@ impl<F: Field> PiCircuitConfig<F> {
             let mut cum_num_txs_field = F::from(cum_num_txs as u64);
             cum_num_txs += num_txs;
             for (row, tag) in block_ctx
-                .table_assignments(num_txs, cum_num_txs, num_all_txs, l1_block_hashes_calldata, challenges)
+                .table_assignments(
+                    num_txs,
+                    cum_num_txs,
+                    num_all_txs,
+                    l1_block_hashes_calldata,
+                    challenges,
+                )
                 .into_iter()
                 .zip(tag.iter())
             {

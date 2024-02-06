@@ -771,10 +771,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("l1 block hashes lookup into RLP table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
             let is_tag_in_l1_block_hashes_hash = sum::expr([
-                is_nonce(meta),
-                is_gas(meta),
                 is_to(meta),
-                is_value(meta),
                 is_data_rlc(meta),
                 is_caller_addr(meta),
                 is_hash_length(meta),
@@ -2199,7 +2196,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 let case2 = tx.tx_type.is_eip155_tx() && (tx_tag == ChainID);
                 F::from((case1 || case2) as u64)
             });
-            // 3. lookup to RLP table for hashing (non L1 msg and L1 block hashes)
+            // 3. lookup to RLP table for hashing (non L1 msg and non L1 block hashes)
             conditions.insert(LookupCondition::RlpHashTag, {
                 let hash_set = [
                     Nonce,
@@ -2236,11 +2233,8 @@ impl<F: Field> TxCircuitConfig<F> {
             });
             // 5. lookup to RLP table for hashing (L1 block hashes)
             conditions.insert(LookupCondition::L1BlockHashesHash, {
-                let hash_set = [
-                    Nonce,
-                    Gas,
+                let hash_set = [ 
                     CalleeAddress,
-                    TxFieldTag::Value,
                     CallDataRLC,
                     CallerAddress,
                     TxHashLength,
@@ -2343,7 +2337,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
                 ("byte", self.calldata_byte, F::from(*byte as u64)),
                 ("is_calldata", self.is_calldata, F::one()),
-                ("is_l1_block_hashes", self.is_l1_block_hashes, F::from(tx.tx_type.is_l1_block_hashes())),
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
             }
@@ -2479,7 +2472,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
                 (self.calldata_gas_cost_acc, F::zero()),
-                (self.is_l1_block_hashes, F::zero()),
             ] {
                 region.assign_advice(|| "", col, offset, || Value::known(value))?;
             }

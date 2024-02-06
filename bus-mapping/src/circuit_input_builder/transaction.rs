@@ -242,6 +242,12 @@ pub struct Transaction {
     pub(crate) calls: Vec<Call>,
     /// Execution steps
     steps: Vec<ExecStep>,
+    /// First applied L1 block
+    pub first_applied_l1_block: Option<Word>,
+    /// Last applied L1 block
+    pub last_applied_l1_block: Option<Word>,
+    /// Block range hash
+    pub block_range_hash: Option<Vec<H256>>,
 }
 
 impl From<&Transaction> for geth_types::Transaction {
@@ -263,6 +269,9 @@ impl From<&Transaction> for geth_types::Transaction {
             rlp_unsigned_bytes: tx.rlp_unsigned_bytes.clone(),
             rlp_bytes: tx.rlp_bytes.clone(),
             tx_type: tx.tx_type,
+            first_applied_l1_block: tx.first_applied_l1_block,
+            last_applied_l1_block: tx.last_applied_l1_block,
+            block_range_hash: tx.block_range_hash.clone(),
             ..Default::default()
         }
     }
@@ -297,6 +306,9 @@ impl Transaction {
             l1_fee: Default::default(),
             l1_fee_committed: Default::default(),
             access_list: None,
+            first_applied_l1_block: Some(Word::zero()),
+            last_applied_l1_block: Some(Word::zero()),
+            block_range_hash: Default::default(),
         }
     }
 
@@ -410,6 +422,9 @@ impl Transaction {
             l1_fee,
             l1_fee_committed,
             access_list: eth_tx.access_list.clone(),
+            first_applied_l1_block: eth_tx.first_applied_l1_block,
+            last_applied_l1_block: eth_tx.last_applied_l1_block,
+            block_range_hash: eth_tx.block_range_hash.clone(),
         })
     }
 

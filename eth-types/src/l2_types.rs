@@ -44,7 +44,7 @@ pub struct BlockTrace {
     pub l1_block_hashes: Option<Vec<Hash>>,
     /// Last applied L1 block number
     #[serde(rename = "lastAppliedL1Block", default)]
-    pub last_applied_l1_block: Option<U64>,
+    pub last_applied_l1_block: Option<u64>,
 }
 
 /// l2 chunk trace
@@ -72,7 +72,7 @@ impl From<BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             l1_block_hashes: b.l1_block_hashes,
-            last_applied_l1_block: b.last_applied_l1_block,
+            last_applied_l1_block: Some(U64::from(b.last_applied_l1_block.unwrap_or(0))),
             ..b.header
         }
     }
@@ -90,7 +90,7 @@ impl From<&BlockTrace> for EthBlock {
             transactions: txs,
             difficulty: 0.into(),
             l1_block_hashes: b.l1_block_hashes.clone(),
-            last_applied_l1_block: b.last_applied_l1_block,
+            last_applied_l1_block: Some(U64::from(b.last_applied_l1_block.unwrap_or(0))),
             ..b.header.clone()
         }
     }
@@ -133,6 +133,15 @@ pub struct TransactionTrace {
     pub r: U256,
     /// signature s
     pub s: U256,
+    /// first applied l1 block
+    #[serde(rename = "firstAppliedL1Block")]
+    pub first_applied_l1_block: Option<U256>,
+    /// last applied l1 block
+    #[serde(rename = "lastAppliedL1Block")]
+    pub last_applied_l1_block: Option<U256>,
+    /// block range hash
+    #[serde(rename = "blockRangeHash")]
+    pub block_range_hash: Option<Vec<H256>>,
 }
 
 impl TransactionTrace {
@@ -164,6 +173,9 @@ impl TransactionTrace {
             max_fee_per_gas: None,
             chain_id: Some(self.chain_id),
             other: Default::default(),
+            first_applied_l1_block: self.first_applied_l1_block,
+            last_applied_l1_block: self.last_applied_l1_block,
+            block_range_hash: self.block_range_hash.clone(),
         }
     }
 }

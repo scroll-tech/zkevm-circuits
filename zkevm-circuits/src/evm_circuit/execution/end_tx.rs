@@ -85,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let tx_is_l1_block_hashes =
             IsEqualGadget::construct(cb, tx_type.expr(), (TxType::L1BlockHashes as u64).expr());
 
-        let tx_l1_custom_tx = or::expr([
+        let tx_is_l1_scroll_tx = or::expr([
             tx_is_l1_msg.expr(),
             tx_is_l1_block_hashes.expr(),
         ]);
@@ -107,7 +107,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
-        let gas_fee_refund = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
+        let gas_fee_refund = cb.condition(not::expr(tx_is_l1_scroll_tx.expr()), |cb| {
             UpdateBalanceGadget::construct(
                 cb,
                 tx_caller_address.expr(),
@@ -129,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
 
-        let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
+        let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_is_l1_scroll_tx.expr()), |cb| {
             MulWordByU64Gadget::construct(
                 cb,
                 effective_tip,
@@ -139,21 +139,21 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         let effective_fee = cb.query_word_rlc();
 
-        cb.condition(tx_l1_custom_tx.expr(), |cb| {
+        cb.condition(tx_is_l1_scroll_tx.expr(), |cb| {
             cb.require_zero("l1fee is 0 for l1msg", tx_l1_fee.expr());
         });
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
             tx_l1_fee.expr()
                 + select::expr(
-                    tx_l1_custom_tx.expr(),
+                    tx_is_l1_scroll_tx.expr(),
                     0.expr(),
                     from_bytes::expr(&mul_effective_tip_by_gas_used.product().cells[..16]),
                 ),
             from_bytes::expr(&effective_fee.cells[..16]),
         );
 
-        cb.condition(tx_l1_custom_tx.expr(), |cb| {
+        cb.condition(tx_is_l1_scroll_tx.expr(), |cb| {
             cb.require_zero("effective fee is zero for l1 msg and l1 block hashes", effective_fee.expr());
         });
 
@@ -172,7 +172,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // If coinbase account balance will become positive because of this tx, update its codehash
         // from 0 to the empty codehash.
-        let coinbase_transfer = cb.condition(not::expr(tx_l1_custom_tx.expr()), |cb| {
+        let coinbase_transfer = cb.condition(not::expr(tx_is_l1_scroll_tx.expr()), |cb| {
             TransferToGadget::construct(
                 cb,
                 coinbase.expr(),
@@ -239,7 +239,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
                         10.expr() - is_first_tx.expr()
-                            + not::expr(tx_l1_custom_tx.expr())
+                            + not::expr(tx_is_l1_scroll_tx.expr())
                                 * (coinbase_transfer.rw_delta() + 1.expr()),
                     ),
                     ..StepStateTransition::any()
@@ -248,7 +248,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
 
         let rw_counter_delta = 9.expr() - is_first_tx.expr()
-            + not::expr(tx_l1_custom_tx.expr()) * (coinbase_transfer.rw_delta() + 1.expr());
+            + not::expr(tx_is_l1_scroll_tx.expr()) * (coinbase_transfer.rw_delta() + 1.expr());
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {

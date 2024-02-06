@@ -212,6 +212,9 @@ impl From<MockTransaction> for Transaction {
             max_fee_per_gas: Some(mock.max_fee_per_gas),
             chain_id: Some(mock.chain_id.into()),
             other: OtherFields::default(),
+            first_applied_l1_block: None,
+            last_applied_l1_block: None,
+            block_range_hash: None,
         }
     }
 }

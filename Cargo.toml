@@ -27,7 +27,7 @@ anyhow = "1.0"
 ark-std = "0.3"
 ctor = "0.1"
 env_logger = "0.10"
-ethers = { version = "=2.0.7", features = ["ethers-solc"] }
+ethers = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc", features = ["ethers-solc"] }
 ethers-core = { git = "https://github.com/LimeChain/scroll-ethers-rs.git", branch = "LimeChain/l1-block-hashes-poc", features = ["scroll"] }
 ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"

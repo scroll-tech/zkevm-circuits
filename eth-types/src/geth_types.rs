@@ -84,7 +84,11 @@ impl TxType {
             _ => {
                 if cfg!(feature = "scroll") {
                     if tx.v.is_zero() && tx.r.is_zero() && tx.s.is_zero() {
-                        Self::L1Msg
+                        if tx.nonce.is_zero() {
+                            Self::L1BlockHashes
+                        } else {
+                            Self::L1Msg
+                        }
                     } else {
                         match tx.v.as_u64() {
                             0 | 1 | 27 | 28 => Self::PreEip155,
@@ -300,6 +304,13 @@ pub struct Transaction {
 
     /// Transaction hash
     pub hash: H256,
+
+    /// The first applied L1 block number
+    pub first_applied_l1_block: Option<Word>,
+    /// The last applied L1 block number
+    pub last_applied_l1_block: Option<Word>,
+    /// The block range hashes
+    pub block_range_hash: Option<Vec<H256>>,
 }
 
 impl From<&Transaction> for crate::Transaction {
@@ -344,6 +355,9 @@ impl From<&crate::Transaction> for Transaction {
             rlp_bytes: tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(tx),
             hash: tx.hash,
+            first_applied_l1_block: tx.first_applied_l1_block,
+            last_applied_l1_block: tx.last_applied_l1_block,
+            block_range_hash: tx.block_range_hash.clone(),
         }
     }
 }
