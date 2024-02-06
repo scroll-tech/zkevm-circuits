@@ -1251,6 +1251,12 @@ fn process_block_zstd_lstream<F: Field>(
                 (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
             }
 
+            let end_bit_idx = if current_byte_idx > from_byte_idx {
+                current_bit_idx.rem_euclid(8) + 8
+            } else {
+                current_bit_idx.rem_euclid(8)
+            };
+
             // Add a witness row for emitted symbol
             witness_rows.push(ZstdWitnessRow {
                 state: ZstdState {
@@ -1281,7 +1287,7 @@ fn process_block_zstd_lstream<F: Field>(
                 huffman_data: HuffmanData {
                     byte_offset: huffman_code_byte_offset as u64,
                     bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap(),
-                    k: (from_bit_idx.rem_euclid(8) as u8, current_bit_idx.rem_euclid(8) as u8),
+                    k: (from_bit_idx.rem_euclid(8) as u8, end_bit_idx as u8),
                 },
                 decoded_data: last_row.decoded_data.clone(),
                 fse_data: FseTableRow::default(),
