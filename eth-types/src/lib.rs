@@ -1022,7 +1022,7 @@ mod tests {
                     to: None,
                     gas_used: U256::zero(),
                     call_type: "CALL".to_string(),
-                    output: Bytes::from([0x00])
+                    output: Some(Bytes::from([0x00]))
                 }
             }
         );
