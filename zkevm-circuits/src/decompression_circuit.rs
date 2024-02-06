@@ -2794,14 +2794,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             });
 
             // bitstream decoder ends at index=7.
-            // compression_debug
-            // cb.condition(is_last, |cb| {
-            //     cb.require_equal(
-            //         "bitstream decoder ends at index=7",
-            //         meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
-            //         7.expr(),
-            //     );
-            // });
+            cb.condition(is_last, |cb| {
+                cb.require_equal(
+                    "bitstream decoder ends at index=7",
+                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
+                    7.expr(),
+                );
+            });
 
             // for all rows except the last.
             let is_strictly_contained = and::expr([
@@ -2816,21 +2815,19 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 and::expr([is_not_last.expr(), bitstream_decoder.is_spanned(meta, None)]);
             // if bitstring is strictly contained.
             cb.condition(is_strictly_contained, |cb| {
-                // compression_debug
-                // cb.require_equal(
-                //     "strictly contained bitstring: bit_index_start",
-                //     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
-                //     meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()) + 1.expr(),
-                // );
-                // cb.require_equal(
-                //     "strictly contained bitstring: byte_idx",
-                //     meta.query_advice(byte_idx, Rotation::next()),
-                //     meta.query_advice(byte_idx, Rotation::cur()),
-                // );
+                cb.require_equal(
+                    "strictly contained bitstring: bit_index_start",
+                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
+                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()) + 1.expr(),
+                );
+                cb.require_equal(
+                    "strictly contained bitstring: byte_idx",
+                    meta.query_advice(byte_idx, Rotation::next()),
+                    meta.query_advice(byte_idx, Rotation::cur()),
+                );
             });
 
             // if bitstring is byte-aligned.
-            // compression_debug
             cb.condition(is_byte_aligned, |cb| {
                 cb.require_equal(
                     "byte-aligned bitstring: bit_index_start",
@@ -2861,8 +2858,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 sum::expr([
-                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    // TODO: Verify huffman code assumption?, compression_debug
+                    // meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+                    // meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
                 ]),
             ]))
