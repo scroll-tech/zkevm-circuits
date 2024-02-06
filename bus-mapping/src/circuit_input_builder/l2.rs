@@ -13,7 +13,10 @@ use eth_types::{
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::{AccountData, ZktrieState};
-use std::collections::hash_map::{Entry, HashMap};
+use std::collections::{
+    hash_map::{Entry, HashMap},
+    HashSet,
+};
 
 impl From<&AccountData> for state_db::Account {
     fn from(acc_data: &AccountData) -> Self {
@@ -144,25 +147,31 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
+        // store the code that created in this tx, which is not include in prestate
+        let mut created = HashSet::new();
         // filter all precompile calls and empty calls
         let mut call_trace = execution_result
             .call_trace
             .flatten_trace(vec![])
             .into_iter()
             .filter(|call| {
+                if call.call_type.is_create() && !call.output.is_empty() {
+                    created.insert(call.to.unwrap());
+                }
                 let (is_call_to_precompile, is_callee_code_empty) = call
                     .to
                     .map(|ref addr| {
                         (
                             is_precompiled(addr),
-                            execution_result
-                                .prestate
-                                .get(addr)
-                                .unwrap()
-                                .code
-                                .as_ref()
-                                .unwrap()
-                                .is_empty(),
+                            !created.contains(addr)
+                                && execution_result
+                                    .prestate
+                                    .get(addr)
+                                    .unwrap()
+                                    .code
+                                    .as_ref()
+                                    .unwrap()
+                                    .is_empty(),
                         )
                     })
                     .unwrap_or((false, false));
@@ -170,7 +179,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     call.gas_used.is_zero() && !call.call_type.is_create() && is_callee_code_empty;
                 !(is_call_to_precompile || is_call_to_empty)
             })
-            .rev();
+            .collect::<Vec<_>>();
         log::trace!("call_trace: {call_trace:?}");
 
         for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
@@ -192,7 +201,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                         continue;
                     }
                 }
-                let call = call_trace.next();
+                let call = call_trace.pop();
                 log::trace!("call_trace pop: {call:?}, current step: {step:?}");
                 call
             } else {
