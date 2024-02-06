@@ -2080,56 +2080,57 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ///////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////////// ZstdTag::ZstdBlockHuffmanCode /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
-        // compression_debug
-        // meta.create_gate(
-        //     "DecompressionCircuit: ZstdBlockHuffmanCode (first row)",
-        //     |meta| {
-        //         let mut cb = BaseConstraintBuilder::default();
+        
+        meta.create_gate(
+            "DecompressionCircuit: ZstdBlockHuffmanCode (first row)",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-        //         // - The first row of the HuffmanCode tag is the leading 0s and sentinel bit.
-        //         // - The second row of the HuffmanCode tag is the reading of AL number of bits from
-        //         // the bitstream to find the initial state in the FSE table.
-        //         // - Only from the third row onwards, do we start emitting symbols (weights).
+                // - The first row of the HuffmanCode tag is the leading 0s and sentinel bit.
+                // - The second row of the HuffmanCode tag is the reading of AL number of bits from
+                // the bitstream to find the initial state in the FSE table.
+                // - Only from the third row onwards, do we start emitting symbols (weights).
 
-        //         cb.require_zero(
-        //             "num_emitted starts at 0 from the second row",
-        //             meta.query_advice(fse_decoder.num_emitted, Rotation::next()),
-        //         );
+                // compression_debug
+                // cb.require_zero(
+                //     "num_emitted starts at 0 from the second row",
+                //     meta.query_advice(fse_decoder.num_emitted, Rotation::next()),
+                // );
 
-        //         // On the second row we read AL number of bits.
-        //         cb.require_equal(
-        //             "AL number of bits read on the second row",
-        //             meta.query_advice(huffman_tree_config.fse_table_al, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_index_end, Rotation::next())
-        //                 - meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next())
-        //                 + 1.expr(),
-        //         );
-        //         // Whatever bitstring we read, is also the initial state in the FSE table, where we
-        //         // start applying the FSE table.
-        //         cb.require_equal(
-        //             "init state of FSE table",
-        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::next()),
-        //             meta.query_advice(fse_decoder.state, Rotation(2)),
-        //         );
+                // // On the second row we read AL number of bits.
+                // cb.require_equal(
+                //     "AL number of bits read on the second row",
+                //     meta.query_advice(huffman_tree_config.fse_table_al, Rotation::cur()),
+                //     meta.query_advice(bitstream_decoder.bit_index_end, Rotation::next())
+                //         - meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next())
+                //         + 1.expr(),
+                // );
+                // // Whatever bitstring we read, is also the initial state in the FSE table, where we
+                // // start applying the FSE table.
+                // cb.require_equal(
+                //     "init state of FSE table",
+                //     meta.query_advice(bitstream_decoder.bit_value, Rotation::next()),
+                //     meta.query_advice(fse_decoder.state, Rotation(2)),
+                // );
 
-        //         let lstream_kind = meta.query_advice(lstream_config.lstream_kind, Rotation::cur());
-        //         cb.require_equal(
-        //             "tag_next after Huffman code depending on Lstream kind",
-        //             meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-        //             select::expr(
-        //                 lstream_kind,
-        //                 ZstdTag::ZstdBlockJumpTable.expr(),
-        //                 ZstdTag::ZstdBlockLstream.expr(),
-        //             ),
-        //         );
+                let lstream_kind = meta.query_advice(lstream_config.lstream_kind, Rotation::cur());
+                cb.require_equal(
+                    "tag_next after Huffman code depending on Lstream kind",
+                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                    select::expr(
+                        lstream_kind,
+                        ZstdTag::ZstdBlockJumpTable.expr(),
+                        ZstdTag::ZstdBlockLstream.expr(),
+                    ),
+                );
 
-        //         cb.gate(and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //         ]))
-        //     },
-        // );
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                ]))
+            },
+        );
         meta.create_gate(
             "DecompressionCircuit: ZstdBlockHuffmanCode (wherever we emit a symbol)",
             |meta| {
