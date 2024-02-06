@@ -3009,22 +3009,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     //     }
                     // };
 
-                    // block_gadget,
-                    //     pub struct BlockGadget {
-                    //         // pub struct BlockGadget<F> {
-                    //             /// Boolean column to indicate that we are processing a block.
-                    //             is_block: Column<Advice>,
-                    //             /// The incremental index of the byte within this block.
-                    //             idx: Column<Advice>,
-                    //             /// The number of compressed bytes in the block.
-                    //             block_len: Column<Advice>,
-                    //             /// Boolean column to mark whether or not this is the last block.
-                    //             is_last_block: Column<Advice>,
-                    //             // compression_debug
-                    //             // Check: block_idx <= block_len.
-                    //             // idx_cmp_len: ComparatorConfig<F, 1>,
-                    //         }
-
 
                     // Tag Gadget
 
@@ -3169,7 +3153,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
 
                     // Literals Header
-                    // literals_header,
                     //     struct LiteralsHeaderDecomposition {
                     //         /// The branch we take while decomposing the Literals Header. We compare this value against the
                     //         /// Read-only memory table for Literals Header.
@@ -3185,7 +3168,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
 
                     // Huffman Tree Config
-                    // huffman_tree_config,
                     //     struct HuffmanConfig {
                     //         /// Column to save the byte offset at which the huffman header is described.
                     //         huffman_tree_idx: Column<Advice>,
@@ -3199,7 +3181,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     
 
                     // Bitstream Decoder
-                    // bitstream_decoder,
                     //     pub struct BitstreamDecoder<F> {
                     //         /// The symbol that this bitstring decodes to. We are using this for decoding using FSE table
                     //         /// or a Huffman Tree. So this symbol represents the decoded value that the bitstring maps to.
@@ -3235,22 +3216,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     //     i,
                     //     || Value::known(F::from(row.huffman_data.bit_value as u64)),
                     // )?;
-
-                    // let bitstream_decoder = {
-                    //     BitstreamDecoder {
-                    //         bit_index_start: meta.advice_column(),
-                    //         bit_index_end,
-                    //         bitstream_contained: LtChip::configure(
-                    //             meta,
-                    //             |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                    //             |meta| meta.query_advice(bit_index_end, Rotation::cur()),
-                    //             |_| 8.expr(),
-                    //             range256.into(),
-                    //         ),
-                    //         bit_value: meta.advice_column(),
-                    //         decoded_symbol: meta.advice_column(),
-                    //     }
-                    // };
 
                     
                     // FSE Gadget
