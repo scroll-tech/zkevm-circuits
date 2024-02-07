@@ -101,6 +101,18 @@ fn process_frame_header<F: Field>(
             Some(*acc)
         })
         .collect::<Vec<Value<F>>>();
+    let tag_rlc_iter = fcs_bytes
+        .iter()
+        .scan(Value::known(F::zero()), |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        })
+        .collect::<Vec<Value<F>>>();
+    let tag_rlc = *(tag_rlc_iter
+        .clone()
+        .last()
+        .expect("Tag RLC expected"));
+
     let aux_1 = fcs_value_rlcs
         .last()
         .expect("FrameContentSize bytes expected");
@@ -118,8 +130,8 @@ fn process_frame_header<F: Field>(
                 tag_value: Value::known(F::from(*fhd_byte as u64)),
                 tag_value_acc: Value::known(F::from(*fhd_byte as u64)),
                 is_tag_change: true,
-                tag_rlc: Value::known(F::zero()),
-                tag_rlc_acc: Value::known(F::zero()),
+                tag_rlc: Value::known(F::from(*fhd_byte as u64)),
+                tag_rlc_acc: Value::known(F::from(*fhd_byte as u64)),
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + 1) as u64,
@@ -144,9 +156,10 @@ fn process_frame_header<F: Field>(
                 .iter()
                 .zip(fcs_tag_value_iter)
                 .zip(fcs_value_rlcs.iter().rev())
+                .zip(tag_rlc_iter.iter().rev())
                 .enumerate()
                 .map(
-                    |(i, ((&value_byte, tag_value_acc), &value_rlc))| ZstdWitnessRow {
+                    |(i, (((&value_byte, tag_value_acc), &value_rlc), &tag_rlc_acc))| ZstdWitnessRow {
                         state: ZstdState {
                             tag: ZstdTag::FrameContentSize,
                             tag_next: ZstdTag::BlockHeader,
@@ -156,8 +169,8 @@ fn process_frame_header<F: Field>(
                             tag_value: fcs_tag_value,
                             tag_value_acc,
                             is_tag_change: i == 0,
-                            tag_rlc: Value::known(F::zero()),
-                            tag_rlc_acc: Value::known(F::zero()),
+                            tag_rlc,
+                            tag_rlc_acc,
                         },
                         encoded_data: EncodedData {
                             byte_idx: (byte_offset + 2 + i) as u64,
@@ -262,6 +275,12 @@ fn process_block_header<F: Field>(
     });
     let tag_value = tag_value_iter.clone().last().expect("BlockHeader expected");
 
+    let tag_rlc_acc = bh_bytes.iter().scan(Value::known(F::zero()), |acc, &byte| {
+        *acc = *acc * randomness + Value::known(F::from(byte as u64));
+        Some(*acc)
+    });
+    let tag_rlc = tag_rlc_acc.clone().last().expect("Tag RLC expected");
+
     // BlockHeader follows FrameContentSize which is processed in reverse order.
     // Hence value_rlc at the first BlockHeader byte will be calculated as:
     //
@@ -285,9 +304,10 @@ fn process_block_header<F: Field>(
             .iter()
             .zip(tag_value_iter)
             .zip(value_rlcs.iter())
+            .zip(tag_rlc_acc)
             .enumerate()
             .map(
-                |(i, ((&value_byte, tag_value_acc), &value_rlc))| ZstdWitnessRow {
+                |(i, (((&value_byte, tag_value_acc), &value_rlc), tag_rlc_acc))| ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::BlockHeader,
                         tag_next,
@@ -297,8 +317,8 @@ fn process_block_header<F: Field>(
                         tag_value,
                         tag_value_acc,
                         is_tag_change: i == 0,
-                        tag_rlc: Value::known(F::zero()),
-                        tag_rlc_acc: Value::known(F::zero()),
+                        tag_rlc,
+                        tag_rlc_acc,
                     },
                     encoded_data: EncodedData {
                         byte_idx: (byte_offset + i + 1) as u64,
@@ -697,6 +717,12 @@ fn process_block_zstd_literals_header<F: Field>(
     });
     let tag_value = tag_value_iter.clone().last().expect("LiteralsHeader expected");
 
+    let tag_rlc_iter = lh_bytes.iter().take(n_bytes_header).scan(Value::known(F::zero()), |acc, &byte| {
+        *acc = *acc * randomness + Value::known(F::from(byte as u64));
+        Some(*acc)
+    });
+    let tag_rlc = tag_rlc_iter.clone().last().expect("Tag RLC expected");
+
     let value_rlc_iter = lh_bytes
         .iter()
         .take(n_bytes_header)
@@ -712,9 +738,10 @@ fn process_block_zstd_literals_header<F: Field>(
             .take(n_bytes_header)
             .zip(tag_value_iter)
             .zip(value_rlc_iter)
+            .zip(tag_rlc_iter)
             .enumerate()
             .map(
-                |(i, ((&value_byte, tag_value_acc), value_rlc))| ZstdWitnessRow {
+                |(i, (((&value_byte, tag_value_acc), value_rlc), tag_rlc_acc))| ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::ZstdBlockLiteralsHeader,
                         tag_next,
@@ -724,8 +751,8 @@ fn process_block_zstd_literals_header<F: Field>(
                         tag_value,
                         tag_value_acc,
                         is_tag_change: i == 0,
-                        tag_rlc: Value::known(F::zero()),
-                        tag_rlc_acc: Value::known(F::zero()),
+                        tag_rlc,
+                        tag_rlc_acc,
                     },
                     encoded_data: EncodedData {
                         byte_idx: (byte_offset + i + 1) as u64,
@@ -792,8 +819,8 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag_value: Value::default(), // Must be changed after FSE table length is known
             tag_value_acc: Value::default(), // Must be changed after FSE table length is known
             is_tag_change: true,
-            tag_rlc: Value::known(F::zero()),
-            tag_rlc_acc: Value::known(F::zero()),
+            tag_rlc: Value::known(F::zero()), // Must be changed after FSE table length is known
+            tag_rlc_acc: Value::known(F::zero()), // Must be changed after FSE table length is known
         },
         encoded_data: EncodedData {
             byte_idx: (byte_offset + 1) as u64,
@@ -831,10 +858,24 @@ fn process_block_zstd_huffman_code<F: Field>(
         .last()
         .expect("Tag value must exist");
 
+    let mut tag_rlc_iter = src.iter().skip(byte_offset).take(n_fse_bytes + 1).scan(
+        Value::known(F::zero()),
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    );
+    let tag_rlc = tag_rlc_iter
+        .clone()
+        .last()
+        .expect("Tag value must exist");
+
     // Backfill missing data on the huffman header row
     huffman_header_row.state.tag_len = (n_fse_bytes + 1usize) as u64;
     huffman_header_row.state.tag_value = tag_value;
     huffman_header_row.state.tag_value_acc = tag_value_iter.next().expect("Next value should exist");
+    huffman_header_row.state.tag_rlc = tag_rlc;
+    huffman_header_row.state.tag_rlc_acc = tag_rlc_iter.next().expect("Next value expected");
     witness_rows.push(huffman_header_row);
 
     // Add witness rows for FSE representation bytes
@@ -849,8 +890,8 @@ fn process_block_zstd_huffman_code<F: Field>(
                 tag_value: tag_value,
                 tag_value_acc: tag_value_iter.next().expect("Next value should exist"),
                 is_tag_change: false,
-                tag_rlc: Value::known(F::zero()),
-                tag_rlc_acc: Value::known(F::zero()),
+                tag_rlc,
+                tag_rlc_acc: tag_rlc_iter.next().expect("Tag RLC Acc exists"),
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + idx + 2) as u64, // count the huffman header byte
@@ -903,7 +944,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             Some(*acc)
         },
     ).collect::<Vec<Value<F>>>().into_iter().rev();
-    let mut tag_value_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).rev().scan(
+    let mut tag_value_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).scan(
         Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
@@ -914,9 +955,22 @@ fn process_block_zstd_huffman_code<F: Field>(
         .clone()
         .last()
         .expect("Tag value must exist");
+    let tag_rlc_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).scan(
+        Value::known(F::zero()),
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    );
+    let tag_rlc = tag_rlc_iter
+        .clone()
+        .last()
+        .expect("Tag RLC must exist");
+    let mut tag_rlc_iter = tag_rlc_iter.collect::<Vec<Value<F>>>().into_iter().rev();
 
     let mut next_tag_value_acc = tag_value_iter.next().unwrap();
     let mut next_value_rlc_acc = value_rlc_iter.next().unwrap();
+    let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
 
     let aux_1 = next_value_rlc_acc.clone();
     let aux_2 = witness_rows[witness_rows.len() - 1].encoded_data.value_rlc.clone();
@@ -937,8 +991,8 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag_value: tag_value,
             tag_value_acc: next_tag_value_acc,
             is_tag_change: true,
-            tag_rlc: Value::known(F::zero()),
-            tag_rlc_acc: Value::known(F::zero()),
+            tag_rlc,
+            tag_rlc_acc: next_tag_rlc_acc,
         },
         encoded_data: EncodedData {
             byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
@@ -973,6 +1027,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     if current_byte_idx > last_byte_idx {
         next_tag_value_acc = tag_value_iter.next().unwrap();
         next_value_rlc_acc = value_rlc_iter.next().unwrap();
+        next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
         last_byte_idx = current_byte_idx;
     }
 
@@ -1013,8 +1068,8 @@ fn process_block_zstd_huffman_code<F: Field>(
                 tag_value: tag_value,
                 tag_value_acc: next_tag_value_acc,
                 is_tag_change: false,
-                tag_rlc: Value::known(F::zero()),
-                tag_rlc_acc: Value::known(F::zero()),
+                tag_rlc,
+                tag_rlc_acc: next_tag_rlc_acc,
             },
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
@@ -1054,6 +1109,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         if current_byte_idx > last_byte_idx && current_byte_idx < n_bytes {
             next_tag_value_acc = tag_value_iter.next().unwrap();
             next_value_rlc_acc = value_rlc_iter.next().unwrap();
+            next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
             last_byte_idx = current_byte_idx;
         }
 
@@ -1126,6 +1182,17 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
             .clone()
             .last()
             .expect("Tag value must exist.");
+        let tag_rlc_iter = src.iter().skip(byte_offset).take(N_JUMP_TABLE_BYTES).scan(
+            Value::known(F::zero()),
+            |acc, &byte| {
+                *acc = *acc * randomness + Value::known(F::from(byte as u64));
+                Some(*acc)
+            },
+        );
+        let tag_rlc = tag_rlc_iter
+            .clone()
+            .last()
+            .expect("Tag value must exist.");
 
         (
             byte_offset + N_JUMP_TABLE_BYTES,
@@ -1134,9 +1201,10 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                 .take(N_JUMP_TABLE_BYTES)
                 .zip(tag_value_iter)
                 .zip(value_rlc_iter)
+                .zip(tag_rlc_iter)
                 .enumerate()
                 .map(
-                    |(i, ((&value_byte, tag_value_acc), value_rlc))| {
+                    |(i, (((&value_byte, tag_value_acc), value_rlc), tag_rlc_acc))| {
                         ZstdWitnessRow {
                             state: ZstdState {
                                 tag: ZstdTag::ZstdBlockJumpTable,
@@ -1147,8 +1215,8 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                                 tag_value,
                                 tag_value_acc,
                                 is_tag_change: i == 0,
-                                tag_rlc: Value::known(F::zero()),
-                                tag_rlc_acc: Value::known(F::zero()),
+                                tag_rlc,
+                                tag_rlc_acc,
                             },
                             encoded_data: EncodedData {
                                 byte_idx: (byte_offset + i + 1) as u64,
@@ -1197,26 +1265,38 @@ fn process_block_zstd_lstream<F: Field>(
 
     // Bitstream processing state helper values
     let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
+    let mut last_byte_idx: usize = 1;
     let mut current_byte_idx: usize = 1;
     let mut current_bit_idx: usize = 0;
 
     // accumulators
     let aux_1 = last_row.encoded_data.value_rlc;
-    let value_rlc_acc = src.iter().skip(byte_offset).take(len).rev().scan(
+    let mut value_rlc_acc = src.iter().skip(byte_offset).take(len).rev().scan(
         last_row.encoded_data.value_rlc,
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
         },
-    ).collect::<Vec<Value<F>>>();
-    let tag_value_acc = src.iter().skip(byte_offset).take(len).rev().scan(
+    );
+
+    let mut tag_value_acc = src.iter().skip(byte_offset).take(len).scan(
         Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
         },
-    ).collect::<Vec<Value<F>>>();
-    let tag_value = tag_value_acc.last().expect("Tag value exists");
+    );
+    let tag_value = tag_value_acc.clone().last().expect("Tag value exists");
+
+    let tag_rlc_iter = src.iter().skip(byte_offset).take(len).scan(
+        Value::known(F::zero()),
+        |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        },
+    );
+    let tag_rlc = tag_rlc_iter.clone().last().expect("Tag value exists");
+    let mut tag_rlc_iter = tag_rlc_iter.collect::<Vec<Value<F>>>().into_iter().rev();
 
     // Decide the next tag
     let tag_next = match stream_idx {
@@ -1231,6 +1311,10 @@ fn process_block_zstd_lstream<F: Field>(
     }
     padding_end_idx += 1;
 
+    let mut next_tag_value_acc = tag_value_acc.next().unwrap();
+    let mut next_value_rlc_acc = value_rlc_acc.next().unwrap();
+    let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+
     // Add a witness row for leading 0s and sentinel 1-bit
     witness_rows.push(ZstdWitnessRow {
         state: ZstdState {
@@ -1239,23 +1323,23 @@ fn process_block_zstd_lstream<F: Field>(
             max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockLstream),
             tag_len: len as u64,
             tag_idx: current_byte_idx as u64,
-            tag_value: *tag_value,
-            tag_value_acc: tag_value_acc[current_byte_idx - 1],
+            tag_value: tag_value,
+            tag_value_acc: next_tag_value_acc,
             is_tag_change: true,
-            tag_rlc: Value::known(F::zero()),
-            tag_rlc_acc: Value::known(F::zero()),
+            tag_rlc,
+            tag_rlc_acc: next_tag_rlc_acc,
         },
         encoded_data: EncodedData {
             byte_idx: (byte_offset + current_byte_idx) as u64,
             encoded_len: last_row.encoded_data.encoded_len,
             value_byte: src[byte_offset + len - current_byte_idx],
-            value_rlc: value_rlc_acc[current_byte_idx - 1],
+            value_rlc: next_value_rlc_acc,
             // reverse specific values
             reverse: true,
             reverse_len: len as u64,
             reverse_idx: (len - (current_byte_idx - 1)) as u64,
             aux_1,
-            aux_2: *tag_value,
+            aux_2: tag_value,
             ..Default::default()
         },
         huffman_data: HuffmanData {
@@ -1279,6 +1363,14 @@ fn process_block_zstd_lstream<F: Field>(
     }
     // Exclude the sentinel 1-bit
     (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
+
+    // Update accumulator
+    if current_byte_idx > last_byte_idx {
+        next_tag_value_acc = tag_value_acc.next().unwrap();
+        next_value_rlc_acc = value_rlc_acc.next().unwrap();
+        next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+        last_byte_idx = current_byte_idx;
+    }
 
     // Now the actual symbol-bearing bitstream starts
     let (max_bitstring_len, huffman_bitstring_map) = huffman_code.parse_bitstring_map();
@@ -1313,23 +1405,23 @@ fn process_block_zstd_lstream<F: Field>(
                     max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockLstream),
                     tag_len: len as u64,
                     tag_idx: from_byte_idx as u64,
-                    tag_value: *tag_value,
-                    tag_value_acc: tag_value_acc[from_byte_idx - 1],
+                    tag_value,
+                    tag_value_acc: next_tag_value_acc,
                     is_tag_change: false,
-                    tag_rlc: Value::known(F::zero()),
-                    tag_rlc_acc: Value::known(F::zero()),
+                    tag_rlc,
+                    tag_rlc_acc: next_tag_rlc_acc,
                 },
                 encoded_data: EncodedData {
                     byte_idx: (byte_offset + from_byte_idx) as u64,
                     encoded_len: last_row.encoded_data.encoded_len,
                     value_byte: src[byte_offset + len - from_byte_idx],
-                    value_rlc: value_rlc_acc[from_byte_idx - 1],
+                    value_rlc: next_value_rlc_acc,
                     // reverse specific values
                     reverse: true,
                     reverse_len: len as u64,
                     reverse_idx: (len - from_byte_idx + 1) as u64,
                     aux_1,
-                    aux_2: *tag_value,
+                    aux_2: tag_value,
                     ..Default::default()
                 },
                 huffman_data: HuffmanData {
@@ -1346,6 +1438,14 @@ fn process_block_zstd_lstream<F: Field>(
                 decoded_data: last_row.decoded_data.clone(),
                 fse_data: FseTableRow::default(),
             });
+
+            // Update accumulator
+            if current_byte_idx > last_byte_idx && current_byte_idx < len {
+                next_tag_value_acc = tag_value_acc.next().unwrap();
+                next_value_rlc_acc = value_rlc_acc.next().unwrap();
+                next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+                last_byte_idx = current_byte_idx;
+            }
 
             // Reset decoding state
             bitstring_acc = String::from("");

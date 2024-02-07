@@ -844,7 +844,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 cb.condition(not::expr(is_new_byte.expr()), |cb| {
                     cb.require_equal(
                         "tag_rlc_acc remains the same if not a new byte",
-                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::next()),
+                        meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
                         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
                     );
                 });
@@ -876,7 +876,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
-                    not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                    not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                    // compression_debug
+                    // not::expr(meta.query_advice(is_padding, Rotation::cur())),
                     not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
                 ]))
             },

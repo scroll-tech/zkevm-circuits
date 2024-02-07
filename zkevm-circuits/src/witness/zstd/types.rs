@@ -346,7 +346,7 @@ impl<F: Field> Default for ZstdState<F> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct EncodedData<F> {
     pub byte_idx: u64,
     pub encoded_len: u64,
@@ -362,6 +362,22 @@ pub struct EncodedData<F> {
 impl<F: Field> EncodedData<F> {
     pub fn value_bits_le(&self) -> [u8; N_BITS_PER_BYTE] {
         value_bits_le(self.value_byte)
+    }
+}
+
+impl<F: Field> Default for EncodedData<F> {
+    fn default() -> Self {
+        Self {
+            byte_idx: 0,
+            encoded_len: 0,
+            value_byte: 0,
+            reverse: false,
+            reverse_idx: 0,
+            reverse_len: 0,
+            aux_1: Value::known(F::zero()),
+            aux_2: Value::known(F::zero()),
+            value_rlc: Value::known(F::zero()),
+        }
     }
 }
 
