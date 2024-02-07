@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyAccessList, CopyBytes, CopyDataType, CopyEvent, ExecStep,
+        Call, CircuitInputStateRef, CopyAccessList, CopyBytes, CopyDataType, CopyEvent, ExecStep,
         NumberOrHash,
     },
     l2_predeployed::l1_gas_price_oracle,
@@ -44,12 +44,15 @@ use ethers_core::utils::get_contract_address;
 
 pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecStep>, Error> {
     let mut exec_step = state.new_begin_tx_step();
+    let call = state.call()?.clone();
+
+    // write tx_id
+    begin_tx(state, &mut exec_step, &call)?;
 
     // Add two copy-events for tx access-list addresses and storage keys for
     // EIP-1559 and EIP-2930.
     gen_tx_access_list_ops(state, &mut exec_step)?;
 
-    let call = state.call()?.clone();
     let caller_address = call.caller_address;
     if state.tx.tx_type.is_l1_msg() {
         // for l1 message, no need to add rw op, but we must check
@@ -114,7 +117,6 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
     // * write l1fee call context
 
     for (field, value) in [
-        (CallContextField::TxId, state.tx_ctx.id().into()),
         (
             CallContextField::RwCounterEndOfReversion,
             call.rw_counter_end_of_reversion.into(),
@@ -646,17 +648,53 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         )?;
     }
 
+    end_tx(state, &mut exec_step, &call)?;
+
+    Ok(exec_step)
+}
+
+pub(crate) fn begin_tx(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    call: &Call,
+) -> Result<(), Error> {
+    // Write the transaction id
+    state.call_context_write(
+        exec_step,
+        call.call_id,
+        CallContextField::TxId,
+        state.tx_ctx.id().into(),
+    )?;
+    Ok(())
+}
+
+pub(crate) fn end_tx(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    call: &Call,
+) -> Result<(), Error> {
+    // Write the tx receipt
+    write_tx_receipt(state, exec_step, call.is_persistent)?;
+
+    Ok(())
+}
+
+fn write_tx_receipt(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    is_persistent: bool,
+) -> Result<(), Error> {
     // handle tx receipt tag
     state.tx_receipt_write(
-        &mut exec_step,
+        exec_step,
         state.tx_ctx.id(),
         TxReceiptField::PostStateOrStatus,
-        call.is_persistent as u64,
+        is_persistent as u64,
     )?;
 
     let log_id = exec_step.log_id;
     state.tx_receipt_write(
-        &mut exec_step,
+        exec_step,
         state.tx_ctx.id(),
         TxReceiptField::LogLength,
         log_id as u64,
@@ -665,7 +703,7 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     if state.tx_ctx.id() > 1 {
         // query pre tx cumulative gas
         state.tx_receipt_read(
-            &mut exec_step,
+            exec_step,
             state.tx_ctx.id() - 1,
             TxReceiptField::CumulativeGasUsed,
             state.block_ctx.cumulative_gas_used,
@@ -674,22 +712,13 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     state.block_ctx.cumulative_gas_used += state.tx.gas - exec_step.gas_left.0;
     state.tx_receipt_write(
-        &mut exec_step,
+        exec_step,
         state.tx_ctx.id(),
         TxReceiptField::CumulativeGasUsed,
         state.block_ctx.cumulative_gas_used,
     )?;
 
-    if !state.tx_ctx.is_last_tx() {
-        state.call_context_write(
-            &mut exec_step,
-            state.block_ctx.rwc.0 + 1,
-            CallContextField::TxId,
-            (state.tx_ctx.id() + 1).into(),
-        )?;
-    }
-
-    Ok(exec_step)
+    Ok(())
 }
 
 // Add 3 RW read operations for transaction L1 fee.

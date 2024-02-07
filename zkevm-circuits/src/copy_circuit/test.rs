@@ -425,7 +425,7 @@ fn copy_circuit_invalid_calldatacopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["Memory word lookup", "Tx calldata lookup"],
+        vec!["rw lookup", "rw lookup"],
     );
 }
 
@@ -443,7 +443,7 @@ fn copy_circuit_invalid_codecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["Memory word lookup", "Bytecode lookup"],
+        vec!["rw lookup", "Bytecode lookup"],
     );
 }
 
@@ -461,7 +461,7 @@ fn copy_circuit_invalid_extcodecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(block),
-        vec!["Memory word lookup", "Bytecode lookup"],
+        vec!["rw lookup", "Bytecode lookup"],
     );
 }
 
@@ -477,10 +477,7 @@ fn copy_circuit_invalid_sha3() {
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
-    assert_error_matches(
-        test_copy_circuit_from_block(block),
-        vec!["Memory word lookup"],
-    );
+    assert_error_matches(test_copy_circuit_from_block(block), vec!["rw lookup"]);
 }
 
 #[test]
@@ -580,9 +577,9 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, names: Vec<&str>
             VerifyFailure::CellNotAssigned { .. } => panic!(),
             VerifyFailure::ConstraintPoisoned { .. } => panic!(),
             VerifyFailure::Permutation { .. } => panic!(),
-            // &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => {
-            //     todo!()
-            // }
+            &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => {
+                todo!()
+            }
         }
     }
 }

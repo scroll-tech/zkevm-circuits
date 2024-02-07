@@ -116,6 +116,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.query_cell();
+        cb.call_context_lookup(
+            1.expr(),
+            Some(call_id.expr()),
+            CallContextFieldTag::TxId,
+            tx_id.expr(),
+        ); // rwc_delta += 1
+
         let sender_nonce = cb.query_cell();
 
         let [tx_type, tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
@@ -163,12 +170,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             l1_fee_cost.expr(),
         ); // rwc_delta += 1
 
-        cb.call_context_lookup(
-            1.expr(),
-            Some(call_id.expr()),
-            CallContextFieldTag::TxId,
-            tx_id.expr(),
-        ); // rwc_delta += 1
         let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
         let is_persistent = reversion_info.is_persistent();
         cb.call_context_lookup(
@@ -841,6 +842,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         */
 
         let mut rws = StepRws::new(block, step);
+        let rw = rws.next();
+        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
+        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::TxId as u64));
 
         let tx_type = tx.tx_type;
         let caller_code_hash = if tx_type.is_l1_msg() {
@@ -865,7 +869,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         //              KeccakCodeHash
         // else:
         //      3 l1 fee rw
-        // TxId
         // RwCounterEndOfReversion
         // IsPersistent
         // IsSuccess
@@ -900,9 +903,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
         debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::L1Fee as u64));
 
-        let rw = rws.next();
-        debug_assert_eq!(rw.tag(), RwTableTag::CallContext);
-        debug_assert_eq!(rw.field_tag(), Some(CallContextFieldTag::TxId as u64));
         rws.offset_add(3);
 
         let rw = rws.next();

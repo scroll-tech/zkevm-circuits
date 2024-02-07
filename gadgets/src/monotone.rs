@@ -233,7 +233,7 @@ mod test {
             vec![1, 2, 2, 4, 4],
             Err(vec![
                 Lookup {
-                    name: "Range check",
+                    name: "Range check".to_string(),
                     lookup_index: 0,
                     location: FailureLocation::InRegion {
                         region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
@@ -241,7 +241,7 @@ mod test {
                     },
                 },
                 Lookup {
-                    name: "Range check",
+                    name: "Range check".to_string(),
                     lookup_index: 0,
                     location: FailureLocation::InRegion {
                         region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
@@ -254,7 +254,7 @@ mod test {
         try_test_circuit(
             vec![1, 2, 3, 4, 105],
             Err(vec![Lookup {
-                name: "Range check",
+                name: "Range check".to_string(),
                 lookup_index: 0,
                 location: FailureLocation::InRegion {
                     region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
@@ -266,7 +266,7 @@ mod test {
         try_test_circuit(
             vec![1, 2, 3, 103, 4],
             Err(vec![Lookup {
-                name: "Range check",
+                name: "Range check".to_string(),
                 lookup_index: 0,
                 location: FailureLocation::InRegion {
                     region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
@@ -289,7 +289,7 @@ mod test {
         try_test_circuit(
             vec![1, 2, 3, 4, 105],
             Err(vec![Lookup {
-                name: "Range check",
+                name: "Range check".to_string(),
                 lookup_index: 0,
                 location: FailureLocation::InRegion {
                     region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
@@ -301,7 +301,7 @@ mod test {
         try_test_circuit(
             vec![1, 2, 3, 103, 4],
             Err(vec![Lookup {
-                name: "Range check",
+                name: "Range check".to_string(),
                 lookup_index: 0,
                 location: FailureLocation::InRegion {
                     region: halo2_proofs::dev::metadata::Region::from((1, "witness")),
