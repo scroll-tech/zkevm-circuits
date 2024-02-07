@@ -1,4 +1,4 @@
-use eth_types::l2_types::BlockTrace;
+use eth_types::l2_types::{BlockTrace, ChunkTrace};
 use halo2_proofs::halo2curves::bn256::Fr;
 use snark_verifier_sdk::CircuitExt;
 use zkevm_circuits::witness;
@@ -12,6 +12,8 @@ mod l1_builder;
 #[cfg(not(feature = "scroll"))]
 use l1_builder as builder;
 mod super_circuit;
+use crate::utils::chunk_trace_to_witness_block;
+
 pub use self::builder::{
     block_trace_to_witness_block, block_traces_to_witness_block,
     block_traces_to_witness_block_with_updated_state, calculate_row_usage_of_trace,
@@ -87,8 +89,8 @@ pub trait TargetCircuit {
         Ok(Self::estimate_rows_from_witness_block(&witness_block))
     }
 
-    fn estimate_rows(block_traces: Vec<BlockTrace>) -> anyhow::Result<usize> {
-        let witness_block = block_traces_to_witness_block(block_traces, None, None, None)?;
+    fn estimate_rows(chunk_trace: ChunkTrace) -> anyhow::Result<usize> {
+        let witness_block = chunk_trace_to_witness_block(chunk_trace)?;
         Ok(Self::estimate_rows_from_witness_block(&witness_block))
     }
 
