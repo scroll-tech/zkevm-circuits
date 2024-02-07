@@ -1288,13 +1288,18 @@ pub(super) fn tx_convert(
             .iter()
             .map(|step| step_convert(step, tx.block_num))
             .chain({
-                let rw_counter = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
+                // TODO: it is a bit counter-intuitive to treat EndInnerBlock step, even multiple
+                // EndInnerBlock steps to belong to the last prev tx.
+                // We can change design later to make it easier to understand.
+                let last_step = tx.steps().last().unwrap();
+                let rw_counter = last_step.rwc.0 + last_step.bus_mapping_instance.len();
                 debug_assert!(next_block_num >= tx.block_num);
                 (tx.block_num..next_block_num)
                     .map(|block_num| ExecStep {
                         rw_counter,
                         execution_state: ExecutionState::EndInnerBlock,
                         block_num,
+                        call_index: last_step.call_index,
                         ..Default::default()
                     })
                     .collect::<Vec<ExecStep>>()

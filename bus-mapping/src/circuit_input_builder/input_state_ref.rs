@@ -1132,6 +1132,14 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(call)
     }
 
+    /// Get the next call's success status.
+    pub fn next_call_is_success(&self) -> Option<bool> {
+        self.tx_ctx
+            .call_is_success
+            .get(self.tx.calls().len() - self.tx_ctx.call_is_success_offset)
+            .copied()
+    }
+
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
@@ -1621,6 +1629,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let call = self.call()?;
+        trace!("get_step_err: step:\n\tstep:{step:?}\n\tnext_step:{next_step:?}\n\tcall:{call:?}");
 
         if next_step.is_none() {
             // enumerating call scope successful cases
@@ -1647,6 +1656,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // let next_result = next_step
         //     .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
         //     .unwrap_or_else(Word::zero);
+        let next_success = self.next_call_is_success().unwrap_or(true);
 
         let call_ctx = self.call_ctx()?;
         #[cfg(feature = "enable-stack")]
@@ -1749,8 +1759,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 | OpcodeId::STATICCALL
                 | OpcodeId::CREATE
                 | OpcodeId::CREATE2
-        ) && !call.is_success
-            && !call.is_root
+        ) && !next_success
             && next_pc != 0
         {
             if step.depth == 1025 {

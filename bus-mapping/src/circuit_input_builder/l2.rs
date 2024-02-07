@@ -2,6 +2,7 @@ pub use super::block::{Block, BlockContext};
 use crate::{
     circuit_input_builder::{self, BlockHead, CircuitInputBuilder, CircuitsParams},
     error::Error,
+    precompile::is_precompiled,
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{
@@ -143,10 +144,42 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
-        let mut call_trace = execution_result.call_trace.flatten_trace(vec![]);
+        // filter all precompile calls, empty calls and create
+        let mut call_trace = execution_result
+            .call_trace
+            .flatten_trace(&execution_result.prestate)
+            .into_iter()
+            .inspect(|c| println!("{c:?}"))
+            .filter(|call| {
+                let is_call_to_precompile = call.to.as_ref().map(is_precompiled).unwrap_or(false);
+                let is_call_to_empty = call.gas_used.is_zero()
+                    && !call.call_type.is_create()
+                    && call.is_callee_code_empty;
+                !(is_call_to_precompile || is_call_to_empty || call.call_type.is_create())
+            })
+            .collect::<Vec<_>>();
+        log::trace!("call_trace: {call_trace:?}");
 
-        for step in execution_result.exec_steps.iter().rev() {
+        for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
+            if step.op.is_create() {
+                continue;
+            }
             let call = if step.op.is_call_or_create() {
+                // filter call to empty/precompile/!precheck_ok
+                if let Some(next_step) = execution_result.exec_steps.get(idx + 1) {
+                    // the call doesn't have inner steps, it could be:
+                    // - a call to a precompiled contract
+                    // - a call to an empty account
+                    // - a call that !is_precheck_ok
+                    if next_step.depth != step.depth + 1 {
+                        log::trace!("skip call step due to no inner step, curr: {step:?}, next: {next_step:?}");
+                        continue;
+                    }
+                } else {
+                    // this is the final step, no inner steps
+                    log::trace!("skip call step due this is the final step: {step:?}");
+                    continue;
+                }
                 let call = call_trace.pop();
                 log::trace!("call_trace pop: {call:?}, current step: {step:?}");
                 call
@@ -191,6 +224,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     OpcodeId::CREATE | OpcodeId::CREATE2 => {
                         // notice we do not need to insert code for CREATE,
                         // bustmapping do this job
+                        unreachable!()
                     }
                     OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
                         let code = data.get_code_at(0);

@@ -31,8 +31,6 @@ impl Opcode for Address {
 
         // Write the address to stack.
         state.stack_push(&mut exec_step, address)?;
-        #[cfg(feature = "enable-stack")]
-        assert_eq!(geth_steps[1].stack.last()?, address);
 
         Ok(vec![exec_step])
     }

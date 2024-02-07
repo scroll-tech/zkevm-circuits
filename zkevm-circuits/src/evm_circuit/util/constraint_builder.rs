@@ -1134,6 +1134,33 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         word
     }
 
+    // same as call_context_lookup_write with bypassing external rwc
+    // Note: will not bumping internal rwc
+    pub(crate) fn call_context_lookup_write_with_counter(
+        &mut self,
+        rw_counter: Expression<F>,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup_with_counter(
+            "CallContext lookup",
+            rw_counter,
+            1.expr(),
+            RwTableTag::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                0.expr(),
+                value,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            ),
+        );
+    }
+
     pub(crate) fn call_context_lookup(
         &mut self,
         is_write: Expression<F>,

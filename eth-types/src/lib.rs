@@ -46,7 +46,7 @@ use halo2_base::utils::ScalarField;
 use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     fmt::{Display, Formatter},
     str::FromStr,
@@ -751,10 +751,10 @@ pub struct GethCallTrace {
     error: Option<String>,
     from: Address,
     // gas: U256,
-    // #[serde(rename = "gasUsed")]
-    // gas_used: U256,
+    #[serde(rename = "gasUsed")]
+    gas_used: U256,
     // input: Bytes,
-    // output: Bytes,
+    output: Option<Bytes>,
     to: Option<Address>,
     #[serde(rename = "type")]
     call_type: String,
@@ -768,10 +768,11 @@ pub struct FlatGethCallTrace {
     /// from
     pub from: Address,
     // gas: U256,
-    // #[serde(rename = "gasUsed")]
-    // gas_used: U256,
+    /// gas used
+    pub gas_used: U256,
     // input: Bytes,
-    // output: Bytes,
+    /// is callee code empty
+    pub is_callee_code_empty: bool,
     /// to
     pub to: Option<Address>,
     /// call type
@@ -790,16 +791,55 @@ impl GethCallTrace {
     }
 
     /// flatten the call trace as it is.
-    pub fn flatten_trace(&self, mut trace: Vec<FlatGethCallTrace>) -> Vec<FlatGethCallTrace> {
+    pub fn flatten_trace(
+        &self,
+        prestate: &HashMap<Address, GethPrestateTrace>,
+    ) -> Vec<FlatGethCallTrace> {
+        let mut trace = vec![];
+        // store the code that created in this tx, which is not include in prestate
+        let mut created = HashSet::new();
+        self.flatten_trace_inner(prestate, &mut trace, &mut created);
+        trace
+    }
+
+    fn flatten_trace_inner(
+        &self,
+        prestate: &HashMap<Address, GethPrestateTrace>,
+        trace: &mut Vec<FlatGethCallTrace>,
+        created: &mut HashSet<Address>,
+    ) {
+        let call_type = OpcodeId::from_str(&self.call_type).unwrap();
+        let is_callee_code_empty = self
+            .to
+            .as_ref()
+            .map(|addr| {
+                !created.contains(addr)
+                    && prestate
+                        .get(addr)
+                        .unwrap()
+                        .code
+                        .as_ref()
+                        .unwrap()
+                        .is_empty()
+            })
+            .unwrap_or(false);
+
         trace.push(FlatGethCallTrace {
             from: self.from,
             to: self.to,
-            call_type: OpcodeId::from_str(&self.call_type).unwrap(),
+            is_callee_code_empty,
+            gas_used: self.gas_used,
+            call_type,
         });
+
         for call in &self.calls {
-            trace = call.flatten_trace(trace);
+            call.flatten_trace_inner(prestate, trace, created);
         }
-        trace
+
+        let has_output = self.output.as_ref().map(|x| !x.is_empty()).unwrap_or(false);
+        if call_type.is_create() && has_output {
+            created.insert(self.to.unwrap());
+        }
     }
 }
 
@@ -925,7 +965,9 @@ mod tests {
       "error": null,
       "from": "0x000000000000000000000000000000000cafe001",
       "to": null,
-      "type": "CALL"
+      "gasUsed": "0x0",
+      "type": "CALL",
+      "output": "0x00"
     }
   }
         "#;
@@ -1015,7 +1057,9 @@ mod tests {
                     error: None,
                     from: address!("0x000000000000000000000000000000000cafe001"),
                     to: None,
+                    gas_used: U256::zero(),
                     call_type: "CALL".to_string(),
+                    output: Some(Bytes::from([0x00]))
                 }
             }
         );

@@ -491,11 +491,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     is_create: To(false.expr()),
                     code_hash: To(cb.empty_code_hash_rlc()),
                     program_counter: Delta(1.expr()),
-                    stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(precompile_output_rws.expr()),
                     reversible_write_counter: To(callee_reversible_rwc_delta.expr()),
-                    ..StepStateTransition::default()
+                    ..StepStateTransition::new_context()
                 });
 
                 let precompile_gadget = PrecompileGadget::construct(
