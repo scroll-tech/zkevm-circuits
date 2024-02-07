@@ -798,7 +798,7 @@ impl GethCallTrace {
         let mut trace = vec![];
         // store the code that created in this tx, which is not include in prestate
         let mut created = HashSet::new();
-        self.flatten_trace_inner(&prestate, &mut trace, &mut created);
+        self.flatten_trace_inner(prestate, &mut trace, &mut created);
         trace
     }
 
