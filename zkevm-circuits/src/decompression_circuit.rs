@@ -982,20 +982,18 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.tag, Rotation::cur()),
                 ZstdTag::FrameHeaderDescriptor.expr(),
             );
-
-            // compression_debug
-            // cb.require_zero(
-            //     "value_rlc starts at 0",
-            //     meta.query_advice(value_rlc, Rotation::cur()),
-            // );
-            // cb.require_zero(
-            //     "decoded_rlc initialises at 0",
-            //     meta.query_advice(decoded_rlc, Rotation::cur()),
-            // );
-            // cb.require_zero(
-            //     "decoded_len_acc initialises at 0",
-            //     meta.query_advice(decoded_len_acc, Rotation::cur()),
-            // );
+            cb.require_zero(
+                "value_rlc starts at 0",
+                meta.query_advice(value_rlc, Rotation::cur()),
+            );
+            cb.require_zero(
+                "decoded_rlc initialises at 0",
+                meta.query_advice(decoded_rlc, Rotation::cur()),
+            );
+            cb.require_zero(
+                "decoded_len_acc initialises at 0",
+                meta.query_advice(decoded_len_acc, Rotation::cur()),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
