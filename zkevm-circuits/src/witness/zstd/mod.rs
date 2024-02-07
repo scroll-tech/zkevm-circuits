@@ -72,6 +72,13 @@ fn process_frame_header<F: Field>(
         .iter()
         .skip(byte_offset + 1)
         .take(fcs_tag_len)
+        // .rev()
+        .cloned()
+        .collect::<Vec<u8>>();
+    let fcs_bytes_rev = src
+        .iter()
+        .skip(byte_offset + 1)
+        .take(fcs_tag_len)
         .rev()
         .cloned()
         .collect::<Vec<u8>>();
@@ -101,6 +108,7 @@ fn process_frame_header<F: Field>(
             Some(*acc)
         })
         .collect::<Vec<Value<F>>>();
+
     let tag_rlc_iter = fcs_bytes
         .iter()
         .scan(Value::known(F::zero()), |acc, &byte| {
@@ -112,7 +120,7 @@ fn process_frame_header<F: Field>(
         .clone()
         .last()
         .expect("Tag RLC expected"));
-
+    
     let aux_1 = fcs_value_rlcs
         .last()
         .expect("FrameContentSize bytes expected");
@@ -152,7 +160,7 @@ fn process_frame_header<F: Field>(
             fse_data: FseTableRow::default(),
         })
         .chain(
-            fcs_bytes
+            fcs_bytes_rev
                 .iter()
                 .zip(fcs_tag_value_iter)
                 .zip(fcs_value_rlcs.iter().rev())
@@ -997,7 +1005,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         encoded_data: EncodedData {
             byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
             encoded_len,
-            value_byte: src[byte_offset + n_fse_bytes + 1 + current_byte_idx],
+            value_byte: src[byte_offset + n_fse_bytes + 1 + n_huffman_code_bytes - (current_byte_idx - 1)],
             value_rlc: next_value_rlc_acc,
             reverse: true,
             reverse_len: n_huffman_code_bytes as u64,
@@ -1074,7 +1082,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             encoded_data: EncodedData {
                 byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
                 encoded_len,
-                value_byte: src[byte_offset + n_fse_bytes + 1 + current_byte_idx],
+                value_byte: src[byte_offset + n_fse_bytes + 1 + n_huffman_code_bytes - current_byte_idx],
                 value_rlc: next_value_rlc_acc,
                 reverse: true,
                 reverse_len: n_huffman_code_bytes as u64,
@@ -1440,7 +1448,7 @@ fn process_block_zstd_lstream<F: Field>(
             });
 
             // Update accumulator
-            if current_byte_idx > last_byte_idx && current_byte_idx < len {
+            if current_byte_idx > last_byte_idx && current_byte_idx <= len {
                 next_tag_value_acc = tag_value_acc.next().unwrap();
                 next_value_rlc_acc = value_rlc_acc.next().unwrap();
                 next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
