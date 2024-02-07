@@ -848,19 +848,18 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
                     );
                 });
-                // compression_debug
-                // cb.condition(
-                //     and::expr([is_new_byte.expr(), not::expr(is_reverse.expr())]),
-                //     |cb| {
-                //         cb.require_equal(
-                //             "tag_rlc_acc == tag_rlc_acc::prev * r + byte",
-                //             meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
-                //             meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev())
-                //                 * challenges.keccak_input()
-                //                 + value_byte_curr,
-                //         );
-                //     },
-                // );
+                cb.condition(
+                    and::expr([is_new_byte.expr(), not::expr(is_reverse.expr())]),
+                    |cb| {
+                        cb.require_equal(
+                            "tag_rlc_acc == tag_rlc_acc::prev * r + byte",
+                            meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                            meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev())
+                                * challenges.keccak_input()
+                                + value_byte_curr,
+                        );
+                    },
+                );
                 
                 let value_byte_prev = meta.query_advice(value_byte, Rotation::prev());
                 // compression_debug

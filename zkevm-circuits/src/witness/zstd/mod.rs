@@ -879,7 +879,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     witness_rows.push(huffman_header_row);
 
     // Add witness rows for FSE representation bytes
-    for (idx, byte) in src.iter().skip(byte_offset).take(n_fse_bytes).enumerate() {
+    for (idx, byte) in src.iter().skip(byte_offset + 1).take(n_fse_bytes).enumerate() {
         witness_rows.push(ZstdWitnessRow {
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockFseCode,
