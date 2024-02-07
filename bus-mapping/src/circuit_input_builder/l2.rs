@@ -13,10 +13,7 @@ use eth_types::{
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::{AccountData, ZktrieState};
-use std::collections::{
-    hash_map::{Entry, HashMap},
-    HashSet,
-};
+use std::collections::hash_map::{Entry, HashMap};
 
 impl From<&AccountData> for state_db::Account {
     fn from(acc_data: &AccountData) -> Self {
@@ -147,59 +144,45 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
-        // store the code that created in this tx, which is not include in prestate
-        let mut created = HashSet::new();
-        // filter all precompile calls and empty calls
+        // filter all precompile calls, empty calls and create
         let mut call_trace = execution_result
             .call_trace
-            .flatten_trace(vec![])
+            .flatten_trace(&execution_result.prestate)
             .into_iter()
+            .inspect(|c| println!("{c:?}"))
             .filter(|call| {
-                if call.call_type.is_create() && call.has_output {
-                    created.insert(call.to.unwrap());
-                }
-                let (is_call_to_precompile, is_callee_code_empty) = call
+                let is_call_to_precompile = call
                     .to
-                    .map(|ref addr| {
-                        (
-                            is_precompiled(addr),
-                            !created.contains(addr)
-                                && execution_result
-                                    .prestate
-                                    .get(addr)
-                                    .unwrap()
-                                    .code
-                                    .as_ref()
-                                    .unwrap()
-                                    .is_empty(),
-                        )
-                    })
-                    .unwrap_or((false, false));
-                let is_call_to_empty =
-                    call.gas_used.is_zero() && !call.call_type.is_create() && is_callee_code_empty;
-                !(is_call_to_precompile || is_call_to_empty)
+                    .as_ref()
+                    .map(|addr| is_precompiled(addr))
+                    .unwrap_or(false);
+                let is_call_to_empty = call.gas_used.is_zero()
+                    && !call.call_type.is_create()
+                    && call.is_callee_code_empty;
+                !(is_call_to_precompile || is_call_to_empty || call.call_type.is_create())
             })
             .collect::<Vec<_>>();
         log::trace!("call_trace: {call_trace:?}");
 
         for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
+            if step.op.is_create() {
+                continue;
+            }
             let call = if step.op.is_call_or_create() {
                 // filter call to empty/precompile/!precheck_ok
-                if !step.op.is_create() {
-                    if let Some(next_step) = execution_result.exec_steps.get(idx + 1) {
-                        // the call doesn't have inner steps, it could be:
-                        // - a call to a precompiled contract
-                        // - a call to an empty account
-                        // - a call that !is_precheck_ok
-                        if next_step.depth != step.depth + 1 {
-                            log::trace!("skip call step due to no inner step, curr: {step:?}, next: {next_step:?}");
-                            continue;
-                        }
-                    } else {
-                        // this is the final step, no inner steps
-                        log::trace!("skip call step due this is the final step: {step:?}");
+                if let Some(next_step) = execution_result.exec_steps.get(idx + 1) {
+                    // the call doesn't have inner steps, it could be:
+                    // - a call to a precompiled contract
+                    // - a call to an empty account
+                    // - a call that !is_precheck_ok
+                    if next_step.depth != step.depth + 1 {
+                        log::trace!("skip call step due to no inner step, curr: {step:?}, next: {next_step:?}");
                         continue;
                     }
+                } else {
+                    // this is the final step, no inner steps
+                    log::trace!("skip call step due this is the final step: {step:?}");
+                    continue;
                 }
                 let call = call_trace.pop();
                 log::trace!("call_trace pop: {call:?}, current step: {step:?}");
@@ -245,6 +228,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                     OpcodeId::CREATE | OpcodeId::CREATE2 => {
                         // notice we do not need to insert code for CREATE,
                         // bustmapping do this job
+                        unreachable!()
                     }
                     OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
                         let code = data.get_code_at(0);
