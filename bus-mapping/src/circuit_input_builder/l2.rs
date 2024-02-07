@@ -149,7 +149,6 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             .call_trace
             .flatten_trace(&execution_result.prestate)
             .into_iter()
-            .inspect(|c| println!("{c:?}"))
             .filter(|call| {
                 let is_call_to_precompile = call.to.as_ref().map(is_precompiled).unwrap_or(false);
                 let is_call_to_empty = call.gas_used.is_zero()
