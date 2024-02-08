@@ -858,7 +858,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let mut tag_value_iter = src.iter().skip(byte_offset).take(n_fse_bytes + 1).scan(
         Value::known(F::zero()),
         |acc, &byte| {
-            *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
             Some(*acc)
         },
     );

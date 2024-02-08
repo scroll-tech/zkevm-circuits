@@ -735,14 +735,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             );
             let (lt, eq) = tag_gadget.len_cmp_max.expr(meta, None);
             cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
-
-            // compression_debug
             cb.require_equal(
                 "tag_value_acc == value_byte",
                 meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
                 meta.query_advice(value_byte, Rotation::cur()),
             );
 
+            // compression_debug
             // cb.require_equal(
             //     "value_rlc calculation",
             //     meta.query_advice(value_rlc, Rotation::cur()),
@@ -813,16 +812,15 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     meta.query_advice(tag_gadget.tag_value_acc, Rotation::prev());
                 let value_byte_curr = meta.query_advice(value_byte, Rotation::cur());
 
-                // compression_debug
-                // cb.require_equal(
-                //     "tag_value calculation depending on whether new byte",
-                //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
-                //     select::expr(
-                //         is_new_byte.expr(),
-                //         tag_value_acc_prev.expr() * multiplier + value_byte_curr.expr(),
-                //         tag_value_acc_prev,
-                //     ),
-                // );
+                cb.require_equal(
+                    "tag_value calculation depending on whether new byte",
+                    meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
+                    select::expr(
+                        is_new_byte.expr(),
+                        tag_value_acc_prev.expr() * multiplier + value_byte_curr.expr(),
+                        tag_value_acc_prev,
+                    ),
+                );
 
                 // tag_rlc_acc calculation depending on whether is_reverse or not.
                 let is_reverse = meta.query_advice(tag_gadget.is_reverse, Rotation::cur());
