@@ -1072,7 +1072,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 tag_next,
                 max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockHuffmanCode),
                 tag_len: (n_huffman_code_bytes) as u64,
-                tag_idx: current_byte_idx as u64,
+                tag_idx: (current_byte_idx + 1) as u64,
                 tag_value: tag_value,
                 tag_value_acc: next_tag_value_acc,
                 is_tag_change: false,
@@ -1080,7 +1080,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 tag_rlc_acc: next_tag_rlc_acc,
             },
             encoded_data: EncodedData {
-                byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
+                byte_idx: (byte_offset + n_fse_bytes + 2 + current_byte_idx) as u64,
                 encoded_len,
                 value_byte: src[byte_offset + n_fse_bytes + 1 + n_huffman_code_bytes - current_byte_idx],
                 value_rlc: next_value_rlc_acc,
@@ -1227,7 +1227,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                                 tag_rlc_acc,
                             },
                             encoded_data: EncodedData {
-                                byte_idx: (byte_offset + i + 1) as u64,
+                                byte_idx: (byte_offset + i + 2) as u64,
                                 encoded_len: last_row.encoded_data.encoded_len,
                                 value_byte,
                                 value_rlc,
@@ -1338,7 +1338,7 @@ fn process_block_zstd_lstream<F: Field>(
             tag_rlc_acc: next_tag_rlc_acc,
         },
         encoded_data: EncodedData {
-            byte_idx: (byte_offset + current_byte_idx) as u64,
+            byte_idx: (byte_offset + current_byte_idx + 1) as u64,
             encoded_len: last_row.encoded_data.encoded_len,
             value_byte: src[byte_offset + len - current_byte_idx],
             value_rlc: next_value_rlc_acc,
@@ -1420,7 +1420,7 @@ fn process_block_zstd_lstream<F: Field>(
                     tag_rlc_acc: next_tag_rlc_acc,
                 },
                 encoded_data: EncodedData {
-                    byte_idx: (byte_offset + from_byte_idx) as u64,
+                    byte_idx: (byte_offset + from_byte_idx + 1) as u64,
                     encoded_len: last_row.encoded_data.encoded_len,
                     value_byte: src[byte_offset + len - from_byte_idx],
                     value_rlc: next_value_rlc_acc,
