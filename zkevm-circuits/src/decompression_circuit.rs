@@ -543,11 +543,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             macro_rules! degree_reduction_check {
                 ($column:expr, $expr:expr) => {
                     // compression_debug
-                    // cb.require_equal(
-                    //     "Degree reduction column check",
-                    //     meta.query_advice($column, Rotation::cur()),
-                    //     $expr,
-                    // );
+                    cb.require_equal(
+                        "Degree reduction column check",
+                        meta.query_advice($column, Rotation::cur()),
+                        $expr,
+                    );
                 };
             }
             degree_reduction_check!(tag_gadget.is_block_header, is_block_header(meta));
@@ -2612,132 +2612,140 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]))
             },
         );
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockLstream (contained bitstream start)",
-            |meta| {
-                let (huffman_byte_offset, start, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
-                    bitstream_decoder.is_contained(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    bit_value,                                                 // bitstring value
-                    1.expr(), // bitstring length accumulator, starts at 1
-                    start,    // bit index start
-                    1.expr(), // denotes that this bit index is a part of the bitstring
-                    1.expr(), // denotes that this bit index is a part of the bitstring
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_contained(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockLstream (contained bitstream end)",
-            |meta| {
-                let (huffman_byte_offset, start, end, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
-                    bitstream_decoder.is_contained(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    bit_value,                                                 // bitstring value
-                    end.expr() - start + 1.expr(),                             // bitstring length
-                    end,                                                       // bit index at end
-                    1.expr(),                                                  // from start
-                    1.expr(),                                                  // to end
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_contained(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockLstream (spanned bitstream start)",
-            |meta| {
-                let (huffman_byte_offset, start, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
-                    bitstream_decoder.is_spanned(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(byte_idx, Rotation::next()),             // byte index'
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    meta.query_advice(value_byte, Rotation::next()),           // byte value'
-                    bit_value,                                                 // bitstring value
-                    1.expr(),                                                  // bitstring len acc
-                    start,                                                     // bit index start
-                    1.expr(),                                                  // from start
-                    1.expr(),                                                  // to end
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), //  is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_spanned(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockLstream (spanned bitstring end)",
-            |meta| {
-                let (huffman_byte_offset, start, end, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
-                    bitstream_decoder.is_spanned(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(byte_idx, Rotation::next()),             // byte index'
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    meta.query_advice(value_byte, Rotation::next()),           // byte value'
-                    bit_value,                                                 // bitstring value
-                    end.expr() - start + 1.expr(),                             // bitstring length
-                    end,                                                       // bit index at end
-                    1.expr(),                                                  // from start
-                    1.expr(),                                                  // to end
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_spanned(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
+
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockLstream (contained bitstream start)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
+        //             bitstream_decoder.is_contained(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             bit_value,                                                 // bitstring value
+        //             1.expr(), // bitstring length accumulator, starts at 1
+        //             start,    // bit index start
+        //             1.expr(), // denotes that this bit index is a part of the bitstring
+        //             1.expr(), // denotes that this bit index is a part of the bitstring
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_contained(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
+
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockLstream (contained bitstream end)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, end, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
+        //             bitstream_decoder.is_contained(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             bit_value,                                                 // bitstring value
+        //             end.expr() - start + 1.expr(),                             // bitstring length
+        //             end,                                                       // bit index at end
+        //             1.expr(),                                                  // from start
+        //             1.expr(),                                                  // to end
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_contained(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
+
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockLstream (spanned bitstream start)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
+        //             bitstream_decoder.is_spanned(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(byte_idx, Rotation::next()),             // byte index'
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             meta.query_advice(value_byte, Rotation::next()),           // byte value'
+        //             bit_value,                                                 // bitstring value
+        //             1.expr(),                                                  // bitstring len acc
+        //             start,                                                     // bit index start
+        //             1.expr(),                                                  // from start
+        //             1.expr(),                                                  // to end
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), //  is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_spanned(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
+
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockLstream (spanned bitstring end)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, end, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
+        //             bitstream_decoder.is_spanned(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(byte_idx, Rotation::next()),             // byte index'
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             meta.query_advice(value_byte, Rotation::next()),           // byte value'
+        //             bit_value,                                                 // bitstring value
+        //             end.expr() - start + 1.expr(),                             // bitstring length
+        //             end,                                                       // bit index at end
+        //             1.expr(),                                                  // from start
+        //             1.expr(),                                                  // to end
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_spanned(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
 
         meta.create_gate("DecompressionCircuit: bitstream reader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -2786,44 +2794,47 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 and::expr([is_not_last.expr(), bitstream_decoder.is_spanned(meta, None)]);
             // if bitstring is strictly contained.
             cb.condition(is_strictly_contained, |cb| {
-                cb.require_equal(
-                    "strictly contained bitstring: bit_index_start",
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
-                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()) + 1.expr(),
-                );
-                cb.require_equal(
-                    "strictly contained bitstring: byte_idx",
-                    meta.query_advice(byte_idx, Rotation::next()),
-                    meta.query_advice(byte_idx, Rotation::cur()),
-                );
+                // compression_debug
+                // cb.require_equal(
+                //     "strictly contained bitstring: bit_index_start",
+                //     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
+                //     meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()) + 1.expr(),
+                // );
+                // cb.require_equal(
+                //     "strictly contained bitstring: byte_idx",
+                //     meta.query_advice(byte_idx, Rotation::next()),
+                //     meta.query_advice(byte_idx, Rotation::cur()),
+                // );
             });
 
             // if bitstring is byte-aligned.
             cb.condition(is_byte_aligned, |cb| {
-                cb.require_equal(
-                    "byte-aligned bitstring: bit_index_start",
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
-                    0.expr(),
-                );
-                cb.require_equal(
-                    "byte-aligned bitstring: byte_idx",
-                    meta.query_advice(byte_idx, Rotation::next()),
-                    meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
-                );
+                // compression_debug
+                // cb.require_equal(
+                //     "byte-aligned bitstring: bit_index_start",
+                //     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
+                //     0.expr(),
+                // );
+                // cb.require_equal(
+                //     "byte-aligned bitstring: byte_idx",
+                //     meta.query_advice(byte_idx, Rotation::next()),
+                //     meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
+                // );
             });
 
             // if bitstring is spanned.
             cb.condition(is_spanned, |cb| {
-                cb.require_equal(
-                    "spanned bitstring: bit_index_start",
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
-                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()) - 7.expr(),
-                );
-                cb.require_equal(
-                    "spanned bitstring: byte_idx",
-                    meta.query_advice(byte_idx, Rotation::next()),
-                    meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
-                );
+                // compression_debug
+                // cb.require_equal(
+                //     "spanned bitstring: bit_index_start",
+                //     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
+                //     meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()) - 7.expr(),
+                // );
+                // cb.require_equal(
+                //     "spanned bitstring: byte_idx",
+                //     meta.query_advice(byte_idx, Rotation::next()),
+                //     meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
+                // );
             });
 
             cb.gate(and::expr([
@@ -2994,7 +3005,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
                     let idx_cmp_len_chip = ComparatorChip::construct(self.block_gadget.idx_cmp_len.clone());
                     idx_cmp_len_chip.assign(&mut region, i, F::one(), F::one())?;
-                    
+
 
                     // Tag Gadget
 
@@ -3111,6 +3122,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         self.tag_gadget.is_literals_header,
                         i,
                         || Value::known(F::from(is_literals_header)),
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.is_lstream",
+                        self.tag_gadget.is_lstream,
+                        i,
+                        || Value::known(F::from(is_lstream)),
                     )?;
                     region.assign_advice(
                         || "tag_gadget.is_fse_code",
