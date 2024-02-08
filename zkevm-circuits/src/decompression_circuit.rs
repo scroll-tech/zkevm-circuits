@@ -542,7 +542,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // Degree reduction columns.
             macro_rules! degree_reduction_check {
                 ($column:expr, $expr:expr) => {
-                    // compression_debug
                     cb.require_equal(
                         "Degree reduction column check",
                         meta.query_advice($column, Rotation::cur()),
@@ -651,6 +650,10 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // on the next row iff:
             // - tag_idx == tag_len
             // - byte_idx' == byte_idx + 1
+
+            // TODO: This constraints might be incorrect as is_new_byte specifies the byte on current row is new
+            // but for is_tag_change, it instead requires that the byte on the next row is new. 
+
             // let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, None);
             // cb.condition(and::expr([
             //     tidx_eq_tlen, 
@@ -689,36 +692,34 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.tag_idx, Rotation::prev()),
                 meta.query_advice(tag_gadget.tag_len, Rotation::prev()),
             );
-            // compression_debug
-            // cb.require_equal(
-            //     "tag_value::prev == tag_value_acc::prev",
-            //     meta.query_advice(tag_gadget.tag_value, Rotation::prev()),
-            //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::prev()),
-            // );
+            cb.require_equal(
+                "tag_value::prev == tag_value_acc::prev",
+                meta.query_advice(tag_gadget.tag_value, Rotation::prev()),
+                meta.query_advice(tag_gadget.tag_value_acc, Rotation::prev()),
+            );
             cb.require_equal(
                 "tag == tag_next::prev",
                 meta.query_advice(tag_gadget.tag, Rotation::cur()),
                 meta.query_advice(tag_gadget.tag_next, Rotation::prev()),
             );
-            // cb.condition(was_reverse.expr(), |cb| {
-            //     cb.require_equal(
-            //         "tag_rlc_acc on the last row for tag processed back-to-front",
-            //         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
-            //         meta.query_advice(value_byte, Rotation::prev()),
-            //     );
-            // });
-            // cb.condition(not::expr(was_reverse), |cb| {
-            //     cb.require_equal(
-            //         "tag_rlc_acc == tag_rlc on the last row of tag if tag processed front-to-back",
-            //         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
-            //         meta.query_advice(tag_gadget.tag_rlc, Rotation::prev()),
-            //     );
-            // });
+            cb.condition(was_reverse.expr(), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc on the last row for tag processed back-to-front",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
+                    meta.query_advice(value_byte, Rotation::prev()),
+                );
+            });
+            cb.condition(not::expr(was_reverse), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc == tag_rlc on the last row of tag if tag processed front-to-back",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::prev()),
+                    meta.query_advice(tag_gadget.tag_rlc, Rotation::prev()),
+                );
+            });
 
             // Whether the new tag is processed from back-to-front.
             let is_reverse = meta.query_advice(tag_gadget.is_reverse, Rotation::cur());
 
-            // compression_debug
             // Validations for the new tag:
             //
             // - tag_idx == 1
@@ -734,11 +735,14 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             );
             let (lt, eq) = tag_gadget.len_cmp_max.expr(meta, None);
             cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
+
+            // compression_debug
             // cb.require_equal(
             //     "tag_value_acc == value_byte",
             //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
             //     meta.query_advice(value_byte, Rotation::cur()),
             // );
+
             // cb.require_equal(
             //     "value_rlc calculation",
             //     meta.query_advice(value_rlc, Rotation::cur()),
@@ -746,20 +750,20 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //         * meta.query_advice(tag_gadget.rand_pow_tag_len, Rotation::prev())
             //         + meta.query_advice(tag_gadget.tag_rlc, Rotation::prev()),
             // );
-            // cb.condition(is_reverse.expr(), |cb| {
-            //     cb.require_equal(
-            //         "tag_rlc_acc == tag_rlc on the first row of tag processed back-to-front",
-            //         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
-            //         meta.query_advice(tag_gadget.tag_rlc, Rotation::cur()),
-            //     );
-            // });
-            // cb.condition(not::expr(is_reverse), |cb| {
-            //     cb.require_equal(
-            //         "tag_rlc_acc on the first row for tag processed from front-to-back",
-            //         meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
-            //         meta.query_advice(value_byte, Rotation::cur()),
-            //     );
-            // });
+            cb.condition(is_reverse.expr(), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc == tag_rlc on the first row of tag processed back-to-front",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_rlc, Rotation::cur()),
+                );
+            });
+            cb.condition(not::expr(is_reverse), |cb| {
+                cb.require_equal(
+                    "tag_rlc_acc on the first row for tag processed from front-to-back",
+                    meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                    meta.query_advice(value_byte, Rotation::cur()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
