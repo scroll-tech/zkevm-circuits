@@ -1021,7 +1021,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             // FrameHeaderDescriptor is a single byte.
-            // compression_debug
             cb.require_equal(
                 "tag_idx == 1",
                 meta.query_advice(tag_gadget.tag_idx, Rotation::cur()),
