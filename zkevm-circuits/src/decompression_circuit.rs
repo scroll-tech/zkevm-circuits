@@ -122,6 +122,7 @@ pub struct DecompressionCircuitConfig<F> {
     range128: RangeTable<128>,
     range256: RangeTable<256>,
     tag_rom_table: TagRomTable,
+    pow_rand_table: PowOfRandTable,
 }
 
 /// Block level details are specified in these columns.
@@ -864,23 +865,23 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]))
             },
         );
-        // compression_debug
-        // meta.lookup_any("DecompressionCircuit: randomness power tag_len", |meta| {
-        //     let condition = and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         not::expr(meta.query_advice(is_padding, Rotation::cur())),
-        //         meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //     ]);
-        //     [
-        //         1.expr(),                                                        // enabled
-        //         meta.query_advice(tag_gadget.tag_len, Rotation::cur()),          // exponent
-        //         meta.query_advice(tag_gadget.rand_pow_tag_len, Rotation::cur()), // exponentiation
-        //     ]
-        //     .into_iter()
-        //     .zip(pow_rand_table.table_exprs(meta))
-        //     .map(|(value, table)| (condition.expr() * value, table))
-        //     .collect()
-        // });
+        
+        meta.lookup_any("DecompressionCircuit: randomness power tag_len", |meta| {
+            let condition = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+            ]);
+            [
+                1.expr(),                                                        // enabled
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),          // exponent
+                meta.query_advice(tag_gadget.rand_pow_tag_len, Rotation::cur()), // exponentiation
+            ]
+            .into_iter()
+            .zip(pow_rand_table.table_exprs(meta))
+            .map(|(value, table)| (condition.expr() * value, table))
+            .collect()
+        });
 
         debug_assert!(meta.degree() <= 9);
 
@@ -2868,6 +2869,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             range128,
             range256,
             tag_rom_table,
+            pow_rand_table,
         }
     }
 }
@@ -2882,11 +2884,20 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let mut jump_table_idx: usize = 0;
+        let mut rand_pow: Vec<Value<F>> = vec![Value::known(F::one())];
 
         layouter.assign_region(
             || "Decompression table region",
             |mut region| {
                 for (i, row) in witness_rows.iter().enumerate() {
+                    let tag_len = row.state.tag_len as usize;
+                    assert!(tag_len > 0);
+
+                    while tag_len >= rand_pow.len() {
+                        let tail = rand_pow.last().expect("Tail exists").clone();
+                        rand_pow.push(tail * challenges.keccak_input());
+                    }
+
                     region.assign_fixed(
                         || "q_enable",
                         self.q_enable,
@@ -3009,13 +3020,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
 
                     // Tag Gadget
-
-                    // pub struct TagGadget<F> {
-                    //     /// Randomness exponentiated by the tag's length. This is used to then accumulate the value
-                    //     /// RLC post processing of this tag.
-                    //     rand_pow_tag_len: Column<Advice>,
-                    // }
-
                     region.assign_advice(
                         || "tag_gadget.tag",
                         self.tag_gadget.tag,
@@ -3081,6 +3085,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         self.tag_gadget.tag_rlc_acc,
                         i,
                         || row.state.tag_rlc_acc,
+                    )?;
+                    region.assign_advice(
+                        || "tag_gadget.rand_pow_tag_len",
+                        self.tag_gadget.rand_pow_tag_len,
+                        i,
+                        || rand_pow[tag_len],
                     )?;
 
                     let tag_bits = BinaryNumberChip::construct(self.tag_gadget.tag_bits);
@@ -3345,8 +3355,8 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
 
         // compression_debug
         for row in witness_rows.clone() {
-            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;",
-                row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.stream_idx, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol,
+            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};;",
+                row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.stream_idx, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol, row.bitstream_read_data.bit_start_idx, row.bitstream_read_data.bit_end_idx, row.bitstream_read_data.bit_value
             );
         }
 
