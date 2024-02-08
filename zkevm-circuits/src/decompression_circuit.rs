@@ -1119,16 +1119,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     256.expr() + fcs_tag_value.expr(),
                     fcs_tag_value,
                 );
-                // compression_debug
-                // cb.require_equal(
-                //     "decoded_len == frame_content_size",
-                //     frame_content_size,
-                //     meta.query_advice(decoded_len, Rotation::cur()),
-                // );
-
-                // compression_debug
-                cb.require_zero("dummy constraint", 0.expr());
-
+                cb.require_equal(
+                    "decoded_len == frame_content_size",
+                    frame_content_size,
+                    meta.query_advice(decoded_len, Rotation::cur()),
+                );
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),

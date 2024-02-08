@@ -87,7 +87,8 @@ fn process_frame_header<F: Field>(
             .iter()
             .fold(0u64, |acc, &byte| acc * 256u64 + (byte as u64));
         match fcs_tag_len {
-            2 => fcs + 256,
+            // compression_debug
+            // 2 => fcs + 256,
             _ => fcs,
         }
     };
