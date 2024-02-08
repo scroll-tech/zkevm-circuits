@@ -767,8 +767,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                // not::expr(meta.query_advice(is_padding, Rotation::cur())),
-                // compression_debug
                 not::expr(meta.query_fixed(q_first, Rotation::cur())),
                 meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
             ]))
@@ -1034,16 +1032,16 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
                 1.expr(),
             );
-            // cb.require_equal(
-            //     "tag_value_acc == value_byte",
-            //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            // );
-            // cb.require_equal(
-            //     "tag_rlc_acc == value_byte",
-            //     meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            // );
+            cb.require_equal(
+                "tag_value_acc == value_byte",
+                meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
+                meta.query_advice(value_byte, Rotation::cur()),
+            );
+            cb.require_equal(
+                "tag_rlc_acc == value_byte",
+                meta.query_advice(tag_gadget.tag_rlc_acc, Rotation::cur()),
+                meta.query_advice(value_byte, Rotation::cur()),
+            );
 
             // Structure of the Frame's header descriptor.
             //
