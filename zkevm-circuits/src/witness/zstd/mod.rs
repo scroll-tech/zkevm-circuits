@@ -1005,7 +1005,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         encoded_data: EncodedData {
             byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
             encoded_len,
-            value_byte: src[byte_offset + n_fse_bytes + 1 + n_huffman_code_bytes - (current_byte_idx - 1)],
+            value_byte: src[byte_offset + n_fse_bytes + 1 + n_huffman_code_bytes - current_byte_idx],
             value_rlc: next_value_rlc_acc,
             reverse: true,
             reverse_len: n_huffman_code_bytes as u64,
