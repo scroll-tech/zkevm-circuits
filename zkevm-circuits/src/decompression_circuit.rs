@@ -103,9 +103,7 @@ pub struct DecompressionCircuitConfig<F> {
     /// The random linear combination of all decoded bytes up to and including the current one.
     decoded_rlc: Column<Advice>,
     /// Block level details are specified in these columns.
-    /// compression_debug
-    // block_gadget: BlockGadget<F>,
-    block_gadget: BlockGadget,
+    block_gadget: BlockGadget<F>,
     /// All zstd tag related columns.
     tag_gadget: TagGadget<F>,
     /// Decomposition of the Literals Header.
@@ -128,9 +126,7 @@ pub struct DecompressionCircuitConfig<F> {
 
 /// Block level details are specified in these columns.
 #[derive(Clone, Debug)]
-// compression_debug
-pub struct BlockGadget {
-// pub struct BlockGadget<F> {
+pub struct BlockGadget<F> {
     /// Boolean column to indicate that we are processing a block.
     is_block: Column<Advice>,
     /// The incremental index of the byte within this block.
@@ -139,9 +135,8 @@ pub struct BlockGadget {
     block_len: Column<Advice>,
     /// Boolean column to mark whether or not this is the last block.
     is_last_block: Column<Advice>,
-    // compression_debug
     // Check: block_idx <= block_len.
-    // idx_cmp_len: ComparatorConfig<F, 1>,
+    idx_cmp_len: ComparatorConfig<F, 1>,
 }
 
 /// All tag related columns are placed in this type.
@@ -397,14 +392,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 idx: block_idx,
                 block_len,
                 is_last_block: meta.advice_column(),
-                // compression_debug
-                // idx_cmp_len: ComparatorChip::configure(
-                //     meta,
-                //     |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                //     |meta| meta.query_advice(block_idx, Rotation::cur()),
-                //     |meta| meta.query_advice(block_len, Rotation::cur()),
-                //     range256.into(),
-                // ),
+                idx_cmp_len: ComparatorChip::configure(
+                    meta,
+                    |meta| meta.query_fixed(q_enable, Rotation::cur()),
+                    |meta| meta.query_advice(block_idx, Rotation::cur()),
+                    |meta| meta.query_advice(block_len, Rotation::cur()),
+                    range256.into(),
+                ),
             }
         };
         let tag_gadget = {
@@ -1150,6 +1144,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ////////////////////////////////// ZstdTag::BlockHeader ///////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
 
+        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         // Note: We only verify the 1st row of BlockHeader for tag_value.
         meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1167,7 +1162,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //
             // But block header is expressed in the reverse order, which helps us in calculating
             // the tag_value appropriately.
-            // compression_debug
             // cb.require_equal(
             //     "last block check",
             //     meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
@@ -1193,7 +1187,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear with
             // block type 00 or 01, i.e. the block_type_bit1 is 0.
-            // compression_debug
             // cb.condition(not::expr(block_type_bit1), |cb| {
             //     cb.require_equal(
             //         "Raw/RLE blocks: tag_len == block_len",
@@ -1233,11 +1226,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
             ]))
         });
+        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         meta.create_gate("DecompressionCircuit: while processing a block", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             // If byte_idx increments, then block_gadet.idx should also increment.
-            // compression_debug
             // cb.require_equal(
             //     "idx in block increments if byte_idx increments",
             //     meta.query_advice(block_gadget.idx, Rotation::next())
@@ -1267,6 +1260,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(block_gadget.is_block, Rotation::next()),
             ]))
         });
+        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         meta.create_gate("DecompressionCircuit: handle end of other blocks", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1296,6 +1290,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 not::expr(meta.query_advice(block_gadget.is_last_block, Rotation::cur())),
             ]))
         });
+        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         meta.create_gate("DecompressionCircuit: handle end of last block", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1347,6 +1342,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 // idx_eq_len,
             ]))
         });
+
         // compression_debug
         // meta.lookup(
         //     "DecompressionCircuit: BlockHeader (BlockSize == BlockHeader >> 3)",
@@ -2972,30 +2968,33 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     // Block Gadget
                     // compression_debug
                     region.assign_advice(
+                        || "block_gadget.is_block",
+                        self.block_gadget.is_block,
+                        i,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_advice(
                         || "block_gadget.block_idx",
                         self.block_gadget.idx,
                         i,
                         || Value::known(F::one()),
                     )?;
+                    region.assign_advice(
+                        || "block_gadget.block_len",
+                        self.block_gadget.block_len,
+                        i,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_advice(
+                        || "block_gadget.is_last_block",
+                        self.block_gadget.is_last_block,
+                        i,
+                        || Value::known(F::one()),
+                    )?;
 
-                    // let block_gadget = {
-                    //     let block_idx = meta.advice_column();
-                    //     let block_len = meta.advice_column();
-                    //     BlockGadget {
-                    //         is_block: meta.advice_column(),
-                    //         idx: block_idx,
-                    //         block_len,
-                    //         is_last_block: meta.advice_column(),
-                    //         idx_cmp_len: ComparatorChip::configure(
-                    //             meta,
-                    //             |meta| meta.query_fixed(q_enable, Rotation::cur()),
-                    //             |meta| meta.query_advice(block_idx, Rotation::cur()),
-                    //             |meta| meta.query_advice(block_len, Rotation::cur()),
-                    //             range256.into(),
-                    //         ),
-                    //     }
-                    // };
-
+                    let idx_cmp_len_chip = ComparatorChip::construct(self.block_gadget.idx_cmp_len.clone());
+                    idx_cmp_len_chip.assign(&mut region, i, F::one(), F::one())?;
+                    
 
                     // Tag Gadget
 
