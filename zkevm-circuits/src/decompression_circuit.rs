@@ -646,10 +646,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             // If we don't encounter a new byte, the byte value should stay the same.
             cb.condition(not::expr(is_new_byte.expr()), |cb| {
-                // compression_debug
                 cb.require_equal(
                     "value_byte' == value_byte if not a new byte",
-                    meta.query_advice(value_byte, Rotation::next()),
+                    meta.query_advice(value_byte, Rotation::prev()),
                     meta.query_advice(value_byte, Rotation::cur()),
                 );
             });
