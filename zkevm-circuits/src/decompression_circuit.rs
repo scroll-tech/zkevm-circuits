@@ -987,28 +987,28 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        meta.lookup_any(
-            "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
-            |meta| {
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    not::expr(meta.query_advice(is_padding, Rotation::next())),
-                ]);
-                [
-                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
-                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-                    meta.query_advice(tag_gadget.max_len, Rotation::cur()),
-                    // compression_debug
-                    // meta.query_advice(tag_gadget.is_output, Rotation::cur()),
-                    // meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                    // meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
-                ]
-                .into_iter()
-                .zip(tag_rom_table.table_exprs(meta))
-                .map(|(arg, table)| (condition.expr() * arg, table))
-                .collect()
-            },
-        );
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
+        //     |meta| {
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             not::expr(meta.query_advice(is_padding, Rotation::next())),
+        //         ]);
+        //         [
+        //             meta.query_advice(tag_gadget.tag, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.max_len, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_output, Rotation::cur()),
+        //             meta.query_advice(block_gadget.is_block, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
+        //         ]
+        //         .into_iter()
+        //         .zip(tag_rom_table.table_exprs(meta))
+        //         .map(|(arg, table)| (condition.expr() * arg, table))
+        //         .collect()
+        //     },
+        // );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -2971,17 +2971,24 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.decoded_data.decoded_byte as u64)),
                     )?;
-                    // decoded_rlc
-                    // TODO:
-                    
+                    region.assign_advice(
+                        || "decoded_rlc",
+                        self.decoded_rlc,
+                        i,
+                        || row.decoded_data.decoded_value_rlc,
+                    )?;
 
                     // Block Gadget
-                    // compression_debug
+                    let is_block = !(
+                        row.state.tag == ZstdTag::FrameHeaderDescriptor ||
+                        row.state.tag == ZstdTag::FrameContentSize ||
+                        row.state.tag == ZstdTag::BlockHeader
+                    ) as u64;
                     region.assign_advice(
                         || "block_gadget.is_block",
                         self.block_gadget.is_block,
                         i,
-                        || Value::known(F::one()),
+                        || Value::known(F::from(is_block)),
                     )?;
                     region.assign_advice(
                         || "block_gadget.block_idx",
@@ -3103,11 +3110,18 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     let is_literals_section = is_literals_header + is_fse_code + is_huffman_code + is_lstream + is_jumptable;
                     let is_huffman_tree_section = is_fse_code + is_huffman_code + is_jumptable + is_lstream;
 
+                    let is_output = (
+                        row.state.tag == ZstdTag::RawBlockBytes ||
+                        row.state.tag == ZstdTag::RleBlockBytes ||
+                        row.state.tag == ZstdTag::ZstdBlockLiteralsRawBytes ||
+                        row.state.tag == ZstdTag::ZstdBlockLiteralsRleBytes ||
+                        row.state.tag == ZstdTag::ZstdBlockLstream
+                    ) as u64;
                     region.assign_advice(
                         || "tag_gadget.is_output",
                         self.tag_gadget.is_output,
                         i,
-                        || Value::known(F::zero()),
+                        || Value::known(F::from(is_output)),
                     )?;
 
                     region.assign_advice(
@@ -3183,12 +3197,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     
 
                     // Bitstream Decoder
-                    //     pub struct BitstreamDecoder<F> {
-                    //         /// The symbol that this bitstring decodes to. We are using this for decoding using FSE table
-                    //         /// or a Huffman Tree. So this symbol represents the decoded value that the bitstring maps to.
-                    //         decoded_symbol: Column<Advice>,
-                    //     }
-
                     region.assign_advice(
                         || "bitstream_decoder.bit_index_start",
                         self.bitstream_decoder.bit_index_start,
@@ -3211,13 +3219,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     let bitstring_contained_chip = ComparatorChip::construct(self.bitstream_decoder.bitstring_contained.clone());
                     bitstring_contained_chip.assign(&mut region, i, F::from(row.huffman_data.k.1 as u64), F::from(7u64))?;
 
-                    // compression_debug
-                    // region.assign_advice(
-                    //     || "bitstream_decoder.decoded_symbol",
-                    //     self.bitstream_decoder.decoded_symbol,
-                    //     i,
-                    //     || Value::known(F::from(row.huffman_data.bit_value as u64)),
-                    // )?;
+                    region.assign_advice(
+                        || "bitstream_decoder.decoded_symbol",
+                        self.bitstream_decoder.decoded_symbol,
+                        i,
+                        || Value::known(F::from(row.decoded_data.decoded_byte as u64)),
+                    )?;
 
                     
                     // FSE Gadget

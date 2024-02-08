@@ -83,7 +83,7 @@ fn process_frame_header<F: Field>(
         .cloned()
         .collect::<Vec<u8>>();
     let fcs = {
-        let fcs = fcs_bytes
+        let fcs = fcs_bytes_rev
             .iter()
             .fold(0u64, |acc, &byte| acc * 256u64 + (byte as u64));
         match fcs_tag_len {
@@ -197,7 +197,7 @@ fn process_frame_header<F: Field>(
                             decoded_len_acc: 0,
                             total_decoded_len: last_row.decoded_data.total_decoded_len + fcs,
                             decoded_byte: 0,
-                            decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
+                            decoded_value_rlc: Value::known(F::zero()),
                         },
                         bitstream_read_data: BitstreamReadRow::default(),
                         huffman_data: HuffmanData::default(),
@@ -1277,6 +1277,8 @@ fn process_block_zstd_lstream<F: Field>(
     let mut last_byte_idx: usize = 1;
     let mut current_byte_idx: usize = 1;
     let mut current_bit_idx: usize = 0;
+    let mut decoded_len_acc = last_row.decoded_data.decoded_len_acc;
+    let mut decoded_rlc = last_row.decoded_data.decoded_value_rlc;
 
     // accumulators
     let aux_1 = last_row.encoded_data.value_rlc;
@@ -1362,7 +1364,13 @@ fn process_block_zstd_lstream<F: Field>(
             bit_start_idx: 0usize,
             bit_end_idx: padding_end_idx as usize,
         },
-        decoded_data: last_row.decoded_data.clone(),
+        decoded_data: DecodedData {
+            decoded_len: last_row.decoded_data.decoded_len,
+            decoded_len_acc: last_row.decoded_data.decoded_len_acc,
+            total_decoded_len: last_row.decoded_data.total_decoded_len,
+            decoded_byte: 0,
+            decoded_value_rlc: last_row.decoded_data.decoded_value_rlc,
+        },
         fse_data: FseTableRow::default(),
     });
     
@@ -1406,6 +1414,9 @@ fn process_block_zstd_lstream<F: Field>(
             };
             (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
 
+            decoded_len_acc += 1;
+            decoded_rlc = decoded_rlc * randomness + Value::known(F::from(sym));
+
             // Add a witness row for emitted symbol
             witness_rows.push(ZstdWitnessRow {
                 state: ZstdState {
@@ -1444,7 +1455,13 @@ fn process_block_zstd_lstream<F: Field>(
                     bit_start_idx: from_bit_idx.rem_euclid(8) as usize,
                     bit_end_idx: end_bit_idx as usize,
                 },
-                decoded_data: last_row.decoded_data.clone(),
+                decoded_data: DecodedData {
+                    decoded_len: last_row.decoded_data.decoded_len,
+                    decoded_len_acc,
+                    total_decoded_len: last_row.decoded_data.total_decoded_len,
+                    decoded_byte: sym as u8,
+                    decoded_value_rlc: decoded_rlc,
+                },
                 fse_data: FseTableRow::default(),
             });
 
