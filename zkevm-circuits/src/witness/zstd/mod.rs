@@ -93,6 +93,7 @@ fn process_frame_header<F: Field>(
     };
     let fcs_tag_value_iter = fcs_bytes
         .iter()
+        .rev()
         .scan(Value::known(F::zero()), |acc, &byte| {
             *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
             Some(*acc)
@@ -952,7 +953,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             Some(*acc)
         },
     ).collect::<Vec<Value<F>>>().into_iter().rev();
-    let mut tag_value_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).scan(
+    let mut tag_value_iter = src.iter().skip(byte_offset + n_fse_bytes + 1).take(n_huffman_code_bytes).rev().scan(
         Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
@@ -1287,7 +1288,7 @@ fn process_block_zstd_lstream<F: Field>(
         },
     );
 
-    let mut tag_value_acc = src.iter().skip(byte_offset).take(len).scan(
+    let mut tag_value_acc = src.iter().skip(byte_offset).take(len).rev().scan(
         Value::known(F::zero()),
         |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));

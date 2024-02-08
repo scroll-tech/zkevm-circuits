@@ -737,11 +737,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             cb.require_equal("tag_len <= max_len", lt + eq, 1.expr());
 
             // compression_debug
-            // cb.require_equal(
-            //     "tag_value_acc == value_byte",
-            //     meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
-            //     meta.query_advice(value_byte, Rotation::cur()),
-            // );
+            cb.require_equal(
+                "tag_value_acc == value_byte",
+                meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
+                meta.query_advice(value_byte, Rotation::cur()),
+            );
 
             // cb.require_equal(
             //     "value_rlc calculation",
