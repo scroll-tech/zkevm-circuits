@@ -128,6 +128,8 @@ fn process_frame_header<F: Field>(
         .expect("FrameContentSize bytes expected");
     let aux_2 = fhd_value_rlc;
 
+    let value_rlc_fcs = fhd_value_rlc * randomness + fhd_value_rlc;
+
     (
         byte_offset + 1 + fcs_tag_len,
         std::iter::once(ZstdWitnessRow {
@@ -169,7 +171,7 @@ fn process_frame_header<F: Field>(
                 .zip(tag_rlc_iter.iter().rev())
                 .enumerate()
                 .map(
-                    |(i, (((&value_byte, tag_value_acc), &value_rlc), &tag_rlc_acc))| ZstdWitnessRow {
+                    |(i, (((&value_byte, tag_value_acc), _value_rlc), &tag_rlc_acc))| ZstdWitnessRow {
                         state: ZstdState {
                             tag: ZstdTag::FrameContentSize,
                             tag_next: ZstdTag::BlockHeader,
@@ -191,7 +193,7 @@ fn process_frame_header<F: Field>(
                             reverse_len: fcs_tag_len as u64,
                             aux_1: *aux_1,
                             aux_2,
-                            value_rlc,
+                            value_rlc: value_rlc_fcs,
                         },
                         decoded_data: DecodedData {
                             decoded_len: fcs,
@@ -291,6 +293,9 @@ fn process_block_header<F: Field>(
     });
     let tag_rlc = tag_rlc_acc.clone().last().expect("Tag RLC expected");
 
+    let multiplier = (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+    let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
+
     // BlockHeader follows FrameContentSize which is processed in reverse order.
     // Hence value_rlc at the first BlockHeader byte will be calculated as:
     //
@@ -317,7 +322,7 @@ fn process_block_header<F: Field>(
             .zip(tag_rlc_acc)
             .enumerate()
             .map(
-                |(i, (((&value_byte, tag_value_acc), &value_rlc), tag_rlc_acc))| ZstdWitnessRow {
+                |(i, (((&value_byte, tag_value_acc), _v_rlc), tag_rlc_acc))| ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::BlockHeader,
                         tag_next,
@@ -741,6 +746,9 @@ fn process_block_zstd_literals_header<F: Field>(
             Some(*acc)
         });
 
+    let multiplier = (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+    let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
+
     (
         byte_offset + n_bytes_header,
         lh_bytes
@@ -751,7 +759,7 @@ fn process_block_zstd_literals_header<F: Field>(
             .zip(tag_rlc_iter)
             .enumerate()
             .map(
-                |(i, (((&value_byte, tag_value_acc), value_rlc), tag_rlc_acc))| ZstdWitnessRow {
+                |(i, (((&value_byte, tag_value_acc), _v_rlc), tag_rlc_acc))| ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::ZstdBlockLiteralsHeader,
                         tag_next,
@@ -809,14 +817,8 @@ fn process_block_zstd_huffman_code<F: Field>(
     assert!(header_byte < 128, "FSE encoded huffman weights assumed");
     let n_bytes = header_byte as usize;
 
-    // Get value_rlc accumulator
-    let mut value_rlc_iter = src.iter().skip(byte_offset).take(n_bytes + 1).scan(
-        last_row.encoded_data.value_rlc,
-        |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        },
-    );
+    let multiplier = (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+    let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
     
     // Add a witness row for Huffman header
     let mut huffman_header_row: ZstdWitnessRow<F> = ZstdWitnessRow {
@@ -836,7 +838,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             byte_idx: (byte_offset + 1) as u64,
             encoded_len,
             value_byte: header_byte.clone(),
-            value_rlc: value_rlc_iter.next().expect("Next value should exist"),
+            value_rlc,
             reverse: false,
             ..Default::default()
         },
@@ -907,7 +909,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 byte_idx: (byte_offset + idx + 2) as u64, // count the huffman header byte
                 encoded_len,
                 value_byte: byte.clone(),
-                value_rlc: value_rlc_iter.next().expect("Next value should exist"),
+                value_rlc,
                 reverse: false,
                 ..Default::default()
             },
@@ -924,6 +926,11 @@ fn process_block_zstd_huffman_code<F: Field>(
     } else {
         ZstdTag::ZstdBlockLstream
     };
+
+    // Update the last row
+    let last_row = witness_rows.last().expect("Last row exists");
+    let multiplier = (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+    let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
 
     // Bitstream processing state values
     let n_huffman_code_bytes = n_bytes - n_fse_bytes;
@@ -1008,7 +1015,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
             encoded_len,
             value_byte: src[byte_offset + n_fse_bytes + 1 + n_huffman_code_bytes - current_byte_idx],
-            value_rlc: next_value_rlc_acc,
+            value_rlc,
             reverse: true,
             reverse_len: n_huffman_code_bytes as u64,
             reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
@@ -1085,7 +1092,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 byte_idx: (byte_offset + n_fse_bytes + 1 + current_byte_idx) as u64,
                 encoded_len,
                 value_byte: src[byte_offset + n_fse_bytes + 1 + n_huffman_code_bytes - current_byte_idx],
-                value_rlc: next_value_rlc_acc,
+                value_rlc,
                 reverse: true,
                 reverse_len: n_huffman_code_bytes as u64,
                 reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
@@ -1181,6 +1188,9 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                 Some(*acc)
             },
         );
+        let multiplier = (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+        let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
+
         let tag_value_iter = src.iter().skip(byte_offset).take(N_JUMP_TABLE_BYTES).scan(
             Value::known(F::zero()),
             |acc, &byte| {
@@ -1214,7 +1224,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                 .zip(tag_rlc_iter)
                 .enumerate()
                 .map(
-                    |(i, (((&value_byte, tag_value_acc), value_rlc), tag_rlc_acc))| {
+                    |(i, (((&value_byte, tag_value_acc), _v_rlc), tag_rlc_acc))| {
                         ZstdWitnessRow {
                             state: ZstdState {
                                 tag: ZstdTag::ZstdBlockJumpTable,
@@ -1290,6 +1300,8 @@ fn process_block_zstd_lstream<F: Field>(
             Some(*acc)
         },
     );
+    let multiplier = (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
+    let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
 
     let mut tag_value_acc = src.iter().skip(byte_offset).take(len).rev().scan(
         Value::known(F::zero()),
@@ -1345,7 +1357,7 @@ fn process_block_zstd_lstream<F: Field>(
             byte_idx: (byte_offset + current_byte_idx) as u64,
             encoded_len: last_row.encoded_data.encoded_len,
             value_byte: src[byte_offset + len - current_byte_idx],
-            value_rlc: next_value_rlc_acc,
+            value_rlc,
             // reverse specific values
             reverse: true,
             reverse_len: len as u64,
@@ -1436,7 +1448,7 @@ fn process_block_zstd_lstream<F: Field>(
                     byte_idx: (byte_offset + from_byte_idx) as u64,
                     encoded_len: last_row.encoded_data.encoded_len,
                     value_byte: src[byte_offset + len - from_byte_idx],
-                    value_rlc: next_value_rlc_acc,
+                    value_rlc,
                     // reverse specific values
                     reverse: true,
                     reverse_len: len as u64,

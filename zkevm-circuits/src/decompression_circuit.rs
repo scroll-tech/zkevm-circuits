@@ -865,7 +865,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]))
             },
         );
-        
+
         meta.lookup_any("DecompressionCircuit: randomness power tag_len", |meta| {
             let condition = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
