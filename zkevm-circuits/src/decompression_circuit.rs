@@ -1137,7 +1137,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ////////////////////////////////// ZstdTag::BlockHeader ///////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
 
-        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         // Note: We only verify the 1st row of BlockHeader for tag_value.
         meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1155,14 +1154,14 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //
             // But block header is expressed in the reverse order, which helps us in calculating
             // the tag_value appropriately.
-            // cb.require_equal(
-            //     "last block check",
-            //     meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
-            //     meta.query_advice(
-            //         block_gadget.is_last_block,
-            //         Rotation(N_BLOCK_HEADER_BYTES as i32),
-            //     ),
-            // );
+            cb.require_equal(
+                "last block check",
+                meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
+                meta.query_advice(
+                    block_gadget.is_last_block,
+                    Rotation(N_BLOCK_HEADER_BYTES as i32),
+                ),
+            );
             let block_type_bit0 =
                 meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
             let block_type_bit1 =
