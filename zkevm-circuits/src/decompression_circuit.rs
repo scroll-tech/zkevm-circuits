@@ -1204,12 +1204,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // This block is the first block iff the FrameContentSize tag precedes it. However we
             // assume that the block_idx and block_len will be set to 0 for FrameContentSize as it
             // is not part of a "block".
-            // compression_debug
-            // cb.require_equal(
-            //     "block_idx::prev == block_len::prev",
-            //     meta.query_advice(block_gadget.idx, Rotation::prev()),
-            //     meta.query_advice(block_gadget.block_len, Rotation::prev()),
-            // );
+            cb.require_equal(
+                "block_idx::prev == block_len::prev",
+                meta.query_advice(block_gadget.idx, Rotation::prev()),
+                meta.query_advice(block_gadget.block_len, Rotation::prev()),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
