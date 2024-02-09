@@ -987,7 +987,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        // compression_debug, current_debug
         meta.lookup_any(
             "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
             |meta| {
