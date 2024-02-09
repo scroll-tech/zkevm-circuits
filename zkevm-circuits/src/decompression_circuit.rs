@@ -1350,6 +1350,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         vec![(condition * range_value, range8.into())]
         //     },
         // );
+
         meta.lookup_any(
             "DecompressionCircuit: lookup for tuple (block_type, tag_next)",
             |meta| {
@@ -1451,28 +1452,27 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]))
             },
         );
-
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: lookup for tuple (zstd_block_type, tag_next)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
-        //         ]);
-        //         [
-        //             meta.query_advice(tag_gadget.tag, Rotation::cur()),
-        //             meta.query_advice(value_bits[7], Rotation::cur()),
-        //             meta.query_advice(value_bits[6], Rotation::cur()),
-        //             meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-        //         ]
-        //         .into_iter()
-        //         .zip(block_type_rom_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+        
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for tuple (zstd_block_type, tag_next)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
+                ]);
+                [
+                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                    meta.query_advice(value_bits[6], Rotation::cur()),
+                    meta.query_advice(value_bits[7], Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(block_type_rom_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         // compression_debug
         // meta.lookup_any(

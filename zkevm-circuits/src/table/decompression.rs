@@ -1979,7 +1979,7 @@ impl BlockTypeRomTable {
                         ZstdTag::ZstdBlockLiteralsHeader,
                         1,
                         0,
-                        ZstdTag::ZstdBlockHuffmanCode,
+                        ZstdTag::ZstdBlockFseCode,
                     ),
                 ]
                 .iter()
