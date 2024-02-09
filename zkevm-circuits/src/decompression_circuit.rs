@@ -1350,27 +1350,26 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         vec![(condition * range_value, range8.into())]
         //     },
         // );
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: lookup for tuple (block_type, tag_next)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
-        //         ]);
-        //         [
-        //             meta.query_advice(tag_gadget.tag, Rotation::cur()),
-        //             meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
-        //             meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
-        //             meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-        //         ]
-        //         .into_iter()
-        //         .zip(block_type_rom_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for tuple (block_type, tag_next)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
+                ]);
+                [
+                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                    meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
+                    meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
+                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(block_type_rom_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
