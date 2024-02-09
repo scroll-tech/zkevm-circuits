@@ -859,8 +859,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                    // compression_debug
-                    // not::expr(meta.query_advice(is_padding, Rotation::cur())),
                     not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
                 ]))
             },
@@ -1116,7 +1114,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 let fcs_flag1 = meta.query_advice(value_bits[6], Rotation::prev());
                 let fcs_tag_value = meta.query_advice(tag_gadget.tag_value, Rotation::cur());
                 let frame_content_size = select::expr(
-                    and::expr([fcs_flag0, not::expr(fcs_flag1)]),
+                    and::expr([not::expr(fcs_flag0), fcs_flag1]),
                     256.expr() + fcs_tag_value.expr(),
                     fcs_tag_value,
                 );
@@ -1169,7 +1167,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
             let block_type_bit1 =
                 meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
-            // compression_debug
             cb.require_zero(
                 "block type cannot be RESERVED, i.e. block_type == 3 not possible",
                 block_type_bit0.expr() * block_type_bit1.expr(),
@@ -1182,6 +1179,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear with
             // block type 00 or 01, i.e. the block_type_bit1 is 0.
+            // compression_debug
             // cb.condition(not::expr(block_type_bit1), |cb| {
             //     cb.require_equal(
             //         "Raw/RLE blocks: tag_len == block_len",
