@@ -123,6 +123,7 @@ pub struct DecompressionCircuitConfig<F> {
     range256: RangeTable<256>,
     tag_rom_table: TagRomTable,
     pow_rand_table: PowOfRandTable,
+    block_type_rom_table: BlockTypeRomTable,
 }
 
 /// Block level details are specified in these columns.
@@ -986,28 +987,28 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             not::expr(meta.query_advice(is_padding, Rotation::next())),
-        //         ]);
-        //         [
-        //             meta.query_advice(tag_gadget.tag, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.max_len, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_output, Rotation::cur()),
-        //             meta.query_advice(block_gadget.is_block, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
-        //         ]
-        //         .into_iter()
-        //         .zip(tag_rom_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+        // compression_debug, current_debug
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for tuple (tag, tag_next, max_len, is_output)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_advice(is_padding, Rotation::next())),
+                ]);
+                [
+                    meta.query_advice(tag_gadget.tag, Rotation::cur()),
+                    meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                    meta.query_advice(tag_gadget.max_len, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_output, Rotation::cur()),
+                    meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(tag_rom_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -2868,6 +2869,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             range256,
             tag_rom_table,
             pow_rand_table,
+            block_type_rom_table,
         }
     }
 }

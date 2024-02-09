@@ -3123,8 +3123,6 @@ pub type U16Table = RangeTable<{ 1 << 16 }>;
 impl<const MAX: usize> RangeTable<MAX> {
     /// Construct the range table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        // compression_debug
-        log::trace!("=> RangeTable construct, MAX: {:?}", MAX);
         let inner = meta.lookup_table_column();
         meta.annotate_lookup_column(inner, || format!("range table [0, {MAX})"));
         Self(inner)
@@ -3132,8 +3130,6 @@ impl<const MAX: usize> RangeTable<MAX> {
 
     /// Assign values to the table.
     pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        // compression_debug
-        log::trace!("=> load RangeTable, MAX: {:?}", MAX);
         layouter.assign_table(
             || format!("range table [0, {MAX})"),
             |mut table| {

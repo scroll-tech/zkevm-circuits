@@ -280,17 +280,23 @@ fn process_block_header<F: Field>(
         _ => unreachable!("BlockType::Reserved unexpected"),
     };
 
-    let tag_value_iter = bh_bytes.iter().scan(Value::known(F::zero()), |acc, &byte| {
+    let tag_value_iter = bh_bytes.iter().rev().scan(Value::known(F::zero()), |acc, &byte| {
         *acc = *acc * Value::known(F::from(256u64)) + Value::known(F::from(byte as u64));
         Some(*acc)
     });
     let tag_value = tag_value_iter.clone().last().expect("BlockHeader expected");
 
-    let tag_rlc_acc = bh_bytes.iter().scan(Value::known(F::zero()), |acc, &byte| {
-        *acc = *acc * randomness + Value::known(F::from(byte as u64));
-        Some(*acc)
-    });
-    let tag_rlc = tag_rlc_acc.clone().last().expect("Tag RLC expected");
+    let tag_rlc_iter = bh_bytes
+        .iter()
+        .scan(Value::known(F::zero()), |acc, &byte| {
+            *acc = *acc * randomness + Value::known(F::from(byte as u64));
+            Some(*acc)
+        })
+        .collect::<Vec<Value<F>>>();
+    let tag_rlc = *(tag_rlc_iter
+        .clone()
+        .last()
+        .expect("Tag RLC expected"));
 
     let multiplier = (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
@@ -304,7 +310,7 @@ fn process_block_header<F: Field>(
     let acc_start = last_row.encoded_data.aux_1
         * randomness.map(|r| r.pow([last_row.encoded_data.reverse_len, 0, 0, 0]))
         + last_row.encoded_data.aux_2;
-    let value_rlcs = bh_bytes
+    let _value_rlcs = bh_bytes
         .iter()
         .scan(acc_start, |acc, &byte| {
             *acc = *acc * randomness + Value::known(F::from(byte as u64));
@@ -316,12 +322,12 @@ fn process_block_header<F: Field>(
         byte_offset + N_BLOCK_HEADER_BYTES,
         bh_bytes
             .iter()
+            .rev()
             .zip(tag_value_iter)
-            .zip(value_rlcs.iter())
-            .zip(tag_rlc_acc)
+            .zip(tag_rlc_iter.iter().rev())
             .enumerate()
             .map(
-                |(i, (((&value_byte, tag_value_acc), _v_rlc), tag_rlc_acc))| ZstdWitnessRow {
+                |(i, ((&value_byte, tag_value_acc), tag_rlc_acc))| ZstdWitnessRow {
                     state: ZstdState {
                         tag: ZstdTag::BlockHeader,
                         tag_next,
@@ -332,13 +338,13 @@ fn process_block_header<F: Field>(
                         tag_value_acc,
                         is_tag_change: i == 0,
                         tag_rlc,
-                        tag_rlc_acc,
+                        tag_rlc_acc: *tag_rlc_acc,
                     },
                     encoded_data: EncodedData {
                         byte_idx: (byte_offset + i + 1) as u64,
                         encoded_len: last_row.encoded_data.encoded_len,
                         value_byte,
-                        reverse: false,
+                        reverse: true,
                         value_rlc,
                         ..Default::default()
                     },
