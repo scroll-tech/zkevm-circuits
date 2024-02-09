@@ -1178,17 +1178,16 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear with
             // block type 00 or 01, i.e. the block_type_bit1 is 0.
-            // compression_debug
-            // cb.condition(not::expr(block_type_bit1), |cb| {
-            //     cb.require_equal(
-            //         "Raw/RLE blocks: tag_len == block_len",
-            //         meta.query_advice(tag_gadget.tag_len, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-            //         meta.query_advice(
-            //             block_gadget.block_len,
-            //             Rotation(N_BLOCK_HEADER_BYTES as i32),
-            //         ),
-            //     );
-            // });
+            cb.condition(not::expr(block_type_bit1), |cb| {
+                cb.require_equal(
+                    "Raw/RLE blocks: tag_len == block_len",
+                    meta.query_advice(tag_gadget.tag_len, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                    meta.query_advice(
+                        block_gadget.block_len,
+                        Rotation(N_BLOCK_HEADER_BYTES as i32),
+                    ),
+                );
+            });
 
             // Validate that for an RLE block: value_byte == decoded_byte.
             cb.condition(block_type_bit0, |cb| {
