@@ -2921,13 +2921,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.encoded_data.encoded_len)),
                     )?;
-                    // compression_debug
-                    // region.assign_advice(
-                    //     || "value_rlc",
-                    //     self.value_rlc,
-                    //     i,
-                    //     || row.encoded_data.value_rlc,
-                    // )?;
+                    region.assign_advice(
+                        || "value_rlc",
+                        self.value_rlc,
+                        i,
+                        || row.encoded_data.value_rlc,
+                    )?;
 
                     // Byte value and bits decomposition
                     region.assign_advice(

@@ -148,7 +148,7 @@ fn process_frame_header<F: Field>(
                 byte_idx: (byte_offset + 1) as u64,
                 encoded_len: last_row.encoded_data.encoded_len,
                 value_byte: *fhd_byte,
-                value_rlc: fhd_value_rlc,
+                value_rlc: Value::known(F::zero()),
                 ..Default::default()
             },
             decoded_data: DecodedData {
@@ -192,7 +192,7 @@ fn process_frame_header<F: Field>(
                             reverse_len: fcs_tag_len as u64,
                             aux_1: *aux_1,
                             aux_2,
-                            value_rlc: value_rlc_fcs,
+                            value_rlc: fhd_value_rlc,
                         },
                         decoded_data: DecodedData {
                             decoded_len: fcs,
