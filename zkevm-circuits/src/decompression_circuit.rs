@@ -2828,8 +2828,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 // TODO: Modify to prev -> cur? compression_debug
                 not::expr(meta.query_fixed(q_enable, Rotation::cur())),
                 sum::expr([
-                    // TODO: Verify huffman code assumption?, compression_debug
-                    // meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
                 ]),
