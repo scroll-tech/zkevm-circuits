@@ -737,7 +737,7 @@ mod tests {
         // sure FSE reconstruction ignores them.
         let src = vec![0xff, 0xff, 0xff, 0x30, 0x6f, 0x9b, 0x03, 0xff, 0xff, 0xff];
 
-        let (n_bytes, bit_boundaries, table) = FseAuxiliaryTableData::reconstruct(&src, 3)?;
+        let (n_bytes, _bit_boundaries, table) = FseAuxiliaryTableData::reconstruct(&src, 3)?;
 
         // TODO: assert equality for the entire table.
         // for now only comparing state/baseline/nb for S1, i.e. weight == 1.
