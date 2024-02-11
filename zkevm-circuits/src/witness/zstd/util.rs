@@ -142,7 +142,7 @@ pub fn increment_idx(current_byte_idx: usize, current_bit_idx: usize) -> (usize,
     let current_bit_idx = current_bit_idx + 1;
     let mut current_byte_idx = current_byte_idx;
 
-    if current_bit_idx > current_byte_idx * N_BITS_PER_BYTE {
+    if current_bit_idx >= current_byte_idx * N_BITS_PER_BYTE {
         current_byte_idx += 1;
     }
 

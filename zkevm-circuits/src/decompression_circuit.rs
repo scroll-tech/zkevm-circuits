@@ -2799,16 +2799,16 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // if bitstring is byte-aligned.
             cb.condition(is_byte_aligned, |cb| {
                 // compression_debug
-                // cb.require_equal(
-                //     "byte-aligned bitstring: bit_index_start",
-                //     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
-                //     0.expr(),
-                // );
-                // cb.require_equal(
-                //     "byte-aligned bitstring: byte_idx",
-                //     meta.query_advice(byte_idx, Rotation::next()),
-                //     meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
-                // );
+                cb.require_equal(
+                    "byte-aligned bitstring: bit_index_start",
+                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
+                    0.expr(),
+                );
+                cb.require_equal(
+                    "byte-aligned bitstring: byte_idx",
+                    meta.query_advice(byte_idx, Rotation::next()),
+                    meta.query_advice(byte_idx, Rotation::cur()) + 1.expr(),
+                );
             });
 
             // if bitstring is spanned.
@@ -2831,7 +2831,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 sum::expr([
                     // TODO: Verify huffman code assumption?, compression_debug
                     // meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-                    // meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
                 ]),
             ]))

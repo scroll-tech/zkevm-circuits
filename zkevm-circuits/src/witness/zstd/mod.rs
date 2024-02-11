@@ -1048,7 +1048,6 @@ fn process_block_zstd_huffman_code<F: Field>(
     // Update accumulator
     if current_byte_idx > last_byte_idx {
         next_tag_value_acc = tag_value_iter.next().unwrap();
-        next_value_rlc_acc = value_rlc_iter.next().unwrap();
         next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
         last_byte_idx = current_byte_idx;
     }
@@ -1128,9 +1127,8 @@ fn process_block_zstd_huffman_code<F: Field>(
         for _ in 0..nb {
             (current_byte_idx, current_bit_idx) = increment_idx(current_byte_idx, current_bit_idx);
         }
-        if current_byte_idx > last_byte_idx && current_byte_idx < n_bytes {
+        if current_byte_idx > last_byte_idx && current_byte_idx <= n_huffman_code_bytes {
             next_tag_value_acc = tag_value_iter.next().unwrap();
-            next_value_rlc_acc = value_rlc_iter.next().unwrap();
             next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
             last_byte_idx = current_byte_idx;
         }
