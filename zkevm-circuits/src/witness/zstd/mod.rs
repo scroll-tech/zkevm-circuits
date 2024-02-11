@@ -858,7 +858,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     };
 
     // Recover the FSE table for generating Huffman weights
-    let (n_fse_bytes, table) = FseAuxiliaryTableData::reconstruct(&src, byte_offset + 1).expect("Reconstructing FSE table should not fail.");
+    let (n_fse_bytes, bit_boundaries, table) = FseAuxiliaryTableData::reconstruct(&src, byte_offset + 1).expect("Reconstructing FSE table should not fail.");
     
     // Witness generation
     let accuracy_log = (src[byte_offset + 1] & 0b1111) + 5;
@@ -885,7 +885,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let tag_rlc = tag_rlc_iter
         .clone()
         .last()
-        .expect("Tag value must exist");
+        .expect("Tag RLC must exist");
 
     // Backfill missing data on the huffman header row
     huffman_header_row.state.tag_len = (n_fse_bytes + 1usize) as u64;
@@ -895,30 +895,75 @@ fn process_block_zstd_huffman_code<F: Field>(
     huffman_header_row.state.tag_rlc_acc = tag_rlc_iter.next().expect("Next value expected");
     witness_rows.push(huffman_header_row);
 
+    // Process bit boundaries into bitstream reader info
+    let mut to_bit_idx: usize = 0;
+    let mut to_byte_idx: usize = 1;
+    let mut from_bit_idx: usize = 0;
+    let mut from_byte_idx: usize = 0;
+    let mut last_to_bit_idx: usize = 0;
+    let mut current_tag_value_acc = tag_value_iter.next().unwrap();
+    let mut current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+    let bitstream_rows = bit_boundaries.iter().enumerate().map(|(sym, (bit_idx, value))| {
+        if last_to_bit_idx > 7 {
+            current_tag_value_acc = tag_value_iter.next().unwrap();
+            current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+        }
+
+        if sym == 0 {
+            from_bit_idx = 0;
+        } else {
+            from_bit_idx = to_bit_idx + 1;
+            from_byte_idx = to_byte_idx;
+        }
+
+        if from_bit_idx >= from_byte_idx * N_BITS_PER_BYTE || sym == 0 {
+            from_byte_idx += 1;
+        }
+
+        to_bit_idx = *bit_idx as usize - 1;
+        if to_bit_idx >= from_byte_idx * N_BITS_PER_BYTE {
+            to_byte_idx += 1;
+        }
+
+        to_bit_idx = to_bit_idx.rem_euclid(8);
+        if to_byte_idx > from_byte_idx {
+            to_bit_idx += 8;
+        }
+
+        last_to_bit_idx = to_bit_idx;
+
+        (sym as u64, from_byte_idx, from_bit_idx.rem_euclid(8), to_byte_idx, to_bit_idx, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone())
+    })
+    .collect::<Vec<(u64, usize, usize, usize, usize, u64, Value<F>, Value<F>)>>();
+
     // Add witness rows for FSE representation bytes
-    for (idx, byte) in src.iter().skip(byte_offset + 1).take(n_fse_bytes).enumerate() {
+    for row in bitstream_rows {
         witness_rows.push(ZstdWitnessRow {
             state: ZstdState {
                 tag: ZstdTag::ZstdBlockFseCode,
                 tag_next,
                 max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockFseCode),
                 tag_len: (n_fse_bytes + 1) as u64,
-                tag_idx: (idx + 2) as u64, // count the huffman header byte
+                tag_idx: (row.1 + 1) as u64, // count the huffman header byte
                 tag_value: tag_value,
-                tag_value_acc: tag_value_iter.next().expect("Next value should exist"),
+                tag_value_acc: row.6,
                 is_tag_change: false,
                 tag_rlc,
-                tag_rlc_acc: tag_rlc_iter.next().expect("Tag RLC Acc exists"),
+                tag_rlc_acc: row.7,
             },
             encoded_data: EncodedData {
-                byte_idx: (byte_offset + idx + 2) as u64, // count the huffman header byte
+                byte_idx: (byte_offset + row.1 + 1) as u64, // count the huffman header byte
                 encoded_len,
-                value_byte: byte.clone(),
+                value_byte: src[byte_offset + row.1],
                 value_rlc,
                 reverse: false,
                 ..Default::default()
             },
-            bitstream_read_data: BitstreamReadRow::default(),
+            bitstream_read_data: BitstreamReadRow { 
+                bit_start_idx: row.2, 
+                bit_end_idx: row.4, 
+                bit_value: row.5, 
+            },
             decoded_data: decoded_data.clone(),
             huffman_data: HuffmanData::default(),
             fse_data: FseTableRow::default(),

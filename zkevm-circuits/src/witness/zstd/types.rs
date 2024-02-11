@@ -570,10 +570,11 @@ impl FseAuxiliaryTableData {
     /// with the reconstructed FSE table. After processing the entire bitstream to reconstruct the
     /// FSE table, if the read bitstream was not byte aligned, then we discard the 1..8 bits from
     /// the last byte that we read from.
-    pub fn reconstruct(src: &[u8], byte_offset: usize) -> std::io::Result<(usize, Self)> {
+    pub fn reconstruct(src: &[u8], byte_offset: usize) -> std::io::Result<(usize, Vec<(u32, u64)>, Self)> {
         // construct little-endian bit-reader.
         let data = src.iter().skip(byte_offset).cloned().collect::<Vec<u8>>();
         let mut reader = BitReader::endian(Cursor::new(&data), LittleEndian);
+        let mut bit_boundaries: Vec<(u32, u64)> = vec![];
 
         // number of bits read by the bit-reader from the bistream.
         let mut offset = 0;
@@ -582,6 +583,7 @@ impl FseAuxiliaryTableData {
             offset += 4;
             reader.read::<u8>(offset)? + 5
         };
+        bit_boundaries.push((offset, accuracy_log as u64));
         let table_size = 1 << accuracy_log;
 
         let mut sym_to_states = BTreeMap::new();
@@ -639,6 +641,7 @@ impl FseAuxiliaryTableData {
 
             // update the total number of bits read so far.
             offset += n_bits_read;
+            bit_boundaries.push((offset, value));
 
             // increment symbol.
             symbol = ((symbol as usize) + 1).into();
@@ -654,8 +657,15 @@ impl FseAuxiliaryTableData {
         // ignore any bits left to be read until byte-aligned.
         let t = (((offset as usize) - 1) / N_BITS_PER_BYTE) + 1;
 
+        // read the trailing section
+        if t * N_BITS_PER_BYTE > (offset as usize) {
+            let bits_remaining = t * N_BITS_PER_BYTE - offset as usize;
+            bit_boundaries.push((offset + bits_remaining as u32, reader.read::<u8>(bits_remaining as u32)? as u64));
+        }
+
         Ok((
             t,
+            bit_boundaries,
             Self {
                 byte_offset: byte_offset as u64,
                 table_size,
@@ -727,7 +737,7 @@ mod tests {
         // sure FSE reconstruction ignores them.
         let src = vec![0xff, 0xff, 0xff, 0x30, 0x6f, 0x9b, 0x03, 0xff, 0xff, 0xff];
 
-        let (n_bytes, table) = FseAuxiliaryTableData::reconstruct(&src, 3)?;
+        let (n_bytes, bit_boundaries, table) = FseAuxiliaryTableData::reconstruct(&src, 3)?;
 
         // TODO: assert equality for the entire table.
         // for now only comparing state/baseline/nb for S1, i.e. weight == 1.
