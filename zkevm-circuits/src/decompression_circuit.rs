@@ -2038,14 +2038,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 // - The first row of the HuffmanCode tag is the leading 0s and sentinel bit.
                 // - The second row of the HuffmanCode tag is the reading of AL number of bits from
-                // the bitstream to find the initial state in the FSE table.
-                // - Only from the third row onwards, do we start emitting symbols (weights).
-
-                // TODO: Discuss starting condition. Perhaps it makes more sense to count the first symbol emitted on row 2?
-                // cb.require_zero(
-                //     "num_emitted starts at 0 from the second row",
-                //     meta.query_advice(fse_decoder.num_emitted, Rotation::next()),
-                // );
+                // the bitstream to find the initial state in the FSE table and emit the first symbol.
                 cb.require_equal(
                     "num_emitted starts at 1 from the second row",
                     meta.query_advice(fse_decoder.num_emitted, Rotation::next()),
@@ -2062,12 +2055,20 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 );
                 // Whatever bitstring we read, is also the initial state in the FSE table, where we
                 // start applying the FSE table.
-                // TODO: Correct init condition? Whatever bitstring is read on the next row is the initial state
                 cb.require_equal(
                     "init state of FSE table",
                     meta.query_advice(bitstream_decoder.bit_value, Rotation::next()),
-                    // meta.query_advice(fse_decoder.state, Rotation(2)),
                     meta.query_advice(fse_decoder.state, Rotation::next()),
+                );
+
+                // Baseline conditions for FSE state transition
+                cb.require_zero(
+                    "Current row baseline",
+                    meta.query_advice(fse_decoder.baseline, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "Previous row baseline",
+                    meta.query_advice(fse_decoder.baseline, Rotation::prev()),
                 );
 
                 let lstream_kind = meta.query_advice(lstream_config.lstream_kind, Rotation::cur());
@@ -2101,19 +2102,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 // Check for state transition, except if we are on the last row of HuffmanCode.
                 let is_last_row = meta.query_advice(tag_gadget.is_tag_change, Rotation::next());
-                // TODO: correct baseline targeting?
-                // let baseline = meta.query_advice(fse_decoder.baseline, Rotation::cur()); // baseline at state
                 let baseline = meta.query_advice(fse_decoder.baseline, Rotation(-2)); // baseline at state
                 let bit_value = meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()); // bits read
 
-                // TODO: Correct FSE transition?
-                // cb.condition(not::expr(is_last_row), |cb| {
-                //     cb.require_equal(
-                //         "state' == baseline(state) + bit_value",
-                //         meta.query_advice(fse_decoder.state, Rotation::next()),
-                //         baseline + bit_value,
-                //     );
-                // });
                 cb.require_equal(
                     "state' == baseline(state) + bit_value (every other row)",
                     meta.query_advice(fse_decoder.state, Rotation::cur()),
