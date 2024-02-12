@@ -2402,16 +2402,17 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // - HuffmanTreeDescriptionSize == byte_idx(JumpTable) - byte_idx(HuffmanTree)
             
             // TODO: incorrect size? compression_debug
-            // cb.require_equal(
-            //     "length of lstream4",
-            //     meta.query_advice(lstream_config.len_lstream4, Rotation::cur())
-            //         + len1
-            //         + len2
-            //         + len3
-            //         + meta.query_advice(byte_idx, Rotation::cur()),
-            //     meta.query_advice(literals_header.compr_size, Rotation::cur())
-            //         + meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-            // );
+            cb.require_equal(
+                "length of lstream4",
+                meta.query_advice(lstream_config.len_lstream4, Rotation::cur())
+                    + len1
+                    + len2
+                    + len3
+                    + meta.query_advice(byte_idx, Rotation::cur())
+                    + 6.expr(), // TODO: need to add the 6 bytes for jump table
+                meta.query_advice(literals_header.compr_size, Rotation::cur())
+                    + meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+            );
 
             for col in [
                 lstream_config.len_lstream1,
@@ -3201,7 +3202,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(aux_data[5])),
                     )?;
 
-                    
+
                     // Huffman Tree Config
                     region.assign_advice(
                         || "huffman_tree_config.huffman_tree_idx",

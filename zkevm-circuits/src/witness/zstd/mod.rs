@@ -1229,7 +1229,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         huffman_code_byte_offset + 1, 
         new_value_rlc_init_value,
 
-        byte_offset + 1 + n_fse_bytes,
+        byte_offset + 1,
         (1 << accuracy_log) as u64,
         accuracy_log as u64,
         n_huffman_code_bytes as u64,
