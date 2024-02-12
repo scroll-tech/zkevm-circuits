@@ -2399,7 +2399,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // The HuffmanTreeDescriptionSize can be calculated as:
             // - HuffmanTreeDescriptionSize == byte_idx(JumpTable) - byte_idx(HuffmanTree)
             
-            // TODO: byte counting?
             cb.require_equal(
                 "length of lstream4",
                 meta.query_advice(lstream_config.len_lstream4, Rotation::cur())
@@ -2407,7 +2406,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     + len2
                     + len3
                     + meta.query_advice(byte_idx, Rotation::cur())
-                    + 6.expr(), // TODO: need to add the 6 bytes for jump table
+                    + 6.expr(),
                 meta.query_advice(literals_header.compr_size, Rotation::cur())
                     + meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
             );
@@ -2884,9 +2883,13 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         layouter.assign_region(
             || "Decompression table region",
             |mut region| {
+                let mut last_byte_idx: usize = 0;
+
                 for (i, row) in witness_rows.iter().enumerate() {
                     let tag_len = row.state.tag_len as usize;
                     assert!(tag_len > 0);
+
+                    last_byte_idx = row.encoded_data.byte_idx as usize;
 
                     while tag_len >= rand_pow.len() {
                         let tail = rand_pow.last().expect("Tail exists").clone();
@@ -3336,6 +3339,14 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(aux_data[3])),
                     )?;
                 }
+
+                // TODO: Dummy row for sequencing section for now
+                region.assign_advice(
+                    || "byte_idx",
+                    self.byte_idx,
+                    witness_rows.len(),
+                    || Value::known(F::from((last_byte_idx + 1) as u64)),
+                )?;
 
                 Ok(())
             }
