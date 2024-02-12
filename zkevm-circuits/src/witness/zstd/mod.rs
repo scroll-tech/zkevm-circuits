@@ -940,7 +940,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         if sym > 0 && n_acc < (1 << accuracy_log) {
             // num_emitted += 1;
             decoded = sym as u8;
-            n_acc += *value as usize;
+            n_acc += (*value - 1) as usize;
         }
 
         (decoded, from_byte_idx, from_bit_idx.rem_euclid(8), to_byte_idx, to_bit_idx, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone(), 0, n_acc)

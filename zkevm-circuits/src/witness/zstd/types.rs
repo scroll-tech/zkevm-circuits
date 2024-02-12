@@ -647,7 +647,7 @@ impl FseAuxiliaryTableData {
 
             // update the total number of bits read so far.
             offset += n_bits_read;
-            bit_boundaries.push((offset, value - 1));
+            bit_boundaries.push((offset, value));
 
             // increment symbol.
             symbol = ((symbol as usize) + 1).into();
@@ -666,7 +666,7 @@ impl FseAuxiliaryTableData {
         // read the trailing section
         if t * N_BITS_PER_BYTE > (offset as usize) {
             let bits_remaining = t * N_BITS_PER_BYTE - offset as usize;
-            bit_boundaries.push((offset + bits_remaining as u32, reader.read::<u8>(bits_remaining as u32)? as u64 - 1));
+            bit_boundaries.push((offset + bits_remaining as u32, reader.read::<u8>(bits_remaining as u32)? as u64));
         }
 
         Ok((

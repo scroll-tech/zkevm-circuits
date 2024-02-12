@@ -1809,7 +1809,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                         // meta.query_advice(fse_decoder.n_acc, Rotation::cur()) + 1.expr(),
                         meta.query_advice(fse_decoder.n_acc, Rotation::cur()),
                         meta.query_advice(fse_decoder.n_acc, Rotation::prev())
-                            + meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+                            + (meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()) - 1.expr()),
                     );
                 });
                 cb.condition(is_last, |cb| {
