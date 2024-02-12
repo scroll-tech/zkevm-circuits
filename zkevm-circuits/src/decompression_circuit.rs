@@ -2894,7 +2894,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         let mut jump_table_idx: usize = 0;
         let mut rand_pow: Vec<Value<F>> = vec![Value::known(F::one())];
 
-        self.bitstring_accumulation_table.dev_load(layouter, &witness_rows);
+        self.bitstring_accumulation_table.assign(layouter, &witness_rows)?;
 
         layouter.assign_region(
             || "Decompression table region",

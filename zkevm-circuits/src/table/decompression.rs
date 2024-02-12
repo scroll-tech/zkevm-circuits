@@ -22,7 +22,7 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
     witness::{
-        FseAuxiliaryTableData, FseSymbol, HuffmanCodesData, TagRomTableRow, ZstdTag, ZstdWitnessRow, N_BITS_SYMBOL, N_MAX_SYMBOLS
+        FseAuxiliaryTableData, FseSymbol, HuffmanCodesData, TagRomTableRow, ZstdTag, ZstdWitnessRow, N_BITS_SYMBOL, N_MAX_SYMBOLS, value_bits_le,
     },
 };
 
@@ -1396,8 +1396,189 @@ impl BitstringAccumulationTable {
     }
 
     /// Load witness to the table: dev mode.
-    pub fn dev_load<F: Field>(&self, _layouter: &mut impl Layouter<F>, witness_rows: &Vec<ZstdWitnessRow<F>>) -> Result<(), Error> {
-        // TODO
+    pub fn assign<F: Field>(&self, layouter: &mut impl Layouter<F>, witness_rows: &Vec<ZstdWitnessRow<F>>) -> Result<(), Error> {
+        assert!(witness_rows.len() > 0);
+
+        // Get the byte at which FSE is described
+        let huffman_offset = witness_rows.iter()
+            .find(|&r| r.state.tag == ZstdTag::ZstdBlockFseCode)
+            .unwrap()
+            .encoded_data.byte_idx;
+
+        // Extract bit accumulation-related info from the rows
+        let accumulation_rows = witness_rows.iter()
+            .filter(|&r| {
+                r.state.tag == ZstdTag::ZstdBlockFseCode ||
+                r.state.tag == ZstdTag::ZstdBlockHuffmanCode ||
+                r.state.tag == ZstdTag::ZstdBlockLstream
+            })
+            .map(|r| {
+                let is_reverse: u64 =
+                    if r.state.tag == ZstdTag::ZstdBlockFseCode {
+                        0
+                    } else {
+                        1
+                    };
+                (r.encoded_data.byte_idx as usize, r.encoded_data.value_byte as u64, r.bitstream_read_data.bit_start_idx as usize, r.bitstream_read_data.bit_end_idx as usize, r.bitstream_read_data.bit_value as u64, is_reverse)
+            })
+            .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
+
+        layouter.assign_region(
+            || "Bitstring Accumulation Table",
+            |mut region| {
+                
+                let mut offset: usize = 0;
+                for (idx, row) in accumulation_rows.iter().enumerate() {
+                    if row.3 <= 7 {
+                        // byte-contained
+        
+                    } else {
+                        // byte-spanned
+                        let next_row = accumulation_rows[idx + 1];
+
+                        let byte_1_bits = value_bits_le(row.1 as u8);
+                        let byte_2_bits = value_bits_le(next_row.1 as u8);
+                        let bits = if row.5 > 0 {
+                            // reversed
+                            [byte_1_bits.into_iter().rev().collect::<Vec<u8>>(), byte_2_bits.into_iter().rev().collect::<Vec<u8>>()].concat()
+                        } else {
+                            // not reversed
+                            [byte_1_bits, byte_2_bits].concat()
+                        };
+
+                        let mut acc: u64 = 0;
+                        let mut bitstring_len: u64 = 0;
+        
+                        for bit_idx in (0..16usize).into_iter() {
+                            region.assign_fixed(
+                                || format!("q_enable"),
+                                self.q_enabled,
+                                offset + bit_idx,
+                                || Value::known(F::one()),
+                            )?;
+                            region.assign_advice(
+                                || format!("byte_offset"),
+                                self.byte_offset,
+                                offset + bit_idx,
+                                || Value::known(F::from(huffman_offset)),
+                            )?;
+                            region.assign_advice(
+                                || format!("byte_idx_1"),
+                                self.byte_idx_1,
+                                offset + bit_idx,
+                                || Value::known(F::from(row.0 as u64)),
+                            )?;
+                            region.assign_advice(
+                                || format!("byte_idx_2"),
+                                self.byte_idx_2,
+                                offset + bit_idx,
+                                || Value::known(F::from(next_row.0 as u64)),
+                            )?;
+                            region.assign_advice(
+                                || format!("byte_1"),
+                                self.byte_1,
+                                offset + bit_idx,
+                                || Value::known(F::from(row.1 as u64)),
+                            )?;
+                            region.assign_advice(
+                                || format!("byte_2"),
+                                self.byte_2,
+                                offset + bit_idx,
+                                || Value::known(F::from(next_row.1 as u64)),
+                            )?;
+                            region.assign_fixed(
+                                || format!("bit_index"),
+                                self.bit_index,
+                                offset + bit_idx,
+                                || Value::known(F::from(bit_idx as u64)),
+                            )?;
+                            region.assign_fixed(
+                                || format!("q_first"),
+                                self.q_first,
+                                offset + bit_idx,
+                                || Value::known(F::from((bit_idx == 0) as u64)),
+                            )?;
+                            
+                            let bit = bits[bit_idx] as u64;
+                            if bit_idx >= row.2 && bit_idx <= row.3 {
+                                acc = acc * 2 + bit;
+                                bitstring_len += 1;
+                            }
+                            region.assign_advice(
+                                || format!("bit"),
+                                self.bit,
+                                offset + bit_idx,
+                                || Value::known(F::from(bit)),
+                            )?;
+                            region.assign_advice(
+                                || format!("bit_value_acc"),
+                                self.bit_value_acc,
+                                offset + bit_idx,
+                                || Value::known(F::from(acc)),
+                            )?;
+                            region.assign_advice(
+                                || format!("bit_value"),
+                                self.bit_value,
+                                offset + bit_idx,
+                                || Value::known(F::from(row.4)),
+                            )?;
+                            region.assign_advice(
+                                || format!("bitstring_len"),
+                                self.bitstring_len,
+                                offset + bit_idx,
+                                || Value::known(F::from(bitstring_len)),
+                            )?;
+                            region.assign_advice(
+                                || format!("from_start"),
+                                self.from_start,
+                                offset + bit_idx,
+                                || Value::known(F::from((bit_idx <= row.3) as u64)),
+                            )?;
+                            region.assign_advice(
+                                || format!("until_end"),
+                                self.until_end,
+                                offset + bit_idx,
+                                || Value::known(F::from((bit_idx >= row.2) as u64)),
+                            )?;
+                            region.assign_advice(
+                                || format!("is_reverse"),
+                                self.is_reverse,
+                                offset + bit_idx,
+                                || Value::known(F::from(row.5 as u64)),
+                            )?;
+                        }
+
+                        offset += 16;
+                    }
+                }
+
+                region.assign_fixed(
+                    || format!("q_first"),
+                    self.q_first,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
+
+                Ok(())
+            }
+        )?;
+        
+
+
+
+
+
+
+            
+
+
+
+
+
+
+
+
+        
 
         Ok(())
     }
