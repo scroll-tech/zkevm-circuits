@@ -1262,14 +1262,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //     ZstdTag::BlockHeader.expr(),
             // );
 
-            // cb.require_equal(
-            //     "block_idx == block_len",
-            //     meta.query_advice(block_gadget.idx, Rotation::cur()),
-            //     meta.query_advice(block_gadget.block_len, Rotation::cur()),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "block_idx == block_len",
+                meta.query_advice(block_gadget.idx, Rotation::cur()),
+                meta.query_advice(block_gadget.block_len, Rotation::cur()),
+            );
 
             // compression_debug
             // let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
@@ -1314,14 +1311,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //     1.expr(),
             // );
 
-            // cb.require_equal(
-            //     "block_idx == block_len",
-            //     meta.query_advice(block_gadget.idx, Rotation::cur()),
-            //     meta.query_advice(block_gadget.block_len, Rotation::cur()),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "block_idx == block_len",
+                meta.query_advice(block_gadget.idx, Rotation::cur()),
+                meta.query_advice(block_gadget.block_len, Rotation::cur()),
+            );
 
             // compression_debug
             // let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
