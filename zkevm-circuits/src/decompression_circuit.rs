@@ -3168,21 +3168,26 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(is_huffman_tree_section)),
                     )?;
 
-                    
 
-                    // compression_debug
-                    // [2024-02-12T00:28:43Z TRACE zkevm_circuits::decompression_circuit] => aux_data: [85, 87, 81, 82, 551, 377, 14, 64, 5, 31]
-                    log::trace!("=> aux_data: {:?}", aux_data);
-                    
                     // Literals Header
-                    //     struct LiteralsHeaderDecomposition {
-                    //         /// The branch we take while decomposing the Literals Header. We compare this value against the
-                    //         /// Read-only memory table for Literals Header.
-                    //         branch: Column<Advice>,
-                    //         /// A helper column to mark whether the size format (sf) for Literals Header is 0b_11. We need
-                    //         /// this column to keep the circuit degree in check.
-                    //         sf_max: Column<Advice>,
-                    //     }
+                    region.assign_advice(
+                        || "literals_header.branch",
+                        self.literals_header.branch,
+                        i,
+                        || Value::known(F::from(aux_data[10])),
+                    )?;
+                    region.assign_advice(
+                        || "literals_header.sf_max",
+                        self.literals_header.sf_max,
+                        i,
+                        || Value::known(F::from(aux_data[11])),
+                    )?;
+                    region.assign_advice(
+                        || "literals_header.regen_size",
+                        self.literals_header.regen_size,
+                        i,
+                        || Value::known(F::from(aux_data[4])),
+                    )?;
                     region.assign_advice(
                         || "literals_header.regen_size",
                         self.literals_header.regen_size,
@@ -3196,9 +3201,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(aux_data[5])),
                     )?;
 
-
                     
-
                     // Huffman Tree Config
                     region.assign_advice(
                         || "huffman_tree_config.huffman_tree_idx",

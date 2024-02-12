@@ -580,7 +580,8 @@ fn process_block_zstd<F: Field>(
         literals_block_type, 
         n_streams, 
         regen_size, 
-        compressed_size
+        compressed_size,
+        (branch, sf_max),
     ) = process_block_zstd_literals_header::<F>(
         src, 
         byte_offset, 
@@ -675,7 +676,7 @@ fn process_block_zstd<F: Field>(
     };
     witness_rows.extend_from_slice(&rows);
 
-    (bytes_offset, witness_rows, literals, lstream_len, vec![regen_size as u64, compressed_size as u64, aux_data[0], aux_data[1], aux_data[2], aux_data[3]])
+    (bytes_offset, witness_rows, literals, lstream_len, vec![regen_size as u64, compressed_size as u64, aux_data[0], aux_data[1], aux_data[2], aux_data[3], branch, sf_max as u64])
 }
 
 fn process_block_zstd_literals_header<F: Field>(
@@ -683,7 +684,7 @@ fn process_block_zstd_literals_header<F: Field>(
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>, BlockType, usize, usize, usize) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, BlockType, usize, usize, usize, (u64, bool)) {
     let lh_bytes = src
         .iter()
         .skip(byte_offset)
@@ -693,22 +694,23 @@ fn process_block_zstd_literals_header<F: Field>(
 
     let literals_block_type = BlockType::from(lh_bytes[0] & 0x3);
     let size_format = (lh_bytes[0] >> 2) & 3;
+    let sf_max = size_format == 3;
 
-    let [n_bits_fmt, n_bits_regen, n_bits_compressed, n_streams, n_bytes_header]: [usize; 5] = match literals_block_type {
+    let [n_bits_fmt, n_bits_regen, n_bits_compressed, n_streams, n_bytes_header, branch]: [usize; 6] = match literals_block_type {
         BlockType::RawBlock | BlockType::RleBlock => {
             match size_format {
-                0b00 | 0b10 => [1, 5, 0, 1, 1],
-                0b01 => [2, 12, 0, 1, 2],
-                0b11 => [2, 20, 0, 1, 3],
+                0b00 | 0b10 => [1, 5, 0, 1, 1, 0],
+                0b01 => [2, 12, 0, 1, 2, 1],
+                0b11 => [2, 20, 0, 1, 3, 2],
                 _ => unreachable!("size_format out of bound")
             }
         },
         BlockType::ZstdCompressedBlock => {
             match size_format {
-                0b00 => [2, 10, 10, 1, 3],
-                0b01 => [2, 10, 10, 4, 3],
-                0b10 => [2, 14, 14, 4, 4],
-                0b11 => [2, 18, 18, 4, 5],
+                0b00 => [2, 10, 10, 1, 3, 3],
+                0b01 => [2, 10, 10, 4, 3, 4],
+                0b10 => [2, 14, 14, 4, 4, 5],
+                0b11 => [2, 18, 18, 4, 5, 6],
                 _ => unreachable!("size_format out of bound")
             }
         },
@@ -796,6 +798,7 @@ fn process_block_zstd_literals_header<F: Field>(
         n_streams,
         regen_size as usize,
         compressed_size as usize,
+        (branch as u64, sf_max),
     )
 }
 
