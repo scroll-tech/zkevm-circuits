@@ -1906,73 +1906,76 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //     },
         // );
 
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockFseCode (spanned bitstream start)",
-            |meta| {
-                let (huffman_byte_offset, start, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-                    bitstream_decoder.is_spanned(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(byte_idx, Rotation::next()),             // byte index'
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    meta.query_advice(value_byte, Rotation::next()),           // byte value'
-                    bit_value,                                                 // bitstring value
-                    1.expr(),                                                  // bitstring len acc
-                    start,                                                     // bit index start
-                    1.expr(),                                                  // from start
-                    1.expr(),                                                  // to end
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), //  is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_spanned(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockFseCode (spanned bitstring end)",
-            |meta| {
-                let (huffman_byte_offset, start, end, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-                    bitstream_decoder.is_spanned(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(byte_idx, Rotation::next()),             // byte index'
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    meta.query_advice(value_byte, Rotation::next()),           // byte value'
-                    bit_value,                                                 // bitstring value
-                    end.expr() - start + 1.expr(),                             // bitstring length
-                    end,                                                       // bit index at end
-                    1.expr(),                                                  // from start
-                    1.expr(),                                                  // to end
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_spanned(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockFseCode (spanned bitstream start)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+        //             bitstream_decoder.is_spanned(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(byte_idx, Rotation::next()),             // byte index'
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             meta.query_advice(value_byte, Rotation::next()),           // byte value'
+        //             bit_value,                                                 // bitstring value
+        //             1.expr(),                                                  // bitstring len acc
+        //             start,                                                     // bit index start
+        //             1.expr(),                                                  // from start
+        //             1.expr(),                                                  // to end
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), //  is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_spanned(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
+
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockFseCode (spanned bitstring end)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, end, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+        //             bitstream_decoder.is_spanned(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(byte_idx, Rotation::next()),             // byte index'
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             meta.query_advice(value_byte, Rotation::next()),           // byte value'
+        //             bit_value,                                                 // bitstring value
+        //             end.expr() - start + 1.expr(),                             // bitstring length
+        //             end,                                                       // bit index at end
+        //             1.expr(),                                                  // from start
+        //             1.expr(),                                                  // to end
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_spanned(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
 
         // compression_debug
         // meta.lookup_any(
@@ -2106,10 +2109,12 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 // Check for state transition, except if we are on the last row of HuffmanCode.
                 let is_last_row = meta.query_advice(tag_gadget.is_tag_change, Rotation::next());
-                let baseline = meta.query_advice(fse_decoder.baseline, Rotation::cur()); // baseline at state
+                // TODO: correct baseline targeting, compression_debug
+                // let baseline = meta.query_advice(fse_decoder.baseline, Rotation::cur()); // baseline at state
+                let baseline = meta.query_advice(fse_decoder.baseline, Rotation(-2)); // baseline at state
                 let bit_value = meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()); // bits read
 
-                // compression_debug
+                // TODO: Correct FSE transition, compression_debug
                 // cb.condition(not::expr(is_last_row), |cb| {
                 //     cb.require_equal(
                 //         "state' == baseline(state) + bit_value",
@@ -2117,8 +2122,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 //         baseline + bit_value,
                 //     );
                 // });
-
-                cb.require_zero("", 0.expr());
+                cb.require_equal(
+                    "state' == baseline(state) + bit_value (every other row)",
+                    meta.query_advice(fse_decoder.state, Rotation::cur()),
+                    baseline + bit_value,
+                );
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
@@ -2194,71 +2202,74 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //     },
         // );
 
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockHuffmanCode (spanned bitstream start)",
-            |meta| {
-                let (huffman_byte_offset, start, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-                    bitstream_decoder.is_spanned(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(byte_idx, Rotation::next()),             // byte index'
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    meta.query_advice(value_byte, Rotation::next()),           // byte value'
-                    bit_value,                                                 // bitstring value
-                    1.expr(),                                                  // bitstring len acc
-                    start,                                                     // bit index start
-                    1.expr(),                                                  // from start
-                    1.expr(),                                                  // to end
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), //  is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_spanned(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
-        meta.lookup_any(
-            "DecompressionCircuit: ZstdBlockHuffmanCode (spanned bitstring end)",
-            |meta| {
-                let (huffman_byte_offset, start, end, bit_value) = (
-                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-                );
-                let condition = and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-                    bitstream_decoder.is_spanned(meta, None),
-                ]);
-                [
-                    huffman_byte_offset,                                       // huffman ID
-                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-                    meta.query_advice(byte_idx, Rotation::next()),             // byte index'
-                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
-                    meta.query_advice(value_byte, Rotation::next()),           // byte value'
-                    bit_value,                                                 // bitstring value
-                    end.expr() - start + 1.expr(),                             // bitstring length
-                    end,                                                       // bit index at end
-                    1.expr(),                                                  // from start
-                    1.expr(),                                                  // to end
-                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
-                ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs_spanned(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
-            },
-        );
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockHuffmanCode (spanned bitstream start)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+        //             bitstream_decoder.is_spanned(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(byte_idx, Rotation::next()),             // byte index'
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             meta.query_advice(value_byte, Rotation::next()),           // byte value'
+        //             bit_value,                                                 // bitstring value
+        //             1.expr(),                                                  // bitstring len acc
+        //             start,                                                     // bit index start
+        //             1.expr(),                                                  // from start
+        //             1.expr(),                                                  // to end
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), //  is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_spanned(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
+
+        // compression_debug
+        // meta.lookup_any(
+        //     "DecompressionCircuit: ZstdBlockHuffmanCode (spanned bitstring end)",
+        //     |meta| {
+        //         let (huffman_byte_offset, start, end, bit_value) = (
+        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
+        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+        //         );
+        //         let condition = and::expr([
+        //             meta.query_fixed(q_enable, Rotation::cur()),
+        //             meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+        //             bitstream_decoder.is_spanned(meta, None),
+        //         ]);
+        //         [
+        //             huffman_byte_offset,                                       // huffman ID
+        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+        //             meta.query_advice(byte_idx, Rotation::next()),             // byte index'
+        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
+        //             meta.query_advice(value_byte, Rotation::next()),           // byte value'
+        //             bit_value,                                                 // bitstring value
+        //             end.expr() - start + 1.expr(),                             // bitstring length
+        //             end,                                                       // bit index at end
+        //             1.expr(),                                                  // from start
+        //             1.expr(),                                                  // to end
+        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
+        //         ]
+        //         .into_iter()
+        //         .zip(bs_acc_table.table_exprs_spanned(meta))
+        //         .map(|(value, table)| (condition.expr() * value, table))
+        //         .collect()
+        //     },
+        // );
 
         // 1. We first read AL number of bits from the bitstream (say bit_value_init) and transition
         //    to the state == bit_value_init.
@@ -3235,23 +3246,23 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || "bitstream_decoder.bit_index_start",
                         self.bitstream_decoder.bit_index_start,
                         i,
-                        || Value::known(F::from(row.huffman_data.k.0 as u64)),
+                        || Value::known(F::from(row.bitstream_read_data.bit_start_idx as u64)),
                     )?;
                     region.assign_advice(
                         || "bitstream_decoder.bit_index_end",
                         self.bitstream_decoder.bit_index_end,
                         i,
-                        || Value::known(F::from(row.huffman_data.k.1 as u64)),
+                        || Value::known(F::from(row.bitstream_read_data.bit_end_idx as u64)),
                     )?;
                     region.assign_advice(
                         || "bitstream_decoder.bit_value",
                         self.bitstream_decoder.bit_value,
                         i,
-                        || Value::known(F::from(row.huffman_data.bit_value as u64)),
+                        || Value::known(F::from(row.bitstream_read_data.bit_value as u64)),
                     )?;
 
                     let bitstring_contained_chip = ComparatorChip::construct(self.bitstream_decoder.bitstring_contained.clone());
-                    bitstring_contained_chip.assign(&mut region, i, F::from(row.huffman_data.k.1 as u64), F::from(7u64))?;
+                    bitstring_contained_chip.assign(&mut region, i, F::from(row.bitstream_read_data.bit_end_idx as u64), F::from(7u64))?;
 
                     region.assign_advice(
                         || "bitstream_decoder.decoded_symbol",
