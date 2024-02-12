@@ -656,21 +656,19 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // on the next row iff:
             // - tag_idx == tag_len
             // - byte_idx' == byte_idx + 1
-
-            // TODO: This constraints might be incorrect as is_new_byte specifies the byte on current row is new
-            // but for is_tag_change, it instead requires that the byte on the next row is new. 
-
-            // let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, None);
-            // cb.condition(and::expr([
-            //     tidx_eq_tlen, 
-            //     is_new_byte
-            // ]), |cb| {
-            //     cb.require_equal(
-            //         "is_tag_change should be set",
-            //         meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
-            //         1.expr(),
-            //     );
-            // });
+            let is_next_new_byte = meta.query_advice(byte_idx, Rotation::next())
+                - meta.query_advice(byte_idx, Rotation::cur());
+            let (_, tidx_eq_tlen) = tag_gadget.idx_cmp_len.expr(meta, None);
+            cb.condition(and::expr([
+                tidx_eq_tlen, 
+                is_next_new_byte
+            ]), |cb| {
+                cb.require_equal(
+                    "is_tag_change should be set",
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
+                    1.expr(),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -3307,12 +3305,18 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     )?;
                 }
 
-                // TODO: Dummy row for sequencing section header
+                // TODO: Assign sequence section. Dummy row for sequencing section header as of now
                 region.assign_advice(
                     || "byte_idx",
                     self.byte_idx,
                     witness_rows.len(),
                     || Value::known(F::from((last_byte_idx + 1) as u64)),
+                )?;
+                region.assign_advice(
+                    || "tag_gadget.is_tag_change",
+                    self.tag_gadget.is_tag_change,
+                    witness_rows.len(),
+                    || Value::known(F::one()),
                 )?;
 
                 Ok(())
