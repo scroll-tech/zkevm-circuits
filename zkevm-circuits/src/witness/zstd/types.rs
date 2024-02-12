@@ -517,6 +517,10 @@ pub struct FseTableRow {
     pub num_bits: u64,
     /// The symbol emitted by the FSE table at this state.
     pub symbol: u64,
+    /// During FSE table decoding, keep track of the number of symbol emitted
+    pub num_emitted: u64,
+    /// During FSE table decoding, keep track of accumulated states assigned
+    pub n_acc: u64,
 }
 
 // Used for tracking bit markers for non-byte-aligned bitstream decoding
@@ -583,7 +587,7 @@ impl FseAuxiliaryTableData {
             offset += 4;
             reader.read::<u8>(offset)? + 5
         };
-        bit_boundaries.push((offset, accuracy_log as u64));
+        bit_boundaries.push((offset, accuracy_log as u64 - 1));
         let table_size = 1 << accuracy_log;
 
         let mut sym_to_states = BTreeMap::new();
@@ -634,6 +638,8 @@ impl FseAuxiliaryTableData {
                         num_bits: nb,
                         baseline,
                         symbol: symbol.into(),
+                        num_emitted: 0,
+                        n_acc: 0,
                     })
                     .collect(),
             );
@@ -641,7 +647,7 @@ impl FseAuxiliaryTableData {
 
             // update the total number of bits read so far.
             offset += n_bits_read;
-            bit_boundaries.push((offset, value));
+            bit_boundaries.push((offset, value - 1));
 
             // increment symbol.
             symbol = ((symbol as usize) + 1).into();
@@ -660,7 +666,7 @@ impl FseAuxiliaryTableData {
         // read the trailing section
         if t * N_BITS_PER_BYTE > (offset as usize) {
             let bits_remaining = t * N_BITS_PER_BYTE - offset as usize;
-            bit_boundaries.push((offset + bits_remaining as u32, reader.read::<u8>(bits_remaining as u32)? as u64));
+            bit_boundaries.push((offset + bits_remaining as u32, reader.read::<u8>(bits_remaining as u32)? as u64 - 1));
         }
 
         Ok((
@@ -761,6 +767,8 @@ mod tests {
                 symbol: 1,
                 baseline,
                 num_bits,
+                num_emitted: 0,
+                n_acc: 0,
             })
             .collect::<Vec<FseTableRow>>(),
         );

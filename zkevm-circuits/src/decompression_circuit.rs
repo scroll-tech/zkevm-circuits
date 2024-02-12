@@ -2950,6 +2950,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         )?;
                     }
                     
+                    
                     // Decoded Data
                     region.assign_advice(
                         || "decoded_len",
@@ -2975,6 +2976,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || row.decoded_data.decoded_value_rlc,
                     )?;
+
 
                     // Block Gadget
                     let is_block = !(
@@ -3225,21 +3227,17 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
                     
                     // FSE Gadget
-
-                    // fse_decoder,
-                    //     pub struct FseDecoder {
-                    //         /// Number of symbols we have emitted.
-                    //         num_emitted: Column<Advice>,
-                    //         /// An accumulator that keeps a count of the number of states assigned for each symbol,
-                    //         /// including the symbol that is decoded on the current row.
-                    //         n_acc: Column<Advice>,
-                    //     }
-
                     region.assign_advice(
                         || "fse_decoder.num_emitted",
                         self.fse_decoder.num_emitted,
                         i,
-                        || Value::known(F::one()),
+                        || Value::known(F::from(row.fse_data.num_emitted)),
+                    )?;
+                    region.assign_advice(
+                        || "fse_decoder.n_acc",
+                        self.fse_decoder.n_acc,
+                        i,
+                        || Value::known(F::from(row.fse_data.n_acc)),
                     )?;
                     region.assign_advice(
                         || "fse_decoder.state",
@@ -3259,6 +3257,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.fse_data.symbol as u64)),
                     )?;
+
 
                     // Lstream Config
                     let is_four_streams: u64 = if aux_data[2] > 0 { 1 } else { 0 };
@@ -3347,8 +3346,8 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
 
         // compression_debug
         for row in witness_rows.clone() {
-            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};;",
-                row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.stream_idx, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol, row.bitstream_read_data.bit_start_idx, row.bitstream_read_data.bit_end_idx, row.bitstream_read_data.bit_value
+            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};;",
+                row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.stream_idx, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol, row.fse_data.num_emitted, row.fse_data.n_acc, row.bitstream_read_data.bit_start_idx, row.bitstream_read_data.bit_end_idx, row.bitstream_read_data.bit_value
             );
         }
 

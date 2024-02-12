@@ -901,6 +901,8 @@ fn process_block_zstd_huffman_code<F: Field>(
     let mut from_bit_idx: usize = 0;
     let mut from_byte_idx: usize = 0;
     let mut last_to_bit_idx: usize = 0;
+    let mut num_emitted: usize = 0;
+    let mut n_acc: usize = 0;
     let mut current_tag_value_acc = tag_value_iter.next().unwrap();
     let mut current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
     let bitstream_rows = bit_boundaries.iter().enumerate().map(|(sym, (bit_idx, value))| {
@@ -932,9 +934,14 @@ fn process_block_zstd_huffman_code<F: Field>(
 
         last_to_bit_idx = to_bit_idx;
 
-        (sym as u64, from_byte_idx, from_bit_idx.rem_euclid(8), to_byte_idx, to_bit_idx, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone())
+        if sym > 0 {
+            num_emitted += 1;
+            n_acc += *value as usize;
+        }
+
+        (sym as u64, from_byte_idx, from_bit_idx.rem_euclid(8), to_byte_idx, to_bit_idx, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone(), num_emitted, n_acc)
     })
-    .collect::<Vec<(u64, usize, usize, usize, usize, u64, Value<F>, Value<F>)>>();
+    .collect::<Vec<(u64, usize, usize, usize, usize, u64, Value<F>, Value<F>, usize, usize)>>();
 
     // Add witness rows for FSE representation bytes
     for row in bitstream_rows {
@@ -966,7 +973,19 @@ fn process_block_zstd_huffman_code<F: Field>(
             },
             decoded_data: decoded_data.clone(),
             huffman_data: HuffmanData::default(),
-            fse_data: FseTableRow::default(),
+            fse_data: if row.0 > 0 && row.9 <= (2 << accuracy_log) {
+                FseTableRow {
+                    idx: 0,
+                    state: 0,
+                    symbol: 0,
+                    baseline: 0,
+                    num_bits: 0,
+                    num_emitted: row.0,
+                    n_acc: row.9 as u64,
+                }
+            } else {
+                FseTableRow::default()
+            },
         });
     }
 
@@ -1036,7 +1055,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let mut tag_rlc_iter = tag_rlc_iter.collect::<Vec<Value<F>>>().into_iter().rev();
 
     let mut next_tag_value_acc = tag_value_iter.next().unwrap();
-    let mut next_value_rlc_acc = value_rlc_iter.next().unwrap();
+    let next_value_rlc_acc = value_rlc_iter.next().unwrap();
     let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
 
     let aux_1 = next_value_rlc_acc.clone();
@@ -1159,7 +1178,9 @@ fn process_block_zstd_huffman_code<F: Field>(
                 state: next_state as u64,
                 symbol: fse_row.0,
                 baseline: fse_row.1,
-                num_bits: fse_row.2,  
+                num_bits: fse_row.2,
+                num_emitted: 0,
+                n_acc: 0,
             },
             huffman_data: HuffmanData::default(),
             decoded_data: decoded_data.clone(),
