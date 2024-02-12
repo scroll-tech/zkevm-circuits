@@ -1704,28 +1704,24 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 let tag_len_huffman_code =
                     meta.query_advice(huffman_tree_config.huffman_code_len, Rotation::cur());
 
-                // compression_debug
-                // cb.require_equal(
-                //     "huffman header value byte check",
-                //     meta.query_advice(value_byte, Rotation::cur()) + 1.expr(),
-                //     tag_len_fse_code + tag_len_huffman_code,
-                // );
+                cb.require_equal(
+                    "huffman header value byte check",
+                    meta.query_advice(value_byte, Rotation::cur()) + 1.expr(),
+                    tag_len_fse_code + tag_len_huffman_code,
+                );
 
                 // The huffman tree description starts at this byte index. We identify the FSE and
                 // Huffman tables using this byte index.
-                // compression_debug
-                // cb.require_equal(
-                //     "huffman header byte offset assignment",
-                //     meta.query_advice(byte_idx, Rotation::cur()),
-                //     meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                // );
+                cb.require_equal(
+                    "huffman header byte offset assignment",
+                    meta.query_advice(byte_idx, Rotation::cur()),
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                );
 
                 // We know that the next byte is the start of processing bitstream to construct the
                 // FSE table. The first 4 bits are used to calculate the accuracy log (and the
                 // table size) of the table. So the first bitstring that's decoded starts from
                 // bit_index 4 (considering that it is 0-indexed).
-                
-                // compression_debug
                 cb.require_equal(
                     "accuracy log read from bits [0, 4)",
                     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
