@@ -2055,27 +2055,35 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 // the bitstream to find the initial state in the FSE table.
                 // - Only from the third row onwards, do we start emitting symbols (weights).
 
+                // TODO: Discuss starting condition. Perhaps it makes more sense to count the first symbol emitted on row 2?
                 // compression_debug
                 // cb.require_zero(
                 //     "num_emitted starts at 0 from the second row",
                 //     meta.query_advice(fse_decoder.num_emitted, Rotation::next()),
                 // );
+                cb.require_equal(
+                    "num_emitted starts at 1 from the second row",
+                    meta.query_advice(fse_decoder.num_emitted, Rotation::next()),
+                    1.expr(),
+                );
 
-                // // On the second row we read AL number of bits.
-                // cb.require_equal(
-                //     "AL number of bits read on the second row",
-                //     meta.query_advice(huffman_tree_config.fse_table_al, Rotation::cur()),
-                //     meta.query_advice(bitstream_decoder.bit_index_end, Rotation::next())
-                //         - meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next())
-                //         + 1.expr(),
-                // );
-                // // Whatever bitstring we read, is also the initial state in the FSE table, where we
-                // // start applying the FSE table.
-                // cb.require_equal(
-                //     "init state of FSE table",
-                //     meta.query_advice(bitstream_decoder.bit_value, Rotation::next()),
-                //     meta.query_advice(fse_decoder.state, Rotation(2)),
-                // );
+                // On the second row we read AL number of bits.
+                cb.require_equal(
+                    "AL number of bits read on the second row",
+                    meta.query_advice(huffman_tree_config.fse_table_al, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::next())
+                        - meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next())
+                        + 1.expr(),
+                );
+                // Whatever bitstring we read, is also the initial state in the FSE table, where we
+                // start applying the FSE table.
+                // TODO: Correct init condition? Whatever bitstring is read on the next row is the initial state, compression_debug
+                cb.require_equal(
+                    "init state of FSE table",
+                    meta.query_advice(bitstream_decoder.bit_value, Rotation::next()),
+                    // meta.query_advice(fse_decoder.state, Rotation(2)),
+                    meta.query_advice(fse_decoder.state, Rotation::next()),
+                );
 
                 let lstream_kind = meta.query_advice(lstream_config.lstream_kind, Rotation::cur());
                 cb.require_equal(
@@ -2101,11 +2109,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 let mut cb = BaseConstraintBuilder::default();
 
                 // compression_debug
-                // cb.require_equal(
-                //     "num_emitted increments",
-                //     meta.query_advice(fse_decoder.num_emitted, Rotation::cur()),
-                //     meta.query_advice(fse_decoder.num_emitted, Rotation::prev()) + 1.expr(),
-                // );
+                cb.require_equal(
+                    "num_emitted increments",
+                    meta.query_advice(fse_decoder.num_emitted, Rotation::cur()),
+                    meta.query_advice(fse_decoder.num_emitted, Rotation::prev()) + 1.expr(),
+                );
 
                 // Check for state transition, except if we are on the last row of HuffmanCode.
                 let is_last_row = meta.query_advice(tag_gadget.is_tag_change, Rotation::next());
