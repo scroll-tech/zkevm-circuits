@@ -124,6 +124,7 @@ pub struct DecompressionCircuitConfig<F> {
     tag_rom_table: TagRomTable,
     pow_rand_table: PowOfRandTable,
     block_type_rom_table: BlockTypeRomTable,
+    pow2_table: Pow2Table,
 }
 
 /// Block level details are specified in these columns.
@@ -2863,6 +2864,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             tag_rom_table,
             pow_rand_table,
             block_type_rom_table,
+            pow2_table,
         }
     }
 }
@@ -2950,7 +2952,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         )?;
                     }
                     
-                    
+
                     // Decoded Data
                     region.assign_advice(
                         || "decoded_len",
@@ -3166,7 +3168,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || Value::known(F::from(is_huffman_tree_section)),
                     )?;
 
+                    
 
+                    // compression_debug
+                    // [2024-02-12T00:28:43Z TRACE zkevm_circuits::decompression_circuit] => aux_data: [85, 87, 81, 82, 551, 377, 14, 64, 5, 31]
+                    log::trace!("=> aux_data: {:?}", aux_data);
+                    
                     // Literals Header
                     //     struct LiteralsHeaderDecomposition {
                     //         /// The branch we take while decomposing the Literals Header. We compare this value against the
@@ -3175,25 +3182,49 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     //         /// A helper column to mark whether the size format (sf) for Literals Header is 0b_11. We need
                     //         /// this column to keep the circuit degree in check.
                     //         sf_max: Column<Advice>,
-                    //         /// The regenerated size decoded from the Literals Header.
-                    //         regen_size: Column<Advice>,
-                    //         /// The compressed size decoded from the Literals Header.
-                    //         compr_size: Column<Advice>,
                     //     }
+                    region.assign_advice(
+                        || "literals_header.regen_size",
+                        self.literals_header.regen_size,
+                        i,
+                        || Value::known(F::from(aux_data[4])),
+                    )?;
+                    region.assign_advice(
+                        || "literals_header.compr_size",
+                        self.literals_header.compr_size,
+                        i,
+                        || Value::known(F::from(aux_data[5])),
+                    )?;
 
+
+                    
 
                     // Huffman Tree Config
-                    //     struct HuffmanConfig {
-                    //         /// Column to save the byte offset at which the huffman header is described.
-                    //         huffman_tree_idx: Column<Advice>,
-                    //         /// The table size of the FSE table.
-                    //         fse_table_size: Column<Advice>,
-                    //         /// The accuracy log of the FSE table.
-                    //         fse_table_al: Column<Advice>,
-                    //         /// The number of bytes used to specify canonical huffman code representation.
-                    //         huffman_code_len: Column<Advice>,
-                    //     }
-                    
+                    region.assign_advice(
+                        || "huffman_tree_config.huffman_tree_idx",
+                        self.huffman_tree_config.huffman_tree_idx,
+                        i,
+                        || Value::known(F::from(aux_data[6])),
+                    )?;
+                    region.assign_advice(
+                        || "huffman_tree_config.fse_table_size",
+                        self.huffman_tree_config.fse_table_size,
+                        i,
+                        || Value::known(F::from(aux_data[7])),
+                    )?;
+                    region.assign_advice(
+                        || "huffman_tree_config.fse_table_al",
+                        self.huffman_tree_config.fse_table_al,
+                        i,
+                        || Value::known(F::from(aux_data[8])),
+                    )?;
+                    region.assign_advice(
+                        || "huffman_tree_config.huffman_code_len",
+                        self.huffman_tree_config.huffman_code_len,
+                        i,
+                        || Value::known(F::from(aux_data[9])),
+                    )?;
+
 
                     // Bitstream Decoder
                     region.assign_advice(

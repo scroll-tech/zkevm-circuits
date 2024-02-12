@@ -216,7 +216,7 @@ fn process_block<F: Field>(
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>, Vec<u64>) {
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, last_block, block_type, block_size) =
@@ -224,7 +224,7 @@ fn process_block<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     let last_row = rows.last().expect("last row expected to exist");
-    let (_byte_offset, rows, literals, lstream_len) = match block_type {
+    let (_byte_offset, rows, literals, lstream_len, aux_data) = match block_type {
         BlockType::RawBlock => process_block_raw(
             src,
             byte_offset,
@@ -253,7 +253,7 @@ fn process_block<F: Field>(
     };
     witness_rows.extend_from_slice(&rows);
 
-    (byte_offset, witness_rows, last_block, literals, lstream_len)
+    (byte_offset, witness_rows, last_block, literals, lstream_len, aux_data)
 }
 
 fn process_block_header<F: Field>(
@@ -515,7 +515,7 @@ fn process_block_raw<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -532,7 +532,7 @@ fn process_block_raw<F: Field>(
         tag_next,
     );
 
-    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0])
 }
 
 fn process_block_rle<F: Field>(
@@ -542,7 +542,7 @@ fn process_block_rle<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -559,7 +559,7 @@ fn process_block_rle<F: Field>(
         tag_next,
     );
 
-    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0])
 }
 
 #[allow(unused_variables)]
@@ -570,7 +570,7 @@ fn process_block_zstd<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) {
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
@@ -590,7 +590,7 @@ fn process_block_zstd<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     // Depending on the literals block type, decode literals section accordingly
-    let (bytes_offset, rows, literals, lstream_len): (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) = match literals_block_type {
+    let (bytes_offset, rows, literals, lstream_len, aux_data): (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) = match literals_block_type {
         BlockType::RawBlock => {
             let (byte_offset, rows) = process_raw_bytes(
                 src, 
@@ -602,7 +602,7 @@ fn process_block_zstd<F: Field>(
                 ZstdTag::ZstdBlockSequenceHeader,
             );
 
-            (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
+            (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0])
         },
         BlockType::RleBlock => {
             let (byte_offset, rows) = process_rle_bytes(
@@ -615,12 +615,12 @@ fn process_block_zstd<F: Field>(
                 ZstdTag::ZstdBlockSequenceHeader,
             );
 
-            (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0])
+            (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0])
         },
         BlockType::ZstdCompressedBlock => {
             let mut huffman_rows = vec![];
 
-            let (bytes_offset, rows, huffman_codes, n_huffman_bytes, huffman_byte_offset, last_rlc) = process_block_zstd_huffman_code(
+            let (bytes_offset, rows, huffman_codes, n_huffman_bytes, huffman_byte_offset, last_rlc, huffman_idx, fse_size, fse_accuracy, n_huffman_bitstream_bytes) = process_block_zstd_huffman_code(
                 src,
                 byte_offset,
                 rows.last().expect("last row must exist"),
@@ -669,13 +669,13 @@ fn process_block_zstd<F: Field>(
                 stream_offset = byte_offset;
             }
             
-            (stream_offset, huffman_rows, literals, lstream_lens)
+            (stream_offset, huffman_rows, literals, lstream_lens, vec![huffman_idx as u64, fse_size, fse_accuracy, n_huffman_bitstream_bytes])
         },
         _ => unreachable!("Invalid literals section BlockType")
     };
     witness_rows.extend_from_slice(&rows);
 
-    (bytes_offset, witness_rows, literals, lstream_len)
+    (bytes_offset, witness_rows, literals, lstream_len, vec![regen_size as u64, compressed_size as u64, aux_data[0], aux_data[1], aux_data[2], aux_data[3]])
 }
 
 fn process_block_zstd_literals_header<F: Field>(
@@ -805,7 +805,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     n_streams: usize,
-) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize, Value<F>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize, Value<F>, usize, u64, u64, u64) {
     // Preserve this value for later construction of HuffmanCodesDataTable
     let huffman_code_byte_offset = byte_offset;
 
@@ -973,7 +973,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             },
             decoded_data: decoded_data.clone(),
             huffman_data: HuffmanData::default(),
-            fse_data: if row.0 > 0 && row.9 <= (2 << accuracy_log) {
+            fse_data: if row.0 > 0 && row.9 <= (1 << accuracy_log) {
                 FseTableRow {
                     idx: 0,
                     state: 0,
@@ -1218,7 +1218,19 @@ fn process_block_zstd_huffman_code<F: Field>(
     });
     let new_value_rlc_init_value = aux_2 * mul + aux_1;
 
-    (byte_offset + 1 + n_fse_bytes + n_huffman_code_bytes, witness_rows, huffman_codes, n_bytes, huffman_code_byte_offset + 1, new_value_rlc_init_value)
+    (
+        byte_offset + 1 + n_fse_bytes + n_huffman_code_bytes, 
+        witness_rows, 
+        huffman_codes, 
+        n_bytes, 
+        huffman_code_byte_offset + 1, 
+        new_value_rlc_init_value,
+
+        byte_offset + 1 + n_fse_bytes,
+        (1 << accuracy_log) as u64,
+        accuracy_log as u64,
+        n_huffman_code_bytes as u64,
+    )
 }
 
 fn process_block_zstd_huffman_jump_table<F: Field>(
@@ -1592,7 +1604,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
     witness_rows.extend_from_slice(&rows);
 
     loop {
-        let (_byte_offset, rows, last_block, new_literals, auxiliary_info) = process_block::<F>(
+        let (_byte_offset, rows, last_block, new_literals, lstream_lens, pipeline_data) = process_block::<F>(
             src,
             byte_offset,
             rows.last().expect("last row expected to exist"),
@@ -1600,7 +1612,8 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
         );
         witness_rows.extend_from_slice(&rows);
         literals.extend_from_slice(&new_literals);
-        aux_data.extend_from_slice(&auxiliary_info);
+        aux_data.extend_from_slice(&lstream_lens);
+        aux_data.extend_from_slice(&pipeline_data);
 
         if last_block {
             // TODO: Recover this assertion after the sequence section decoding is completed.
@@ -1713,7 +1726,7 @@ mod tests {
             0x54, 0x40, 0x29, 0x01,
         ];
 
-        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes, _huffman_byte_offset, _last_rlc) = 
+        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes, _huffman_byte_offset, _last_rlc, _huffman_idx, _fse_size, _fse_accuracy, _n_huffman_bitstream_bytes) = 
             process_block_zstd_huffman_code::<Fr>(
                 &input, 
                 0, 
