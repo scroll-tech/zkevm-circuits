@@ -1335,7 +1335,11 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                                 reverse: false,
                                 ..Default::default()
                             },
-                            bitstream_read_data: BitstreamReadRow::default(),
+                            bitstream_read_data: BitstreamReadRow { 
+                                bit_start_idx: 0, 
+                                bit_end_idx: 7, 
+                                bit_value: value_byte as u64,
+                            },
                             decoded_data: last_row.decoded_data.clone(),
                             huffman_data: HuffmanData::default(),
                             fse_data: FseTableRow::default(),
