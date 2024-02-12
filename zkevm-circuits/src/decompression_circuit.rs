@@ -125,6 +125,9 @@ pub struct DecompressionCircuitConfig<F> {
     pow_rand_table: PowOfRandTable,
     block_type_rom_table: BlockTypeRomTable,
     pow2_table: Pow2Table,
+    literals_header_rom_table: LiteralsHeaderRomTable,
+    literals_header_table: LiteralsHeaderTable,
+    bitstring_accumulation_table: BitstringAccumulationTable,
 }
 
 /// Block level details are specified in these columns.
@@ -1782,7 +1785,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // compression_debug
         meta.create_gate(
             "DecompressionCircuit: ZstdBlockFseCode (fse code)",
             |meta| {
@@ -2873,6 +2875,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             pow_rand_table,
             block_type_rom_table,
             pow2_table,
+            literals_header_rom_table,
+            literals_header_table,
+            bitstring_accumulation_table: bs_acc_table,
         }
     }
 }
@@ -2888,6 +2893,8 @@ impl<F: Field> DecompressionCircuitConfig<F> {
     ) -> Result<(), Error> {
         let mut jump_table_idx: usize = 0;
         let mut rand_pow: Vec<Value<F>> = vec![Value::known(F::one())];
+
+        self.bitstring_accumulation_table.dev_load(layouter, &witness_rows);
 
         layouter.assign_region(
             || "Decompression table region",

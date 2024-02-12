@@ -22,8 +22,7 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
     witness::{
-        FseAuxiliaryTableData, FseSymbol, HuffmanCodesData, TagRomTableRow, ZstdTag, N_BITS_SYMBOL,
-        N_MAX_SYMBOLS,
+        FseAuxiliaryTableData, FseSymbol, HuffmanCodesData, TagRomTableRow, ZstdTag, ZstdWitnessRow, N_BITS_SYMBOL, N_MAX_SYMBOLS
     },
 };
 
@@ -1397,7 +1396,7 @@ impl BitstringAccumulationTable {
     }
 
     /// Load witness to the table: dev mode.
-    pub fn dev_load<F: Field>(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn dev_load<F: Field>(&self, _layouter: &mut impl Layouter<F>, witness_rows: &Vec<ZstdWitnessRow<F>>) -> Result<(), Error> {
         // TODO
 
         Ok(())
