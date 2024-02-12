@@ -1830,72 +1830,70 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: ZstdBlockFseCode (contained bitstream start)",
-        //     |meta| {
-        //         let (huffman_byte_offset, start, bit_value) = (
-        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-        //         );
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-        //             bitstream_decoder.is_contained(meta, None),
-        //         ]);
-        //         [
-        //             huffman_byte_offset,                                       // huffman ID
-        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
-        //             bit_value,                                                 // bitstring value
-        //             1.expr(), // bitstring length accumulator, starts at 1
-        //             start,    // bit index start
-        //             1.expr(), // denotes that this bit index is a part of the bitstring
-        //             1.expr(), // denotes that this bit index is a part of the bitstring
-        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
-        //         ]
-        //         .into_iter()
-        //         .zip(bs_acc_table.table_exprs_contained(meta))
-        //         .map(|(value, table)| (condition.expr() * value, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockFseCode (contained bitstream start)",
+            |meta| {
+                let (huffman_byte_offset, start, bit_value) = (
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+                );
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+                    bitstream_decoder.is_contained(meta, None),
+                ]);
+                [
+                    huffman_byte_offset,                                       // huffman ID
+                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
+                    bit_value,                                                 // bitstring value
+                    1.expr(), // bitstring length accumulator, starts at 1
+                    start,    // bit index start
+                    1.expr(), // denotes that this bit index is a part of the bitstring
+                    1.expr(), // denotes that this bit index is a part of the bitstring
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
+                ]
+                .into_iter()
+                .zip(bs_acc_table.table_exprs_contained(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: ZstdBlockFseCode (contained bitstream end)",
-        //     |meta| {
-        //         let (huffman_byte_offset, start, end, bit_value) = (
-        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-        //         );
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-        //             bitstream_decoder.is_contained(meta, None),
-        //         ]);
-        //         [
-        //             huffman_byte_offset,                                       // huffman ID
-        //             meta.query_advice(byte_idx, Rotation::cur()),              // byte index
-        //             meta.query_advice(value_byte, Rotation::cur()),            // byte value
-        //             bit_value,                                                 // bitstring value
-        //             end.expr() - start + 1.expr(),                             // bitstring length
-        //             end,                                                       // bit index at end
-        //             1.expr(),                                                  // from start
-        //             1.expr(),                                                  // to end
-        //             meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
-        //         ]
-        //         .into_iter()
-        //         .zip(bs_acc_table.table_exprs_contained(meta))
-        //         .map(|(value, table)| (condition.expr() * value, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockFseCode (contained bitstream end)",
+            |meta| {
+                let (huffman_byte_offset, start, end, bit_value) = (
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+                );
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+                    bitstream_decoder.is_contained(meta, None),
+                ]);
+                [
+                    huffman_byte_offset,                                       // huffman ID
+                    meta.query_advice(byte_idx, Rotation::cur()),              // byte index
+                    meta.query_advice(value_byte, Rotation::cur()),            // byte value
+                    bit_value,                                                 // bitstring value
+                    end.expr() - start + 1.expr(),                             // bitstring length
+                    end,                                                       // bit index at end
+                    1.expr(),                                                  // from start
+                    1.expr(),                                                  // to end
+                    meta.query_advice(tag_gadget.is_reverse, Rotation::cur()), // is reverse
+                ]
+                .into_iter()
+                .zip(bs_acc_table.table_exprs_contained(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         meta.lookup_any(
             "DecompressionCircuit: ZstdBlockFseCode (spanned bitstream start)",
