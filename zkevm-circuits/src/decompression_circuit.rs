@@ -2094,7 +2094,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
-                // compression_debug
                 cb.require_equal(
                     "num_emitted increments",
                     meta.query_advice(fse_decoder.num_emitted, Rotation::cur()),
@@ -2402,7 +2401,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             // The HuffmanTreeDescriptionSize can be calculated as:
             // - HuffmanTreeDescriptionSize == byte_idx(JumpTable) - byte_idx(HuffmanTree)
             
-            // TODO: incorrect size? compression_debug
+            // TODO: byte counting?
             cb.require_equal(
                 "length of lstream4",
                 meta.query_advice(lstream_config.len_lstream4, Rotation::cur())
@@ -2824,7 +2823,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                // TODO: Modify to prev -> cur? compression_debug
+                // TODO: Modify to prev -> cur?
                 not::expr(meta.query_fixed(q_enable, Rotation::cur())),
                 sum::expr([
                     meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
@@ -3379,13 +3378,6 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
             let (rows, _decoded_literals, aux_data) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
             witness_rows.extend_from_slice(&rows);
             data.extend_from_slice(&aux_data);
-        }
-
-        // compression_debug
-        for row in witness_rows.clone() {
-            log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};;",
-                row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.stream_idx, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol, row.fse_data.num_emitted, row.fse_data.n_acc, row.bitstream_read_data.bit_start_idx, row.bitstream_read_data.bit_end_idx, row.bitstream_read_data.bit_value
-            );
         }
 
         config.assign(layouter, witness_rows, data, challenges)
