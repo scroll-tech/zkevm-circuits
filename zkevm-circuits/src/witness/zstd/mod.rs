@@ -904,6 +904,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let mut from_bit_idx: usize = 0;
     let mut from_byte_idx: usize = 0;
     let mut last_to_bit_idx: usize = 0;
+    let mut decoded: u8 = 0;
     let mut n_acc: usize = 0;
     let mut current_tag_value_acc = tag_value_iter.next().unwrap();
     let mut current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
@@ -936,14 +937,15 @@ fn process_block_zstd_huffman_code<F: Field>(
 
         last_to_bit_idx = to_bit_idx;
 
-        if sym > 0 {
+        if sym > 0 && n_acc < (1 << accuracy_log) {
             // num_emitted += 1;
+            decoded = sym as u8;
             n_acc += *value as usize;
         }
 
-        (sym as u64, from_byte_idx, from_bit_idx.rem_euclid(8), to_byte_idx, to_bit_idx, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone(), 0, n_acc)
+        (decoded, from_byte_idx, from_bit_idx.rem_euclid(8), to_byte_idx, to_bit_idx, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone(), 0, n_acc)
     })
-    .collect::<Vec<(u64, usize, usize, usize, usize, u64, Value<F>, Value<F>, usize, usize)>>();
+    .collect::<Vec<(u8, usize, usize, usize, usize, u64, Value<F>, Value<F>, usize, usize)>>();
 
     // Add witness rows for FSE representation bytes
     for row in bitstream_rows {
@@ -973,21 +975,23 @@ fn process_block_zstd_huffman_code<F: Field>(
                 bit_end_idx: row.4, 
                 bit_value: row.5, 
             },
-            decoded_data: decoded_data.clone(),
-            huffman_data: HuffmanData::default(),
-            fse_data: if row.0 > 0 && row.9 <= (1 << accuracy_log) {
-                FseTableRow {
-                    idx: 0,
-                    state: 0,
-                    symbol: 0,
-                    baseline: 0,
-                    num_bits: 0,
-                    num_emitted: row.0,
-                    n_acc: row.9 as u64,
-                }
-            } else {
-                FseTableRow::default()
+            decoded_data: DecodedData { 
+                decoded_len: last_row.decoded_data.decoded_len, 
+                decoded_len_acc: last_row.decoded_data.decoded_len_acc, 
+                total_decoded_len: last_row.decoded_data.total_decoded_len, 
+                decoded_byte: row.0, 
+                decoded_value_rlc: last_row.decoded_data.decoded_value_rlc, 
             },
+            huffman_data: HuffmanData::default(),
+            fse_data: FseTableRow {
+                idx: 0,
+                state: 0,
+                symbol: 0,
+                baseline: 0,
+                num_bits: 0,
+                num_emitted: 0,
+                n_acc: row.9 as u64,
+            }
         });
     }
 

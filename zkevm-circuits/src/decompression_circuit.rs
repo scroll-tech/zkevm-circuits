@@ -1801,43 +1801,50 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         );
 
         // compression_debug
-        // meta.create_gate(
-        //     "DecompressionCircuit: ZstdBlockFseCode (fse code)",
-        //     |meta| {
-        //         let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate(
+            "DecompressionCircuit: ZstdBlockFseCode (fse code)",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-        //         // The decoded symbol keeps incrementing in the FSE code reconstruction. Since
-        //         // we've already done the check for the first symbol in the huffman header gate, we
-        //         // only check for increments.
-        //         cb.require_equal(
-        //             "fse table reconstruction: decoded symbol increments",
-        //             meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::prev())
-        //                 + 1.expr(),
-        //         );
-        //         cb.require_equal(
-        //             "number of states assigned so far is accumulated correctly",
-        //             meta.query_advice(fse_decoder.n_acc, Rotation::cur()) + 1.expr(),
-        //             meta.query_advice(fse_decoder.n_acc, Rotation::prev())
-        //                 + meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-        //         );
+                // The decoded symbol keeps incrementing in the FSE code reconstruction. Since
+                // we've already done the check for the first symbol in the huffman header gate, we
+                // only check for increments.
+                let is_last = meta.query_advice(tag_gadget.is_tag_change, Rotation::next());
 
-        //         let is_last = meta.query_advice(tag_gadget.is_tag_change, Rotation::next());
-        //         cb.condition(is_last, |cb| {
-        //             cb.require_equal(
-        //                 "on the last row, accumulated number of symbols is the table size of FSE table",
-        //                 meta.query_advice(fse_decoder.n_acc, Rotation::cur()),
-        //                 meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()),
-        //             );
-        //         });
+                // TODO: Verify that the last row is excluded for trailing bits?
+                cb.condition(not::expr(is_last.clone()), |cb| {
+                    cb.require_equal(
+                        "fse table reconstruction: decoded symbol increments",
+                        meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::cur()),
+                        meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::prev())
+                            + 1.expr(),
+                    );
+                    cb.require_equal(
+                        "number of states assigned so far is accumulated correctly",
+                        // TODO: why is there an extra +1 here?..
+                        // meta.query_advice(fse_decoder.n_acc, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(fse_decoder.n_acc, Rotation::cur()),
+                        meta.query_advice(fse_decoder.n_acc, Rotation::prev())
+                            + meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+                    );
+                });
+                cb.condition(is_last, |cb| {
+                    cb.require_equal(
+                        "on the last row, accumulated number of symbols is the table size of FSE table",
+                        meta.query_advice(fse_decoder.n_acc, Rotation::cur()),
+                        meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()),
+                    );
+                });
 
-        //         cb.gate(and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-        //         ]))
-        //     },
-        // );
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+                    // TODO: Verify that the second witness row in FSE is also skipped.
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::prev())),
+                ]))
+            },
+        );
 
         // compression_debug
         // meta.lookup_any(
@@ -2056,7 +2063,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 // - Only from the third row onwards, do we start emitting symbols (weights).
 
                 // TODO: Discuss starting condition. Perhaps it makes more sense to count the first symbol emitted on row 2?
-                // compression_debug
                 // cb.require_zero(
                 //     "num_emitted starts at 0 from the second row",
                 //     meta.query_advice(fse_decoder.num_emitted, Rotation::next()),
@@ -2077,7 +2083,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 );
                 // Whatever bitstring we read, is also the initial state in the FSE table, where we
                 // start applying the FSE table.
-                // TODO: Correct init condition? Whatever bitstring is read on the next row is the initial state, compression_debug
+                // TODO: Correct init condition? Whatever bitstring is read on the next row is the initial state
                 cb.require_equal(
                     "init state of FSE table",
                     meta.query_advice(bitstream_decoder.bit_value, Rotation::next()),
@@ -2117,12 +2123,12 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 // Check for state transition, except if we are on the last row of HuffmanCode.
                 let is_last_row = meta.query_advice(tag_gadget.is_tag_change, Rotation::next());
-                // TODO: correct baseline targeting, compression_debug
+                // TODO: correct baseline targeting?
                 // let baseline = meta.query_advice(fse_decoder.baseline, Rotation::cur()); // baseline at state
                 let baseline = meta.query_advice(fse_decoder.baseline, Rotation(-2)); // baseline at state
                 let bit_value = meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()); // bits read
 
-                // TODO: Correct FSE transition, compression_debug
+                // TODO: Correct FSE transition?
                 // cb.condition(not::expr(is_last_row), |cb| {
                 //     cb.require_equal(
                 //         "state' == baseline(state) + bit_value",
