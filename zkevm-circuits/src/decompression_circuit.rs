@@ -1217,7 +1217,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
             ]))
         });
-        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         meta.create_gate("DecompressionCircuit: while processing a block", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1230,20 +1229,17 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             //         - meta.query_advice(byte_idx, Rotation::cur()),
             // );
 
-            // cb.require_equal(
-            //     "block_len remains unchanged",
-            //     meta.query_advice(block_gadget.block_len, Rotation::next()),
-            //     meta.query_advice(block_gadget.block_len, Rotation::cur()),
-            // );
+            cb.require_equal(
+                "block_len remains unchanged",
+                meta.query_advice(block_gadget.block_len, Rotation::next()),
+                meta.query_advice(block_gadget.block_len, Rotation::cur()),
+            );
 
-            // cb.require_equal(
-            //     "is_last_block remains unchanged",
-            //     meta.query_advice(block_gadget.is_last_block, Rotation::next()),
-            //     meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
-            // );
-
-            // compression_debug
-            cb.require_zero("dummy constraint", 0.expr());
+            cb.require_equal(
+                "is_last_block remains unchanged",
+                meta.query_advice(block_gadget.is_last_block, Rotation::next()),
+                meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1251,16 +1247,14 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(block_gadget.is_block, Rotation::next()),
             ]))
         });
-        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         meta.create_gate("DecompressionCircuit: handle end of other blocks", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // compression_debug
-            // cb.require_equal(
-            //     "tag_next depending on whether or not this is the last block",
-            //     meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-            //     ZstdTag::BlockHeader.expr(),
-            // );
+            cb.require_equal(
+                "tag_next depending on whether or not this is the last block",
+                meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                ZstdTag::BlockHeader.expr(),
+            );
 
             cb.require_equal(
                 "block_idx == block_len",
@@ -1278,7 +1272,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 not::expr(meta.query_advice(block_gadget.is_last_block, Rotation::cur())),
             ]))
         });
-        // TODO: Multi-block constraints will be examined after mutli-block test vectors become available
         meta.create_gate("DecompressionCircuit: handle end of last block", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
