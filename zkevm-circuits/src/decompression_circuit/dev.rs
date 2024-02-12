@@ -86,7 +86,7 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
         config.0.pow_rand_table.assign(&mut layouter, challenges)?;
         config.0.block_type_rom_table.load(&mut layouter)?;
         config.0.pow2_table.load(&mut layouter)?;
-        // config.0.literals_header_rom_table.load(&mut layouter)?;
+        config.0.literals_header_rom_table.load(&mut layouter)?;
         // config.0.literals_header_table.dev_load(layouter, literals_headers)?;
         self.synthesize_sub(&config.0, challenges, &mut layouter)
     }

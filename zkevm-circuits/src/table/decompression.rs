@@ -2281,18 +2281,18 @@ impl LiteralsHeaderRomTable {
             |mut region| {
                 // Refer: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#literals_section_header
                 for (i, row) in [
-                    [0, 0, 0, 0, 1, 1, 0, 0], // Raw: 1 byte header
-                    [0, 0, 0, 1, 1, 1, 0, 0], // Raw: 1 byte header
-                    [0, 0, 1, 0, 2, 1, 1, 0], // Raw: 2 bytes header
-                    [0, 0, 1, 1, 3, 1, 2, 1], // Raw: 3 bytes header
-                    [1, 0, 0, 0, 1, 1, 0, 0], // RLE: 1 byte header
-                    [1, 0, 0, 1, 1, 1, 0, 0], // RLE: 1 byte header
-                    [1, 0, 1, 0, 2, 1, 1, 0], // RLE: 2 bytes header
-                    [1, 0, 1, 1, 3, 1, 2, 1], // RLE: 3 bytes header
-                    [0, 1, 0, 0, 3, 1, 3, 0], // Compressed: 3 bytes header
-                    [0, 1, 1, 0, 3, 4, 4, 0], // Compressed: 3 bytes header
-                    [0, 1, 0, 1, 4, 4, 5, 0], // Compressed: 4 bytes header
-                    [0, 1, 1, 1, 5, 4, 6, 1], // Compressed: 5 bytes header
+                    [0, 0, 0, 0, 1, 0, 0, 0], // Raw: 1 byte header
+                    [0, 0, 0, 1, 1, 0, 0, 0], // Raw: 1 byte header
+                    [0, 0, 1, 0, 2, 0, 1, 0], // Raw: 2 bytes header
+                    [0, 0, 1, 1, 3, 0, 2, 1], // Raw: 3 bytes header
+                    [1, 0, 0, 0, 1, 0, 0, 0], // RLE: 1 byte header
+                    [1, 0, 0, 1, 1, 0, 0, 0], // RLE: 1 byte header
+                    [1, 0, 1, 0, 2, 0, 1, 0], // RLE: 2 bytes header
+                    [1, 0, 1, 1, 3, 0, 2, 1], // RLE: 3 bytes header
+                    [0, 1, 0, 0, 3, 0, 3, 0], // Compressed: 3 bytes header
+                    [0, 1, 1, 0, 3, 1, 4, 0], // Compressed: 3 bytes header
+                    [0, 1, 0, 1, 4, 1, 5, 0], // Compressed: 4 bytes header
+                    [0, 1, 1, 1, 5, 1, 6, 1], // Compressed: 5 bytes header
                 ]
                 .iter()
                 .enumerate()
