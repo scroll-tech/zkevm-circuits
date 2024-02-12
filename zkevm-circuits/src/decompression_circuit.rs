@@ -1726,16 +1726,16 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 // bit_index 4 (considering that it is 0-indexed).
                 
                 // compression_debug
-                // cb.require_equal(
-                //     "accuracy log read from bits [0, 4)",
-                //     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
-                //     0.expr(),
-                // );
-                // cb.require_equal(
-                //     "accuracy log read from bits [0, 4)",
-                //     meta.query_advice(bitstream_decoder.bit_index_end, Rotation::next()),
-                //     3.expr(),
-                // );
+                cb.require_equal(
+                    "accuracy log read from bits [0, 4)",
+                    meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
+                    0.expr(),
+                );
+                cb.require_equal(
+                    "accuracy log read from bits [0, 4)",
+                    meta.query_advice(bitstream_decoder.bit_index_end, Rotation::next()),
+                    3.expr(),
+                );
 
                 // At every row, a new symbol is decoded. This symbol stands for the weight in the
                 // canonical Huffman code representation. So we start at symbol == S0, i.e. 0 and
@@ -1756,12 +1756,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 );
 
                 // Check that the decoded accuracy log is correct.
-                // compression_debug
-                // cb.require_equal(
-                //     "accuracy log check",
-                //     meta.query_advice(huffman_tree_config.fse_table_al, Rotation::next()),
-                //     meta.query_advice(bitstream_decoder.bit_value, Rotation::next()) + 5.expr(),
-                // );
+                cb.require_equal(
+                    "accuracy log check",
+                    meta.query_advice(huffman_tree_config.fse_table_al, Rotation::next()),
+                    meta.query_advice(bitstream_decoder.bit_value, Rotation::next()) + 5.expr(),
+                );
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),

@@ -587,7 +587,7 @@ impl FseAuxiliaryTableData {
             offset += 4;
             reader.read::<u8>(offset)? + 5
         };
-        bit_boundaries.push((offset, accuracy_log as u64 - 1));
+        bit_boundaries.push((offset, accuracy_log as u64 - 5));
         let table_size = 1 << accuracy_log;
 
         let mut sym_to_states = BTreeMap::new();
