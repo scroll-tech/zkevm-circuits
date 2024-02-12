@@ -1141,190 +1141,170 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         ////////////////////////////////// ZstdTag::BlockHeader ///////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
 
+        // TODO: Block constraints will be examined later
         // Note: We only verify the 1st row of BlockHeader for tag_value.
-        meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_equal(
-                "tag_len == 3",
-                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-                N_BLOCK_HEADER_BYTES.expr(),
-            );
+        // meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
+        //     let mut cb = BaseConstraintBuilder::default();
+        //     cb.require_equal(
+        //         "tag_len == 3",
+        //         meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+        //         N_BLOCK_HEADER_BYTES.expr(),
+        //     );
+        //     // The lowest bit (as per little-endian representation) is whether the block is the
+        //     // last block in the frame or not.
+        //     //
+        //     // The next 2 bits denote the block type.
+        //     //
+        //     // But block header is expressed in the reverse order, which helps us in calculating
+        //     // the tag_value appropriately.
+        //     cb.require_equal(
+        //         "last block check",
+        //         meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
+        //         meta.query_advice(
+        //             block_gadget.is_last_block,
+        //             Rotation(N_BLOCK_HEADER_BYTES as i32),
+        //         ),
+        //     );
+        //     let block_type_bit0 =
+        //         meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
+        //     let block_type_bit1 =
+        //         meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
+        //     cb.require_zero(
+        //         "block type cannot be RESERVED, i.e. block_type == 3 not possible",
+        //         block_type_bit0.expr() * block_type_bit1.expr(),
+        //     );
+        //     cb.require_equal(
+        //         "block_idx == 1",
+        //         meta.query_advice(block_gadget.idx, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+        //         1.expr(),
+        //     );
+        //     // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear with
+        //     // block type 00 or 01, i.e. the block_type_bit1 is 0.
+        //     cb.condition(not::expr(block_type_bit1), |cb| {
+        //         cb.require_equal(
+        //             "Raw/RLE blocks: tag_len == block_len",
+        //             meta.query_advice(tag_gadget.tag_len, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+        //             meta.query_advice(
+        //                 block_gadget.block_len,
+        //                 Rotation(N_BLOCK_HEADER_BYTES as i32),
+        //             ),
+        //         );
+        //     });
+        //     // Validate that for an RLE block: value_byte == decoded_byte.
+        //     cb.condition(block_type_bit0, |cb| {
+        //         cb.require_equal(
+        //             "for RLE block, value_byte == decoded_byte",
+        //             meta.query_advice(value_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+        //             meta.query_advice(decoded_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+        //         );
+        //     });
+        //     // If this wasn't the first block, then the previous block's last byte should have
+        //     // block's idx == block length.
+        //     //
+        //     // This block is the first block iff the FrameContentSize tag precedes it. However we
+        //     // assume that the block_idx and block_len will be set to 0 for FrameContentSize as it
+        //     // is not part of a "block".
+        //     cb.require_equal(
+        //         "block_idx::prev == block_len::prev",
+        //         meta.query_advice(block_gadget.idx, Rotation::prev()),
+        //         meta.query_advice(block_gadget.block_len, Rotation::prev()),
+        //     );
+        //     cb.gate(and::expr([
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+        //         meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
+        //     ]))
+        // });
 
-            // The lowest bit (as per little-endian representation) is whether the block is the
-            // last block in the frame or not.
-            //
-            // The next 2 bits denote the block type.
-            //
-            // But block header is expressed in the reverse order, which helps us in calculating
-            // the tag_value appropriately.
-            cb.require_equal(
-                "last block check",
-                meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
-                meta.query_advice(
-                    block_gadget.is_last_block,
-                    Rotation(N_BLOCK_HEADER_BYTES as i32),
-                ),
-            );
-            let block_type_bit0 =
-                meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
-            let block_type_bit1 =
-                meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
-            cb.require_zero(
-                "block type cannot be RESERVED, i.e. block_type == 3 not possible",
-                block_type_bit0.expr() * block_type_bit1.expr(),
-            );
-            cb.require_equal(
-                "block_idx == 1",
-                meta.query_advice(block_gadget.idx, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-                1.expr(),
-            );
+        // meta.create_gate("DecompressionCircuit: while processing a block", |meta| {
+        //     let mut cb = BaseConstraintBuilder::default();
+        //     // If byte_idx increments, then block_gadet.idx should also increment.
+        //     cb.require_equal(
+        //         "idx in block increments if byte_idx increments",
+        //         meta.query_advice(block_gadget.idx, Rotation::next())
+        //             - meta.query_advice(block_gadget.idx, Rotation::cur()),
+        //         meta.query_advice(byte_idx, Rotation::next())
+        //             - meta.query_advice(byte_idx, Rotation::cur()),
+        //     );
+        //     cb.require_equal(
+        //         "block_len remains unchanged",
+        //         meta.query_advice(block_gadget.block_len, Rotation::next()),
+        //         meta.query_advice(block_gadget.block_len, Rotation::cur()),
+        //     );
+        //     cb.require_equal(
+        //         "is_last_block remains unchanged",
+        //         meta.query_advice(block_gadget.is_last_block, Rotation::next()),
+        //         meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
+        //     );
+        //     cb.gate(and::expr([
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         meta.query_advice(block_gadget.is_block, Rotation::cur()),
+        //         meta.query_advice(block_gadget.is_block, Rotation::next()),
+        //     ]))
+        // });
 
-            // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear with
-            // block type 00 or 01, i.e. the block_type_bit1 is 0.
-            cb.condition(not::expr(block_type_bit1), |cb| {
-                cb.require_equal(
-                    "Raw/RLE blocks: tag_len == block_len",
-                    meta.query_advice(tag_gadget.tag_len, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-                    meta.query_advice(
-                        block_gadget.block_len,
-                        Rotation(N_BLOCK_HEADER_BYTES as i32),
-                    ),
-                );
-            });
+        // meta.create_gate("DecompressionCircuit: handle end of other blocks", |meta| {
+        //     let mut cb = BaseConstraintBuilder::default();
+        //     cb.require_equal(
+        //         "tag_next depending on whether or not this is the last block",
+        //         meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+        //         ZstdTag::BlockHeader.expr(),
+        //     );
+        //     cb.require_equal(
+        //         "block_idx == block_len",
+        //         meta.query_advice(block_gadget.idx, Rotation::cur()),
+        //         meta.query_advice(block_gadget.block_len, Rotation::cur()),
+        //     );
+        //     let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
+        //     cb.gate(and::expr([
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         not::expr(meta.query_advice(is_padding, Rotation::cur())),
+        //         idx_eq_len,
+        //         not::expr(meta.query_advice(block_gadget.is_last_block, Rotation::cur())),
+        //     ]))
+        // });
 
-            // Validate that for an RLE block: value_byte == decoded_byte.
-            cb.condition(block_type_bit0, |cb| {
-                cb.require_equal(
-                    "for RLE block, value_byte == decoded_byte",
-                    meta.query_advice(value_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-                    meta.query_advice(decoded_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-                );
-            });
+        // meta.create_gate("DecompressionCircuit: handle end of last block", |meta| {
+        //     let mut cb = BaseConstraintBuilder::default();
+        //     cb.require_equal(
+        //         "tag_next depending on whether or not this is the last block",
+        //         meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+        //         ZstdTag::Null.expr(),
+        //     );
+        //     cb.require_equal(
+        //         "decoded_len has been reached if last block",
+        //         meta.query_advice(decoded_len_acc, Rotation::cur()),
+        //         meta.query_advice(decoded_len, Rotation::cur()),
+        //     );
+        //     cb.require_equal(
+        //         "byte idx has reached the encoded len",
+        //         meta.query_advice(byte_idx, Rotation::cur()),
+        //         meta.query_advice(encoded_len, Rotation::cur()),
+        //     );
+        //     cb.require_equal(
+        //         "block can end only on Raw/Rle/TODO tag",
+        //         sum::expr([
+        //             is_raw_block(meta),
+        //             is_rle_block(meta),
+        //             // TODO: there will be other tags where a block ends
+        //         ]),
+        //         1.expr(),
+        //     );
+        //     cb.require_equal(
+        //         "block_idx == block_len",
+        //         meta.query_advice(block_gadget.idx, Rotation::cur()),
+        //         meta.query_advice(block_gadget.block_len, Rotation::cur()),
+        //     );
+        //     let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
+        //     cb.gate(and::expr([
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         not::expr(meta.query_advice(is_padding, Rotation::cur())),
+        //         meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
+        //         idx_eq_len,
+        //     ]))
+        // });
 
-            // If this wasn't the first block, then the previous block's last byte should have
-            // block's idx == block length.
-            //
-            // This block is the first block iff the FrameContentSize tag precedes it. However we
-            // assume that the block_idx and block_len will be set to 0 for FrameContentSize as it
-            // is not part of a "block".
-            cb.require_equal(
-                "block_idx::prev == block_len::prev",
-                meta.query_advice(block_gadget.idx, Rotation::prev()),
-                meta.query_advice(block_gadget.block_len, Rotation::prev()),
-            );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-                meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
-            ]))
-        });
-        meta.create_gate("DecompressionCircuit: while processing a block", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            // If byte_idx increments, then block_gadet.idx should also increment.
-            // cb.require_equal(
-            //     "idx in block increments if byte_idx increments",
-            //     meta.query_advice(block_gadget.idx, Rotation::next())
-            //         - meta.query_advice(block_gadget.idx, Rotation::cur()),
-            //     meta.query_advice(byte_idx, Rotation::next())
-            //         - meta.query_advice(byte_idx, Rotation::cur()),
-            // );
-
-            cb.require_equal(
-                "block_len remains unchanged",
-                meta.query_advice(block_gadget.block_len, Rotation::next()),
-                meta.query_advice(block_gadget.block_len, Rotation::cur()),
-            );
-
-            cb.require_equal(
-                "is_last_block remains unchanged",
-                meta.query_advice(block_gadget.is_last_block, Rotation::next()),
-                meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
-            );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(block_gadget.is_block, Rotation::cur()),
-                meta.query_advice(block_gadget.is_block, Rotation::next()),
-            ]))
-        });
-        meta.create_gate("DecompressionCircuit: handle end of other blocks", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "tag_next depending on whether or not this is the last block",
-                meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-                ZstdTag::BlockHeader.expr(),
-            );
-
-            cb.require_equal(
-                "block_idx == block_len",
-                meta.query_advice(block_gadget.idx, Rotation::cur()),
-                meta.query_advice(block_gadget.block_len, Rotation::cur()),
-            );
-
-            // compression_debug
-            // let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_padding, Rotation::cur())),
-                // compression_debug
-                // idx_eq_len,
-                not::expr(meta.query_advice(block_gadget.is_last_block, Rotation::cur())),
-            ]))
-        });
-        meta.create_gate("DecompressionCircuit: handle end of last block", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            // compression_debug
-            // cb.require_equal(
-            //     "tag_next depending on whether or not this is the last block",
-            //     meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-            //     ZstdTag::Null.expr(),
-            // );
-
-            // cb.require_equal(
-            //     "decoded_len has been reached if last block",
-            //     meta.query_advice(decoded_len_acc, Rotation::cur()),
-            //     meta.query_advice(decoded_len, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "byte idx has reached the encoded len",
-            //     meta.query_advice(byte_idx, Rotation::cur()),
-            //     meta.query_advice(encoded_len, Rotation::cur()),
-            // );
-
-            // cb.require_equal(
-            //     "block can end only on Raw/Rle/TODO tag",
-            //     sum::expr([
-            //         is_raw_block(meta),
-            //         is_rle_block(meta),
-            //         // TODO: there will be other tags where a block ends
-            //     ]),
-            //     1.expr(),
-            // );
-
-            cb.require_equal(
-                "block_idx == block_len",
-                meta.query_advice(block_gadget.idx, Rotation::cur()),
-                meta.query_advice(block_gadget.block_len, Rotation::cur()),
-            );
-
-            // compression_debug
-            // let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_padding, Rotation::cur())),
-                meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
-                // compression_debug
-                // idx_eq_len,
-            ]))
-        });
-
-        // compression_debug
         // meta.lookup(
         //     "DecompressionCircuit: BlockHeader (BlockSize == BlockHeader >> 3)",
         //     |meta| {
@@ -1794,7 +1774,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 // only check for increments.
                 let is_last = meta.query_advice(tag_gadget.is_tag_change, Rotation::next());
 
-                // TODO: Verify that the last row is excluded for trailing bits?
                 cb.condition(not::expr(is_last.clone()), |cb| {
                     cb.require_equal(
                         "fse table reconstruction: decoded symbol increments",
@@ -1804,8 +1783,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     );
                     cb.require_equal(
                         "number of states assigned so far is accumulated correctly",
-                        // TODO: why is there an extra +1 here?..
-                        // meta.query_advice(fse_decoder.n_acc, Rotation::cur()) + 1.expr(),
                         meta.query_advice(fse_decoder.n_acc, Rotation::cur()),
                         meta.query_advice(fse_decoder.n_acc, Rotation::prev())
                             + (meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()) - 1.expr()),
@@ -1823,7 +1800,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
                     not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-                    // TODO: Verify that the second witness row in FSE is also skipped.
                     not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::prev())),
                 ]))
             },
