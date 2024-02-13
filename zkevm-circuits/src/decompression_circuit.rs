@@ -33,8 +33,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, LstreamNum, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES,
-        N_JUMP_TABLE_BYTES, process, value_bits_le
+        process, value_bits_le, Block, FseAuxiliaryTableData, LstreamNum, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_JUMP_TABLE_BYTES
     },
 };
 
@@ -128,6 +127,7 @@ pub struct DecompressionCircuitConfig<F> {
     literals_header_rom_table: LiteralsHeaderRomTable,
     literals_header_table: LiteralsHeaderTable,
     bitstring_accumulation_table: BitstringAccumulationTable,
+    fse_table: FseTable<F>,
 }
 
 /// Block level details are specified in these columns.
@@ -2827,6 +2827,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             literals_header_rom_table,
             literals_header_table,
             bitstring_accumulation_table: bs_acc_table,
+            fse_table,
         }
     }
 }
@@ -2838,12 +2839,14 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         witness_rows: Vec<ZstdWitnessRow<F>>,
         aux_data: Vec<u64>,
+        fse_aux_tables: Vec<FseAuxiliaryTableData>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let mut jump_table_idx: usize = 0;
         let mut rand_pow: Vec<Value<F>> = vec![Value::known(F::one())];
 
         self.bitstring_accumulation_table.assign(layouter, &witness_rows)?;
+        self.fse_table.assign(layouter, fse_aux_tables)?;
 
         layouter.assign_region(
             || "Decompression table region",
@@ -3353,13 +3356,15 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
     ) -> Result<(), Error> {
         let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
         let mut data: Vec<u64> = vec![];
+        let mut fse_aux_tables = vec![];
 
         for idx in 0..self.compressed_frames.len() {
-            let (rows, _decoded_literals, aux_data) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
+            let (rows, _decoded_literals, aux_data, f_fse_aux_tables) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
             witness_rows.extend_from_slice(&rows);
             data.extend_from_slice(&aux_data);
+            fse_aux_tables.extend_from_slice(&f_fse_aux_tables);
         }
 
-        config.assign(layouter, witness_rows, data, challenges)
+        config.assign(layouter, witness_rows, data, fse_aux_tables, challenges)
     }
 }

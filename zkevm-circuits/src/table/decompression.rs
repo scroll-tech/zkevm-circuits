@@ -430,7 +430,7 @@ impl<F: Field> FseTable<F> {
     }
 
     /// Load witness.
-    pub fn dev_load(
+    pub fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
         data: Vec<FseAuxiliaryTableData>,

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use eth_types::Field;
 use halo2_proofs::circuit::Value;
 
@@ -216,7 +218,7 @@ fn process_block<F: Field>(
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, last_block, block_type, block_size) =
@@ -224,7 +226,7 @@ fn process_block<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     let last_row = rows.last().expect("last row expected to exist");
-    let (_byte_offset, rows, literals, lstream_len, aux_data) = match block_type {
+    let (_byte_offset, rows, literals, lstream_len, aux_data, fse_aux_table) = match block_type {
         BlockType::RawBlock => process_block_raw(
             src,
             byte_offset,
@@ -253,7 +255,7 @@ fn process_block<F: Field>(
     };
     witness_rows.extend_from_slice(&rows);
 
-    (byte_offset, witness_rows, last_block, literals, lstream_len, aux_data)
+    (byte_offset, witness_rows, last_block, literals, lstream_len, aux_data, fse_aux_table)
 }
 
 fn process_block_header<F: Field>(
@@ -515,7 +517,7 @@ fn process_block_raw<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -532,7 +534,13 @@ fn process_block_raw<F: Field>(
         tag_next,
     );
 
-    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0])
+    let fse_aux_table = FseAuxiliaryTableData {
+        byte_offset: 0,
+        table_size: 0,
+        sym_to_states: BTreeMap::default()
+    };
+
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0], fse_aux_table)
 }
 
 fn process_block_rle<F: Field>(
@@ -542,7 +550,7 @@ fn process_block_rle<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -559,7 +567,13 @@ fn process_block_rle<F: Field>(
         tag_next,
     );
 
-    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0])
+    let fse_aux_table = FseAuxiliaryTableData {
+        byte_offset: 0,
+        table_size: 0,
+        sym_to_states: BTreeMap::default()
+    };
+
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0], fse_aux_table)
 }
 
 #[allow(unused_variables)]
@@ -570,7 +584,7 @@ fn process_block_zstd<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
@@ -589,6 +603,11 @@ fn process_block_zstd<F: Field>(
         randomness
     );
     witness_rows.extend_from_slice(&rows);
+    let mut fse_aux_table = FseAuxiliaryTableData {
+        byte_offset: 0,
+        table_size: 0,
+        sym_to_states: BTreeMap::default()
+    };
 
     // Depending on the literals block type, decode literals section accordingly
     let (bytes_offset, rows, literals, lstream_len, aux_data): (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>) = match literals_block_type {
@@ -621,7 +640,7 @@ fn process_block_zstd<F: Field>(
         BlockType::ZstdCompressedBlock => {
             let mut huffman_rows = vec![];
 
-            let (bytes_offset, rows, huffman_codes, n_huffman_bytes, huffman_byte_offset, last_rlc, huffman_idx, fse_size, fse_accuracy, n_huffman_bitstream_bytes) = process_block_zstd_huffman_code(
+            let (bytes_offset, rows, huffman_codes, n_huffman_bytes, huffman_byte_offset, last_rlc, huffman_idx, fse_size, fse_accuracy, n_huffman_bitstream_bytes, fse_aux_data) = process_block_zstd_huffman_code(
                 src,
                 byte_offset,
                 rows.last().expect("last row must exist"),
@@ -629,6 +648,7 @@ fn process_block_zstd<F: Field>(
                 n_streams,
             );
             huffman_rows.extend_from_slice(&rows);
+            fse_aux_table = fse_aux_data;
 
             // Subtract huffman header (1-byte), len of huffman bytes and 6-byte jump table (if n_streams > 1)
             let mut literal_stream_size = compressed_size - (n_huffman_bytes + 1);  
@@ -676,7 +696,7 @@ fn process_block_zstd<F: Field>(
     };
     witness_rows.extend_from_slice(&rows);
 
-    (bytes_offset, witness_rows, literals, lstream_len, vec![regen_size as u64, compressed_size as u64, aux_data[0], aux_data[1], aux_data[2], aux_data[3], branch, sf_max as u64])
+    (bytes_offset, witness_rows, literals, lstream_len, vec![regen_size as u64, compressed_size as u64, aux_data[0], aux_data[1], aux_data[2], aux_data[3], branch, sf_max as u64], fse_aux_table)
 }
 
 fn process_block_zstd_literals_header<F: Field>(
@@ -808,7 +828,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     n_streams: usize,
-) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize, Value<F>, usize, u64, u64, u64) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize, Value<F>, usize, u64, u64, u64, FseAuxiliaryTableData) {
     // Preserve this value for later construction of HuffmanCodesDataTable
     let huffman_code_byte_offset = byte_offset;
 
@@ -1133,7 +1153,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let mut fse_table_idx: u64 = 1;
 
     // Convert FSE auxiliary data into a state-indexed representation
-    let fse_state_table = table.parse_state_table();
+    let fse_state_table = table.clone().parse_state_table();
 
     while current_bit_idx + next_nb_to_read[color] <= (n_huffman_code_bytes) * N_BITS_PER_BYTE {
         let nb = next_nb_to_read[color];
@@ -1238,6 +1258,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         (1 << accuracy_log) as u64,
         accuracy_log as u64,
         n_huffman_code_bytes as u64,
+        table,   // FSE table
     )
 }
 
@@ -1600,10 +1621,11 @@ fn process_block_zstd_lstream<F: Field>(
 }
 
 /// Process a slice of bytes into decompression circuit witness rows
-pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>) {
+pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<FseAuxiliaryTableData>) {
     let mut witness_rows = vec![];
     let mut literals: Vec<u64> = vec![];
     let mut aux_data: Vec<u64> = vec![];
+    let mut fse_aux_tables: Vec<FseAuxiliaryTableData> = vec![];
     let byte_offset = 0;
 
     // FrameHeaderDescriptor and FrameContentSize
@@ -1616,7 +1638,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
     witness_rows.extend_from_slice(&rows);
 
     loop {
-        let (_byte_offset, rows, last_block, new_literals, lstream_lens, pipeline_data) = process_block::<F>(
+        let (_byte_offset, rows, last_block, new_literals, lstream_lens, pipeline_data, fse_aux_table) = process_block::<F>(
             src,
             byte_offset,
             rows.last().expect("last row expected to exist"),
@@ -1626,6 +1648,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
         literals.extend_from_slice(&new_literals);
         aux_data.extend_from_slice(&lstream_lens);
         aux_data.extend_from_slice(&pipeline_data);
+        fse_aux_tables.push(fse_aux_table);
 
         if last_block {
             // TODO: Recover this assertion after the sequence section decoding is completed.
@@ -1637,7 +1660,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
     #[cfg(test)]
     let _ = draw_rows(&witness_rows);
 
-    (witness_rows, literals, aux_data)
+    (witness_rows, literals, aux_data, fse_aux_tables)
 }
 
 #[cfg(test)]
@@ -1719,7 +1742,7 @@ mod tests {
             encoder.finish()?
         };
 
-        let (_witness_rows, _decoded_literals, _aux_data) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+        let (_witness_rows, _decoded_literals, _aux_data, fse_aux_tables) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
 
         Ok(())
     }
@@ -1738,7 +1761,7 @@ mod tests {
             0x54, 0x40, 0x29, 0x01,
         ];
 
-        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes, _huffman_byte_offset, _last_rlc, _huffman_idx, _fse_size, _fse_accuracy, _n_huffman_bitstream_bytes) = 
+        let (_byte_offset, _witness_rows, huffman_codes, _n_huffan_bytes, _huffman_byte_offset, _last_rlc, _huffman_idx, _fse_size, _fse_accuracy, _n_huffman_bitstream_bytes, fse_aux_data) = 
             process_block_zstd_huffman_code::<Fr>(
                 &input, 
                 0, 
@@ -1866,7 +1889,7 @@ mod tests {
             0x84, 0xc9, 0x76, 0x84, 0xbc, 0xb8, 0xfe, 0x4e, 0x53, 0xa5, 0x06, 0x82, 0x14, 0x95, 0x51,
         ];
 
-        let (_witness_rows, decoded_literals, _aux_data) = process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
+        let (_witness_rows, decoded_literals, _aux_data, fse_aux_tables) = process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
 
         let decoded_literal_string: String = decoded_literals.iter().filter_map(|&s| char::from_u32(s as u32)).collect();
         let expected_literal_string = String::from("Romeo and Juliet\nExcerpt from Act 2, Scene 2\n\nJULIET\nO ,! wherefore art thou?\nDeny thy fatherrefusename;\nOr, ifwilt not, be but sworn my love,\nAnd I'll no longera Capulet.\n\nROMEO\n[Aside] Shall I hear more, or sspeak at this?'Tis that isenemy;\nTyself,gh a Montague.\nWhat's? inor hand,foot,\nNor armaceany opart\nBeing to a man. Osome!in a?which we ca rose\nBy would smell as sweet;\nSo, were he'd,\nRetaindear perfectionhe owes\nWithoitle.dofffor oee\nTake mI t hy word:\nCebe new baptized;\nHencth I never will. manthus bescreen'dnightstumblest on my counsel?\n");
