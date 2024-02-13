@@ -218,7 +218,7 @@ fn process_block<F: Field>(
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData) {
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, last_block, block_type, block_size) =
@@ -226,7 +226,7 @@ fn process_block<F: Field>(
     witness_rows.extend_from_slice(&rows);
 
     let last_row = rows.last().expect("last row expected to exist");
-    let (_byte_offset, rows, literals, lstream_len, aux_data, fse_aux_table) = match block_type {
+    let (_byte_offset, rows, literals, lstream_len, aux_data, fse_aux_table, huffman_codes) = match block_type {
         BlockType::RawBlock => process_block_raw(
             src,
             byte_offset,
@@ -255,7 +255,7 @@ fn process_block<F: Field>(
     };
     witness_rows.extend_from_slice(&rows);
 
-    (byte_offset, witness_rows, last_block, literals, lstream_len, aux_data, fse_aux_table)
+    (byte_offset, witness_rows, last_block, literals, lstream_len, aux_data, fse_aux_table, huffman_codes)
 }
 
 fn process_block_header<F: Field>(
@@ -517,7 +517,7 @@ fn process_block_raw<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -539,8 +539,12 @@ fn process_block_raw<F: Field>(
         table_size: 0,
         sym_to_states: BTreeMap::default()
     };
+    let mut huffman_weights = HuffmanCodesData {
+        byte_offset: 0,
+        weights: vec![]
+    };
 
-    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0], fse_aux_table)
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0], fse_aux_table, huffman_weights)
 }
 
 fn process_block_rle<F: Field>(
@@ -550,7 +554,7 @@ fn process_block_rle<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData) {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -572,8 +576,12 @@ fn process_block_rle<F: Field>(
         table_size: 0,
         sym_to_states: BTreeMap::default()
     };
+    let mut huffman_weights = HuffmanCodesData {
+        byte_offset: 0,
+        weights: vec![]
+    };
 
-    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0], fse_aux_table)
+    (byte_offset, rows.clone(), vec![], vec![rows.len() as u64, 0, 0, 0], vec![0, 0, 0, 0, 0, 0], fse_aux_table, huffman_weights)
 }
 
 #[allow(unused_variables)]
@@ -584,7 +592,7 @@ fn process_block_zstd<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData) {
+) -> (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData) {
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
@@ -607,6 +615,10 @@ fn process_block_zstd<F: Field>(
         byte_offset: 0,
         table_size: 0,
         sym_to_states: BTreeMap::default()
+    };
+    let mut huffman_weights = HuffmanCodesData {
+        byte_offset: 0,
+        weights: vec![]
     };
 
     // Depending on the literals block type, decode literals section accordingly
@@ -649,6 +661,7 @@ fn process_block_zstd<F: Field>(
             );
             huffman_rows.extend_from_slice(&rows);
             fse_aux_table = fse_aux_data;
+            huffman_weights = huffman_codes.clone();
 
             // Subtract huffman header (1-byte), len of huffman bytes and 6-byte jump table (if n_streams > 1)
             let mut literal_stream_size = compressed_size - (n_huffman_bytes + 1);  
@@ -696,7 +709,7 @@ fn process_block_zstd<F: Field>(
     };
     witness_rows.extend_from_slice(&rows);
 
-    (bytes_offset, witness_rows, literals, lstream_len, vec![regen_size as u64, compressed_size as u64, aux_data[0], aux_data[1], aux_data[2], aux_data[3], branch, sf_max as u64], fse_aux_table)
+    (bytes_offset, witness_rows, literals, lstream_len, vec![regen_size as u64, compressed_size as u64, aux_data[0], aux_data[1], aux_data[2], aux_data[3], branch, sf_max as u64], fse_aux_table, huffman_weights)
 }
 
 fn process_block_zstd_literals_header<F: Field>(
@@ -1242,7 +1255,7 @@ fn process_block_zstd_huffman_code<F: Field>(
 
     // Construct HuffmanCodesTable
     let huffman_codes = HuffmanCodesData {
-        byte_offset: huffman_code_byte_offset as u64,
+        byte_offset: (huffman_code_byte_offset + 1) as u64,
         weights: decoded_weights.into_iter().map(|w| FseSymbol::from(w as usize) ).collect()
     };
 
@@ -1627,11 +1640,12 @@ fn process_block_zstd_lstream<F: Field>(
 }
 
 /// Process a slice of bytes into decompression circuit witness rows
-pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<FseAuxiliaryTableData>) {
+pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<FseAuxiliaryTableData>, Vec<HuffmanCodesData>) {
     let mut witness_rows = vec![];
     let mut literals: Vec<u64> = vec![];
     let mut aux_data: Vec<u64> = vec![];
     let mut fse_aux_tables: Vec<FseAuxiliaryTableData> = vec![];
+    let mut huffman_codes: Vec<HuffmanCodesData> = vec![];
     let byte_offset = 0;
 
     // FrameHeaderDescriptor and FrameContentSize
@@ -1644,7 +1658,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
     witness_rows.extend_from_slice(&rows);
 
     loop {
-        let (_byte_offset, rows, last_block, new_literals, lstream_lens, pipeline_data, fse_aux_table) = process_block::<F>(
+        let (_byte_offset, rows, last_block, new_literals, lstream_lens, pipeline_data, fse_aux_table, huffman_code) = process_block::<F>(
             src,
             byte_offset,
             rows.last().expect("last row expected to exist"),
@@ -1655,6 +1669,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
         aux_data.extend_from_slice(&lstream_lens);
         aux_data.extend_from_slice(&pipeline_data);
         fse_aux_tables.push(fse_aux_table);
+        huffman_codes.push(huffman_code);
 
         if last_block {
             // TODO: Recover this assertion after the sequence section decoding is completed.
@@ -1666,7 +1681,7 @@ pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> (Vec<ZstdWitnessRo
     #[cfg(test)]
     let _ = draw_rows(&witness_rows);
 
-    (witness_rows, literals, aux_data, fse_aux_tables)
+    (witness_rows, literals, aux_data, fse_aux_tables, huffman_codes)
 }
 
 #[cfg(test)]
@@ -1748,7 +1763,7 @@ mod tests {
             encoder.finish()?
         };
 
-        let (_witness_rows, _decoded_literals, _aux_data, fse_aux_tables) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
+        let (_witness_rows, _decoded_literals, _aux_data, fse_aux_tables, huffman_codes) = process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
 
         Ok(())
     }
@@ -1895,7 +1910,7 @@ mod tests {
             0x84, 0xc9, 0x76, 0x84, 0xbc, 0xb8, 0xfe, 0x4e, 0x53, 0xa5, 0x06, 0x82, 0x14, 0x95, 0x51,
         ];
 
-        let (_witness_rows, decoded_literals, _aux_data, fse_aux_tables) = process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
+        let (_witness_rows, decoded_literals, _aux_data, fse_aux_tables, huffman_codes) = process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
 
         let decoded_literal_string: String = decoded_literals.iter().filter_map(|&s| char::from_u32(s as u32)).collect();
         let expected_literal_string = String::from("Romeo and Juliet\nExcerpt from Act 2, Scene 2\n\nJULIET\nO ,! wherefore art thou?\nDeny thy fatherrefusename;\nOr, ifwilt not, be but sworn my love,\nAnd I'll no longera Capulet.\n\nROMEO\n[Aside] Shall I hear more, or sspeak at this?'Tis that isenemy;\nTyself,gh a Montague.\nWhat's? inor hand,foot,\nNor armaceany opart\nBeing to a man. Osome!in a?which we ca rose\nBy would smell as sweet;\nSo, were he'd,\nRetaindear perfectionhe owes\nWithoitle.dofffor oee\nTake mI t hy word:\nCebe new baptized;\nHencth I never will. manthus bescreen'dnightstumblest on my counsel?\n");

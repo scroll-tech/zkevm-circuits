@@ -33,7 +33,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        process, value_bits_le, Block, FseAuxiliaryTableData, LstreamNum, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_JUMP_TABLE_BYTES
+        process, value_bits_le, Block, FseAuxiliaryTableData, HuffmanCodesData, LstreamNum, ZstdTag, ZstdWitnessRow, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG, N_BLOCK_HEADER_BYTES, N_JUMP_TABLE_BYTES
     },
 };
 
@@ -128,6 +128,7 @@ pub struct DecompressionCircuitConfig<F> {
     literals_header_table: LiteralsHeaderTable,
     bitstring_accumulation_table: BitstringAccumulationTable,
     fse_table: FseTable<F>,
+    huffman_codes_table: HuffmanCodesTable<F>,
 }
 
 /// Block level details are specified in these columns.
@@ -1468,7 +1469,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // compression_debug
+        // TODO: LiteralHeader regen/compr size
         // meta.lookup_any(
         //     "DecompressionCircuit: lookup for LiteralsHeader regen/compr size",
         //     |meta| {
@@ -2277,27 +2278,28 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: ZstdBlockHuffmanCode (huffman codes table lookup)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::prev())),
-        //         ]);
-        //         [
-        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.symbol, Rotation::cur()),
-        //         ]
-        //         .into_iter()
-        //         .zip(huffman_codes_table.table_exprs_canonical_weight(meta))
-        //         .map(|(value, table)| (condition.expr() * value, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockHuffmanCode (huffman codes table lookup)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::prev())),
+                ]);
+                [
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    // TODO: Ask about assumption - bit_value is used for FSE state transition only but not related to the actual symbol
+                    // meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+                    meta.query_advice(fse_decoder.num_emitted, Rotation::cur()) - 1.expr(),
+                    meta.query_advice(fse_decoder.symbol, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(huffman_codes_table.table_exprs_canonical_weight(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         // compression_debug
         // meta.lookup_any(
@@ -2788,6 +2790,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 // TODO: Modify to prev -> cur?
+                // compression_debug
                 not::expr(meta.query_fixed(q_enable, Rotation::cur())),
                 sum::expr([
                     meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
@@ -2830,6 +2833,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             literals_header_table,
             bitstring_accumulation_table: bs_acc_table,
             fse_table,
+            huffman_codes_table,
         }
     }
 }
@@ -2842,6 +2846,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         witness_rows: Vec<ZstdWitnessRow<F>>,
         aux_data: Vec<u64>,
         fse_aux_tables: Vec<FseAuxiliaryTableData>,
+        huffman_codes: Vec<HuffmanCodesData>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let mut jump_table_idx: usize = 0;
@@ -2849,6 +2854,8 @@ impl<F: Field> DecompressionCircuitConfig<F> {
 
         self.bitstring_accumulation_table.assign(layouter, &witness_rows)?;
         self.fse_table.assign(layouter, fse_aux_tables)?;
+        self.huffman_codes_table.assign(layouter, huffman_codes)?;
+
 
         layouter.assign_region(
             || "Decompression table region",
@@ -3359,14 +3366,16 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
         let mut witness_rows: Vec<ZstdWitnessRow<F>> = vec![];
         let mut data: Vec<u64> = vec![];
         let mut fse_aux_tables = vec![];
+        let mut huffman_aux_data = vec![];
 
         for idx in 0..self.compressed_frames.len() {
-            let (rows, _decoded_literals, aux_data, f_fse_aux_tables) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
+            let (rows, _decoded_literals, aux_data, f_fse_aux_tables, huffman_codes) = process::<F>(&self.compressed_frames[idx], challenges.keccak_input());
             witness_rows.extend_from_slice(&rows);
             data.extend_from_slice(&aux_data);
             fse_aux_tables.extend_from_slice(&f_fse_aux_tables);
+            huffman_aux_data.extend_from_slice(&huffman_codes);
         }
 
-        config.assign(layouter, witness_rows, data, fse_aux_tables, challenges)
+        config.assign(layouter, witness_rows, data, fse_aux_tables, huffman_aux_data, challenges)
     }
 }

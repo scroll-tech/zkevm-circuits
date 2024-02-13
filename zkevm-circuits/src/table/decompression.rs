@@ -919,7 +919,7 @@ impl<F: Field> HuffmanCodesTable<F> {
     }
 
     /// Load witness to the huffman codes table: dev mode.
-    pub fn dev_load(
+    pub fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
         data: Vec<HuffmanCodesData>,
@@ -932,6 +932,7 @@ impl<F: Field> HuffmanCodesTable<F> {
                 for code in data.iter() {
                     let byte_offset = Value::known(F::from(code.byte_offset));
                     let (max_bitstring_len, sym_map) = code.parse_canonical();
+
                     let max_bitstring_len = Value::known(F::from(max_bitstring_len));
                     let sum_weights = Value::known(F::from(
                         sym_map
