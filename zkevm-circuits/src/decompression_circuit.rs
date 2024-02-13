@@ -2242,33 +2242,40 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         // in that Huffman table. As per the canonical Huffman code representation, we only need to
         // emit N - 1 weights and the weight of the last symbol can be calculated.
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: ZstdBlockHuffmanCode (fse table lookup)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::prev())),
-        //         ]);
-        //         let start = meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur());
-        //         let end = meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur());
-        //         let num_bits = end - start + 1.expr();
-        //         [
-        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //             meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.state, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.symbol, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.baseline, Rotation::cur()),
-        //             num_bits,
-        //         ]
-        //         .into_iter()
-        //         .zip(fse_table.table_exprs_state_check(meta))
-        //         .map(|(value, table)| (condition.expr() * value, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockHuffmanCode (fse table lookup)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    // TODO: # of bits read is determined on the next state
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+                    // not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::prev())),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::next())),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation(2))),
+                ]);
+
+                // TODO: include num_bits in lookup
+                // let start = meta.query_advice(bitstream_decoder.bit_index_start, Rotation(2));
+                // let end = meta.query_advice(bitstream_decoder.bit_index_end, Rotation(2));
+                // let num_bits = end - start + 1.expr();
+
+                [
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()),
+                    meta.query_advice(fse_decoder.state, Rotation::cur()),
+                    meta.query_advice(fse_decoder.symbol, Rotation::cur()),
+                    meta.query_advice(fse_decoder.baseline, Rotation::cur()),
+                    // TODO: a complication of nb representation between reading 0 bit and 1 bit. 
+                    // The bit_start_idx and bit_end_idx for both scenarios are set to the same value.
+                    // num_bits,
+                ]
+                .into_iter()
+                .zip(fse_table.table_exprs_state_check(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         // compression_debug
         // meta.lookup_any(
@@ -3359,7 +3366,7 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
             data.extend_from_slice(&aux_data);
             fse_aux_tables.extend_from_slice(&f_fse_aux_tables);
         }
-        
+
         config.assign(layouter, witness_rows, data, fse_aux_tables, challenges)
     }
 }
