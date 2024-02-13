@@ -1774,12 +1774,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
                 cb.condition(not::expr(is_last.clone()), |cb| {
                     cb.require_equal(
-                        "fse table reconstruction: decoded symbol increments",
-                        meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::cur()),
-                        meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::prev())
-                            + 1.expr(),
-                    );
-                    cb.require_equal(
                         "number of states assigned so far is accumulated correctly",
                         meta.query_advice(fse_decoder.n_acc, Rotation::cur()),
                         meta.query_advice(fse_decoder.n_acc, Rotation::prev())
@@ -1937,37 +1931,38 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: ZstdBlockFseCode (symbol count check)",
-        //     |meta| {
-        //         let (huffman_byte_offset, bit_value, decoded_symbol) = (
-        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
-        //             meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::cur()),
-        //         );
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-        //         ]);
-        //         // The FSE table reconstruction follows a variable bit packing. However we know the
-        //         // start and end bit index for the bitstring that was read. We read a value in the
-        //         // range 0..=R+1 and then subtract 1 from it to get N, i.e. the number of slots
-        //         // that were allocated to that symbol in the FSE table. This is also the count of
-        //         // the symbol in the FseTable.
-        //         [
-        //             huffman_byte_offset,                                           // huffman ID
-        //             meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()), // table size
-        //             decoded_symbol,       // decoded symbol.
-        //             bit_value - 1.expr(), // symbol count
-        //         ]
-        //         .into_iter()
-        //         .zip(fse_table.table_exprs_symbol_count_check(meta))
-        //         .map(|(value, table)| (condition.expr() * value, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockFseCode (symbol count check)",
+            |meta| {
+                let (huffman_byte_offset, bit_value, decoded_symbol) = (
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::cur()),
+                );
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_fse_code, Rotation::cur()),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())), // Exclude huffman header byte
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::prev())), // Exclude accuracy log bits
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::next())), // Exclude trailing bits
+                ]);
+                // The FSE table reconstruction follows a variable bit packing. However we know the
+                // start and end bit index for the bitstring that was read. We read a value in the
+                // range 0..=R+1 and then subtract 1 from it to get N, i.e. the number of slots
+                // that were allocated to that symbol in the FSE table. This is also the count of
+                // the symbol in the FseTable.
+                [
+                    huffman_byte_offset,                                           // huffman ID
+                    meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()), // table size
+                    decoded_symbol,       // decoded symbol.
+                    bit_value - 1.expr(), // symbol count
+                ]
+                .into_iter()
+                .zip(fse_table.table_exprs_symbol_count_check(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         meta.create_gate("DecompressionCircuit: HuffmanTreeSection", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -3364,7 +3359,7 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
             data.extend_from_slice(&aux_data);
             fse_aux_tables.extend_from_slice(&f_fse_aux_tables);
         }
-
+        
         config.assign(layouter, witness_rows, data, fse_aux_tables, challenges)
     }
 }

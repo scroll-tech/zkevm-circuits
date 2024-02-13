@@ -957,9 +957,15 @@ fn process_block_zstd_huffman_code<F: Field>(
 
         last_to_bit_idx = to_bit_idx;
 
+        // compression_debug
+        // if sym > 0 && n_acc < (1 << accuracy_log) {
+        //     // num_emitted += 1;
+        //     decoded = sym as u8;
+        //     n_acc += (*value - 1) as usize;
+        // }
         if sym > 0 && n_acc < (1 << accuracy_log) {
             // num_emitted += 1;
-            decoded = sym as u8;
+            decoded = (sym - 1) as u8;
             n_acc += (*value - 1) as usize;
         }
 
