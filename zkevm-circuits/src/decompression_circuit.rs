@@ -2301,26 +2301,25 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: ZstdBlockHuffmanCode (num symbols in huffman code)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
-        //         ]);
-        //         [
-        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.num_emitted, Rotation::cur()),
-        //             1.expr(), // is_last
-        //         ]
-        //         .into_iter()
-        //         .zip(huffman_codes_table.table_exprs_weights_count(meta))
-        //         .map(|(value, table)| (condition.expr() * value, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockHuffmanCode (num symbols in huffman code)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::next()),
+                ]);
+                [
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    meta.query_advice(fse_decoder.num_emitted, Rotation::cur()),
+                    1.expr(), // is_last
+                ]
+                .into_iter()
+                .zip(huffman_codes_table.table_exprs_weights_count(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         debug_assert!(meta.degree() <= 9);
 
@@ -2855,7 +2854,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         self.bitstring_accumulation_table.assign(layouter, &witness_rows)?;
         self.fse_table.assign(layouter, fse_aux_tables)?;
         self.huffman_codes_table.assign(layouter, huffman_codes)?;
-
 
         layouter.assign_region(
             || "Decompression table region",
