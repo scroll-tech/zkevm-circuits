@@ -1214,17 +1214,17 @@ impl BitstringAccumulationTable {
                 ),
             );
 
-            // TODO: Possibly exclude jump table bytes as they create a gap in byte_idx between
-            // huffman code and lstreams
-            cb.require_equal(
-                "byte2 follows byte2, i.e. byte_idx_2 == byte_idx_1 + 1",
-                meta.query_advice(table.byte_idx_2, Rotation::cur()),
-                meta.query_advice(table.byte_idx_1, Rotation::cur()) + 1.expr(),
-            );
-
             cb.require_boolean(
                 "is_reverse is boolean",
                 meta.query_advice(table.is_reverse, Rotation::cur()),
+            );
+
+            // TODO: Possibly exclude jump table bytes as they create a gap in byte_idx between
+            // huffman code and lstreams
+            cb.require_boolean(
+                "byte2 == byte1 or byte2 == byte1 + 1",
+                meta.query_advice(table.byte_idx_2, Rotation::cur()) -
+                    meta.query_advice(table.byte_idx_1, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -1254,6 +1254,15 @@ impl BitstringAccumulationTable {
                     meta.query_advice(col, Rotation::prev()),
                 );
             }
+
+            let is_last = meta.query_fixed(table.q_first, Rotation::next());
+            cb.condition(is_last, |cb| {
+                cb.require_equal(
+                    "byte_idx_1' == byte_idx_2",
+                    meta.query_advice(table.byte_idx_1, Rotation::next()),
+                    meta.query_advice(table.byte_idx_2, Rotation::cur()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(table.q_enabled, Rotation::cur()),
@@ -1405,7 +1414,7 @@ impl BitstringAccumulationTable {
         layouter: &mut impl Layouter<F>,
         witness_rows: &Vec<ZstdWitnessRow<F>>,
     ) -> Result<(), Error> {
-        assert!(witness_rows.len() > 0);
+        assert!(!witness_rows.is_empty());
 
         // Get the byte at which FSE is described
         let huffman_offset = witness_rows
@@ -1425,20 +1434,13 @@ impl BitstringAccumulationTable {
                     || r.state.tag == ZstdTag::ZstdBlockLstream
             })
             .map(|r| {
-                let is_reverse: u64 = if r.state.tag == ZstdTag::ZstdBlockFseCode
-                    || r.state.tag == ZstdTag::ZstdBlockJumpTable
-                {
-                    0
-                } else {
-                    1
-                };
                 (
                     r.encoded_data.byte_idx as usize,
                     r.encoded_data.value_byte as u64,
-                    r.bitstream_read_data.bit_start_idx as usize,
-                    r.bitstream_read_data.bit_end_idx as usize,
-                    r.bitstream_read_data.bit_value as u64,
-                    is_reverse,
+                    r.bitstream_read_data.bit_start_idx,
+                    r.bitstream_read_data.bit_end_idx,
+                    r.bitstream_read_data.bit_value,
+                    r.state.tag.is_reverse() as u64, // is_reverse
                 )
             })
             .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
@@ -1449,17 +1451,9 @@ impl BitstringAccumulationTable {
             || "Bitstring Accumulation Table",
             |mut region| {
                 let mut offset: usize = 0;
-                for (idx, row) in accumulation_rows.iter().enumerate() {
-                    let next_row = if idx + 1 < accumulation_rows.len() {
-                        let mut candidate_idx = idx + 1;
-                        while accumulation_rows[candidate_idx].0 == row.0 {
-                            candidate_idx += 1;
-                        }
-                        accumulation_rows[candidate_idx]
-                    } else {
-                        (last_row.0 + 1, 0, 0, 0, 0, 0)
-                    };
-
+                for rows in accumulation_rows.windows(2) {
+                    let row = rows[0];
+                    let next_row = rows[1];
                     let byte_1_bits = value_bits_le(row.1 as u8);
                     let byte_2_bits = value_bits_le(next_row.1 as u8);
                     let bits = if row.5 > 0 {
@@ -1477,7 +1471,7 @@ impl BitstringAccumulationTable {
                     let mut acc: u64 = 0;
                     let mut bitstring_len: u64 = 0;
 
-                    for bit_idx in (0..16usize).into_iter() {
+                    for bit_idx in 0..16 {
                         region.assign_fixed(
                             || format!("q_enable"),
                             self.q_enabled,
@@ -1594,41 +1588,36 @@ impl BitstringAccumulationTable {
     }
 }
 
-impl BitstringAccumulationTable {
-    /// Lookup table expressions for a bitsteam completely contained within the bits of a single
-    /// byte in the encoded data.
-    pub fn table_exprs_contained<F: Field>(
-        &self,
-        meta: &mut VirtualCells<F>,
-    ) -> Vec<Expression<F>> {
+impl<F: Field> LookupTable<F> for BitstringAccumulationTable {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            meta.query_advice(self.byte_offset, Rotation::cur()),
-            meta.query_advice(self.byte_idx_1, Rotation::cur()),
-            meta.query_advice(self.byte_1, Rotation::cur()),
-            meta.query_advice(self.bit_value, Rotation::cur()),
-            meta.query_advice(self.bitstring_len, Rotation::cur()),
-            meta.query_fixed(self.bit_index, Rotation::cur()),
-            meta.query_advice(self.from_start, Rotation::cur()),
-            meta.query_advice(self.until_end, Rotation::cur()),
-            meta.query_advice(self.is_reverse, Rotation::cur()),
+            self.byte_offset.into(),
+            self.byte_idx_1.into(),
+            self.byte_idx_2.into(),
+            self.byte_1.into(),
+            self.byte_2.into(),
+            self.bit_value.into(),
+            self.bitstring_len.into(),
+            self.bit_index.into(),
+            self.from_start.into(),
+            self.until_end.into(),
+            self.is_reverse.into(),
         ]
     }
 
-    /// Lookup table expressions for a bitstream that spans over 2 consequtive bytes in the
-    /// encoded data.
-    pub fn table_exprs_spanned<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+    fn annotations(&self) -> Vec<String> {
         vec![
-            meta.query_advice(self.byte_offset, Rotation::cur()),
-            meta.query_advice(self.byte_idx_1, Rotation::cur()),
-            meta.query_advice(self.byte_idx_2, Rotation::cur()),
-            meta.query_advice(self.byte_1, Rotation::cur()),
-            meta.query_advice(self.byte_2, Rotation::cur()),
-            meta.query_advice(self.bit_value, Rotation::cur()),
-            meta.query_advice(self.bitstring_len, Rotation::cur()),
-            meta.query_fixed(self.bit_index, Rotation::cur()),
-            meta.query_advice(self.from_start, Rotation::cur()),
-            meta.query_advice(self.until_end, Rotation::cur()),
-            meta.query_advice(self.is_reverse, Rotation::cur()),
+            String::from("byte_offset"),
+            String::from("byte_idx_1"),
+            String::from("byte_idx_2"),
+            String::from("byte_1"),
+            String::from("byte_2"),
+            String::from("bit_value"),
+            String::from("bitstring_len"),
+            String::from("bit_index"),
+            String::from("from_start"),
+            String::from("until_end"),
+            String::from("is_reverse")
         ]
     }
 }

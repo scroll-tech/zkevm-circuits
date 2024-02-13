@@ -264,7 +264,8 @@ impl ZstdTag {
         }
     }
 
-    fn is_reverse(&self) -> bool {
+    /// Whether this tag is processed in back-to-front order.
+    pub fn is_reverse(&self) -> bool {
         match self {
             Self::Null => false,
             Self::FrameHeaderDescriptor => false,
