@@ -747,13 +747,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             );
 
             // compression_debug
-            // cb.require_equal(
-            //     "value_rlc calculation",
-            //     meta.query_advice(value_rlc, Rotation::cur()),
-            //     meta.query_advice(value_rlc, Rotation::prev())
-            //         * meta.query_advice(tag_gadget.rand_pow_tag_len, Rotation::prev())
-            //         + meta.query_advice(tag_gadget.tag_rlc, Rotation::prev()),
-            // );
+            cb.require_equal(
+                "value_rlc calculation",
+                meta.query_advice(value_rlc, Rotation::cur()),
+                meta.query_advice(value_rlc, Rotation::prev())
+                    * meta.query_advice(tag_gadget.rand_pow_tag_len, Rotation::prev())
+                    + meta.query_advice(tag_gadget.tag_rlc, Rotation::prev()),
+            );
             cb.condition(is_reverse.expr(), |cb| {
                 cb.require_equal(
                     "tag_rlc_acc == tag_rlc on the first row of tag processed back-to-front",
@@ -2859,6 +2859,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
             || "Decompression table region",
             |mut region| {
                 let mut last_byte_idx: usize = 0;
+                let mut value_rlc = Value::known(F::zero());
 
                 for (i, row) in witness_rows.iter().enumerate() {
                     let tag_len = row.state.tag_len as usize;
@@ -2901,11 +2902,17 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.encoded_data.encoded_len)),
                     )?;
+
+                    if i > 0 && row.state.is_tag_change {
+                        let prev_row = &witness_rows[i - 1];
+                        value_rlc = value_rlc * rand_pow[prev_row.state.tag_len as usize] + prev_row.state.tag_rlc;
+                    }
+
                     region.assign_advice(
                         || "value_rlc",
                         self.value_rlc,
                         i,
-                        || row.encoded_data.value_rlc,
+                        || if i == 0 { Value::known(F::zero()) } else { value_rlc },
                     )?;
 
                     // Byte value and bits decomposition
