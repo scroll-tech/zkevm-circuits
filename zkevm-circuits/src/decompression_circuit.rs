@@ -745,8 +745,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 meta.query_advice(tag_gadget.tag_value_acc, Rotation::cur()),
                 meta.query_advice(value_byte, Rotation::cur()),
             );
-
-            // compression_debug
             cb.require_equal(
                 "value_rlc calculation",
                 meta.query_advice(value_rlc, Rotation::cur()),
