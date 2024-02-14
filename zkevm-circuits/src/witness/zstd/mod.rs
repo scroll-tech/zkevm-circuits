@@ -741,9 +741,9 @@ fn process_block_zstd_literals_header<F: Field>(
         BlockType::ZstdCompressedBlock => {
             match size_format {
                 0b00 => [2, 10, 10, 1, 3, 3],
-                0b01 => [2, 10, 10, 4, 3, 3],
-                0b10 => [2, 14, 14, 4, 4, 4],
-                0b11 => [2, 18, 18, 4, 5, 5],
+                0b01 => [2, 10, 10, 4, 3, 4],
+                0b10 => [2, 14, 14, 4, 4, 5],
+                0b11 => [2, 18, 18, 4, 5, 6],
                 _ => unreachable!("size_format out of bound")
             }
         },
@@ -977,9 +977,6 @@ fn process_block_zstd_huffman_code<F: Field>(
         (decoded, from_pos.0 as usize, from_pos.1 as usize, to_pos.0 as usize, to_pos.1 as usize, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone(), 0, n_acc)
     })
     .collect::<Vec<(u8, usize, usize, usize, usize, u64, Value<F>, Value<F>, usize, usize)>>();
-
-    // compression_debug
-    log::trace!("=> bitstream_rows: {:?}", bitstream_rows);
 
     // Add witness rows for FSE representation bytes
     for row in bitstream_rows {

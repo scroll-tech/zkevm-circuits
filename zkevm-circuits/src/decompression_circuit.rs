@@ -1447,30 +1447,30 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         );
 
         // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: lookup for LiteralsHeader decomposition",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
-        //         ]);
-        //         [
-        //             meta.query_advice(value_bits[0], Rotation::cur()), // block type bit0
-        //             meta.query_advice(value_bits[1], Rotation::cur()), // block type bit1
-        //             meta.query_advice(value_bits[2], Rotation::cur()), // size format bit0
-        //             meta.query_advice(value_bits[3], Rotation::cur()), // size format bit1
-        //             meta.query_advice(tag_gadget.tag_len, Rotation::cur()), // num bytes header
-        //             meta.query_advice(lstream_config.lstream_kind, Rotation::cur()), // 1 or 4
-        //             meta.query_advice(literals_header.branch, Rotation::cur()), // branch
-        //             meta.query_advice(literals_header.sf_max, Rotation::cur()), // size format 0b11
-        //         ]
-        //         .into_iter()
-        //         .zip(literals_header_rom_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for LiteralsHeader decomposition",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
+                ]);
+                [
+                    meta.query_advice(value_bits[0], Rotation::cur()), // block type bit0
+                    meta.query_advice(value_bits[1], Rotation::cur()), // block type bit1
+                    meta.query_advice(value_bits[2], Rotation::cur()), // size format bit0
+                    meta.query_advice(value_bits[3], Rotation::cur()), // size format bit1
+                    meta.query_advice(tag_gadget.tag_len, Rotation::cur()), // num bytes header
+                    meta.query_advice(lstream_config.lstream_kind, Rotation::cur()), // 1 or 4
+                    meta.query_advice(literals_header.branch, Rotation::cur()), // branch
+                    meta.query_advice(literals_header.sf_max, Rotation::cur()), // size format 0b11
+                ]
+                .into_iter()
+                .zip(literals_header_rom_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         // TODO: LiteralHeader regen/compr size
         // meta.lookup_any(
