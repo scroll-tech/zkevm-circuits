@@ -26,6 +26,7 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::Field;
+use ff::BitViewSized;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -1484,9 +1485,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         // Which branch are we taking in the literals header decomposition.
         //         let branch = meta.query_advice(literals_header.branch, Rotation::cur());
 
-        // //         // Is it the case of zstd compressed block, i.e. block type == 0b10. Since we
-        // //         // already know that block type == 0b11 (TREELESS) will not occur, we can skip
-        // the //         // check for not::expr(value_bits[7]).
+        //         // Is it the case of zstd compressed block, i.e. block type == 0b10. Since we
+        //         // already know that block type == 0b11 (TREELESS) will not occur, we can skip the
+        //         // check for not::expr(value_bits[7]).
         //         let is_compressed = meta.query_advice(value_bits[6], Rotation::cur());
 
         //         // Is the size format == 0b11.
@@ -1535,9 +1536,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //             byte2,                                        // byte2
         //             byte3,                                        // byte3
         //             byte4,                                        // byte4
-        //             meta.query_advice(literals_header.regen_size, Rotation::cur()), //
-        // regenerated size             meta.query_advice(literals_header.compr_size,
-        // Rotation::cur()), // compressed size         ]
+        //             meta.query_advice(literals_header.regen_size, Rotation::cur()), // regenerated size             
+        //             meta.query_advice(literals_header.compr_size, Rotation::cur()), // compressed size         
+        //         ]
         //         .into_iter()
         //         .zip(literals_header_table.table_exprs(meta))
         //         .map(|(arg, table)| (condition.expr() * arg, table))
@@ -2589,6 +2590,18 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         self.fse_table.assign(layouter, fse_aux_tables)?;
         self.huffman_codes_table.assign(layouter, huffman_codes)?;
 
+        let literal_header_offset = witness_rows.iter().find(|r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader).unwrap().encoded_data.byte_idx;
+        let literal_bytes = witness_rows
+            .iter()
+            .filter(|&r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
+            .map(|r| r.encoded_data.value_byte)
+            .collect::<Vec<u8>>();
+
+        self.literals_header_table.assign(
+            layouter, 
+            &[(literal_header_offset, literal_bytes.as_slice(), aux_data[10], aux_data[4], aux_data[5])],
+        )?;
+
         layouter.assign_region(
             || "Decompression table region",
             |mut region| {
@@ -2929,12 +2942,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         self.literals_header.sf_max,
                         i,
                         || Value::known(F::from(aux_data[11])),
-                    )?;
-                    region.assign_advice(
-                        || "literals_header.regen_size",
-                        self.literals_header.regen_size,
-                        i,
-                        || Value::known(F::from(aux_data[4])),
                     )?;
                     region.assign_advice(
                         || "literals_header.regen_size",

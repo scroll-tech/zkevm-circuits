@@ -1977,7 +1977,7 @@ impl LiteralsHeaderTable {
     }
 
     /// Assign witness to the literals header table.
-    pub fn dev_load<F: Field>(
+    pub fn assign<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         literals_headers: &[(u64, &[u8], u64, u64, u64)], /* (byte_offset, bytes, branch,
