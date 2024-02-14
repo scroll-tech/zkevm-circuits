@@ -74,7 +74,7 @@ According to the [EllipticCurveDigitalSignatureAlgorithm] (ECDSA), the signature
 
 The recovery id `v` is then computed from the parity of the `y` component of the EC point corresponding to `x` component being `r`. The `public_key` can be recovered from `(v,r,s)` and `msg_hash` using `ecrecover`, which further determines the caller address as `caller_address=keccak(public_key)[-20:]` (because this is the way account address is created, which is derived from its public key). Notice that only EOA address can initiate a tx and contract address cannot, because contract address is not calculated from public key but from nonce and EOA address. Also notice that EOA account's private key are elliptic-curve pre-images of public key and are thus hidden, while the public key can be calculated from the private key.
 
-In the Tx Circuit, validation of correct signature is made through lookup to the sig table; validation of correct RLP is made through lookup to the RLP table; and validation of correct has is made through lookup to the Keccak table.
+In the Tx Circuit, validation of correct signature is made through lookup to the sig table; validation of correct RLP is made through lookup to the RLP table; and validation of correct hash is made through lookup to the Keccak table.
 
 
 ## The Purpose of Tx Circuit
@@ -85,14 +85,14 @@ Tx Circuit provides constraints that validates the correctness of a transaction.
 - correctness of `msg_hash` if `tx_type` is `L1Msg`: lookup to RLP table;
 - tx signature via ECDSA done correctly and caller address recovered from ECDSA signature correctly: lookup to sig table;
 - correct transition behavior of tx id, cum_num_txs and call_data_length etc. .
-- some basic constraints such as boolean for some indicator variables etc. .
+- some basic constraints, such as boolean for some indicator variables etc. .
 
 
 ## Circuit Layout and Design
 
-Each transaction's data fields except calldata are listed row-by-row according to tx_tag ([`TxFieldTag`]), then followed by padding txs. After that, each tx's variable-length calldata are listed byte-by-byte (one row per byte). This design of order is mainly because of variable length feature of tx's calldata.
+Each transaction's data fields except calldata are listed row-by-row according to tx_tag ([`TxFieldTag`]), then followed by padding txs. After that, each tx's variable-length calldata are listed byte by byte (one row per byte). This design of order is mainly because of variable length feature of tx's calldata.
 
-Based on the corresponding tx_tag, lookup to different tables maybe triggered. Tx Circuit uses columns `LookupCondition::xx` to determine the kind of lookup if the current row needs to. 
+Based on the corresponding tx_tag, lookup to different tables may be triggered. Tx Circuit uses columns `LookupCondition::xx` to determine the kind of lookup if the current row needs to. 
 
 Some boolean columns are used to reduce the degree of constraint system, such as `is_tag_block_num`, `is_calldata`, `is_caller_address`, `is_chain_id`, `is_l1_msg`.
 
