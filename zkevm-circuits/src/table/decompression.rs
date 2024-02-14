@@ -22,7 +22,8 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::BitwiseOp,
     witness::{
-        FseAuxiliaryTableData, FseSymbol, HuffmanCodesData, TagRomTableRow, ZstdTag, ZstdWitnessRow, N_BITS_SYMBOL, N_MAX_SYMBOLS, value_bits_le,
+        value_bits_le, FseAuxiliaryTableData, FseSymbol, HuffmanCodesData, TagRomTableRow, ZstdTag,
+        ZstdWitnessRow, N_BITS_SYMBOL, N_MAX_SYMBOLS,
     },
 };
 
@@ -1213,16 +1214,17 @@ impl BitstringAccumulationTable {
                 ),
             );
 
-            // TODO: Possibly exclude jump table bytes as they create a gap in byte_idx between huffman code and lstreams
-            cb.require_equal(
-                "byte2 follows byte2, i.e. byte_idx_2 == byte_idx_1 + 1",
-                meta.query_advice(table.byte_idx_2, Rotation::cur()),
-                meta.query_advice(table.byte_idx_1, Rotation::cur()) + 1.expr(),
-            );
-
             cb.require_boolean(
                 "is_reverse is boolean",
                 meta.query_advice(table.is_reverse, Rotation::cur()),
+            );
+
+            // TODO: Possibly exclude jump table bytes as they create a gap in byte_idx between
+            // huffman code and lstreams
+            cb.require_boolean(
+                "byte2 == byte1 or byte2 == byte1 + 1",
+                meta.query_advice(table.byte_idx_2, Rotation::cur()) -
+                    meta.query_advice(table.byte_idx_1, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -1252,6 +1254,15 @@ impl BitstringAccumulationTable {
                     meta.query_advice(col, Rotation::prev()),
                 );
             }
+
+            let is_last = meta.query_fixed(table.q_first, Rotation::next());
+            cb.condition(is_last, |cb| {
+                cb.require_equal(
+                    "byte_idx_1' == byte_idx_2",
+                    meta.query_advice(table.byte_idx_1, Rotation::next()),
+                    meta.query_advice(table.byte_idx_2, Rotation::cur()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(table.q_enabled, Rotation::cur()),
@@ -1398,32 +1409,39 @@ impl BitstringAccumulationTable {
     }
 
     /// Load witness to the table: dev mode.
-    pub fn assign<F: Field>(&self, layouter: &mut impl Layouter<F>, witness_rows: &Vec<ZstdWitnessRow<F>>) -> Result<(), Error> {
-        assert!(witness_rows.len() > 0);
+    pub fn assign<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        witness_rows: &Vec<ZstdWitnessRow<F>>,
+    ) -> Result<(), Error> {
+        assert!(!witness_rows.is_empty());
 
         // Get the byte at which FSE is described
         // TODO: Determining huffman offset in a multi-block scenario.
         let huffman_offset = witness_rows.iter()
             .find(|&r| r.state.tag == ZstdTag::ZstdBlockFseCode)
             .unwrap()
-            .encoded_data.byte_idx;
+            .encoded_data
+            .byte_idx;
 
         // Extract bit accumulation-related info from the rows
-        let accumulation_rows = witness_rows.iter()
+        let accumulation_rows = witness_rows
+            .iter()
             .filter(|&r| {
-                r.state.tag == ZstdTag::ZstdBlockFseCode ||
-                r.state.tag == ZstdTag::ZstdBlockHuffmanCode ||
-                r.state.tag == ZstdTag::ZstdBlockJumpTable ||
-                r.state.tag == ZstdTag::ZstdBlockLstream
+                r.state.tag == ZstdTag::ZstdBlockFseCode
+                    || r.state.tag == ZstdTag::ZstdBlockHuffmanCode
+                    || r.state.tag == ZstdTag::ZstdBlockJumpTable
+                    || r.state.tag == ZstdTag::ZstdBlockLstream
             })
             .map(|r| {
-                let is_reverse: u64 =
-                    if r.state.tag == ZstdTag::ZstdBlockFseCode || r.state.tag == ZstdTag::ZstdBlockJumpTable {
-                        0
-                    } else {
-                        1
-                    };
-                (r.encoded_data.byte_idx as usize, r.encoded_data.value_byte as u64, r.bitstream_read_data.bit_start_idx as usize, r.bitstream_read_data.bit_end_idx as usize, r.bitstream_read_data.bit_value as u64, is_reverse)
+                (
+                    r.encoded_data.byte_idx as usize,
+                    r.encoded_data.value_byte as u64,
+                    r.bitstream_read_data.bit_start_idx,
+                    r.bitstream_read_data.bit_end_idx,
+                    r.bitstream_read_data.bit_value,
+                    r.state.tag.is_reverse() as u64, // is_reverse
+                )
             })
             .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
 
@@ -1433,22 +1451,18 @@ impl BitstringAccumulationTable {
             || "Bitstring Accumulation Table",
             |mut region| {
                 let mut offset: usize = 0;
-                for (idx, row) in accumulation_rows.iter().enumerate() {
-                    let next_row = if idx + 1 < accumulation_rows.len() {
-                        let mut candidate_idx = idx + 1;
-                        while accumulation_rows[candidate_idx].0 == row.0 {
-                            candidate_idx += 1;
-                        }
-                        accumulation_rows[candidate_idx]
-                    } else {
-                        (last_row.0 + 1, 0, 0, 0, 0, 0)
-                    };
-
+                for rows in accumulation_rows.windows(2) {
+                    let row = rows[0];
+                    let next_row = rows[1];
                     let byte_1_bits = value_bits_le(row.1 as u8);
                     let byte_2_bits = value_bits_le(next_row.1 as u8);
                     let bits = if row.5 > 0 {
                         // reversed
-                        [byte_1_bits.into_iter().rev().collect::<Vec<u8>>(), byte_2_bits.into_iter().rev().collect::<Vec<u8>>()].concat()
+                        [
+                            byte_1_bits.into_iter().rev().collect::<Vec<u8>>(),
+                            byte_2_bits.into_iter().rev().collect::<Vec<u8>>(),
+                        ]
+                        .concat()
                     } else {
                         // not reversed
                         [byte_1_bits, byte_2_bits].concat()
@@ -1456,8 +1470,8 @@ impl BitstringAccumulationTable {
 
                     let mut acc: u64 = 0;
                     let mut bitstring_len: u64 = 0;
-    
-                    for bit_idx in (0..16usize).into_iter() {
+
+                    for bit_idx in 0..16 {
                         region.assign_fixed(
                             || format!("q_enable"),
                             self.q_enabled,
@@ -1506,7 +1520,7 @@ impl BitstringAccumulationTable {
                             offset + bit_idx,
                             || Value::known(F::from((bit_idx == 0) as u64)),
                         )?;
-                        
+
                         let bit = bits[bit_idx] as u64;
                         if bit_idx >= row.2 && bit_idx <= row.3 {
                             acc = acc * 2 + bit;
@@ -1567,65 +1581,43 @@ impl BitstringAccumulationTable {
                 )?;
 
                 Ok(())
-            }
+            },
         )?;
-        
-
-
-
-
-
-
-            
-
-
-
-
-
-
-
-
-        
 
         Ok(())
     }
 }
 
-impl BitstringAccumulationTable {
-    /// Lookup table expressions for a bitsteam completely contained within the bits of a single
-    /// byte in the encoded data.
-    pub fn table_exprs_contained<F: Field>(
-        &self,
-        meta: &mut VirtualCells<F>,
-    ) -> Vec<Expression<F>> {
+impl<F: Field> LookupTable<F> for BitstringAccumulationTable {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            meta.query_advice(self.byte_offset, Rotation::cur()),
-            meta.query_advice(self.byte_idx_1, Rotation::cur()),
-            meta.query_advice(self.byte_1, Rotation::cur()),
-            meta.query_advice(self.bit_value, Rotation::cur()),
-            meta.query_advice(self.bitstring_len, Rotation::cur()),
-            meta.query_fixed(self.bit_index, Rotation::cur()),
-            meta.query_advice(self.from_start, Rotation::cur()),
-            meta.query_advice(self.until_end, Rotation::cur()),
-            meta.query_advice(self.is_reverse, Rotation::cur()),
+            self.byte_offset.into(),
+            self.byte_idx_1.into(),
+            self.byte_idx_2.into(),
+            self.byte_1.into(),
+            self.byte_2.into(),
+            self.bit_value.into(),
+            self.bitstring_len.into(),
+            self.bit_index.into(),
+            self.from_start.into(),
+            self.until_end.into(),
+            self.is_reverse.into(),
         ]
     }
 
-    /// Lookup table expressions for a bitstream that spans over 2 consequtive bytes in the
-    /// encoded data.
-    pub fn table_exprs_spanned<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+    fn annotations(&self) -> Vec<String> {
         vec![
-            meta.query_advice(self.byte_offset, Rotation::cur()),
-            meta.query_advice(self.byte_idx_1, Rotation::cur()),
-            meta.query_advice(self.byte_idx_2, Rotation::cur()),
-            meta.query_advice(self.byte_1, Rotation::cur()),
-            meta.query_advice(self.byte_2, Rotation::cur()),
-            meta.query_advice(self.bit_value, Rotation::cur()),
-            meta.query_advice(self.bitstring_len, Rotation::cur()),
-            meta.query_fixed(self.bit_index, Rotation::cur()),
-            meta.query_advice(self.from_start, Rotation::cur()),
-            meta.query_advice(self.until_end, Rotation::cur()),
-            meta.query_advice(self.is_reverse, Rotation::cur()),
+            String::from("byte_offset"),
+            String::from("byte_idx_1"),
+            String::from("byte_idx_2"),
+            String::from("byte_1"),
+            String::from("byte_2"),
+            String::from("bit_value"),
+            String::from("bitstring_len"),
+            String::from("bit_index"),
+            String::from("from_start"),
+            String::from("until_end"),
+            String::from("is_reverse")
         ]
     }
 }
@@ -1635,7 +1627,7 @@ impl BitstringAccumulationTable {
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum LiteralsHeaderBranch {
     /// Raw/RLE block type with size_format 00 or 10.
-    RawRle0,
+    RawRle0 = 0,
     /// Raw/RLE block type with size format 10.
     RawRle1,
     /// Raw/RLE block type with size format 11.
@@ -1649,6 +1641,20 @@ pub enum LiteralsHeaderBranch {
 }
 
 impl_expr!(LiteralsHeaderBranch);
+
+impl From<u64> for LiteralsHeaderBranch {
+    fn from(value: u64) -> Self {
+        match value {
+            0 => Self::RawRle0,
+            1 => Self::RawRle1,
+            2 => Self::RawRle2,
+            3 => Self::Compressed0,
+            4 => Self::Compressed1,
+            5 => Self::Compressed2,
+            _ => unreachable!("LiteralsHeaderBranch only from 0..=5"),
+        }
+    }
+}
 
 impl From<LiteralsHeaderBranch> for usize {
     fn from(value: LiteralsHeaderBranch) -> Self {
@@ -1966,15 +1972,54 @@ impl LiteralsHeaderTable {
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        literals_headers: Vec<Vec<u8>>,
+        literals_headers: &[(u64, &[u8], u64, u64, u64)], /* (byte_offset, bytes, branch,
+                                                           * regen_size, compr_size) */
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "LiteralsHeaderTable",
-            |_region| {
-                for (_i, header) in literals_headers.iter().enumerate() {
-                    let _n_bytes_header = header.len();
-                    // TODO: make the appropriate assignment.
+            |mut region| {
+                for (offset, &(byte_offset, header, branch, regen_size, compr_size)) in
+                    literals_headers.iter().enumerate()
+                {
+                    assert!(header.len() <= 5);
+                    let [byte0, byte1, byte2, byte3, byte4] = [0, 1, 2, 3, 4]
+                        .map(|i| header.get(i).cloned().map_or(0u64, |byte| byte as u64));
+                    region.assign_fixed(
+                        || "q_enable",
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                    for (col, value, annotation) in [
+                        (self.byte_offset, byte_offset, "byte_offset"),
+                        (self.branch, branch, "branch"),
+                        (self.byte0, byte0, "byte0"),
+                        (self.byte1, byte1, "byte1"),
+                        (self.byte2, byte2, "byte2"),
+                        (self.byte3, byte3, "byte3"),
+                        (self.byte4, byte4, "byte4"),
+                        (self.byte0_rs_3, byte0 >> 3, "byte0_rs_3"),
+                        (self.byte0_rs_4, byte0 >> 4, "byte0_rs_4"),
+                        (self.byte1_rs_6, byte1 >> 6, "byte1_rs_6"),
+                        (self.byte1_and_63, byte1 & 63, "byte1_and_63"),
+                        (self.byte2_rs_2, byte2 >> 2, "byte2_rs_2"),
+                        (self.byte2_rs_6, byte2 >> 6, "byte2_rs_6"),
+                        (self.byte2_and_3, byte2 & 3, "byte2_and_3"),
+                        (self.byte2_and_63, byte2 & 63, "byte2_and_63"),
+                        (self.regen_size, regen_size, "regen_size"),
+                        (self.compr_size, compr_size, "compr_size"),
+                    ] {
+                        region.assign_advice(
+                            || annotation,
+                            col,
+                            offset,
+                            || Value::known(F::from(value)),
+                        )?;
+                    }
+                    let branch_chip = BinaryNumberChip::construct(self.branch_bits);
+                    branch_chip.assign(&mut region, offset, &LiteralsHeaderBranch::from(branch))?;
                 }
+
                 Ok(())
             },
         )
