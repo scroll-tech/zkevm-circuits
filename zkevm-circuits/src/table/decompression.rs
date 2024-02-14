@@ -1402,6 +1402,7 @@ impl BitstringAccumulationTable {
         assert!(witness_rows.len() > 0);
 
         // Get the byte at which FSE is described
+        // TODO: Determining huffman offset in a multi-block scenario.
         let huffman_offset = witness_rows.iter()
             .find(|&r| r.state.tag == ZstdTag::ZstdBlockFseCode)
             .unwrap()
