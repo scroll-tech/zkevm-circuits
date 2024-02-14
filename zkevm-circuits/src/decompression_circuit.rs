@@ -3114,7 +3114,8 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     )?;
                 }
 
-                // TODO: Should assign sequence section. Dummy row for sequencing section header as of now
+                // TODO: Should assign sequence section. Dummy row for sequencing section header as
+                // of now
                 region.assign_advice(
                     || "byte_idx",
                     self.byte_idx,
