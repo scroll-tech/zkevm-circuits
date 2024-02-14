@@ -15,7 +15,7 @@ use crate::{
             BitstringAccumulationTable, BlockTypeRomTable, FseTable, HuffmanCodesTable,
             LiteralsHeaderRomTable, LiteralsHeaderTable, TagRomTable,
         },
-        BitwiseOpTable, KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table,
+        BitwiseOpTable, KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
@@ -26,7 +26,6 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::Field;
-use ff::BitViewSized;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
@@ -2621,7 +2620,6 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         huffman_codes: Vec<HuffmanCodesData>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let mut jump_table_idx: usize = 0;
         let mut rand_pow: Vec<Value<F>> = vec![Value::known(F::one())];
 
         self.bitstring_accumulation_table
@@ -2665,7 +2663,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     last_byte_idx = row.encoded_data.byte_idx as usize;
 
                     while tag_len >= rand_pow.len() {
-                        let tail = rand_pow.last().expect("Tail exists").clone();
+                        let tail = *rand_pow.last().expect("Tail exists");
                         rand_pow.push(tail * challenges.keccak_input());
                     }
 
@@ -2828,13 +2826,13 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || "tag_gadget.tag_idx",
                         self.tag_gadget.tag_idx,
                         i,
-                        || Value::known(F::from(row.state.tag_idx as u64)),
+                        || Value::known(F::from(row.state.tag_idx)),
                     )?;
                     region.assign_advice(
                         || "tag_gadget.tag_len",
                         self.tag_gadget.tag_len,
                         i,
-                        || Value::known(F::from(row.state.tag_len as u64)),
+                        || Value::known(F::from(row.state.tag_len)),
                     )?;
                     region.assign_advice(
                         || "tag_gadget.is_reverse",
@@ -2901,12 +2899,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     )?;
 
                     let max_tag_len = row.state.max_tag_len;
-                    let mlen_lt_0x20_chip = LtChip::construct(self.tag_gadget.mlen_lt_0x20.clone());
+                    let mlen_lt_0x20_chip = LtChip::construct(self.tag_gadget.mlen_lt_0x20);
                     mlen_lt_0x20_chip.assign(
                         &mut region,
                         i,
                         F::from(max_tag_len),
-                        F::from(0x20 as u64),
+                        F::from(0x20),
                     )?;
 
                     let is_block_header = (row.state.tag == ZstdTag::BlockHeader) as u64;
@@ -3049,7 +3047,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || "bitstream_decoder.bit_value",
                         self.bitstream_decoder.bit_value,
                         i,
-                        || Value::known(F::from(row.bitstream_read_data.bit_value as u64)),
+                        || Value::known(F::from(row.bitstream_read_data.bit_value)),
                     )?;
                     region.assign_advice(
                         || "bitstream_decoder.is_nil",
@@ -3092,19 +3090,19 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || "fse_decoder.state",
                         self.fse_decoder.state,
                         i,
-                        || Value::known(F::from(row.fse_data.state as u64)),
+                        || Value::known(F::from(row.fse_data.state)),
                     )?;
                     region.assign_advice(
                         || "fse_decoder.baseline",
                         self.fse_decoder.baseline,
                         i,
-                        || Value::known(F::from(row.fse_data.baseline as u64)),
+                        || Value::known(F::from(row.fse_data.baseline)),
                     )?;
                     region.assign_advice(
                         || "fse_decoder.symbol",
                         self.fse_decoder.symbol,
                         i,
-                        || Value::known(F::from(row.fse_data.symbol as u64)),
+                        || Value::known(F::from(row.fse_data.symbol)),
                     )?;
 
                     // Lstream Config

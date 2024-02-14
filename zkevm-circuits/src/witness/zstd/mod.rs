@@ -36,8 +36,7 @@ const TAG_MAX_LEN: [(ZstdTag, u64); 13] = [
 fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
     TAG_MAX_LEN
         .iter()
-        .filter(|record| record.0 == tag)
-        .next()
+        .find(|record| record.0 == tag)
         .unwrap()
         .1
 }
@@ -129,8 +128,6 @@ fn process_frame_header<F: Field>(
         .last()
         .expect("FrameContentSize bytes expected");
     let aux_2 = fhd_value_rlc;
-
-    let value_rlc_fcs = fhd_value_rlc * randomness + fhd_value_rlc;
 
     (
         byte_offset + 1 + fcs_tag_len,
@@ -571,7 +568,7 @@ fn process_block_raw<F: Field>(
         table_size: 0,
         sym_to_states: BTreeMap::default(),
     };
-    let mut huffman_weights = HuffmanCodesData {
+    let huffman_weights = HuffmanCodesData {
         byte_offset: 0,
         weights: vec![],
     };
@@ -624,7 +621,7 @@ fn process_block_rle<F: Field>(
         table_size: 0,
         sym_to_states: BTreeMap::default(),
     };
-    let mut huffman_weights = HuffmanCodesData {
+    let huffman_weights = HuffmanCodesData {
         byte_offset: 0,
         weights: vec![],
     };
@@ -776,11 +773,12 @@ fn process_block_zstd<F: Field>(
 
             let mut literals: Vec<u64> = vec![];
 
-            for idx in 0..n_streams {
+            // for idx in 0..n_streams {
+            for (idx, l_len) in lstream_lens.iter().enumerate().take(n_streams) {
                 let (byte_offset, rows, symbols) = process_block_zstd_lstream(
                     src,
                     stream_offset,
-                    lstream_lens[idx] as usize,
+                    *l_len as usize,
                     huffman_rows.last().expect("last row should exist"),
                     randomness,
                     idx,
@@ -1017,9 +1015,9 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag: ZstdTag::ZstdBlockFseCode,
             tag_next,
             max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockFseCode),
-            tag_len: 0 as u64, /* There's no information at this point about the length of FSE
+            tag_len: 0_u64, /* There's no information at this point about the length of FSE
                                 * table bytes. So this value has to be modified later. */
-            tag_idx: 1 as u64,
+            tag_idx: 1_u64,
             tag_value: Value::default(), // Must be changed after FSE table length is known
             tag_value_acc: Value::default(), // Must be changed after FSE table length is known
             is_tag_change: true,
@@ -1029,7 +1027,7 @@ fn process_block_zstd_huffman_code<F: Field>(
         encoded_data: EncodedData {
             byte_idx: (byte_offset + 1) as u64,
             encoded_len,
-            value_byte: header_byte.clone(),
+            value_byte: header_byte,
             value_rlc,
             reverse: false,
             ..Default::default()
@@ -1047,7 +1045,7 @@ fn process_block_zstd_huffman_code<F: Field>(
 
     // Recover the FSE table for generating Huffman weights
     let (n_fse_bytes, bit_boundaries, table) =
-        FseAuxiliaryTableData::reconstruct(&src, byte_offset + 1)
+        FseAuxiliaryTableData::reconstruct(src, byte_offset + 1)
             .expect("Reconstructing FSE table should not fail.");
 
     // Witness generation
@@ -1128,8 +1126,8 @@ fn process_block_zstd_huffman_code<F: Field>(
                 to_pos.0 as usize,
                 to_pos.1 as usize,
                 value.clone(),
-                current_tag_value_acc.clone(),
-                current_tag_rlc_acc.clone(),
+                current_tag_value_acc,
+                current_tag_rlc_acc,
                 0,
                 n_acc,
             )
@@ -1156,7 +1154,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockFseCode),
                 tag_len: (n_fse_bytes + 1) as u64,
                 tag_idx: (row.1 + 1) as u64, // count the huffman header byte
-                tag_value: tag_value,
+                tag_value,
                 tag_value_acc: row.6,
                 is_tag_change: false,
                 tag_rlc,
@@ -1270,8 +1268,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let aux_1 = next_value_rlc_acc.clone();
     let aux_2 = witness_rows[witness_rows.len() - 1]
         .encoded_data
-        .value_rlc
-        .clone();
+        .value_rlc;
 
     let mut padding_end_idx: usize = 0;
     while huffman_bitstream[padding_end_idx] == 0 {
@@ -1285,8 +1282,8 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag_next,
             max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockHuffmanCode),
             tag_len: n_huffman_code_bytes as u64,
-            tag_idx: 1 as u64,
-            tag_value: tag_value,
+            tag_idx: 1_u64,
+            tag_value,
             tag_value_acc: next_tag_value_acc,
             is_tag_change: true,
             tag_rlc,
@@ -1303,7 +1300,6 @@ fn process_block_zstd_huffman_code<F: Field>(
             reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
             aux_1,
             aux_2,
-            ..Default::default()
         },
         bitstream_read_data: BitstreamReadRow {
             bit_value: 1u64,
@@ -1357,7 +1353,7 @@ fn process_block_zstd_huffman_code<F: Field>(
 
         // Lookup the FSE table row for the state
         let fse_row = fse_state_table
-            .get(&(next_state as u64))
+            .get(&{ next_state })
             .expect("next state should be in fse table");
 
         // Decode the symbol
@@ -1372,7 +1368,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockHuffmanCode),
                 tag_len: (n_huffman_code_bytes) as u64,
                 tag_idx: current_byte_idx as u64,
-                tag_value: tag_value,
+                tag_value,
                 tag_value_acc: next_tag_value_acc,
                 is_tag_change: false,
                 tag_rlc,
@@ -1389,7 +1385,6 @@ fn process_block_zstd_huffman_code<F: Field>(
                 reverse_idx: (n_huffman_code_bytes - (current_byte_idx - 1)) as u64,
                 aux_1,
                 aux_2,
-                ..Default::default()
             },
             bitstream_read_data: BitstreamReadRow {
                 bit_value: bitstring_value,
@@ -1399,7 +1394,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             },
             fse_data: FseTableRow {
                 idx: fse_table_idx,
-                state: next_state as u64,
+                state: next_state,
                 symbol: fse_row.0,
                 baseline: fse_row.1,
                 num_bits: fse_row.2,
@@ -1637,7 +1632,7 @@ fn process_block_zstd_lstream<F: Field>(
 
     // Decide the next tag
     let tag_next = match stream_idx {
-        0 | 1 | 2 => ZstdTag::ZstdBlockLstream,
+        0..=2 => ZstdTag::ZstdBlockLstream,
         3 => ZstdTag::ZstdBlockSequenceHeader,
         _ => unreachable!("stream_idx value out of range"),
     };
@@ -1648,7 +1643,6 @@ fn process_block_zstd_lstream<F: Field>(
     }
 
     let mut next_tag_value_acc = tag_value_acc.next().unwrap();
-    let mut next_value_rlc_acc = value_rlc_acc.next().unwrap();
     let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
 
     // Add a witness row for leading 0s and sentinel 1-bit
@@ -1659,7 +1653,7 @@ fn process_block_zstd_lstream<F: Field>(
             max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockLstream),
             tag_len: len as u64,
             tag_idx: current_byte_idx as u64,
-            tag_value: tag_value,
+            tag_value,
             tag_value_acc: next_tag_value_acc,
             is_tag_change: true,
             tag_rlc,
@@ -1676,18 +1670,17 @@ fn process_block_zstd_lstream<F: Field>(
             reverse_idx: (len - (current_byte_idx - 1)) as u64,
             aux_1,
             aux_2: tag_value,
-            ..Default::default()
         },
         huffman_data: HuffmanData {
             byte_offset: huffman_code_byte_offset as u64,
             bit_value: 1u8,
-            stream_idx: stream_idx,
+            stream_idx,
             k: (0, padding_end_idx as u8),
         },
         bitstream_read_data: BitstreamReadRow {
             bit_value: 1u64,
             bit_start_idx: 0usize,
-            bit_end_idx: padding_end_idx as usize,
+            bit_end_idx: padding_end_idx,
             is_zero_bit_read: false,
         },
         decoded_data: DecodedData {
@@ -1710,7 +1703,6 @@ fn process_block_zstd_lstream<F: Field>(
     // Update accumulator
     if current_byte_idx > last_byte_idx {
         next_tag_value_acc = tag_value_acc.next().unwrap();
-        next_value_rlc_acc = value_rlc_acc.next().unwrap();
         next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
         last_byte_idx = current_byte_idx;
     }
@@ -1723,10 +1715,9 @@ fn process_block_zstd_lstream<F: Field>(
 
     while current_bit_idx < len * N_BITS_PER_BYTE {
         if huffman_bitstring_map.contains_key(bitstring_acc.as_str()) {
-            let sym = huffman_bitstring_map
+            let sym = *huffman_bitstring_map
                 .get(bitstring_acc.as_str())
-                .unwrap()
-                .clone();
+                .unwrap();
             decoded_symbols.push(sym);
 
             let from_byte_idx = current_byte_idx;
@@ -1772,18 +1763,17 @@ fn process_block_zstd_lstream<F: Field>(
                     reverse_idx: (len - from_byte_idx + 1) as u64,
                     aux_1,
                     aux_2: tag_value,
-                    ..Default::default()
                 },
                 huffman_data: HuffmanData {
                     byte_offset: huffman_code_byte_offset as u64,
                     bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap(),
-                    stream_idx: stream_idx,
+                    stream_idx,
                     k: (from_bit_idx.rem_euclid(8) as u8, end_bit_idx as u8),
                 },
                 bitstream_read_data: BitstreamReadRow {
                     bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap() as u64,
-                    bit_start_idx: from_bit_idx.rem_euclid(8) as usize,
-                    bit_end_idx: end_bit_idx as usize,
+                    bit_start_idx: from_bit_idx.rem_euclid(8),
+                    bit_end_idx: end_bit_idx,
                     is_zero_bit_read: false,
                 },
                 decoded_data: DecodedData {
@@ -1799,7 +1789,6 @@ fn process_block_zstd_lstream<F: Field>(
             // Update accumulator
             if current_byte_idx > last_byte_idx && current_byte_idx <= len {
                 next_tag_value_acc = tag_value_acc.next().unwrap();
-                next_value_rlc_acc = value_rlc_acc.next().unwrap();
                 next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
                 last_byte_idx = current_byte_idx;
             }
@@ -1809,9 +1798,9 @@ fn process_block_zstd_lstream<F: Field>(
             cur_bitstring_len = 0;
         } else {
             if lstream_bits[current_bit_idx + cur_bitstring_len] > 0 {
-                bitstring_acc.push_str("1");
+                bitstring_acc.push('1');
             } else {
-                bitstring_acc.push_str("0");
+                bitstring_acc.push('0');
             }
             cur_bitstring_len += 1;
 
@@ -1972,7 +1961,7 @@ mod tests {
             encoder.finish()?
         };
 
-        let (_witness_rows, _decoded_literals, _aux_data, fse_aux_tables, huffman_codes) =
+        let (_witness_rows, _decoded_literals, _aux_data, _fse_aux_tables, _huffman_codes) =
             process::<Fr>(&compressed, Value::known(Fr::from(123456789)));
 
         Ok(())
@@ -2001,7 +1990,7 @@ mod tests {
             _fse_size,
             _fse_accuracy,
             _n_huffman_bitstream_bytes,
-            fse_aux_data,
+            _fse_aux_data,
         ) = process_block_zstd_huffman_code::<Fr>(
             &input,
             0,
@@ -2018,7 +2007,7 @@ mod tests {
             5, 3, 1, 3, 1, 3,
         ]
         .into_iter()
-        .map(|w| FseSymbol::from(w))
+        .map(FseSymbol::from)
         .collect::<Vec<FseSymbol>>();
 
         assert_eq!(
@@ -2043,7 +2032,7 @@ mod tests {
                 2, 0, 4, 4, 5, 3, 1, 3, 1, 3,
             ]
             .into_iter()
-            .map(|w| FseSymbol::from(w))
+            .map(FseSymbol::from)
             .collect::<Vec<FseSymbol>>(),
         };
 
@@ -2129,7 +2118,7 @@ mod tests {
             0x4e, 0x53, 0xa5, 0x06, 0x82, 0x14, 0x95, 0x51,
         ];
 
-        let (_witness_rows, decoded_literals, _aux_data, fse_aux_tables, huffman_codes) =
+        let (_witness_rows, decoded_literals, _aux_data, _fse_aux_tables, _huffman_codes) =
             process::<Fr>(&encoded, Value::known(Fr::from(123456789)));
 
         let decoded_literal_string: String = decoded_literals

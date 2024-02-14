@@ -474,7 +474,7 @@ impl HuffmanCodesData {
 
     /// parse bit string map
     pub fn parse_bitstring_map(&self) -> ParsedCanonicalHuffmanCodeBitstringMap {
-        let mut weights: Vec<usize> = self.weights.iter().map(|w| w.clone() as usize).collect();
+        let mut weights: Vec<usize> = self.weights.iter().map(|w| *w as usize).collect();
         let sum_weights: usize = weights
             .iter()
             .filter_map(|&w| if w > 0 { Some(1 << (w - 1)) } else { None })
@@ -816,7 +816,7 @@ mod tests {
             5, 3, 1, 3, 1, 3,
         ]
         .into_iter()
-        .map(|w| FseSymbol::from(w))
+        .map(FseSymbol::from)
         .collect::<Vec<FseSymbol>>();
 
         let huffman_codes_data = HuffmanCodesData {

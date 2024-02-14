@@ -1412,7 +1412,7 @@ impl BitstringAccumulationTable {
     pub fn assign<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        witness_rows: &Vec<ZstdWitnessRow<F>>,
+        witness_rows: &[ZstdWitnessRow<F>],
     ) -> Result<(), Error> {
         assert!(!witness_rows.is_empty());
 
@@ -1446,8 +1446,6 @@ impl BitstringAccumulationTable {
             })
             .collect::<Vec<(usize, u64, usize, usize, u64, u64)>>();
 
-        let last_row = accumulation_rows.last().expect("Last row expected");
-
         layouter.assign_region(
             || "Bitstring Accumulation Table",
             |mut region| {
@@ -1473,102 +1471,101 @@ impl BitstringAccumulationTable {
                     let mut acc: u64 = 0;
                     let mut bitstring_len: u64 = 0;
 
-                    for bit_idx in 0..16 {
+                    for (bit_idx, bit) in bits.into_iter().enumerate().take(16) {
                         region.assign_fixed(
-                            || format!("q_enable"),
+                            || "q_enable",
                             self.q_enabled,
                             offset + bit_idx,
                             || Value::known(F::one()),
                         )?;
                         region.assign_advice(
-                            || format!("byte_offset"),
+                            || "byte_offset",
                             self.byte_offset,
                             offset + bit_idx,
                             || Value::known(F::from(huffman_offset)),
                         )?;
                         region.assign_advice(
-                            || format!("byte_idx_1"),
+                            || "byte_idx_1",
                             self.byte_idx_1,
                             offset + bit_idx,
                             || Value::known(F::from(row.0 as u64)),
                         )?;
                         region.assign_advice(
-                            || format!("byte_idx_2"),
+                            || "byte_idx_2",
                             self.byte_idx_2,
                             offset + bit_idx,
                             || Value::known(F::from(next_row.0 as u64)),
                         )?;
                         region.assign_advice(
-                            || format!("byte_1"),
+                            || "byte_1",
                             self.byte_1,
                             offset + bit_idx,
-                            || Value::known(F::from(row.1 as u64)),
+                            || Value::known(F::from(row.1)),
                         )?;
                         region.assign_advice(
-                            || format!("byte_2"),
+                            || "byte_2",
                             self.byte_2,
                             offset + bit_idx,
-                            || Value::known(F::from(next_row.1 as u64)),
+                            || Value::known(F::from(next_row.1)),
                         )?;
                         region.assign_fixed(
-                            || format!("bit_index"),
+                            || "bit_index",
                             self.bit_index,
                             offset + bit_idx,
                             || Value::known(F::from(bit_idx as u64)),
                         )?;
                         region.assign_fixed(
-                            || format!("q_first"),
+                            || "q_first",
                             self.q_first,
                             offset + bit_idx,
                             || Value::known(F::from((bit_idx == 0) as u64)),
                         )?;
 
-                        let bit = bits[bit_idx] as u64;
                         if bit_idx >= row.2 && bit_idx <= row.3 {
-                            acc = acc * 2 + bit;
+                            acc = acc * 2 + (bit as u64);
                             bitstring_len += 1;
                         }
                         region.assign_advice(
-                            || format!("bit"),
+                            || "bit",
                             self.bit,
                             offset + bit_idx,
-                            || Value::known(F::from(bit)),
+                            || Value::known(F::from(bit as u64)),
                         )?;
                         region.assign_advice(
-                            || format!("bit_value_acc"),
+                            || "bit_value_acc",
                             self.bit_value_acc,
                             offset + bit_idx,
                             || Value::known(F::from(acc)),
                         )?;
                         region.assign_advice(
-                            || format!("bit_value"),
+                            || "bit_value",
                             self.bit_value,
                             offset + bit_idx,
                             || Value::known(F::from(row.4)),
                         )?;
                         region.assign_advice(
-                            || format!("bitstring_len"),
+                            || "bitstring_len",
                             self.bitstring_len,
                             offset + bit_idx,
                             || Value::known(F::from(bitstring_len)),
                         )?;
                         region.assign_advice(
-                            || format!("from_start"),
+                            || "from_start",
                             self.from_start,
                             offset + bit_idx,
                             || Value::known(F::from((bit_idx <= row.3) as u64)),
                         )?;
                         region.assign_advice(
-                            || format!("until_end"),
+                            || "until_end",
                             self.until_end,
                             offset + bit_idx,
                             || Value::known(F::from((bit_idx >= row.2) as u64)),
                         )?;
                         region.assign_advice(
-                            || format!("is_reverse"),
+                            || "is_reverse",
                             self.is_reverse,
                             offset + bit_idx,
-                            || Value::known(F::from(row.5 as u64)),
+                            || Value::known(F::from(row.5)),
                         )?;
                     }
 
@@ -1577,13 +1574,13 @@ impl BitstringAccumulationTable {
                 }
 
                 region.assign_fixed(
-                    || format!("q_first"),
+                    || "q_first",
                     self.q_first,
                     offset,
                     || Value::known(F::one()),
                 )?;
                 region.assign_advice(
-                    || format!("byte_idx_1"),
+                    || "byte_idx_1",
                     self.byte_idx_1,
                     offset,
                     || Value::known(F::from(last_byte_idx as u64)),

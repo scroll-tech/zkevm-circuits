@@ -121,8 +121,8 @@ pub fn le_bits_to_value(bits: &[u8]) -> u64 {
     assert!(bits.len() <= 32);
     let mut m: u64 = 1;
 
-    bits.into_iter().fold(0, |mut acc, b| {
-        acc = acc + (*b as u64) * m;
+    bits.iter().fold(0, |mut acc, b| {
+        acc += (*b as u64) * m;
         m *= 2;
         acc
     })
@@ -131,7 +131,7 @@ pub fn le_bits_to_value(bits: &[u8]) -> u64 {
 pub fn be_bits_to_value(bits: &[u8]) -> u64 {
     assert!(bits.len() <= 32);
 
-    bits.into_iter().fold(0, |mut acc, b| {
+    bits.iter().fold(0, |mut acc, b| {
         acc = acc * 2 + *b as u64;
         acc
     })
