@@ -2028,9 +2028,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]);
                 [
                     meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-                    // TODO: Ask about assumption - bit_value is used for FSE state transition only
-                    // but not related to the actual symbol
-                    // meta.query_advice(bitstream_decoder.bit_value, Rotation::cur()),
                     meta.query_advice(fse_decoder.num_emitted, Rotation::cur()) - 1.expr(),
                     meta.query_advice(fse_decoder.symbol, Rotation::cur()),
                 ]
