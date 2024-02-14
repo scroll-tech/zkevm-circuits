@@ -1465,7 +1465,6 @@ fn process_block_zstd_lstream<F: Field>(
     while lstream_bits[padding_end_idx] == 0 {
         padding_end_idx += 1;
     }
-    padding_end_idx += 1;
 
     let mut next_tag_value_acc = tag_value_acc.next().unwrap();
     let mut next_value_rlc_acc = value_rlc_acc.next().unwrap();

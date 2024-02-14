@@ -1451,6 +1451,7 @@ impl BitstringAccumulationTable {
             || "Bitstring Accumulation Table",
             |mut region| {
                 let mut offset: usize = 0;
+                let mut last_byte_idx: usize = 0;
                 for rows in accumulation_rows.windows(2) {
                     let row = rows[0];
                     let next_row = rows[1];
@@ -1571,6 +1572,7 @@ impl BitstringAccumulationTable {
                     }
 
                     offset += 16;
+                    last_byte_idx = next_row.0;
                 }
 
                 region.assign_fixed(
@@ -1578,6 +1580,12 @@ impl BitstringAccumulationTable {
                     self.q_first,
                     offset,
                     || Value::known(F::one()),
+                )?;
+                region.assign_advice(
+                    || format!("byte_idx_1"),
+                    self.byte_idx_1,
+                    offset,
+                    || Value::known(F::from(last_byte_idx as u64)),
                 )?;
 
                 Ok(())
