@@ -542,7 +542,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             // Boolean columns.
-            for col in [is_padding, block_gadget.is_last_block, bitstream_decoder.is_nil] {
+            for col in [
+                is_padding,
+                block_gadget.is_last_block,
+                bitstream_decoder.is_nil,
+            ] {
                 cb.require_boolean(
                     "Boolean column check",
                     meta.query_advice(col, Rotation::cur()),
@@ -1486,8 +1490,8 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //         let branch = meta.query_advice(literals_header.branch, Rotation::cur());
 
         //         // Is it the case of zstd compressed block, i.e. block type == 0b10. Since we
-        //         // already know that block type == 0b11 (TREELESS) will not occur, we can skip the
-        //         // check for not::expr(value_bits[7]).
+        //         // already know that block type == 0b11 (TREELESS) will not occur, we can skip
+        // the         // check for not::expr(value_bits[7]).
         //         let is_compressed = meta.query_advice(value_bits[6], Rotation::cur());
 
         //         // Is the size format == 0b11.
@@ -1536,9 +1540,9 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         //             byte2,                                        // byte2
         //             byte3,                                        // byte3
         //             byte4,                                        // byte4
-        //             meta.query_advice(literals_header.regen_size, Rotation::cur()), // regenerated size             
-        //             meta.query_advice(literals_header.compr_size, Rotation::cur()), // compressed size         
-        //         ]
+        //             meta.query_advice(literals_header.regen_size, Rotation::cur()), //
+        // regenerated size             meta.query_advice(literals_header.compr_size,
+        // Rotation::cur()), // compressed size         ]
         //         .into_iter()
         //         .zip(literals_header_table.table_exprs(meta))
         //         .map(|(arg, table)| (condition.expr() * arg, table))
@@ -2352,10 +2356,10 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 1.expr(), // until_end
                 meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
             ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
+            .into_iter()
+            .zip(bs_acc_table.table_exprs(meta))
+            .map(|(value, table)| (condition.expr() * value, table))
+            .collect()
         });
         meta.lookup_any("DecompressionCircuit: bitstring (end)", |meta| {
             let condition = and::expr([
@@ -2392,10 +2396,10 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 1.expr(), // until_end
                 meta.query_advice(tag_gadget.is_reverse, Rotation::cur()),
             ]
-                .into_iter()
-                .zip(bs_acc_table.table_exprs(meta))
-                .map(|(value, table)| (condition.expr() * value, table))
-                .collect()
+            .into_iter()
+            .zip(bs_acc_table.table_exprs(meta))
+            .map(|(value, table)| (condition.expr() * value, table))
+            .collect()
         });
         meta.create_gate("DecompressionCircuit: bitstream reader", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -2446,7 +2450,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 and::expr([is_not_last.expr(), bitstream_decoder.is_spanned(meta, None)]);
             // if bitstring is strictly contained.
             cb.condition(is_strictly_contained, |cb| {
-                // TODO: Take into account a FSE transition row can read 0 bit
                 cb.require_equal(
                     "strictly contained bitstring: bit_index_start",
                     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
@@ -2461,9 +2464,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
 
             // if bitstring is byte-aligned.
             cb.condition(is_byte_aligned, |cb| {
-                // TODO: Take into account a FSE transition row can read 0 bit
-                // In this case, last row ends at bit_idx 7, then the next row also starts with
-                // bit_idx 7 on the same byte_idx
                 cb.require_equal(
                     "byte-aligned bitstring: bit_index_start",
                     meta.query_advice(bitstream_decoder.bit_index_start, Rotation::next()),
@@ -2590,17 +2590,29 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         self.fse_table.assign(layouter, fse_aux_tables)?;
         self.huffman_codes_table.assign(layouter, huffman_codes)?;
 
-        let literal_header_offset = witness_rows.iter().find(|r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader).unwrap().encoded_data.byte_idx;
-        let literal_bytes = witness_rows
-            .iter()
-            .filter(|&r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
-            .map(|r| r.encoded_data.value_byte)
-            .collect::<Vec<u8>>();
+        // TODO: Assining into literals_header_table causes failed table constraints
+        // let literal_header_offset = witness_rows
+        //     .iter()
+        //     .find(|r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
+        //     .unwrap()
+        //     .encoded_data
+        //     .byte_idx;
+        // let literal_bytes = witness_rows
+        //     .iter()
+        //     .filter(|&r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
+        //     .map(|r| r.encoded_data.value_byte)
+        //     .collect::<Vec<u8>>();
 
-        self.literals_header_table.assign(
-            layouter, 
-            &[(literal_header_offset, literal_bytes.as_slice(), aux_data[10], aux_data[4], aux_data[5])],
-        )?;
+        // self.literals_header_table.assign(
+        //     layouter,
+        //     &[(
+        //         literal_header_offset,
+        //         literal_bytes.as_slice(),
+        //         aux_data[10],
+        //         aux_data[4],
+        //         aux_data[5],
+        //     )],
+        // )?;
 
         layouter.assign_region(
             || "Decompression table region",
@@ -3102,7 +3114,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     )?;
                 }
 
-                // TODO: Assign sequence section. Dummy row for sequencing section header as of now
+                // TODO: Should assign sequence section. Dummy row for sequencing section header as of now
                 region.assign_advice(
                     || "byte_idx",
                     self.byte_idx,

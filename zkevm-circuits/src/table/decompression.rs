@@ -1223,8 +1223,8 @@ impl BitstringAccumulationTable {
             // huffman code and lstreams
             cb.require_boolean(
                 "byte2 == byte1 or byte2 == byte1 + 1",
-                meta.query_advice(table.byte_idx_2, Rotation::cur()) -
-                    meta.query_advice(table.byte_idx_1, Rotation::cur()),
+                meta.query_advice(table.byte_idx_2, Rotation::cur())
+                    - meta.query_advice(table.byte_idx_1, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -1418,7 +1418,8 @@ impl BitstringAccumulationTable {
 
         // Get the byte at which FSE is described
         // TODO: Determining huffman offset in a multi-block scenario.
-        let huffman_offset = witness_rows.iter()
+        let huffman_offset = witness_rows
+            .iter()
             .find(|&r| r.state.tag == ZstdTag::ZstdBlockFseCode)
             .unwrap()
             .encoded_data
@@ -1625,7 +1626,7 @@ impl<F: Field> LookupTable<F> for BitstringAccumulationTable {
             String::from("bit_index"),
             String::from("from_start"),
             String::from("until_end"),
-            String::from("is_reverse")
+            String::from("is_reverse"),
         ]
     }
 }

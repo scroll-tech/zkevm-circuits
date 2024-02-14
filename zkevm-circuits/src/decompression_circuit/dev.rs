@@ -12,7 +12,7 @@ use crate::{
         decompression::{
             BitstringAccumulationTable, FseTable, HuffmanCodesTable, LiteralsHeaderTable,
         },
-        BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table
+        BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable, U8Table,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
