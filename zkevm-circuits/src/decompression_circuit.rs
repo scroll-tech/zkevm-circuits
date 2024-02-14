@@ -1981,43 +1981,53 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         // in that Huffman table. As per the canonical Huffman code representation, we only need to
         // emit N - 1 weights and the weight of the last symbol can be calculated.
 
-        // compression_debug
-        // meta.lookup_any(
-        //     "DecompressionCircuit: ZstdBlockHuffmanCode (fse table lookup)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
-        //             not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::next())),
-        //         ]);
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockHuffmanCode (fse table lookup)",
+            |meta| {
+                let condition = and::expr([
+                    // TODO: Degree > 9
+                    // Comment q_enable out for now with the assumption that when is_huffman_code is on, q_enable must also be on. (perhaps constrain this?)
+                    // meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_huffman_code, Rotation::cur()),
+                    // TODO: Verify below exclusion
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())), // Exclude leading 0s and sentinel 1 bit
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::next())), // Exclude the last row
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation(2))), // Exclude the second last row as below max rotation is 2
 
-        //         // TODO: include num_bits in lookup
-        //         let start = meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur());
-        //         let end = meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur());
-        //         let num_bits = select::expr(
-        //             meta.query_advice(bitstream_decoder.is_nil, Rotation::cur()),
-        //             0.expr(),
-        //             end - start + 1.expr(),
-        //         );
+                ]);
 
-        //         [
-        //             meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
-        //             meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.state, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.symbol, Rotation::cur()),
-        //             meta.query_advice(fse_decoder.baseline, Rotation::cur()),
-        //             // TODO: a complication of nb representation between reading 0 bit and 1 bit.
-        //             // The bit_start_idx and bit_end_idx for both scenarios are set to the same
-        //             // value.
-        //             num_bits,
-        //         ]
-        //         .into_iter()
-        //         .zip(fse_table.table_exprs_state_check(meta))
-        //         .map(|(value, table)| (condition.expr() * value, table))
-        //         .collect()
-        //     },
-        // );
+                // TODO: Verify that acquiring data for num_bits from bitstream_decoder targets 2 rows down, not the current row
+
+                // let start = meta.query_advice(bitstream_decoder.bit_index_start, Rotation::cur());
+                // let end = meta.query_advice(bitstream_decoder.bit_index_end, Rotation::cur());
+                // let num_bits = select::expr(
+                //     meta.query_advice(bitstream_decoder.is_nil, Rotation::cur()),
+                //     0.expr(),
+                //     end - start + 1.expr(),
+                // );
+
+                let start = meta.query_advice(bitstream_decoder.bit_index_start, Rotation(2));
+                let end = meta.query_advice(bitstream_decoder.bit_index_end, Rotation(2));
+                let num_bits = select::expr(
+                    meta.query_advice(bitstream_decoder.is_nil, Rotation(2)),
+                    0.expr(),
+                    end - start + 1.expr(),
+                );
+
+                [
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    meta.query_advice(huffman_tree_config.fse_table_size, Rotation::cur()),
+                    meta.query_advice(fse_decoder.state, Rotation::cur()),
+                    meta.query_advice(fse_decoder.symbol, Rotation::cur()),
+                    meta.query_advice(fse_decoder.baseline, Rotation::cur()),
+                    num_bits,
+                ]
+                .into_iter()
+                .zip(fse_table.table_exprs_state_check(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         meta.lookup_any(
             "DecompressionCircuit: ZstdBlockHuffmanCode (huffman codes table lookup)",
