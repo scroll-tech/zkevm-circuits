@@ -1446,7 +1446,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // compression_debug
         meta.lookup_any(
             "DecompressionCircuit: lookup for LiteralsHeader decomposition",
             |meta| {
