@@ -2977,6 +2977,12 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         i,
                         || Value::known(F::from(row.bitstream_read_data.bit_value as u64)),
                     )?;
+                    region.assign_advice(
+                        || "bitstream_decoder.is_nil",
+                        self.bitstream_decoder.is_nil,
+                        i,
+                        || Value::known(F::from(row.bitstream_read_data.is_zero_bit_read as u64)),
+                    )?;
 
                     let bitstring_contained_chip = ComparatorChip::construct(
                         self.bitstream_decoder.bitstring_contained.clone(),
@@ -3131,6 +3137,13 @@ impl<F: Field> SubCircuit<F> for DecompressionCircuit<F> {
             fse_aux_tables.extend_from_slice(&f_fse_aux_tables);
             huffman_aux_data.extend_from_slice(&huffman_codes);
         }
+
+        // compression_debug
+        // for row in witness_rows.clone() {
+        //     log::trace!("{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};{:?};{:?};{:?};;{:?};{:?};{:?};{:?};;",
+        //         row.state.tag, row.state.tag_next, row.state.max_tag_len, row.state.tag_len, row.state.tag_idx, row.state.tag_value, row.state.tag_value_acc, row.state.is_tag_change, row.state.tag_rlc, row.state.tag_rlc_acc, row.encoded_data.byte_idx, row.encoded_data.encoded_len, row.encoded_data.value_byte, row.encoded_data.reverse, row.encoded_data.reverse_idx, row.encoded_data.reverse_len, row.encoded_data.aux_1, row.encoded_data.aux_2, row.encoded_data.value_rlc, row.decoded_data.decoded_len, row.decoded_data.decoded_len_acc, row.decoded_data.total_decoded_len, row.decoded_data.decoded_byte, row.decoded_data.decoded_value_rlc, row.huffman_data.byte_offset, row.huffman_data.bit_value, row.huffman_data.stream_idx, row.huffman_data.k.0, row.huffman_data.k.1, row.fse_data.idx, row.fse_data.state, row.fse_data.baseline, row.fse_data.num_bits, row.fse_data.symbol, row.fse_data.num_emitted, row.fse_data.n_acc, row.bitstream_read_data.bit_start_idx, row.bitstream_read_data.bit_end_idx, row.bitstream_read_data.bit_value, row.bitstream_read_data.is_zero_bit_read
+        //     );
+        // }
 
         config.assign(
             layouter,

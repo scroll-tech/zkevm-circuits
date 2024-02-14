@@ -533,6 +533,8 @@ pub struct BitstreamReadRow {
     pub bit_end_idx: usize,
     /// The value of the bitstring
     pub bit_value: u64,
+    /// Whether 0 bit is read
+    pub is_zero_bit_read: bool,
 }
 
 /// Data for the FSE table's witness values.

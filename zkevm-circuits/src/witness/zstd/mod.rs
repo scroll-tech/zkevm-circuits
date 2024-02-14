@@ -887,6 +887,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             bit_start_idx: 0usize,
             bit_end_idx: 7usize,
             bit_value: header_byte as u64,
+            is_zero_bit_read: false,
         },
         decoded_data: decoded_data.clone(),
         huffman_data: HuffmanData::default(),
@@ -932,59 +933,53 @@ fn process_block_zstd_huffman_code<F: Field>(
     witness_rows.push(huffman_header_row);
 
     // Process bit boundaries into bitstream reader info
-    let mut to_bit_idx: usize = 0;
-    let mut to_byte_idx: usize = 1;
-    let mut from_bit_idx: usize = 0;
-    let mut from_byte_idx: usize = 0;
-    let mut last_to_bit_idx: usize = 0;
     let mut decoded: u8 = 0;
     let mut n_acc: usize = 0;
-    let mut current_tag_value_acc = tag_value_iter.next().unwrap();
-    let mut current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+    let mut current_tag_value_acc = Value::known(F::zero());
+    let mut current_tag_rlc_acc = Value::known(F::zero());
+    let mut last_byte_idx: i64 = 0;
+    let mut from_pos: (i64, i64) = (1, 0);
+    let mut to_pos: (i64, i64) = (0, 0);
+
     let bitstream_rows = bit_boundaries.iter().enumerate().map(|(sym, (bit_idx, value))| {
-        if last_to_bit_idx > 7 {
+        from_pos = if sym == 0 {
+            (1, -1)
+        } else {
+            to_pos
+        };
+
+        from_pos.1 += 1;
+        if from_pos.1 == 8 {
+            from_pos = (from_pos.0 + 1, 0);
+        }
+        from_pos.1 = (from_pos.1 as u64).rem_euclid(8) as i64;
+
+        if from_pos.0 > last_byte_idx {
             current_tag_value_acc = tag_value_iter.next().unwrap();
             current_tag_rlc_acc = tag_rlc_iter.next().unwrap();
+            last_byte_idx = from_pos.0;
         }
 
-        if sym == 0 {
-            from_bit_idx = 0;
-        } else {
-            from_bit_idx = to_bit_idx + 1;
-            from_byte_idx = to_byte_idx;
-        }
+        let to_byte_idx = (bit_idx - 1) / 8;
+        let mut to_bit_idx = bit_idx - to_byte_idx * (N_BITS_PER_BYTE as u32) - 1;
 
-        if from_bit_idx >= from_byte_idx * N_BITS_PER_BYTE || sym == 0 {
-            from_byte_idx += 1;
-        }
-
-        to_bit_idx = *bit_idx as usize - 1;
-        if to_bit_idx >= from_byte_idx * N_BITS_PER_BYTE {
-            to_byte_idx += 1;
-        }
-
-        to_bit_idx = to_bit_idx.rem_euclid(8);
-        if to_byte_idx > from_byte_idx {
+        if from_pos.0 < (to_byte_idx + 1) as i64 {
             to_bit_idx += 8;
         }
 
-        last_to_bit_idx = to_bit_idx;
+        to_pos = ((to_byte_idx + 1) as i64, to_bit_idx as i64);
 
-        // compression_debug
-        // if sym > 0 && n_acc < (1 << accuracy_log) {
-        //     // num_emitted += 1;
-        //     decoded = sym as u8;
-        //     n_acc += (*value - 1) as usize;
-        // }
         if sym > 0 && n_acc < (1 << accuracy_log) {
-            // num_emitted += 1;
             decoded = (sym - 1) as u8;
             n_acc += (*value - 1) as usize;
         }
 
-        (decoded, from_byte_idx, from_bit_idx.rem_euclid(8), to_byte_idx, to_bit_idx, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone(), 0, n_acc)
+        (decoded, from_pos.0 as usize, from_pos.1 as usize, to_pos.0 as usize, to_pos.1 as usize, value.clone(), current_tag_value_acc.clone(), current_tag_rlc_acc.clone(), 0, n_acc)
     })
     .collect::<Vec<(u8, usize, usize, usize, usize, u64, Value<F>, Value<F>, usize, usize)>>();
+
+    // compression_debug
+    log::trace!("=> bitstream_rows: {:?}", bitstream_rows);
 
     // Add witness rows for FSE representation bytes
     for row in bitstream_rows {
@@ -1012,7 +1007,8 @@ fn process_block_zstd_huffman_code<F: Field>(
             bitstream_read_data: BitstreamReadRow { 
                 bit_start_idx: row.2, 
                 bit_end_idx: row.4, 
-                bit_value: row.5, 
+                bit_value: row.5,
+                is_zero_bit_read: false,
             },
             decoded_data: DecodedData { 
                 decoded_len: last_row.decoded_data.decoded_len, 
@@ -1142,6 +1138,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             bit_value: 1u64,
             bit_start_idx: 0usize,
             bit_end_idx: padding_end_idx,
+            is_zero_bit_read: false,
         },
         huffman_data: HuffmanData::default(),
         decoded_data: last_row.decoded_data.clone(),
@@ -1219,6 +1216,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 bit_value: bitstring_value,
                 bit_start_idx: from_bit_idx,
                 bit_end_idx: to_bit_idx,
+                is_zero_bit_read: (nb == 0),
             },
             fse_data: FseTableRow {
                 idx: fse_table_idx,
@@ -1379,6 +1377,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
                                 bit_start_idx: 0, 
                                 bit_end_idx: 7, 
                                 bit_value: value_byte as u64,
+                                is_zero_bit_read: false,
                             },
                             decoded_data: last_row.decoded_data.clone(),
                             huffman_data: HuffmanData::default(),
@@ -1509,6 +1508,7 @@ fn process_block_zstd_lstream<F: Field>(
             bit_value: 1u64,
             bit_start_idx: 0usize,
             bit_end_idx: padding_end_idx as usize,
+            is_zero_bit_read: false,
         },
         decoded_data: DecodedData {
             decoded_len: last_row.decoded_data.decoded_len,
@@ -1600,6 +1600,7 @@ fn process_block_zstd_lstream<F: Field>(
                     bit_value: u8::from_str_radix(bitstring_acc.as_str(), 2).unwrap() as u64,
                     bit_start_idx: from_bit_idx.rem_euclid(8) as usize,
                     bit_end_idx: end_bit_idx as usize,
+                    is_zero_bit_read: false,
                 },
                 decoded_data: DecodedData {
                     decoded_len: last_row.decoded_data.decoded_len,
