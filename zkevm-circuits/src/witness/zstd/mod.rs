@@ -865,9 +865,9 @@ fn process_block_zstd_literals_header<F: Field>(
         },
         BlockType::ZstdCompressedBlock => match size_format {
             0b00 => [2, 10, 10, 1, 3, 3],
-            0b01 => [2, 10, 10, 4, 3, 4],
-            0b10 => [2, 14, 14, 4, 4, 5],
-            0b11 => [2, 18, 18, 4, 5, 6],
+            0b01 => [2, 10, 10, 4, 3, 3],
+            0b10 => [2, 14, 14, 4, 4, 4],
+            0b11 => [2, 18, 18, 4, 5, 5],
             _ => unreachable!("size_format out of bound"),
         },
         _ => unreachable!("BlockType::Reserved unexpected or treeless literal section"),

@@ -2278,8 +2278,7 @@ pub struct LiteralsHeaderRomTable {
     /// - block_type == Raw/RLE and size_format == 00 or 10
     /// - block_type == Raw/RLE and size_format == 01
     /// - block_type == Raw/RLE and size_format == 11
-    /// - block_type == Compressed and size_format == 00
-    /// - block_type == Compressed and size_format == 01
+    /// - block_type == Compressed and size_format == 00 or 01
     /// - block_type == Compressed and size_format == 10
     /// - block_type == Compressed and size_format == 11
     branch: Column<Fixed>,
@@ -2346,9 +2345,9 @@ impl LiteralsHeaderRomTable {
                     [1, 0, 1, 0, 2, 0, 1, 0], // RLE: 2 bytes header
                     [1, 0, 1, 1, 3, 0, 2, 1], // RLE: 3 bytes header
                     [0, 1, 0, 0, 3, 0, 3, 0], // Compressed: 3 bytes header
-                    [0, 1, 1, 0, 3, 1, 4, 0], // Compressed: 3 bytes header
-                    [0, 1, 0, 1, 4, 1, 5, 0], // Compressed: 4 bytes header
-                    [0, 1, 1, 1, 5, 1, 6, 1], // Compressed: 5 bytes header
+                    [0, 1, 1, 0, 3, 1, 3, 0], // Compressed: 3 bytes header
+                    [0, 1, 0, 1, 4, 1, 4, 0], // Compressed: 4 bytes header
+                    [0, 1, 1, 1, 5, 1, 5, 1], // Compressed: 5 bytes header
                 ]
                 .iter()
                 .enumerate()

@@ -15,7 +15,7 @@ use crate::{
             BitstringAccumulationTable, BlockTypeRomTable, FseTable, HuffmanCodesTable,
             LiteralsHeaderRomTable, LiteralsHeaderTable, TagRomTable,
         },
-        KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table,
+        BitwiseOpTable, KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable, U8Table,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
@@ -53,8 +53,16 @@ pub struct DecompressionCircuitConfigArgs<F> {
     pub bs_acc_table: BitstringAccumulationTable,
     /// Lookup table to get regenerated and compressed size from LiteralsHeader.
     pub literals_header_table: LiteralsHeaderTable,
+    /// Bitwise OP table.
+    pub bitwise_op_table: BitwiseOpTable,
+    /// RangeTable for [0, 4).
+    pub range4: RangeTable<4>,
     /// RangeTable for [0, 8).
     pub range8: RangeTable<8>,
+    /// RangeTable for [0, 16).
+    pub range16: RangeTable<16>,
+    /// RangeTable for [0, 64).
+    pub range64: RangeTable<64>,
     /// RangeTable for [0; 128).
     pub range128: RangeTable<128>,
     /// U8 table, i.e. RangeTable for [0, 1 << 8).
@@ -121,7 +129,11 @@ pub struct DecompressionCircuitConfig<F> {
     lstream_config: LstreamConfig,
 
     /// Internal Tables
+    bitwise_op_table: BitwiseOpTable,
+    range4: RangeTable<4>,
     range8: RangeTable<8>,
+    range16: RangeTable<16>,
+    range64: RangeTable<64>,
     range128: RangeTable<128>,
     range256: RangeTable<256>,
     tag_rom_table: TagRomTable,
@@ -372,7 +384,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             huffman_codes_table,
             bs_acc_table,
             literals_header_table,
+            bitwise_op_table,
+            range4,
             range8,
+            range16,
+            range64,
             range128,
             range256,
             pow2_table,
@@ -1151,190 +1167,201 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         // TODO: Block constraints will be examined later
         // Note: We only verify the 1st row of BlockHeader for tag_value.
 
-        // meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
-        //     cb.require_equal(
-        //         "tag_len == 3",
-        //         meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-        //         N_BLOCK_HEADER_BYTES.expr(),
-        //     );
-        //     // The lowest bit (as per little-endian representation) is whether the block is the
-        //     // last block in the frame or not.
-        //     //
-        //     // The next 2 bits denote the block type.
-        //     //
-        //     // But block header is expressed in the reverse order, which helps us in calculating
-        //     // the tag_value appropriately.
-        //     cb.require_equal(
-        //         "last block check",
-        //         meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
-        //         meta.query_advice(
-        //             block_gadget.is_last_block,
-        //             Rotation(N_BLOCK_HEADER_BYTES as i32),
-        //         ),
-        //     );
-        //     let block_type_bit0 =
-        //         meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
-        //     let block_type_bit1 =
-        //         meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
-        //     cb.require_zero(
-        //         "block type cannot be RESERVED, i.e. block_type == 3 not possible",
-        //         block_type_bit0.expr() * block_type_bit1.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "block_idx == 1",
-        //         meta.query_advice(block_gadget.idx, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-        //         1.expr(),
-        //     );
-        //     // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear
-        // with     // block type 00 or 01, i.e. the block_type_bit1 is 0.
-        //     cb.condition(not::expr(block_type_bit1), |cb| {
-        //         cb.require_equal(
-        //             "Raw/RLE blocks: tag_len == block_len",
-        //             meta.query_advice(tag_gadget.tag_len, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-        //             meta.query_advice(
-        //                 block_gadget.block_len,
-        //                 Rotation(N_BLOCK_HEADER_BYTES as i32),
-        //             ),
-        //         );
-        //     });
-        //     // Validate that for an RLE block: value_byte == decoded_byte.
-        //     cb.condition(block_type_bit0, |cb| {
-        //         cb.require_equal(
-        //             "for RLE block, value_byte == decoded_byte",
-        //             meta.query_advice(value_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-        //             meta.query_advice(decoded_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
-        //         );
-        //     });
-        //     // If this wasn't the first block, then the previous block's last byte should have
-        //     // block's idx == block length.
-        //     //
-        //     // This block is the first block iff the FrameContentSize tag precedes it. However we
-        //     // assume that the block_idx and block_len will be set to 0 for FrameContentSize as
-        // it     // is not part of a "block".
-        //     cb.require_equal(
-        //         "block_idx::prev == block_len::prev",
-        //         meta.query_advice(block_gadget.idx, Rotation::prev()),
-        //         meta.query_advice(block_gadget.block_len, Rotation::prev()),
-        //     );
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //         meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
-        //     ]))
-        // });
+        /*
+        meta.create_gate("DecompressionCircuit: BlockHeader", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            cb.require_equal(
+                "tag_len == 3",
+                meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                N_BLOCK_HEADER_BYTES.expr(),
+            );
+            // The lowest bit (as per little-endian representation) is whether the block is the
+            // last block in the frame or not.
+            //
+            // The next 2 bits denote the block type.
+            //
+            // But block header is expressed in the reverse order, which helps us in calculating
+            // the tag_value appropriately.
+            cb.require_equal(
+                "last block check",
+                meta.query_advice(value_bits[7], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1)),
+                meta.query_advice(
+                    block_gadget.is_last_block,
+                    Rotation(N_BLOCK_HEADER_BYTES as i32),
+                ),
+            );
+            let block_type_bit0 =
+                meta.query_advice(value_bits[6], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
+            let block_type_bit1 =
+                meta.query_advice(value_bits[5], Rotation(N_BLOCK_HEADER_BYTES as i32 - 1));
+            cb.require_zero(
+                "block type cannot be RESERVED, i.e. block_type == 3 not possible",
+                block_type_bit0.expr() * block_type_bit1.expr(),
+            );
+            cb.require_equal(
+                "block_idx == 1",
+                meta.query_advice(block_gadget.idx, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                1.expr(),
+            );
+            // For Raw/RLE blocks, the block_len is equal to the tag_len. These blocks appear
+            // with block type 00 or 01, i.e. the block_type_bit1 is 0.
+            cb.condition(not::expr(block_type_bit1), |cb| {
+                cb.require_equal(
+                    "Raw/RLE blocks: tag_len == block_len",
+                    meta.query_advice(tag_gadget.tag_len, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                    meta.query_advice(
+                        block_gadget.block_len,
+                        Rotation(N_BLOCK_HEADER_BYTES as i32),
+                    ),
+                );
+            });
+            // Validate that for an RLE block: value_byte == decoded_byte.
+            cb.condition(block_type_bit0, |cb| {
+                cb.require_equal(
+                    "for RLE block, value_byte == decoded_byte",
+                    meta.query_advice(value_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                    meta.query_advice(decoded_byte, Rotation(N_BLOCK_HEADER_BYTES as i32)),
+                );
+            });
+            // If this wasn't the first block, then the previous block's last byte should have
+            // block's idx == block length.
+            //
+            // This block is the first block iff the FrameContentSize tag precedes it. However we
+            // assume that the block_idx and block_len will be set to 0 for FrameContentSize as
+            // it is not part of a "block".
+            cb.require_equal(
+                "block_idx::prev == block_len::prev",
+                meta.query_advice(block_gadget.idx, Rotation::prev()),
+                meta.query_advice(block_gadget.block_len, Rotation::prev()),
+            );
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
+            ]))
+        });
+        */
 
-        // meta.create_gate("DecompressionCircuit: while processing a block", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
-        //     // If byte_idx increments, then block_gadet.idx should also increment.
-        //     cb.require_equal(
-        //         "idx in block increments if byte_idx increments",
-        //         meta.query_advice(block_gadget.idx, Rotation::next())
-        //             - meta.query_advice(block_gadget.idx, Rotation::cur()),
-        //         meta.query_advice(byte_idx, Rotation::next())
-        //             - meta.query_advice(byte_idx, Rotation::cur()),
-        //     );
-        //     cb.require_equal(
-        //         "block_len remains unchanged",
-        //         meta.query_advice(block_gadget.block_len, Rotation::next()),
-        //         meta.query_advice(block_gadget.block_len, Rotation::cur()),
-        //     );
-        //     cb.require_equal(
-        //         "is_last_block remains unchanged",
-        //         meta.query_advice(block_gadget.is_last_block, Rotation::next()),
-        //         meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
-        //     );
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         meta.query_advice(block_gadget.is_block, Rotation::cur()),
-        //         meta.query_advice(block_gadget.is_block, Rotation::next()),
-        //     ]))
-        // });
+        /*
+        meta.create_gate("DecompressionCircuit: while processing a block", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            // If byte_idx increments, then block_gadet.idx should also increment.
+            cb.require_equal(
+                "idx in block increments if byte_idx increments",
+                meta.query_advice(block_gadget.idx, Rotation::next())
+                    - meta.query_advice(block_gadget.idx, Rotation::cur()),
+                meta.query_advice(byte_idx, Rotation::next())
+                    - meta.query_advice(byte_idx, Rotation::cur()),
+            );
+            cb.require_equal(
+                "block_len remains unchanged",
+                meta.query_advice(block_gadget.block_len, Rotation::next()),
+                meta.query_advice(block_gadget.block_len, Rotation::cur()),
+            );
+            cb.require_equal(
+                "is_last_block remains unchanged",
+                meta.query_advice(block_gadget.is_last_block, Rotation::next()),
+                meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
+            );
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(block_gadget.is_block, Rotation::cur()),
+                meta.query_advice(block_gadget.is_block, Rotation::next()),
+            ]))
+        });
+        */
 
-        // meta.create_gate("DecompressionCircuit: handle end of other blocks", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
-        //     cb.require_equal(
-        //         "tag_next depending on whether or not this is the last block",
-        //         meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-        //         ZstdTag::BlockHeader.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "block_idx == block_len",
-        //         meta.query_advice(block_gadget.idx, Rotation::cur()),
-        //         meta.query_advice(block_gadget.block_len, Rotation::cur()),
-        //     );
-        //     let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         not::expr(meta.query_advice(is_padding, Rotation::cur())),
-        //         idx_eq_len,
-        //         not::expr(meta.query_advice(block_gadget.is_last_block, Rotation::cur())),
-        //     ]))
-        // });
+        /*
+        meta.create_gate("DecompressionCircuit: handle end of other blocks", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            cb.require_equal(
+                "tag_next depending on whether or not this is the last block",
+                meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                ZstdTag::BlockHeader.expr(),
+            );
+            cb.require_equal(
+                "block_idx == block_len",
+                meta.query_advice(block_gadget.idx, Rotation::cur()),
+                meta.query_advice(block_gadget.block_len, Rotation::cur()),
+            );
+            let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                idx_eq_len,
+                not::expr(meta.query_advice(block_gadget.is_last_block, Rotation::cur())),
+            ]))
+        });
+        */
 
-        // meta.create_gate("DecompressionCircuit: handle end of last block", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
-        //     cb.require_equal(
-        //         "tag_next depending on whether or not this is the last block",
-        //         meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
-        //         ZstdTag::Null.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "decoded_len has been reached if last block",
-        //         meta.query_advice(decoded_len_acc, Rotation::cur()),
-        //         meta.query_advice(decoded_len, Rotation::cur()),
-        //     );
-        //     cb.require_equal(
-        //         "byte idx has reached the encoded len",
-        //         meta.query_advice(byte_idx, Rotation::cur()),
-        //         meta.query_advice(encoded_len, Rotation::cur()),
-        //     );
-        //     cb.require_equal(
-        //         "block can end only on Raw/Rle/TODO tag",
-        //         sum::expr([
-        //             is_raw_block(meta),
-        //             is_rle_block(meta),
-        //             // TODO: there will be other tags where a block ends
-        //         ]),
-        //         1.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "block_idx == block_len",
-        //         meta.query_advice(block_gadget.idx, Rotation::cur()),
-        //         meta.query_advice(block_gadget.block_len, Rotation::cur()),
-        //     );
-        //     let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         not::expr(meta.query_advice(is_padding, Rotation::cur())),
-        //         meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
-        //         idx_eq_len,
-        //     ]))
-        // });
+        /*
+        meta.create_gate("DecompressionCircuit: handle end of last block", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            cb.require_equal(
+                "tag_next depending on whether or not this is the last block",
+                meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
+                ZstdTag::Null.expr(),
+            );
+            cb.require_equal(
+                "decoded_len has been reached if last block",
+                meta.query_advice(decoded_len_acc, Rotation::cur()),
+                meta.query_advice(decoded_len, Rotation::cur()),
+            );
+            cb.require_equal(
+                "byte idx has reached the encoded len",
+                meta.query_advice(byte_idx, Rotation::cur()),
+                meta.query_advice(encoded_len, Rotation::cur()),
+            );
+            cb.require_equal(
+                "block can end only on Raw/Rle/TODO tag",
+                sum::expr([
+                    is_raw_block(meta),
+                    is_rle_block(meta),
+                    // TODO: there will be other tags where a block ends
+                ]),
+                1.expr(),
+            );
+            cb.require_equal(
+                "block_idx == block_len",
+                meta.query_advice(block_gadget.idx, Rotation::cur()),
+                meta.query_advice(block_gadget.block_len, Rotation::cur()),
+            );
+            let (_, idx_eq_len) = block_gadget.idx_cmp_len.expr(meta, None);
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                meta.query_advice(block_gadget.is_last_block, Rotation::cur()),
+                idx_eq_len,
+            ]))
+        });
+        */
 
-        // meta.lookup(
-        //     "DecompressionCircuit: BlockHeader (BlockSize == BlockHeader >> 3)",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
-        //         ]);
-        //         let range_value = meta.query_advice(tag_gadget.tag_value, Rotation::cur())
-        //             - (meta.query_advice( block_gadget.block_len, Rotation(N_BLOCK_HEADER_BYTES
-        //               as i32),
-        //             ) * 8.expr());
-        //         vec![(condition * range_value, range8.into())]
-        //     },
-        // );
+        /*
+        meta.lookup(
+            "DecompressionCircuit: BlockHeader (BlockSize == BlockHeader >> 3)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
+                ]);
+                let range_value = meta.query_advice(tag_gadget.tag_value, Rotation::cur())
+                    - (meta.query_advice(
+                        block_gadget.block_len,
+                        Rotation(N_BLOCK_HEADER_BYTES as i32),
+                    ) * 8.expr());
+                vec![(condition * range_value, range8.into())]
+            },
+        );
+        */
 
         meta.lookup_any(
             "DecompressionCircuit: lookup for tuple (block_type, tag_next)",
             |meta| {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_block_header, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
                 ]);
                 [
                     meta.query_advice(tag_gadget.tag, Rotation::cur()),
@@ -1415,8 +1442,8 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
-                let block_type_bit0 = meta.query_advice(value_bits[7], Rotation::cur());
-                let block_type_bit1 = meta.query_advice(value_bits[6], Rotation::cur());
+                let block_type_bit0 = meta.query_advice(value_bits[0], Rotation::cur());
+                let block_type_bit1 = meta.query_advice(value_bits[1], Rotation::cur());
                 cb.require_zero(
                     "block type cannot be TREELESS, i.e. block_type == 3 not possible",
                     block_type_bit0 * block_type_bit1,
@@ -1435,13 +1462,13 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             |meta| {
                 let condition = and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
                 ]);
                 [
                     meta.query_advice(tag_gadget.tag, Rotation::cur()),
-                    meta.query_advice(value_bits[6], Rotation::cur()),
-                    meta.query_advice(value_bits[7], Rotation::cur()),
+                    meta.query_advice(value_bits[1], Rotation::cur()),
+                    meta.query_advice(value_bits[0], Rotation::cur()),
                     meta.query_advice(tag_gadget.tag_next, Rotation::cur()),
                 ]
                 .into_iter()
@@ -1476,79 +1503,87 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             },
         );
 
-        // TODO: LiteralHeader regen/compr size
-        // meta.lookup_any(
-        //     "DecompressionCircuit: lookup for LiteralsHeader regen/compr size",
-        //     |meta| {
-        //         let condition = and::expr([
-        //             meta.query_fixed(q_enable, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-        //             meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
-        //         ]);
+        meta.lookup_any(
+            "DecompressionCircuit: lookup for LiteralsHeader regen/compr size",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_literals_header, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
+                ]);
 
-        //         // Which branch are we taking in the literals header decomposition.
-        //         let branch = meta.query_advice(literals_header.branch, Rotation::cur());
+                // Which branch are we taking in the literals header decomposition.
+                let branch = meta.query_advice(literals_header.branch, Rotation::cur());
 
-        //         // Is it the case of zstd compressed block, i.e. block type == 0b10. Since we
-        //         // already know that block type == 0b11 (TREELESS) will not occur, we can skip
-        // the         // check for not::expr(value_bits[7]).
-        //         let is_compressed = meta.query_advice(value_bits[6], Rotation::cur());
+                // Is it the case of zstd compressed block, i.e. block type == 0b10. Since we
+                // already know that block type == 0b11 (TREELESS) will not occur, we can skip
+                // the check for not::expr(value_bits[0]).
+                let is_compressed = meta.query_advice(value_bits[1], Rotation::cur());
 
-        //         // Is the size format == 0b11.
-        //         let is_size_format_0b11 =
-        //             meta.query_advice(literals_header.sf_max, Rotation::cur());
+                // Is the size format == 0b11.
+                let is_size_format_0b11 =
+                    meta.query_advice(literals_header.sf_max, Rotation::cur());
+                let size_format_bit0 = meta.query_advice(value_bits[2], Rotation::cur());
+                let size_format_bit1 = meta.query_advice(value_bits[3], Rotation::cur());
 
-        //         let byte0 = meta.query_advice(value_byte, Rotation::cur());
-        //         let byte1 = select::expr(
-        //             is_compressed.expr(),
-        //             meta.query_advice(value_byte, Rotation(1)),
-        //             select::expr(
-        //                 meta.query_advice(value_bits[5], Rotation::cur()),
-        //                 meta.query_advice(value_byte, Rotation(1)),
-        //                 0.expr(),
-        //             ),
-        //         );
-        //         let byte2 = select::expr(
-        //             is_compressed.expr(),
-        //             meta.query_advice(value_byte, Rotation(2)),
-        //             select::expr(
-        //                 meta.query_advice(value_bits[5], Rotation::cur()),
-        //                 meta.query_advice(value_byte, Rotation(2)),
-        //                 0.expr(),
-        //             ),
-        //         );
-        //         let byte3 = select::expr(
-        //             is_compressed.expr(),
-        //             select::expr(
-        //                 meta.query_advice(value_bits[5], Rotation::cur()),
-        //                 meta.query_advice(value_byte, Rotation(3)),
-        //                 0.expr(),
-        //             ),
-        //             0.expr(),
-        //         );
-        //         let byte4 = select::expr(
-        //             is_compressed * is_size_format_0b11,
-        //             meta.query_advice(value_byte, Rotation(4)),
-        //             0.expr(),
-        //         );
+                // Literals header is at least 1 byte for all branches.
+                let byte0 = meta.query_advice(value_byte, Rotation::cur());
+                // Literals header is at least 2 bytes for:
+                // - zstd compressed block
+                // - size format 01 / 11 for Raw/RLE block
+                let byte1 = select::expr(
+                    is_compressed.expr(),
+                    meta.query_advice(value_byte, Rotation(1)),
+                    select::expr(
+                        size_format_bit0.expr(),
+                        meta.query_advice(value_byte, Rotation(1)),
+                        0.expr(),
+                    ),
+                );
+                // Literals header is at least 3 bytes for:
+                // - zstd compressed block
+                // - size format 11 for Raw/RLE block
+                let byte2 = select::expr(
+                    is_compressed.expr(),
+                    meta.query_advice(value_byte, Rotation(2)),
+                    select::expr(
+                        is_size_format_0b11.expr(),
+                        meta.query_advice(value_byte, Rotation(2)),
+                        0.expr(),
+                    ),
+                );
+                // Literals header is at least 4 bytes for:
+                // - zstd compressed block with size format 10 / 11
+                let byte3 = select::expr(
+                    is_compressed.expr() * size_format_bit1.expr(),
+                    meta.query_advice(value_byte, Rotation(3)),
+                    0.expr(),
+                );
+                // Literals header is 5 bytes for:
+                // - zstd compressed block with size format 11
+                let byte4 = select::expr(
+                    is_compressed * is_size_format_0b11,
+                    meta.query_advice(value_byte, Rotation(4)),
+                    0.expr(),
+                );
 
-        //         [
-        //             meta.query_advice(byte_idx, Rotation::cur()), // byte offset
-        //             branch,                                       // branch
-        //             byte0,                                        // byte0
-        //             byte1,                                        // byte1
-        //             byte2,                                        // byte2
-        //             byte3,                                        // byte3
-        //             byte4,                                        // byte4
-        //             meta.query_advice(literals_header.regen_size, Rotation::cur()), //
-        // regenerated size             meta.query_advice(literals_header.compr_size,
-        // Rotation::cur()), // compressed size         ]
-        //         .into_iter()
-        //         .zip(literals_header_table.table_exprs(meta))
-        //         .map(|(arg, table)| (condition.expr() * arg, table))
-        //         .collect()
-        //     },
-        // );
+                [
+                    meta.query_advice(byte_idx, Rotation::cur()), // byte offset
+                    branch,                                       // branch
+                    byte0,                                        // byte0
+                    byte1,                                        // byte1
+                    byte2,                                        // byte2
+                    byte3,                                        // byte3
+                    byte4,                                        // byte4
+                    meta.query_advice(literals_header.regen_size, Rotation::cur()),
+                    meta.query_advice(literals_header.compr_size, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(literals_header_table.table_exprs(meta))
+                .map(|(arg, table)| (condition.expr() * arg, table))
+                .collect()
+            },
+        );
 
         meta.create_gate("DecompressionCircuit: LiteralsSection", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -2555,7 +2590,11 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             bitstream_decoder,
             fse_decoder,
             lstream_config,
+            bitwise_op_table,
+            range4,
             range8,
+            range16,
+            range64,
             range128,
             range256,
             tag_rom_table,
@@ -2590,29 +2629,28 @@ impl<F: Field> DecompressionCircuitConfig<F> {
         self.fse_table.assign(layouter, fse_aux_tables)?;
         self.huffman_codes_table.assign(layouter, huffman_codes)?;
 
-        // TODO: Assining into literals_header_table causes failed table constraints
-        // let literal_header_offset = witness_rows
-        //     .iter()
-        //     .find(|r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
-        //     .unwrap()
-        //     .encoded_data
-        //     .byte_idx;
-        // let literal_bytes = witness_rows
-        //     .iter()
-        //     .filter(|&r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
-        //     .map(|r| r.encoded_data.value_byte)
-        //     .collect::<Vec<u8>>();
+        let literal_header_offset = witness_rows
+            .iter()
+            .find(|r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
+            .unwrap()
+            .encoded_data
+            .byte_idx;
+        let literal_bytes = witness_rows
+            .iter()
+            .filter(|&r| r.state.tag == ZstdTag::ZstdBlockLiteralsHeader)
+            .map(|r| r.encoded_data.value_byte)
+            .collect::<Vec<u8>>();
 
-        // self.literals_header_table.assign(
-        //     layouter,
-        //     &[(
-        //         literal_header_offset,
-        //         literal_bytes.as_slice(),
-        //         aux_data[10],
-        //         aux_data[4],
-        //         aux_data[5],
-        //     )],
-        // )?;
+        self.literals_header_table.assign(
+            layouter,
+            &[(
+                literal_header_offset,
+                literal_bytes.as_slice(),
+                aux_data[10],
+                aux_data[4],
+                aux_data[5],
+            )],
+        )?;
 
         layouter.assign_region(
             || "Decompression table region",

@@ -72,7 +72,7 @@ fn test_work_example_decompression() {
         _data: Default::default(),
     };
 
-    let mock_prover = MockProver::run(16, &decompression_circuit, vec![]);
+    let mock_prover = MockProver::run(18, &decompression_circuit, vec![]);
 
     let mock_prover = mock_prover.unwrap();
     if let Err(errors) = mock_prover.verify_par() {
