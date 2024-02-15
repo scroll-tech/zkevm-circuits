@@ -586,6 +586,7 @@ pub struct FseAuxiliaryTableData {
 /// This representation makes it easy to look up decoded symbol from current state.   
 /// Map<state, (symbol, baseline, num_bits)>.
 type FseStateMapping = BTreeMap<u64, (u64, u64, u64)>;
+type ReconstructedFse = (usize, Vec<(u32, u64)>, FseAuxiliaryTableData);
 
 impl FseAuxiliaryTableData {
     #[allow(non_snake_case)]
@@ -599,7 +600,7 @@ impl FseAuxiliaryTableData {
     pub fn reconstruct(
         src: &[u8],
         byte_offset: usize,
-    ) -> std::io::Result<(usize, Vec<(u32, u64)>, Self)> {
+    ) -> std::io::Result<ReconstructedFse> {
         // construct little-endian bit-reader.
         let data = src.iter().skip(byte_offset).cloned().collect::<Vec<u8>>();
         let mut reader = BitReader::endian(Cursor::new(&data), LittleEndian);

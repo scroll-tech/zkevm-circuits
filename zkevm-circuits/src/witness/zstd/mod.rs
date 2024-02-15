@@ -213,21 +213,13 @@ fn process_frame_header<F: Field>(
     )
 }
 
+type AggregateBlockResult<F> = (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData);
 fn process_block<F: Field>(
     src: &[u8],
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (
-    usize,
-    Vec<ZstdWitnessRow<F>>,
-    bool,
-    Vec<u64>,
-    Vec<u64>,
-    Vec<u64>,
-    FseAuxiliaryTableData,
-    HuffmanCodesData,
-) {
+) -> AggregateBlockResult<F> {
     let mut witness_rows = vec![];
 
     let (byte_offset, rows, last_block, block_type, block_size) =
@@ -635,6 +627,7 @@ fn process_block_zstd<F: Field>(
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
+    let literals_header_result: LiteralsHeaderProcessingResult<F> = process_block_zstd_literals_header::<F>(src, byte_offset, last_row, randomness);
     let (
         byte_offset,
         rows,
@@ -643,7 +636,17 @@ fn process_block_zstd<F: Field>(
         regen_size,
         compressed_size,
         (branch, sf_max),
-    ) = process_block_zstd_literals_header::<F>(src, byte_offset, last_row, randomness);
+    ) = literals_header_result;
+    // let (
+    //     byte_offset,
+    //     rows,
+    //     literals_block_type,
+    //     n_streams,
+    //     regen_size,
+    //     compressed_size,
+    //     (branch, sf_max),
+    // ) = process_block_zstd_literals_header::<F>(src, byte_offset, last_row, randomness);
+
     witness_rows.extend_from_slice(&rows);
     let mut fse_aux_table = FseAuxiliaryTableData {
         byte_offset: 0,
