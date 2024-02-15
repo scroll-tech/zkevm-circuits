@@ -27,6 +27,9 @@ strum_macros.workspace = true
 
 # precompile related crates
 revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-fix" }
+lazy_static = "1.4"
+tokio = { version = "1.16.1", features = ["macros", "rt-multi-thread"] }
+linked-hash-map = "0.5.6"
 
 [dev-dependencies]
 hex.workspace = true
