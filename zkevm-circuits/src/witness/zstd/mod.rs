@@ -615,6 +615,8 @@ fn process_block_rle<F: Field>(
     )
 }
 
+type LiteralsBlockResult<F> = (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>);
+
 #[allow(unused_variables)]
 fn process_block_zstd<F: Field>(
     src: &[u8],
@@ -659,13 +661,7 @@ fn process_block_zstd<F: Field>(
     };
 
     // Depending on the literals block type, decode literals section accordingly
-    let (bytes_offset, rows, literals, lstream_len, aux_data): (
-        usize,
-        Vec<ZstdWitnessRow<F>>,
-        Vec<u64>,
-        Vec<u64>,
-        Vec<u64>,
-    ) = match literals_block_type {
+    let literals_block_result: LiteralsBlockResult<F> = match literals_block_type {
         BlockType::RawBlock => {
             let (byte_offset, rows) = process_raw_bytes(
                 src,
@@ -787,6 +783,7 @@ fn process_block_zstd<F: Field>(
         }
         _ => unreachable!("Invalid literals section BlockType"),
     };
+    let (bytes_offset, rows, literals, lstream_len, aux_data) = literals_block_result;
     witness_rows.extend_from_slice(&rows);
 
     (
