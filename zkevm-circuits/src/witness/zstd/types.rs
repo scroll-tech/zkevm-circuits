@@ -224,7 +224,8 @@ pub enum ZstdTag {
 }
 
 impl ZstdTag {
-    fn is_output(&self) -> bool {
+    /// Whether this tag produces an output or not.
+    pub fn is_output(&self) -> bool {
         match self {
             Self::Null => false,
             Self::FrameHeaderDescriptor => false,
@@ -233,18 +234,19 @@ impl ZstdTag {
             Self::RawBlockBytes => true,
             Self::RleBlockBytes => true,
             Self::ZstdBlockLiteralsHeader => false,
-            Self::ZstdBlockLiteralsRawBytes => true,
-            Self::ZstdBlockLiteralsRleBytes => true,
+            Self::ZstdBlockLiteralsRawBytes => false,
+            Self::ZstdBlockLiteralsRleBytes => false,
             Self::ZstdBlockFseCode => false,
             Self::ZstdBlockHuffmanCode => false,
             Self::ZstdBlockJumpTable => false,
-            Self::ZstdBlockLstream => true,
+            Self::ZstdBlockLstream => false,
             Self::ZstdBlockSequenceHeader => false,
             // TODO: more tags
         }
     }
 
-    fn is_block(&self) -> bool {
+    /// Whether this tag is a part of block or not.
+    pub fn is_block(&self) -> bool {
         match self {
             Self::Null => false,
             Self::FrameHeaderDescriptor => false,
@@ -597,10 +599,7 @@ impl FseAuxiliaryTableData {
     /// with the reconstructed FSE table. After processing the entire bitstream to reconstruct the
     /// FSE table, if the read bitstream was not byte aligned, then we discard the 1..8 bits from
     /// the last byte that we read from.
-    pub fn reconstruct(
-        src: &[u8],
-        byte_offset: usize,
-    ) -> std::io::Result<ReconstructedFse> {
+    pub fn reconstruct(src: &[u8], byte_offset: usize) -> std::io::Result<ReconstructedFse> {
         // construct little-endian bit-reader.
         let data = src.iter().skip(byte_offset).cloned().collect::<Vec<u8>>();
         let mut reader = BitReader::endian(Cursor::new(&data), LittleEndian);

@@ -18,7 +18,7 @@ fn test_basic() {
 fn test_work_example_decompression() {
     use crate::decompression_circuit::DecompressionCircuit;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    
+
     let compressed: Vec<u8> = vec![
         // 0x28, 0xb5, 0x2f, 0xfd, // magic numbers are removed
         0x60, // Originally 0x64. unset the checksum bit.

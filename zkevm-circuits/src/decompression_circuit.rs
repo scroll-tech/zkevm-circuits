@@ -12,8 +12,8 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
         decompression::{
-            BitstringAccumulationTable, BlockTypeRomTable, FseTable, HuffmanCodesTable,
-            LiteralsHeaderRomTable, LiteralsHeaderTable, TagRomTable,
+            BitstringAccumulationTable, BlockTypeRomTable, DecodedLiteralsTable, FseTable,
+            HuffmanCodesTable, LiteralsHeaderRomTable, LiteralsHeaderTable, TagRomTable,
         },
         BitwiseOpTable, KeccakTable, LookupTable, Pow2Table, PowOfRandTable, RangeTable,
     },
@@ -52,6 +52,8 @@ pub struct DecompressionCircuitConfigArgs<F> {
     pub bs_acc_table: BitstringAccumulationTable,
     /// Lookup table to get regenerated and compressed size from LiteralsHeader.
     pub literals_header_table: LiteralsHeaderTable,
+    /// Lookup table to validate decoded literal bytes.
+    pub decoded_literals_table: DecodedLiteralsTable<F>,
     /// Bitwise OP table.
     pub bitwise_op_table: BitwiseOpTable,
     /// RangeTable for [0, 4).
@@ -144,6 +146,7 @@ pub struct DecompressionCircuitConfig<F> {
     bitstring_accumulation_table: BitstringAccumulationTable,
     fse_table: FseTable<F>,
     huffman_codes_table: HuffmanCodesTable<F>,
+    decoded_literals_table: DecodedLiteralsTable<F>,
 }
 
 /// Block level details are specified in these columns.
@@ -383,6 +386,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             huffman_codes_table,
             bs_acc_table,
             literals_header_table,
+            decoded_literals_table,
             bitwise_op_table,
             range4,
             range8,
@@ -1622,21 +1626,14 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlock Raw bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_equal(
-                "value_byte == decoded_byte",
-                meta.query_advice(value_byte, Rotation::cur()),
-                meta.query_advice(decoded_byte, Rotation::cur()),
-            );
-            cb.condition(
-                meta.query_advice(tag_gadget.is_tag_change, Rotation::cur()),
-                |cb| {
-                    cb.require_equal(
-                        "tag_len == regen_size",
-                        meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
-                        meta.query_advice(literals_header.regen_size, Rotation::prev()),
-                    );
-                },
-            );
+            let is_first = meta.query_advice(tag_gadget.is_tag_change, Rotation::cur());
+            cb.condition(is_first, |cb| {
+                cb.require_equal(
+                    "tag_len == regen_size",
+                    meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
+                    meta.query_advice(literals_header.regen_size, Rotation::prev()),
+                );
+            });
             cb.require_equal(
                 "byte_idx increments",
                 meta.query_advice(byte_idx, Rotation::cur()),
@@ -1657,29 +1654,19 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
         meta.create_gate("DecompressionCircuit: ZstdBlock RLE bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_equal(
-                "value_byte == decoded_byte",
-                meta.query_advice(value_byte, Rotation::cur()),
-                meta.query_advice(decoded_byte, Rotation::cur()),
-            );
-            let is_tag_change = meta.query_advice(tag_gadget.is_tag_change, Rotation::cur());
-            cb.condition(is_tag_change.expr(), |cb| {
+            let is_first = meta.query_advice(tag_gadget.is_tag_change, Rotation::cur());
+            cb.condition(is_first.expr(), |cb| {
                 cb.require_equal(
                     "tag_len == regen_size",
                     meta.query_advice(tag_gadget.tag_len, Rotation::cur()),
                     meta.query_advice(literals_header.regen_size, Rotation::prev()),
                 );
             });
-            cb.condition(not::expr(is_tag_change), |cb| {
+            cb.condition(not::expr(is_first), |cb| {
                 cb.require_equal(
                     "byte_idx remains the same",
                     meta.query_advice(byte_idx, Rotation::cur()),
                     meta.query_advice(byte_idx, Rotation::prev()),
-                );
-                cb.require_equal(
-                    "decoded byte remains the same",
-                    meta.query_advice(decoded_byte, Rotation::cur()),
-                    meta.query_advice(decoded_byte, Rotation::prev()),
                 );
             });
 
@@ -2267,12 +2254,6 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                     meta.query_advice(lstream_config.lstream, Rotation::prev()),
                 );
 
-                cb.require_equal(
-                    "decoded byte is the decoded symbol",
-                    meta.query_advice(decoded_byte, Rotation::cur()),
-                    meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::cur()),
-                );
-
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
@@ -2355,6 +2336,29 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
                 ]))
             },
         );
+
+        // TODO: to be enabled once DecodedLiteralsTable has been assigned witness to.
+        /*
+        meta.lookup_any(
+            "DecompressionCircuit: ZstdBlockLstream (decoded literal byte)",
+            |meta| {
+                let condition = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(tag_gadget.is_lstream, Rotation::cur()),
+                    not::expr(meta.query_advice(tag_gadget.is_tag_change, Rotation::cur())),
+                ]);
+                [
+                    meta.query_advice(huffman_tree_config.huffman_tree_idx, Rotation::cur()),
+                    meta.query_advice(byte_idx, Rotation::cur()),
+                    meta.query_advice(bitstream_decoder.decoded_symbol, Rotation::cur()),
+                ]
+                .into_iter()
+                .zip(decoded_literals_table.table_exprs(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
+        */
 
         meta.lookup_any("DecompressionCircuit: bitstring (start)", |meta| {
             let condition = and::expr([
@@ -2605,6 +2609,7 @@ impl<F: Field> SubCircuitConfig<F> for DecompressionCircuitConfig<F> {
             bitstring_accumulation_table: bs_acc_table,
             fse_table,
             huffman_codes_table,
+            decoded_literals_table,
         }
     }
 }
@@ -2649,6 +2654,10 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                 aux_data[5],
             )],
         )?;
+
+        // TODO: pass decoded literals along with boundaries (literal lengths calculated while
+        // applying the Sequences FSE tables).
+        // self.decoded_literals_table.assign(layouter)?;
 
         layouter.assign_region(
             || "Decompression table region",
@@ -2922,12 +2931,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                     let is_huffman_tree_section =
                         is_fse_code + is_huffman_code + is_jumptable + is_lstream;
 
-                    let is_output = (row.state.tag == ZstdTag::RawBlockBytes
-                        || row.state.tag == ZstdTag::RleBlockBytes
-                        || row.state.tag == ZstdTag::ZstdBlockLiteralsRawBytes
-                        || row.state.tag == ZstdTag::ZstdBlockLiteralsRleBytes
-                        || row.state.tag == ZstdTag::ZstdBlockLstream)
-                        as u64;
+                    let is_output = row.state.tag.is_output() as u64;
                     region.assign_advice(
                         || "tag_gadget.is_output",
                         self.tag_gadget.is_output,

@@ -34,11 +34,7 @@ const TAG_MAX_LEN: [(ZstdTag, u64); 13] = [
 ];
 
 fn lookup_max_tag_len(tag: ZstdTag) -> u64 {
-    TAG_MAX_LEN
-        .iter()
-        .find(|record| record.0 == tag)
-        .unwrap()
-        .1
+    TAG_MAX_LEN.iter().find(|record| record.0 == tag).unwrap().1
 }
 
 /// FrameHeaderDescriptor and FrameContentSize
@@ -213,7 +209,16 @@ fn process_frame_header<F: Field>(
     )
 }
 
-type AggregateBlockResult<F> = (usize, Vec<ZstdWitnessRow<F>>, bool, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData);
+type AggregateBlockResult<F> = (
+    usize,
+    Vec<ZstdWitnessRow<F>>,
+    bool,
+    Vec<u64>,
+    Vec<u64>,
+    Vec<u64>,
+    FseAuxiliaryTableData,
+    HuffmanCodesData,
+);
 fn process_block<F: Field>(
     src: &[u8],
     byte_offset: usize,
@@ -523,7 +528,15 @@ fn process_rle_bytes<F: Field>(
     )
 }
 
-type BlockProcessingResult<F> = (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData);
+type BlockProcessingResult<F> = (
+    usize,
+    Vec<ZstdWitnessRow<F>>,
+    Vec<u64>,
+    Vec<u64>,
+    Vec<u64>,
+    FseAuxiliaryTableData,
+    HuffmanCodesData,
+);
 
 fn process_block_raw<F: Field>(
     src: &[u8],
@@ -629,7 +642,8 @@ fn process_block_zstd<F: Field>(
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
-    let literals_header_result: LiteralsHeaderProcessingResult<F> = process_block_zstd_literals_header::<F>(src, byte_offset, last_row, randomness);
+    let literals_header_result: LiteralsHeaderProcessingResult<F> =
+        process_block_zstd_literals_header::<F>(src, byte_offset, last_row, randomness);
     let (
         byte_offset,
         rows,
@@ -806,7 +820,15 @@ fn process_block_zstd<F: Field>(
     )
 }
 
-type LiteralsHeaderProcessingResult<F> = (usize, Vec<ZstdWitnessRow<F>>, BlockType, usize, usize, usize, (u64, bool));
+type LiteralsHeaderProcessingResult<F> = (
+    usize,
+    Vec<ZstdWitnessRow<F>>,
+    BlockType,
+    usize,
+    usize,
+    usize,
+    (u64, bool),
+);
 
 fn process_block_zstd_literals_header<F: Field>(
     src: &[u8],
@@ -942,7 +964,19 @@ fn process_block_zstd_literals_header<F: Field>(
     )
 }
 
-type HuffmanCodeProcessingResult<F> = (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize, Value<F>, usize, u64, u64, u64, FseAuxiliaryTableData);
+type HuffmanCodeProcessingResult<F> = (
+    usize,
+    Vec<ZstdWitnessRow<F>>,
+    HuffmanCodesData,
+    usize,
+    usize,
+    Value<F>,
+    usize,
+    u64,
+    u64,
+    u64,
+    FseAuxiliaryTableData,
+);
 
 fn process_block_zstd_huffman_code<F: Field>(
     src: &[u8],
@@ -978,7 +1012,7 @@ fn process_block_zstd_huffman_code<F: Field>(
             tag_next,
             max_tag_len: lookup_max_tag_len(ZstdTag::ZstdBlockFseCode),
             tag_len: 0_u64, /* There's no information at this point about the length of FSE
-                                * table bytes. So this value has to be modified later. */
+                             * table bytes. So this value has to be modified later. */
             tag_idx: 1_u64,
             tag_value: Value::default(), // Must be changed after FSE table length is known
             tag_value_acc: Value::default(), // Must be changed after FSE table length is known
@@ -1228,9 +1262,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
 
     let aux_1 = next_value_rlc_acc;
-    let aux_2 = witness_rows[witness_rows.len() - 1]
-        .encoded_data
-        .value_rlc;
+    let aux_2 = witness_rows[witness_rows.len() - 1].encoded_data.value_rlc;
 
     let mut padding_end_idx: usize = 0;
     while huffman_bitstream[padding_end_idx] == 0 {
@@ -1671,9 +1703,7 @@ fn process_block_zstd_lstream<F: Field>(
 
     while current_bit_idx < len * N_BITS_PER_BYTE {
         if huffman_bitstring_map.contains_key(bitstring_acc.as_str()) {
-            let sym = *huffman_bitstring_map
-                .get(bitstring_acc.as_str())
-                .unwrap();
+            let sym = *huffman_bitstring_map.get(bitstring_acc.as_str()).unwrap();
             decoded_symbols.push(sym);
 
             let from_byte_idx = current_byte_idx;
@@ -1770,13 +1800,16 @@ fn process_block_zstd_lstream<F: Field>(
 }
 
 /// Result for processing multiple blocks from compressed data
-pub type MultiBlockProcessResult<F> = (Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<FseAuxiliaryTableData>, Vec<HuffmanCodesData>);
+pub type MultiBlockProcessResult<F> = (
+    Vec<ZstdWitnessRow<F>>,
+    Vec<u64>,
+    Vec<u64>,
+    Vec<FseAuxiliaryTableData>,
+    Vec<HuffmanCodesData>,
+);
 
 /// Process a slice of bytes into decompression circuit witness rows
-pub fn process<F: Field>(
-    src: &[u8],
-    randomness: Value<F>,
-) -> MultiBlockProcessResult<F> {
+pub fn process<F: Field>(src: &[u8], randomness: Value<F>) -> MultiBlockProcessResult<F> {
     let mut witness_rows = vec![];
     let mut literals: Vec<u64> = vec![];
     let mut aux_data: Vec<u64> = vec![];

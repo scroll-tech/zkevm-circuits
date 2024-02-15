@@ -10,7 +10,8 @@ use crate::{
     },
     table::{
         decompression::{
-            BitstringAccumulationTable, FseTable, HuffmanCodesTable, LiteralsHeaderTable,
+            BitstringAccumulationTable, DecodedLiteralsTable, FseTable, HuffmanCodesTable,
+            LiteralsHeaderTable,
         },
         BitwiseOpTable, KeccakTable, Pow2Table, PowOfRandTable, RangeTable,
     },
@@ -52,6 +53,8 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
             range16,
             range64,
         );
+        let decoded_literals_table =
+            DecodedLiteralsTable::construct(meta, challenge_exprs.clone(), range256);
 
         let config = DecompressionCircuitConfig::new(
             meta,
@@ -61,6 +64,7 @@ impl<F: Field> Circuit<F> for DecompressionCircuit<F> {
                 huffman_codes_table,
                 bs_acc_table,
                 literals_header_table,
+                decoded_literals_table,
                 bitwise_op_table,
                 range4,
                 range8,
