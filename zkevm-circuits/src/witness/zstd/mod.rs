@@ -531,6 +531,8 @@ fn process_rle_bytes<F: Field>(
     )
 }
 
+type BlockProcessingResult<F> = (usize, Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<u64>, FseAuxiliaryTableData, HuffmanCodesData);
+
 fn process_block_raw<F: Field>(
     src: &[u8],
     byte_offset: usize,
@@ -538,15 +540,7 @@ fn process_block_raw<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (
-    usize,
-    Vec<ZstdWitnessRow<F>>,
-    Vec<u64>,
-    Vec<u64>,
-    Vec<u64>,
-    FseAuxiliaryTableData,
-    HuffmanCodesData,
-) {
+) -> BlockProcessingResult<F> {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -591,15 +585,7 @@ fn process_block_rle<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (
-    usize,
-    Vec<ZstdWitnessRow<F>>,
-    Vec<u64>,
-    Vec<u64>,
-    Vec<u64>,
-    FseAuxiliaryTableData,
-    HuffmanCodesData,
-) {
+) -> BlockProcessingResult<F> {
     let tag_next = if last_block {
         ZstdTag::Null
     } else {
@@ -645,15 +631,7 @@ fn process_block_zstd<F: Field>(
     randomness: Value<F>,
     block_size: usize,
     last_block: bool,
-) -> (
-    usize,
-    Vec<ZstdWitnessRow<F>>,
-    Vec<u64>,
-    Vec<u64>,
-    Vec<u64>,
-    FseAuxiliaryTableData,
-    HuffmanCodesData,
-) {
+) -> BlockProcessingResult<F> {
     let mut witness_rows = vec![];
 
     // 1-5 bytes LiteralSectionHeader
@@ -828,20 +806,14 @@ fn process_block_zstd<F: Field>(
     )
 }
 
+type LiteralsHeaderProcessingResult<F> = (usize, Vec<ZstdWitnessRow<F>>, BlockType, usize, usize, usize, (u64, bool));
+
 fn process_block_zstd_literals_header<F: Field>(
     src: &[u8],
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
-) -> (
-    usize,
-    Vec<ZstdWitnessRow<F>>,
-    BlockType,
-    usize,
-    usize,
-    usize,
-    (u64, bool),
-) {
+) -> LiteralsHeaderProcessingResult<F> {
     let lh_bytes = src
         .iter()
         .skip(byte_offset)
@@ -970,25 +942,15 @@ fn process_block_zstd_literals_header<F: Field>(
     )
 }
 
+type HuffmanCodeProcessingResult<F> = (usize, Vec<ZstdWitnessRow<F>>, HuffmanCodesData, usize, usize, Value<F>, usize, u64, u64, u64, FseAuxiliaryTableData);
+
 fn process_block_zstd_huffman_code<F: Field>(
     src: &[u8],
     byte_offset: usize,
     last_row: &ZstdWitnessRow<F>,
     randomness: Value<F>,
     n_streams: usize,
-) -> (
-    usize,
-    Vec<ZstdWitnessRow<F>>,
-    HuffmanCodesData,
-    usize,
-    usize,
-    Value<F>,
-    usize,
-    u64,
-    u64,
-    u64,
-    FseAuxiliaryTableData,
-) {
+) -> HuffmanCodeProcessingResult<F> {
     // Preserve this value for later construction of HuffmanCodesDataTable
     let huffman_code_byte_offset = byte_offset;
 
@@ -1563,6 +1525,7 @@ fn process_block_zstd_huffman_jump_table<F: Field>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_block_zstd_lstream<F: Field>(
     src: &[u8],
     byte_offset: usize,
@@ -1806,17 +1769,14 @@ fn process_block_zstd_lstream<F: Field>(
     (byte_offset + len, witness_rows, decoded_symbols)
 }
 
+/// Result for processing multiple blocks from compressed data
+pub type MultiBlockProcessResult<F> = (Vec<ZstdWitnessRow<F>>, Vec<u64>, Vec<u64>, Vec<FseAuxiliaryTableData>, Vec<HuffmanCodesData>);
+
 /// Process a slice of bytes into decompression circuit witness rows
 pub fn process<F: Field>(
     src: &[u8],
     randomness: Value<F>,
-) -> (
-    Vec<ZstdWitnessRow<F>>,
-    Vec<u64>,
-    Vec<u64>,
-    Vec<FseAuxiliaryTableData>,
-    Vec<HuffmanCodesData>,
-) {
+) -> MultiBlockProcessResult<F> {
     let mut witness_rows = vec![];
     let mut literals: Vec<u64> = vec![];
     let mut aux_data: Vec<u64> = vec![];
