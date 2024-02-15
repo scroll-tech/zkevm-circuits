@@ -503,8 +503,8 @@ impl HuffmanCodesData {
             cur_bit_value += 1;
             cur_bit_value >>= 1;
 
-            for sym in 0..n {
-                if bitstring_length[sym] == bit_len {
+            for (sym, b_len) in bitstring_length.iter().enumerate().take(n) {
+                if *b_len == bit_len {
                     bitstring_map.insert(
                         format!("{:0width$b}", cur_bit_value, width = bit_len),
                         sym as u64,

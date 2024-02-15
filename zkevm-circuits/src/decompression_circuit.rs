@@ -2820,7 +2820,7 @@ impl<F: Field> DecompressionCircuitConfig<F> {
                         || "tag_gadget.max_len",
                         self.tag_gadget.max_len,
                         i,
-                        || Value::known(F::from(row.state.max_tag_len as u64)),
+                        || Value::known(F::from(row.state.max_tag_len)),
                     )?;
                     region.assign_advice(
                         || "tag_gadget.tag_idx",

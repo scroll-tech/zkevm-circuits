@@ -1125,7 +1125,7 @@ fn process_block_zstd_huffman_code<F: Field>(
                 from_pos.1 as usize,
                 to_pos.0 as usize,
                 to_pos.1 as usize,
-                value.clone(),
+                *value,
                 current_tag_value_acc,
                 current_tag_rlc_acc,
                 0,
@@ -1265,7 +1265,7 @@ fn process_block_zstd_huffman_code<F: Field>(
     let next_value_rlc_acc = value_rlc_iter.next().unwrap();
     let mut next_tag_rlc_acc = tag_rlc_iter.next().unwrap();
 
-    let aux_1 = next_value_rlc_acc.clone();
+    let aux_1 = next_value_rlc_acc;
     let aux_2 = witness_rows[witness_rows.len() - 1]
         .encoded_data
         .value_rlc;
@@ -1597,13 +1597,6 @@ fn process_block_zstd_lstream<F: Field>(
 
     // accumulators
     let aux_1 = last_row.encoded_data.value_rlc;
-    let mut value_rlc_acc = src.iter().skip(byte_offset).take(len).rev().scan(
-        last_row.encoded_data.value_rlc,
-        |acc, &byte| {
-            *acc = *acc * randomness + Value::known(F::from(byte as u64));
-            Some(*acc)
-        },
-    );
     let multiplier =
         (0..last_row.state.tag_len).fold(Value::known(F::one()), |acc, _| acc * randomness);
     let value_rlc = last_row.encoded_data.value_rlc * multiplier + last_row.state.tag_rlc;
