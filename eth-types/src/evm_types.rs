@@ -61,6 +61,8 @@ impl fmt::Debug for Gas {
     }
 }
 
+/// According to EIP-3541, disallow new code starting with 0xEF to be deployed.
+pub const INVALID_INIT_CODE_FIRST_BYTE: u8 = 0xef;
 /// Maximum bytecode size to permit for a contract.
 pub const MAX_CODE_SIZE: u64 = 24576;
 /// This constant ((2^32 - 1) * 32) is the highest number that can be used without overflowing the

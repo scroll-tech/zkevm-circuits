@@ -22,7 +22,7 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
 use eth_types::{
-    evm_types::{GasCost, OpcodeId},
+    evm_types::{GasCost, OpcodeId, INVALID_INIT_CODE_FIRST_BYTE},
     Field, ToScalar, U256,
 };
 use ethers_core::utils::keccak256;
@@ -39,6 +39,10 @@ pub(crate) struct ReturnRevertGadget<F> {
 
     is_success: Cell<F>,
     restore_context: RestoreContextGadget<F>,
+
+    // Used to check first byte of create init code must not be 0xef (EIP-3541).
+    init_code_first_byte: Cell<F>,
+    is_init_code_first_byte_invalid: IsEqualGadget<F>,
 
     copy_length: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
     copy_rw_increase: Cell<F>,
@@ -125,7 +129,23 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             prev_keccak_code_hash,
             code_size,
             deployed_bytecode_rlc,
+            init_code_first_byte,
+            is_init_code_first_byte_invalid,
         ) = cb.condition(is_contract_deployment.clone(), |cb| {
+            // Read the first byte and check it must not be 0xef (EIP-3541).
+            let init_code_first_byte = cb.query_cell();
+            // lookup memory word to ensure the frist byte is really part of word ? ;
+
+            let is_init_code_first_byte_invalid = IsEqualGadget::construct(
+                cb,
+                init_code_first_byte.expr(),
+                INVALID_INIT_CODE_FIRST_BYTE.expr(),
+            );
+            cb.require_zero(
+                "First byte of create init code must not be 0xef",
+                is_init_code_first_byte_invalid.expr(),
+            );
+
             // poseidon hash of code.
             //
             // We don't need to place any additional constraints on code_hash. The lookup to
@@ -213,6 +233,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 prev_keccak_code_hash,
                 code_size,
                 deployed_bytecode_rlc,
+                init_code_first_byte,
+                is_init_code_first_byte_invalid,
             )
         });
 
@@ -328,6 +350,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             range,
             deployed_bytecode_rlc,
             is_success,
+            init_code_first_byte,
+            is_init_code_first_byte_invalid,
             copy_length,
             copy_rw_increase,
             copy_rw_increase_is_zero,
@@ -397,12 +421,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         };
 
         let copy_rwc_inc = step.copy_rw_counter_delta;
+        let mut init_code_first_byte: u8 = 0;
 
         if call.is_create && call.is_success {
             // read memory word and get real copy bytes
             let deployed_bytecode: Vec<u8> =
                 get_copy_bytes(&mut rws, copy_rwc_inc as usize, shift, valid_length);
 
+            init_code_first_byte = *deployed_bytecode.first().unwrap_or(&0u8);
             self.deployed_bytecode_rlc.assign(
                 region,
                 offset,
@@ -450,6 +476,18 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 }
             }
         }
+
+        self.init_code_first_byte.assign(
+            region,
+            offset,
+            Value::known(F::from(init_code_first_byte as u64)),
+        )?;
+        self.is_init_code_first_byte_invalid.assign(
+            region,
+            offset,
+            F::from(init_code_first_byte as u64),
+            F::from(INVALID_INIT_CODE_FIRST_BYTE as u64),
+        )?;
 
         self.copy_rw_increase
             .assign(region, offset, Value::known(F::from(copy_rwc_inc)))?;
