@@ -33,7 +33,7 @@ pub(crate) struct TxEip1559Gadget<F> {
     // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L255>
     is_insufficient_balance: LtWordGadget<F>,
     // Error condition
-    // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L304>
+    // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L310>
     gas_fee_cap_lt_gas_tip_cap: LtWordGadget<F>,
 }
 
