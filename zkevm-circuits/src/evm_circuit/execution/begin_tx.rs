@@ -522,7 +522,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (init_code_rlc, keccak_code_hash)
         });
 
-        // 2. Handle call to precompiled contracts.
+        /*
+        2. Handle call to precompiled contracts:
+           + Set up the root call's context like the tx is calling non-empty code
+           + constructed the base precompile gadget
+           + connected the additional copy event and the base precompile gadget with a lookup to copy table with following constraints:
+              * copy source is from the `TxCalldata` of current tx id
+              * copy target is the root call we have setup, and with the form of `RlcAcc`
+              * The copied len and rlc of copied bytes would be passed to base precompile gadget,
+                so the base precompile gadget verify the RLC of the call data against its input bytes.
+
+            Notice we need an additional copy event like we have done in the `CallOp` step
+
+            We simply drop any checks to the output bytes which precompile would return,
+            since they are ommited as the return data from a transaction.
+        */
         let (precompile_gadget, precompile_input_bytes_rlc) =
             cb.condition(is_precompile.expr(), |cb| {
                 cb.require_equal(

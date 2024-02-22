@@ -371,7 +371,15 @@ pub fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<Vec<ExecSt
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
         }
-        // 2. Call to precompiled.
+        /*
+         2. Call to precompiled.
+
+           + Set up the root call's context like the tx is calling non-empty code
+           + Add an additional copy event like we have done in the `CallOp` step.
+             It copied the `TxCalldata` into the root calls, with form of `RlcAcc`.
+           + Prepare a precompile step to be returned, so in this case `gen_begin_tx_steps`
+             would return 2 steps instead of 1
+        */
         (_, true, _) => {
             // some *pre-handling* for precompile address, like what we have done in callop
             // the generation of precompile step is in `handle_tx`, right after the generation
