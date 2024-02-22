@@ -9,11 +9,14 @@ use crate::{
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::{MemoryMask, MemoryWordAddress},
-            CachedRegion, Cell, RandomLinearCombination, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
@@ -24,8 +27,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct ErrorInvalidCreationCodeGadget<F> {
     opcode: Cell<F>,
     memory_address: MemoryWordAddress<F>,
-    length: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>,
-    value_left: Word<F>,
+    length: Word32Cell<F>,
+    value_left: Word32Cell<F>,
     first_byte: Cell<F>,
     is_first_byte_invalid: IsEqualGadget<F>,
     mask: MemoryMask<F>,
@@ -47,14 +50,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         );
         let first_byte = cb.query_cell();
 
-        //let address = cb.query_word_rlc();
+        let offset = cb.query_memory_address();
 
-        let offset = cb.query_word_rlc();
-        let length = cb.query_word_rlc();
-        let value_left = cb.query_word_rlc();
+        let length = cb.query_word32();
+        let value_left = cb.query_word32();
 
-        cb.stack_pop(offset.expr());
-        cb.stack_pop(length.expr());
+        cb.stack_pop(offset.to_word());
+        cb.stack_pop(length.to_word());
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
         let address_word = MemoryWordAddress::construct(cb, offset.clone());
@@ -62,8 +64,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.memory_lookup(
             0.expr(),
             address_word.addr_left(),
-            value_left.expr(),
-            value_left.expr(),
+            value_left.to_word(),
+            value_left.to_word(),
             None,
         );
 
@@ -82,8 +84,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             cb,
             opcode.expr(),
             5.expr(),
-            from_bytes::expr(&offset.cells[..N_BYTES_MEMORY_ADDRESS]),
-            from_bytes::expr(&length.cells[..N_BYTES_MEMORY_ADDRESS]),
+            from_bytes::expr(&offset.limbs[..N_BYTES_MEMORY_ADDRESS]),
+            from_bytes::expr(&length.limbs[..N_BYTES_MEMORY_ADDRESS]),
         );
 
         Self {
@@ -115,19 +117,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         self.memory_address
             .assign(region, offset, memory_offset.as_u64())?;
 
-        self.length.assign(
-            region,
-            offset,
-            Some(
-                length.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.length.assign_u256(region, offset, length)?;
 
         let word_left = block.rws[step.rw_indices[2]].memory_word_pair().0;
-        self.value_left
-            .assign(region, offset, Some(word_left.to_le_bytes()))?;
+        self.value_left.assign_u256(region, offset, word_left)?;
 
         let mut bytes = word_left.to_le_bytes();
         bytes.reverse();

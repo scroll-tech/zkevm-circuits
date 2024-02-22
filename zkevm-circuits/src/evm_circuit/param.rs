@@ -6,10 +6,11 @@ use halo2_proofs::{
 };
 use std::{collections::HashMap, sync::LazyLock};
 
-// Step dimension
-pub(crate) const STEP_WIDTH: usize = 141;
+/// Step dimension
+pub(crate) const STEP_WIDTH: usize = 153;
 /// Step height
-pub const MAX_STEP_HEIGHT: usize = 21;
+pub const MAX_STEP_HEIGHT: usize = 22;
+
 /// The height of the state of a step, used by gates that connect two
 /// consecutive steps. We target 1, which is also convenient for padding with
 /// EndBlock steps.
@@ -17,6 +18,7 @@ pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 
 /// Number of Advice Phase2 columns in the EVM circuit
 pub(crate) const N_PHASE2_COLUMNS: usize = 7;
+//pub(crate) const N_PHASE2_COLUMNS: usize = 1;
 
 /// Number of Advice Phase1 columns in the EVM circuit
 pub(crate) const N_PHASE1_COLUMNS: usize =
@@ -27,7 +29,7 @@ pub(crate) const N_COPY_COLUMNS: usize = 2;
 // Number of copy columns for phase2
 pub(crate) const N_PHASE2_COPY_COLUMNS: usize = 1;
 
-pub(crate) const N_BYTE_LOOKUPS: usize = 36;
+pub(crate) const N_BYTE_LOOKUPS: usize = 43;
 
 /// Amount of lookup columns in the EVM circuit dedicated to lookups.
 pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
@@ -71,7 +73,7 @@ pub const TX_TABLE_LOOKUPS: usize = 4;
 pub const RW_TABLE_LOOKUPS: usize = 8;
 
 /// Bytecode Table lookups done in EVMCircuit
-pub const BYTECODE_TABLE_LOOKUPS: usize = 1;
+pub const BYTECODE_TABLE_LOOKUPS: usize = 4;
 
 /// Block Table lookups done in EVMCircuit
 pub const BLOCK_TABLE_LOOKUPS: usize = 1;
@@ -105,6 +107,8 @@ pub(crate) const MAX_N_BYTES_INTEGER: usize = 31;
 
 // Number of bytes an EVM word has.
 pub(crate) const N_BYTES_WORD: usize = 32;
+
+pub(crate) const N_BYTES_HALF_WORD: usize = N_BYTES_WORD / 2;
 
 pub(crate) const N_BYTES_EC_PAIR: usize = 192;
 

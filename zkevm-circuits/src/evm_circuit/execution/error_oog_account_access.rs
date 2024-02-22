@@ -1,23 +1,22 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS},
+        param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
             math_gadget::LtGadget,
-            select, CachedRegion, Cell, Word,
+            select, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian,
+    Field, ToAddress,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -26,7 +25,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGAccountAccessGadget<F> {
     opcode: Cell<F>,
-    address_word: Word<F>,
+    address: AccountAddress<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
@@ -50,14 +49,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
             ],
         );
 
-        let address_word = cb.query_word_rlc();
-        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-        cb.stack_pop(address_word.expr());
+        let address = cb.query_account_address();
+        cb.stack_pop(address.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_warm = cb.query_bool();
         // read is_warm
-        cb.account_access_list_read(tx_id.expr(), address.expr(), is_warm.expr());
+        cb.account_access_list_read(tx_id.expr(), address.to_word(), is_warm.expr());
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -77,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
         let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 5.expr());
         Self {
             opcode,
-            address_word,
+            address,
             tx_id,
             is_warm,
             insufficient_gas_cost,
@@ -99,9 +97,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         let address = block.rws[step.rw_indices[0]].stack_value();
-        self.address_word
-            .assign(region, offset, Some(address.to_le_bytes()))?;
-
+        self.address
+            .assign_h160(region, offset, address.to_address())?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 

@@ -6,7 +6,7 @@ use crate::{
         not, or, select,
     },
     table::TxFieldTag,
-    util::Expr,
+    util::{word::Word, Expr},
     witness::Transaction,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
@@ -57,9 +57,9 @@ impl<F: Field> TxAccessListGadget<F> {
         cb.condition(not::expr(is_address_len_zero.expr()), |cb| {
                 // Let copy-circuit to write the tx-table's access list addresses into rw-table.
                 cb.copy_table_lookup(
-                    tx_id.expr(),
+                    Word::from_lo_unchecked(tx_id.expr()),
                     CopyDataType::AccessListAddresses.expr(),
-                    tx_id.expr(),
+                    Word::from_lo_unchecked(tx_id.expr()),
                     CopyDataType::AccessListAddresses.expr(),
                     // Access list address index starts from 1 in tx-table.
                     1.expr(),
@@ -73,9 +73,9 @@ impl<F: Field> TxAccessListGadget<F> {
         cb.condition(not::expr(is_storage_key_len_zero.expr()), |cb| {
                 // Let copy-circuit to write the tx-table's access list storage keys into rw-table.
                 cb.copy_table_lookup(
-                    tx_id.expr(),
+                    Word::from_lo_unchecked(tx_id.expr()),
                     CopyDataType::AccessListStorageKeys.expr(),
-                    tx_id.expr(),
+                    Word::from_lo_unchecked(tx_id.expr()),
                     CopyDataType::AccessListStorageKeys.expr(),
                     // Access list storage key index starts from 0 in tx-table.
                     0.expr(),

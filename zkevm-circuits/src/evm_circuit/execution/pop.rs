@@ -5,11 +5,14 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -18,7 +21,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct PopGadget<F> {
     same_context: SameContextGadget<F>,
-    phase2_value: Cell<F>,
+    value: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
@@ -27,10 +30,10 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::POP;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let phase2_value = cb.query_cell_phase2();
+        let value = cb.query_word_unchecked();
 
         // Pop the value from the stack
-        cb.stack_pop(phase2_value.expr());
+        cb.stack_pop(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -45,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
 
         Self {
             same_context,
-            phase2_value,
+            value,
         }
     }
 
@@ -61,8 +64,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
-        self.phase2_value
-            .assign(region, offset, region.word_rlc(value))?;
+        self.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }

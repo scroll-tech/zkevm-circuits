@@ -5,25 +5,28 @@ use crate::{
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::IsZeroGadget,
-            CachedRegion, Cell, Word as RLCWord,
+            math_gadget::{IsZeroGadget, IsZeroWordGadget},
+            AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorWriteProtectionGadget<F> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
-    gas: RLCWord<F>,
-    code_address: RLCWord<F>,
-    value: RLCWord<F>,
-    is_value_zero: IsZeroGadget<F>,
+    gas: WordCell<F>,
+    code_address: AccountAddress<F>,
+    value: WordCell<F>,
+    is_value_zero: IsZeroWordGadget<F, WordCell<F>>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -35,10 +38,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let gas_word = cb.query_word_rlc();
-        let code_address_word = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
-        let is_value_zero = IsZeroGadget::construct(cb, value.expr());
+        let gas_word = cb.query_word_unchecked();
+        let code_address = cb.query_account_address();
+        let value = cb.query_word_unchecked();
+        let is_value_zero = IsZeroWordGadget::construct(cb, &value);
 
         // require_in_set method will spilit into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes
@@ -63,15 +66,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         // Lookup values from stack if opcode is call
         // Precondition: If there's a StackUnderflow CALL, is handled before this error
         cb.condition(is_call.expr(), |cb| {
-            cb.stack_pop(gas_word.expr());
-            cb.stack_pop(code_address_word.expr());
-            cb.stack_pop(value.expr());
-            //cb.require_zero("value of call is not zero",
-            // is_value_zero.expr());
+            cb.stack_pop(gas_word.to_word());
+            cb.stack_pop(code_address.to_word());
+            cb.stack_pop(value.to_word());
+            cb.require_zero("value of call is not zero", is_value_zero.expr());
         });
 
         // current call context is readonly
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsStatic, 1.expr());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsStatic, Word::one());
 
         // constrain not root call as at least one previous staticcall preset.
         cb.require_zero(
@@ -85,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             opcode,
             is_call,
             gas: gas_word,
-            code_address: code_address_word,
+            code_address,
             value,
             is_value_zero,
             common_error_gadget,
@@ -113,11 +115,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
                     .map(|idx| block.rws[idx].stack_value());
         }
 
-        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
+        self.gas.assign_u256(region, offset, gas)?;
         self.code_address
-            .assign(region, offset, Some(code_address.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+            .assign_h160(region, offset, code_address.to_address())?;
+        self.value.assign_u256(region, offset, value)?;
 
         self.is_call.assign(
             region,
@@ -125,8 +126,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
         )?;
         self.is_value_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
-
+            .assign(region, offset, Word::from(value))?;
         self.common_error_gadget.assign(
             region,
             offset,

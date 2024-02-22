@@ -6,11 +6,14 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::IsZeroGadget,
-            rlc, select, CachedRegion, Cell,
+            rlc, select, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -19,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
     is_push0: IsZeroGadget<F>,
-    value: Cell<F>,
+    value: Word32Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
@@ -31,9 +34,9 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         let opcode = cb.query_cell();
 
         let is_push0 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::PUSH0.expr());
-
-        let value = cb.query_cell_phase2();
-        cb.stack_push(value.expr());
+        // value use WordCell better ?
+        let value = cb.query_word32();
+        cb.stack_push(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -47,8 +50,10 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             )),
             ..Default::default()
         };
+
+        let push_rlc = cb.word_rlc(value.limbs.clone().map(|ref l| l.expr()));
         let same_context =
-            SameContextGadget::construct2(cb, opcode, step_state_transition, value.expr());
+            SameContextGadget::construct2(cb, opcode, step_state_transition, push_rlc);
 
         Self {
             same_context,
@@ -75,8 +80,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             F::from(opcode.as_u64() - OpcodeId::PUSH0.as_u64()),
         )?;
 
-        let value_rlc = if opcode.is_push_with_data() {
-            let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.rws[step.rw_indices[0]].stack_value();
+        let _value_rlc = if opcode.is_push_with_data() {
             region
                 .challenges()
                 .evm_word()
@@ -84,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         } else {
             Value::known(F::zero())
         };
-        self.value.assign(region, offset, value_rlc)?;
+        self.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }

@@ -3,7 +3,7 @@
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
@@ -37,7 +37,9 @@ pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the bytes representation of the difference between lhs and rhs.
     pub diff: [Column<Advice>; N_BYTES],
     /// Denotes the range within which each byte should lie.
-    pub u8_table: TableColumn,
+    //pub u8_table: TableColumn,
+    pub u8_table: Column<Fixed>,
+
     /// Denotes the range within which both lhs and rhs lie.
     pub range: F,
 }
@@ -68,7 +70,8 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
         lhs: impl FnOnce(&mut VirtualCells<F>) -> Expression<F>,
         rhs: impl FnOnce(&mut VirtualCells<F>) -> Expression<F>,
-        u8_table: TableColumn,
+        //u8_table: TableColumn,
+        u8_table: Column<Fixed>,
     ) -> LtConfig<F, N_BYTES> {
         let lt = meta.advice_column();
         let diff = [(); N_BYTES].map(|_| meta.advice_column());
@@ -94,11 +97,11 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         });
 
         for cell_column in diff {
-            meta.lookup("range check for u8", |meta| {
+            meta.lookup_any("range check for u8", |meta| {
                 let q_enable = q_enable.clone()(meta);
                 vec![(
                     q_enable * meta.query_advice(cell_column, Rotation::cur()),
-                    u8_table,
+                    meta.query_fixed(u8_table, Rotation::cur()),
                 )]
             });
         }
@@ -156,11 +159,12 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
     ) -> Result<(), Error> {
         const RANGE: usize = u8::MAX as usize;
 
-        layouter.assign_table(
+        //layouter.assign_table(
+        layouter.assign_region(
             || "load u8 range check table",
-            |mut table| {
+            |mut region| {
                 for i in 0..=RANGE {
-                    table.assign_cell(
+                    region.assign_fixed(
                         || "assign cell in fixed column",
                         self.config.u8_table,
                         i,
@@ -265,7 +269,7 @@ mod test {
                 let q_enable = meta.complex_selector();
                 let value = meta.advice_column();
                 let check = meta.advice_column();
-                let u8_table = meta.lookup_table_column();
+                let u8_table = meta.fixed_column();
 
                 let lt = LtChip::configure(
                     meta,
@@ -389,7 +393,7 @@ mod test {
                 let q_enable = meta.complex_selector();
                 let (value_a, value_b) = (meta.advice_column(), meta.advice_column());
                 let check = meta.advice_column();
-                let u16_table = meta.lookup_table_column();
+                let u16_table = meta.fixed_column();
 
                 let lt = LtChip::configure(
                     meta,

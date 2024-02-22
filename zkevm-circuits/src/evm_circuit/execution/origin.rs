@@ -1,26 +1,28 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, Cell, RandomLinearCombination,
+            from_bytes, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct OriginGadget<F> {
     tx_id: Cell<F>,
-    origin: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    origin: AccountAddress<F>,
     same_context: SameContextGadget<F>,
 }
 
@@ -30,20 +32,23 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ORIGIN;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let origin = cb.query_word_rlc::<N_BYTES_ACCOUNT_ADDRESS>();
+        let origin = cb.query_account_address();
+        // let address_rlc = cb.word_rlc(origin.limbs.clone().map(|l| l.expr()));
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let address_value = from_bytes::expr(&origin.limbs);
         // Lookup rw_table -> call_context with tx origin address
         cb.tx_context_lookup(
             tx_id.expr(),
             TxContextFieldTag::CallerAddress,
             None, // None because unrelated to calldata
-            from_bytes::expr(&origin.cells),
+            //origin.to_word(),
+            Word::from_lo_unchecked(address_value),
         );
 
         // Push the value to the stack
-        cb.stack_push(origin.expr());
+        cb.stack_push(origin.to_word());
 
         // State transition
         let opcode = cb.query_cell();
@@ -78,16 +83,8 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
-        // Assign Origin addr RLC.
-        self.origin.assign(
-            region,
-            offset,
-            Some(
-                origin.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        // Assign Origin addr word.
+        self.origin.assign_u256(region, offset, origin)?;
 
         // Assign SameContextGadget witnesses.
         self.same_context.assign_exec_step(region, offset, step)?;

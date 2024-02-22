@@ -5,12 +5,15 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, U64Word,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -19,7 +22,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ChainIdGadget<F> {
     same_context: SameContextGadget<F>,
-    chain_id: U64Word<F>,
+    chain_id: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
@@ -28,16 +31,17 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CHAINID;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let chain_id = cb.query_word_rlc();
+        let chain_id = cb.query_word_unchecked();
 
         // Push the value to the stack
-        cb.stack_push(chain_id.expr());
+        cb.stack_push(chain_id.to_word());
 
         // Lookup block table with chain_id
         cb.block_lookup(
             BlockContextFieldTag::ChainId.expr(),
-            cb.curr.state.block_number.expr(),
-            from_bytes::expr(&chain_id.cells),
+            Some(cb.curr.state.block_number.expr()),
+            //chain_id.to_word(),
+            chain_id.lo().expr(),
         );
 
         // State transition
@@ -68,9 +72,8 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let chain_id = block.rws[step.rw_indices[0]].stack_value().as_u64();
-        self.chain_id
-            .assign(region, offset, Some(chain_id.to_le_bytes()))?;
+        let chain_id = block.rws[step.rw_indices[0]].stack_value();
+        self.chain_id.assign_u256(region, offset, chain_id)?;
 
         Ok(())
     }

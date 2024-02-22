@@ -4,16 +4,19 @@ use crate::{
         param::N_BYTES_U64,
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes, U64Word, Word,
+            from_bytes,
         },
     },
-    util::Expr,
+    util::{
+        word::{Word, Word32, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::{
     circuit_input_builder::{TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION},
     l2_predeployed::l1_gas_price_oracle,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, Word as U256Word};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Transaction L1 fee gadget for L1GasPriceOracle contract
@@ -22,15 +25,15 @@ pub(crate) struct TxL1FeeGadget<F> {
     /// Transaction L1 fee
     /// It should be an Uint64, but it's also used to check sender balance which
     /// needs to be added as a Word.
-    tx_l1_fee_word: Word<F>,
+    tx_l1_fee_word: Word32Cell<F>,
     /// Remainder when calculating L1 fee
-    remainder_word: U64Word<F>,
+    remainder_word: Word32Cell<F>,
     /// Current value of L1 base fee
-    base_fee_word: U64Word<F>,
+    base_fee_word: Word32Cell<F>,
     /// Current value of L1 fee overhead
-    fee_overhead_word: U64Word<F>,
+    fee_overhead_word: Word32Cell<F>,
     /// Current value of L1 fee scalar
-    fee_scalar_word: U64Word<F>,
+    fee_scalar_word: Word32Cell<F>,
     /// Committed value of L1 base fee
     base_fee_committed: Cell<F>,
     /// Committed value of L1 fee overhead
@@ -52,37 +55,37 @@ impl<F: Field> TxL1FeeGadget<F> {
         ));
 
         let [base_fee_slot, overhead_slot, scalar_slot] = [
-            &l1_gas_price_oracle::BASE_FEE_SLOT,
-            &l1_gas_price_oracle::OVERHEAD_SLOT,
-            &l1_gas_price_oracle::SCALAR_SLOT,
+            *l1_gas_price_oracle::BASE_FEE_SLOT,
+            *l1_gas_price_oracle::OVERHEAD_SLOT,
+            *l1_gas_price_oracle::SCALAR_SLOT,
         ]
-        .map(|slot| cb.word_rlc(slot.to_le_bytes().map(|b| b.expr())));
+        .map(|slot| slot);
 
         // Read L1 base fee
-        cb.account_storage_read(
+        cb.account_storage_read_address(
             l1_fee_address.expr(),
-            base_fee_slot,
-            this.base_fee_word.expr(),
+            Word32::new(base_fee_slot.to_le_bytes()).to_expr().to_word(),
+            this.base_fee_word.to_word(),
             tx_id.expr(),
-            this.base_fee_committed.expr(),
+            Word::from_lo_unchecked(this.base_fee_committed.expr()),
         );
 
         // Read L1 fee overhead
-        cb.account_storage_read(
+        cb.account_storage_read_address(
             l1_fee_address.expr(),
-            overhead_slot,
-            this.fee_overhead_word.expr(),
+            Word32::new(overhead_slot.to_le_bytes()).to_expr().to_word(),
+            this.fee_overhead_word.to_word(),
             tx_id.expr(),
-            this.fee_overhead_committed.expr(),
+            Word::from_lo_unchecked(this.fee_overhead_committed.expr()),
         );
 
         // Read L1 fee scalar
-        cb.account_storage_read(
+        cb.account_storage_read_address(
             l1_fee_address,
-            scalar_slot,
-            this.fee_scalar_word.expr(),
+            Word32::new(scalar_slot.to_le_bytes()).to_expr().to_word(),
+            this.fee_scalar_word.to_word(),
             tx_id,
-            this.fee_scalar_committed.expr(),
+            Word::from_lo_unchecked(this.fee_scalar_committed.expr()),
         );
 
         this
@@ -98,15 +101,15 @@ impl<F: Field> TxL1FeeGadget<F> {
     ) -> Result<(), Error> {
         let (tx_l1_fee, remainder) = l1_fee.tx_l1_fee(tx_data_gas_cost);
         self.tx_l1_fee_word
-            .assign(region, offset, Some(U256::from(tx_l1_fee).to_le_bytes()))?;
+            .assign_u256(region, offset, U256Word::from(tx_l1_fee))?;
         self.remainder_word
-            .assign(region, offset, Some(remainder.to_le_bytes()))?;
+            .assign_u256(region, offset, U256Word::from(remainder))?;
         self.base_fee_word
-            .assign(region, offset, Some(l1_fee.base_fee.to_le_bytes()))?;
+            .assign_u256(region, offset, U256Word::from(l1_fee.base_fee))?;
         self.fee_overhead_word
-            .assign(region, offset, Some(l1_fee.fee_overhead.to_le_bytes()))?;
+            .assign_u256(region, offset, U256Word::from(l1_fee.fee_overhead))?;
         self.fee_scalar_word
-            .assign(region, offset, Some(l1_fee.fee_scalar.to_le_bytes()))?;
+            .assign_u256(region, offset, U256Word::from(l1_fee.fee_scalar))?;
         self.base_fee_committed.assign(
             region,
             offset,
@@ -134,29 +137,29 @@ impl<F: Field> TxL1FeeGadget<F> {
     }
 
     pub(crate) fn tx_l1_fee(&self) -> Expression<F> {
-        from_bytes::expr(&self.tx_l1_fee_word.cells[..N_BYTES_U64])
+        from_bytes::expr(&self.tx_l1_fee_word.limbs[..N_BYTES_U64])
     }
 
-    pub(crate) fn tx_l1_fee_word(&self) -> &Word<F> {
+    pub(crate) fn tx_l1_fee_word(&self) -> &Word32Cell<F> {
         &self.tx_l1_fee_word
     }
 
     fn raw_construct(cb: &mut EVMConstraintBuilder<F>, tx_data_gas_cost: Expression<F>) -> Self {
-        let tx_l1_fee_word = cb.query_word_rlc();
-        let remainder_word = cb.query_word_rlc();
+        let tx_l1_fee_word = cb.query_word32();
+        let remainder_word = cb.query_word32();
 
-        let base_fee_word = cb.query_word_rlc();
-        let fee_overhead_word = cb.query_word_rlc();
-        let fee_scalar_word = cb.query_word_rlc();
+        let base_fee_word = cb.query_word32();
+        let fee_overhead_word = cb.query_word32();
+        let fee_scalar_word = cb.query_word32();
 
-        let tx_l1_fee = from_bytes::expr(&tx_l1_fee_word.cells[..N_BYTES_U64]);
+        let tx_l1_fee = from_bytes::expr(&tx_l1_fee_word.limbs[..N_BYTES_U64]);
         let [remainder, base_fee, fee_overhead, fee_scalar] = [
             &remainder_word,
             &base_fee_word,
             &fee_overhead_word,
             &fee_scalar_word,
         ]
-        .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
+        .map(|word| from_bytes::expr(&word.limbs[..N_BYTES_U64]));
 
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
         let tx_l1_gas = tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead;

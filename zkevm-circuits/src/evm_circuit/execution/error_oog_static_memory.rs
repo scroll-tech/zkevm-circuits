@@ -4,23 +4,23 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
+            common_gadget::CommonErrorGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
+                ConstrainBuilderCommon,
+                EVMConstraintBuilder,
+                //Transition::{Delta, Same},
             },
             math_gadget::{IsEqualGadget, LtGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
-            not, or, select, CachedRegion, Cell,
+            or, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::CallContextFieldTag,
-    util::Expr,
+    util::{word::Word, Expr},
 };
-use eth_types::{evm_types::OpcodeId, Field};
+use eth_types::{evm_types::OpcodeId, Field, ToWord};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -31,8 +31,7 @@ pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
@@ -43,10 +42,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
     // Support other OOG due to pure memory including MSTORE, MSTORE8 and MLOAD
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        //CommonErrorGadget will do opcode lookup;
 
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
-        cb.stack_pop(memory_address.offset_rlc());
+        cb.stack_pop(memory_address.offset_word());
 
         // Check if this is an MSTORE8
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -66,14 +65,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             ),
         );
 
-        cb.require_equal(
+        cb.require_equal_word(
             "Memory length must be 32 for MLOAD and MSTORE, and 1 for MSTORE8",
-            memory_address.length_rlc(),
-            select::expr(is_mstore8.expr(), 1.expr(), 32.expr()),
+            memory_address.length_word(),
+            Word::from_lo_unchecked(select::expr(is_mstore8.expr(), 1.expr(), 32.expr())),
         );
 
         // Get the next memory size and the gas cost for this memory access
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         // Check if the amount of gas available is less than the amount of gas
         // required
@@ -89,36 +88,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             1.expr(),
         );
 
-        // Current call must fail.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        let rw_counter_end_of_reversion = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(3.expr() + cb.curr.state.reversible_write_counter.expr()),
-                ..StepStateTransition::any()
-            });
-        });
-
-        let restore_context = cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 3.expr());
 
         Self {
             opcode,
@@ -127,8 +97,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             insufficient_gas,
             is_mload,
             is_mstore8,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -150,8 +119,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         // MSTORE8 in go-ethereum.
         // <https://github.com/ethereum/go-ethereum/blob/4a9fa31450d3cdcea84735b68cd5a0a8450473f8/core/vm/memory_table.go#L39>
         let memory_length = match opcode {
-            OpcodeId::MLOAD | OpcodeId::MSTORE => 32,
-            OpcodeId::MSTORE8 => 1,
+            OpcodeId::MLOAD | OpcodeId::MSTORE => 32.to_word(),
+            OpcodeId::MSTORE8 => 1.to_word(),
             _ => unreachable!(),
         };
 
@@ -172,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         let memory_address =
             self.memory_address
-                .assign(region, offset, memory_offset, memory_length.into())?;
+                .assign(region, offset, memory_offset, memory_length)?;
 
         let memory_expansion_cost = self
             .memory_expansion
@@ -188,12 +157,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             F::from(OpcodeId::MLOAD.constant_gas_cost().0 + memory_expansion_cost),
         )?;
 
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-        self.restore_context
+        self.common_error_gadget
             .assign(region, offset, block, call, step, 3)?;
 
         Ok(())

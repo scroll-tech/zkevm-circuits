@@ -1,27 +1,29 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
                 MemoryExpansionGadget,
             },
-            or, select, CachedRegion, Cell, Word,
+            or, select, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian, U256,
+    Field, ToAddress, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -35,9 +37,9 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     is_warm: Cell<F>,
     tx_id: Cell<F>,
     /// Extra stack pop for `EXTCODECOPY`
-    external_address: Word<F>,
+    external_address: AccountAddress<F>,
     /// Source offset
-    src_offset: Word<F>,
+    src_offset: WordCell<F>,
     /// Destination offset and size to copy
     dst_memory_addr: MemoryExpandedAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -65,8 +67,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             ],
         );
 
-        let src_offset = cb.query_word_rlc();
-        let external_address = cb.query_word_rlc();
+        let src_offset = cb.query_word_unchecked();
+        let external_address = cb.query_account_address();
         let is_warm = cb.query_bool();
         let tx_id = cb.query_cell();
 
@@ -74,26 +76,25 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::EXTCODECOPY.expr());
 
         cb.condition(is_extcodecopy.expr(), |cb| {
-            cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, tx_id.expr());
-
-            // Check if EXTCODECOPY external address is warm.
-            cb.account_access_list_read(
-                tx_id.expr(),
-                from_bytes::expr(&external_address.cells[..N_BYTES_ACCOUNT_ADDRESS]),
-                is_warm.expr(),
+            cb.call_context_lookup_read(
+                None,
+                CallContextFieldTag::TxId,
+                Word::from_lo_unchecked(tx_id.expr()),
             );
 
-            // EXTCODECOPY has an extra stack pop for external address.
-            cb.stack_pop(external_address.expr());
-        });
+            // Check if EXTCODECOPY external address is warm.
+            cb.account_access_list_read(tx_id.expr(), external_address.to_word(), is_warm.expr());
 
+            // EXTCODECOPY has an extra stack pop for external address.
+            cb.stack_pop(external_address.to_word());
+        });
         let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
 
-        cb.stack_pop(dst_memory_addr.offset_rlc());
-        cb.stack_pop(src_offset.expr());
-        cb.stack_pop(dst_memory_addr.length_rlc());
+        cb.stack_pop(dst_memory_addr.offset_word());
+        cb.stack_pop(src_offset.to_word());
+        cb.stack_pop(dst_memory_addr.length_word());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             dst_memory_addr.length(),
@@ -187,9 +188,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
         self.external_address
-            .assign(region, offset, Some(external_address.to_le_bytes()))?;
-        self.src_offset
-            .assign(region, offset, Some(src_offset.to_le_bytes()))?;
+            .assign_h160(region, offset, external_address.to_address())?;
+        self.src_offset.assign_u256(region, offset, src_offset)?;
         let memory_addr = self
             .dst_memory_addr
             .assign(region, offset, dst_offset, copy_size)?;

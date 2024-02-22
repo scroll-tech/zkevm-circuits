@@ -6,9 +6,7 @@ pub use super::TxCircuit;
 
 use crate::{
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
-    table::{
-        BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, U16Table, U8Table,
-    },
+    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, UXTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Transaction,
@@ -32,9 +30,9 @@ pub struct TxCircuitTesterConfigArgs<F: Field> {
     /// SigTable
     pub sig_table: SigTable,
     /// u8 lookup table,
-    pub u8_table: U8Table,
+    pub u8_table: UXTable<8>,
     /// u16 lookup table,
-    pub u16_table: U16Table,
+    pub u16_table: UXTable<16>,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
 }
@@ -46,9 +44,9 @@ pub struct TxCircuitTesterConfig<F: Field> {
     // SigTable is assigned inside SigCircuit
     sig_config: SigCircuitConfig<F>,
     /// u16 lookup table,
-    pub u8_table: U8Table,
+    pub u8_table: UXTable<8>,
     /// u16 lookup table,
-    pub u16_table: U16Table,
+    pub u16_table: UXTable<16>,
 }
 
 impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
@@ -168,8 +166,8 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         let keccak_table = KeccakTable::construct(meta);
         let rlp_table = RlpTable::construct(meta);
         let sig_table = SigTable::construct(meta);
-        let u8_table = U8Table::construct(meta);
-        let u16_table = U16Table::construct(meta);
+        let u8_table = UXTable::construct(meta);
+        let u16_table = UXTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
         let config = {

@@ -2,7 +2,7 @@ pub use super::StateCircuit;
 
 use crate::{
     state_circuit::{StateCircuitConfig, StateCircuitConfigArgs},
-    table::{MptTable, RwTable},
+    table::{MptTable, RwTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use eth_types::Field;
@@ -27,6 +27,9 @@ where
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let rw_table = RwTable::construct(meta);
         let mpt_table = MptTable::construct(meta);
+        let u8_table = UXTable::construct(meta);
+        let u10_table = UXTable::construct(meta);
+        let u16_table = UXTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
         let config = {
@@ -36,6 +39,9 @@ where
                 StateCircuitConfigArgs {
                     rw_table,
                     mpt_table,
+                    u8_table,
+                    u10_table,
+                    u16_table,
                     challenges,
                 },
             )
@@ -66,11 +72,16 @@ pub enum AdviceColumn {
     Address,
     AddressLimb0,
     AddressLimb1,
-    StorageKey,
+    _StorageKeyLo,
+    _StorageKeyHi,
+    StorageKeyLimb0,
+    _StorageKeyLimb1,
     StorageKeyByte0,
     StorageKeyByte1,
-    Value,
-    ValuePrev,
+    ValueLo,
+    ValueHi,
+    ValuePrevLo,
+    ValuePrevHi,
     RwCounter,
     RwCounterLimb0,
     RwCounterLimb1,
@@ -84,7 +95,8 @@ pub enum AdviceColumn {
     LimbIndexBit2,
     LimbIndexBit3,
     LimbIndexBit4, // least significant bit
-    InitialValue,
+    InitialValueLo,
+    InitialValueHi,
     IsZero, // committed_value and value are 0
     // NonEmptyWitness is the BatchedIsZero chip witness that contains the
     // inverse of the non-zero value if any in [committed_value, value]
@@ -98,11 +110,16 @@ impl AdviceColumn {
             Self::Address => config.rw_table.address,
             Self::AddressLimb0 => config.sort_keys.address.limbs[0],
             Self::AddressLimb1 => config.sort_keys.address.limbs[1],
-            Self::StorageKey => config.rw_table.storage_key,
-            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::Value => config.rw_table.value,
-            Self::ValuePrev => config.rw_table.value_prev,
+            Self::_StorageKeyLo => config.rw_table.storage_key.lo(),
+            Self::_StorageKeyHi => config.rw_table.storage_key.hi(),
+            Self::StorageKeyLimb0 => config.sort_keys.storage_key.limbs[0],
+            Self::_StorageKeyLimb1 => config.sort_keys.storage_key.limbs[1],
+            Self::StorageKeyByte0 => config.sort_keys.storage_key.limbs[0],
+            Self::StorageKeyByte1 => config.sort_keys.storage_key.limbs[1],
+            Self::ValueLo => config.rw_table.value.lo(),
+            Self::ValueHi => config.rw_table.value.hi(),
+            Self::ValuePrevLo => config.rw_table.value_prev.lo(),
+            Self::ValuePrevHi => config.rw_table.value_prev.hi(),
             Self::RwCounter => config.rw_table.rw_counter,
             Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
             Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
@@ -116,7 +133,8 @@ impl AdviceColumn {
             Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
             Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
             Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
-            Self::InitialValue => config.initial_value,
+            Self::InitialValueLo => config.initial_value.lo(),
+            Self::InitialValueHi => config.initial_value.hi(),
             Self::IsZero => config.is_non_exist.is_zero,
             Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
         }

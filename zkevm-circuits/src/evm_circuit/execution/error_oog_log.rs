@@ -47,8 +47,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(memory_address.offset_rlc());
-        cb.stack_pop(memory_address.length_rlc());
+        cb.stack_pop(memory_address.offset_word());
+        cb.stack_pop(memory_address.length_word());
 
         // constrain not in static call
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         let gas_cost = GasCost::LOG.as_u64().expr()
             + GasCost::LOG.as_u64().expr() * topic_count

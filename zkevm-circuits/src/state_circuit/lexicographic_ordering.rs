@@ -250,7 +250,7 @@ struct Queries<F: Field> {
     field_tag: Expression<F>, // 8 bits, so we can pack tag + field_tag into one limb.
     id_limbs: [Expression<F>; N_LIMBS_ID],
     address_limbs: [Expression<F>; N_LIMBS_ACCOUNT_ADDRESS],
-    storage_key_bytes: [Expression<F>; N_BYTES_WORD],
+    storage_key_limbs: [Expression<F>; N_LIMBS_WORD],
     rw_counter_limbs: [Expression<F>; N_LIMBS_RW_COUNTER],
 }
 
@@ -263,18 +263,13 @@ impl<F: Field> Queries<F> {
             id_limbs: keys.id.limbs.map(&mut query_advice),
             address_limbs: keys.address.limbs.map(&mut query_advice),
             field_tag: query_advice(keys.field_tag),
-            storage_key_bytes: keys.storage_key.bytes.map(&mut query_advice),
+            storage_key_limbs: keys.storage_key.limbs.map(&mut query_advice),
             rw_counter_limbs: keys.rw_counter.limbs.map(query_advice),
         }
     }
 
     fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
-        self.storage_key_bytes
-            .iter()
-            .rev()
-            .tuples()
-            .map(|(hi, lo)| (1u64 << 8).expr() * hi.clone() + lo.clone())
-            .collect()
+        self.storage_key_limbs.iter().rev().cloned().collect()
     }
 
     fn be_limbs(&self) -> Vec<Expression<F>> {

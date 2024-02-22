@@ -3,19 +3,23 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
         table::{FixedTableTag, Lookup, RwValues},
-        util::{Cell, RandomLinearCombination, Word},
+        util::{Cell, RandomLinearCombination},
     },
     table::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::{build_tx_log_expression, Challenges, Expr},
+    util::{
+        build_tx_log_expression,
+        word::{Word, Word32, Word32Cell, WordCell, WordExpr},
+        Challenges, Expr,
+    },
 };
 use bus_mapping::{
     state_db::EMPTY_CODE_HASH_LE,
     util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY},
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
+use eth_types::{Field, ToLittleEndian, ToWord};
 use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
@@ -26,7 +30,10 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use super::{rlc, CachedRegion, CellType, StoredExpression};
+use super::{
+    address_word_to_expr, rlc, AccountAddress, CachedRegion, CellType, MemoryAddress,
+    StoredExpression, U64Cell,
+};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -54,7 +61,7 @@ pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) call_id: Transition<Expression<F>>,
     pub(crate) is_root: Transition<Expression<F>>,
     pub(crate) is_create: Transition<Expression<F>>,
-    pub(crate) code_hash: Transition<Expression<F>>,
+    pub(crate) code_hash: Transition<Word<Expression<F>>>,
     pub(crate) program_counter: Transition<Expression<F>>,
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
@@ -179,6 +186,22 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
 
     fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
         self.add_constraint(name, constraint);
+    }
+
+    fn require_zero_word(&mut self, name: &'static str, word: Word<Expression<F>>) {
+        self.require_equal_word(name, word, Word::zero());
+    }
+
+    fn require_equal_word(
+        &mut self,
+        name: &'static str,
+        lhs: Word<Expression<F>>,
+        rhs: Word<Expression<F>>,
+    ) {
+        let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
+        let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
+        self.add_constraint(name, lhs_lo - rhs_lo);
+        self.add_constraint(name, lhs_hi - rhs_hi);
     }
 
     fn require_equal(&mut self, name: &'static str, lhs: Expression<F>, rhs: Expression<F>) {
@@ -452,8 +475,35 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cells(CellType::LookupByte, count)
     }
 
+    pub(crate) fn query_account_address(&mut self) -> AccountAddress<F> {
+        AccountAddress::<F>::new(self.query_bytes())
+    }
+
+    pub(crate) fn query_memory_address(&mut self) -> MemoryAddress<F> {
+        MemoryAddress::<F>::new(self.query_bytes())
+    }
+
+    // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
+    pub fn query_word_unchecked(&mut self) -> WordCell<F> {
+        Word::new(
+            self.query_cells(CellType::StoragePhase1, 2)
+                .try_into()
+                .unwrap(),
+        )
+    }
+
+    // query_word32 each limb is 8 bits, and any conversion to smaller limbs inherits the type
+    // check.
+    pub(crate) fn query_word32(&mut self) -> Word32Cell<F> {
+        Word32::new(self.query_bytes())
+    }
+
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
         self.query_cell_with_type(CellType::StoragePhase1)
+    }
+
+    pub(crate) fn query_u64(&mut self) -> U64Cell<F> {
+        U64Cell::new(self.query_bytes())
     }
 
     #[allow(clippy::let_and_return)]
@@ -508,12 +558,23 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.word_rlc(bytes.map(|byte| byte.expr()))
     }
 
-    pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
+    pub(crate) fn empty_keccak_hash(&self) -> Word<Expression<F>> {
+        let bytes = KECCAK_CODE_HASH_EMPTY.to_word().to_le_bytes();
+        Word32::new(bytes.map(|l| l.expr())).to_word()
+    }
+
+    // poseidon codehash if enalbe scroll or poseidon-codehash, else keccak_hash.
+    pub(crate) fn empty_code_hash(&self) -> Word<Expression<F>> {
         if cfg!(feature = "poseidon-codehash") {
-            let codehash = POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap();
-            Expression::Constant(codehash)
+            Word32::new(
+                POSEIDON_CODE_HASH_EMPTY
+                    .to_word()
+                    .to_le_bytes()
+                    .map(|byte| byte.expr()),
+            )
+            .to_word()
         } else {
-            self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
+            Word32::new(EMPTY_CODE_HASH_LE.map(|byte| byte.expr())).to_word()
         }
     }
 
@@ -561,11 +622,29 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             };
         }
 
+        macro_rules! constrain_word {
+            ($name:tt) => {
+                match step_state_transition.$name {
+                    Transition::Same => self.require_equal_word(
+                        concat!("State transition (same) constraint of ", stringify!($name)),
+                        self.next.state.$name.to_word(),
+                        self.curr.state.$name.to_word(),
+                    ),
+                    Transition::To(to) => self.require_equal_word(
+                        concat!("State transition (to) constraint of ", stringify!($name)),
+                        self.next.state.$name.to_word(),
+                        to,
+                    ),
+                    _ => {}
+                }
+            };
+        }
+
         constrain!(rw_counter);
         constrain!(call_id);
         constrain!(is_root);
         constrain!(is_create);
-        constrain!(code_hash);
+        constrain_word!(code_hash);
         constrain!(program_counter);
         constrain!(stack_pointer);
         constrain!(gas_left);
@@ -663,7 +742,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {
-                hash: self.curr.state.code_hash.expr(),
+                hash: self.curr.state.code_hash.to_word(),
                 tag: BytecodeFieldTag::Byte.expr(),
                 index,
                 is_code: 1.expr(),
@@ -678,7 +757,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn bytecode_lookup(
         &mut self,
-        code_hash: Expression<F>,
+        code_hash: Word<Expression<F>>,
         index: Expression<F>,
         is_code: Expression<F>,
         value: Expression<F>,
@@ -697,7 +776,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
+    pub(crate) fn bytecode_length(&mut self, code_hash: Word<Expression<F>>, value: Expression<F>) {
         self.add_lookup(
             "Bytecode (length)",
             Lookup::Bytecode {
@@ -720,7 +799,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        self.tx_context_lookup(id, field_tag, index, cell.expr());
+        self.tx_context_lookup(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
+        // self.tx_context_lookup(id, field_tag, index, cell.expr());
         cell
     }
 
@@ -729,9 +809,20 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         id: Expression<F>,
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
-    ) -> Word<F> {
-        let word = self.query_word_rlc();
-        self.tx_context_lookup(id, field_tag, index, word.expr());
+    ) -> WordCell<F> {
+        let word = self.query_word_unchecked();
+        self.tx_context_lookup(id, field_tag, index, word.to_word());
+        word
+    }
+
+    pub(crate) fn tx_context_as_word32(
+        &mut self,
+        id: Expression<F>,
+        field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
+    ) -> Word32Cell<F> {
+        let word = self.query_word32();
+        self.tx_context_lookup(id, field_tag, index, word.to_word());
         word
     }
 
@@ -740,7 +831,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         id: Expression<F>,
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
-        value: Expression<F>,
+        value: Word<Expression<F>>,
+        //value: Expression<F>,
     ) {
         self.add_lookup(
             "Tx lookup",
@@ -757,14 +849,15 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn block_lookup(
         &mut self,
         tag: Expression<F>,
-        number: Expression<F>,
+        number: Option<Expression<F>>,
+        //val: Word<Expression<F>>,
         val: Expression<F>,
     ) {
         self.add_lookup(
             "Block lookup",
             Lookup::Block {
                 field_tag: tag,
-                number,
+                number: number.unwrap_or_else(|| 0.expr()),
                 value: val,
             },
         );
@@ -849,22 +942,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                     reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
                     true.expr(),
                     tag,
-                    RwValues {
-                        value_prev: values.value,
-                        value: values.value_prev,
-                        ..values
-                    },
+                    values.revert_value(),
                 )
             });
         }
     }
 
     // Access list
-
-    pub(crate) fn account_access_list_write(
+    pub(crate) fn account_access_list_write_unchecked(
         &mut self,
         tx_id: Expression<F>,
-        account_address: Expression<F>,
+        account_address: Word<Expression<F>>,
         value: Expression<F>,
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
@@ -874,13 +962,38 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwTableTag::TxAccessListAccount,
             RwValues::new(
                 tx_id,
-                account_address,
+                address_word_to_expr(account_address),
                 0.expr(),
+                Word::zero(),
+                Word::from_lo_unchecked(value),
+                Word::from_lo_unchecked(value_prev),
+                Word::zero(),
+                Word::zero(),
+            ),
+            reversion_info,
+        );
+    }
+
+    pub(crate) fn account_access_list_write(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Word<Expression<F>>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.reversible_write(
+            "TxAccessListAccount write",
+            RwTableTag::TxAccessListAccount,
+            RwValues::new(
+                tx_id,
+                address_word_to_expr(account_address),
                 0.expr(),
-                value,
-                value_prev,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::from_lo_unchecked(value),
+                Word::from_lo_unchecked(value_prev),
+                Word::zero(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -889,7 +1002,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn account_access_list_read(
         &mut self,
         tx_id: Expression<F>,
-        account_address: Expression<F>,
+        account_address: Word<Expression<F>>,
         value: Expression<F>,
     ) {
         self.rw_lookup(
@@ -898,13 +1011,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwTableTag::TxAccessListAccount,
             RwValues::new(
                 tx_id,
-                account_address,
+                address_word_to_expr(account_address),
                 0.expr(),
-                0.expr(),
-                value.clone(),
-                value,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::from_lo_unchecked(value.clone()),
+                Word::from_lo_unchecked(value),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
@@ -912,10 +1025,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn account_storage_access_list_write(
         &mut self,
         tx_id: Expression<F>,
-        account_address: Expression<F>,
-        storage_key: Expression<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
+        account_address: Word<Expression<F>>,
+        storage_key: Word<Expression<F>>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
@@ -923,13 +1036,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwTableTag::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
-                account_address,
+                address_word_to_expr(account_address),
                 0.expr(),
                 storage_key,
                 value,
                 value_prev,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -938,9 +1051,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn account_storage_access_list_read(
         &mut self,
         tx_id: Expression<F>,
-        account_address: Expression<F>,
-        storage_key: Expression<F>,
-        value: Expression<F>,
+        account_address: Word<Expression<F>>,
+        storage_key: Word<Expression<F>>,
+        value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "TxAccessListAccountStorage read",
@@ -948,20 +1061,20 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwTableTag::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
-                account_address,
+                address_word_to_expr(account_address),
                 0.expr(),
                 storage_key,
                 value.clone(),
                 value,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
 
     // Tx Refund
 
-    pub(crate) fn tx_refund_read(&mut self, tx_id: Expression<F>, value: Expression<F>) {
+    pub(crate) fn tx_refund_read(&mut self, tx_id: Expression<F>, value: Word<Expression<F>>) {
         self.rw_lookup(
             "TxRefund read",
             false.expr(),
@@ -970,11 +1083,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 0.expr(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
                 value.clone(),
                 value,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
@@ -982,8 +1095,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn tx_refund_write(
         &mut self,
         tx_id: Expression<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
@@ -993,11 +1106,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 0.expr(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
                 value,
                 value_prev,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -1007,9 +1120,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn account_read(
         &mut self,
-        account_address: Expression<F>,
+        account_address: Word<Expression<F>>,
         field_tag: AccountFieldTag,
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "Account read",
@@ -1017,23 +1130,23 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwTableTag::Account,
             RwValues::new(
                 0.expr(),
-                account_address,
+                address_word_to_expr(account_address),
                 field_tag.expr(),
-                0.expr(),
+                Word::zero(),
                 value.clone(),
                 value,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
 
     pub(crate) fn account_write(
         &mut self,
-        account_address: Expression<F>,
+        account_address: Word<Expression<F>>,
         field_tag: AccountFieldTag,
-        value: Expression<F>,
-        value_prev: Expression<F>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
@@ -1041,13 +1154,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwTableTag::Account,
             RwValues::new(
                 0.expr(),
-                account_address,
+                address_word_to_expr(account_address),
                 field_tag.expr(),
-                0.expr(),
+                Word::zero(),
                 value,
                 value_prev,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -1057,11 +1170,37 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn account_storage_read(
         &mut self,
-        account_address: Expression<F>,
-        key: Expression<F>,
-        value: Expression<F>,
+        account_address: Word<Expression<F>>,
+        key: Word<Expression<F>>,
+        value: Word<Expression<F>>,
         tx_id: Expression<F>,
-        committed_value: Expression<F>,
+        committed_value: Word<Expression<F>>,
+    ) {
+        self.rw_lookup(
+            "account_storage_read",
+            false.expr(),
+            RwTableTag::AccountStorage,
+            RwValues::new(
+                tx_id,
+                address_word_to_expr(account_address),
+                AccountFieldTag::CodeHash.expr(),
+                key,
+                value.clone(),
+                value,
+                Word::zero(),
+                committed_value,
+            ),
+        );
+    }
+
+    // this method take use of `account_address` Expression as parameter
+    pub(crate) fn account_storage_read_address(
+        &mut self,
+        account_address: Expression<F>,
+        key: Word<Expression<F>>,
+        value: Word<Expression<F>>,
+        tx_id: Expression<F>,
+        committed_value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "account_storage_read",
@@ -1074,7 +1213,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 key,
                 value.clone(),
                 value,
-                0.expr(),
+                Word::zero(),
                 committed_value,
             ),
         );
@@ -1083,12 +1222,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn account_storage_write(
         &mut self,
-        account_address: Expression<F>,
-        key: Expression<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
+        account_address: Word<Expression<F>>,
+        key: Word<Expression<F>>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
         tx_id: Expression<F>,
-        committed_value: Expression<F>,
+        committed_value: Word<Expression<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
@@ -1096,12 +1235,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwTableTag::AccountStorage,
             RwValues::new(
                 tx_id,
-                account_address,
+                address_word_to_expr(account_address),
                 AccountFieldTag::CodeHash.expr(),
                 key,
                 value,
                 value_prev,
-                0.expr(),
+                Word::zero(),
                 committed_value,
             ),
             reversion_info,
@@ -1120,7 +1259,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             _ => CellType::StoragePhase1,
         };
         let cell = self.query_cell_with_type(phase);
-        self.call_context_lookup(false.expr(), call_id, field_tag, cell.expr());
+        self.call_context_lookup_read(
+            call_id,
+            field_tag,
+            Word::from_lo_unchecked(cell.expr()), // lookup read, unchecked is safe
+        );
+
         cell
     }
 
@@ -1128,9 +1272,20 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         &mut self,
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
-    ) -> Word<F> {
-        let word = self.query_word_rlc();
-        self.call_context_lookup(false.expr(), call_id, field_tag, word.expr());
+    ) -> Word32Cell<F> {
+        let word = self.query_word32();
+        self.call_context_lookup(false.expr(), call_id, field_tag, word.to_word());
+        word
+    }
+
+    pub(crate) fn call_context_read_as_word(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+    ) -> Word<Cell<F>> {
+        let word = self.query_word_unchecked();
+
+        self.call_context_lookup_read(call_id, field_tag, word.to_word());
         word
     }
 
@@ -1141,7 +1296,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rw_counter: Expression<F>,
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     ) {
         self.rw_lookup_with_counter(
             "CallContext lookup",
@@ -1152,11 +1307,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 field_tag.expr(),
-                0.expr(),
+                Word::zero(),
                 value,
-                0.expr(),
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
@@ -1166,7 +1321,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         is_write: Expression<F>,
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "CallContext lookup",
@@ -1176,13 +1331,31 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 field_tag.expr(),
-                0.expr(),
+                Word::zero(),
                 value,
-                0.expr(),
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
+    }
+
+    pub(crate) fn call_context_lookup_read(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Word<Expression<F>>,
+    ) {
+        self.call_context_lookup(0.expr(), call_id, field_tag, value)
+    }
+
+    pub(crate) fn call_context_lookup_write(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Word<Expression<F>>,
+    ) {
+        self.call_context_lookup(1.expr(), call_id, field_tag, value)
     }
 
     fn reversion_info(
@@ -1196,7 +1369,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         ]
         .map(|field_tag| {
             let cell = self.query_cell();
-            self.call_context_lookup(is_write.expr(), call_id.clone(), field_tag, cell.expr());
+            self.call_context_lookup(
+                is_write.expr(),
+                call_id.clone(),
+                field_tag,
+                Word::from_lo_unchecked(cell.expr()),
+            );
+
             cell
         });
 
@@ -1225,14 +1404,21 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.reversion_info(call_id, true)
     }
 
+    pub(crate) fn reversion_info_write_unchecked(
+        &mut self,
+        call_id: Option<Expression<F>>,
+    ) -> ReversionInfo<F> {
+        self.reversion_info(call_id, true)
+    }
+
     // Stack
 
-    pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
+    pub(crate) fn stack_pop(&mut self, value: Word<Expression<F>>) {
         self.stack_lookup(false.expr(), self.stack_pointer_offset.clone(), value);
         self.stack_pointer_offset = self.stack_pointer_offset.clone() + self.condition_expr();
     }
 
-    pub(crate) fn stack_push(&mut self, value: Expression<F>) {
+    pub(crate) fn stack_push(&mut self, value: Word<Expression<F>>) {
         self.stack_pointer_offset = self.stack_pointer_offset.clone() - self.condition_expr();
         self.stack_lookup(true.expr(), self.stack_pointer_offset.expr(), value);
     }
@@ -1241,7 +1427,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         &mut self,
         is_write: Expression<F>,
         stack_pointer_offset: Expression<F>,
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "Stack lookup",
@@ -1251,23 +1437,23 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
                 value,
-                0.expr(),
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
 
     // Memory
-
+    // TODO: last to update memory lookup as we apply memory word lookup feature
     pub(crate) fn memory_lookup(
         &mut self,
         is_write: Expression<F>,
         memory_address: Expression<F>, // slot
-        value: Expression<F>,
-        value_prev: Expression<F>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
         call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
@@ -1278,11 +1464,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 memory_address,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
                 value,
                 value_prev,
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
@@ -1293,7 +1479,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         log_id: Expression<F>,
         field_tag: TxLogFieldTag,
         index: Expression<F>,
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "log data lookup",
@@ -1303,11 +1489,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
                 value,
-                0.expr(),
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
@@ -1329,11 +1515,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 0.expr(),
                 tag.expr(),
-                0.expr(),
-                value,
-                0.expr(),
-                0.expr(),
-                0.expr(),
+                Word::zero(),
+                // TODO assure range check since write=true also possible
+                Word::from_lo_unchecked(value),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
             ),
         );
     }
@@ -1350,11 +1537,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 id: 0.expr(),
                 address: 0.expr(),
                 field_tag: 0.expr(),
-                storage_key: 0.expr(),
-                value: 0.expr(),
-                value_prev: 0.expr(),
-                aux1: 0.expr(),
-                aux2: 0.expr(),
+                storage_key: Word::zero(),
+                value: Word::zero(),
+                value_prev: Word::zero(),
+                aux1: Word::zero(),
+                aux2: Word::zero(),
             },
         );
     }
@@ -1364,9 +1551,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn copy_table_lookup(
         &mut self,
-        src_id: Expression<F>,
+        src_id: Word<Expression<F>>,
         src_tag: Expression<F>,
-        dst_id: Expression<F>,
+        dst_id: Word<Expression<F>>,
         dst_tag: Expression<F>,
         src_addr: Expression<F>,
         src_addr_end: Expression<F>,
@@ -1492,6 +1679,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         input_rlc: Expression<F>,
         input_len: Expression<F>,
         output_rlc: Expression<F>,
+        output: Word<Expression<F>>,
     ) {
         self.add_lookup(
             "keccak lookup",
@@ -1499,6 +1687,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 input_rlc,
                 input_len,
                 output_rlc,
+                output,
             },
         );
     }

@@ -11,8 +11,12 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
                 MemoryWordSizeGadget,
             },
-            or, select, CachedRegion, Cell, Word,
+            or, select, CachedRegion, Cell,
         },
+    },
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -20,16 +24,15 @@ use eth_types::{
     evm_types::{
         GasCost, OpcodeId, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE,
     },
-    Field, ToLittleEndian, U256,
+    Field, U256,
 };
-use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCreateGadget<F> {
     opcode: Cell<F>,
-    value: Word<F>,
-    salt: Word<F>,
+    value: Word32Cell<F>,
+    salt: Word32Cell<F>,
     is_create2: PairSelectGadget<F>,
     minimum_word_size: MemoryWordSizeGadget<F>,
     memory_address: MemoryExpandedAddressGadget<F>,
@@ -58,21 +61,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
             OpcodeId::CREATE.expr(),
         );
 
-        let value = cb.query_word_rlc();
-        let salt = cb.query_word_rlc();
+        let value = cb.query_word32();
+        let salt = cb.query_word32();
 
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
 
-        cb.stack_pop(value.expr());
-        cb.stack_pop(memory_address.offset_rlc());
-        cb.stack_pop(memory_address.length_rlc());
-        cb.condition(is_create2.expr().0, |cb| cb.stack_pop(salt.expr()));
+        cb.stack_pop(value.to_word());
+        cb.stack_pop(memory_address.offset_word());
+        cb.stack_pop(memory_address.length_word());
+        cb.condition(is_create2.expr().0, |cb| cb.stack_pop(salt.to_word()));
 
         let init_code_size_overflow =
             LtGadget::construct(cb, MAX_INIT_CODE_SIZE.expr(), memory_address.length());
 
         let minimum_word_size = MemoryWordSizeGadget::construct(cb, memory_address.length());
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         let keccak_gas_cost = minimum_word_size.expr()
             * select::expr(
@@ -148,9 +151,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
             U256::zero()
         };
 
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.salt.assign(region, offset, Some(salt.to_le_bytes()))?;
+        self.value.assign_u256(region, offset, value)?;
+        self.salt.assign_u256(region, offset, salt)?;
 
         let memory_address =
             self.memory_address

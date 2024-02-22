@@ -1,6 +1,6 @@
 use crate::{
     rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
-    table::{RlpFsmRlpTable, U8Table},
+    table::{RlpFsmRlpTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Transaction,
 };
@@ -23,8 +23,9 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, Transaction> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let rlp_table = RlpFsmRlpTable::construct(meta);
         let challenges = Challenges::construct(meta);
-        let challenge_exprs = challenges.exprs(meta);
-        let u8_table = U8Table::construct(meta);
+        let challenge_exprs: Challenges<halo2_proofs::plonk::Expression<F>> =
+            challenges.exprs(meta);
+        let u8_table = UXTable::construct(meta);
 
         let config = RlpCircuitConfig::new(
             meta,

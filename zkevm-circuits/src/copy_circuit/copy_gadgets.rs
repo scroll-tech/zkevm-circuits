@@ -4,11 +4,14 @@ use eth_types::Field;
 use gadgets::{
     binary_number::BinaryNumberConfig,
     is_equal::IsEqualConfig,
-    util::{and, not, select, sum, Expr},
+    util::{and, not, or, select, sum, Expr},
 };
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells};
 
-use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
+use crate::{
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    util::word,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub fn constrain_tag<F: Field>(
@@ -95,16 +98,16 @@ pub fn constrain_forward_parameters<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
     is_continue: Expression<F>,
-    id: Column<Advice>,
+    id: word::Word<Column<Advice>>,
     tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
     src_addr_end: Column<Advice>,
 ) {
     cb.condition(is_continue.expr(), |cb| {
         // Forward other fields to the next step.
-        cb.require_equal(
+        cb.require_equal_word(
             "rows[0].id == rows[2].id",
-            meta.query_advice(id, CURRENT),
-            meta.query_advice(id, NEXT_STEP),
+            id.map(|limb| meta.query_advice(limb, CURRENT)),
+            id.map(|limb| meta.query_advice(limb, NEXT_STEP)),
         );
         cb.require_equal(
             "rows[0].tag == rows[2].tag",
@@ -486,6 +489,28 @@ pub fn constrain_address<F: Field>(
             meta.query_advice(addr, CURRENT) + addr_diff,
             meta.query_advice(addr, NEXT_STEP),
         );
+    });
+}
+
+/// constrain id(src_id, dest_id). id_hi = 0
+pub fn constrain_id<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    //_is_bytecode: Column<Advice>,
+    is_tx_log: Column<Advice>,
+    is_tx_calldata: Column<Advice>,
+    is_memory: Column<Advice>,
+    id: word::Word<Column<Advice>>,
+    is_pad: Column<Advice>,
+) {
+    let cond = or::expr([
+        //meta.query_advice(is_bytecode, CURRENT),
+        meta.query_advice(is_tx_log, CURRENT),
+        meta.query_advice(is_tx_calldata, CURRENT),
+        meta.query_advice(is_memory, CURRENT),
+    ]) * not::expr(meta.query_advice(is_pad, CURRENT));
+    cb.condition(cond, |cb| {
+        cb.require_zero("id_hi == 0", meta.query_advice(id.hi(), CURRENT))
     });
 }
 

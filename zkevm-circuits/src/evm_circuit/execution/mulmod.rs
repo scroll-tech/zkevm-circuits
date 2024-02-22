@@ -3,21 +3,23 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            self,
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
-            sum, CachedRegion,
+            math_gadget::{IsZeroWordGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, U256};
 use halo2_proofs::plonk::Error;
 
 /// MulModGadget verifies opcode MULMOD
@@ -27,15 +29,15 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct MulModGadget<F> {
     same_context: SameContextGadget<F>,
     // a, b, n, r
-    pub words: [util::Word<F>; 4],
-    k: util::Word<F>,
-    a_reduced: util::Word<F>,
-    d: util::Word<F>,
-    e: util::Word<F>,
-    modword: ModGadget<F, true>,
+    pub words: [Word32Cell<F>; 4],
+    k: Word32Cell<F>,
+    a_reduced: Word32Cell<F>,
+    d: Word32Cell<F>,
+    e: Word32Cell<F>,
+    modword: ModGadget<F>,
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,
-    n_is_zero: IsZeroGadget<F>,
+    n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     lt: LtWordGadget<F>,
 }
 
@@ -47,16 +49,16 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word_rlc();
-        let b = cb.query_word_rlc();
-        let n = cb.query_word_rlc();
-        let r = cb.query_word_rlc();
+        let a = cb.query_word32();
+        let b = cb.query_word32();
+        let n = cb.query_word32();
+        let r = cb.query_word32();
 
-        let k = cb.query_word_rlc();
+        let k = cb.query_word32();
 
-        let a_reduced = cb.query_word_rlc();
-        let d = cb.query_word_rlc();
-        let e = cb.query_word_rlc();
+        let a_reduced = cb.query_word32();
+        let d = cb.query_word32();
+        let e = cb.query_word32();
 
         // 1. k1 * n + a_reduced  == a
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
@@ -68,17 +70,17 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
-        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
-        let lt = LtWordGadget::construct(cb, &r, &n);
+        let n_is_zero = IsZeroWordGadget::construct(cb, &n);
+        let lt = LtWordGadget::construct(cb, &r.to_word(), &n.to_word());
         cb.add_constraint(
             " (1 - (r < n) - (n==0)) ",
             1.expr() - lt.expr() - n_is_zero.expr(),
         );
 
-        cb.stack_pop(a.expr());
-        cb.stack_pop(b.expr());
-        cb.stack_pop(n.expr());
-        cb.stack_push(r.expr());
+        cb.stack_pop(a.to_word());
+        cb.stack_pop(b.to_word());
+        cb.stack_pop(n.to_word());
+        cb.stack_push(r.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -119,10 +121,10 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let [r, n, b, a] = [3, 2, 1, 0]
             .map(|idx| step.rw_indices[idx])
             .map(|idx| block.rws[idx].stack_value());
-        self.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
-        self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
-        self.words[2].assign(region, offset, Some(n.to_le_bytes()))?;
-        self.words[3].assign(region, offset, Some(r.to_le_bytes()))?;
+        self.words[0].assign_u256(region, offset, a)?;
+        self.words[1].assign_u256(region, offset, b)?;
+        self.words[2].assign_u256(region, offset, n)?;
+        self.words[3].assign_u256(region, offset, r)?;
         // 1. quotient and reduction of a mod n
         let (k1, a_reduced) = if n.is_zero() {
             (U256::zero(), U256::zero())
@@ -144,11 +146,10 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             (r, U256::try_from(prod / n).unwrap())
         };
 
-        self.k.assign(region, offset, Some(k2.to_le_bytes()))?;
-        self.a_reduced
-            .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
-        self.d.assign(region, offset, Some(d.to_le_bytes()))?;
-        self.e.assign(region, offset, Some(e.to_le_bytes()))?;
+        self.k.assign_u256(region, offset, k2)?;
+        self.a_reduced.assign_u256(region, offset, a_reduced)?;
+        self.d.assign_u256(region, offset, d)?;
+        self.e.assign_u256(region, offset, e)?;
 
         self.modword.assign(region, offset, a, n, a_reduced, k1)?;
         self.mul512_left
@@ -158,8 +159,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 
         self.lt.assign(region, offset, r, n)?;
 
-        let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
-        self.n_is_zero.assign(region, offset, F::from(n_sum))?;
+        self.n_is_zero.assign(region, offset, Word::from(n))?;
         Ok(())
     }
 }

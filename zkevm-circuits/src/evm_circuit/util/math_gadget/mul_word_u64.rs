@@ -4,9 +4,12 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         from_bytes, pow_of_two_expr, split_u256, CachedRegion,
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -16,28 +19,26 @@ use halo2_proofs::{
 /// which disallows overflow.
 #[derive(Clone, Debug)]
 pub(crate) struct MulWordByU64Gadget<F> {
-    multiplicand: util::Word<F>,
-    product: util::Word<F>,
+    multiplicand: Word32Cell<F>,
+    product: Word32Cell<F>,
     carry_lo: [util::Cell<F>; 8],
 }
 
 impl<F: Field> MulWordByU64Gadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        multiplicand: util::Word<F>,
+        multiplicand: Word32Cell<F>,
         multiplier: Expression<F>,
     ) -> Self {
         let gadget = Self {
             multiplicand,
-            product: cb.query_word_rlc(),
+            product: cb.query_word32(),
             carry_lo: cb.query_bytes(),
         };
 
-        let multiplicand_lo = from_bytes::expr(&gadget.multiplicand.cells[..16]);
-        let multiplicand_hi = from_bytes::expr(&gadget.multiplicand.cells[16..]);
+        let (multiplicand_lo, multiplicand_hi) = gadget.multiplicand.to_word().to_lo_hi();
 
-        let product_lo = from_bytes::expr(&gadget.product.cells[..16]);
-        let product_hi = from_bytes::expr(&gadget.product.cells[16..]);
+        let (product_lo, product_hi) = gadget.product.to_word().to_lo_hi();
 
         let carry_lo = from_bytes::expr(&gadget.carry_lo[..8]);
 
@@ -65,9 +66,8 @@ impl<F: Field> MulWordByU64Gadget<F> {
         product: Word,
     ) -> Result<(), Error> {
         self.multiplicand
-            .assign(region, offset, Some(multiplicand.to_le_bytes()))?;
-        self.product
-            .assign(region, offset, Some(product.to_le_bytes()))?;
+            .assign_u256(region, offset, multiplicand)?;
+        self.product.assign_u256(region, offset, product)?;
 
         let (multiplicand_lo, _) = split_u256(&multiplicand);
         let (product_lo, _) = split_u256(&product);
@@ -85,7 +85,7 @@ impl<F: Field> MulWordByU64Gadget<F> {
         Ok(())
     }
 
-    pub(crate) fn product(&self) -> &util::Word<F> {
+    pub(crate) fn product(&self) -> &Word32Cell<F> {
         &self.product
     }
 }
@@ -94,23 +94,23 @@ impl<F: Field> MulWordByU64Gadget<F> {
 mod tests {
     use super::{super::test_util::*, *};
     use crate::evm_circuit::util::Cell;
-    use eth_types::Word;
+    use eth_types::{ToLittleEndian, Word};
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MulWordByU64TestContainer: require(product = a*(b as u64))
     struct MulWordByU64TestContainer<F> {
         mulwords_u64_gadget: MulWordByU64Gadget<F>,
-        a: util::Word<F>,
+        a: Word32Cell<F>,
         b: Cell<F>,
-        product: util::Word<F>,
+        product: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulWordByU64TestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
+            let a = cb.query_word32();
             let b = cb.query_cell();
-            let product = cb.query_word_rlc();
+            let product = cb.query_word32();
             let mulwords_u64_gadget = MulWordByU64Gadget::<F>::construct(cb, a.clone(), b.expr());
             MulWordByU64TestContainer {
                 mulwords_u64_gadget,
@@ -130,10 +130,9 @@ mod tests {
             let product = witnesses[2];
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, a)?;
             self.b.assign(region, offset, Value::known(F::from(b)))?;
-            self.product
-                .assign(region, offset, Some(product.to_le_bytes()))?;
+            self.product.assign_u256(region, offset, product)?;
             self.mulwords_u64_gadget.assign(region, 0, a, b, product)?;
 
             Ok(())

@@ -5,21 +5,24 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget, CachedRegion, Cell,
+            math_gadget, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct IsZeroGadget<F> {
     same_context: SameContextGadget<F>,
-    value: Cell<F>,
-    is_zero: math_gadget::IsZeroGadget<F>,
+    value: WordCell<F>,
+    is_zero_word: math_gadget::IsZeroWordGadget<F, WordCell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
@@ -30,11 +33,11 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_cell_phase2();
-        let is_zero = math_gadget::IsZeroGadget::construct(cb, value.expr());
+        let value = cb.query_word_unchecked();
+        let is_zero_word = math_gadget::IsZeroWordGadget::construct(cb, &value);
 
-        cb.stack_pop(value.expr());
-        cb.stack_push(is_zero.expr());
+        cb.stack_pop(value.to_word());
+        cb.stack_push(Word::from_lo_unchecked(is_zero_word.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -49,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         Self {
             same_context,
             value,
-            is_zero,
+            is_zero_word,
         }
     }
 
@@ -65,9 +68,9 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
-        let value = region.word_rlc(value);
-        self.value.assign(region, offset, value)?;
-        self.is_zero.assign_value(region, offset, value)?;
+        self.value.assign_u256(region, offset, value)?;
+        self.is_zero_word
+            .assign_value(region, offset, Value::known(Word::from(value)))?;
 
         Ok(())
     }

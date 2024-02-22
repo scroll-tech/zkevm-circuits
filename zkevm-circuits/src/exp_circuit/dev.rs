@@ -2,7 +2,7 @@ pub use super::ExpCircuit;
 
 use crate::{
     exp_circuit::{ExpCircuitArgs, ExpCircuitConfig},
-    table::{ExpTable, U16Table},
+    table::{ExpTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use eth_types::Field;
@@ -24,7 +24,7 @@ impl<F: Field> Circuit<F> for ExpCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let exp_table = ExpTable::construct(meta);
         let challenges = Challenges::construct(meta);
-        let u16_table = U16Table::construct(meta);
+        let u16_table = UXTable::construct(meta);
         (
             ExpCircuitConfig::new(
                 meta,

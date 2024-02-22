@@ -3,12 +3,14 @@ use eth_types::Field;
 use gadgets::util::{and, not, Expr};
 use halo2_proofs::plonk::Expression;
 
-use crate::evm_circuit::step::{ExecutionState, ExecutionState::ErrorOutOfGasPrecompile};
-
 use super::{
     constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
     math_gadget::BinaryNumberGadget,
     CachedRegion,
+};
+use crate::evm_circuit::{
+    step::{ExecutionState, ExecutionState::ErrorOutOfGasPrecompile},
+    util::Word,
 };
 
 #[derive(Clone, Debug)]
@@ -19,13 +21,14 @@ pub struct PrecompileGadget<F> {
 impl<F: Field> PrecompileGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        callee_address: Expression<F>,
+        //callee_address: Expression<F>,
+        callee_address: Word<Expression<F>>,
         input_bytes_rlc: Expression<F>,
         // for root call we do not need to constraint output and return
         output_bytes_rlc: Option<Expression<F>>,
         return_bytes_rlc: Option<Expression<F>>,
     ) -> Self {
-        let address = BinaryNumberGadget::construct(cb, callee_address.expr());
+        let address = BinaryNumberGadget::construct(cb, callee_address.lo().expr());
 
         macro_rules! constrain_next_state {
             ($cb:ident, $precompile_call_type:ident, $precompile_exec_state:ident) => {

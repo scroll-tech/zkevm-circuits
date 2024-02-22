@@ -2,14 +2,18 @@ use crate::{
     evm_circuit::util::{
         and,
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-        not, or, rlc, select,
+        not, or, select,
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
-    util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{
+        get_push_size,
+        word::{Word, Word32, WordExpr},
+        Challenges, Expr, SubCircuit, SubCircuitConfig,
+    },
     witness,
 };
 use bus_mapping::{state_db::EMPTY_CODE_HASH_LE, util::POSEIDON_CODE_HASH_EMPTY};
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, U256};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -274,19 +278,18 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
-            let empty_hash = if cfg!(feature = "poseidon-codehash") {
-                Expression::Constant(POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap())
+            let empty_hash_word = if cfg!(feature = "poseidon-codehash") {
+                Word32::new(POSEIDON_CODE_HASH_EMPTY.to_word().to_le_bytes())
+                    .to_expr::<F>()
+                    .to_word()
             } else {
-                rlc::expr(
-                    &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
-                    challenges.evm_word(),
-                )
+                Word32::new(*EMPTY_CODE_HASH_LE).to_expr::<F>().to_word()
             };
 
-            cb.require_equal(
+            cb.require_equal_word(
                 "assert cur.hash == EMPTY_HASH",
-                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
-                empty_hash,
+                bytecode_table.code_hash.query_advice(meta, Rotation::cur()),
+                empty_hash_word,
             );
 
             cb.gate(and::expr(vec![
@@ -324,10 +327,12 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 1.expr(),
             );
 
-            cb.require_equal(
+            cb.require_equal_word(
                 "next.hash == cur.hash",
-                meta.query_advice(bytecode_table.code_hash, Rotation::next()),
-                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
+                bytecode_table
+                    .code_hash
+                    .query_advice(meta, Rotation::next()),
+                bytecode_table.code_hash.query_advice(meta, Rotation::cur()),
             );
 
             cb.require_equal(
@@ -367,10 +372,12 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
             );
 
-            cb.require_equal(
+            cb.require_equal_word(
                 "next.hash == cur.hash",
-                meta.query_advice(bytecode_table.code_hash, Rotation::next()),
-                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
+                bytecode_table
+                    .code_hash
+                    .query_advice(meta, Rotation::next()),
+                bytecode_table.code_hash.query_advice(meta, Rotation::cur()),
             );
 
             cb.require_equal(
@@ -549,14 +556,16 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             last_row_offset
         );
 
-        let empty_hash = challenges.evm_word().map(|challenge| {
-            if cfg!(feature = "poseidon-codehash") {
-                POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap()
-            } else {
-                rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge)
-            }
-        });
-
+        let empty_hash_word = if cfg!(feature = "poseidon-codehash") {
+            //POSEIDON_CODE_HASH_EMPTY.to_word()
+            Word::new([
+                POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap(),
+                F::zero(),
+            ])
+            .map(Value::known)
+        } else {
+            Word::from(U256::from_little_endian(&*EMPTY_CODE_HASH_LE)).map(Value::known)
+        };
         let mut is_first_time = true;
         layouter.assign_region(
             || "assign bytecode",
@@ -567,7 +576,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &mut region,
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
-                        empty_hash,
+                        empty_hash_word,
                         last_row_offset,
                         last_row_offset,
                     )?;
@@ -584,7 +593,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         challenges,
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
-                        empty_hash,
+                        empty_hash_word,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
@@ -597,7 +606,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &mut region,
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
-                        empty_hash,
+                        empty_hash_word,
                         idx,
                         last_row_offset,
                     )?;
@@ -644,20 +653,19 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 value_rlc = challenges.keccak_input().map(|_| F::zero());
             }
 
-            let code_hash = challenges
-                .evm_word()
-                .map(|challenge| rlc::value(&row.code_hash.to_le_bytes(), challenge));
-            for (name, column, value) in [
-                ("code_hash", self.bytecode_table.code_hash, code_hash),
-                ("value_rlc", self.value_rlc, value_rlc),
-            ] {
-                region.assign_advice(
-                    || format!("assign {name} {offset}"),
-                    column,
-                    offset,
-                    || value,
-                )?;
-            }
+            region.assign_advice(
+                || format!("assign value_rlc {offset}"),
+                self.value_rlc,
+                offset,
+                || value_rlc,
+            )?;
+
+            row.code_hash.assign_advice(
+                region,
+                || format!("assign code_hash {offset}"),
+                self.bytecode_table.code_hash,
+                offset,
+            )?;
         }
         Ok(())
     }
@@ -670,7 +678,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
         push_data_left_is_zero_chip: &IsZeroChip<F>,
         index_length_diff_is_zero_chip: &IsZeroChip<F>,
-        empty_hash: Value<F>,
+        empty_hash: Word<Value<F>>,
         offset: &mut usize,
         last_row_offset: usize,
         fail_fast: bool,
@@ -686,13 +694,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         // Code hash with challenge is calculated only using the first row of the
         // bytecode (header row), the rest of the code_hash in other rows are ignored.
-        let code_hash = challenges.evm_word().map(|challenge| {
-            if cfg!(feature = "poseidon-codehash") {
-                bytecode.rows[0].code_hash.to_scalar().unwrap()
-            } else {
-                rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge)
-            }
-        });
+        let code_hash = bytecode.rows[0].code_hash;
 
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {
@@ -809,7 +811,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         region: &mut Region<'_, F>,
         push_data_left_is_zero_chip: &IsZeroChip<F>,
         index_length_diff_is_zero_chip: &IsZeroChip<F>,
-        empty_hash: Value<F>,
+        empty_hash: Word<Value<F>>,
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
@@ -843,7 +845,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         offset: usize,
         enable: bool,
         last: bool,
-        code_hash: Value<F>,
+        code_hash: Word<Value<F>>,
         tag: F,
         index: F,
         is_code: F,
@@ -902,7 +904,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             )?;
         }
         for (name, column, value) in [
-            ("code_hash", self.bytecode_table.code_hash, code_hash),
             ("push_acc", self.push_acc, push_acc),
             ("push_rlc", self.bytecode_table.push_rlc, push_rlc),
             ("value_rlc", self.value_rlc, value_rlc),
@@ -914,6 +915,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 || value,
             )?;
         }
+
+        code_hash.assign_advice(
+            region,
+            || format!("assign code_hash {offset}"),
+            self.bytecode_table.code_hash,
+            offset,
+        )?;
 
         push_data_left_is_zero_chip.assign(
             region,
@@ -1010,7 +1018,10 @@ impl<F: Field> BytecodeCircuit<F> {
         let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .iter()
-            .map(|(codehash, b)| unroll_with_codehash(*codehash, b.bytes.clone()))
+            .map(|(codehash, b)| {
+                let codehash_word = Word::from(codehash.to_word()).map(Value::known);
+                unroll_with_codehash(codehash_word, b.bytes.clone())
+            })
             .collect();
         Self::new(bytecodes, bytecode_size)
     }

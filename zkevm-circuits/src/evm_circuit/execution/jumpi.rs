@@ -9,22 +9,25 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::IsZeroGadget,
-            select, CachedRegion, Cell,
+            math_gadget::IsZeroWordGadget,
+            select, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct JumpiGadget<F> {
     same_context: SameContextGadget<F>,
     dest: WordByteRangeGadget<F, N_BYTES_PROGRAM_COUNTER>,
-    phase2_condition: Cell<F>,
-    is_condition_zero: IsZeroGadget<F>,
+    condition: WordCell<F>,
+    is_condition_zero: IsZeroWordGadget<F, WordCell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
@@ -34,14 +37,14 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let dest = WordByteRangeGadget::construct(cb);
-        let phase2_condition = cb.query_cell_phase2();
+        let condition = cb.query_word_unchecked();
 
         // Pop the value from the stack
-        cb.stack_pop(dest.original_word());
-        cb.stack_pop(phase2_condition.expr());
+        cb.stack_pop(dest.original());
+        cb.stack_pop(condition.to_word());
 
         // Determine if the jump condition is met
-        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
+        let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
         let should_jump = 1.expr() - is_condition_zero.expr();
 
         // Lookup opcode at destination when should_jump
@@ -77,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         Self {
             same_context,
             dest,
-            phase2_condition,
+            condition,
             is_condition_zero,
         }
     }
@@ -95,12 +98,11 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
         let [destination, condition] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-        let condition = region.word_rlc(condition);
 
         self.dest.assign(region, offset, destination)?;
-        self.phase2_condition.assign(region, offset, condition)?;
+        self.condition.assign_u256(region, offset, condition)?;
         self.is_condition_zero
-            .assign_value(region, offset, condition)?;
+            .assign_value(region, offset, Value::known(Word::from(condition)))?;
 
         Ok(())
     }

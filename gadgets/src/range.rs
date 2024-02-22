@@ -10,7 +10,7 @@ use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, TableColumn, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
@@ -36,7 +36,8 @@ pub struct UIntRangeCheckConfig<F, const N_2BYTE: usize, const N_EXPR: usize> {
     /// Denotes the little-endian representation of expression in u16.
     pub u16_repr: [Column<Advice>; N_2BYTE],
     /// Denotes the u16 lookup table.
-    pub u16_table: TableColumn,
+    //pub u16_table: TableColumn,
+    pub u16_table: Column<Fixed>,
     _marker: std::marker::PhantomData<F>,
 }
 
@@ -61,7 +62,8 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> UIntRangeCheckChip<F, 
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<F>) -> Expression<F> + Clone,
         expressions: impl FnOnce(&mut VirtualCells<F>) -> [Expression<F>; N_EXPR],
-        u16_table: TableColumn,
+        //u16_table: TableColumn,
+        u16_table: Column<Fixed>,
     ) -> UIntRangeCheckConfig<F, N_2BYTE, N_EXPR> {
         let u16_repr = [(); N_2BYTE].map(|_| meta.advice_column());
 
@@ -83,9 +85,10 @@ impl<F: Field, const N_2BYTE: usize, const N_EXPR: usize> UIntRangeCheckChip<F, 
         });
 
         for column in u16_repr {
-            meta.lookup(concat!("u16 cell range check"), |meta| {
+            meta.lookup_any(concat!("u16 cell range check"), |meta| {
                 let cell = meta.query_advice(column, Rotation::cur());
-                vec![(cell, u16_table)]
+                let u16_expr = meta.query_fixed(u16_table, Rotation::cur());
+                vec![(cell, u16_expr)]
             });
         }
 

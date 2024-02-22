@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -9,11 +8,11 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            from_bytes, CachedRegion, RandomLinearCombination,
+            CachedRegion, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -22,7 +21,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct PcGadget<F> {
     same_context: SameContextGadget<F>,
-    value: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
+    value: U64Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
@@ -31,17 +30,17 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PC;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let value = cb.query_word_rlc();
+        let value = cb.query_u64();
 
         // program_counter is limited to 64 bits so we only consider 8 bytes
         cb.require_equal(
             "Constrain program_counter equal to stack value",
-            from_bytes::expr(&value.cells),
+            value.expr(),
             cb.curr.state.program_counter.expr(),
         );
 
         // Push the value on the stack
-        cb.stack_push(value.expr());
+        cb.stack_push(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

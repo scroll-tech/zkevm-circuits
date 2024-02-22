@@ -5,11 +5,14 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;
@@ -17,7 +20,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct DupGadget<F> {
     same_context: SameContextGadget<F>,
-    value: Cell<F>,
+    value: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
@@ -28,15 +31,15 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_cell_phase2();
+        let value = cb.query_word_unchecked();
 
         // The stack index we have to peek, deduced from the 'x' value of 'dupx'
         // The offset starts at 0 for DUP1
         let dup_offset = opcode.expr() - OpcodeId::DUP1.expr();
 
         // Peek the value at `dup_offset` and push the value on the stack
-        cb.stack_lookup(false.expr(), dup_offset, value.expr());
-        cb.stack_push(value.expr());
+        cb.stack_lookup(false.expr(), dup_offset, value.to_word());
+        cb.stack_push(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -66,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
-        self.value.assign(region, offset, region.word_rlc(value))?;
+        self.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }

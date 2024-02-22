@@ -6,11 +6,14 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            sum, CachedRegion, Word,
+            sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
@@ -20,8 +23,8 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ByteGadget<F> {
     same_context: SameContextGadget<F>,
-    index: Word<F>,
-    value: Word<F>,
+    index: Word32Cell<F>,
+    value: Word32Cell<F>,
     is_msb_sum_zero: IsZeroGadget<F>,
     is_byte_selected: [IsEqualGadget<F>; 32],
 }
@@ -32,14 +35,14 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BYTE;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let index = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
+        let index = cb.query_word32();
+        let value = cb.query_word32();
 
         // If any of the non-LSB bytes of the index word are non-zero we never
         // need to copy any bytes. So just sum all the non-LSB byte
         // values here and then check if it's non-zero so we can use
         // that as an additional condition when to copy the byte value.
-        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
+        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.limbs[1..32]));
 
         // Now we just need to check that `result[0]` is the sum of all copied
         // bytes. We go byte by byte and check if `idx == index[0]`.
@@ -50,11 +53,11 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         let is_byte_selected = array_init(|idx| {
             // Check if this byte is selected looking only at the LSB of the
             // index word
-            IsEqualGadget::construct(cb, index.cells[0].expr(), (31 - idx).expr())
+            IsEqualGadget::construct(cb, index.limbs[0].expr(), (31 - idx).expr())
         });
 
         // Sum all possible selected bytes
-        let selected_byte = value.cells.iter().zip(is_byte_selected.iter()).fold(
+        let selected_byte = value.limbs.iter().zip(is_byte_selected.iter()).fold(
             0.expr(),
             |acc, (cell, is_selected)| {
                 acc + is_selected.expr() * is_msb_sum_zero.expr() * cell.expr()
@@ -65,9 +68,9 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         // push the selected byte on the stack
         // We can push the selected byte here directly because
         // it only uses the LSB of a word.
-        cb.stack_pop(index.expr());
-        cb.stack_pop(value.expr());
-        cb.stack_push(selected_byte);
+        cb.stack_pop(index.to_word());
+        cb.stack_pop(value.to_word());
+        cb.stack_push(Word::from_lo_unchecked(selected_byte));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -101,21 +104,21 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         // Inputs/Outputs
-        let index = block.rws[step.rw_indices[0]].stack_value().to_le_bytes();
-        let value = block.rws[step.rw_indices[1]].stack_value().to_le_bytes();
-        self.index.assign(region, offset, Some(index))?;
-        self.value.assign(region, offset, Some(value))?;
-
+        let index = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.rws[step.rw_indices[1]].stack_value();
+        let index_bytes = index.to_le_bytes();
+        self.index.assign_u256(region, offset, index)?;
+        self.value.assign_u256(region, offset, value)?;
         // Set `is_msb_sum_zero`
         self.is_msb_sum_zero
-            .assign(region, offset, sum::value(&index[1..32]))?;
+            .assign(region, offset, sum::value(&index_bytes[1..32]))?;
 
         // Set `is_byte_selected`
         for i in 0..32 {
             self.is_byte_selected[i].assign(
                 region,
                 offset,
-                F::from(index[0] as u64),
+                F::from(index_bytes[0] as u64),
                 F::from((31 - i) as u64),
             )?;
         }

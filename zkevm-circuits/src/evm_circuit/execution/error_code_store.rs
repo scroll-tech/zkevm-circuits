@@ -12,7 +12,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 
 use eth_types::{
@@ -50,11 +50,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             OpcodeId::RETURN.expr(),
         );
 
-        let offset = cb.query_cell_phase2();
-        let length = cb.query_word_rlc();
-
-        cb.stack_pop(offset.expr());
-        cb.stack_pop(length.expr());
+        let offset = cb.query_word_unchecked();
+        let length = cb.query_memory_address();
+        cb.stack_pop(offset.to_word());
+        cb.stack_pop(length.to_word());
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
 
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());

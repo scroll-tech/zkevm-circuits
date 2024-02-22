@@ -7,15 +7,18 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteOrWord, ByteSizeGadget, LtGadget},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian,
+    Field,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -24,8 +27,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGExpGadget<F> {
     opcode: Cell<F>,
-    base: Word<F>,
-    exponent: Word<F>,
+    base: Word32Cell<F>,
+    exponent: Word32Cell<F>,
     exponent_byte_size: ByteSizeGadget<F>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     common_error_gadget: CommonErrorGadget<F>,
@@ -45,15 +48,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
             OpcodeId::EXP.expr(),
         );
 
-        let base = cb.query_word_rlc();
-        let exponent = cb.query_word_rlc();
-        cb.stack_pop(base.expr());
-        cb.stack_pop(exponent.expr());
+        let base = cb.query_word32();
+        let exponent = cb.query_word32();
+        cb.stack_pop(base.to_word());
+        cb.stack_pop(exponent.to_word());
 
         let exponent_byte_size = ByteSizeGadget::construct(
             cb,
             exponent
-                .cells
+                .limbs
                 .iter()
                 .map(Expr::expr)
                 .collect::<Vec<_>>()
@@ -108,9 +111,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        self.base.assign(region, offset, Some(base.to_le_bytes()))?;
-        self.exponent
-            .assign(region, offset, Some(exponent.to_le_bytes()))?;
+        self.base.assign_u256(region, offset, base)?;
+        self.exponent.assign_u256(region, offset, exponent)?;
         self.exponent_byte_size
             .assign(region, offset, ByteOrWord::Word(exponent))?;
         self.insufficient_gas_cost.assign_value(

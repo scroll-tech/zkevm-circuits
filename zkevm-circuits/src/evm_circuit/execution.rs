@@ -592,6 +592,11 @@ impl<F: Field> ExecutionConfig<F> {
             address_gadget: configure_gadget!(),
             balance_gadget: configure_gadget!(),
             blockhash_gadget: configure_gadget!(),
+            block_ctx_u64_gadget: configure_gadget!(),
+            block_ctx_u160_gadget: configure_gadget!(),
+            block_ctx_u256_gadget: configure_gadget!(),
+            #[cfg(feature = "scroll")]
+            difficulty_gadget: configure_gadget!(),
             exp_gadget: configure_gadget!(),
             sar_gadget: configure_gadget!(),
             extcodecopy_gadget: configure_gadget!(),
@@ -608,11 +613,6 @@ impl<F: Field> ExecutionConfig<F> {
             sstore_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
-            block_ctx_u64_gadget: configure_gadget!(),
-            block_ctx_u160_gadget: configure_gadget!(),
-            block_ctx_u256_gadget: configure_gadget!(),
-            #[cfg(feature = "scroll")]
-            difficulty_gadget: configure_gadget!(),
             // error gadgets
             error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
@@ -1587,6 +1587,7 @@ impl<F: Field> ExecutionConfig<F> {
             #[cfg(feature = "scroll")]
             ExecutionState::DIFFICULTY => assign_exec_step!(self.difficulty_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
+
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
@@ -1773,10 +1774,7 @@ impl<F: Field> ExecutionConfig<F> {
             .rw_indices
             .iter()
             .map(|rw_idx| block.rws[*rw_idx])
-            .map(|rw| {
-                rw.table_assignment_aux(evm_randomness)
-                    .rlc(lookup_randomness)
-            })
+            .map(|rw| rw.table_assignment_aux().unwrap().rlc(lookup_randomness))
             .fold(BTreeSet::<F>::new(), |mut set, value| {
                 set.insert(value);
                 set
@@ -1797,7 +1795,8 @@ impl<F: Field> ExecutionConfig<F> {
                     idx,
                     block.rws[*rw_idx],
                     block.rws[*rw_idx]
-                        .table_assignment_aux(evm_randomness)
+                        .table_assignment()
+                        .unwrap()
                         .rlc(lookup_randomness)
                 );
             }
@@ -1860,8 +1859,8 @@ impl<F: Field> ExecutionConfig<F> {
             };
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(evm_randomness);
-            let rlc = table_assignments.rlc(lookup_randomness);
+            let table_assignments = rw.table_assignment_aux();
+            let rlc = table_assignments.unwrap().rlc(lookup_randomness);
 
             if !rlc_assignments.contains(value) {
                 log_ctx(&assigned_rw_values);

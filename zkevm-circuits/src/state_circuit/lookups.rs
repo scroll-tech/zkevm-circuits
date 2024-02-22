@@ -1,10 +1,12 @@
-use crate::table::CallContextFieldTag;
+use crate::table::{CallContextFieldTag, LookupTable, UXTable};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+
+use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
@@ -12,35 +14,13 @@ use strum::IntoEnumIterator;
 pub struct Config {
     // Can these be TableColumn's?
     // https://github.com/zcash/halo2/blob/642efc1536d3ea2566b04814bd60a00c4745ae22/halo2_proofs/src/plonk/circuit.rs#L266
-    u8: Column<Fixed>,
-    u10: Column<Fixed>,
-    u16: Column<Fixed>,
+    u8_table: UXTable<8>,
+    u10_table: UXTable<10>,
+    u16_table: UXTable<16>,
     pub call_context_field_tag: Column<Fixed>,
 }
 
 impl Config {
-    pub fn range_check_u8<F: Field>(
-        &self,
-        meta: &mut ConstraintSystem<F>,
-        msg: &'static str,
-        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-    ) {
-        meta.lookup_any(msg, |meta| {
-            let exp = exp_fn(meta);
-            vec![(exp, meta.query_fixed(self.u8, Rotation::cur()))]
-        });
-    }
-    pub fn range_check_u10<F: Field>(
-        &self,
-        meta: &mut ConstraintSystem<F>,
-        msg: &'static str,
-        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-    ) {
-        meta.lookup_any(msg, |meta| {
-            let exp = exp_fn(meta);
-            vec![(exp, meta.query_fixed(self.u10, Rotation::cur()))]
-        });
-    }
     pub fn range_check_u16<F: Field>(
         &self,
         meta: &mut ConstraintSystem<F>,
@@ -49,7 +29,10 @@ impl Config {
     ) {
         meta.lookup_any(msg, |meta| {
             let exp = exp_fn(meta);
-            vec![(exp, meta.query_fixed(self.u16, Rotation::cur()))]
+            vec![exp]
+                .into_iter()
+                .zip_eq(self.u16_table.table_exprs(meta))
+                .collect()
         });
     }
 }
@@ -65,9 +48,9 @@ pub struct Queries<F> {
 impl<F: Field> Queries<F> {
     pub fn new(meta: &mut VirtualCells<'_, F>, c: Config) -> Self {
         Self {
-            u8: meta.query_fixed(c.u8, Rotation::cur()),
-            u10: meta.query_fixed(c.u10, Rotation::cur()),
-            u16: meta.query_fixed(c.u16, Rotation::cur()),
+            u8: c.u8_table.table_exprs(meta)[0].clone(),
+            u10: c.u10_table.table_exprs(meta)[0].clone(),
+            u16: c.u16_table.table_exprs(meta)[0].clone(),
             call_context_field_tag: meta.query_fixed(c.call_context_field_tag, Rotation::cur()),
         }
     }
@@ -86,16 +69,18 @@ impl<F: Field> Chip<F> {
         }
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> Config {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        u8_table: UXTable<8>,
+        u10_table: UXTable<10>,
+        u16_table: UXTable<16>,
+    ) -> Config {
         let config = Config {
-            u8: meta.fixed_column(),
-            u10: meta.fixed_column(),
-            u16: meta.fixed_column(),
+            u8_table,
+            u10_table,
+            u16_table,
             call_context_field_tag: meta.fixed_column(),
         };
-        meta.annotate_lookup_any_column(config.u8, || "LOOKUP_u8");
-        meta.annotate_lookup_any_column(config.u10, || "LOOKUP_u10");
-        meta.annotate_lookup_any_column(config.u16, || "LOOKUP_u16");
         meta.annotate_lookup_any_column(config.call_context_field_tag, || {
             "LOOKUP_call_context_field_tag"
         });
@@ -103,26 +88,9 @@ impl<F: Field> Chip<F> {
     }
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        for (column, exponent) in [
-            (self.config.u8, 8),
-            (self.config.u10, 10),
-            (self.config.u16, 16),
-        ] {
-            layouter.assign_region(
-                || format!("assign u{exponent} fixed column"),
-                |mut region| {
-                    for i in 0..(1 << exponent) {
-                        region.assign_fixed(
-                            || format!("assign {i} in u{exponent} fixed column"),
-                            column,
-                            i,
-                            || Value::known(F::from(i as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )?;
-        }
+        self.config.u8_table.load(layouter)?;
+        self.config.u10_table.load(layouter)?;
+        self.config.u16_table.load(layouter)?;
         layouter.assign_region(
             || "assign call_context_field_tags fixed column",
             |mut region| {
@@ -137,6 +105,7 @@ impl<F: Field> Chip<F> {
                 Ok(())
             },
         )?;
+
         Ok(())
     }
 }

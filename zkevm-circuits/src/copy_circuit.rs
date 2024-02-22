@@ -11,6 +11,7 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
+use crate::util::word;
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, Word};
@@ -45,10 +46,10 @@ use crate::{
 
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_first_last,
-    constrain_forward_parameters, constrain_is_pad, constrain_mask, constrain_masked_value,
-    constrain_must_terminate, constrain_non_pad_non_mask, constrain_rw_counter,
-    constrain_rw_word_complete, constrain_tag, constrain_value_rlc, constrain_word_index,
-    constrain_word_rlc,
+    constrain_forward_parameters, constrain_id, constrain_is_pad, constrain_mask,
+    constrain_masked_value, constrain_must_terminate, constrain_non_pad_non_mask,
+    constrain_rw_counter, constrain_rw_word_complete, constrain_tag, constrain_value_rlc,
+    constrain_word_index,
 };
 
 /// The current row.
@@ -76,9 +77,11 @@ pub struct CopyCircuitConfig<F> {
     /// The value before the write.
     pub value_prev: Column<Advice>,
     /// The word value for memory lookup.
-    pub value_word_rlc: Column<Advice>,
+    //pub value_word_rlc: Column<Advice>,
+    pub value_word: word::Word<Column<Advice>>,
     /// The word value for memory lookup, before the write.
-    pub value_word_rlc_prev: Column<Advice>,
+    // pub value_word_rlc_prev: Column<Advice>,
+    pub value_word_prev: word::Word<Column<Advice>>,
     /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
     /// mask indicates when a row is not part of the copy, but it is needed to complete the front
@@ -162,8 +165,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value_prev = meta.advice_column();
 
         // RLC accumulators in the second phase.
-        let value_word_rlc = meta.advice_column_in(SecondPhase);
-        let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
+        // let code_hash = word::Word::new([meta.advice_column(), meta.advice_column()]);
+
+        let value_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let value_word_prev = word::Word::new([meta.advice_column(), meta.advice_column()]);
         let value_acc = meta.advice_column_in(SecondPhase);
 
         let [is_pad, is_tx_calldata, is_bytecode, is_memory, is_tx_log, is_access_list_address, is_access_list_storage_key] =
@@ -236,6 +241,18 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // Detect the rows which process the last byte of a word. The next word starts at
             // NEXT_STEP.
             let is_word_end = is_word_end.expr();
+
+            constrain_id(
+                cb,
+                meta,
+                //is_bytecode,
+                is_tx_log,
+                is_tx_calldata,
+                is_memory,
+                id,
+                is_pad,
+            );
+
             let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
             let is_access_list = meta.query_advice(is_access_list_address, CURRENT)
                 + meta.query_advice(is_access_list_storage_key, CURRENT);
@@ -295,23 +312,21 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             constrain_event_rlc_acc(cb, meta, is_last_col, value_acc, rlc_acc, is_bytecode, tag);
 
+            // no word_rlc required after word hi lo
             // Apply the same constraints for the RLCs of words before and after the write.
-            let word_rlc_both = [(value_word_rlc, value), (value_word_rlc_prev, value_prev)];
-            for (word_rlc, value) in word_rlc_both {
-                constrain_word_rlc(
-                    cb,
-                    meta,
-                    // Not constrain word rlc for access list, since `value`
-                    // saves access list address and `value_prev` saves storage
-                    // key.
-                    is_first.expr() * (1.expr() - is_access_list.expr()),
-                    is_continue.expr() * (1.expr() - is_access_list.expr()),
-                    is_word_end.expr(),
-                    word_rlc,
-                    value,
-                    challenges.evm_word(),
-                );
-            }
+            // let word_rlc_both = [(value_word, value), (value_word_prev, value_prev)];
+            // for (word_rlc, value) in word_rlc_both {
+            //     constrain_word_rlc(
+            //         cb,
+            //         meta,
+            //         is_first.expr(),
+            //         is_continue.expr(),
+            //         is_word_end.expr(),
+            //         word_rlc,
+            //         value,
+            //         challenges.evm_word(),
+            //     );
+            // }
 
             constrain_word_index(
                 cb,
@@ -373,12 +388,17 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(rw_counter, CURRENT),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
-                meta.query_advice(id, CURRENT), // call_id
+                meta.query_advice(id.lo(), Rotation::cur()), // call_id
                 addr_slot,
                 0.expr(),
                 0.expr(),
-                meta.query_advice(value_word_rlc, CURRENT),
-                meta.query_advice(value_word_rlc_prev, CURRENT),
+                0.expr(),
+                meta.query_advice(value_word.lo(), CURRENT),
+                meta.query_advice(value_word.hi(), CURRENT),
+                meta.query_advice(value_word_prev.lo(), CURRENT),
+                meta.query_advice(value_word_prev.hi(), CURRENT),
+                0.expr(),
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ]
@@ -400,11 +420,17 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(rw_counter, CURRENT),
                 1.expr(),
                 RwTableTag::TxLog.expr(),
-                meta.query_advice(id, CURRENT), // tx_id
-                addr_slot,                      // byte_index || field_tag || log_id
+                //meta.query_advice(id, CURRENT), // tx_id
+                meta.query_advice(id.lo(), CURRENT), // tx_id
+                addr_slot,                           // byte_index || field_tag || log_id
                 0.expr(),
                 0.expr(),
-                meta.query_advice(value_word_rlc, CURRENT),
+                0.expr(),
+                meta.query_advice(value_word.lo(), CURRENT),
+                meta.query_advice(value_word.hi(), CURRENT),
+                0.expr(),
+                0.expr(),
+                0.expr(),
                 0.expr(),
                 0.expr(),
                 0.expr(),
@@ -422,7 +448,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             vec![
                 1.expr(),
-                meta.query_advice(id, CURRENT),
+                meta.query_advice(id.lo(), CURRENT),
+                meta.query_advice(id.hi(), CURRENT),
                 BytecodeFieldTag::Byte.expr(),
                 meta.query_advice(addr, CURRENT),
                 meta.query_advice(value, CURRENT),
@@ -440,7 +467,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             vec![
                 1.expr(),
-                meta.query_advice(id, CURRENT),
+                meta.query_advice(id.lo(), CURRENT),
                 TxContextFieldTag::CallData.expr(),
                 meta.query_advice(addr, CURRENT),
                 meta.query_advice(value, CURRENT),
@@ -455,9 +482,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_access_list_address, CURRENT);
 
-            let tx_id = meta.query_advice(id, CURRENT);
+            let tx_id = meta.query_advice(id.lo(), CURRENT);
             let index = meta.query_advice(addr, CURRENT);
-            let address = meta.query_advice(value_word_rlc, CURRENT);
+            //TODO: update per value_word columns
+            let address = meta.query_advice(value_word.lo(), CURRENT);
 
             vec![
                 1.expr(),
@@ -465,6 +493,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 TxContextFieldTag::AccessListAddress.expr(),
                 index,
                 address,
+                // address ?
             ]
             .into_iter()
             .zip(tx_table.table_exprs(meta))
@@ -476,8 +505,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_access_list_address, CURRENT);
 
-            let tx_id = meta.query_advice(id, CURRENT);
-            let address = meta.query_advice(value_word_rlc, CURRENT);
+            // let address = meta.query_advice(value, CURRENT);
+            let tx_id = meta.query_advice(id.lo(), CURRENT);
+            let address = meta.query_advice(value_word.lo(), CURRENT);
             let is_warm_prev = meta.query_advice(value_prev, CURRENT);
 
             vec![
@@ -489,8 +519,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 address, // access list address
                 0.expr(),
                 0.expr(),
-                1.expr(),     // is_warm
-                is_warm_prev, // is_warm_prev
+                0.expr(),
+                1.expr(),     // is_warm_lo
+                0.expr(),     // is_warm_hi
+                is_warm_prev, // is_warm_prev_lo
+                0.expr(),     // is_warm_prev_hi
+                0.expr(),
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ]
@@ -504,9 +539,11 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_access_list_storage_key, CURRENT);
 
-            let tx_id = meta.query_advice(id, CURRENT);
+            let tx_id = meta.query_advice(id.lo(), CURRENT);
+            // index in copy table 'value' column ?
             let index = meta.query_advice(value, CURRENT);
-            let storage_key = meta.query_advice(value_word_rlc_prev, CURRENT);
+            // value_word column? put address in ? TODO: check lo() covers storage key ?
+            let storage_key = meta.query_advice(value_word_prev.lo(), CURRENT);
 
             vec![
                 1.expr(),
@@ -525,9 +562,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, CURRENT)
                 * meta.query_advice(is_access_list_storage_key, CURRENT);
 
-            let tx_id = meta.query_advice(id, CURRENT);
-            let address = meta.query_advice(value_word_rlc, CURRENT);
-            let storage_key = meta.query_advice(value_word_rlc_prev, CURRENT);
+            let tx_id = meta.query_advice(id.lo(), CURRENT);
+            let address = meta.query_advice(value_word.lo(), CURRENT);
+            let storage_key_lo = meta.query_advice(value_word_prev.lo(), CURRENT);
+            let storage_key_hi = meta.query_advice(value_word_prev.hi(), CURRENT);
+
+            // reserve ?
             let is_warm_prev = meta.query_advice(value_prev, CURRENT);
 
             vec![
@@ -538,9 +578,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 tx_id,
                 address, // access list address
                 0.expr(),
-                storage_key,  // access list storage key
-                1.expr(),     // is_warm
-                is_warm_prev, // is_warm_prev
+                storage_key_lo, // access list storage_key_lo
+                storage_key_hi, // access list storage_key_hi
+                1.expr(),       // is_warm_lo
+                0.expr(),       // is_warm_hi
+                is_warm_prev,   // is_warm_prev_lo
+                0.expr(),       // is_warm_prev_hi
+                0.expr(),
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ]
@@ -555,8 +600,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_last,
             value,
             value_prev,
-            value_word_rlc,
-            value_word_rlc_prev,
+            value_word,
+            value_word_prev,
             word_index,
             mask,
             front_mask,
@@ -631,8 +676,10 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_last,
                 self.value,
                 self.value_prev,
-                self.value_word_rlc,
-                self.value_word_rlc_prev,
+                self.value_word.lo(),
+                self.value_word.hi(),
+                self.value_word_prev.lo(),
+                self.value_word_prev.hi(),
                 self.value_acc,
                 self.is_pad,
                 self.mask,
@@ -655,7 +702,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             // lt chip
             if is_read {
-                let addr = table_row[2].0;
+                let addr = table_row[3].0;
                 is_src_end_chip.assign(
                     region,
                     *offset,
@@ -671,8 +718,8 @@ impl<F: Field> CopyCircuitConfig<F> {
                 Value::known(F::from(31u64)),
             )?;
 
-            let pad = unwrap_value(circuit_row[6].0);
-            let mask = unwrap_value(circuit_row[7].0);
+            let pad = unwrap_value(circuit_row[8].0);
+            let mask = unwrap_value(circuit_row[9].0);
             let non_pad_non_mask = pad.is_zero_vartime() && mask.is_zero_vartime();
             region.assign_advice(
                 || format!("non_pad_non_mask at row: {offset}"),
@@ -758,8 +805,10 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "is_last", self.is_last);
                 region.name_column(|| "value", self.value);
                 region.name_column(|| "value_prev", self.value_prev);
-                region.name_column(|| "value_word_rlc", self.value_word_rlc);
-                region.name_column(|| "value_word_rlc_prev", self.value_word_rlc_prev);
+                region.name_column(|| "value_word_lo", self.value_word.lo());
+                region.name_column(|| "value_word_hi", self.value_word.hi());
+                region.name_column(|| "value_word_lo", self.value_word_prev.lo());
+                region.name_column(|| "value_word_hi", self.value_word_prev.hi());
                 region.name_column(|| "word_index", self.word_index);
                 region.name_column(|| "mask", self.mask);
                 region.name_column(|| "front_mask", self.front_mask);
@@ -858,8 +907,14 @@ impl<F: Field> CopyCircuitConfig<F> {
         )?;
         // id
         region.assign_advice(
-            || format!("assign id {}", *offset),
-            self.copy_table.id,
+            || format!("assign id lo {}", *offset),
+            self.copy_table.id.lo(),
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        region.assign_advice(
+            || format!("assign id hi {}", *offset),
+            self.copy_table.id.hi(),
             *offset,
             || Value::known(F::zero()),
         )?;
@@ -900,15 +955,27 @@ impl<F: Field> CopyCircuitConfig<F> {
         )?;
         // value_word_rlc
         region.assign_advice(
-            || format!("assign value_word_rlc {}", *offset),
-            self.value_word_rlc,
+            || format!("assign value_word_lo {}", *offset),
+            self.value_word.lo(),
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        region.assign_advice(
+            || format!("assign value_word_hi {}", *offset),
+            self.value_word.hi(),
             *offset,
             || Value::known(F::zero()),
         )?;
         // value_word_rlc_prev
         region.assign_advice(
-            || format!("assign value_word_rlc_prev {}", *offset),
-            self.value_word_rlc_prev,
+            || format!("assign value_word_prev_lo {}", *offset),
+            self.value_word_prev.lo(),
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        region.assign_advice(
+            || format!("assign value_word_prev_hi {}", *offset),
+            self.value_word_prev.hi(),
             *offset,
             || Value::known(F::zero()),
         )?;

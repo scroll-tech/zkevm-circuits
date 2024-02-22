@@ -9,42 +9,48 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::{
-                AddWordsGadget, CmpWordsGadget, IsZeroGadget, MulAddWords512Gadget,
+                AddWordsGadget, CmpWordsGadget, IsZeroWordGadget, MulAddWords512Gadget,
                 MulAddWordsGadget,
             },
-            not, CachedRegion, Word,
+            not, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256, U512};
-use halo2_proofs::plonk::Error;
+use eth_types::{Field, U256, U512};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AddModGadget<F> {
     same_context: SameContextGadget<F>,
 
-    a: Word<F>,
-    b: Word<F>,
-    r: Word<F>,
-    n: Word<F>,
+    a: Word32Cell<F>,
+    b: Word32Cell<F>,
+    r: Word32Cell<F>,
+    n: Word32Cell<F>,
 
-    k: Word<F>,
-    d: Word<F>,
-    a_reduced: Word<F>,
+    k: Word32Cell<F>,
+    d: Word32Cell<F>,
+    a_reduced: Word32Cell<F>,
 
     muladd_k_n_areduced: MulAddWordsGadget<F>,
 
     sum_areduced_b: AddWordsGadget<F, 2, false>,
-    sum_areduced_b_overflow: Word<F>,
+    sum_areduced_b_overflow: Word32Cell<F>,
     muladd_d_n_r: MulAddWords512Gadget<F>,
 
-    n_is_zero: IsZeroGadget<F>,
-    cmp_r_n: CmpWordsGadget<F>,
-    cmp_areduced_n: CmpWordsGadget<F>,
+    //n_is_zero: IsZeroGadget<F>,
+    n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    //cmp_r_n: CmpWordsGadget<F>,
+    cmp_r_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    //cmp_areduced_n: CmpWordsGadget<F>,
+    cmp_areduced_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
@@ -56,20 +62,21 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let opcode = cb.query_cell();
 
         // values got from stack (original r is modified if n==0)
-        let a = cb.query_word_rlc();
-        let b = cb.query_word_rlc();
-        let n = cb.query_word_rlc();
-        let r = cb.query_word_rlc();
+        let a = cb.query_word32();
+        let b = cb.query_word32();
+        let n = cb.query_word32();
+        let r = cb.query_word32();
 
         // auxiliar witness
-        let k = cb.query_word_rlc();
-        let a_reduced = cb.query_word_rlc();
-        let d = cb.query_word_rlc();
+        let k = cb.query_word32();
+        let a_reduced = cb.query_word32();
+        let d = cb.query_word32();
 
-        let n_is_zero = IsZeroGadget::construct(cb, n.clone().expr());
+        let n_is_zero = IsZeroWordGadget::construct(cb, &n);
 
         // 1. check k * N + a_reduced == a without overflow
-        let muladd_k_n_areduced = MulAddWordsGadget::construct(cb, [&k, &n, &a_reduced, &a]);
+        let muladd_k_n_areduced =
+            MulAddWordsGadget::construct(cb, [&k, &n.clone(), &a_reduced, &a]);
         cb.require_zero(
             "k * N + a_reduced does not overflow",
             muladd_k_n_areduced.overflow(),
@@ -77,24 +84,25 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // 2. check d * N + r == a_reduced + b, only checking carry if n != 0
         let sum_areduced_b = {
-            let sum = cb.query_word_rlc();
+            let sum = cb.query_word32();
             AddWordsGadget::construct(cb, [a_reduced.clone(), b.clone()], sum)
         };
-        let sum_areduced_b_overflow = cb.query_word_rlc();
+        let sum_areduced_b_overflow = cb.query_word32();
         let muladd_d_n_r = MulAddWords512Gadget::construct(
             cb,
             [&d, &n, &sum_areduced_b_overflow, sum_areduced_b.sum()],
             Some(&r),
         );
 
-        cb.require_equal(
+        cb.require_equal_word(
             "check a_reduced + b 512 bit carry if n != 0",
-            sum_areduced_b_overflow.expr(),
-            sum_areduced_b.carry().clone().unwrap().expr() * not::expr(n_is_zero.expr()),
+            sum_areduced_b_overflow.to_word(),
+            Word::from_lo_unchecked(sum_areduced_b.carry().clone().unwrap().expr())
+                .mul_selector(not::expr(n_is_zero.expr())),
         );
 
-        let cmp_r_n = CmpWordsGadget::construct(cb, &r, &n);
-        let cmp_areduced_n = CmpWordsGadget::construct(cb, &a_reduced, &n);
+        let cmp_r_n = CmpWordsGadget::construct(cb, r.clone(), n.clone());
+        let cmp_areduced_n = CmpWordsGadget::construct(cb, a_reduced.clone(), n.clone());
 
         // 3. r < n and a_reduced < n if n > 0
         cb.require_zero(
@@ -104,10 +112,14 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // pop/push values
         // take care that if n==0 pushed value for r should be zero also
-        cb.stack_pop(a.expr());
-        cb.stack_pop(b.expr());
-        cb.stack_pop(n.expr());
-        cb.stack_push(r.expr() * not::expr(n_is_zero.expr()));
+        cb.stack_pop(a.to_word());
+        cb.stack_pop(b.to_word());
+        cb.stack_pop(n.clone().to_word());
+        cb.stack_push(
+            r.clone()
+                .to_word()
+                .mul_selector(not::expr(n_is_zero.expr())),
+        );
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -155,9 +167,9 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
             .map(|idx| block.rws[idx].stack_value());
 
         // assing a,b & n stack values
-        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-        self.n.assign(region, offset, Some(n.to_le_bytes()))?;
+        self.a.assign_u256(region, offset, a)?;
+        self.b.assign_u256(region, offset, b)?;
+        self.n.assign_u256(region, offset, n)?;
 
         // compute a_reduced,k,d,a_reduced_plus_b,a_reduced_plus_b_overflow,r values
         let a_reduced;
@@ -189,11 +201,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // rest of values and gadgets
 
-        self.r.assign(region, offset, Some(r.to_le_bytes()))?;
-        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
-        self.d.assign(region, offset, Some(d.to_le_bytes()))?;
-        self.a_reduced
-            .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
+        self.r.assign_u256(region, offset, r)?;
+        self.k.assign_u256(region, offset, k)?;
+        self.d.assign_u256(region, offset, d)?;
+        self.a_reduced.assign_u256(region, offset, a_reduced)?;
 
         self.muladd_k_n_areduced
             .assign(region, offset, [k, n, a_reduced, a])?;
@@ -201,11 +212,8 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.sum_areduced_b
             .assign(region, offset, [a_reduced, b], a_reduced_plus_b)?;
 
-        self.sum_areduced_b_overflow.assign(
-            region,
-            offset,
-            Some(a_reduced_plus_b_overflow.to_le_bytes()),
-        )?;
+        self.sum_areduced_b_overflow
+            .assign_u256(region, offset, a_reduced_plus_b_overflow)?;
         self.muladd_d_n_r.assign(
             region,
             offset,
@@ -217,7 +225,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.cmp_areduced_n.assign(region, offset, a_reduced, n)?;
 
         self.n_is_zero
-            .assign_value(region, offset, region.word_rlc(n))?;
+            .assign_value(region, offset, Value::known(Word::from(n)))?;
 
         Ok(())
     }

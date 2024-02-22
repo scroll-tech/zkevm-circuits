@@ -1,4 +1,4 @@
-use crate::evm_circuit::util::rlc;
+use crate::{evm_circuit::util::rlc, util::word};
 use bus_mapping::circuit_input_builder::NumberOrHash;
 use eth_types::Field;
 use halo2_proofs::circuit::Value;
@@ -27,5 +27,13 @@ pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) 
                 )
             })
         }
+    }
+}
+
+/// Encode the type `NumberOrHash` into a field element
+pub fn number_or_hash_to_word<F: Field>(v: &NumberOrHash) -> word::Word<Value<F>> {
+    match v {
+        NumberOrHash::Number(n) => word::Word::from(*n as u64).into_value(),
+        NumberOrHash::Hash(h) => word::Word::from(*h).into_value(),
     }
 }

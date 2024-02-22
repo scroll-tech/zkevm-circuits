@@ -7,11 +7,14 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
-            select, CachedRegion, Cell, Word,
+            select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -22,8 +25,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct SignedComparatorGadget<F> {
     same_context: SameContextGadget<F>,
 
-    a: Word<F>,
-    b: Word<F>,
+    a: Word32Cell<F>,
+    b: Word32Cell<F>,
 
     sign_check_a: LtGadget<F, 1>,
     sign_check_b: LtGadget<F, 1>,
@@ -42,8 +45,8 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word_rlc();
-        let b = cb.query_word_rlc();
+        let a = cb.query_word32();
+        let b = cb.query_word32();
 
         // The Signed Comparator gadget is used for both opcodes SLT and SGT.
         // Depending on whether the opcode is SLT or SGT, we
@@ -56,8 +59,8 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // number is negative if the most significant cell >= 128
         // (0b10000000). a and b being in the little-endian notation, the
         // most-significant byte is the last byte.
-        let sign_check_a = LtGadget::construct(cb, a.cells[31].expr(), 128.expr());
-        let sign_check_b = LtGadget::construct(cb, b.cells[31].expr(), 128.expr());
+        let sign_check_a = LtGadget::construct(cb, a.limbs[31].expr(), 128.expr());
+        let sign_check_b = LtGadget::construct(cb, b.limbs[31].expr(), 128.expr());
 
         // sign_check_a_lt expression implies a is positive since its MSB < 2**7
         // sign_check_b_lt expression implies b is positive since its MSB < 2**7
@@ -72,16 +75,11 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // significant bytes. While only considering the absolute
         // values, we have: a < b == 1 iff ((a_hi < b_hi) || ((a_hi ==
         // b_hi) && (a_lo < b_lo)))
-        let lt_lo = LtGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[0..16]),
-            from_bytes::expr(&b.cells[0..16]),
-        );
-        let comparison_hi = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[16..32]),
-            from_bytes::expr(&b.cells[16..32]),
-        );
+        let (a_lo, a_hi) = a.to_word().to_lo_hi();
+        let (b_lo, b_hi) = b.to_word().to_lo_hi();
+
+        let lt_lo = LtGadget::construct(cb, a_lo, b_lo);
+        let comparison_hi = ComparisonGadget::construct(cb, a_hi, b_hi);
         let a_lt_b_lo = lt_lo.expr();
         let (a_lt_b_hi, a_eq_b_hi) = comparison_hi.expr();
 
@@ -112,9 +110,9 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         let result = a_neg_b_pos.clone() + (1.expr() - a_neg_b_pos - b_neg_a_pos) * a_lt_b.expr();
 
         // Pop a and b from the stack, push the result on the stack.
-        cb.stack_pop(select::expr(is_sgt.expr(), b.expr(), a.expr()));
-        cb.stack_pop(select::expr(is_sgt.expr(), a.expr(), b.expr()));
-        cb.stack_push(result);
+        cb.stack_pop(Word::select(is_sgt.expr(), b.to_word(), a.to_word()));
+        cb.stack_pop(Word::select(is_sgt.expr(), a.to_word(), b.to_word()));
+        cb.stack_push(Word::from_lo_unchecked(result));
 
         // The read-write counter changes by three since we're reading two words
         // from stack and writing one. The program counter shifts only by one
@@ -209,8 +207,8 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
             Value::known(if a < b { F::one() } else { F::zero() }),
         )?;
 
-        self.a.assign(region, offset, Some(a_le_bytes))?;
-        self.b.assign(region, offset, Some(b_le_bytes))?;
+        self.a.assign_u256(region, offset, a)?;
+        self.b.assign_u256(region, offset, b)?;
 
         Ok(())
     }

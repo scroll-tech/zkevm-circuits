@@ -771,6 +771,7 @@ arith:
         run_test(t1, TestSuite::default(), CircuitsConfig::default())?;
         Ok(())
     }
+
     #[test]
     fn test_result_bad_storage() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
@@ -796,6 +797,7 @@ arith:
 
         Ok(())
     }
+
     #[test]
     fn bad_balance() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(

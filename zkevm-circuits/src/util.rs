@@ -18,8 +18,10 @@ use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
+pub mod int_decomposition;
 /// A wrapper of is_zero in gadgets which gives is_zero at any rotation
 pub mod is_zero;
+pub mod word;
 
 pub(crate) fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,

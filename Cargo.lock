@@ -2335,7 +2335,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.7#32ab964ff065ee6a0ccc63590b9db73238c70b81"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.8#287a66e56ad3071cddd843c7388ca555ea02ceed"
 dependencies = [
  "env_logger",
  "ethers-core",

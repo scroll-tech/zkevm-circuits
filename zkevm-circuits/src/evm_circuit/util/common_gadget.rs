@@ -1,13 +1,13 @@
 use super::{
     constraint_builder::ConstrainBuilderCommon,
     from_bytes,
-    math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+    math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
     memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
     CachedRegion,
 };
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
@@ -16,15 +16,19 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell, CellType, StepRws, Word,
+            not, or, Cell, StepRws,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word, Word32, Word32Cell, WordCell, WordExpr},
+        Expr,
+    },
     witness::{Block, Call, ExecStep},
 };
+use bus_mapping::state_db::CodeDB;
 use either::Either;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ToWord, U256};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::Value,
@@ -113,7 +117,7 @@ pub(crate) struct RestoreContextGadget<F> {
     caller_id: Cell<F>,
     caller_is_root: Cell<F>,
     caller_is_create: Cell<F>,
-    caller_code_hash: Cell<F>,
+    caller_code_hash: WordCell<F>,
     caller_program_counter: Cell<F>,
     caller_stack_pointer: Cell<F>,
     caller_gas_left: Cell<F>,
@@ -159,11 +163,16 @@ impl<F: Field> RestoreContextGadget<F> {
     ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
-        let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
+
+        let [caller_is_root, caller_is_create] =
+            [CallContextFieldTag::IsRoot, CallContextFieldTag::IsCreate]
+                .map(|field_tag| cb.call_context(Some(caller_id.expr()), field_tag));
+
+        let caller_code_hash =
+            cb.call_context_read_as_word(Some(caller_id.expr()), CallContextFieldTag::CodeHash);
+
+        let [caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             [
-                CallContextFieldTag::IsRoot,
-                CallContextFieldTag::IsCreate,
-                CallContextFieldTag::CodeHash,
                 CallContextFieldTag::ProgramCounter,
                 CallContextFieldTag::StackPointer,
                 CallContextFieldTag::GasLeft,
@@ -189,15 +198,23 @@ impl<F: Field> RestoreContextGadget<F> {
         for (field_tag, value) in [
             (
                 CallContextFieldTag::LastCalleeId,
-                cb.curr.state.call_id.expr(),
+                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataOffset,
-                select::expr(discard_return_data.clone(), 0.expr(), return_data_offset),
+                Word::from_lo_unchecked(select::expr(
+                    discard_return_data.clone(),
+                    0.expr(),
+                    return_data_offset,
+                )),
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataLength,
-                select::expr(discard_return_data, 0.expr(), return_data_length.clone()),
+                Word::from_lo_unchecked(select::expr(
+                    discard_return_data,
+                    0.expr(),
+                    return_data_length.clone(),
+                )),
             ),
         ] {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
@@ -240,7 +257,7 @@ impl<F: Field> RestoreContextGadget<F> {
             call_id: To(caller_id.expr()),
             is_root: To(caller_is_root.expr()),
             is_create: To(caller_is_create.expr()),
-            code_hash: To(caller_code_hash.expr()),
+            code_hash: To(caller_code_hash.to_word()),
             program_counter: To(caller_program_counter.expr()),
             stack_pointer: To(caller_stack_pointer.expr()),
             gas_left: To(gas_left),
@@ -326,7 +343,7 @@ impl<F: Field> RestoreContextGadget<F> {
         }
 
         self.caller_code_hash
-            .assign(region, offset, region.code_hash(caller_code_hash))?;
+            .assign_u256(region, offset, caller_code_hash)?;
 
         Ok(())
     }
@@ -342,19 +359,19 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        address: Expression<F>,
-        updates: Vec<Word<F>>,
+        address: Word<Expression<F>>,
+        updates: Vec<Word32Cell<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
 
-        let balance_addend = cb.query_word_rlc();
-        let balance_sum = cb.query_word_rlc();
+        let balance_addend = cb.query_word32();
+        let balance_sum = cb.query_word32();
 
-        let [value, value_prev] = if INCREASE {
-            [balance_sum.expr(), balance_addend.expr()]
+        let [value, value_prev]: [Word32<Expression<F>>; 2] = if INCREASE {
+            [balance_sum.to_word_n(), balance_addend.to_word_n()]
         } else {
-            [balance_addend.expr(), balance_sum.expr()]
+            [balance_addend.to_word_n(), balance_sum.to_word_n()]
         };
 
         let add_words = AddWordsGadget::construct(
@@ -370,15 +387,15 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         cb.account_write(
             address,
             AccountFieldTag::Balance,
-            value,
-            value_prev,
+            value.to_word(),
+            value_prev.to_word(),
             reversion_info,
         );
 
         Self { add_words }
     }
 
-    pub(crate) fn balance(&self) -> &Word<F> {
+    pub(crate) fn balance(&self) -> &Word32Cell<F> {
         if INCREASE {
             self.add_words.sum()
         } else {
@@ -386,7 +403,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         }
     }
 
-    pub(crate) fn balance_prev(&self) -> &Word<F> {
+    pub(crate) fn balance_prev(&self) -> &Word32Cell<F> {
         if INCREASE {
             &self.add_words.addends()[0]
         } else {
@@ -429,7 +446,7 @@ pub(crate) struct TransferGadgetAssignResult {
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferFromGadgetImpl<F, WithFeeGadget> {
-    pub(crate) value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+    pub(crate) value_is_zero: Either<IsZeroWordGadget<F, Word32Cell<F>>, Expression<F>>,
     sender_sub_fee: WithFeeGadget,
     sender_sub_value: UpdateBalanceGadget<F, 2, false>,
 }
@@ -455,12 +472,12 @@ pub(crate) trait TransferGadgetInfo<F: Field> {
 impl<F: Field> TransferFromGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        value: Word<F>,
+        sender_address: Word<Expression<F>>,
+        value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let value_is_zero = cb.annotation("transfer from is zero value", |cb| {
-            IsZeroGadget::construct(cb, value.expr())
+            IsZeroWordGadget::construct(cb, &value)
         });
         Self::construct_with_is_zero(
             cb,
@@ -473,9 +490,9 @@ impl<F: Field> TransferFromGadget<F> {
 
     pub(crate) fn construct_with_is_zero(
         cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        value: Word<F>,
-        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        sender_address: Word<Expression<F>>,
+        value: Word32Cell<F>,
+        value_is_zero: Either<IsZeroWordGadget<F, Word32Cell<F>>, Expression<F>>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let value_is_zero_expr = value_is_zero
@@ -504,7 +521,7 @@ impl<F: Field> TransferFromGadget<F> {
         value: U256,
     ) -> Result<(), Error> {
         if let Either::Left(value_is_zero) = &self.value_is_zero {
-            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+            value_is_zero.assign_value(region, offset, Value::known(Word::from(value)))?;
         }
         self.sender_sub_value.assign(
             region,
@@ -540,12 +557,12 @@ impl<F: Field> TransferFromAssign<F> for TransferFromGadget<F> {
 impl<F: Field> TransferFromWithGasFeeGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        value: Word<F>,
-        gas_fee: Word<F>,
+        sender_address: Word<Expression<F>>,
+        value: Word32Cell<F>,
+        gas_fee: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
+        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         Self::construct_with_is_zero(
             cb,
             sender_address,
@@ -558,17 +575,17 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
 
     pub(crate) fn construct_with_is_zero(
         cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        value: Word<F>,
-        gas_fee: Word<F>,
-        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        sender_address: Word<Expression<F>>,
+        value: Word32Cell<F>,
+        gas_fee: Word32Cell<F>,
+        value_is_zero: Either<IsZeroWordGadget<F, Word32Cell<F>>, Expression<F>>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let value_is_zero_expr = value_is_zero
             .as_ref()
             .either(|gadget| gadget.expr(), |expr| expr.clone());
         let sender_sub_fee =
-            UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
+            UpdateBalanceGadget::construct(cb, sender_address.clone(), vec![gas_fee], None);
         let sender_sub_value = cb.condition(not::expr(value_is_zero_expr), |cb| {
             UpdateBalanceGadget::construct(
                 cb,
@@ -599,7 +616,7 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
         );
 
         if let Either::Left(value_is_zero) = &self.value_is_zero {
-            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+            value_is_zero.assign_value(region, offset, Value::known(Word::from(value)))?;
         }
         self.sender_sub_fee.assign(
             region,
@@ -618,7 +635,7 @@ impl<F: Field> TransferFromWithGasFeeGadget<F> {
     }
 
     /// Return sender balance before subtracting fee and value.
-    pub(crate) fn sender_balance_prev(&self) -> &Word<F> {
+    pub(crate) fn sender_balance_prev(&self) -> &Word32Cell<F> {
         // Fee is subtracted before value.
         self.sender_sub_fee.balance_prev()
     }
@@ -691,7 +708,7 @@ impl<F: Field> TransferGadgetInfo<F> for TransferFromGadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferToGadget<F> {
-    pub(crate) value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+    pub(crate) value_is_zero: Either<IsZeroWordGadget<F, Word32Cell<F>>, Expression<F>>,
     receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
     must_create: Expression<F>,
@@ -701,16 +718,17 @@ impl<F: Field> TransferToGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        receiver_address: Expression<F>,
+        receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
-        prev_code_hash: Expression<F>,
-        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
-        value: Word<F>,
+        prev_code_hash: Word<Expression<F>>,
+        // scroll feature take use of poseidon hash
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Word<Expression<F>>,
+        value: Word32Cell<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         let value_is_zero = cb.annotation("transfer to is zero value", |cb| {
-            IsZeroGadget::construct(cb, value.expr())
+            IsZeroWordGadget::construct(cb, &value)
         });
         Self::construct_with_is_zero(
             cb,
@@ -729,13 +747,13 @@ impl<F: Field> TransferToGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct_with_is_zero(
         cb: &mut EVMConstraintBuilder<F>,
-        receiver_address: Expression<F>,
+        receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
-        prev_code_hash: Expression<F>,
-        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
-        value: Word<F>,
-        value_is_zero: Either<IsZeroGadget<F>, Expression<F>>,
+        prev_code_hash: Word<Expression<F>>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Word<Expression<F>>,
+        value: Word32Cell<F>,
+        value_is_zero: Either<IsZeroWordGadget<F, Word32Cell<F>>, Expression<F>>,
         mut reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         let value_is_zero_expr = value_is_zero
@@ -751,13 +769,13 @@ impl<F: Field> TransferToGadget<F> {
                 cb.account_read(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    prev_code_hash.expr(),
+                    prev_code_hash.to_word(),
                 );
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_code_hash_rlc(),
-                    prev_code_hash.expr(),
+                    cb.empty_code_hash(),
+                    prev_code_hash.to_word(),
                     reversion_info.as_deref_mut(),
                 );
                 #[cfg(feature = "scroll")]
@@ -765,14 +783,14 @@ impl<F: Field> TransferToGadget<F> {
                     cb.account_read(
                         receiver_address.clone(),
                         AccountFieldTag::KeccakCodeHash,
-                        prev_keccak_code_hash.expr(),
+                        prev_keccak_code_hash.clone(),
                     );
 
                     cb.account_write(
                         receiver_address.clone(),
                         AccountFieldTag::KeccakCodeHash,
-                        cb.empty_keccak_hash_rlc(),
-                        prev_keccak_code_hash.expr(),
+                        cb.empty_keccak_hash(),
+                        prev_keccak_code_hash,
                         reversion_info.as_deref_mut(),
                     );
                 }
@@ -797,8 +815,9 @@ impl<F: Field> TransferToGadget<F> {
         value: U256,
     ) -> Result<(), Error> {
         if let Either::Left(value_is_zero) = &self.value_is_zero {
-            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+            value_is_zero.assign_value(region, offset, Value::known(Word::from(value)))?;
         }
+
         self.receiver.assign(
             region,
             offset,
@@ -818,7 +837,7 @@ impl<F: Field> TransferToGadget<F> {
         rws: &mut StepRws,
     ) -> Result<TransferGadgetAssignResult, Error> {
         if let Either::Left(value_is_zero) = &self.value_is_zero {
-            value_is_zero.assign_value(region, offset, region.word_rlc(value))?;
+            value_is_zero.assign_value(region, offset, Value::known(Word::from(value)))?;
         }
         let result = if (!receiver_exists && !value.is_zero()) || must_create {
             TransferGadgetAssignResult {
@@ -891,7 +910,7 @@ impl<F: Field> TransferGadgetInfo<F> for TransferToGadget<F> {
 /// unconditionally if must_create is true.  This gadget is used in BeginTx.
 #[derive(Clone, Debug)]
 pub(crate) struct TransferGadgetImpl<F, TransferFromGadget> {
-    value_is_zero: IsZeroGadget<F>,
+    value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     from: TransferFromGadget,
     to: TransferToGadget<F>,
 }
@@ -904,17 +923,17 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        receiver_address: Expression<F>,
+        sender_address: Word<Expression<F>>,
+        receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
-        prev_code_hash: Expression<F>,
-        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
-        value: Word<F>,
-        gas_fee: Word<F>,
+        prev_code_hash: Word<Expression<F>>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Word<Expression<F>>,
+        value: Word32Cell<F>,
+        gas_fee: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
+        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         let from = TransferFromWithGasFeeGadget::construct_with_is_zero(
             cb,
             sender_address,
@@ -943,7 +962,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     }
 
     /// Return sender balance before subtracting fee and value.
-    pub(crate) fn sender_balance_prev(&self) -> &Word<F> {
+    pub(crate) fn sender_balance_prev(&self) -> &Word32Cell<F> {
         self.from.sender_balance_prev()
     }
 }
@@ -952,21 +971,21 @@ impl<F: Field> TransferGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        receiver_address: Expression<F>,
+        sender_address: Word<Expression<F>>,
+        receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
-        prev_code_hash: Expression<F>,
-        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
-        value: Word<F>,
+        prev_code_hash: Word<Expression<F>>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Word<Expression<F>>,
+        value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let value_is_zero = cb.annotation("transfer is zero value", |cb| {
-            IsZeroGadget::construct(cb, value.expr())
+            IsZeroWordGadget::construct(cb, &value)
         });
         let from = TransferFromGadget::construct_with_is_zero(
             cb,
-            sender_address.expr(),
+            sender_address,
             value.clone(),
             Either::Right(value_is_zero.expr()),
             reversion_info,
@@ -1002,7 +1021,7 @@ impl<F: Field, G: TransferFromAssign<F> + TransferGadgetInfo<F>> TransferGadgetI
         rws: &mut StepRws,
     ) -> Result<TransferGadgetAssignResult, Error> {
         self.value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
+            .assign_value(region, offset, Value::known(Word::from(value)))?;
         let TransferGadgetAssignResult {
             gas_fee,
             sender_balance_sub_fee_pair,
@@ -1054,20 +1073,23 @@ impl<F: Field, G: TransferFromAssign<F> + TransferGadgetInfo<F>> TransferGadgetI
 pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool> {
     pub is_success: Cell<F>,
 
-    pub gas: Word<F>,
+    pub gas: Word32Cell<F>,
     pub gas_is_u64: IsZeroGadget<F>,
-    pub callee_address: Word<F>,
-    pub value: Word<F>,
+    pub callee_address_word: Word32Cell<F>,
+    pub value: Word32Cell<F>,
     pub cd_address: MemAddrGadget,
     pub rd_address: MemAddrGadget,
     pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 
-    value_is_zero: IsZeroGadget<F>,
+    value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    // value_is_zero: IsZeroGadget<F>,
     pub has_value: Expression<F>,
-    pub phase2_callee_code_hash: Cell<F>,
-    pub is_empty_code_hash: IsEqualGadget<F>,
+    // phase2_callee_code_hash
+    pub callee_code_hash: WordCell<F>,
+    pub is_empty_code_hash: IsEqualWordGadget<F, WordCell<F>, Word<Expression<F>>>,
 
-    pub callee_not_exists: IsZeroGadget<F>,
+    //pub callee_not_exists: IsZeroGadget<F>,
+    pub callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
 
     // save information
     is_call: Expression<F>,
@@ -1093,9 +1115,9 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             1.expr(),
         );
 
-        let gas_word = cb.query_word_rlc();
-        let callee_address_word = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
+        let gas_word = cb.query_word32();
+        let callee_address_word = cb.query_word32();
+        let value = cb.query_word32();
         let is_success = cb.query_bool();
 
         let cd_address = MemAddrGadget::construct_self(cb);
@@ -1109,51 +1131,55 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         // callee address is `current_callee_address`.
         // For both CALL and STATICCALL, caller address is
         // `current_callee_address` and callee address is `callee_address`.
-        cb.stack_pop(gas_word.expr());
-        cb.stack_pop(callee_address_word.expr());
+        cb.stack_pop(gas_word.to_word());
+        cb.stack_pop(callee_address_word.to_word());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
-        cb.condition(is_call.expr() + is_callcode.expr(), |cb| {
-            cb.stack_pop(value.expr())
+        cb.condition(is_call.clone() + is_callcode.clone(), |cb| {
+            cb.stack_pop(value.to_word())
         });
-        cb.stack_pop(cd_address.offset_rlc());
-        cb.stack_pop(cd_address.length_rlc());
-        cb.stack_pop(rd_address.offset_rlc());
-        cb.stack_pop(rd_address.length_rlc());
+        cb.stack_pop(cd_address.offset_word());
+        cb.stack_pop(cd_address.length_word());
+        cb.stack_pop(rd_address.offset_word());
+        cb.stack_pop(rd_address.length_word());
         cb.stack_push(if IS_SUCCESS_CALL {
-            is_success.expr()
+            Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
-            0.expr()
+            Word::zero()
         });
 
         // Recomposition of random linear combination to integer
-        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            [cd_address.end_offset(), rd_address.end_offset()],
-        );
+        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
+
+        let memory_expansion =
+            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
         // construct common gadget
-        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
+        //let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
+        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
             1.expr() - value_is_zero.expr(),
         );
 
-        let phase2_callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
+        let callee_code_hash = cb.query_word_unchecked();
+        let callee_address_normal = Self::callee_address_valid(&callee_address_word);
+
         cb.account_read(
-            from_bytes::expr(&callee_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]),
+            callee_address_normal,
             AccountFieldTag::CodeHash,
-            phase2_callee_code_hash.expr(),
+            callee_code_hash.to_word(),
         );
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_code_hash_rlc());
-        let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
+            IsEqualWordGadget::construct(cb, &callee_code_hash, &cb.empty_code_hash());
+
+        let callee_not_exists = IsZeroWordGadget::construct(cb, &callee_code_hash);
 
         Self {
             is_success,
-            callee_address: callee_address_word,
+            callee_address_word,
             gas: gas_word,
             gas_is_u64,
             value,
@@ -1162,7 +1188,8 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             memory_expansion,
             value_is_zero,
             has_value,
-            phase2_callee_code_hash,
+            //phase2_callee_code_hash,
+            callee_code_hash,
             is_empty_code_hash,
             callee_not_exists,
             is_call,
@@ -1172,12 +1199,19 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         }
     }
 
-    pub fn callee_address_expr(&self) -> Expression<F> {
-        from_bytes::expr(&self.callee_address.cells[..N_BYTES_ACCOUNT_ADDRESS])
+    pub fn callee_address(&self) -> Word<Expression<F>> {
+        Self::callee_address_valid(&self.callee_address_word)
+    }
+
+    pub fn callee_address_valid(callee_address_word: &Word32Cell<F>) -> Word<Expression<F>> {
+        let limbs: [Expression<F>; 32] = callee_address_word.limbs.clone().map(|l| l.expr());
+        let callee_address_lo = from_bytes::expr(&limbs[0..16]);
+        let callee_address_hi = from_bytes::expr(&limbs[16..20]);
+        Word::new([callee_address_lo, callee_address_hi])
     }
 
     pub fn gas_expr(&self) -> Expression<F> {
-        from_bytes::expr(&self.gas.cells[..N_BYTES_GAS])
+        from_bytes::expr(&self.gas.limbs[..N_BYTES_GAS])
     }
 
     pub fn gas_cost_expr(
@@ -1210,13 +1244,14 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         rd_offset: U256,
         rd_length: U256,
         memory_word_size: u64,
-        phase2_callee_code_hash: Value<F>,
+        // callee_code_hash in phase2
+        callee_code_hash: U256,
     ) -> Result<u64, Error> {
-        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
-        self.callee_address
-            .assign(region, offset, Some(callee_address.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.gas.assign_u256(region, offset, gas)?;
+        self.callee_address_word
+            .assign_u256(region, offset, callee_address)?;
+
+        self.value.assign_u256(region, offset, value)?;
         if IS_SUCCESS_CALL {
             self.is_success
                 .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
@@ -1240,17 +1275,22 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         )?;
 
         self.value_is_zero
-            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
-        self.phase2_callee_code_hash
-            .assign(region, offset, phase2_callee_code_hash)?;
+            .assign(region, offset, Word::from(value))?;
+        self.callee_code_hash
+            .assign_u256(region, offset, callee_code_hash)?;
+
         self.is_empty_code_hash.assign_value(
             region,
             offset,
-            phase2_callee_code_hash,
-            region.empty_code_hash_rlc(),
+            Value::known(Word::from(callee_code_hash)),
+            Value::known(Word::from(CodeDB::empty_code_hash().to_word())),
         )?;
-        self.callee_not_exists
-            .assign_value(region, offset, phase2_callee_code_hash)?;
+        self.callee_not_exists.assign_value(
+            region,
+            offset,
+            Value::known(Word::from(callee_code_hash)),
+        )?;
+
         Ok(memory_expansion_gas_cost)
     }
 
@@ -1312,29 +1352,29 @@ impl<F: Field> SloadGasGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct SstoreGasGadget<F> {
-    value: Cell<F>,
-    value_prev: Cell<F>,
-    original_value: Cell<F>,
+pub(crate) struct SstoreGasGadget<F, T> {
+    value: T,
+    value_prev: T,
+    original_value: T,
     is_warm: Cell<F>,
     gas_cost: Expression<F>,
-    value_eq_prev: IsEqualGadget<F>,
-    original_eq_prev: IsEqualGadget<F>,
-    original_is_zero: IsZeroGadget<F>,
+    value_eq_prev: IsEqualWordGadget<F, T, T>,
+    original_eq_prev: IsEqualWordGadget<F, T, T>,
+    original_is_zero: IsZeroWordGadget<F, T>,
 }
 
-impl<F: Field> SstoreGasGadget<F> {
+impl<F: Field, T: WordExpr<F> + Clone> SstoreGasGadget<F, T> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        value: Cell<F>,
-        value_prev: Cell<F>,
-        original_value: Cell<F>,
         is_warm: Cell<F>,
+        value: T,
+        value_prev: T,
+        original_value: T,
     ) -> Self {
-        let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
-        let original_eq_prev =
-            IsEqualGadget::construct(cb, original_value.expr(), value_prev.expr());
-        let original_is_zero = IsZeroGadget::construct(cb, original_value.expr());
+        let value_eq_prev = IsEqualWordGadget::construct(cb, &value, &value_prev);
+        let original_eq_prev = IsEqualWordGadget::construct(cb, &original_value, &value_prev);
+        let original_is_zero = IsZeroWordGadget::construct(cb, &original_value);
+
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -1348,6 +1388,7 @@ impl<F: Field> SstoreGasGadget<F> {
                 GasCost::WARM_ACCESS.expr(),
             ),
         );
+
         let gas_cost = select::expr(
             is_warm.expr(),
             warm_case_gas.expr(),
@@ -1379,27 +1420,25 @@ impl<F: Field> SstoreGasGadget<F> {
         original_value: eth_types::Word,
         is_warm: bool,
     ) -> Result<(), Error> {
-        self.value.assign(region, offset, region.word_rlc(value))?;
-        self.value_prev
-            .assign(region, offset, region.word_rlc(value_prev))?;
-        self.original_value
-            .assign(region, offset, region.word_rlc(original_value))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.value_eq_prev.assign_value(
             region,
             offset,
-            region.word_rlc(value),
-            region.word_rlc(value_prev),
+            Value::known(Word::from(value)),
+            Value::known(Word::from(value_prev)),
         )?;
         self.original_eq_prev.assign_value(
             region,
             offset,
-            region.word_rlc(original_value),
-            region.word_rlc(value_prev),
+            Value::known(Word::from(original_value)),
+            Value::known(Word::from(value_prev)),
         )?;
-        self.original_is_zero
-            .assign_value(region, offset, region.word_rlc(original_value))?;
+        self.original_is_zero.assign_value(
+            region,
+            offset,
+            Value::known(Word::from(original_value)),
+        )?;
         Ok(())
     }
 }
@@ -1440,7 +1479,7 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
 
 #[derive(Clone, Debug)]
 pub(crate) struct CommonErrorGadget<F> {
-    rw_counter_end_of_reversion: Cell<F>,
+    rw_counter_end_of_reversion: WordCell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -1489,16 +1528,16 @@ impl<F: Field> CommonErrorGadget<F> {
     ) -> Self {
         cb.opcode_lookup_rlc(opcode.expr(), push_rlc);
 
-        let rw_counter_end_of_reversion = cb.query_cell();
+        // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
+        let rw_counter_end_of_reversion = cb.query_word_unchecked();
 
         // current call must be failed.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::zero());
 
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_reversion.to_word(),
         );
 
         // Go to EndTx only when is_root
@@ -1539,7 +1578,7 @@ impl<F: Field> CommonErrorGadget<F> {
             cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
         cb.require_equal(
             "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_reversion.lo().expr(),
             rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
         );
 
@@ -1559,10 +1598,10 @@ impl<F: Field> CommonErrorGadget<F> {
         step: &ExecStep,
         rw_offset: usize,
     ) -> Result<u64, Error> {
-        self.rw_counter_end_of_reversion.assign(
+        self.rw_counter_end_of_reversion.assign_u64(
             region,
             offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+            call.rw_counter_end_of_reversion as u64,
         )?;
         self.restore_context
             .assign(region, offset, block, call, step, rw_offset)?;
@@ -1632,12 +1671,13 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.lt_cap.expr()
     }
 
-    pub(crate) fn original_ref(&self) -> &Word<F> {
+    // orginal ref of word limbs
+    pub(crate) fn original_ref(&self) -> &Word32Cell<F> {
         self.word.original_ref()
     }
 
-    pub(crate) fn original_word(&self) -> Expression<F> {
-        self.word.original_word()
+    pub(crate) fn original_word(&self) -> Word32Cell<F> {
+        self.word.original.clone()
     }
 
     pub(crate) fn overflow(&self) -> Expression<F> {
@@ -1656,7 +1696,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
 /// Check if the passed in word is within the specified byte range (not overflow).
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
-    original: Word<F>,
+    original: Word32Cell<F>,
     not_overflow: IsZeroGadget<F>,
 }
 
@@ -1664,8 +1704,8 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         debug_assert!(VALID_BYTES < 32);
 
-        let original = cb.query_word_rlc();
-        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+        let original = cb.query_word32();
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.limbs[VALID_BYTES..]));
 
         Self {
             original,
@@ -1680,8 +1720,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         offset: usize,
         original: U256,
     ) -> Result<bool, Error> {
-        self.original
-            .assign(region, offset, Some(original.to_le_bytes()))?;
+        self.original.assign_u256(region, offset, original)?;
 
         let overflow_hi = original.to_le_bytes()[VALID_BYTES..]
             .iter()
@@ -1692,12 +1731,12 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         Ok(overflow_hi == 0)
     }
 
-    pub(crate) fn original_ref(&self) -> &Word<F> {
+    pub(crate) fn original_ref(&self) -> &Word32Cell<F> {
         &self.original
     }
 
-    pub(crate) fn original_word(&self) -> Expression<F> {
-        self.original.expr()
+    pub(crate) fn original(&self) -> Word<Expression<F>> {
+        self.original.to_word()
     }
 
     pub(crate) fn overflow(&self) -> Expression<F> {
@@ -1705,7 +1744,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     }
 
     pub(crate) fn valid_value(&self) -> Expression<F> {
-        from_bytes::expr(&self.original.cells[..VALID_BYTES])
+        from_bytes::expr(&self.original.limbs[..VALID_BYTES])
     }
 
     pub(crate) fn not_overflow(&self) -> Expression<F> {
@@ -1731,12 +1770,12 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
         return_data_length: Expression<F>,
         is_overflow: Expression<F>,
     ) -> Self {
-        let data_offset = cb.query_word_rlc();
-        let size_word = cb.query_word_rlc();
-        let remainder_end = cb.query_word_rlc();
+        let data_offset = cb.query_word32();
+        let size_word = cb.query_word32();
+        let remainder_end = cb.query_word32();
 
         // Check if `data_offset` is Uint64 overflow.
-        let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
+        let data_offset_larger_u64 = sum::expr(&data_offset.limbs[N_BYTES_U64..]);
         let is_data_offset_within_u64 = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
         let sum: AddWordsGadget<F, 2, false> =
@@ -1745,14 +1784,14 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
         // Need to check if `data_offset + size` is U256 overflow via `AddWordsGadget` carry. If
         // yes, it should be also an error of return data out of bound.
         let is_end_u256_overflow = sum.carry().as_ref().unwrap();
-        let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
+        let remainder_end_larger_u64 = sum::expr(&remainder_end.limbs[N_BYTES_U64..]);
         let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, remainder_end_larger_u64);
 
         // check if `remainder_end` exceeds return data length.
         let is_remainder_end_exceed_len = LtGadget::construct(
             cb,
             return_data_length.expr(),
-            from_bytes::expr(&remainder_end.cells[..N_BYTES_U64]),
+            from_bytes::expr(&remainder_end.limbs[..N_BYTES_U64]),
         );
 
         // enusre it is expected overflow condition.
@@ -1780,12 +1819,12 @@ impl<F: Field> CommonReturnDataCopyGadget<F> {
     }
 
     /// the first addend is data_offset
-    pub(crate) fn data_offset(&self) -> &Word<F> {
+    pub(crate) fn data_offset(&self) -> &Word32Cell<F> {
         &self.sum.addends()[0]
     }
 
     /// the second added is size
-    pub(crate) fn size(&self) -> &Word<F> {
+    pub(crate) fn size(&self) -> &Word32Cell<F> {
         &self.sum.addends()[1]
     }
 

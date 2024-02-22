@@ -5,12 +5,15 @@ use crate::{
         util::{
             common_gadget::{CommonErrorGadget, CommonReturnDataCopyGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -18,7 +21,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     opcode: Cell<F>,
-    memory_offset: Word<F>,
+    memory_offset: U64Cell<F>,
     // Hold the size of the last callee return data.
     return_data_length: Cell<F>,
     overflow_gadget: CommonReturnDataCopyGadget<F>,
@@ -32,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let memory_offset = cb.query_word_rlc();
+        let memory_offset = cb.query_u64();
         let return_data_length = cb.query_cell();
 
         cb.require_equal(
@@ -45,16 +48,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             CommonReturnDataCopyGadget::construct(cb, return_data_length.expr(), 1.expr());
 
         // Pop memory_offset, offset, size from stack
-        cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(overflow_gadget.data_offset().expr());
-        cb.stack_pop(overflow_gadget.size().expr());
+        cb.stack_pop(memory_offset.to_word());
+        cb.stack_pop(overflow_gadget.data_offset().to_word());
+        cb.stack_pop(overflow_gadget.size().to_word());
 
         // Read last callee return data length
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataLength,
-            return_data_length.expr(),
+            Word::from_lo_unchecked(return_data_length.expr()),
         );
 
         // Check if `data_offset` is Uint64 overflow.

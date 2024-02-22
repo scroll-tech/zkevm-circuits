@@ -12,6 +12,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{BlockContextFieldTag, TxFieldTag::BlockNumber},
+    util::word::Word,
 };
 use eth_types::Field;
 use gadgets::util::{not, Expr};
@@ -49,12 +50,14 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
         let cum_num_txs = cb.query_cell();
         cb.block_lookup(
             BlockContextFieldTag::NumTxs.expr(),
-            cb.curr.state.block_number.expr(),
+            Some(cb.curr.state.block_number.expr()),
+            //Word::from_lo_unchecked(num_txs.expr()),
             num_txs.expr(),
         );
         cb.block_lookup(
             BlockContextFieldTag::CumNumTxs.expr(),
-            cb.curr.state.block_number.expr(),
+            Some(cb.curr.state.block_number.expr()),
+            //Word::from_lo_unchecked(cum_num_txs.expr()),
             cum_num_txs.expr(),
         );
 
@@ -72,7 +75,8 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
                 last_tx_id.expr(),
                 BlockNumber,
                 None,
-                cb.curr.state.block_number.expr(),
+                Word::from_lo_unchecked(cb.curr.state.block_number.expr()),
+                // cb.curr.state.block_number.expr(),
             );
         });
 

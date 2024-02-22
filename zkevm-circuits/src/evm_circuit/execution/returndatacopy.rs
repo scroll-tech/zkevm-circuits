@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
+        param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
             common_gadget::{CommonReturnDataCopyGadget, SameContextGadget},
@@ -14,12 +14,15 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            CachedRegion, Cell, RandomLinearCombination,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToScalar};
@@ -33,6 +36,8 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     last_callee_id: Cell<F>,
     /// Holds the memory address for return data from where we read.
     return_data_offset: Cell<F>,
+    /// dest memory offset
+    dest_offset: WordCell<F>,
     /// Holds the size of the return data.
     return_data_size: Cell<F>,
     /// The data is copied to memory. To verify this
@@ -59,54 +64,52 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let dest_offset = cb.query_cell_phase2();
-        let return_data_size: Cell<F> = cb.query_cell();
+        let dest_offset = cb.query_word_unchecked();
+        let size = cb.query_memory_address();
+        let return_data_size = cb.query_cell();
 
-        let size: RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS> = cb.query_word_rlc();
         // enusre no other out of bound errors occur, otherwise go to `ErrorReturnDataOutOfBound`
         // state
         let check_overflow_gadget =
             CommonReturnDataCopyGadget::construct(cb, return_data_size.expr(), false.expr());
         // in normal case, size = CommonReturnDataCopyGadget::size
-        cb.require_equal(
+        cb.require_equal_word(
             "size = CommonReturnDataCopyGadget::size",
-            size.expr(),
-            check_overflow_gadget.size().expr(),
+            size.to_word(),
+            check_overflow_gadget.size().to_word(),
         );
         // 1. Pop dest_offset, offset, length from stack
-        cb.stack_pop(dest_offset.expr());
-        cb.stack_pop(check_overflow_gadget.data_offset().expr());
-        cb.stack_pop(size.expr());
+        cb.stack_pop(dest_offset.to_word());
+        cb.stack_pop(check_overflow_gadget.data_offset().to_word());
+        cb.stack_pop(check_overflow_gadget.size().to_word());
 
         // 2. Add lookup constraint in the call context for the returndatacopy field.
         let last_callee_id = cb.query_cell();
         let return_data_offset = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
+
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeId,
-            last_callee_id.expr(),
+            Word::from_lo_unchecked(last_callee_id.expr()),
         );
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataOffset,
-            return_data_offset.expr(),
+            Word::from_lo_unchecked(return_data_offset.expr()),
         );
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataLength,
-            return_data_size.expr(),
+            Word::from_lo_unchecked(return_data_size.expr()),
         );
 
         // 4. memory copy
         // Construct memory address in the destination (memory) to which we copy memory.
-        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_offset, size);
+        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_offset.clone(), size);
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
         // memory.
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.end_offset()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             dst_memory_addr.length(),
@@ -116,12 +119,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
             cb.copy_table_lookup(
-                last_callee_id.expr(),
+                Word::from_lo_unchecked(last_callee_id.expr()),
                 CopyDataType::Memory.expr(),
-                cb.curr.state.call_id.expr(),
+                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
                 return_data_offset.expr()
-                    + from_bytes::expr(&check_overflow_gadget.data_offset().cells[..N_BYTES_U64]),
+                    + from_bytes::expr(&check_overflow_gadget.data_offset().limbs[..N_BYTES_U64]),
                 return_data_offset.expr() + return_data_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
@@ -154,6 +157,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             same_context,
             last_callee_id,
             return_data_offset,
+            dest_offset,
             return_data_size,
             dst_memory_addr,
             check_overflow_gadget,
@@ -177,6 +181,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let [dest_offset, data_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
 
+        self.dest_offset.assign_u256(region, offset, dest_offset)?;
         let [last_callee_id, return_data_offset, return_data_size] = [
             (3, CallContextFieldTag::LastCalleeId),
             (4, CallContextFieldTag::LastCalleeReturnDataOffset),

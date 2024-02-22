@@ -5,12 +5,15 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -21,7 +24,7 @@ pub(crate) struct CallValueGadget<F> {
     same_context: SameContextGadget<F>,
     // Value in rw_table->stack_op and call_context->call_value are both RLC
     // encoded, so no need to decode.
-    call_value: Cell<F>,
+    call_value: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
@@ -30,18 +33,17 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLVALUE;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let call_value = cb.query_cell_phase2();
+        let call_value = cb.query_word_unchecked();
 
         // Lookup rw_table -> call_context with call value
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None, // cb.curr.state.call_id
             CallContextFieldTag::Value,
-            call_value.expr(),
+            call_value.to_word(),
         );
 
         // Push the value to the stack
-        cb.stack_push(call_value.expr());
+        cb.stack_push(call_value.to_word());
 
         // State transition
         let opcode = cb.query_cell();
@@ -73,8 +75,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
 
         let call_value = block.rws[step.rw_indices[1]].stack_value();
 
-        self.call_value
-            .assign(region, offset, region.word_rlc(call_value))?;
+        self.call_value.assign_u256(region, offset, call_value)?;
 
         Ok(())
     }

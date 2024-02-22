@@ -1,12 +1,17 @@
-use crate::{table::BytecodeFieldTag, util::get_push_size};
+use crate::{
+    table::BytecodeFieldTag,
+    util::{get_push_size, word::Word},
+};
+use halo2_proofs::circuit::Value;
+
 use bus_mapping::state_db::CodeDB;
-use eth_types::{Field, ToWord, Word, U256};
+use eth_types::{Field, ToWord, U256};
 use std::vec;
 
 /// Public data for the bytecode
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct BytecodeRow<F: Field> {
-    pub(crate) code_hash: Word,
+    pub(crate) code_hash: Word<Value<F>>,
     pub(crate) tag: F,
     pub(crate) index: F,
     pub(crate) is_code: F,
@@ -14,7 +19,7 @@ pub(crate) struct BytecodeRow<F: Field> {
 }
 
 /// Unrolled bytecode
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct UnrolledBytecode<F: Field> {
     pub(crate) bytes: Vec<u8>,
     pub(crate) rows: Vec<BytecodeRow<F>>,
@@ -23,11 +28,15 @@ pub struct UnrolledBytecode<F: Field> {
 /// Get unrolled bytecode from raw bytes
 pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
     let code_hash = CodeDB::hash(&bytes[..]);
-    unroll_with_codehash(code_hash.to_word(), bytes)
+    let code_hash_word = Word::from(code_hash.to_word()).map(Value::known);
+    unroll_with_codehash(code_hash_word, bytes)
 }
 
 /// Get unrolled bytecode from raw bytes and codehash
-pub fn unroll_with_codehash<F: Field>(code_hash: U256, bytes: Vec<u8>) -> UnrolledBytecode<F> {
+pub fn unroll_with_codehash<F: Field>(
+    code_hash: Word<Value<F>>,
+    bytes: Vec<u8>,
+) -> UnrolledBytecode<F> {
     let mut rows = vec![BytecodeRow::<F> {
         code_hash,
         tag: F::from(BytecodeFieldTag::Header as u64),

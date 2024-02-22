@@ -284,7 +284,8 @@ pub(crate) fn extract_hash_cells(
                     keccak_packed_multi::get_input_bytes_col_idx_in_cell_manager()
                         + <KeccakTable as LookupTable<Fr>>::columns(&keccak_config.keccak_table)
                             .len()
-                        - 1;
+                        - 1
+                        - 2; // exclude last word limbs' columns
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row = keccak_config.set_row(&mut region, offset, keccak_row)?;
 

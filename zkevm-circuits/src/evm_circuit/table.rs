@@ -2,6 +2,7 @@ pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
+    util::word::Word,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
@@ -167,11 +168,11 @@ pub struct RwValues<F> {
     pub id: Expression<F>,
     pub address: Expression<F>,
     pub field_tag: Expression<F>,
-    pub storage_key: Expression<F>,
-    pub value: Expression<F>,
-    pub value_prev: Expression<F>,
-    pub aux1: Expression<F>,
-    pub aux2: Expression<F>,
+    pub storage_key: Word<Expression<F>>,
+    pub value: Word<Expression<F>>,
+    pub value_prev: Word<Expression<F>>,
+    pub aux1: Word<Expression<F>>,
+    pub aux2: Word<Expression<F>>,
 }
 
 impl<F: Field> RwValues<F> {
@@ -180,11 +181,11 @@ impl<F: Field> RwValues<F> {
         id: Expression<F>,
         address: Expression<F>,
         field_tag: Expression<F>,
-        storage_key: Expression<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
-        aux1: Expression<F>,
-        aux2: Expression<F>,
+        storage_key: Word<Expression<F>>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
+        aux1: Word<Expression<F>>,
+        aux2: Word<Expression<F>>,
     ) -> Self {
         Self {
             id,
@@ -195,6 +196,15 @@ impl<F: Field> RwValues<F> {
             value_prev,
             aux1,
             aux2,
+        }
+    }
+
+    pub(crate) fn revert_value(&self) -> Self {
+        let new_self = self.clone();
+        Self {
+            value_prev: new_self.value,
+            value: new_self.value_prev,
+            ..new_self
         }
     }
 }
@@ -219,7 +229,8 @@ pub(crate) enum Lookup<F> {
         /// field_tag is Calldata, otherwise should be set to 0.
         index: Expression<F>,
         /// Value of the field.
-        value: Expression<F>,
+        value: Word<Expression<F>>,
+        // value: Expression<F>,
     },
     /// Lookup to read-write table, which contains read-write access records of
     /// time-aware data.
@@ -239,7 +250,7 @@ pub(crate) enum Lookup<F> {
     /// contract code.
     Bytecode {
         /// Hash to specify which code to read.
-        hash: Expression<F>,
+        hash: Word<Expression<F>>,
         /// Tag to specify whether its the bytecode length or byte value in the
         /// bytecode.
         tag: Expression<F>,
@@ -263,17 +274,18 @@ pub(crate) enum Lookup<F> {
         number: Expression<F>,
         /// Value of the field.
         value: Expression<F>,
+        // value: Word<Expression<F>>,
     },
     /// Lookup to copy table.
     CopyTable {
         /// Whether the row is the first row of the copy event.
         is_first: Expression<F>,
         /// The source ID for the copy event.
-        src_id: Expression<F>,
+        src_id: Word<Expression<F>>,
         /// The source tag for the copy event.
         src_tag: Expression<F>,
         /// The destination ID for the copy event.
-        dst_id: Expression<F>,
+        dst_id: Word<Expression<F>>,
         /// The destination tag for the copy event.
         dst_tag: Expression<F>,
         /// The source address where bytes are copied from.
@@ -303,6 +315,7 @@ pub(crate) enum Lookup<F> {
         /// Output (hash) until this state. This is the RLC representation of
         /// the final output keccak256 hash of the input.
         output_rlc: Expression<F>,
+        output: Word<Expression<F>>,
     },
     /// Lookup to sha256 table.
     Sha256Table {
@@ -390,7 +403,9 @@ impl<F: Field> Lookup<F> {
                 id.clone(),
                 field_tag.clone(),
                 index.clone(),
-                value.clone(),
+                value.lo(),
+                value.hi(),
+                // value.clone(),
             ],
             Self::Rw {
                 counter,
@@ -406,11 +421,16 @@ impl<F: Field> Lookup<F> {
                     values.id.clone(),
                     values.address.clone(),
                     values.field_tag.clone(),
-                    values.storage_key.clone(),
-                    values.value.clone(),
-                    values.value_prev.clone(),
-                    values.aux1.clone(),
-                    values.aux2.clone(),
+                    values.storage_key.lo(),
+                    values.storage_key.hi(),
+                    values.value.lo(),
+                    values.value.hi(),
+                    values.value_prev.lo(),
+                    values.value_prev.hi(),
+                    values.aux1.lo(),
+                    values.aux1.hi(),
+                    values.aux2.lo(),
+                    values.aux2.hi(),
                 ]
             }
             Self::Bytecode {
@@ -423,7 +443,8 @@ impl<F: Field> Lookup<F> {
             } => {
                 vec![
                     1.expr(), // q_enable
-                    hash.clone(),
+                    hash.lo(),
+                    hash.hi(),
                     tag.clone(),
                     index.clone(),
                     is_code.clone(),
@@ -436,6 +457,8 @@ impl<F: Field> Lookup<F> {
                 number,
                 value,
             } => {
+                // used in stage2 after block table to word
+                //vec![field_tag.clone(), number.clone(), value.lo(), value.hi()]
                 vec![field_tag.clone(), number.clone(), value.clone()]
             }
             Self::CopyTable {
@@ -454,9 +477,11 @@ impl<F: Field> Lookup<F> {
             } => vec![
                 1.expr(),
                 is_first.clone(),
-                src_id.clone(),
+                src_id.lo(),
+                src_id.hi(),
                 src_tag.clone(),
-                dst_id.clone(),
+                dst_id.lo(),
+                dst_id.hi(),
                 dst_tag.clone(),
                 src_addr.clone(),
                 src_addr_end.clone(),
@@ -470,12 +495,15 @@ impl<F: Field> Lookup<F> {
                 input_rlc,
                 input_len,
                 output_rlc,
+                output,
             } => vec![
                 1.expr(), // q_enable
                 1.expr(), // is_final
                 input_rlc.clone(),
                 input_len.clone(),
                 output_rlc.clone(),
+                output.lo(),
+                output.hi(),
             ],
             Self::Sha256Table {
                 input_rlc,

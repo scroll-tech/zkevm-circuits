@@ -1,11 +1,12 @@
 use super::{
-    lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    param::*, random_linear_combination::Queries as RlcQueries,
+    lookups::Queries as LookupsQueries,
+    multiple_precision_integer::Queries as MpiQueries,
+    param::*, // random_linear_combination::Queries as RlcQueries,
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
     table::{AccountFieldTag, MPTProofType as ProofType, RwTableTag},
-    util::Expr,
+    util::{word, Expr},
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -23,23 +24,23 @@ pub struct RwTableQueries<F: Field> {
     pub address: Expression<F>,
     pub prev_address: Expression<F>,
     pub field_tag: Expression<F>,
-    pub storage_key: Expression<F>,
-    pub value: Expression<F>,
-    pub value_prev: Expression<F>, // meta.query(value, Rotation::prev())
-    pub value_prev_column: Expression<F>, /* meta.query(prev_value, Rotation::cur())
-                                    * TODO: aux1 and aux2 */
+    pub storage_key: word::Word<Expression<F>>,
+    pub value: word::Word<Expression<F>>,
+    pub value_prev: word::Word<Expression<F>>,
+    pub value_prev_column: word::Word<Expression<F>>, /* meta.query(prev_value, Rotation::cur())
+                                                       * * TODO: aux1 and aux2 */
 }
 
 #[derive(Clone)]
 pub struct MptUpdateTableQueries<F: Field> {
     pub q_enable: Expression<F>,
     pub address: Expression<F>,
-    pub storage_key: Expression<F>,
+    pub storage_key: word::Word<Expression<F>>,
     pub proof_type: Expression<F>,
-    pub new_root: Expression<F>,
-    pub old_root: Expression<F>,
-    pub new_value: Expression<F>,
-    pub old_value: Expression<F>,
+    pub new_root: word::Word<Expression<F>>,
+    pub old_root: word::Word<Expression<F>>,
+    pub new_value: word::Word<Expression<F>>,
+    pub old_value: word::Word<Expression<F>>,
 }
 
 #[derive(Clone)]
@@ -53,9 +54,9 @@ pub struct Queries<F: Field> {
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
-    pub storage_key: RlcQueries<F, N_BYTES_WORD>,
-    pub initial_value: Expression<F>,
-    pub initial_value_prev: Expression<F>,
+    pub storage_key: MpiQueries<F, N_LIMBS_WORD>,
+    pub initial_value: word::Word<Expression<F>>,
+    pub initial_value_prev: word::Word<Expression<F>>,
     pub is_non_exist: Expression<F>,
     pub mpt_proof_type: Expression<F>,
     pub lookups: LookupsQueries<F>,
@@ -63,8 +64,8 @@ pub struct Queries<F: Field> {
     pub first_different_limb: [Expression<F>; 4],
     pub not_first_access: Expression<F>,
     pub last_access: Expression<F>,
-    pub state_root: Expression<F>,
-    pub state_root_prev: Expression<F>,
+    pub state_root: word::Word<Expression<F>>,
+    pub state_root_prev: word::Word<Expression<F>>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -74,6 +75,28 @@ pub struct ConstraintBuilder<F: Field> {
     pub constraints: Vec<Constraint<F>>,
     lookups: Vec<Lookup<F>>,
     condition: Expression<F>,
+}
+
+struct LookupBuilder<F>(Vec<(Expression<F>, Expression<F>)>);
+impl<F: Field> LookupBuilder<F> {
+    fn new() -> Self {
+        Self(vec![])
+    }
+
+    fn add(mut self, e1: &Expression<F>, e2: &Expression<F>) -> Self {
+        self.0.push((e1.clone(), e2.clone()));
+        self
+    }
+
+    fn add_word(mut self, e1: &word::Word<Expression<F>>, e2: &word::Word<Expression<F>>) -> Self {
+        self.0.push((e1.lo(), e2.lo()));
+        self.0.push((e1.hi(), e2.hi()));
+        self
+    }
+
+    fn build(self) -> Vec<(Expression<F>, Expression<F>)> {
+        self.0
+    }
 }
 
 impl<F: Field> ConstraintBuilder<F> {
@@ -151,10 +174,14 @@ impl<F: Field> ConstraintBuilder<F> {
         // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
-                "first access reads don't change value",
-                q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
+                "first access reads don't change value (hi)",
+                q.is_read() * (q.rw_table.value.hi() - q.initial_value().hi()),
             );
-            cb.require_equal(
+            cb.require_zero(
+                "first access reads don't change value (lo)",
+                q.is_read() * (q.rw_table.value.lo() - q.initial_value().lo()),
+            );
+            cb.require_word_equal(
                 "value_prev column is initial_value for first access",
                 q.value_prev_column(),
                 q.initial_value.clone(),
@@ -164,12 +191,20 @@ impl<F: Field> ConstraintBuilder<F> {
         // When all the keys in the current row and previous row are equal.
         self.condition(q.not_first_access.clone(), |cb| {
             cb.require_zero(
-                "non-first access reads don't change value",
-                q.is_read() * (q.rw_table.value.clone() - q.rw_table.value_prev.clone()),
+                "non-first access reads don't change value (hi)",
+                q.is_read() * (q.rw_table.value.hi() - q.rw_table.value_prev.hi()),
             );
             cb.require_zero(
-                "initial value doesn't change in an access group",
-                q.initial_value.clone() - q.initial_value_prev(),
+                "non-first access reads don't change value (lo)",
+                q.is_read() * (q.rw_table.value.lo() - q.rw_table.value_prev.lo()),
+            );
+            cb.require_zero(
+                "initial value doesn't change in an access group (hi)",
+                q.initial_value.hi() - q.initial_value_prev().hi(),
+            );
+            cb.require_zero(
+                "initial value doesn't change in an access group (lo)",
+                q.initial_value.lo() - q.initial_value_prev().lo(),
             );
         });
     }
@@ -179,39 +214,41 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("field_tag is 0 for Start", q.field_tag());
         self.require_zero("address is 0 for Start", q.rw_table.address.clone());
         self.require_zero("id is 0 for Start", q.id());
-        self.require_zero("storage_key is 0 for Start", q.rw_table.storage_key.clone());
+        self.require_word_zero("storage_key is 0 for Start", q.rw_table.storage_key.clone());
         // 1.1. rw_counter increases by 1 for every non-first row
         self.require_zero(
             "rw_counter increases by 1 for every non-first row",
             q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
         );
         // 1.2. Start value is 0
-        self.require_zero("Start value is 0", q.value());
+        self.require_word_zero("Start value is 0", q.value());
         // 1.3. Start initial value is 0
-        self.require_zero("Start initial_value is 0", q.initial_value());
+        self.require_word_zero("Start initial_value is 0", q.initial_value());
         // 1.4. state_root is unchanged for every non-first row
         self.condition(q.lexicographic_ordering_selector.clone(), |cb| {
-            cb.require_equal(
+            cb.require_word_equal(
                 "state_root is unchanged for Start",
                 q.state_root(),
                 q.state_root_prev(),
             )
         });
-        self.require_zero("value_prev column is 0 for Start", q.value_prev_column());
+        self.require_word_zero("value_prev column is 0 for Start", q.value_prev_column());
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
         // 2.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Memory", q.field_tag());
-        self.require_zero(
+        self.require_word_zero(
             "storage_key is 0 for Memory",
             q.rw_table.storage_key.clone(),
         );
         // 2.1. First access for a set of all keys are 0 if READ
-        self.require_zero(
-            "first access for a set of all keys are 0 if READ",
-            q.first_access() * q.is_read() * q.value(),
-        );
+        self.condition(q.first_access() * q.is_read(), |cb| {
+            cb.require_word_zero(
+                "first access for a set of all keys are 0 if READ",
+                q.value(),
+            );
+        });
         // could do this more efficiently by just asserting address = limb0 + 2^16 *
         // limb1?
         // 2.2. mem_addr in range
@@ -228,16 +265,16 @@ impl<F: Field> ConstraintBuilder<F> {
 
         // 2.3. value is a word
         // 2.4. Start initial value is 0
-        self.require_zero("initial Memory value is 0", q.initial_value());
+        self.require_word_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
-        self.require_equal(
+        self.require_word_equal(
             "state_root is unchanged for Memory",
             q.state_root(),
             q.state_root_prev(),
         );
         // 2.6. The value on the previous row equals the value_prev column.
         self.condition(q.not_first_access.clone(), |cb| {
-            cb.require_equal(
+            cb.require_word_equal(
                 "value column at Rotation::prev() equals value_prev at Rotation::cur()",
                 q.rw_table.value_prev.clone(),
                 q.value_prev_column(),
@@ -248,7 +285,7 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
         // 3.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Stack", q.field_tag());
-        self.require_zero("storage_key is 0 for Stack", q.rw_table.storage_key.clone());
+        self.require_word_zero("storage_key is 0 for Stack", q.rw_table.storage_key.clone());
         // 3.1. First access for a set of all keys
         self.require_zero(
             "first access to new stack address is a write",
@@ -267,14 +304,14 @@ impl<F: Field> ConstraintBuilder<F> {
             )
         });
         // 3.4. Stack initial value is 0
-        self.require_zero("initial Stack value is 0", q.initial_value.clone());
+        self.require_word_zero("initial Stack value is 0", q.initial_value.clone());
         // 3.5 state root does not change
-        self.require_equal(
+        self.require_word_equal(
             "state_root is unchanged for Stack",
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_equal(
+        self.require_word_equal(
             "value_prev column equals initial_value for Stack",
             q.value_prev_column(),
             q.initial_value(),
@@ -306,27 +343,21 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
-                vec![
-                    (1.expr(), q.mpt_update_table.q_enable.clone()),
-                    (
-                        q.rw_table.address.clone(),
-                        q.mpt_update_table.address.clone(),
-                    ),
-                    (
-                        q.rw_table.storage_key.clone(),
-                        q.mpt_update_table.storage_key.clone(),
-                    ),
-                    (q.mpt_proof_type(), q.mpt_update_table.proof_type.clone()),
-                    (q.state_root(), q.mpt_update_table.new_root.clone()),
-                    (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
-                    (q.value(), q.mpt_update_table.new_value.clone()),
-                    (q.initial_value(), q.mpt_update_table.old_value.clone()),
-                ],
+                LookupBuilder::new()
+                    .add(&1.expr(), &q.mpt_update_table.q_enable.clone())
+                    .add(&q.rw_table.address, &q.mpt_update_table.address)
+                    .add_word(&q.rw_table.storage_key, &q.mpt_update_table.storage_key)
+                    .add(&q.mpt_proof_type(), &q.mpt_update_table.proof_type)
+                    .add_word(&q.state_root(), &q.mpt_update_table.new_root)
+                    .add_word(&q.state_root_prev(), &q.mpt_update_table.old_root)
+                    .add_word(&q.value(), &q.mpt_update_table.new_value)
+                    .add_word(&q.initial_value(), &q.mpt_update_table.old_value)
+                    .build(),
             );
         });
 
         self.condition(q.not_first_access.clone(), |cb| {
-            cb.require_equal(
+            cb.require_word_equal(
                 "value column at Rotation::prev() equals value_prev at Rotation::cur()",
                 q.rw_table.value_prev.clone(),
                 q.value_prev_column(),
@@ -336,24 +367,24 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
-        self.require_zero(
+        self.require_word_zero(
             "storage_key is 0 for TxAccessListAccount",
             q.rw_table.storage_key.clone(),
         );
-        self.require_boolean("TxAccessListAccount value is boolean", q.value());
-        self.require_zero(
+        self.require_word_boolean("TxAccessListAccount value is boolean", q.value());
+        self.require_word_zero(
             "initial TxAccessListAccount value is false",
             q.initial_value(),
         );
 
-        self.require_equal(
+        self.require_word_equal(
             "state_root is unchanged for TxAccessListAccount",
             q.state_root(),
             q.state_root_prev(),
         );
 
         self.condition(q.not_first_access.clone(), |cb| {
-            cb.require_equal(
+            cb.require_word_equal(
                 "value column at Rotation::prev() equals value_prev at Rotation::cur()",
                 q.rw_table.value_prev.clone(),
                 q.value_prev_column(),
@@ -366,20 +397,20 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag is 0 for TxAccessListAccountStorage",
             q.field_tag(),
         );
-        self.require_boolean("TxAccessListAccountStorage value is boolean", q.value());
-        self.require_zero(
+        self.require_word_boolean("TxAccessListAccountStorage value is boolean", q.value());
+        self.require_word_zero(
             "initial TxAccessListAccountStorage value is false",
             q.initial_value(),
         );
 
-        self.require_equal(
+        self.require_word_equal(
             "state_root is unchanged for TxAccessListAccountStorage",
             q.state_root(),
             q.state_root_prev(),
         );
 
         self.condition(q.not_first_access.clone(), |cb| {
-            cb.require_equal(
+            cb.require_word_equal(
                 "value column at Rotation::prev() equals value_prev at Rotation::cur()",
                 q.rw_table.value_prev.clone(),
                 q.value_prev_column(),
@@ -391,32 +422,32 @@ impl<F: Field> ConstraintBuilder<F> {
         // 7.0. `address`, `field_tag` and `storage_key` are 0
         self.require_zero("address is 0 for TxRefund", q.rw_table.address.clone());
         self.require_zero("field_tag is 0 for TxRefund", q.field_tag());
-        self.require_zero(
+        self.require_word_zero(
             "storage_key is 0 for TxRefund",
             q.rw_table.storage_key.clone(),
         );
         // 7.1. `state root` is not changed
-        self.require_equal(
+        self.require_word_equal(
             "state_root is unchanged for TxRefund",
             q.state_root(),
             q.state_root_prev(),
         );
 
         self.condition(q.not_first_access.clone(), |cb| {
-            cb.require_equal(
+            cb.require_word_equal(
                 "value column at Rotation::prev() equals value_prev at Rotation::cur()",
                 q.rw_table.value_prev.clone(),
                 q.value_prev_column(),
             );
         });
         // 7.2. `initial value` is 0
-        self.require_zero("initial TxRefund value is 0", q.initial_value());
+        self.require_word_zero("initial TxRefund value is 0", q.initial_value());
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
         // ref. spec 6.0. Unused keys are 0
         self.require_zero("id is 0 for Account", q.id());
-        self.require_zero(
+        self.require_word_zero(
             "storage_key is 0 for Account",
             q.rw_table.storage_key.clone(),
         );
@@ -439,27 +470,21 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for Account last access",
-                vec![
-                    (1.expr(), q.mpt_update_table.q_enable.clone()),
-                    (
-                        q.rw_table.address.clone(),
-                        q.mpt_update_table.address.clone(),
-                    ),
-                    (
-                        q.rw_table.storage_key.clone(),
-                        q.mpt_update_table.storage_key.clone(),
-                    ),
-                    (q.mpt_proof_type(), q.mpt_update_table.proof_type.clone()),
-                    (q.state_root(), q.mpt_update_table.new_root.clone()),
-                    (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
-                    (q.value(), q.mpt_update_table.new_value.clone()),
-                    (q.initial_value(), q.mpt_update_table.old_value.clone()),
-                ],
+                LookupBuilder::new()
+                    .add(&1.expr(), &q.mpt_update_table.q_enable)
+                    .add(&q.rw_table.address, &q.mpt_update_table.address)
+                    .add_word(&q.rw_table.storage_key, &q.mpt_update_table.storage_key)
+                    .add(&q.mpt_proof_type(), &q.mpt_update_table.proof_type)
+                    .add_word(&q.state_root(), &q.mpt_update_table.new_root)
+                    .add_word(&q.state_root_prev(), &q.mpt_update_table.old_root)
+                    .add_word(&q.value(), &q.mpt_update_table.new_value)
+                    .add_word(&q.initial_value(), &q.mpt_update_table.old_value)
+                    .build(),
             );
         });
 
         self.condition(q.not_first_access.clone(), |cb| {
-            cb.require_equal(
+            cb.require_word_equal(
                 "value column at Rotation::prev() equals value_prev at Rotation::cur()",
                 q.rw_table.value_prev.clone(),
                 q.value_prev_column(),
@@ -469,7 +494,7 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_call_context_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("address is 0 for CallContext", q.rw_table.address.clone());
-        self.require_zero(
+        self.require_word_zero(
             "storage_key is 0 for CallContext",
             q.rw_table.storage_key.clone(),
         );
@@ -477,13 +502,13 @@ impl<F: Field> ConstraintBuilder<F> {
             "field_tag in CallContextFieldTag range",
             vec![(q.field_tag(), q.lookups.call_context_field_tag.clone())],
         );
-        self.require_zero("initial CallContext value is 0", q.initial_value());
-        self.require_equal(
+        self.require_word_zero("initial CallContext value is 0", q.initial_value());
+        self.require_word_equal(
             "state_root is unchanged for CallContext",
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_zero(
+        self.require_word_zero(
             "value_prev column is 0 for CallContext",
             q.value_prev_column(),
         );
@@ -495,14 +520,14 @@ impl<F: Field> ConstraintBuilder<F> {
             q.rw_table.is_write.clone(),
             1.expr(),
         );
-        self.require_zero("initial TxLog value is 0", q.initial_value());
+        self.require_word_zero("initial TxLog value is 0", q.initial_value());
 
-        self.require_equal(
+        self.require_word_equal(
             "state_root is unchanged for TxLog",
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_equal(
+        self.require_word_equal(
             "value_prev column equals initial_value for TxLog",
             q.value_prev_column(),
             q.initial_value(),
@@ -513,12 +538,12 @@ impl<F: Field> ConstraintBuilder<F> {
         // TODO: implement TxReceipt constraints
         self.require_equal("TxReceipt rows not implemented", 1.expr(), 0.expr());
 
-        self.require_equal(
+        self.require_word_equal(
             "state_root is unchanged for TxReceipt",
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_zero(
+        self.require_word_zero(
             "value_prev_column is 0 for TxReceipt",
             q.value_prev_column(),
         );
@@ -528,12 +553,36 @@ impl<F: Field> ConstraintBuilder<F> {
         self.constraints.push((name, self.condition.clone() * e));
     }
 
+    fn require_word_zero(&mut self, name: &'static str, e: word::Word<Expression<F>>) {
+        let (lo, hi) = e.into_lo_hi();
+        self.constraints.push((name, self.condition.clone() * hi));
+        self.constraints.push((name, self.condition.clone() * lo));
+    }
+
     fn require_equal(&mut self, name: &'static str, left: Expression<F>, right: Expression<F>) {
         self.require_zero(name, left - right)
     }
 
+    fn require_word_equal(
+        &mut self,
+        name: &'static str,
+        left: word::Word<Expression<F>>,
+        right: word::Word<Expression<F>>,
+    ) {
+        let (left_lo, left_hi) = left.into_lo_hi();
+        let (right_lo, right_hi) = right.into_lo_hi();
+        self.require_zero(name, left_hi - right_hi);
+        self.require_zero(name, left_lo - right_lo);
+    }
+
     fn require_boolean(&mut self, name: &'static str, e: Expression<F>) {
         self.require_zero(name, e.clone() * (1.expr() - e))
+    }
+
+    fn require_word_boolean(&mut self, name: &'static str, e: word::Word<Expression<F>>) {
+        let (lo, hi) = e.into_lo_hi();
+        self.require_zero(name, hi);
+        self.require_zero(name, lo.clone() * (1.expr() - lo));
     }
 
     fn require_in_set(&mut self, name: &'static str, item: Expression<F>, set: Vec<Expression<F>>) {
@@ -590,19 +639,19 @@ impl<F: Field> Queries<F> {
         self.rw_table.field_tag.clone()
     }
 
-    fn value(&self) -> Expression<F> {
+    fn value(&self) -> word::Word<Expression<F>> {
         self.rw_table.value.clone()
     }
 
-    fn value_prev(&self) -> Expression<F> {
+    fn value_prev(&self) -> word::Word<Expression<F>> {
         self.rw_table.value_prev.clone()
     }
 
-    fn initial_value(&self) -> Expression<F> {
+    fn initial_value(&self) -> word::Word<Expression<F>> {
         self.initial_value.clone()
     }
 
-    fn initial_value_prev(&self) -> Expression<F> {
+    fn initial_value_prev(&self) -> word::Word<Expression<F>> {
         self.initial_value_prev.clone()
     }
 
@@ -658,15 +707,15 @@ impl<F: Field> Queries<F> {
         self.last_access.clone()
     }
 
-    fn state_root(&self) -> Expression<F> {
+    fn state_root(&self) -> word::Word<Expression<F>> {
         self.state_root.clone()
     }
 
-    fn state_root_prev(&self) -> Expression<F> {
+    fn state_root_prev(&self) -> word::Word<Expression<F>> {
         self.state_root_prev.clone()
     }
 
-    fn value_prev_column(&self) -> Expression<F> {
+    fn value_prev_column(&self) -> word::Word<Expression<F>> {
         self.rw_table.value_prev_column.clone()
     }
 }

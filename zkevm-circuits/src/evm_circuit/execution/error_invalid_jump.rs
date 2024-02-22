@@ -6,12 +6,15 @@ use crate::{
         util::{
             common_gadget::{CommonErrorGadget, WordByteCapGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{IsEqualGadget, IsZeroGadget},
+            math_gadget::{IsEqualGadget, IsZeroWordGadget},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field, U256};
 
@@ -27,8 +30,8 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     push_rlc: Cell<F>,
     is_jump_dest: IsEqualGadget<F>,
     is_jumpi: IsEqualGadget<F>,
-    phase2_condition: Cell<F>,
-    is_condition_zero: IsZeroGadget<F>,
+    condition: WordCell<F>,
+    is_condition_zero: IsZeroWordGadget<F, WordCell<F>>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -45,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let value = cb.query_cell();
         let is_code = cb.query_cell();
         let push_rlc = cb.query_cell_phase2();
-        let phase2_condition = cb.query_cell_phase2();
+        let condition = cb.query_word_unchecked();
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",
@@ -60,24 +63,24 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // first default this condition, if use will re-construct with real condition
         // value
-        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
+        let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
 
         // Pop the value from the stack
-        cb.stack_pop(dest.original_word());
+        cb.stack_pop(dest.original_word().to_word());
 
         cb.condition(is_jumpi.expr(), |cb| {
-            cb.stack_pop(phase2_condition.expr());
+            cb.stack_pop(condition.to_word());
             // if condition is zero, jump will not happen, so constrain condition not zero
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
         // Look up bytecode length
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_len.expr());
+        cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_len.expr());
 
         // If destination is in valid range, lookup for the value.
         cb.condition(dest.lt_cap(), |cb| {
             cb.bytecode_lookup(
-                cb.curr.state.code_hash.expr(),
+                cb.curr.state.code_hash.to_word(),
                 dest.valid_value(),
                 is_code.expr(),
                 value.expr(),
@@ -101,7 +104,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             push_rlc,
             is_jump_dest,
             is_jumpi,
-            phase2_condition,
+            condition,
             is_condition_zero,
             common_error_gadget,
         }
@@ -118,6 +121,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         let is_jumpi = opcode == OpcodeId::JUMPI;
+
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
@@ -126,7 +130,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         } else {
             U256::zero()
         };
-        let condition_rlc = region.word_rlc(condition);
 
         let code = block
             .bytecodes
@@ -166,11 +169,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             F::from(OpcodeId::JUMPI.as_u64()),
         )?;
 
-        self.phase2_condition
-            .assign(region, offset, condition_rlc)?;
-        self.is_condition_zero
-            .assign_value(region, offset, condition_rlc)?;
+        self.condition.assign_u256(region, offset, condition)?;
 
+        self.is_condition_zero
+            .assign_value(region, offset, Value::known(Word::from(condition)))?;
         self.common_error_gadget.assign(
             region,
             offset,

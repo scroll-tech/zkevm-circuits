@@ -1240,8 +1240,11 @@ impl FromStr for OpcodeId {
             "BASEFEE" => OpcodeId::BASEFEE,
             #[cfg(feature = "scroll")]
             "BASEFEE" => OpcodeId::INVALID(0x48),
-            "TLOAD" => OpcodeId::INVALID(0xb3),
-            "TSTORE" => OpcodeId::INVALID(0xb4),
+            "BLOBHASH" => OpcodeId::INVALID(0x49),
+            "BLOBBASEFEE" => OpcodeId::INVALID(0x4a),
+            "TLOAD" => OpcodeId::INVALID(0x5c),
+            "TSTORE" => OpcodeId::INVALID(0x5d),
+            "MCOPY" => OpcodeId::INVALID(0x5e),
             _ => {
                 // Parse an invalid opcode value as reported by geth
                 static RE: LazyLock<Regex> = LazyLock::new(|| {

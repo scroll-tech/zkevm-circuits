@@ -3,21 +3,23 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            self,
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
-            select, sum, CachedRegion,
+            math_gadget::{IsZeroWordGadget, LtWordGadget, MulAddWordsGadget},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, U256};
 use halo2_proofs::plonk::Error;
 
 /// MulGadget verifies opcode MUL, DIV, and MOD.
@@ -29,11 +31,11 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct MulDivModGadget<F> {
     same_context: SameContextGadget<F>,
     /// Words a, b, c, d
-    pub words: [util::Word<F>; 4],
+    pub words: [Word32Cell<F>; 4],
     /// Gadget that verifies a * b + c = d
     mul_add_words: MulAddWordsGadget<F>,
     /// Check if divisor is zero for DIV and MOD
-    divisor_is_zero: IsZeroGadget<F>,
+    divisor_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     /// Check if residue < divisor when divisor != 0 for DIV and MOD
     lt_word: LtWordGadget<F>,
 }
@@ -55,32 +57,39 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let is_mod = (opcode.expr() - OpcodeId::MUL.expr())
             * (opcode.expr() - OpcodeId::DIV.expr())
             * F::from(8).invert().unwrap();
-        let a = cb.query_word_rlc();
-        let b = cb.query_word_rlc();
-        let c = cb.query_word_rlc();
-        let d = cb.query_word_rlc();
+        let a = cb.query_word32();
+        let b = cb.query_word32();
+        let c = cb.query_word32();
+        let d = cb.query_word32();
 
         let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
-        let lt_word = LtWordGadget::construct(cb, &c, &b);
+        let divisor_is_zero = IsZeroWordGadget::construct(cb, &b);
+        let lt_word = LtWordGadget::construct(cb, &c.to_word(), &b.to_word());
 
         // Pop a and b from the stack, push result on the stack
         // The first pop is multiplier for MUL and dividend for DIV/MOD
         // The second pop is multiplicand for MUL and divisor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
-        cb.stack_pop(select::expr(is_mul.clone(), a.expr(), d.expr()));
-        cb.stack_pop(b.expr());
+        cb.stack_pop(Word::select(is_mul.clone(), a.to_word(), d.to_word()));
+        cb.stack_pop(b.to_word());
         cb.stack_push(
-            is_mul.clone() * d.expr()
-                + is_div * a.expr() * (1.expr() - divisor_is_zero.expr())
-                + is_mod * c.expr() * (1.expr() - divisor_is_zero.expr()),
+            d.to_word()
+                .mul_selector(is_mul.clone())
+                .add_unchecked(
+                    a.to_word()
+                        .mul_selector(is_div * (1.expr() - divisor_is_zero.expr())),
+                )
+                .add_unchecked(
+                    c.to_word()
+                        .mul_selector(is_mod * (1.expr() - divisor_is_zero.expr())),
+                ),
         );
 
         // Constraint for MUL case
-        cb.add_constraint(
+        cb.require_zero_word(
             "c == 0 for opcode MUL",
-            is_mul.clone() * sum::expr(&c.cells),
+            c.to_word().mul_selector(is_mul.clone()),
         );
 
         // Constraints for DIV and MOD cases
@@ -138,15 +147,15 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
             ),
             _ => unreachable!(),
         };
-        self.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
-        self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
-        self.words[2].assign(region, offset, Some(c.to_le_bytes()))?;
-        self.words[3].assign(region, offset, Some(d.to_le_bytes()))?;
+        self.words[0].assign_u256(region, offset, a)?;
+        self.words[1].assign_u256(region, offset, b)?;
+        self.words[2].assign_u256(region, offset, c)?;
+        self.words[3].assign_u256(region, offset, d)?;
         self.mul_add_words.assign(region, offset, [a, b, c, d])?;
         self.lt_word.assign(region, offset, c, b)?;
-        let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);
-        self.divisor_is_zero
-            .assign(region, offset, F::from(b_sum))?;
+        // let b_sum = (0..32).fold(0, |acc, idx| acc + b.byte(idx) as u64);
+        self.divisor_is_zero.assign(region, offset, Word::from(b))?;
+
         Ok(())
     }
 }

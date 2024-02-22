@@ -15,8 +15,9 @@ use crate::{
         witness::Transaction,
     },
     table::TxFieldTag,
+    util::word::{Word32Cell, WordExpr},
 };
-use eth_types::{geth_types::TxType, Field, ToLittleEndian, U256};
+use eth_types::{geth_types::TxType, Field, U256};
 use halo2_proofs::plonk::{Error, Expression};
 
 /// Transaction EIP-1559 gadget to check sender balance before transfer
@@ -24,9 +25,9 @@ use halo2_proofs::plonk::{Error, Expression};
 pub(crate) struct TxEip1559Gadget<F> {
     is_eip1559_tx: IsEqualGadget<F>,
     // MaxFeePerGas
-    gas_fee_cap: Word<F>,
+    gas_fee_cap: Word32Cell<F>,
     // MaxPriorityFeePerGas
-    gas_tip_cap: Word<F>,
+    gas_tip_cap: Word32Cell<F>,
     mul_gas_fee_cap_by_gas: MulWordByU64Gadget<F>,
     balance_check: AddWordsGadget<F, 3, true>,
     // Error condition
@@ -43,15 +44,26 @@ impl<F: Field> TxEip1559Gadget<F> {
         tx_id: Expression<F>,
         tx_type: Expression<F>,
         tx_gas: Expression<F>,
-        tx_l1_fee: &Word<F>,
-        value: &Word<F>,
-        sender_balance: &Word<F>,
+        tx_l1_fee: &Word32Cell<F>,
+        value: &Word32Cell<F>,
+        sender_balance: &Word32Cell<F>,
     ) -> Self {
         let is_eip1559_tx = IsEqualGadget::construct(cb, tx_type, (TxType::Eip1559 as u64).expr());
 
-        let [gas_fee_cap, gas_tip_cap] =
-            [TxFieldTag::MaxFeePerGas, TxFieldTag::MaxPriorityFeePerGas]
-                .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
+        let [gas_fee_cap, gas_tip_cap] = [cb.query_word32(), cb.query_word32()];
+        let gas_fee_cap_rlc = cb.word_rlc(gas_fee_cap.limbs.clone().map(|l| l.expr()));
+        let gas_tip_cap_rlc = cb.word_rlc(gas_tip_cap.limbs.clone().map(|cell| cell.expr()));
+        for (field_tag, value) in [
+            (TxFieldTag::MaxFeePerGas, gas_fee_cap_rlc),
+            (TxFieldTag::MaxPriorityFeePerGas, gas_tip_cap_rlc),
+        ] {
+            cb.tx_context_lookup(
+                tx_id.expr(),
+                field_tag,
+                None,
+                Word::from_lo_unchecked(value),
+            );
+        }
 
         let (
             mul_gas_fee_cap_by_gas,
@@ -62,7 +74,7 @@ impl<F: Field> TxEip1559Gadget<F> {
             let mul_gas_fee_cap_by_gas =
                 MulWordByU64Gadget::construct(cb, gas_fee_cap.clone(), tx_gas);
 
-            let min_balance = cb.query_word_rlc();
+            let min_balance = cb.query_word32();
             let balance_check = AddWordsGadget::construct(
                 cb,
                 [
@@ -73,9 +85,10 @@ impl<F: Field> TxEip1559Gadget<F> {
                 min_balance.clone(),
             );
 
-            let is_insufficient_balance = LtWordGadget::construct(cb, sender_balance, &min_balance);
+            let is_insufficient_balance =
+                LtWordGadget::construct(cb, &sender_balance.to_word(), &min_balance.to_word());
             let gas_fee_cap_lt_gas_tip_cap =
-                LtWordGadget::construct(cb, &gas_fee_cap, &gas_tip_cap);
+                LtWordGadget::construct(cb, &gas_fee_cap.to_word(), &gas_tip_cap.to_word());
 
             cb.require_zero(
                 "Sender balance must be sufficient, and gas_fee_cap >= gas_tip_cap",
@@ -119,12 +132,9 @@ impl<F: Field> TxEip1559Gadget<F> {
             F::from(TxType::Eip1559 as u64),
         )?;
         self.gas_fee_cap
-            .assign(region, offset, Some(tx.max_fee_per_gas.to_le_bytes()))?;
-        self.gas_tip_cap.assign(
-            region,
-            offset,
-            Some(tx.max_priority_fee_per_gas.to_le_bytes()),
-        )?;
+            .assign_u256(region, offset, tx.max_fee_per_gas)?;
+        self.gas_tip_cap
+            .assign_u256(region, offset, tx.max_priority_fee_per_gas)?;
         let mul_gas_fee_cap_by_gas = tx.max_fee_per_gas * tx.gas;
         self.mul_gas_fee_cap_by_gas.assign(
             region,

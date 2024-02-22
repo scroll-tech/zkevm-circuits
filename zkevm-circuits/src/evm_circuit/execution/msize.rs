@@ -9,20 +9,20 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            from_bytes, CachedRegion, RandomLinearCombination,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct MsizeGadget<F> {
     same_context: SameContextGadget<F>,
-    value: RandomLinearCombination<F, 8>,
+    value: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
@@ -31,17 +31,16 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let value = cb.query_word_rlc();
+        let value = cb.query_cell();
 
         // memory_size is limited to 64 bits so we only consider 8 bytes
         cb.require_equal(
             "Constrain memory_size equal to stack value",
-            from_bytes::expr(&value.cells),
+            value.expr(),
             cb.curr.state.memory_word_size.expr() * N_BYTES_WORD.expr(),
         );
-
         // Push the value on the stack
-        cb.stack_push(value.expr());
+        cb.stack_push(Word::from_lo_unchecked(value.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -71,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
         self.value
-            .assign(region, offset, Some((step.memory_size).to_le_bytes()))?;
+            .assign(region, offset, Value::known(F::from(step.memory_size)))?;
 
         Ok(())
     }

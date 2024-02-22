@@ -5,13 +5,14 @@ use crate::{
         not, or, select,
     },
     table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
-    util::{Challenges, Expr, SubCircuitConfig},
+    util::{word, Challenges, Expr, SubCircuitConfig},
 };
 use bus_mapping::util::POSEIDON_CODE_HASH_EMPTY;
-use eth_types::{Field, ToScalar, ToWord};
+use eth_types::{Field, ToWord};
 use gadgets::is_zero::IsZeroChip;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
+    dev::unwrap_value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -41,6 +42,7 @@ pub struct ToHashBlockCircuitConfig<F, const BYTES_IN_FIELD: usize> {
     padding_shift: Column<Advice>,
     field_index: Column<Advice>,
     field_index_inv: Column<Advice>,
+    poseidon_code_hash: Column<Advice>,
     // External table
     pub(crate) poseidon_table: PoseidonTable,
     pub(crate) keccak_table: KeccakTable,
@@ -65,6 +67,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         let padding_shift = meta.advice_column();
         let field_index = meta.advice_column();
         let field_index_inv = meta.advice_column();
+        let poseidon_code_hash = meta.advice_column();
 
         // some composited selectors are grepped from base
         // Does the current row have bytecode field tag == Byte?
@@ -92,6 +95,14 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 meta.query_advice(is_field_border, Rotation::cur()),
             );
 
+            let f_128 = F::from(1 << 32).pow([4, 0, 0, 0]);
+            let word_code_hash = bytecode_table.code_hash.query_advice(meta, Rotation::cur());
+            // check poseidon_code_hash = code_hash.hi * 2^128 + code_hash.lo
+            cb.require_equal(
+                "poseidon_code_hash = code_hash.hi * 2^128 + code_hash.lo",
+                meta.query_advice(poseidon_code_hash, Rotation::cur()),
+                word_code_hash.hi() * Expression::Constant(f_128) + word_code_hash.lo(),
+            );
             // Conditions:
             // - always
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -291,7 +302,6 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         {
             use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
             use itertools::Itertools;
-            let code_hash = bytecode_table.code_hash;
             let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
                 debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
                 [
@@ -335,7 +345,8 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
 
                     let lookup_inputs = [
                         1.expr(),
-                        meta.query_advice(code_hash, Rotation::cur()),
+                        //TODO: check it lo
+                        meta.query_advice(poseidon_code_hash, Rotation::cur()),
                         meta.query_advice(field_input, Rotation::cur()),
                         meta.query_advice(control_length, Rotation::cur())
                             * domain_spec_factor.clone(),
@@ -365,7 +376,8 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 let mut constraints = Vec::new();
                 let lookup_inputs = [
                     1.expr(),
-                    meta.query_advice(code_hash, Rotation::cur()),
+                    //meta.query_advice(code_hash.lo(), Rotation::cur()),
+                    meta.query_advice(poseidon_code_hash, Rotation::cur()),
                     0.expr(),
                     meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor,
                     0.expr(),
@@ -388,6 +400,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             field_input,
             bytes_in_field_index,
             bytes_in_field_inv,
+            poseidon_code_hash,
             is_field_border,
             padding_shift,
             field_index,
@@ -433,8 +446,11 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             base_conf.minimum_rows,
             last_row_offset
         );
-
-        let empty_hash = Value::known(POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap());
+        let empty_hash = POSEIDON_CODE_HASH_EMPTY.to_word();
+        let empty_hash_word = word::Word::from(empty_hash).map(Value::known);
+        let f_128 = F::from(1 << 32).pow([4, 0, 0, 0]);
+        let poseidon_empty_code_hash =
+            unwrap_value(empty_hash_word.hi()) * f_128 + unwrap_value(empty_hash_word.lo());
 
         layouter.assign_region(
             || "assign bytecode with poseidon hash extension",
@@ -449,18 +465,28 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         challenges,
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
-                        empty_hash,
+                        empty_hash_word,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
                     )?;
 
+                    let code_hash = bytecode.rows[0].code_hash;
+                    let poseidon_code_hash =
+                        unwrap_value(code_hash.hi()) * f_128 + unwrap_value(code_hash.lo());
                     for (idx, row) in bytecode.rows.iter().enumerate() {
                         // if the base_conf's assignment not fail fast,
                         // we also avoid the failure of "NotEnoughRowsAvailable"
                         // in prover creation (so bytecode_incomplete test could pass)
                         let offset = bytecode_offset_begin + idx;
                         if offset <= last_row_offset {
+                            region.assign_advice(
+                                || format!("assign poseidon_code_hash {idx}"),
+                                self.poseidon_code_hash,
+                                offset,
+                                || Value::known(poseidon_code_hash),
+                            )?;
+
                             row_input = self.assign_extended_row(
                                 &mut region,
                                 offset,
@@ -478,13 +504,18 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         &mut region,
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
-                        empty_hash,
+                        empty_hash_word,
                         idx,
                         last_row_offset,
                     )?;
+                    region.assign_advice(
+                        || format!("assign poseidon_code_hash {idx}"),
+                        self.poseidon_code_hash,
+                        idx,
+                        || Value::known(poseidon_empty_code_hash),
+                    )?;
                     self.set_header_row(&mut region, 0, idx)?;
                 }
-
                 base_conf.assign_overwrite(&mut region, overwrite, challenges)?;
 
                 Ok(())

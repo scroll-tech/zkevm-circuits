@@ -1,13 +1,15 @@
 use crate::{
     evm_circuit::util::{
-        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        select, sum, CachedRegion,
+        CachedRegion,
     },
-    util::Expr,
+    util::{
+        word::{self, Word, Word32Cell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word as U256};
 use halo2_proofs::plonk::Error;
 
 /// Constraints for the words a, n, r:
@@ -20,36 +22,34 @@ use halo2_proofs::plonk::Error;
 /// case of n=0. Unlike the usual k * n + r = a, which forces r = a when n=0,
 /// this equation assures that r<n or r=n=0.
 #[derive(Clone, Debug)]
-pub(crate) struct ModGadget<F, const IS_EVM: bool> {
-    k: util::Word<F>,
-    a_or_zero: util::Word<F>,
+pub(crate) struct ModGadget<F> {
+    k: Word32Cell<F>,
+    a_or_zero: Word32Cell<F>,
     mul_add_words: MulAddWordsGadget<F>,
-    n_is_zero: IsZeroGadget<F>,
-    a_or_is_zero: IsZeroGadget<F>,
+    n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    a_or_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     lt: LtWordGadget<F>,
 }
-impl<F: Field, const IS_EVM: bool> ModGadget<F, IS_EVM> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+impl<F: Field> ModGadget<F> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
-        let k = if IS_EVM {
-            cb.query_word_rlc()
-        } else {
-            cb.query_keccak_rlc()
-        };
-        let a_or_zero = if IS_EVM {
-            cb.query_word_rlc()
-        } else {
-            cb.query_keccak_rlc()
-        };
-        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
-        let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
+        let k = cb.query_word32();
+        let a_or_zero = cb.query_word32();
+        let n_is_zero = IsZeroWordGadget::construct(cb, n);
+        let a_or_is_zero = IsZeroWordGadget::construct(cb, &a_or_zero);
+
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
-        let lt = LtWordGadget::construct(cb, r, n);
+        let lt = LtWordGadget::construct(cb, &r.to_word(), &n.to_word());
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
-        cb.require_equal(
+        cb.require_equal_word(
             "a_or_zero == if n == 0 { 0 } else { a }",
-            a_or_zero.expr(),
-            select::expr(n_is_zero.expr(), 0.expr(), a.expr()),
+            a_or_zero.to_word(),
+            Word::select(
+                n_is_zero.expr(),
+                Word::zero(),
+                a.to_word()
+            )
+            // select::expr(n_is_zero.expr(), 0.expr(), a.expr()),
         );
 
         // Constrain the result r to be valid: (r<n) ^ n==0
@@ -76,21 +76,19 @@ impl<F: Field, const IS_EVM: bool> ModGadget<F, IS_EVM> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        a: Word,
-        n: Word,
-        r: Word,
-        k: Word,
+        a: U256,
+        n: U256,
+        r: U256,
+        k: U256,
     ) -> Result<(), Error> {
-        let a_or_zero = if n.is_zero() { Word::zero() } else { a };
+        let a_or_zero = if n.is_zero() { U256::zero() } else { a };
 
-        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
-        self.a_or_zero
-            .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
-        let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
-        let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
-        self.n_is_zero.assign(region, offset, F::from(n_sum))?;
+        self.k.assign_u256(region, offset, k)?;
+        self.a_or_zero.assign_u256(region, offset, a_or_zero)?;
+
+        self.n_is_zero.assign(region, offset, word::Word::from(n))?;
         self.a_or_is_zero
-            .assign(region, offset, F::from(a_or_zero_sum))?;
+            .assign(region, offset, word::Word::from(a_or_zero))?;
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
@@ -107,17 +105,17 @@ mod tests {
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
-        mod_gadget: ModGadget<F, true>,
-        a: util::Word<F>,
-        n: util::Word<F>,
-        r: util::Word<F>,
+        mod_gadget: ModGadget<F>,
+        a: Word32Cell<F>,
+        n: Word32Cell<F>,
+        r: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let n = cb.query_word_rlc();
-            let r = cb.query_word_rlc();
+            let a = cb.query_word32();
+            let n = cb.query_word32();
+            let r = cb.query_word32();
             let mod_gadget = ModGadget::construct(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,
@@ -143,9 +141,9 @@ mod tests {
 
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-            self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-            self.r.assign(region, offset, Some(r.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, a)?;
+            self.n.assign_u256(region, offset, n)?;
+            self.r.assign_u256(region, offset, r)?;
 
             self.mod_gadget.assign(region, 0, a, n, r, k)
         }

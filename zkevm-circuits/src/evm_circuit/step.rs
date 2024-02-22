@@ -5,11 +5,15 @@ use crate::{
         util::Cell,
         witness::{Block, Call, ExecStep},
     },
-    util::Expr,
+    util::{
+        //cell_manager::{CMFixedWidthStrategy, CellManager},
+        word::{Word, WordCell},
+        Expr,
+    },
     witness::Transaction,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::{evm_types::GasCost, Field, ToWord};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
@@ -549,7 +553,7 @@ pub(crate) struct StepState<F> {
     /// In the case of a contract creation internal call, this denotes the hash
     /// of the chunk of bytes from caller's memory that represent the
     /// contract init code.
-    pub(crate) code_hash: Cell<F>,
+    pub(crate) code_hash: WordCell<F>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -596,7 +600,10 @@ impl<F: Field> Step<F> {
                 tx_id: cell_manager.query_cell(CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(CellType::StoragePhase1),
-                code_hash: cell_manager.query_cell(CellType::StoragePhase2),
+                code_hash: Word::new([
+                    cell_manager.query_cell(CellType::StoragePhase1),
+                    cell_manager.query_cell(CellType::StoragePhase1),
+                ]),
                 block_number: cell_manager.query_cell(CellType::StoragePhase1),
                 program_counter: cell_manager.query_cell(CellType::StoragePhase1),
                 stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
@@ -656,9 +663,10 @@ impl<F: Field> Step<F> {
         self.state
             .block_number
             .assign(region, offset, Value::known(F::from(step.block_num)))?;
+
         self.state
             .code_hash
-            .assign(region, offset, region.code_hash(call.code_hash))?;
+            .assign_u256(region, offset, call.code_hash.to_word())?;
         self.state.program_counter.assign(
             region,
             offset,

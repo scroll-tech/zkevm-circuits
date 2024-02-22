@@ -51,8 +51,8 @@ pub struct MptCircuitConfigArgs {
     pub poseidon_table: PoseidonTable,
     /// MptTable
     pub mpt_table: MptTable,
-    /// Challenges
-    pub challenges: Challenges,
+    // Challenges no need after word hi lo
+    // pub challenges: Challenges,
 }
 
 /// re-wrapping for mpt config
@@ -71,10 +71,9 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
         Self::ConfigArgs {
             poseidon_table,
             mpt_table,
-            challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let conf = mpt::MptCircuitConfig::configure(meta, challenges.evm_word(), &poseidon_table);
+        let conf = mpt::MptCircuitConfig::configure(meta, &poseidon_table);
         meta.lookup_any("updates in mpt table proven in mpt circuit", |meta| {
             mpt_table
                 .table_exprs(meta)
@@ -146,7 +145,7 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
                 layouter,
                 &self.mpt_updates,
                 self.row_limit,
-                challenges.evm_word(),
+                //challenges.evm_word(),
             )?;
         } else {
             config.1.load(
@@ -189,7 +188,6 @@ impl Circuit<Fr> for MptCircuit<Fr> {
                 MptCircuitConfigArgs {
                     poseidon_table,
                     mpt_table,
-                    challenges,
                 },
             )
         };

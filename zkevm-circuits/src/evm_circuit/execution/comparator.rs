@@ -5,27 +5,28 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes,
-            math_gadget::{ComparisonGadget, IsEqualGadget},
-            select, CachedRegion, Cell, Word,
+            math_gadget::{CmpWordsGadget, IsEqualGadget},
+            select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ComparatorGadget<F> {
     same_context: SameContextGadget<F>,
-    a: Word<F>,
-    b: Word<F>,
+    a: WordCell<F>,
+    b: WordCell<F>,
     result: Cell<F>,
-    comparison_lo: ComparisonGadget<F, 16>,
-    comparison_hi: ComparisonGadget<F, 16>,
     is_eq: IsEqualGadget<F>,
     is_gt: IsEqualGadget<F>,
+    word_comparison: CmpWordsGadget<F, WordCell<F>, WordCell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
@@ -36,8 +37,8 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word_rlc();
-        let b = cb.query_word_rlc();
+        let a = cb.query_word_unchecked();
+        let b = cb.query_word_unchecked();
 
         // Check if opcode is EQ
         let is_eq = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::EQ.expr());
@@ -45,42 +46,25 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         // actually do greater than instead of smaller than.
         let is_gt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::GT.expr());
 
-        // `a[0..16] <= b[0..16]`
-        let comparison_lo = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[0..16]),
-            from_bytes::expr(&b.cells[0..16]),
-        );
-        let (lt_lo, eq_lo) = comparison_lo.expr();
-
-        // `a[16..32] <= b[16..32]`
-        let comparison_hi = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[16..32]),
-            from_bytes::expr(&b.cells[16..32]),
-        );
-        let (lt_hi, eq_hi) = comparison_hi.expr();
-
-        // `a < b` when:
-        // - `a[16..32] < b[16..32]` OR
-        // - `a[16..32] == b[16..32]` AND `a[0..16] < b[0..16]`
-        let lt = select::expr(lt_hi, 1.expr(), eq_hi.clone() * lt_lo);
-        // `a == b` when both parts are equal
-        let eq = eq_hi * eq_lo;
+        let word_comparison = CmpWordsGadget::construct(cb, a.clone(), b.clone());
 
         // The result is:
         // - `lt` when LT or GT
         // - `eq` when EQ
         // Use copy to avoid degree too high for stack_push below.
-        let result = cb.copy(select::expr(is_eq.expr(), eq, lt));
+        let result = cb.copy(select::expr(
+            is_eq.expr(),
+            word_comparison.eq.clone(),
+            word_comparison.lt.clone(),
+        ));
 
         // Pop a and b from the stack, push the result on the stack.
         // When swap is enabled we swap stack places between a and b.
         // We can push result here directly because
         // it only uses the LSB of a word.
-        cb.stack_pop(select::expr(is_gt.expr(), b.expr(), a.expr()));
-        cb.stack_pop(select::expr(is_gt.expr(), a.expr(), b.expr()));
-        cb.stack_push(result.expr());
+        cb.stack_pop(Word::select(is_gt.expr(), b.to_word(), a.to_word()));
+        cb.stack_pop(Word::select(is_gt.expr(), a.to_word(), b.to_word()));
+        cb.stack_push(Word::from_lo_unchecked(result.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -97,8 +81,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
             a,
             b,
             result,
-            comparison_lo,
-            comparison_hi,
+            word_comparison,
             is_eq,
             is_gt,
         }
@@ -138,27 +121,13 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         } else {
             [step.rw_indices[0], step.rw_indices[1]]
         };
-        let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
+        let [a, b] = indices.map(|idx| block.rws[idx].stack_value());
         let result = block.rws[step.rw_indices[2]].stack_value();
 
-        // `a[0..16] <= b[0..16]`
-        self.comparison_lo.assign(
-            region,
-            offset,
-            from_bytes::value(&a[0..16]),
-            from_bytes::value(&b[0..16]),
-        )?;
+        self.word_comparison.assign(region, offset, a, b)?;
+        self.a.assign_u256(region, offset, a)?;
+        self.b.assign_u256(region, offset, b)?;
 
-        // `a[16..32] <= b[16..32]`
-        self.comparison_hi.assign(
-            region,
-            offset,
-            from_bytes::value(&a[16..32]),
-            from_bytes::value(&b[16..32]),
-        )?;
-
-        self.a.assign(region, offset, Some(a))?;
-        self.b.assign(region, offset, Some(b))?;
         self.result
             .assign(region, offset, Value::known(F::from(result.low_u64())))?;
 

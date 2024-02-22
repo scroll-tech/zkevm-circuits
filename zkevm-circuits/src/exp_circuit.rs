@@ -10,7 +10,7 @@ pub use dev::ExpCircuit as TestExpCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{ExpTable, LookupTable, U16Table},
+    table::{ExpTable, LookupTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -38,7 +38,8 @@ pub struct ExpCircuitConfig<F> {
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// u16 lookup table,
-    pub u16_table: U16Table,
+    // pub u16_table: U16Table,
+    pub u16_table: UXTable<16>,
     /// Multiplication gadget for verification of each step.
     pub mul_gadget: MulAddConfig<F>,
     /// Multiplication gadget to perform 2*n + k.
@@ -50,7 +51,8 @@ pub struct ExpCircuitArgs {
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// u16 lookup table,
-    pub u16_table: U16Table,
+    // pub u16_table: U16Table,
+    pub u16_table: UXTable<16>,
 }
 
 impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
@@ -74,7 +76,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                     meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 ])
             },
-            u16_table.into(),
+            u16_table.col,
         );
         let parity_check = MulAddChip::configure(
             meta,
@@ -84,7 +86,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                     meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 ])
             },
-            u16_table.into(),
+            u16_table.col,
         );
 
         // multiplier <- 2^64

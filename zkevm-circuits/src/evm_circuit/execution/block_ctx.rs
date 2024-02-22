@@ -6,29 +6,33 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, RandomLinearCombination,
+            from_bytes, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {
     same_context: SameContextGadget<F>,
-    value: RandomLinearCombination<F, N_BYTES>,
+    //value: RandomLinearCombination<F, N_BYTES>,
+    value: Word32Cell<F>,
 }
 
 impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
     fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let value = cb.query_word_rlc();
+        let value = cb.query_word32();
 
         // Push the const generic parameter N_BYTES value to the stack
-        cb.stack_push(value.expr());
+        cb.stack_push(value.to_word());
 
         // Get op's FieldTag
         let opcode = cb.query_cell();
@@ -38,11 +42,16 @@ impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
         // Lookup block table with block context ops
         // TIMESTAMP/NUMBER/GASLIMIT, COINBASE and DIFFICULTY/BASEFEE
         let value_expr = if N_BYTES == N_BYTES_WORD {
-            value.expr()
+            cb.word_rlc(value.limbs.clone().map(|l| l.expr()))
         } else {
-            from_bytes::expr(&value.cells)
+            from_bytes::expr(&value.limbs[..N_BYTES])
         };
-        cb.block_lookup(blockctx_tag, cb.curr.state.block_number.expr(), value_expr);
+
+        cb.block_lookup(
+            blockctx_tag,
+            Some(cb.curr.state.block_number.expr()),
+            value_expr,
+        );
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -92,11 +101,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u64.value.assign(
-            region,
-            offset,
-            Some(u64::try_from(value).unwrap().to_le_bytes()),
-        )?;
+        self.value_u64.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }
@@ -133,15 +138,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u160.value.assign(
-            region,
-            offset,
-            Some(
-                value.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.value_u160.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }
@@ -188,9 +185,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
 
         let value = block.rws[step.rw_indices[0]].stack_value();
 
-        self.value_u256
-            .value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.value_u256.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }
@@ -210,7 +205,7 @@ impl<F: Field> ExecutionGadget<F> for DifficultyGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Always returns 0 for scroll.
-        cb.stack_push(0.expr());
+        cb.stack_push(Word::from_lo_unchecked(0.expr()));
         let opcode = cb.query_cell();
         // State transition
         let step_state_transition = StepStateTransition {

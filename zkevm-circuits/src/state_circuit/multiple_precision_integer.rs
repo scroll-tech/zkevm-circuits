@@ -1,8 +1,8 @@
 use super::{lookups, param::*};
 use crate::util::Expr;
-use eth_types::{Address, Field};
+use eth_types::{Address, Field, ToLittleEndian, Word};
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 
 pub trait ToLimbs<const N: usize> {
     fn to_limbs(&self) -> [u16; N];
+    fn annotation() -> &'static str;
 }
 
 impl ToLimbs<N_LIMBS_ACCOUNT_ADDRESS> for Address {
@@ -21,11 +22,28 @@ impl ToLimbs<N_LIMBS_ACCOUNT_ADDRESS> for Address {
         let le_bytes: Vec<_> = self.0.iter().rev().cloned().collect();
         le_bytes_to_limbs(&le_bytes).try_into().unwrap()
     }
+
+    fn annotation() -> &'static str {
+        "Address"
+    }
 }
 
 impl ToLimbs<N_LIMBS_RW_COUNTER> for u32 {
     fn to_limbs(&self) -> [u16; 2] {
         le_bytes_to_limbs(&self.to_le_bytes()).try_into().unwrap()
+    }
+
+    fn annotation() -> &'static str {
+        "u32"
+    }
+}
+
+impl ToLimbs<N_LIMBS_WORD> for Word {
+    fn to_limbs(&self) -> [u16; N_LIMBS_WORD] {
+        le_bytes_to_limbs(&self.to_le_bytes()).try_into().unwrap()
+    }
+    fn annotation() -> &'static str {
+        "Word"
     }
 }
 
@@ -58,54 +76,30 @@ impl<F: Field, const N: usize> Queries<F, N> {
     }
 }
 
-impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
+impl<T, const N: usize> Config<T, N>
+where
+    T: ToLimbs<N>,
+{
     pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        value: Address,
+        value: T,
     ) -> Result<(), Error> {
-        assign_to_config(region, self, value, offset, "address")
+        for (i, &limb) in value.to_limbs().iter().enumerate() {
+            region.assign_advice(
+                || format!("limb[{}] in {} mpi", i, T::annotation()),
+                self.limbs[i],
+                offset,
+                || Value::known(F::from(limb as u64)),
+            )?;
+        }
+        Ok(())
     }
-
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
         annotate_columns_in_config(region, self, prefix, "address")
     }
-}
-
-impl Config<u32, N_LIMBS_RW_COUNTER> {
-    pub fn assign<F: Field>(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        value: u32,
-    ) -> Result<(), Error> {
-        assign_to_config(region, self, value, offset, "u32")
-    }
-
-    /// Annotates columns of this gadget embedded within a circuit region.
-    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
-        annotate_columns_in_config(region, self, prefix, "u32")
-    }
-}
-
-fn assign_to_config<T: ToLimbs<N>, const N: usize, F: Field>(
-    region: &mut Region<'_, F>,
-    config: &Config<T, N>,
-    value: T,
-    offset: usize,
-    prefix: &str,
-) -> Result<(), Error> {
-    for (i, &limb) in value.to_limbs().iter().enumerate() {
-        region.assign_advice(
-            || format!("limb[{i}] in {prefix} mpi"),
-            config.limbs[i],
-            offset,
-            || Value::known(F::from(limb as u64)),
-        )?;
-    }
-    Ok(())
 }
 
 fn annotate_columns_in_config<T: ToLimbs<N>, const N: usize, F: Field>(
@@ -125,53 +119,51 @@ fn annotate_columns_in_config<T: ToLimbs<N>, const N: usize, F: Field>(
         .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
 }
 
-pub struct Chip<F: Field, T, const N: usize>
+pub struct Chip<F: Field, T, const N_LIMBS: usize, const N_VALUES: usize>
 where
-    T: ToLimbs<N>,
+    T: ToLimbs<N_LIMBS>,
 {
-    config: Config<T, N>,
+    _config: Config<T, N_LIMBS>,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field, T, const N: usize> Chip<F, T, N>
+impl<F: Field, T, const N_LIMBS: usize, const N_VALUES: usize> Chip<F, T, N_LIMBS, N_VALUES>
 where
-    T: ToLimbs<N>,
+    T: ToLimbs<N_LIMBS>,
 {
-    pub fn construct(config: Config<T, N>) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        value: Column<Advice>,
+        values: [Column<Advice>; N_VALUES],
         lookup: lookups::Config,
-    ) -> Config<T, N> {
-        let limbs = [0; N].map(|_| meta.advice_column());
+    ) -> Config<T, N_LIMBS> {
+        assert_eq!(N_LIMBS & N_VALUES, 0);
+        let limbs_per_value = N_LIMBS / N_VALUES;
+
+        let limbs = [0; N_LIMBS].map(|_| meta.advice_column());
 
         for &limb in &limbs {
             lookup.range_check_u16(meta, "limb fits into u16", |meta| {
                 meta.query_advice(limb, Rotation::cur())
             });
         }
-        meta.create_gate("mpi value matches claimed limbs", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            let value = meta.query_advice(value, Rotation::cur());
-            let limbs = limbs.map(|limb| meta.query_advice(limb, Rotation::cur()));
-            vec![selector * (value - value_from_limbs(&limbs))]
-        });
+
+        for (n, value) in values.iter().enumerate() {
+            meta.create_gate("mpi value matches claimed limbs", |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                let value_expr = meta.query_advice(*value, Rotation::cur());
+                let value_limbs = &limbs[n * limbs_per_value..(n + 1) * limbs_per_value];
+                let limbs_expr = value_limbs
+                    .iter()
+                    .map(|limb| meta.query_advice(*limb, Rotation::cur()));
+                vec![selector * (value_expr - value_from_limbs(&limbs_expr.collect::<Vec<_>>()))]
+            });
+        }
 
         Config {
             limbs,
             _marker: PhantomData,
         }
-    }
-
-    pub fn load(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        Ok(())
     }
 }
 

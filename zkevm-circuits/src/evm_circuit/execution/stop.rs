@@ -15,7 +15,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -36,7 +39,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let code_length = cb.query_cell();
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
+        cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_length.expr());
         let is_within_range =
             LtGadget::construct(cb, cb.curr.state.program_counter.expr(), code_length.expr());
         let opcode = cb.query_cell();
@@ -53,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         );
 
         // Call ends with STOP must be successful
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 1.expr());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::one());
 
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(

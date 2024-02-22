@@ -1,14 +1,14 @@
 //! Table definitions used cross-circuits
 
 use crate::{
-    copy_circuit::util::number_or_hash_to_field,
+    copy_circuit::util::number_or_hash_to_word,
     evm_circuit::util::{
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         rlc,
     },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, Challenges},
+    util::{build_tx_log_address, word, Challenges},
     witness::{
         Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen, Rw, RwMap,
         RwRow, Transaction,
@@ -214,7 +214,8 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    //pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
     /// Access list address
     pub access_list_address: Column<Advice>,
 }
@@ -229,7 +230,8 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag,
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            //value: meta.advice_column_in(SecondPhase),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
             access_list_address: meta.advice_column(),
         }
     }
@@ -244,7 +246,7 @@ impl TxTable {
         max_calldata: usize,
         chain_id: u64,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<Vec<word::Word<AssignedCell<F, F>>>, Error> {
         assert!(
             txs.len() <= max_txs,
             "txs.len() <= max_txs: txs.len()={}, max_txs={}",
@@ -269,8 +271,9 @@ impl TxTable {
             tag: &Column<Fixed>,
             row: &[Value<F>; 5],
             msg: &str,
-        ) -> Result<AssignedCell<F, F>, Error> {
-            let mut value_cell = None;
+        ) -> Result<word::Word<AssignedCell<F, F>>, Error> {
+            let mut value_cell_lo: Option<AssignedCell<F, F>> = None;
+            let mut value_cell_hi: Option<AssignedCell<F, F>> = None;
             for (index, column) in advice_columns.iter().enumerate() {
                 let cell = region.assign_advice(
                     || format!("tx table {msg} row {offset}"),
@@ -278,11 +281,15 @@ impl TxTable {
                     offset,
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
-                // tx_id, index, value
+                // tx_id, index, value_lo, value_hi
                 if index == 2 {
-                    value_cell = Some(cell);
+                    value_cell_lo = Some(cell.clone());
+                }
+                if index == 3 {
+                    value_cell_hi = Some(cell);
                 }
             }
+
             region.assign_fixed(
                 || format!("tx table q_enable row {offset}"),
                 q_enable,
@@ -295,7 +302,10 @@ impl TxTable {
                 offset,
                 || row[1],
             )?;
-            Ok(value_cell.unwrap())
+            Ok(word::Word::new([
+                value_cell_lo.unwrap(),
+                value_cell_hi.unwrap(),
+            ]))
         }
 
         layouter.assign_region(
@@ -303,7 +313,7 @@ impl TxTable {
             |mut region| {
                 let mut offset = 0;
                 let mut tx_value_cells = vec![];
-                let advice_columns = [self.tx_id, self.index, self.value];
+                let advice_columns = [self.tx_id, self.index, self.value.lo(), self.value.hi()];
                 assign_row(
                     &mut region,
                     offset,
@@ -392,7 +402,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            self.value.into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
             self.access_list_address.into(),
         ]
     }
@@ -403,7 +414,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             String::from("tx_id"),
             String::from("tag"),
             String::from("index"),
-            String::from("value"),
+            String::from("value lo"),
+            String::from("value hi"),
             String::from("access_list_address"),
         ]
     }
@@ -414,7 +426,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value, Rotation::cur()),
+            meta.query_advice(self.value.lo(), Rotation::cur()),
+            meta.query_advice(self.value.hi(), Rotation::cur()),
             meta.query_advice(self.access_list_address, Rotation::cur()),
         ]
     }
@@ -590,15 +603,15 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key: Column<Advice>,
+    pub storage_key: word::Word<Column<Advice>>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
     /// Value Previous
-    pub value_prev: Column<Advice>,
+    pub value_prev: word::Word<Column<Advice>>,
     /// Aux1
-    pub aux1: Column<Advice>,
+    pub aux1: word::Word<Column<Advice>>,
     /// Aux2 (Committed Value)
-    pub aux2: Column<Advice>,
+    pub aux2: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -611,11 +624,16 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.id.into(),
             self.address.into(),
             self.field_tag.into(),
-            self.storage_key.into(),
-            self.value.into(),
-            self.value_prev.into(),
-            self.aux1.into(),
-            self.aux2.into(),
+            self.storage_key.lo().into(),
+            self.storage_key.hi().into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
+            self.value_prev.lo().into(),
+            self.value_prev.hi().into(),
+            self.aux1.lo().into(),
+            self.aux1.hi().into(),
+            self.aux2.lo().into(),
+            self.aux2.hi().into(),
         ]
     }
 
@@ -628,11 +646,16 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("id"),
             String::from("address"),
             String::from("field_tag"),
-            String::from("storage_key"),
-            String::from("value"),
-            String::from("value_prev"),
-            String::from("aux1"),
-            String::from("aux2"),
+            String::from("storage_key_lo"),
+            String::from("storage_key_hi"),
+            String::from("value_lo"),
+            String::from("value_hi"),
+            String::from("value_prev_lo"),
+            String::from("value_prev_hi"),
+            String::from("aux1_lo"),
+            String::from("aux1_hi"),
+            String::from("aux2_lo"),
+            String::from("aux2_hi"),
         ]
     }
 }
@@ -647,13 +670,11 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: meta.advice_column_in(SecondPhase),
-            value: meta.advice_column_in(SecondPhase),
-            value_prev: meta.advice_column_in(SecondPhase),
-            // It seems that aux1 for the moment is not using randomness
-            // TODO check in a future review
-            aux1: meta.advice_column_in(SecondPhase),
-            aux2: meta.advice_column_in(SecondPhase),
+            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            aux1: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            aux2: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
     fn assign<F: Field>(
@@ -675,14 +696,25 @@ impl RwTable {
             (self.id, row.id),
             (self.address, row.address),
             (self.field_tag, row.field_tag),
+            // (self.storage_key, row.storage_key),
+            // (self.value, row.value),
+            // (self.value_prev, row.value_prev),
+            // (self.aux1, row.aux1),
+            // (self.aux2, row.aux2),
+        ] {
+            region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
+        }
+
+        for (column, value) in [
             (self.storage_key, row.storage_key),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
             (self.aux1, row.aux1),
             (self.aux2, row.aux2),
         ] {
-            region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
+            value.assign_advice(region, || "assign rw row on rw table", column, offset)?;
         }
+
         Ok(())
     }
 
@@ -706,11 +738,11 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        challenges: Value<F>,
+        _challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
-            self.assign(region, offset, &row.table_assignment(challenges))?;
+            self.assign(region, offset, &row.table_assignment())?;
         }
         Ok(())
     }
@@ -719,10 +751,10 @@ impl RwTable {
         &self,
         region: &mut Region<'_, F>,
         rws: &[Rw],
-        challenges: Value<F>,
+        _challenges: Value<F>,
     ) -> Result<(), Error> {
         for (offset, row) in rws.iter().enumerate() {
-            self.assign(region, offset, &row.table_assignment(challenges))?;
+            self.assign(region, offset, &row.table_assignment())?;
         }
         Ok(())
     }
@@ -751,43 +783,59 @@ pub struct MptTable {
     /// Address
     pub address: Column<Advice>,
     /// Storage key
-    pub storage_key: Column<Advice>,
+    pub storage_key: word::Word<Column<Advice>>,
     /// Proof type
     pub proof_type: Column<Advice>,
     /// New root
-    pub new_root: Column<Advice>,
+    pub new_root: word::Word<Column<Advice>>,
     /// Old root
-    pub old_root: Column<Advice>,
+    pub old_root: word::Word<Column<Advice>>,
     /// New value
-    pub new_value: Column<Advice>,
+    pub new_value: word::Word<Column<Advice>>,
     /// Old value
-    pub old_value: Column<Advice>,
+    pub old_value: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.q_enable.into(),
-            self.address.into(),
-            self.storage_key.into(),
-            self.proof_type.into(),
-            self.new_root.into(),
-            self.old_root.into(),
-            self.new_value.into(),
-            self.old_value.into(),
-        ]
+        let mut columns: Vec<Column<Any>> = vec![self.q_enable.into()];
+        columns.extend(
+            vec![
+                self.address,
+                self.storage_key.lo(),
+                self.storage_key.hi(),
+                self.proof_type,
+                self.new_root.lo(),
+                self.new_root.hi(),
+                self.old_root.lo(),
+                self.old_root.hi(),
+                self.new_value.lo(),
+                self.new_value.hi(),
+                self.old_value.lo(),
+                self.old_value.hi(),
+            ]
+            .into_iter()
+            .map(|col| col.into())
+            .collect::<Vec<Column<Any>>>(),
+        );
+        columns
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("q_enable"),
             String::from("address"),
-            String::from("storage_key"),
+            String::from("storage_key_lo"),
+            String::from("storage_key_hi"),
             String::from("proof_type"),
-            String::from("new_root"),
-            String::from("old_root"),
-            String::from("new_value"),
-            String::from("old_value"),
+            String::from("new_root_lo"),
+            String::from("new_root_hi"),
+            String::from("old_root_lo"),
+            String::from("old_root_hi"),
+            String::from("new_value_lo"),
+            String::from("new_value_hi"),
+            String::from("old_value_lo"),
+            String::from("old_value_hi"),
         ]
     }
 }
@@ -798,12 +846,12 @@ impl MptTable {
         Self {
             q_enable: meta.fixed_column(),
             address: meta.advice_column(),
-            storage_key: meta.advice_column_in(SecondPhase),
+            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             proof_type: meta.advice_column(),
-            new_root: meta.advice_column_in(SecondPhase),
-            old_root: meta.advice_column_in(SecondPhase),
-            new_value: meta.advice_column_in(SecondPhase),
-            old_value: meta.advice_column_in(SecondPhase),
+            new_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            old_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            new_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            old_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -821,7 +869,7 @@ impl MptTable {
         )?;
         let mpt_table_columns = <MptTable as LookupTable<F>>::advice_columns(self);
         for (column, value) in mpt_table_columns.iter().zip_eq(row.values()) {
-            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
+            region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
         }
         Ok(())
     }
@@ -831,11 +879,11 @@ impl MptTable {
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
         max_mpt_rows: usize,
-        randomness: Value<F>,
+        _randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table zkevm",
-            |mut region| self.load_with_region(&mut region, updates, max_mpt_rows, randomness),
+            |mut region| self.load_with_region(&mut region, updates, max_mpt_rows),
         )
     }
 
@@ -844,12 +892,11 @@ impl MptTable {
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
         max_mpt_rows: usize,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         let num_threads = std::thread::available_parallelism().unwrap().get();
         let chunk_size = (max_mpt_rows + num_threads - 1) / num_threads;
         let mpt_update_rows = updates
-            .table_assignments(randomness)
+            .table_assignments()
             .into_iter()
             .chain(repeat(MptUpdateRow::padding()))
             .take(max_mpt_rows)
@@ -884,9 +931,9 @@ impl MptTable {
         region: &mut Region<'_, F>,
         updates: &MptUpdates,
         max_mpt_rows: usize,
-        randomness: Value<F>,
+        //randomness: Value<F>,
     ) -> Result<(), Error> {
-        let mpt_update_rows = updates.table_assignments(randomness);
+        let mpt_update_rows = updates.table_assignments();
         for (offset, row) in mpt_update_rows
             .into_iter()
             .chain(repeat(MptUpdateRow::padding()))
@@ -1147,7 +1194,7 @@ pub struct BytecodeTable {
     /// Is Enabled
     pub q_enable: Column<Fixed>,
     /// Code Hash
-    pub code_hash: Column<Advice>,
+    pub code_hash: word::Word<Column<Advice>>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -1165,7 +1212,7 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = meta.advice_column_in(SecondPhase);
+        let code_hash = word::Word::new([meta.advice_column(), meta.advice_column()]);
         let push_rlc = meta.advice_column_in(SecondPhase);
         Self {
             q_enable: meta.fixed_column(),
@@ -1220,7 +1267,8 @@ impl BytecodeTable {
     fn columns_mini(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
-            self.code_hash.into(),
+            self.code_hash.lo().into(),
+            self.code_hash.hi().into(),
             self.tag.into(),
             self.index.into(),
             self.value.into(),
@@ -1240,7 +1288,8 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
-            self.code_hash.into(),
+            self.code_hash.lo().into(),
+            self.code_hash.hi().into(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),
@@ -1252,7 +1301,8 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("q_enable"),
-            String::from("code_hash"),
+            String::from("code_hash_lo"),
+            String::from("code_hash_hi"),
             String::from("tag"),
             String::from("index"),
             String::from("is_code"),
@@ -1313,6 +1363,7 @@ pub struct BlockTable {
     pub index: Column<Advice>,
     /// Value
     pub value: Column<Advice>,
+    //pub value: word::Word<Column<Advice>>,
 }
 
 impl BlockTable {
@@ -1322,6 +1373,7 @@ impl BlockTable {
             tag: meta.fixed_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
+            //value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -1407,6 +1459,8 @@ pub struct KeccakTable {
     pub input_len: Column<Advice>,
     /// RLC of the hash result
     pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+    /// TODO: finally remove output_rlc and use Word hi lo
+    pub output: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -1417,6 +1471,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             self.input_rlc.into(),
             self.input_len.into(),
             self.output_rlc.into(),
+            self.output.lo().into(),
+            self.output.hi().into(),
         ]
     }
 
@@ -1427,6 +1483,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             String::from("input_rlc"),
             String::from("input_len"),
             String::from("output_rlc"),
+            String::from("output_lo"),
+            String::from("output_hi"),
         ]
     }
 }
@@ -1440,6 +1498,7 @@ impl KeccakTable {
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
             output_rlc: meta.advice_column_in(SecondPhase),
+            output: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -1448,7 +1507,7 @@ impl KeccakTable {
     pub fn assignments<F: Field>(
         input: &[u8],
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 4]> {
+    ) -> Vec<[Value<F>; 6]> {
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
@@ -1456,18 +1515,20 @@ impl KeccakTable {
         let mut keccak = Keccak::default();
         keccak.update(input);
         let output = keccak.digest();
-        let output_rlc = challenges.evm_word().map(|challenge| {
-            rlc::value(
-                &Word::from_big_endian(output.as_slice()).to_le_bytes(),
-                challenge,
-            )
-        });
+        let output_word = Word::from_big_endian(output.as_slice());
+        let output_bytes = output_word.to_le_bytes();
+        let output_rlc = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(&output_bytes, challenge));
+        let output_lo_hi = word::Word::from(output_word);
 
         vec![[
             Value::known(F::one()),
             input_rlc,
             Value::known(input_len),
             output_rlc,
+            Value::known(output_lo_hi.lo()),
+            Value::known(output_lo_hi.hi()),
         ]]
     }
 
@@ -1478,7 +1539,7 @@ impl KeccakTable {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        values: [Value<F>; 4],
+        values: [Value<F>; 6],
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         let mut res = vec![];
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
@@ -1553,12 +1614,15 @@ impl KeccakTable {
         &self,
         value_rlc: Column<Advice>,
         length: Column<Advice>,
-        code_hash: Column<Advice>,
+        //code_hash: Column<Advice>,
+        code_hash_word: word::Word<Column<Advice>>,
     ) -> Vec<(Column<Advice>, Column<Advice>)> {
         vec![
             (value_rlc, self.input_rlc),
             (length, self.input_len),
-            (code_hash, self.output_rlc),
+            //(code_hash, self.output),
+            (code_hash_word.lo(), self.output.lo()),
+            (code_hash_word.hi(), self.output.hi()),
         ]
     }
 }
@@ -1695,9 +1759,9 @@ pub struct CopyTable {
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below:
     /// 1. Call ID/Caller ID for CopyDataType::Memory
-    /// 2. RLC encoding of bytecode hash for CopyDataType::Bytecode
+    /// 2. The hi/lo limbs of bytecode hash for CopyDataType::Bytecode
     /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
-    pub id: Column<Advice>,
+    pub id: word::Word<Column<Advice>>,
     /// The source/destination address for this copy step.  Can be memory
     /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
@@ -1725,21 +1789,23 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, { CopyDataType::N_BITS }>,
 }
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
+type CopyTableRow<F> = [(Value<F>, &'static str); 9];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 12];
 
 /// CopyThread is the state used while generating rows of the copy table.
 struct CopyThread<F: Field> {
     tag: CopyDataType,
     is_rw: bool,
-    id: Value<F>,
+    id: word::Word<Value<F>>,
     front_mask: bool,
     addr: u64,
     addr_end: u64,
     bytes_left: u64,
     value_acc: Value<F>,
-    word_rlc: Value<F>,
-    word_rlc_prev: Value<F>,
+    //word_rlc: Value<F>,
+    value_word: word::Word<Value<F>>,
+    //word_rlc_prev: Value<F>,
+    value_word_prev: word::Word<Value<F>>,
 }
 
 impl CopyTable {
@@ -1748,7 +1814,7 @@ impl CopyTable {
         Self {
             q_enable,
             is_first: meta.advice_column(),
-            id: meta.advice_column_in(SecondPhase),
+            id: word::Word::new([meta.advice_column(), meta.advice_column()]),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
@@ -1805,31 +1871,35 @@ impl CopyTable {
 
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
+        let mut value_word_read_bytes: [u8; 32] = [0; 32];
+        let mut value_word_write_bytes: [u8; 32] = [0; 32];
+        let mut value_word_read_prev_bytes: [u8; 32] = [0; 32];
+        let mut value_word_write_prev_bytes: [u8; 32] = [0; 32];
 
         let mut reader = CopyThread {
             tag: copy_event.src_type,
             is_rw: copy_event.is_source_rw(),
-            id: number_or_hash_to_field(&copy_event.src_id, challenges.evm_word()),
+            id: number_or_hash_to_word(&copy_event.src_id),
             front_mask: true,
             addr: copy_event.src_addr,
             addr_end: copy_event.src_addr_end,
             bytes_left: copy_event.copy_length(),
             value_acc: Value::known(F::zero()),
-            word_rlc: Value::known(F::zero()),
-            word_rlc_prev: Value::known(F::zero()),
+            value_word: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
+            value_word_prev: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
         };
 
         let mut writer = CopyThread {
             tag: copy_event.dst_type,
             is_rw: copy_event.is_destination_rw(),
-            id: number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word()),
+            id: number_or_hash_to_word(&copy_event.dst_id),
             front_mask: true,
             addr: copy_event.dst_addr,
             addr_end: copy_event.dst_addr + copy_event.full_length(),
             bytes_left: reader.bytes_left,
             value_acc: Value::known(F::zero()),
-            word_rlc: Value::known(F::zero()),
-            word_rlc_prev: Value::known(F::zero()),
+            value_word: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
+            value_word_prev: word::Word::new([Value::known(F::zero()), Value::known(F::zero())]),
         };
 
         let is_access_list = copy_event.src_type == CopyDataType::AccessListAddresses
@@ -1857,10 +1927,18 @@ impl CopyTable {
             }
             let copy_step = copy_step;
 
-            let thread = if is_read_step {
-                &mut reader
+            let (thread, value_word_bytes, value_word_prev_bytes) = if is_read_step {
+                (
+                    &mut reader,
+                    &mut value_word_read_bytes,
+                    &mut value_word_read_prev_bytes,
+                )
             } else {
-                &mut writer
+                (
+                    &mut writer,
+                    &mut value_word_write_bytes,
+                    &mut value_word_write_prev_bytes,
+                )
             };
 
             let is_first = step_idx == 0;
@@ -1898,26 +1976,48 @@ impl CopyTable {
             }
             if (step_idx / 2) % 32 == 0 {
                 // reset
-                thread.word_rlc = Value::known(F::zero());
-                thread.word_rlc_prev = Value::known(F::zero());
+                thread.value_word =
+                    word::Word::new([Value::known(F::zero()), Value::known(F::zero())]);
+                thread.value_word_prev =
+                    word::Word::new([Value::known(F::zero()), Value::known(F::zero())]);
+                *value_word_bytes = [0; 32];
+                *value_word_prev_bytes = [0; 32];
             }
-            thread.word_rlc = thread.word_rlc * challenges.evm_word() + value;
-            thread.word_rlc_prev = if is_read_step {
-                thread.word_rlc // Reader does not change the word.
+
+            let word_index = (step_idx as u64 / 2) % 32;
+            value_word_bytes[word_index as usize] = copy_step.value;
+
+            let u256_word = U256::from_big_endian(value_word_bytes);
+            thread.value_word = word::Word::from(u256_word).into_value();
+
+            thread.value_word_prev = if is_read_step {
+                thread.value_word // Reader does not change the word.
             } else {
-                thread.word_rlc_prev * challenges.evm_word() + value_prev
+                value_word_prev_bytes[word_index as usize] = copy_step.prev_value;
+                let u256_word_prev = U256::from_big_endian(value_word_prev_bytes);
+                word::Word::from(u256_word_prev).into_value()
             };
 
             if is_access_list {
+                // let address_pair = copy_event.access_list[step_idx / 2];
+                // thread.value_word = word::Word::new(access_list.address.to_scalar().unwrap());
+                // thread.value_word_prev = word::Word::from(address_pair.1).into_value();
+
                 // Save address, storage_key, storage_key_index and is_warm_prev
                 // to column value_word_rlc, value_word_rlc_prev, value and
                 // value_prev in copy circuit.
                 let access_list = &copy_event.access_list[step_idx / 2];
+                thread.value_word =
+                    word::Word::new([access_list.address.to_scalar().unwrap(), F::zero()])
+                        .into_value();
+                // TODO: check if take use of storage_key rlc value ?
+                thread.value_word_prev = word::Word::from(access_list.storage_key).into_value();
 
-                thread.word_rlc = Value::known(access_list.address.to_scalar().unwrap());
-                thread.word_rlc_prev = challenges
-                    .evm_word()
-                    .map(|challenge| rlc::value(&access_list.storage_key.to_le_bytes(), challenge));
+                // thread.word_rlc = Value::known(access_list.address.to_scalar().unwrap());
+                // thread.word_rlc_prev = challenges
+                //     .evm_word()
+                //     .map(|challenge| rlc::value(&access_list.storage_key.to_le_bytes(),
+                // challenge));
             }
 
             let word_index = (step_idx as u64 / 2) % 32;
@@ -1935,7 +2035,8 @@ impl CopyTable {
                 thread.tag,
                 [
                     (Value::known(F::from(is_first)), "is_first"),
-                    (thread.id, "id"),
+                    (thread.id.lo(), "id_lo"),
+                    (thread.id.hi(), "id_hi"),
                     (Value::known(addr), "addr"),
                     (Value::known(F::from(thread.addr_end)), "src_addr_end"),
                     (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
@@ -1947,8 +2048,10 @@ impl CopyTable {
                     (Value::known(F::from(is_last)), "is_last"),
                     (value, "value"),
                     (value_prev, "value_prev"),
-                    (thread.word_rlc, "value_word_rlc"),
-                    (thread.word_rlc_prev, "value_word_rlc_prev"),
+                    (thread.value_word.lo(), "value_word lo"),
+                    (thread.value_word.hi(), "value_word hi"),
+                    (thread.value_word_prev.lo(), "value_word_prev lo"),
+                    (thread.value_word_prev.hi(), "value_word_prev hi"),
                     (thread.value_acc, "value_acc"),
                     (Value::known(F::from(is_pad)), "is_pad"),
                     (Value::known(F::from(copy_step.mask)), "mask"),
@@ -2037,7 +2140,9 @@ impl<F: Field> LookupTable<F> for CopyTable {
         vec![
             self.q_enable.into(),
             self.is_first.into(),
-            self.id.into(),
+            //self.id.into(),
+            self.id.lo().into(),
+            self.id.hi().into(),
             self.addr.into(),
             self.src_addr_end.into(),
             self.real_bytes_left.into(),
@@ -2051,7 +2156,9 @@ impl<F: Field> LookupTable<F> for CopyTable {
         vec![
             String::from("q_enable"),
             String::from("is_first"),
-            String::from("id"),
+            //String::from("id"),
+            String::from("id_lo"),
+            String::from("id_hi"),
             String::from("addr"),
             String::from("src_addr_end"),
             String::from("real_bytes_left"),
@@ -2065,13 +2172,15 @@ impl<F: Field> LookupTable<F> for CopyTable {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.is_first, Rotation::cur()),
-            meta.query_advice(self.id, Rotation::cur()), // src_id
-            self.tag.value(Rotation::cur())(meta),       // src_tag
-            meta.query_advice(self.id, Rotation::next()), // dst_id
-            self.tag.value(Rotation::next())(meta),      // dst_tag
-            meta.query_advice(self.addr, Rotation::cur()), // src_addr
+            meta.query_advice(self.id.lo(), Rotation::cur()), // src_id
+            meta.query_advice(self.id.hi(), Rotation::cur()), // src_id
+            self.tag.value(Rotation::cur())(meta),            // src_tag
+            meta.query_advice(self.id.lo(), Rotation::next()), // dst_id
+            meta.query_advice(self.id.hi(), Rotation::next()), // dst_id
+            self.tag.value(Rotation::next())(meta),           // dst_tag
+            meta.query_advice(self.addr, Rotation::cur()),    // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
-            meta.query_advice(self.addr, Rotation::next()), // dst_addr
+            meta.query_advice(self.addr, Rotation::next()),   // dst_addr
             meta.query_advice(self.real_bytes_left, Rotation::cur()), // real_length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
@@ -2456,7 +2565,10 @@ pub struct SigTable {
     /// Indicates whether or not the gates are enabled on the current row.
     pub q_enable: Column<Fixed>,
     /// Random-linear combination of the Keccak256 hash of the message that's signed.
+    /// currently do not change to word hi-lo type (msg_hash_word) becuase it is related to ecc
+    /// chip. ecc chip requires rlc value to check.
     pub msg_hash_rlc: Column<Advice>,
+    // TODO: sig_r_rlc, sig_s_rlc to word in the future.
     /// should be in range [0, 1]
     pub sig_v: Column<Advice>,
     /// Random-linear combination of the signature's `r` component.
@@ -2475,6 +2587,7 @@ impl SigTable {
         Self {
             q_enable: meta.fixed_column(),
             msg_hash_rlc: meta.advice_column_in(SecondPhase),
+            // msg_hash_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
             sig_v: meta.advice_column(),
             sig_s_rlc: meta.advice_column_in(SecondPhase),
             sig_r_rlc: meta.advice_column_in(SecondPhase),
@@ -2503,6 +2616,11 @@ impl SigTable {
                             challenge,
                         )
                     });
+
+                    // let msg_hash_word =
+                    //     word::Word::from(Word::from_big_endian(&sign_data.msg_hash.to_bytes()))
+                    //         .map(Value::<F>::known);
+
                     let sig_r_rlc = evm_word.map(|challenge| {
                         rlc::value(
                             sign_data.signature.0.to_bytes().iter().collect_vec(),
@@ -2542,6 +2660,13 @@ impl SigTable {
                             || value,
                         )?;
                     }
+
+                    // msg_hash_word.assign_advice(
+                    //     &mut region,
+                    //     || format!("sig table msg_hash_word {offset}"),
+                    //     self.msg_hash_word,
+                    //     offset,
+                    // )?;
                 }
 
                 Ok(())
@@ -2557,6 +2682,8 @@ impl<F: Field> LookupTable<F> for SigTable {
         vec![
             self.q_enable.into(),
             self.msg_hash_rlc.into(),
+            // self.msg_hash_word.lo().into(),
+            // self.msg_hash_word.hi().into(),
             self.sig_v.into(),
             self.sig_r_rlc.into(),
             self.sig_s_rlc.into(),
@@ -2569,6 +2696,8 @@ impl<F: Field> LookupTable<F> for SigTable {
         vec![
             String::from("q_enable"),
             String::from("msg_hash_rlc"),
+            String::from("msg_hash_word lo"),
+            String::from("msg_hash_word hi"),
             String::from("sig_v"),
             String::from("sig_r_rlc"),
             String::from("sig_s_rlc"),
@@ -3151,3 +3280,72 @@ impl<const MAX: usize> From<RangeTable<MAX>> for TableColumn {
         table.0
     }
 }
+
+/// Lookup table for max n bits range check
+#[derive(Clone, Copy, Debug)]
+pub struct UXTable<const N_BITS: usize> {
+    /// content col in the table
+    pub col: Column<Fixed>,
+    // col: TableColumn,
+}
+
+impl<const N_BITS: usize> UXTable<N_BITS> {
+    /// Construct the UXTable.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            col: meta.fixed_column(),
+            // col: meta.lookup_table_column(),
+        }
+    }
+
+    /// Load the `UXTable` for range check
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        //layouter.assign_table(
+        layouter.assign_region(
+            || format!("assign u{} fixed column", 8),
+            |mut region| {
+                // |mut table| {
+                for i in 0..(1 << N_BITS) {
+                    region.assign_fixed(
+                        || format!("assign {i} in u{N_BITS} fixed column"),
+                        self.col,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                    // table.assign_cell(
+                    //     || format!("range at offset = {i}"),
+                    //     self.col,
+                    //     i,
+                    //     || Value::known(F::from(i as u64)),
+                    // )?;
+                }
+                Ok(())
+            },
+        )?;
+        Ok(())
+    }
+}
+
+impl<F: Field, const N_BITS: usize> LookupTable<F> for UXTable<N_BITS> {
+    fn columns(&self) -> Vec<Column<Any>> {
+        // vec![self.col.into()]
+        vec![self.col.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![format!("u{N_BITS}_col")]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![meta.query_fixed(self.col, Rotation::cur())]
+    }
+}
+
+// impl<const N_BITS: usize> From<UXTable<N_BITS>> for TableColumn {
+//     fn from(table: UXTable<N_BITS>) -> TableColumn {
+//        //table.col
+//        TableColumn {
+//         inner: table.col,
+//        }
+//     }
+// }

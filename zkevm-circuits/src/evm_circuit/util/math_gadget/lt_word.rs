@@ -1,6 +1,8 @@
-use crate::evm_circuit::util::{
-    self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, split_u256,
-    CachedRegion,
+use crate::{
+    evm_circuit::util::{
+        constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion,
+    },
+    util::word::{self},
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -14,21 +16,16 @@ pub struct LtWordGadget<F> {
 }
 
 impl<F: Field> LtWordGadget<F> {
-    pub(crate) fn construct(
+    pub(crate) fn construct<T: Expr<F> + Clone>(
         cb: &mut EVMConstraintBuilder<F>,
-        lhs: &util::Word<F>,
-        rhs: &util::Word<F>,
+        lhs: &word::Word<T>,
+        rhs: &word::Word<T>,
     ) -> Self {
-        let comparison_hi = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&lhs.cells[16..]),
-            from_bytes::expr(&rhs.cells[16..]),
-        );
-        let lt_lo = LtGadget::construct(
-            cb,
-            from_bytes::expr(&lhs.cells[..16]),
-            from_bytes::expr(&rhs.cells[..16]),
-        );
+        let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
+        let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
+        let comparison_hi = ComparisonGadget::construct(cb, lhs_hi.expr(), rhs_hi.expr());
+        let lt_lo = LtGadget::construct(cb, lhs_lo.expr(), rhs_lo.expr());
+
         Self {
             comparison_hi,
             lt_lo,
@@ -70,22 +67,22 @@ mod tests {
     use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 
     use super::{test_util::*, *};
-    use eth_types::*;
+    use crate::util::word::{Word32Cell, WordExpr};
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
         ltword_gadget: LtWordGadget<F>,
-        a: util::Word<F>,
-        b: util::Word<F>,
+        a: Word32Cell<F>,
+        b: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let b = cb.query_word_rlc();
-            let ltword_gadget = LtWordGadget::<F>::construct(cb, &a, &b);
+            let a = cb.query_word32();
+            let b = cb.query_word32();
+            let ltword_gadget = LtWordGadget::<F>::construct(cb, &a.to_word(), &b.to_word());
             cb.require_equal("a < b", ltword_gadget.expr(), 1.expr());
             LtWordTestContainer {
                 ltword_gadget,
@@ -103,8 +100,8 @@ mod tests {
             let b = witnesses[1];
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-            self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, a)?;
+            self.b.assign_u256(region, offset, b)?;
             self.ltword_gadget.assign(region, 0, a, b)?;
 
             Ok(())

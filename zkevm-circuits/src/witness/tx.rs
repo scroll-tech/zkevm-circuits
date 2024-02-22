@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{step::ExecutionState, util::rlc},
     table::TxContextFieldTag,
-    util::{rlc_be_bytes, Challenges},
+    util::{rlc_be_bytes, word, Challenges},
     witness::{
         rlp_fsm::{RlpStackOp, SmState},
         DataTable, Format,
@@ -169,6 +169,14 @@ impl Transaction {
         let tx_sign_hash_be_bytes = keccak256(&self.rlp_unsigned);
         let (access_list_address_size, access_list_storage_key_size) =
             access_list_size(&self.access_list);
+        let value_word = word::Word::from(self.value.to_word()).map(Value::known);
+        // currently fields like gas_price, tx_hash, tx_sign_hash still use rlc format for keccak
+        // lookup usage, can be changed to word type later.
+        // let gas_price_word = word::Word::from(self.gas_price.to_word()).map(Value::known);
+        // let tx_hash_word =
+        //     word::Word::from(Word::from_big_endian(&tx_hash_be_bytes)).map(Value::known);
+        // let tx_sign_hash_word =
+        //     word::Word::from(Word::from_big_endian(&tx_sign_hash_be_bytes)).map(Value::known);
 
         let ret = vec![
             [
@@ -186,6 +194,9 @@ impl Transaction {
                     .evm_word()
                     .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
                 Value::known(F::zero()),
+                // can not use word type as tx circuit use rlc value to lookup keccak table
+                // gas_price_word.lo(),
+                // gas_price_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -224,10 +235,11 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Value as u64)),
                 Value::known(F::zero()),
-                challenges
-                    .evm_word()
-                    .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
-                Value::known(F::zero()),
+                // challenges
+                //     .evm_word()
+                //     .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
+                value_word.lo(),
+                value_word.hi(),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -275,6 +287,8 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::SigR as u64)),
                 Value::known(F::zero()),
+                // still use rlc format for `SigR` since rlp/sig circuit requires.
+                // consider to change to word type in the future.
                 rlc_be_bytes(&self.r.to_be_bytes(), challenges.evm_word()),
                 Value::known(F::zero()),
             ],
@@ -282,6 +296,8 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::SigS as u64)),
                 Value::known(F::zero()),
+                // still use rlc format for `SigS` since rlp/sig circuit requires.
+                // consider to change to word type in the future.
                 rlc_be_bytes(&self.s.to_be_bytes(), challenges.evm_word()),
                 Value::known(F::zero()),
             ],
@@ -303,6 +319,8 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxSignHash as u64)),
                 Value::known(F::zero()),
+                // still use rlc format for TxSignHash since keccak lookup requires.
+                // consider to change to word type in the future.
                 rlc_be_bytes(&tx_sign_hash_be_bytes, challenges.evm_word()),
                 Value::known(F::zero()),
             ],
@@ -324,6 +342,8 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxHash as u64)),
                 Value::known(F::zero()),
+                // still use rlc format for TxHash since keccak lookup requires.
+                // consider to change to word type in the future.
                 rlc_be_bytes(&tx_hash_be_bytes, challenges.evm_word()),
                 Value::known(F::zero()),
             ],

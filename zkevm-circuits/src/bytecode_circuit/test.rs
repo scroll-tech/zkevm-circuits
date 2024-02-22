@@ -2,11 +2,11 @@
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push_with_data, keccak, unusable_rows, Challenges, SubCircuit},
+    util::{is_push_with_data, keccak, unusable_rows, word, Challenges, SubCircuit},
 };
 use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
 use eth_types::{Bytecode, Field, ToWord, Word};
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{circuit::Value, dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 
 #[test]
@@ -67,7 +67,7 @@ fn bytecode_unrolling() {
         if !is_push_with_data(byte) {
             bytecode.write(byte, true);
             rows.push(BytecodeRow {
-                code_hash: Word::zero(),
+                code_hash: word::Word::default().into_value(),
                 tag: Fr::from(BytecodeFieldTag::Byte as u64),
                 index: Fr::from(rows.len() as u64),
                 is_code: Fr::from(true as u64),
@@ -83,7 +83,7 @@ fn bytecode_unrolling() {
             Word::from_little_endian(&vec![data_byte; n as usize][..]),
         );
         rows.push(BytecodeRow {
-            code_hash: Word::zero(),
+            code_hash: word::Word::default().into_value(),
             tag: Fr::from(BytecodeFieldTag::Byte as u64),
             index: Fr::from(rows.len() as u64),
             is_code: Fr::from(true as u64),
@@ -91,7 +91,7 @@ fn bytecode_unrolling() {
         });
         for _ in 0..n {
             rows.push(BytecodeRow {
-                code_hash: Word::zero(),
+                code_hash: word::Word::default().into_value(),
                 tag: Fr::from(BytecodeFieldTag::Byte as u64),
                 index: Fr::from(rows.len() as u64),
                 is_code: Fr::from(false as u64),
@@ -101,13 +101,15 @@ fn bytecode_unrolling() {
     }
     // Set the code_hash of the complete bytecode in the rows
     let code_hash = CodeDB::hash(&bytecode.to_vec()[..]).to_word();
+    let code_hash_word = word::Word::from(code_hash.to_word()).map(Value::known);
+
     for row in rows.iter_mut() {
-        row.code_hash = code_hash;
+        row.code_hash = code_hash_word;
     }
     rows.insert(
         0,
         BytecodeRow {
-            code_hash,
+            code_hash: code_hash_word,
             tag: Fr::from(BytecodeFieldTag::Header as u64),
             index: Fr::zero(),
             is_code: Fr::zero(),
@@ -117,13 +119,8 @@ fn bytecode_unrolling() {
     // Unroll the bytecode
     let unrolled = unroll(bytecode.to_vec());
     // Check if the bytecode was unrolled correctly
-    assert_eq!(
-        UnrolledBytecode {
-            bytes: bytecode.to_vec(),
-            rows,
-        },
-        unrolled,
-    );
+    // UnrolledBytecode contains Word<Value<F>>, Value<F> not implemented `PartialEq`.
+    assert_eq!(bytecode.to_vec(), unrolled.bytes,);
     // Verify the unrolling in the circuit
     test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled], true);
 }
@@ -194,7 +191,8 @@ fn bytecode_invalid_hash_data() {
     // Change the code_hash on the first position (header row)
     {
         let mut invalid = unrolled;
-        invalid.rows[0].code_hash += Word::one();
+        invalid.rows[0].code_hash =
+            word::Word::new([Value::known(Fr::one()), Value::known(Fr::zero())]);
         log::trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
