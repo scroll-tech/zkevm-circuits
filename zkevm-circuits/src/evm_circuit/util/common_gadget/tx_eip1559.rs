@@ -14,7 +14,7 @@ use crate::{
         },
         witness::Transaction,
     },
-    table::{TxFieldTag, BlockContextFieldTag},
+    table::{BlockContextFieldTag, TxFieldTag},
 };
 use eth_types::{geth_types::TxType, Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::{Error, Expression};
@@ -82,7 +82,7 @@ impl<F: Field> TxEip1559Gadget<F> {
                 LtWordGadget::construct(cb, &gas_fee_cap, &gas_tip_cap);
             // todo:  GasFeeCap < BaseFee
             let base_fee = cb.query_word_rlc();
-            cb.block_lookup(BlockContextFieldTag::BaseFee, cb.curr.state.block_number.expr(), base_fee);
+            cb.block_lookup(BlockContextFieldTag::BaseFee.expr(), cb.curr.state.block_number.expr(), base_fee.expr());
             let gas_fee_cap_lt_base_fee =
                 LtWordGadget::construct(cb, &gas_fee_cap, &base_fee);
 
@@ -157,19 +157,16 @@ impl<F: Field> TxEip1559Gadget<F> {
         )?;
         self.is_insufficient_balance
             .assign(region, offset, sender_balance_prev, min_balance)?;
-        self.base_fee.assign(region, offset, Some(base_fee.to_le_bytes()))?;
+        self.base_fee
+            .assign(region, offset, Some(base_fee.to_le_bytes()))?;
         self.gas_fee_cap_lt_gas_tip_cap.assign(
             region,
             offset,
             tx.max_fee_per_gas,
             tx.max_priority_fee_per_gas,
         )?;
-        self.gas_fee_cap_lt_base_fee.assign(
-            region,
-            offset,
-            tx.max_fee_per_gas,
-            base_fee,
-        )
+        self.gas_fee_cap_lt_base_fee
+            .assign(region, offset, tx.max_fee_per_gas, base_fee)
     }
 }
 
