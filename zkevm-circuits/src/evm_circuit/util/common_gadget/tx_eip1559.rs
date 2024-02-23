@@ -14,7 +14,7 @@ use crate::{
         },
         witness::Transaction,
     },
-    table::TxFieldTag,
+    table::{TxFieldTag, BlockContextFieldTag},
 };
 use eth_types::{geth_types::TxType, Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::{Error, Expression};
@@ -30,11 +30,13 @@ pub(crate) struct TxEip1559Gadget<F> {
     mul_gas_fee_cap_by_gas: MulWordByU64Gadget<F>,
     balance_check: AddWordsGadget<F, 3, true>,
     // Error condition
-    // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L255>
+    // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L241>
     is_insufficient_balance: LtWordGadget<F>,
     // Error condition
-    // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L304>
+    // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L310>
     gas_fee_cap_lt_gas_tip_cap: LtWordGadget<F>,
+    base_fee: Word<F>,
+    gas_fee_cap_lt_base_fee: LtWordGadget<F>,
 }
 
 impl<F: Field> TxEip1559Gadget<F> {
@@ -58,6 +60,8 @@ impl<F: Field> TxEip1559Gadget<F> {
             balance_check,
             is_insufficient_balance,
             gas_fee_cap_lt_gas_tip_cap,
+            base_fee,
+            gas_fee_cap_lt_base_fee,
         ) = cb.condition(is_eip1559_tx.expr(), |cb| {
             let mul_gas_fee_cap_by_gas =
                 MulWordByU64Gadget::construct(cb, gas_fee_cap.clone(), tx_gas);
@@ -76,12 +80,18 @@ impl<F: Field> TxEip1559Gadget<F> {
             let is_insufficient_balance = LtWordGadget::construct(cb, sender_balance, &min_balance);
             let gas_fee_cap_lt_gas_tip_cap =
                 LtWordGadget::construct(cb, &gas_fee_cap, &gas_tip_cap);
+            // todo:  GasFeeCap < BaseFee
+            let base_fee = cb.query_word_rlc();
+            cb.block_lookup(BlockContextFieldTag::BaseFee, cb.curr.state.block_number.expr(), base_fee);
+            let gas_fee_cap_lt_base_fee =
+                LtWordGadget::construct(cb, &gas_fee_cap, &base_fee);
 
             cb.require_zero(
-                "Sender balance must be sufficient, and gas_fee_cap >= gas_tip_cap",
+                "Sender balance must be sufficient, and gas_fee_cap >= gas_tip_cap, and gas_fee_cap >= base_fee",
                 sum::expr([
                     is_insufficient_balance.expr(),
                     gas_fee_cap_lt_gas_tip_cap.expr(),
+                    gas_fee_cap_lt_base_fee.expr(),
                 ]),
             );
 
@@ -90,6 +100,8 @@ impl<F: Field> TxEip1559Gadget<F> {
                 balance_check,
                 is_insufficient_balance,
                 gas_fee_cap_lt_gas_tip_cap,
+                base_fee,
+                gas_fee_cap_lt_base_fee,
             )
         });
 
@@ -101,6 +113,8 @@ impl<F: Field> TxEip1559Gadget<F> {
             balance_check,
             is_insufficient_balance,
             gas_fee_cap_lt_gas_tip_cap,
+            base_fee,
+            gas_fee_cap_lt_base_fee,
         }
     }
 
@@ -111,6 +125,7 @@ impl<F: Field> TxEip1559Gadget<F> {
         tx: &Transaction,
         tx_l1_fee: U256,
         sender_balance_prev: U256,
+        base_fee: U256,
     ) -> Result<(), Error> {
         self.is_eip1559_tx.assign(
             region,
@@ -142,11 +157,18 @@ impl<F: Field> TxEip1559Gadget<F> {
         )?;
         self.is_insufficient_balance
             .assign(region, offset, sender_balance_prev, min_balance)?;
+        self.base_fee.assign(region, offset, Some(base_fee.to_le_bytes()))?;
         self.gas_fee_cap_lt_gas_tip_cap.assign(
             region,
             offset,
             tx.max_fee_per_gas,
             tx.max_priority_fee_per_gas,
+        )?;
+        self.gas_fee_cap_lt_base_fee.assign(
+            region,
+            offset,
+            tx.max_fee_per_gas,
+            base_fee,
         )
     }
 }
