@@ -35,7 +35,10 @@ pub(crate) struct TxEip1559Gadget<F> {
     // Error condition
     // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L310>
     gas_fee_cap_lt_gas_tip_cap: LtWordGadget<F>,
+    // base fee from block context
     base_fee: Word<F>,
+    // Error condition
+    // <https://github.com/ethereum/go-ethereum/blob/master/core/state_transition.go#L316>
     gas_fee_cap_lt_base_fee: LtWordGadget<F>,
 }
 
@@ -80,9 +83,10 @@ impl<F: Field> TxEip1559Gadget<F> {
             let is_insufficient_balance = LtWordGadget::construct(cb, sender_balance, &min_balance);
             let gas_fee_cap_lt_gas_tip_cap =
                 LtWordGadget::construct(cb, &gas_fee_cap, &gas_tip_cap);
-            // todo:  GasFeeCap < BaseFee
+            // lookup base fee from block.
             let base_fee = cb.query_word_rlc();
             cb.block_lookup(BlockContextFieldTag::BaseFee.expr(), cb.curr.state.block_number.expr(), base_fee.expr());
+            // constrain GasFeeCap not less than BaseFee
             let gas_fee_cap_lt_base_fee =
                 LtWordGadget::construct(cb, &gas_fee_cap, &base_fee);
 
