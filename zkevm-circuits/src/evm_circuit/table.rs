@@ -8,7 +8,7 @@ use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
+use strum_macros::{AsRefStr, EnumIter};
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
@@ -145,7 +145,7 @@ impl FixedTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter, AsRefStr)]
 pub(crate) enum Table {
     Fixed,
     Tx,
@@ -583,5 +583,18 @@ impl<F: Field> Lookup<F> {
             .map(|expr| expr.degree())
             .max()
             .unwrap()
+    }
+}
+
+mod test {
+
+    #[test]
+    fn display_table() {
+        use crate::evm_circuit::Table;
+
+        assert_eq!(Table::Fixed.as_ref(), "Fixed");
+        assert_eq!(Table::Bytecode.as_ref(), "Bytecode");
+        assert_eq!(Table::Block.as_ref(), "Block");
+        assert_eq!(Table::Sha256.as_ref(), "Sha256");
     }
 }

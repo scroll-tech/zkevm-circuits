@@ -23,6 +23,7 @@ use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
 };
+use strum_macros::AsRefStr;
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
@@ -305,7 +306,7 @@ impl<F: Field> StoredExpression<F> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, AsRefStr)]
 pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
@@ -774,5 +775,15 @@ impl<F: Field> Inverter<F> {
             Some(i) => *i,
             None => F::from(value).invert().unwrap(),
         }
+    }
+}
+
+mod test {
+
+    #[test]
+    fn display_cell_type() {
+        use crate::evm_circuit::util::CellType;
+
+        assert_eq!(CellType::LookupByte.as_ref(), "LookupByte");
     }
 }
