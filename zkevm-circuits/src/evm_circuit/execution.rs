@@ -368,7 +368,6 @@ pub(crate) struct ExecutionConfig<F> {
 }
 
 impl<F: Field> ExecutionConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::redundant_closure_call)]
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -889,7 +888,6 @@ impl<F: Field> ExecutionConfig<F> {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn configure_lookup(
         meta: &mut ConstraintSystem<F>,
         tables: HashMap<&str, &dyn LookupTable<F>>,
