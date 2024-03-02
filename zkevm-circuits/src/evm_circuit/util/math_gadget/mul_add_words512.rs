@@ -23,7 +23,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 ///   t5 = a2 * b3 + a3 * b2,
 ///   t6 = a3 * b3,
 ///
-/// The addend c as well as the the words that form the result d, e are divided
+/// The addend c as well as the words that form the result d, e are divided
 /// in 2 128-bit limbs each: c_lo, c_hi, d_lo, d_hi, e_lo, e_hi.
 ///
 /// so t0 ~ t1 include all contributions to the low 128-bit of product (e_lo),
@@ -259,7 +259,7 @@ mod tests {
         // 0 * 0 + 0 == 0 * 2**256 + 0
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(0),
                 Word::from(0),
@@ -271,7 +271,7 @@ mod tests {
         // 1 * 0 + 0 == 0 * 2**256 + 0
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(0),
                 Word::from(0),
@@ -283,7 +283,7 @@ mod tests {
         // 1 * 1 + 0 == 0 * 2**256 + 1
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(1),
                 Word::from(0),
@@ -295,7 +295,7 @@ mod tests {
         // 100 * 54 + 0 == 0 * 2**256 + 5400
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(0),
@@ -307,7 +307,7 @@ mod tests {
         // 100 * 54 + max == 1 * 2**256 + 5400
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(1),
@@ -319,7 +319,7 @@ mod tests {
         // 100 * 54 + low_max == 0 * 2**256 + 5400 + low_max
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(0),
@@ -331,7 +331,7 @@ mod tests {
         // 100 * 54 + high_max == 0 * 2**256 + 5400 + high_max
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(0),
@@ -347,7 +347,7 @@ mod tests {
         // 10 * 1 + 0 != 1 * 2**256 + 3
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(10),
                 Word::from(1),
                 Word::from(1),

@@ -14,6 +14,8 @@ use strum_macros::{EnumIter, EnumString}; // 0.17.1
 
 const MAX_DETAILS_LEN: usize = 128;
 
+const OUTPUT_ALL_RESULT_LEVELS: [ResultLevel; 2] = [ResultLevel::Fail, ResultLevel::Panic];
+
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, EnumString, Serialize, Deserialize)]
 pub enum ResultLevel {
     #[strum(ascii_case_insensitive)]
@@ -82,10 +84,10 @@ impl Diffs {
 
         let mut summary = String::default();
         if stat_news > 0 {
-            summary.push_str(&format!("new: {:+} ", stat_news));
+            summary.push_str(&format!("new: {stat_news:+} "));
         }
         for (lvl, n) in stat {
-            summary.push_str(&format!("/ {:?}: {:+} ", lvl, n));
+            summary.push_str(&format!("/ {lvl:?}: {n:+} "));
         }
         if summary.is_empty() {
             summary.push_str("No changes");
@@ -136,11 +138,21 @@ impl Report {
         by_result_short.print_tty(false)?;
         let (_, files_diff) = self.diffs.gen_info();
         files_diff.print_tty(false)?;
+        let mut num_succ = 0f32;
+        let mut num_fail = 0f32;
         for (test_id, info) in &self.tests {
+            if info.level == ResultLevel::Success {
+                num_succ += 1.0;
+            }
             if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
+                num_fail += 1.0;
                 println!("- {:?} {}", info.level, test_id);
             }
         }
+        log::info!(
+            "success rate: {:.1}%",
+            100f32 * num_succ / (num_succ + num_fail)
+        );
         Ok(())
     }
     pub fn gen_html(&self, githash: String) -> Result<String> {
@@ -156,7 +168,30 @@ impl Report {
 
         // strip_prefix `tests/` for rendering purpose. It helps to generate hyperlink
         let leading_tests_path = "tests/";
-        let mut tests_for_render = self.tests.clone();
+        let mut tests_for_render: HashMap<_, _> = self
+            .tests
+            .iter()
+            .filter_map(|(id, result)| {
+                if OUTPUT_ALL_RESULT_LEVELS.contains(&result.level) {
+                    Some((id.clone(), result.clone()))
+                } else {
+                    // ignore or success
+                    if result.level == ResultLevel::Success {
+                        None
+                    } else {
+                        // ignore
+                        let big_test = result.details.starts_with("SkipTestMaxGasLimit")
+                            || result.details.starts_with("SkipTestMaxSteps");
+                        if result.details.starts_with("SkipTestSelfDestruct") || big_test {
+                            None
+                        } else {
+                            // eg: SkipTestBalanceOverflow
+                            Some((id.clone(), result.clone()))
+                        }
+                    }
+                }
+            })
+            .collect();
         for (_, result) in tests_for_render.iter_mut() {
             assert!(result.path.starts_with(leading_tests_path));
             result.path = result
@@ -179,7 +214,7 @@ impl Report {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Results {
     pub tests: HashMap<String, ResultInfo>,
     pub cache: Option<PathBuf>,
@@ -187,6 +222,7 @@ pub struct Results {
 
 impl Results {
     pub fn from_file(path: PathBuf) -> Result<Self> {
+        log::info!("loading results from {}", path.display());
         let mut file = std::fs::File::open(&path)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
@@ -205,7 +241,7 @@ impl Results {
                 .expect("should be urldecodeable")
                 .to_string();
             let path = split.next().unwrap().to_string();
-            let id = format!("{}#{}", test_id, path);
+            let id = format!("{test_id}#{path}");
             tests.insert(
                 id,
                 ResultInfo {
@@ -297,7 +333,7 @@ impl Results {
 
         let levels: Vec<_> = ResultLevel::iter().collect();
 
-        header.append(&mut levels.iter().map(|v| format!("{:?}", v)).collect());
+        header.append(&mut levels.iter().map(|v| format!("{v:?}")).collect());
         by_folder.add_row(Row::from_iter(header));
 
         let mut totals = vec![0usize; levels.len()];
@@ -340,7 +376,7 @@ impl Results {
         }
 
         info.sort_by(|a, b| b.0.cmp(&a.0));
-        for entry in info.iter().take(25) {
+        for entry in info.iter() {
             by_result.add_row(row![format!("{}", entry.0), entry.1]);
         }
 
@@ -361,6 +397,28 @@ impl Results {
 
     pub fn contains(&self, test: &str) -> bool {
         self.tests.contains_key(test)
+    }
+
+    pub fn write_cache(&self) -> Result<()> {
+        if let Some(path) = &self.cache {
+            let mut file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .append(true)
+                .open(path)?;
+            for result in self.tests.values() {
+                let entry = format!(
+                    "{:?};{};{};{}\n",
+                    result.level,
+                    result.test_id,
+                    urlencoding::encode(&result.details),
+                    result.path,
+                );
+                file.write_all(entry.as_bytes())?;
+            }
+        }
+        Ok(())
     }
 
     #[allow(clippy::map_entry)]

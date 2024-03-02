@@ -1,42 +1,55 @@
 [package]
 name = "testool"
 description="tools for doing tests"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
-anyhow = "1"
+anyhow.workspace = true
 bus-mapping = { path = "../bus-mapping" }
 clap = { version = "3.1", features = ["derive"] }
-env_logger = "0.9"
+env_logger.workspace = true
 eth-types = { path="../eth-types" }
-ethers-core = "0.17.0"
-ethers-signers = "0.17.0"
+ethers-core.workspace = true
+ethers-signers.workspace = true
 external-tracer = { path="../external-tracer" }
 glob = "0.3"
 handlebars = "4.3"
-hex = "0.4.3"
+hex.workspace = true
 keccak256 = { path = "../keccak256" }
-log = "0.4"
+log.workspace = true
+itertools.workspace = true
 mock = { path = "../mock" }
-once_cell = "1.10"
 prettytable-rs = "0.10"
-rayon = "1.5"
-regex = "1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-strum= "0.24"
-strum_macros = "0.24"
+prover = { path = "../prover", optional = true }
+rayon.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+strum.workspace = true
+strum_macros.workspace = true
 thiserror = "1.0"
 toml = "0.5"
 yaml-rust = "0.4.5"
 zkevm-circuits = { path="../zkevm-circuits", features=["test"] }
-rand_chacha = "0.3"
-rand = "0.8"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+rand_chacha.workspace = true
+rand.workspace = true
+halo2_proofs.workspace = true
 urlencoding = "2.1.2"
-
+ctor.workspace = true
 
 [features]
-default = []
+default = ["ignore-test-docker", "skip-self-destruct", "shanghai", "enable-storage"]
+onephase = ["zkevm-circuits/onephase"]
 ignore-test-docker = []
+skip-self-destruct = []
+shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai", "prover?/shanghai"]
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "external-tracer/scroll", "mock/scroll", "zkevm-circuits/scroll", "prover?/scroll"]
+parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn", "prover?/parallel_syn"]
+inner-prove = ["prover/test", "parallel_syn", "scroll", "shanghai"]
+chunk-prove = ["prover/test", "parallel_syn", "scroll", "shanghai"]
+
+enable-stack = ["zkevm-circuits/enable-stack"]
+enable-memory = ["zkevm-circuits/enable-memory"]
+enable-storage = ["zkevm-circuits/enable-storage"]

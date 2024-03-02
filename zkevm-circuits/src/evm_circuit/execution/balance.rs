@@ -129,9 +129,9 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
         let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, region.code_hash(code_hash))?;
         self.not_exists
-            .assign_value(region, offset, region.word_rlc(code_hash))?;
+            .assign_value(region, offset, region.code_hash(code_hash))?;
         let balance = if code_hash.is_zero() {
             eth_types::Word::zero()
         } else {
@@ -148,12 +148,11 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{address, bytecode, geth_types::Account, Address, Bytecode, Word, U256};
-    use lazy_static::lazy_static;
     use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
-    }
+    static TEST_ADDRESS: LazyLock<Address> =
+        LazyLock::new(|| address!("0xaabbccddee000000000000000000000000000000"));
 
     #[test]
     fn balance_gadget_non_existing_account() {
@@ -164,7 +163,12 @@ mod test {
 
     #[test]
     fn balance_gadget_empty_account() {
-        let account = Some(Account::default());
+        let mut empty_address_bytes = [0; 20];
+        empty_address_bytes[12] = 234;
+        let account = Some(Account {
+            address: empty_address_bytes.into(),
+            ..Default::default()
+        });
 
         test_root_ok(&account, false);
         test_internal_ok(0x20, 0x00, &account, false);

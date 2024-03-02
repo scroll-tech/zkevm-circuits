@@ -2,12 +2,19 @@ name: Lints
 
 # We only run these lints on trial-merges of PRs to reduce noise.
 on:
-  merge_group:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
+    # Ignore when target branch is `main` and source branch is develop.
+    # It could avoid running twice. Since develop is set as `push` below.
+    branches-ignore:
+      - main
   push:
     branches:
-      - main
+      - develop
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: git
 
 jobs:
   skip_check:
@@ -33,11 +40,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2023-12-03
           components: clippy
-          override: false
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -48,19 +55,10 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        uses: Swatinem/rust-cache@v2
       - name: Run clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          name: Clippy
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --all-targets -- -D warnings
+        run: cargo clippy --all-features --all-targets -- -D warnings

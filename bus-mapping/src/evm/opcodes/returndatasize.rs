@@ -18,19 +18,29 @@ impl Opcode for Returndatasize {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        let value = geth_steps[1].stack.last()?;
+        let size = state.call_ctx()?.return_data.len();
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::LastCalleeReturnDataLength,
-            value,
-        );
-
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            value,
+            size.into(),
         )?;
+
+        // TODO: fix error in deposit_ether.json...
+        #[cfg(feature = "enable-stack")]
+        {
+            let real_size = geth_steps[1].stack.last()?.as_usize();
+            if real_size != size {
+                log::error!(
+                    "return_data.len() != RETURNDATASIZE value, {} != {}, step: {:?}",
+                    size,
+                    real_size,
+                    geth_step
+                );
+                assert_eq!(real_size, size);
+            }
+        }
+        state.stack_push(&mut exec_step, size.into())?;
 
         Ok(vec![exec_step])
     }

@@ -1,7 +1,7 @@
 use super::CodeSource;
 use crate::{exec_trace::OperationRef, Error};
 use eth_types::{
-    evm_types::{Memory, OpcodeId},
+    evm_types::{Memory, OpcodeId, Stack},
     Address, Hash, Word,
 };
 
@@ -57,13 +57,11 @@ pub struct Call {
     pub call_id: usize,
     /// Caller's id.
     pub caller_id: usize,
-    /// Last Callee's id.
-    pub last_callee_id: usize,
     /// Type of call
     pub kind: CallKind,
     /// This call is being executed without write access (STATIC)
     pub is_static: bool,
-    /// This call generated implicity by a Transaction.
+    /// This call is generated implicitly by a Transaction
     pub is_root: bool,
     /// This call is persistent or call stack reverts at some point
     pub is_persistent: bool,
@@ -87,14 +85,18 @@ pub struct Call {
     pub call_data_offset: u64,
     /// Call data length
     pub call_data_length: u64,
-    /// Return data offset
+    /// Return data offset, usually the second last stack parameter of parent call
     pub return_data_offset: u64,
-    /// Return data length
+    /// Return data length, usually the last stack parameter of parent call
     pub return_data_length: u64,
+    /// Last Callee's id.
+    pub last_callee_id: usize,
     /// last callee's return data offset
     pub last_callee_return_data_offset: u64,
     /// last callee's return data length
     pub last_callee_return_data_length: u64,
+    /// last callee's memory
+    pub last_callee_memory: Memory,
 }
 
 impl Call {
@@ -104,14 +106,31 @@ impl Call {
         self.kind.is_create()
     }
 
+    /// ..
+    pub fn is_success(&self) -> bool {
+        self.is_success
+    }
+
     /// This call is call with op DELEGATECALL
     pub fn is_delegatecall(&self) -> bool {
         matches!(self.kind, CallKind::DelegateCall)
     }
+
+    /// Get the code address if possible
+    pub fn code_address(&self) -> Option<Address> {
+        match self.kind {
+            CallKind::Call | CallKind::StaticCall => Some(self.address),
+            CallKind::CallCode | CallKind::DelegateCall => match self.code_source {
+                CodeSource::Address(address) => Some(address),
+                _ => None,
+            },
+            CallKind::Create | CallKind::Create2 => None,
+        }
+    }
 }
 
 /// Context of a [`Call`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CallContext {
     /// Index of call
     pub index: usize,
@@ -124,8 +143,17 @@ pub struct CallContext {
     pub call_data: Vec<u8>,
     /// memory context of current call
     pub memory: Memory,
+    /// stack context of current call
+    pub stack: Stack,
     /// return data buffer
     pub return_data: Vec<u8>,
+}
+
+impl CallContext {
+    /// Memory size in words, rounded up
+    pub fn memory_word_size(&self) -> u64 {
+        u64::try_from(self.memory.len()).expect("failed to convert usize to u64") / 32
+    }
 }
 
 /// A reversion group is the collection of calls and the operations which are

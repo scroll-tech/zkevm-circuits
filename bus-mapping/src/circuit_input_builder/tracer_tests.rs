@@ -1,29 +1,22 @@
 use super::*;
 use crate::{
-    circuit_input_builder::access::gen_state_access_trace,
-    error::{ExecError, OogError},
-    geth_errors::{
-        GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
-        GETH_ERR_STACK_UNDERFLOW,
+    error::{
+        ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError, OogError,
     },
     operation::RWCounter,
     state_db::Account,
 };
 use eth_types::{
     address, bytecode,
-    evm_types::{stack::Stack, Gas, OpcodeId},
+    evm_types::{stack::Stack, Gas, Memory, OpcodeId},
     geth_types::GethData,
-    word, Bytecode, Hash, ToAddress, ToWord, Word,
+    word, Bytecode, GethExecError, GethExecStep, Hash, ToAddress, ToWord, Word,
 };
-use lazy_static::lazy_static;
-use mock::{
-    test_ctx::{helpers::*, LoggerConfig, TestContext},
-    MOCK_COINBASE,
-};
+use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
 use pretty_assertions::assert_eq;
-use std::collections::HashSet;
+use std::sync::LazyLock;
 
-// Helper struct that contains a CircuitInputBuilder, a particuar tx and a
+// Helper struct that contains a CircuitInputBuilder, a particular tx and a
 // particular execution step so that we can easily get a
 // CircuitInputStateRef to have a context in order to get the error at a
 // given step.
@@ -44,10 +37,14 @@ impl CircuitInputBuilderTx {
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
             &GethExecTrace {
+                l1_fee: 0,
                 gas: Gas(0),
                 failed: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![geth_step.clone()],
+                account_after: vec![],
+                prestate: block.geth_traces[0].prestate.clone(),
+                call_trace: block.geth_traces[0].call_trace.clone(),
             },
             false,
         )
@@ -74,12 +71,11 @@ impl CircuitInputBuilderTx {
     }
 }
 
-lazy_static! {
-    static ref ADDR_A: Address = Address::zero();
-    static ref WORD_ADDR_A: Word = ADDR_A.to_word();
-    static ref ADDR_B: Address = address!("0x0000000000000000000000000000000000000123");
-    static ref WORD_ADDR_B: Word = ADDR_B.to_word();
-}
+static ADDR_A: LazyLock<Address> = LazyLock::new(Address::zero);
+static WORD_ADDR_A: LazyLock<Word> = LazyLock::new(|| ADDR_A.to_word());
+static ADDR_B: LazyLock<Address> =
+    LazyLock::new(|| address!("0x0000000000000000000000000000000000000123"));
+static WORD_ADDR_B: LazyLock<Word> = LazyLock::new(|| ADDR_B.to_word());
 
 fn mock_internal_create() -> Call {
     Call {
@@ -104,6 +100,7 @@ fn mock_internal_create() -> Call {
         return_data_length: 0,
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
+        last_callee_memory: Memory::default(),
     }
 }
 
@@ -130,6 +127,7 @@ fn mock_root_create() -> Call {
         return_data_length: 0,
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
+        last_callee_memory: Memory::default(),
     }
 }
 
@@ -219,7 +217,7 @@ fn tracer_err_depth() {
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::Depth)
+        Some(ExecError::Depth(DepthError::Call))
     );
 }
 
@@ -288,7 +286,9 @@ fn tracer_err_insufficient_balance() {
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::InsufficientBalance)
+        Some(ExecError::InsufficientBalance(
+            InsufficientBalanceError::Call
+        ))
     );
 }
 
@@ -461,8 +461,9 @@ fn tracer_err_address_collision() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
-            balance: Word::from(555u64), /* same value as in
-                                          * `mock::new_tracer_account` */
+            // same value as in
+            // `mock::new_tracer_account`
+            balance: Word::from(555u64),
             ..Account::zero()
         },
     );
@@ -472,7 +473,9 @@ fn tracer_err_address_collision() {
         .set_account(&create2_address, Account::zero());
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::ContractAddressCollision)
+        Some(ExecError::ContractAddressCollision(
+            ContractAddressCollisionError::Create2
+        ))
     );
 }
 
@@ -589,6 +592,7 @@ fn tracer_create_collision_free() {
                                           * `mock::new_tracer_account` */
             storage: HashMap::new(),
             code_hash: Hash::zero(),
+            ..Default::default()
         },
     );
     builder.builder.sdb.set_account(
@@ -598,6 +602,7 @@ fn tracer_create_collision_free() {
             balance: Word::zero(),
             storage: HashMap::new(),
             code_hash: Hash::zero(),
+            ..Default::default()
         },
     );
 
@@ -757,7 +762,7 @@ fn tracer_err_code_store_out_of_gas_tx_deploy() {
 }
 
 fn check_err_invalid_code(step: &GethExecStep, next_step: Option<&GethExecStep>) -> bool {
-    let offset = step.stack.nth_last(0).unwrap();
+    let offset = step.stack.last().unwrap();
     let length = step.stack.nth_last(1).unwrap();
     step.op == OpcodeId::RETURN
         && step.error.is_none()
@@ -1490,7 +1495,7 @@ fn tracer_err_gas_uint_overflow() {
     let step = &block.geth_traces[0].struct_logs[index];
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
     assert_eq!(step.op, OpcodeId::MSTORE);
-    assert_eq!(step.error, Some(GETH_ERR_GAS_UINT_OVERFLOW.to_string()));
+    assert_eq!(step.error, Some(GethExecError::GasUintOverflow));
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
@@ -1627,6 +1632,7 @@ fn tracer_err_write_protection(is_call: bool) {
         return_data_length: 0,
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
+        last_callee_memory: Memory::default(),
     });
 
     assert_eq!(
@@ -1660,7 +1666,7 @@ fn tracer_err_out_of_gas() {
     .into();
     let struct_logs = &block.geth_traces[0].struct_logs;
 
-    assert_eq!(struct_logs[1].error, Some(GETH_ERR_OUT_OF_GAS.to_string()));
+    assert_eq!(struct_logs[1].error, Some(GethExecError::OutOfGas));
 }
 
 #[test]
@@ -1683,10 +1689,13 @@ fn tracer_err_stack_overflow() {
     let index = block.geth_traces[0].struct_logs.len() - 1; // PUSH2
     let step = &block.geth_traces[0].struct_logs[index];
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
-    assert_eq!(
+    assert!(matches!(
         step.error,
-        Some(format!("{} 1024 (1023)", GETH_ERR_STACK_OVERFLOW))
-    );
+        Some(GethExecError::StackOverflow {
+            stack_len: 1024,
+            limit: 1023,
+        })
+    ));
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
@@ -1714,10 +1723,13 @@ fn tracer_err_stack_underflow() {
     let index = 0; // SWAP5
     let step = &block.geth_traces[0].struct_logs[index];
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
-    assert_eq!(
+    assert!(matches!(
         step.error,
-        Some(format!("{} (0 <=> 6)", GETH_ERR_STACK_UNDERFLOW))
-    );
+        Some(GethExecError::StackUnderflow {
+            stack_len: 0,
+            required: 6,
+        })
+    ));
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
@@ -1931,339 +1943,4 @@ fn create_address() {
     let addr = builder.state_ref().create_address().unwrap();
 
     assert_eq!(addr.to_word(), addr_expect);
-}
-
-#[test]
-fn test_gen_access_trace() {
-    use AccessValue::{Account, Code, Storage};
-    use RW::{READ, WRITE};
-    let ADDR_0 = address!("0x00000000000000000000000000000000c014ba5e");
-
-    // code_a calls code_b via static call, which tries to SSTORE and fails.
-    let code_a = bytecode! {
-        PUSH1(0x0) // retLength
-        PUSH1(0x0) // retOffset
-        PUSH1(0x0) // argsLength
-        PUSH1(0x0) // argsOffset
-        PUSH1(0x0) // value
-        PUSH32(*WORD_ADDR_B) // addr
-        PUSH32(0x1_0000) // gas
-        CALL
-
-        PUSH2(0xaa)
-    };
-    let code_b = bytecode! {
-        .op_mstore(0x01, word!("0x1234567890000000000000000000abcdef000000000000000000112233445566"))
-        PUSH1(0x01) // value
-        PUSH1(0x02) // key
-        SSTORE
-        PUSH1(0x03) // key
-        SLOAD
-
-        PUSH3(0xbb)
-    };
-
-    // Get the execution steps from the external tracer
-    let block: GethData = TestContext::<3, 2>::new_with_logger_config(
-        None,
-        |accs| {
-            accs[0]
-                .address(address!("0x0000000000000000000000000000000000000000"))
-                .code(code_a);
-            accs[1].address(*ADDR_B).code(code_b);
-            accs[2].address(ADDR_0).balance(Word::from(1u64 << 30));
-        },
-        |mut txs, accs| {
-            txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
-        },
-        |block, _tx| block.number(0xcafeu64),
-        LoggerConfig::enable_memory(),
-    )
-    .unwrap()
-    .into();
-
-    let access_trace = gen_state_access_trace(
-        &block.eth_block,
-        &block.eth_block.transactions[0],
-        &block.geth_traces[0],
-    )
-    .unwrap();
-
-    assert_eq!(
-        access_trace,
-        vec![
-            Access::new(None, WRITE, Account { address: ADDR_0 }),
-            Access::new(None, WRITE, Account { address: *ADDR_A }),
-            Access::new(None, READ, Code { address: *ADDR_A }),
-            Access::new(Some(7), WRITE, Account { address: *ADDR_A }),
-            Access::new(Some(7), WRITE, Account { address: *ADDR_B }),
-            Access::new(Some(7), READ, Code { address: *ADDR_B }),
-            Access::new(
-                Some(13),
-                WRITE,
-                Storage {
-                    address: *ADDR_B,
-                    key: Word::from(2),
-                }
-            ),
-            Access::new(
-                Some(15),
-                READ,
-                Storage {
-                    address: *ADDR_B,
-                    key: Word::from(3),
-                }
-            ),
-        ]
-    );
-
-    let access_set = AccessSet::from(access_trace);
-    assert_eq!(
-        access_set,
-        AccessSet {
-            state: HashMap::from_iter([
-                (ADDR_0, HashSet::new()),
-                (*ADDR_A, HashSet::new()),
-                (*ADDR_B, HashSet::from_iter([Word::from(2), Word::from(3)]))
-            ]),
-            code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
-        }
-    )
-}
-
-#[test]
-fn test_gen_access_trace_call_EOA_no_new_stack_frame() {
-    use AccessValue::{Account, Code, Storage};
-    use RW::{READ, WRITE};
-
-    // code calls an EOA with not code, so it won't push new stack frame.
-    let code = bytecode! {
-        PUSH1(0x0) // retLength
-        PUSH1(0x0) // retOffset
-        PUSH1(0x0) // argsLength
-        PUSH1(0x0) // argsOffset
-        PUSH1(0x0) // value
-        PUSH32(*WORD_ADDR_B) // addr
-        PUSH32(0x1_0000) // gas
-        CALL
-        PUSH1(0x01) // value
-        PUSH1(0x02) // key
-        SSTORE
-        PUSH1(0x03) // key
-        SLOAD
-
-        PUSH2(0xaa)
-    };
-
-    // Get the execution steps from the external tracer
-    let block: GethData = TestContext::<2, 1>::new_with_logger_config(
-        None,
-        |accs| {
-            accs[0].address(*MOCK_COINBASE).code(code);
-            accs[1].address(*ADDR_B).balance(Word::from(1u64 << 30));
-        },
-        tx_from_1_to_0,
-        |block, _tx| block.number(0xcafeu64),
-        LoggerConfig::enable_memory(),
-    )
-    .unwrap()
-    .into();
-
-    let access_trace = gen_state_access_trace(
-        &block.eth_block,
-        &block.eth_block.transactions[0],
-        &block.geth_traces[0],
-    )
-    .unwrap();
-
-    assert_eq!(
-        access_trace,
-        vec![
-            Access::new(None, WRITE, Account { address: *ADDR_B }),
-            Access::new(
-                None,
-                WRITE,
-                Account {
-                    address: *MOCK_COINBASE
-                }
-            ),
-            Access::new(
-                None,
-                READ,
-                Code {
-                    address: *MOCK_COINBASE
-                }
-            ),
-            Access::new(
-                Some(7),
-                WRITE,
-                Account {
-                    address: *MOCK_COINBASE
-                }
-            ),
-            Access::new(Some(7), WRITE, Account { address: *ADDR_B }),
-            Access::new(Some(7), READ, Code { address: *ADDR_B }),
-            Access::new(
-                Some(10),
-                WRITE,
-                Storage {
-                    address: *MOCK_COINBASE,
-                    key: Word::from(2u64),
-                }
-            ),
-            Access::new(
-                Some(12),
-                READ,
-                Storage {
-                    address: *MOCK_COINBASE,
-                    key: Word::from(3u64),
-                }
-            ),
-        ]
-    );
-
-    let access_set = AccessSet::from(access_trace);
-    assert_eq!(
-        access_set,
-        AccessSet {
-            state: HashMap::from_iter([
-                (
-                    *MOCK_COINBASE,
-                    HashSet::from_iter([Word::from(2u64), Word::from(3u64)])
-                ),
-                (*ADDR_B, HashSet::new()),
-            ]),
-            code: HashSet::from_iter([*ADDR_B, *MOCK_COINBASE]),
-        }
-    );
-}
-
-#[test]
-fn test_gen_access_trace_create_push_call_stack() {
-    use AccessValue::{Account, Code};
-    use RW::{READ, WRITE};
-
-    // revert
-    let code_creator = bytecode! {
-        PUSH1(0x00) // length
-        PUSH1(0x00) // offset
-        REVERT
-    };
-
-    // code_a calls code_b which executes code_creator in CREATE
-    let code_a = bytecode! {
-        PUSH1(0x0) // retLength
-        PUSH1(0x0) // retOffset
-        PUSH1(0x0) // argsLength
-        PUSH1(0x0) // argsOffset
-        PUSH1(0x0) // value
-        PUSH32(*WORD_ADDR_B) // addr
-        PUSH32(0x1_0000) // gas
-        CALL
-
-        PUSH2(0xaa)
-    };
-
-    let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
-    let code_b_end = bytecode! {
-        PUSH1(len) // length
-        PUSH1(0x00) // offset
-        PUSH1(0x00) // value
-        CREATE
-
-        PUSH3(0xbb)
-    };
-    code_b.append(&code_b_end);
-
-    // Get the execution steps from the external tracer
-    let block: GethData = TestContext::<3, 2>::new_with_logger_config(
-        None,
-        |accs| {
-            accs[0].address(*MOCK_COINBASE).code(code_a);
-            accs[1].address(*ADDR_B).code(code_b);
-            accs[2].balance(Word::from(1u64 << 30));
-        },
-        |mut txs, accs| {
-            txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
-        },
-        |block, _tx| block.number(0xcafeu64),
-        LoggerConfig::enable_memory(),
-    )
-    .unwrap()
-    .into();
-
-    let access_trace = gen_state_access_trace(
-        &block.eth_block,
-        &block.eth_block.transactions[0],
-        &block.geth_traces[0],
-    )
-    .unwrap();
-
-    assert_eq!(
-        access_trace,
-        vec![
-            Access::new(
-                None,
-                WRITE,
-                Account {
-                    address: Address::zero()
-                }
-            ),
-            Access::new(
-                None,
-                WRITE,
-                Account {
-                    address: *MOCK_COINBASE
-                }
-            ),
-            Access::new(
-                None,
-                READ,
-                Code {
-                    address: *MOCK_COINBASE
-                }
-            ),
-            Access::new(
-                Some(7),
-                WRITE,
-                Account {
-                    address: *MOCK_COINBASE
-                }
-            ),
-            Access::new(Some(7), WRITE, Account { address: *ADDR_B }),
-            Access::new(Some(7), READ, Code { address: *ADDR_B }),
-        ]
-    );
-
-    let access_set = AccessSet::from(access_trace);
-    assert_eq!(
-        access_set,
-        AccessSet {
-            state: HashMap::from_iter([
-                (*MOCK_COINBASE, HashSet::new()),
-                (*ADDR_A, HashSet::new()),
-                (*ADDR_B, HashSet::new()),
-            ]),
-            code: HashSet::from_iter([*MOCK_COINBASE, *ADDR_B]),
-        }
-    )
 }

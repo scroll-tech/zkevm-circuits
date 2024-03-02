@@ -14,6 +14,8 @@ use halo2_proofs::{
 impl<F: Field> Circuit<F> for CopyCircuit<F> {
     type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -49,13 +51,14 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenge_values = config.1.values(&mut layouter);
+        let challenge_values = config.1.values(&layouter);
 
         config.0.tx_table.load(
             &mut layouter,
             &self.external_data.txs,
             self.external_data.max_txs,
             self.external_data.max_calldata,
+            0, // chain id
             &challenge_values,
         )?;
 
@@ -66,7 +69,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             challenge_values.evm_word(),
         )?;
 
-        config.0.bytecode_table.load(
+        config.0.bytecode_table.dev_load(
             &mut layouter,
             self.external_data.bytecodes.values(),
             &challenge_values,

@@ -1,10 +1,13 @@
 use bus_mapping::{
     circuit_input_builder,
-    error::{ExecError, OogError},
+    error::{
+        ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError,
+        NonceUintOverflowError, OogError,
+    },
     evm::OpcodeId,
     operation,
+    precompile::{PrecompileAuxData, PrecompileCalls},
 };
-use eth_types::evm_unimplemented;
 
 use crate::{
     evm_circuit::{
@@ -45,6 +48,10 @@ pub struct ExecStep {
     pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
+    /// The block number in which this step exists.
+    pub block_num: u64,
+    /// Aux data used for precompiles
+    pub aux_data: Option<PrecompileAuxData>,
 }
 
 impl ExecStep {
@@ -64,14 +71,33 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
             ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
-            ExecError::Depth => ExecutionState::ErrorDepth,
-            ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
-            ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
+            ExecError::Depth(depth_err) => match depth_err {
+                DepthError::Call => ExecutionState::CALL_OP,
+                DepthError::Create => ExecutionState::CREATE,
+                DepthError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::InsufficientBalance(insuff_balance_err) => match insuff_balance_err {
+                InsufficientBalanceError::Call => ExecutionState::CALL_OP,
+                InsufficientBalanceError::Create => ExecutionState::CREATE,
+                InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::ContractAddressCollision(contract_addr_collision_err) => {
+                match contract_addr_collision_err {
+                    ContractAddressCollisionError::Create => ExecutionState::CREATE,
+                    ContractAddressCollisionError::Create2 => ExecutionState::CREATE2,
+                }
+            }
+            ExecError::NonceUintOverflow(nonce_overflow_err) => match nonce_overflow_err {
+                NonceUintOverflowError::Create => ExecutionState::CREATE,
+                NonceUintOverflowError::Create2 => ExecutionState::CREATE2,
+            },
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
-            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
-            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
+                ExecutionState::ErrorCodeStore
+            }
+            ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -82,13 +108,14 @@ impl From<&ExecError> for ExecutionState {
                 }
                 OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
                 OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
-                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
+                OogError::CodeStore => ExecutionState::ErrorCodeStore,
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
+                OogError::Precompile => ExecutionState::ErrorOutOfGasPrecompile,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
-                OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
+                OogError::Create => ExecutionState::ErrorOutOfGasCREATE,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
@@ -98,6 +125,7 @@ impl From<&ExecError> for ExecutionState {
 impl From<&circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &circuit_input_builder::ExecStep) -> Self {
         if let Some(error) = step.error.as_ref() {
+            log::debug!("step err {:?}", error);
             return error.into();
         }
         match step.exec_state {
@@ -117,7 +145,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        evm_unimplemented!("{:?} is implemented with DummyGadget", $name);
+                        log::warn!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
@@ -140,7 +168,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::NOT => ExecutionState::NOT,
                     OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::POP => ExecutionState::POP,
-                    OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
                     OpcodeId::MLOAD => ExecutionState::MEMORY,
                     OpcodeId::MSTORE => ExecutionState::MEMORY,
@@ -160,7 +187,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                         ExecutionState::BLOCKCTXU64
                     }
                     OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
-                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    #[cfg(not(feature = "scroll"))]
+                    OpcodeId::DIFFICULTY => ExecutionState::BLOCKCTXU256,
+                    #[cfg(feature = "scroll")]
+                    OpcodeId::DIFFICULTY => ExecutionState::DIFFICULTY,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
@@ -180,17 +211,28 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
+                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
+                    OpcodeId::CREATE => ExecutionState::CREATE,
+                    OpcodeId::CREATE2 => ExecutionState::CREATE2,
                     // dummy ops
-                    OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
-                    OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
-                    OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
+            circuit_input_builder::ExecState::Precompile(precompile) => match precompile {
+                PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
+                PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
+                PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
+                PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
+                PrecompileCalls::Modexp => ExecutionState::PrecompileBigModExp,
+                PrecompileCalls::Bn128Add => ExecutionState::PrecompileBn256Add,
+                PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+                PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+                PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+            },
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::EndBlock => ExecutionState::EndBlock,
@@ -198,7 +240,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
     }
 }
 
-pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
+pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u64) -> ExecStep {
     ExecStep {
         call_index: step.call_index,
         rw_indices: step
@@ -238,5 +280,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         reversible_write_counter: step.reversible_write_counter,
         reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
+        block_num,
+        aux_data: step.aux_data.clone(),
     }
 }

@@ -17,6 +17,8 @@ where
 {
     type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -47,10 +49,13 @@ where
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-        config
-            .mpt_table
-            .load(&mut layouter, &self.updates, challenges.evm_word())?;
+        let challenges = challenges.values(&layouter);
+        config.mpt_table.load(
+            &mut layouter,
+            &self.updates,
+            self.n_rows,
+            challenges.evm_word(),
+        )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

@@ -11,9 +11,12 @@ use crate::{
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
-use eth_types::Field;
-use gadgets::util::not;
+use bus_mapping::{
+    state_db::EMPTY_CODE_HASH_LE,
+    util::{KECCAK_CODE_HASH_EMPTY, POSEIDON_CODE_HASH_EMPTY},
+};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
+use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -21,6 +24,7 @@ use halo2_proofs::{
         Expression::{self, Constant},
     },
 };
+use itertools::Itertools;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
@@ -28,8 +32,8 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
 // but each ExecutionGadget has implicit selector degree 3, so here it only
 // allows 2^2+1-3 = 2.
-const MAX_DEGREE: usize = 5;
-const IMPLICIT_DEGREE: usize = 3;
+const MAX_DEGREE: usize = 9;
+const IMPLICIT_DEGREE: usize = 4;
 
 pub(crate) enum Transition<T> {
     Same,
@@ -57,6 +61,7 @@ pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) memory_word_size: Transition<Expression<F>>,
     pub(crate) reversible_write_counter: Transition<Expression<F>>,
     pub(crate) log_id: Transition<Expression<F>>,
+    pub(crate) end_tx: Transition<Expression<F>>,
 }
 
 impl<F: Field> StepStateTransition<F> {
@@ -82,6 +87,7 @@ impl<F: Field> StepStateTransition<F> {
             memory_word_size: Transition::Any,
             reversible_write_counter: Transition::Any,
             log_id: Transition::Any,
+            end_tx: Transition::Same,
         }
     }
 }
@@ -104,6 +110,29 @@ pub(crate) struct ReversionInfo<F> {
 }
 
 impl<F: Field> ReversionInfo<F> {
+    pub(crate) fn from_caller(
+        cb: &mut EVMConstraintBuilder<F>,
+        caller: &mut ReversionInfo<F>,
+        callee_is_success: Expression<F>,
+    ) -> Self {
+        // not sure if this is correct??
+        // let call_id = cb.curr.state.rw_counter.expr();
+        let callee = cb.reversion_info_write(None);
+        cb.require_equal(
+            "callee_is_persistent == is_persistent ⋅ is_success",
+            callee.is_persistent(),
+            and::expr([caller.is_persistent(), callee_is_success.clone()]),
+        );
+        cb.condition(callee_is_success * not::expr(caller.is_persistent()), |cb| {
+            cb.require_equal(
+                "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
+                callee.rw_counter_end_of_reversion(),
+                caller.rw_counter_of_reversion(1.expr()),
+            );
+        });
+        callee
+    }
+
     pub(crate) fn rw_counter_end_of_reversion(&self) -> Expression<F> {
         self.rw_counter_end_of_reversion.expr()
     }
@@ -138,6 +167,10 @@ impl<F: Field> ReversionInfo<F> {
         self.is_persistent
             .assign(region, offset, Value::known(F::from(is_persistent as u64)))?;
         Ok(())
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        2.expr()
     }
 }
 
@@ -208,7 +241,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        debug_assert!(
+        assert!(
             self.condition.is_none(),
             "Nested condition is not supported"
         );
@@ -220,7 +253,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         if self.max_degree > 0 {
-            debug_assert!(
+            assert!(
                 degree <= self.max_degree,
                 "Expression {} degree too high: {} > {}",
                 name,
@@ -279,10 +312,16 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
+    pub(crate) max_inner_degree: (&'static str, usize),
+    #[cfg(feature = "debug-annotations")]
+    annotations: Vec<String>,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        #[cfg(feature = "debug-annotations")]
+        let name =
+            Box::leak(format!("{}: {}", self.annotations.iter().join(">"), name).into_boxed_str());
         let constraint = self.split_expression(
             name,
             constraint * self.condition_expr(),
@@ -321,26 +360,26 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
+            max_inner_degree: ("", 0),
+            annotations: Vec::new(),
         }
     }
 
     /// Returns (list of constraints, list of first step constraints, stored
     /// expressions, height used).
     #[allow(clippy::type_complexity)]
-    pub(crate) fn build(self) -> (Constraints<F>, Vec<StoredExpression<F>>, usize) {
+    pub(crate) fn build(
+        self,
+    ) -> (
+        Expression<F>,
+        Constraints<F>,
+        Vec<StoredExpression<F>>,
+        usize,
+    ) {
         let exec_state_sel = self.curr.execution_state_selector([self.execution_state]);
-        let mul_exec_state_sel = |c: Vec<(&'static str, Expression<F>)>| {
-            c.into_iter()
-                .map(|(name, constraint)| (name, exec_state_sel.clone() * constraint))
-                .collect()
-        };
         (
-            Constraints {
-                step: mul_exec_state_sel(self.constraints.step),
-                step_first: mul_exec_state_sel(self.constraints.step_first),
-                step_last: mul_exec_state_sel(self.constraints.step_last),
-                not_step_last: mul_exec_state_sel(self.constraints.not_step_last),
-            },
+            exec_state_sel,
+            self.constraints,
             self.stored_expressions,
             self.curr.cell_manager.get_height(),
         )
@@ -417,12 +456,23 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::StoragePhase1)
     }
 
+    #[allow(clippy::let_and_return)]
     pub(crate) fn query_cell_phase2(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::StoragePhase2)
+        let cell = self.query_cell_with_type(CellType::StoragePhase2);
+        #[cfg(not(feature = "onephase"))]
+        assert_eq!(
+            cell.column.column_type(),
+            &halo2_proofs::plonk::Advice::new(halo2_proofs::plonk::SecondPhase)
+        );
+        cell
     }
 
     pub(crate) fn query_copy_cell(&mut self) -> Cell<F> {
         self.query_cell_with_type(CellType::StoragePermutation)
+    }
+
+    pub(crate) fn query_copy_cell_phase2(&mut self) -> Cell<F> {
+        self.query_cell_with_type(CellType::StoragePermutationPhase2)
     }
 
     pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType) -> Cell<F> {
@@ -453,8 +503,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
+    pub(crate) fn empty_keccak_hash_rlc(&self) -> Expression<F> {
+        let bytes = KECCAK_CODE_HASH_EMPTY.to_word().to_le_bytes();
+        self.word_rlc(bytes.map(|byte| byte.expr()))
+    }
+
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
-        self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
+        if cfg!(feature = "poseidon-codehash") {
+            let codehash = POSEIDON_CODE_HASH_EMPTY.to_word().to_scalar().unwrap();
+            Expression::Constant(codehash)
+        } else {
+            self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
+        }
+    }
+
+    pub(crate) fn require_true(&mut self, name: &'static str, constraint: Expression<F>) {
+        self.require_equal(name, constraint, 1.expr());
     }
 
     pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
@@ -514,11 +578,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn range_lookup(&mut self, value: Expression<F>, range: u64) {
         let (name, tag) = match range {
+            3 => ("Range3", FixedTableTag::Range3),
             5 => ("Range5", FixedTableTag::Range5),
+            8 => ("Range8", FixedTableTag::Range8),
             16 => ("Range16", FixedTableTag::Range16),
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
             128 => ("Range128", FixedTableTag::Range128),
+            192 => ("Range192", FixedTableTag::Range192),
             256 => ("Range256", FixedTableTag::Range256),
             512 => ("Range512", FixedTableTag::Range512),
             1024 => ("Range1024", FixedTableTag::Range1024),
@@ -531,6 +598,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 values: [value, 0.expr(), 0.expr()],
             },
         );
+    }
+
+    // precompiled contract information
+    pub(crate) fn precompile_info_lookup(
+        &mut self,
+        execution_state: Expression<F>,
+        address: Expression<F>,
+        base_gas_cost: Expression<F>,
+    ) {
+        self.add_lookup(
+            "precompiles info",
+            Lookup::Fixed {
+                tag: FixedTableTag::PrecompileInfo.expr(),
+                values: [execution_state, address, base_gas_cost],
+            },
+        )
     }
 
     // constant gas
@@ -547,12 +630,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
-        self.opcode_lookup_at(
-            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
-            opcode,
-            is_code,
-        );
-        self.program_counter_offset += 1;
+        assert_eq!(is_code, 1.expr());
+        self.opcode_lookup_rlc(opcode, 0.expr());
     }
 
     pub(crate) fn opcode_lookup_at(
@@ -561,6 +640,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         opcode: Expression<F>,
         is_code: Expression<F>,
     ) {
+        assert_eq!(is_code, 1.expr());
+        self.opcode_lookup_at_rlc(index, opcode, 0.expr());
+    }
+
+    pub(crate) fn opcode_lookup_rlc(&mut self, opcode: Expression<F>, push_rlc: Expression<F>) {
+        self.opcode_lookup_at_rlc(
+            self.curr.state.program_counter.expr() + self.program_counter_offset.expr(),
+            opcode,
+            push_rlc,
+        );
+        self.program_counter_offset += 1;
+    }
+
+    pub(crate) fn opcode_lookup_at_rlc(
+        &mut self,
+        index: Expression<F>,
+        opcode: Expression<F>,
+        push_rlc: Expression<F>,
+    ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
         self.add_lookup(
             "Opcode lookup",
@@ -568,8 +666,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 hash: self.curr.state.code_hash.expr(),
                 tag: BytecodeFieldTag::Byte.expr(),
                 index,
-                is_code,
+                is_code: 1.expr(),
                 value: opcode,
+                push_rlc,
             }
             .conditional(1.expr() - is_root_create),
         );
@@ -583,6 +682,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Expression<F>,
         is_code: Expression<F>,
         value: Expression<F>,
+        push_rlc: Expression<F>,
     ) {
         self.add_lookup(
             "Bytecode (byte) lookup",
@@ -592,6 +692,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 index,
                 is_code,
                 value,
+                push_rlc,
             },
         )
     }
@@ -605,6 +706,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 index: 0.expr(),
                 is_code: 0.expr(),
                 value,
+                push_rlc: 0.expr(),
             },
         );
     }
@@ -655,14 +757,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn block_lookup(
         &mut self,
         tag: Expression<F>,
-        number: Option<Expression<F>>,
+        number: Expression<F>,
         val: Expression<F>,
     ) {
         self.add_lookup(
             "Block lookup",
             Lookup::Block {
                 field_tag: tag,
-                number: number.unwrap_or_else(|| 0.expr()),
+                number,
                 value: val,
             },
         );
@@ -680,7 +782,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         tag: RwTableTag,
         values: RwValues<F>,
     ) {
-        let name = format!("rw lookup {}", name);
+        let name = format!("rw lookup {name}");
         self.add_lookup(
             &name,
             Lookup::Rw {
@@ -741,7 +843,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         if let Some(reversion_info) = reversion_info {
             let reversible_write_counter_inc_selector = self.condition_expr();
             self.condition(not::expr(reversion_info.is_persistent()), |cb| {
-                let name = format!("{} with reversion", name);
+                let name = format!("{name} with reversion");
                 cb.rw_lookup_with_counter(
                     &name,
                     reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
@@ -968,7 +1070,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwValues::new(
                 tx_id,
                 account_address,
-                0.expr(),
+                AccountFieldTag::CodeHash.expr(),
                 key,
                 value.clone(),
                 value,
@@ -995,7 +1097,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwValues::new(
                 tx_id,
                 account_address,
-                0.expr(),
+                AccountFieldTag::CodeHash.expr(),
                 key,
                 value,
                 value_prev,
@@ -1030,6 +1132,33 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         let word = self.query_word_rlc();
         self.call_context_lookup(false.expr(), call_id, field_tag, word.expr());
         word
+    }
+
+    // same as call_context_lookup_write with bypassing external rwc
+    // Note: will not bumping internal rwc
+    pub(crate) fn call_context_lookup_write_with_counter(
+        &mut self,
+        rw_counter: Expression<F>,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup_with_counter(
+            "CallContext lookup",
+            rw_counter,
+            1.expr(),
+            RwTableTag::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                0.expr(),
+                value,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            ),
+        );
     }
 
     pub(crate) fn call_context_lookup(
@@ -1136,8 +1265,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn memory_lookup(
         &mut self,
         is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
+        memory_address: Expression<F>, // slot
+        value: Expression<F>,
+        value_prev: Expression<F>,
         call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
@@ -1149,8 +1279,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 memory_address,
                 0.expr(),
                 0.expr(),
-                byte,
-                0.expr(),
+                value,
+                value_prev,
                 0.expr(),
                 0.expr(),
             ),
@@ -1262,6 +1392,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 rwc_inc: rwc_inc.clone(),
             },
         );
+
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
     }
 
@@ -1270,8 +1401,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn exp_table_lookup(
         &mut self,
-        identifier: Expression<F>,
-        is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
@@ -1279,13 +1408,81 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.add_lookup(
             "exponentiation lookup",
             Lookup::ExpTable {
-                identifier,
-                is_last,
                 base_limbs,
                 exponent_lo_hi,
                 exponentiation_lo_hi,
             },
         );
+    }
+
+    // Sig Table
+    pub(crate) fn sig_table_lookup(
+        &mut self,
+        msg_hash_rlc: Expression<F>,
+        sig_v: Expression<F>,
+        sig_r_rlc: Expression<F>,
+        sig_s_rlc: Expression<F>,
+        recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
+    ) {
+        self.add_lookup(
+            "sig table",
+            Lookup::SigTable {
+                msg_hash_rlc: msg_hash_rlc.expr(),
+                sig_v: sig_v.expr(),
+                sig_r_rlc: sig_r_rlc.expr(),
+                sig_s_rlc: sig_s_rlc.expr(),
+                recovered_addr: recovered_addr.expr(),
+                is_valid: is_valid.expr(),
+            },
+        );
+    }
+
+    // Ecc Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ecc_table_lookup(
+        &mut self,
+        op_type: Expression<F>,
+        is_valid: Expression<F>,
+        arg1_rlc: Expression<F>,
+        arg2_rlc: Expression<F>,
+        arg3_rlc: Expression<F>,
+        arg4_rlc: Expression<F>,
+        input_rlc: Expression<F>,
+        output1_rlc: Expression<F>,
+        output2_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "ecc table",
+            Lookup::EccTable {
+                op_type,
+                is_valid,
+                arg1_rlc,
+                arg2_rlc,
+                arg3_rlc,
+                arg4_rlc,
+                input_rlc,
+                output1_rlc,
+                output2_rlc,
+            },
+        );
+    }
+
+    // Power of Randomness Table
+
+    pub(crate) fn pow_of_rand_lookup(
+        &mut self,
+        exponent: Expression<F>,
+        pow_of_rand: Expression<F>,
+    ) {
+        self.add_lookup(
+            "power of randomness",
+            Lookup::PowOfRandTable {
+                exponent,
+                pow_of_rand,
+            },
+        )
     }
 
     // Keccak Table
@@ -1306,13 +1503,50 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // SHA256 Table
+
+    pub(crate) fn sha256_table_lookup(
+        &mut self,
+        input_rlc: Expression<F>,
+        input_len: Expression<F>,
+        output_rlc: Expression<F>,
+    ) {
+        self.add_lookup(
+            "sha256 lookup",
+            Lookup::Sha256Table {
+                input_rlc,
+                input_len,
+                output_rlc,
+            },
+        );
+    }
+
+    // ModExp table
+    pub(crate) fn modexp_table_lookup(
+        &mut self,
+        base_limbs: [Expression<F>; 3],
+        exp_limbs: [Expression<F>; 3],
+        modulus_limbs: [Expression<F>; 3],
+        result_limbs: [Expression<F>; 3],
+    ) {
+        self.add_lookup(
+            "u256 exponentiation modulus lookup",
+            Lookup::ModExpTable {
+                base_limbs,
+                exp_limbs,
+                modulus_limbs,
+                result_limbs,
+            },
+        );
+    }
+
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         // We need to subtract IMPLICIT_DEGREE from MAX_DEGREE because all expressions
         // will be multiplied by state selector and q_step/q_step_first
         // selector.
-        debug_assert!(
+        assert!(
             degree <= MAX_DEGREE - IMPLICIT_DEGREE,
             "Expression {} degree too high: {} > {}",
             name,
@@ -1334,13 +1568,31 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         ret
     }
 
+    /// Annotation constraint
+    /// if feature "debug-annotations" is enabled, it will push the annotation
+    /// into the annotation stack.
+    /// if feature "debug-annotations" is disabled, it's a no-op.
+
+    pub(crate) fn annotation<R>(
+        &mut self,
+        annotation: impl AsRef<str>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        #[cfg(feature = "debug-annotations")]
+        self.annotations.push(annotation.as_ref().to_string());
+        let ret = constraint(self);
+        #[cfg(feature = "debug-annotations")]
+        self.annotations.pop();
+        ret
+    }
+
     /// This function needs to be used with extra precaution. You need to make
     /// sure the layout is the same as the gadget for `next_step_state`.
     /// `query_cell` will return cells in the next step in the `constraint`
     /// function.
     pub(crate) fn constrain_next_step<R>(
         &mut self,
-        next_step_state: ExecutionState,
+        opt_next_step_state: Option<ExecutionState>,
         condition: Option<Expression<F>>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
@@ -1348,11 +1600,15 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.in_next_step = true;
         let ret = match condition {
             None => {
-                self.require_next_state(next_step_state);
+                if let Some(next_step_state) = opt_next_step_state {
+                    self.require_next_state(next_step_state);
+                }
                 constraint(self)
             }
             Some(cond) => self.condition(cond, |cb| {
-                cb.require_next_state(next_step_state);
+                if let Some(next_step_state) = opt_next_step_state {
+                    cb.require_next_state(next_step_state);
+                }
                 constraint(cb)
             }),
         };
@@ -1440,7 +1696,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 self.in_next_step = in_next_step;
 
                 // Require the stored value to equal the value of the expression
-                let name = format!("{} (stored expression)", name);
+                let name = format!("{name} (stored expression)");
                 self.push_constraint(
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),
@@ -1475,6 +1731,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         expr: Expression<F>,
         max_degree: usize,
     ) -> Expression<F> {
+        if expr.degree() > self.max_inner_degree.1 {
+            self.max_inner_degree = (name, expr.degree());
+        }
         if expr.degree() > max_degree {
             match expr {
                 Expression::Negated(poly) => {

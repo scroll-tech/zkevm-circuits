@@ -16,8 +16,10 @@ impl Opcode for Selfbalance {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        let self_balance = geth_steps[1].stack.last()?;
         let callee_address = state.call()?.address;
+        let self_balance = state.sdb.get_balance(&callee_address);
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(self_balance, geth_steps[1].stack.last()?);
 
         // CallContext read of the callee_address
         state.call_context_read(
@@ -25,7 +27,7 @@ impl Opcode for Selfbalance {
             state.call()?.call_id,
             CallContextField::CalleeAddress,
             callee_address.to_word(),
-        );
+        )?;
 
         // Account read for the balance of the callee_address
         state.account_read(
@@ -33,14 +35,10 @@ impl Opcode for Selfbalance {
             callee_address,
             AccountField::Balance,
             self_balance,
-        );
+        )?;
 
         // Stack write of self_balance
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            self_balance,
-        )?;
+        state.stack_push(&mut exec_step, self_balance)?;
 
         Ok(vec![exec_step])
     }
@@ -91,7 +89,7 @@ mod selfbalance_tests {
             .unwrap();
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;
-        let callee_address = builder.block.txs()[0].to;
+        let callee_address = builder.block.txs()[0].to.unwrap();
         let self_balance = builder.sdb.get_account(&callee_address).1.balance;
 
         assert_eq!(

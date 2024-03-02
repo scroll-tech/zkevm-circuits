@@ -1,14 +1,12 @@
+#![feature(lazy_cell)]
 #![cfg(feature = "rpc")]
 
 use eth_types::{StorageProof, Word};
 use integration_tests::{get_client, CompiledContract, GenDataOutput, CHAIN_ID, CONTRACTS_PATH};
-use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
-use std::{fs::File, path::Path};
+use std::{fs::File, path::Path, sync::LazyLock};
 
-lazy_static! {
-    pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
-}
+pub static GEN_DATA: LazyLock<GenDataOutput> = LazyLock::new(GenDataOutput::load);
 
 #[tokio::test]
 async fn test_get_chain_id() {
@@ -86,4 +84,16 @@ async fn test_get_proof() {
         .await
         .unwrap();
     assert_eq!(expected_storage_proof, proof.storage_proof[0]);
+}
+
+#[tokio::test]
+async fn test_prestate_tracer() {
+    let cli = get_client();
+    cli.trace_block_prestate_by_hash(
+        "0x25bf297a83c6de4ba7e7672d66c25a3ddd93f9c78878daf9806f6610f7a193bc"
+            .parse()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
 }

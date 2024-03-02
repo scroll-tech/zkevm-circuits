@@ -1,0 +1,50 @@
+name: 'Select Runner'
+
+on:
+  workflow_call:
+    inputs:
+      enabled:
+        default: ${{ github.repository == 'scroll-tech/zkevm-circuits' }}
+        required: false
+        type: boolean
+
+      matrices:
+        description: 'The matrix at index 0 is intended for not running on the self-hosted runner'
+        default: '[["ubuntu-latest"], ["jenkins1"], ["jenkins2"]]'
+        required: false
+        type: string
+
+      bastion-host:
+        default: pse-runner
+        required: false
+        type: string
+
+    outputs:
+      runner-matrix1:
+        value: ${{ jobs.select.outputs.matrix1 }}
+      concurrency-group1:
+        value: ${{ jobs.select.outputs.matrix1 }}
+      runner-matrix2:
+        value: ${{ jobs.select.outputs.matrix2 }}
+      concurrency-group2:
+        value: ${{ jobs.select.outputs.matrix2 }}
+
+jobs:
+  select:
+    # dummy step to make github actions happy
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+    outputs:
+      matrix1: ${{ toJSON( fromJSON(inputs.matrices)[1] ) }}
+      matrix2: ${{ toJSON( fromJSON(inputs.matrices)[2] ) }}
+      
+  wakeup:
+    name: Wake up self-hosted runner
+    if: ${{ inputs.enabled }}
+    needs: [select]
+    runs-on: ${{ inputs.bastion-host }}
+    concurrency: ${{ needs.select.outputs.matrix1 }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/ciChecksScripts/wakeUpRunner.sh

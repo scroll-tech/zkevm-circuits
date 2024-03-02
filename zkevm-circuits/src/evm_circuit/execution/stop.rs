@@ -1,14 +1,15 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
+                Transition::{Delta, Same, To},
             },
-            math_gadget::IsZeroGadget,
+            math_gadget::LtGadget,
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -23,7 +24,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
     code_length: Cell<F>,
-    is_out_of_range: IsZeroGadget<F>,
+    is_within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     opcode: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -36,12 +37,10 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let code_length = cb.query_cell();
         cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
-        let is_out_of_range = IsZeroGadget::construct(
-            cb,
-            code_length.expr() - cb.curr.state.program_counter.expr(),
-        );
+        let is_within_range =
+            LtGadget::construct(cb, cb.curr.state.program_counter.expr(), code_length.expr());
         let opcode = cb.query_cell();
-        cb.condition(1.expr() - is_out_of_range.expr(), |cb| {
+        cb.condition(is_within_range.expr(), |cb| {
             cb.opcode_lookup(opcode.expr(), 1.expr());
         });
 
@@ -69,6 +68,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(1.expr()),
+                end_tx: To(1.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -88,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         Self {
             code_length,
-            is_out_of_range,
+            is_within_range,
             opcode,
             restore_context,
         }
@@ -113,10 +113,11 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             Value::known(F::from(code.bytes.len() as u64)),
         )?;
 
-        self.is_out_of_range.assign(
+        self.is_within_range.assign(
             region,
             offset,
-            F::from(code.bytes.len() as u64) - F::from(step.program_counter),
+            F::from(step.program_counter),
+            F::from(code.bytes.len() as u64),
         )?;
 
         let opcode = step.opcode.unwrap();

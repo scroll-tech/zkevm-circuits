@@ -28,38 +28,47 @@ impl Opcode for Sload {
             call_id,
             CallContextField::TxId,
             Word::from(state.tx_ctx.id()),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::RwCounterEndOfReversion,
             Word::from(state.call()?.rw_counter_end_of_reversion),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::IsPersistent,
             Word::from(state.call()?.is_persistent as u8),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::CalleeAddress,
             contract_addr.to_word(),
-        );
+        )?;
 
         // First stack read
-        let key = geth_step.stack.last()?;
-        let stack_position = geth_step.stack.last_filled();
-
-        // Manage first stack read at latest stack position
-        state.stack_read(&mut exec_step, stack_position, key)?;
+        let key = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(key, geth_step.stack.last()?);
 
         // Storage read
-        let value = geth_step.storage.get_or_err(&key)?;
+        let value_from_statedb = *state.sdb.get_storage(&contract_addr, &key).1;
+        {
+            let value_from_step = geth_step.storage.get_or_err(&key)?;
+
+            // 1. value_from_step == value_from_statedb
+            assert_eq!(value_from_step, value_from_statedb, "inconsistent sload: step proof {value_from_step:?}, local statedb {value_from_statedb:?} in contract {contract_addr:?}, key {key:?}",);
+
+            // 2. value_from_step == value_from_stack
+            #[cfg(feature = "enable-stack")]
+            assert_eq!(value_from_step, geth_steps[1].stack.last()?, "inconsistent sload: step proof {value_from_step:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?);
+        }
+        let value = value_from_statedb;
 
         let is_warm = state
             .sdb
@@ -78,10 +87,21 @@ impl Opcode for Sload {
                 state.tx_ctx.id(),
                 committed_value,
             ),
-        );
+        )?;
 
         // First stack write
-        state.stack_write(&mut exec_step, stack_position, value)?;
+        state.stack_push(&mut exec_step, value)?;
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: contract_addr,
+                key,
+                is_warm,
+                is_warm_prev: is_warm,
+            },
+        )?;
         state.push_op_reversible(
             &mut exec_step,
             TxAccessListAccountStorageOp {
@@ -188,20 +208,35 @@ mod sload_tests {
             )
         );
 
-        let access_list_op = &builder.block.container.tx_access_list_account_storage
-            [step.bus_mapping_instance[7].as_usize()];
         assert_eq!(
-            (access_list_op.rw(), access_list_op.op()),
-            (
-                RW::WRITE,
-                &TxAccessListAccountStorageOp {
-                    tx_id: 1,
-                    address: MOCK_ACCOUNTS[0],
-                    key: Word::from(0x0u32),
-                    is_warm: true,
-                    is_warm_prev: is_warm,
-                },
-            )
+            [7, 8]
+                .map(
+                    |idx| &builder.block.container.tx_access_list_account_storage
+                        [step.bus_mapping_instance[idx].as_usize()]
+                )
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &TxAccessListAccountStorageOp {
+                        tx_id: 1,
+                        address: MOCK_ACCOUNTS[0],
+                        key: Word::from(0x0u32),
+                        is_warm,
+                        is_warm_prev: is_warm,
+                    },
+                ),
+                (
+                    RW::WRITE,
+                    &TxAccessListAccountStorageOp {
+                        tx_id: 1,
+                        address: MOCK_ACCOUNTS[0],
+                        key: Word::from(0x0u32),
+                        is_warm: true,
+                        is_warm_prev: is_warm,
+                    },
+                )
+            ]
         )
     }
 

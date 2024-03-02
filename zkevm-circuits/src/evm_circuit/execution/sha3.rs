@@ -7,12 +7,15 @@ use crate::evm_circuit::{
     param::N_BYTES_MEMORY_WORD_SIZE,
     step::ExecutionState,
     util::{
-        common_gadget::SameContextGadget,
+        common_gadget::{get_copy_bytes, SameContextGadget},
         constraint_builder::{
             ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
         },
-        memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-        rlc, CachedRegion, Cell, Word,
+        memory_gadget::{
+            CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
+            MemoryExpansionGadget,
+        },
+        rlc, CachedRegion, Cell, StepRws, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -58,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::RlcAcc.expr(),
                 memory_address.offset(),
-                memory_address.address(),
+                memory_address.end_offset(),
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
                 rlc_acc.expr(),
@@ -72,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         });
         cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
@@ -111,29 +114,31 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let mut rws = StepRws::new(block, step);
+
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_offset, size, sha3_output] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+        let [memory_offset, size, sha3_output] = [(); 3].map(|_| rws.next().stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, size)?;
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
+        let shift = memory_offset.low_u64() % 32;
+        let copy_rwc_inc = step.copy_rw_counter_delta;
+
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                size.to_scalar()
+                copy_rwc_inc
+                    .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
 
-        let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
-            .collect();
+        let values: Vec<u8> = get_copy_bytes(&mut rws, copy_rwc_inc as usize, shift, size.as_u64());
 
         let rlc_acc = region
             .challenges()
@@ -162,6 +167,7 @@ mod tests {
         circuit_input_builder::CircuitsParams,
         evm::{gen_sha3_code, MemoryKind},
     };
+    use eth_types::{bytecode, Word};
     use mock::TestContext;
 
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
@@ -171,6 +177,7 @@ mod tests {
         )
         .params(CircuitsParams {
             max_rws: 5500,
+            max_copy_rows: 3000,
             ..Default::default()
         })
         .run();
@@ -195,5 +202,19 @@ mod tests {
         test_ok(0x202, 0x303, MemoryKind::LessThanSize);
         test_ok(0x303, 0x404, MemoryKind::EqualToSize);
         test_ok(0x404, 0x505, MemoryKind::MoreThanSize);
+    }
+
+    #[test]
+    fn sha3_gadget_overflow_offset_and_zero_size() {
+        let bytecode = bytecode! {
+            PUSH1(0)
+            PUSH32(Word::MAX)
+            SHA3
+        };
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

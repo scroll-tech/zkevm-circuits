@@ -94,8 +94,8 @@ def log_processor(pull_request,circuit, degree):
     SETUP_PREFIX     = "[Setup generation]"
     PROOFGEN_PREFIX  = "[Proof generation]"
     PROOFVER_PREFIX  = "[Proof verification]"
-    logfile = [i for i in os.listdir('/home/ubuntu/') if 'proverlog' in i][0]
-    f = open(f'/home/ubuntu/{logfile}', 'r')
+    logfile = [i for i in os.listdir('/home/CI/') if 'proverlog' in i][0]
+    f = open(f'/home/CI/{logfile}', 'r')
     logdata = f.read()
     logdata = logdata.split("\n")
     running = [i for i in logdata if 'running' in i and 'test' in i][0].split()[1]

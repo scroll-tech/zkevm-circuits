@@ -18,14 +18,15 @@ impl<const N: usize> Opcode for Dup<N> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let stack_value_read = geth_step.stack.nth_last(N - 1)?;
-        let stack_position = geth_step.stack.nth_last_filled(N - 1);
+        let stack_value_read = state.call_ctx()?.stack.nth_last(N - 1)?;
+        let stack_position = state.call_ctx()?.stack.nth_last_filled(N - 1);
+        #[cfg(feature = "enable-stack")]
+        {
+            assert_eq!(stack_value_read, geth_step.stack.nth_last(N - 1)?);
+            assert_eq!(stack_position, geth_step.stack.nth_last_filled(N - 1));
+        }
         state.stack_read(&mut exec_step, stack_position, stack_value_read)?;
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            stack_value_read,
-        )?;
+        state.stack_push(&mut exec_step, stack_value_read)?;
 
         Ok(vec![exec_step])
     }

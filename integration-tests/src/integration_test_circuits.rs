@@ -1,6 +1,8 @@
 use crate::{get_client, GenDataOutput};
 use bus_mapping::{
-    circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{
+        BuilderClient, CircuitInputBuilder, CircuitsParams, PrecompileEcParams,
+    },
     mock::BlockData,
 };
 use eth_types::geth_types::GethData;
@@ -20,12 +22,15 @@ use halo2_proofs::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-use lazy_static::lazy_static;
 use mock::TestContext;
 use rand_chacha::rand_core::SeedableRng;
 use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
-use std::{collections::HashMap, marker::PhantomData, sync::Mutex};
+use std::{
+    collections::HashMap,
+    marker::PhantomData,
+    sync::{LazyLock, Mutex},
+};
 use tokio::sync::Mutex as TokioMutex;
 use zkevm_circuits::{
     bytecode_circuit::TestBytecodeCircuit,
@@ -46,7 +51,9 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 /// MAX_TXS
 const MAX_TXS: usize = 4;
 /// MAX_CALLDATA
-const MAX_CALLDATA: usize = 512;
+const MAX_CALLDATA: usize = 2049;
+/// MAX_RLP_ROWS
+const MAX_RLP_ROWS: usize = 1000;
 /// MAX_RWS
 const MAX_RWS: usize = 5888;
 /// MAX_BYTECODE
@@ -55,20 +62,42 @@ const MAX_BYTECODE: usize = 5000;
 const MAX_COPY_ROWS: usize = 5888;
 /// MAX_EVM_ROWS
 const MAX_EVM_ROWS: usize = 10000;
+/// MAX_INNER_BLOCKS
+pub const MAX_INNER_BLOCKS: usize = 64;
 /// MAX_EXP_STEPS
 const MAX_EXP_STEPS: usize = 1000;
-
+/// MAX_KECCAK_ROWS
 const MAX_KECCAK_ROWS: usize = 15000;
+/// MAX_POSEIDON_ROWS
+const MAX_POSEIDON_ROWS: usize = 15000;
+/// MAX_VERTICAL_CIRCUIT_ROWS
+const MAX_VERTICAL_CIRCUIT_ROWS: usize = 0;
+/// Max number of EcAdd ops.
+const MAX_EC_ADD: usize = 10;
+/// Max number of EcMul ops.
+const MAX_EC_MUL: usize = 10;
+/// Max number of EcPairing ops.
+const MAX_EC_PAIRING: usize = 4;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,
+    max_mpt_rows: MAX_CALLDATA,
+    max_inner_blocks: 64,
     max_bytecode: MAX_BYTECODE,
     max_copy_rows: MAX_COPY_ROWS,
     max_evm_rows: MAX_EVM_ROWS,
     max_exp_steps: MAX_EXP_STEPS,
     max_keccak_rows: MAX_KECCAK_ROWS,
+    max_poseidon_rows: MAX_POSEIDON_ROWS,
+    max_vertical_circuit_rows: MAX_VERTICAL_CIRCUIT_ROWS,
+    max_rlp_rows: MAX_RLP_ROWS,
+    max_ec_ops: PrecompileEcParams {
+        ec_add: MAX_EC_ADD,
+        ec_mul: MAX_EC_MUL,
+        ec_pairing: MAX_EC_PAIRING,
+    },
 };
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;
@@ -80,52 +109,54 @@ const KECCAK_CIRCUIT_DEGREE: u32 = 16;
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
 const EXP_CIRCUIT_DEGREE: u32 = 16;
 
-lazy_static! {
-    /// Data generation.
-    static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
-    static ref RNG: XorShiftRng = XorShiftRng::from_seed([
+/// Data generation.
+static GEN_DATA: LazyLock<GenDataOutput> = LazyLock::new(GenDataOutput::load);
+static RNG: LazyLock<XorShiftRng> = LazyLock::new(|| {
+    XorShiftRng::from_seed([
         0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
         0xe5,
-    ]);
-}
+    ])
+});
 
-lazy_static! {
-    static ref GEN_PARAMS: Mutex<HashMap<u32, ParamsKZG<Bn256>>> = Mutex::new(HashMap::new());
-}
+static GEN_PARAMS: LazyLock<Mutex<HashMap<u32, ParamsKZG<Bn256>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
-lazy_static! {
-    /// Integration test for EVM circuit
-    pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestEvmCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE));
+/// Integration test for EVM circuit
+pub static EVM_CIRCUIT_TEST: LazyLock<TokioMutex<IntegrationTest<TestEvmCircuit<Fr>>>> =
+    LazyLock::new(|| TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE)));
 
-    /// Integration test for State circuit
-    pub static ref STATE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestStateCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
+/// Integration test for State circuit
+pub static STATE_CIRCUIT_TEST: LazyLock<TokioMutex<IntegrationTest<TestStateCircuit<Fr>>>> =
+    LazyLock::new(|| TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE)));
 
-    /// Integration test for State circuit
-    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
+/// Integration test for State circuit
+pub static TX_CIRCUIT_TEST: LazyLock<TokioMutex<IntegrationTest<TestTxCircuit<Fr>>>> =
+    LazyLock::new(|| TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE)));
 
-    /// Integration test for Bytecode circuit
-    pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestBytecodeCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Bytecode", BYTECODE_CIRCUIT_DEGREE));
+/// Integration test for Bytecode circuit
+pub static BYTECODE_CIRCUIT_TEST: LazyLock<TokioMutex<IntegrationTest<TestBytecodeCircuit<Fr>>>> =
+    LazyLock::new(|| TokioMutex::new(IntegrationTest::new("Bytecode", BYTECODE_CIRCUIT_DEGREE)));
 
-    /// Integration test for Copy circuit
-    pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestCopyCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE));
+/// Integration test for Copy circuit
+pub static COPY_CIRCUIT_TEST: LazyLock<TokioMutex<IntegrationTest<TestCopyCircuit<Fr>>>> =
+    LazyLock::new(|| TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE)));
 
-    /// Integration test for Keccak circuit
-    pub static ref KECCAK_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestKeccakCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE));
+/// Integration test for Keccak circuit
+pub static KECCAK_CIRCUIT_TEST: LazyLock<TokioMutex<IntegrationTest<TestKeccakCircuit<Fr>>>> =
+    LazyLock::new(|| TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE)));
 
-    /// Integration test for Copy circuit
-    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>> =
-    TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
+/// Integration test for Copy circuit
+pub static SUPER_CIRCUIT_TEST: LazyLock<
+    TokioMutex<
+        IntegrationTest<
+            SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>,
+        >,
+    >,
+> = LazyLock::new(|| TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE)));
 
-     /// Integration test for Exp circuit
-     pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
-     TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE));
-}
+/// Integration test for Exp circuit
+pub static EXP_CIRCUIT_TEST: LazyLock<TokioMutex<IntegrationTest<TestExpCircuit<Fr>>>> =
+    LazyLock::new(|| TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE)));
 
 /// Generic implementation for integration tests
 pub struct IntegrationTest<C: SubCircuit<Fr> + Circuit<Fr>> {
@@ -287,8 +318,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_num,
             block_tag
         );
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         let circuit = C::new_from_block(&block);
         let instance = circuit.instance();
 

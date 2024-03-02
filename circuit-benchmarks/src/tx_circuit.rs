@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
+    use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
     use env_logger::Env;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -19,26 +20,62 @@ mod tests {
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     };
+    use log;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::env::var;
-    use zkevm_circuits::tx_circuit::TxCircuit;
+    use zkevm_circuits::{
+        tx_circuit::TestTxCircuit as TxCircuit, util::SubCircuit, witness::block_convert,
+    };
 
-    #[cfg_attr(not(feature = "benches"), ignore)]
-    #[test]
-    fn bench_tx_circuit_prover() {
-        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-        let setup_prfx = crate::constants::SETUP_PREFIX;
-        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
-        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
-        // Unique string used by bench results module for parsing the result
-        const BENCHMARK_ID: &str = "Tx Circuit";
+    use bus_mapping::rpc::GethClient;
+    use ethers::providers::Http;
+    use url::Url;
+    fn get_client() -> GethClient<Http> {
+        let geth_url = "http://52.37.45.56:30303";
+        let transport = Http::new(Url::parse(geth_url).expect("invalid url"));
+        GethClient::new(transport)
+    }
+    async fn build_circuit_from_mainnet_block() -> (usize, TxCircuit<Fr>) {
+        let degree = std::env::var("DEGREE")
+            .expect("DEGREE Not Set")
+            .parse::<usize>()
+            .expect("DEGREE should be int");
+        let block_num = 16140307_u64;
+        log::info!("test super circuit, block number: {}", block_num);
+        let cli = get_client();
+        // target k = 19
+        let params = CircuitsParams {
+            max_rws: 4_000_000,
+            max_copy_rows: 4_000_000,
+            max_txs: 500,
+            max_calldata: 2_000_000,
+            max_inner_blocks: 64,
+            max_mpt_rows: 3_000_000,
+            max_bytecode: 3_000_000,
+            max_keccak_rows: 0, // FIXME: can this be none?
+            max_exp_steps: 100_000,
+            max_evm_rows: 4_000_000,
+            max_rlp_rows: 4_000_000,
+            ..Default::default()
+        };
+        let cli = BuilderClient::new(cli, params).await.unwrap();
+        let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
+        if builder.block.txs.is_empty() {
+            log::info!("skip empty block");
+            std::process::exit(0);
+        }
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let circuit = TxCircuit::new_from_block(&block);
+        (degree, circuit)
+    }
+
+    fn build_circuit_from_mock_txs() -> (usize, TxCircuit<Fr>) {
         // Approximate value, adjust with changes on the TxCircuit.
         const ROWS_PER_TX: usize = 175_000;
 
         const MAX_CALLDATA: usize = 1024;
-
         let degree: u32 = var("DEGREE")
             .unwrap_or_else(|_| "19".to_string())
             .parse()
@@ -46,16 +83,35 @@ mod tests {
 
         let max_txs: usize = 2_usize.pow(degree) / ROWS_PER_TX;
 
+        let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
+        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, mock::MOCK_CHAIN_ID, 0, txs);
+        (degree as usize, circuit)
+    }
+
+    #[cfg_attr(not(feature = "benches"), ignore)]
+    #[cfg_attr(not(feature = "print-trace"), allow(unused_variables))] // FIXME: remove this after ark-std upgrade
+    #[tokio::test]
+    async fn bench_tx_circuit_prover() {
+        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         let mut rng = ChaCha20Rng::seed_from_u64(42);
 
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
-        let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, chain_id, txs);
+        // Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Tx Circuit";
+
+        let mock_mode = true;
+        let (degree, circuit) = if mock_mode {
+            build_circuit_from_mock_txs()
+        } else {
+            build_circuit_from_mainnet_block().await
+        };
 
         // Bench setup generation
-        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
+        let setup_message = format!("{BENCHMARK_ID} {setup_prfx} with degree = {degree}");
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -66,10 +122,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!(
-            "{} {} with degree = {}",
-            BENCHMARK_ID, proof_gen_prfx, degree
-        );
+        let proof_message = format!("{BENCHMARK_ID} {proof_gen_prfx} with degree = {degree}");
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -91,7 +144,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
+        let start3 = start_timer!(|| format!("{BENCHMARK_ID} {proof_ver_prfx}"));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

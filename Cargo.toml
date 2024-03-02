@@ -4,17 +4,75 @@ members = [
     "bus-mapping",
     "geth-utils",
     "keccak256",
+    "zktrie",
     "gadgets",
     "integration-tests",
     "circuit-benchmarks",
     "eth-types",
     "external-tracer",
     "mock",
-    "testool"
+    "testool",
+    "aggregator",
+    "prover"
 ]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+ark-std = "0.3"
+ctor = "0.1"
+env_logger = "0.10"
+ethers = { version = "=2.0.7", features = ["ethers-solc"] }
+ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7", features = ["scroll"] }
+ethers-providers = "=2.0.7"
+ethers-signers = "=2.0.7"
+ff = "0.13"
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
+hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-1201" }
+halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
+halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
+hex = "0.4"
+itertools = "0.11"
+libsecp256k1 = "0.7"
+log = "0.4"
+num = "0.4"
+num-bigint = "0.4"
+num-traits = "0.2"
+pretty_assertions = "1.0"
+rand = "0.8"
+rand_chacha = "0.3"
+rand_xorshift = "0.3"
+rayon = "1.5"
+regex = "1.5"
+serde = {version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_stacker = "0.1"
+sha3 = "0.10"
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop", default-features = false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+strum = "0.25"
+strum_macros = "0.25"
+subtle = "2.4"
+tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
+url = "2.2"
 
 [patch.crates-io]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" } 
+ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
+[patch."https://github.com/privacy-scaling-explorations/halo2.git"]
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.1" }
+[patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
+poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "main" }
+
 
 # Definition of benchmarks profile to use.
 [profile.bench]
@@ -24,8 +82,7 @@ debug-assertions = false
 overflow-checks = false
 rpath = false
 lto = "thin"
-incremental = false
-codegen-units = 1
+incremental = true
 
 [profile.release]
 opt-level = 3

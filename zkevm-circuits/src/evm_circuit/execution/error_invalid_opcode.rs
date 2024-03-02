@@ -56,8 +56,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = F::from(step.opcode.unwrap().as_u64());
-        self.opcode.assign(region, offset, Value::known(opcode))?;
+        let opcode = step.opcode.unwrap().as_u64();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode)))?;
+
+        log::debug!("ErrorInvalidOpcode - opcode = {}", opcode);
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;
@@ -69,21 +72,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode::Bytecode, Word};
-    use lazy_static::lazy_static;
     use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
 
-    lazy_static! {
-        static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [
-            // Single invalid opcode
-            vec![0x0e],
-            vec![0x4f],
-            vec![0xa5],
-            vec![0xf6],
-            vec![0xfe],
-            // Multiple invalid opcodes
-            vec![0x5c, 0x5e, 0x5f],
-        ];
-    }
+    #[cfg(feature = "scroll")]
+    use eth_types::address;
+
+    static TESTING_INVALID_CODES: [&[u8]; 6] = [
+        // Single invalid opcode
+        &[0x0e],
+        &[0x4f],
+        &[0xa5],
+        &[0xf6],
+        &[0xfe],
+        // Multiple invalid opcodes
+        &[0x0c, 0x5e],
+    ];
 
     #[test]
     fn invalid_opcode_root() {
@@ -99,9 +102,86 @@ mod test {
         }
     }
 
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn invalid_opcode_selfdestruct_for_scroll() {
+        let selfdestruct_opcode = 0xff_u8;
+        test_root_ok(&[selfdestruct_opcode]);
+        test_internal_ok(0x20, 0x00, &[selfdestruct_opcode]);
+    }
+
+    // for scroll feature, treat BASEFEE as invalidcode. disabled in scroll l2geth
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn invalid_opcode_basefee_for_scroll() {
+        let basefee_opcode = 0x48_u8;
+        test_root_ok(&[basefee_opcode]);
+        test_internal_ok(0x20, 0x00, &[basefee_opcode]);
+    }
+
+    // make sure 0xFE as invalidcode.
+    #[test]
+    fn invalid_opcode_fe() {
+        let fe_opcode = 0xfe_u8;
+        test_root_ok(&[fe_opcode]);
+        test_internal_ok(0x20, 0x30, &[fe_opcode]);
+    }
+
+    #[cfg(not(feature = "shanghai"))]
+    #[test]
+    fn invalid_opcode_push0_for_not_shanghai() {
+        // Should test with logs in `assign_exec_step`, otherwise it could also
+        // pass (since PushGadget).
+        let push0 = 0x5f;
+        test_root_ok(&[push0]);
+        test_internal_ok(0x20, 0x00, &[push0]);
+    }
+
+    // for scroll feature, treat selfdestruct_opcode as invalidcode. even this test construct oog
+    // case for self_destruct, expected to meet invalid opcode error.
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn test_root_self_destruct() {
+        let selfdestruct_opcode = 0xff_u8;
+        let mut code = Bytecode::default();
+        code.push(20, address!("0x000000000000000000000000000000000000cafe"));
+        code.write(selfdestruct_opcode, true);
+
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(1_u64 << 20))
+                    .code(code);
+
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1_u64 << 20));
+
+                accs[2]
+                    .address(address!("0x0000000000000000000000000000000000000020"))
+                    .balance(Word::from(1_u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[2].address)
+                    .to(accs[0].address)
+                    // gas just over tx baisc gas(21000) + push gas(3), so oog for
+                    // selfdestruct_opcode in normal geth, but treat as
+                    // invalidcode with scroll feature
+                    .gas(21003.into());
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
     fn test_root_ok(invalid_code: &[u8]) {
         let mut code = Bytecode::default();
-        invalid_code.iter().for_each(|b| {
+        invalid_code.iter().for_each(|b: &u8| {
             code.write(*b, true);
         });
 

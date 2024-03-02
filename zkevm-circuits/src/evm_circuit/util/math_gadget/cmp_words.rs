@@ -141,7 +141,7 @@ mod tests {
         // a == b check
         try_test!(
             CmpWordGadgetTestContainer<Fr, true>,
-            vec![Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0)],
             true,
         );
     }
@@ -150,7 +150,7 @@ mod tests {
     fn test_cmpword_1_eq() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, true>,
-            vec![Word::from(1), Word::from(1)],
+            [Word::from(1), Word::from(1)],
             true,
         );
     }
@@ -159,7 +159,7 @@ mod tests {
     fn test_cmpword_wordmax_eq() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, true>,
-            vec![Word::MAX, Word::MAX],
+            [Word::MAX, Word::MAX],
             true,
         );
     }
@@ -168,7 +168,7 @@ mod tests {
     fn test_cmpword_0_neq_wordmax() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, true>,
-            vec![Word::from(0), Word::MAX],
+            [Word::from(0), Word::MAX],
             false,
         );
     }
@@ -178,7 +178,7 @@ mod tests {
     fn test_cmpword_0_lt_1() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, false>,
-            vec![Word::from(0), Word::from(1)],
+            [Word::from(0), Word::from(1)],
             true,
         );
     }
@@ -187,7 +187,7 @@ mod tests {
     fn test_cmpword_1_lt_wordmax() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, false>,
-            vec![Word::from(1), Word::MAX],
+            [Word::from(1), Word::MAX],
             true,
         );
     }
@@ -196,7 +196,7 @@ mod tests {
     fn test_cmpword_1_lt_0() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, false>,
-            vec![Word::from(1), Word::from(0)],
+            [Word::from(1), Word::from(0)],
             false,
         );
     }
@@ -205,7 +205,7 @@ mod tests {
     fn test_cmpword_lowmax_lt_highmax() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, false>,
-            vec![WORD_LOW_MAX, WORD_HIGH_MAX],
+            [WORD_LOW_MAX, WORD_HIGH_MAX],
             true,
         );
     }
@@ -214,7 +214,7 @@ mod tests {
     fn test_cmpword_highmax_lt_lowmax() {
         try_test!(
             CmpWordGadgetTestContainer<Fr, false>,
-            vec![WORD_HIGH_MAX, WORD_LOW_MAX],
+            [WORD_HIGH_MAX, WORD_LOW_MAX],
             false,
         );
     }

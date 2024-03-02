@@ -38,10 +38,8 @@ use strum_macros::EnumIter;
 
 //  1. limb_difference fits into 16 bits.
 //  2. limb_difference is not zero because its inverse exists.
-//  3. RLC of the pairwise limb differences before the first_different_limb is
-//     zero.
-//  4. limb_difference equals the difference of the limbs at
-//     first_different_limb.
+//  3. RLC of the pairwise limb differences before the first_different_limb is zero.
+//  4. limb_difference equals the difference of the limbs at first_different_limb.
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum LimbIndex {
@@ -121,7 +119,7 @@ impl Config {
             limb_difference_inverse,
         };
 
-        lookup.range_check_u16(meta, "limb_difference fits into u16", |meta| {
+        lookup.range_check_u16(meta, "limb fits into u16", |meta| {
             meta.query_advice(limb_difference, Rotation::cur())
         });
 
@@ -238,10 +236,10 @@ impl Config {
             (self.limb_difference_inverse, "LO_limb_difference_inverse"),
         ]
         .iter()
-        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+        .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
         // fixed column
         region.name_column(
-            || format!("{}_LO_upper_limb_difference", prefix),
+            || format!("{prefix}_LO_upper_limb_difference"),
             self.selector,
         );
     }
@@ -317,7 +315,7 @@ fn rlc_limb_differences<F: Field>(
 ) -> Vec<Expression<F>> {
     let mut result = vec![];
     let mut partial_sum = 0u64.expr();
-    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness.into_iter());
+    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness);
     for ((cur_limb, prev_limb), power_of_randomness) in cur
         .be_limbs()
         .iter()

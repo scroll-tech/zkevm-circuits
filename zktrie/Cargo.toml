@@ -1,0 +1,25 @@
+[package]
+name = "mpt-zktrie"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+halo2_proofs.workspace = true
+mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", branch = "v0.7" }
+zktrie = { git = "https://github.com/scroll-tech/zktrie.git", tag = "v0.7.1" }
+hash-circuit.workspace = true
+eth-types = { path = "../eth-types" }
+num-bigint.workspace = true
+log.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+env_logger.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[features]
+default = []

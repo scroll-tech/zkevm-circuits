@@ -6,10 +6,14 @@ on:
     - cron: '50 1 * * SUN'
   pull_request:
     types: [synchronize, labeled]
+    # Ignore when target branch is `main` and source branch is develop.
+    # It could avoid running twice. Since develop is set as `push` below.
+    branches-ignore:
+      - main
   push:
     branches:
-      - main
-  workflow_dispatch:    
+      - develop
+  workflow_dispatch:
     inputs:
       provertype:
         description: 'invoke real vs mock prover'
@@ -54,10 +58,10 @@ jobs:
     needs: set-outputs
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2023-12-03
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
@@ -72,16 +76,11 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
-        uses: actions/cache@v3  
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        uses: Swatinem/rust-cache@v2
       # Run an initial build in a separate step to split the build time from execution time    
       - name: Build bins
         run: cargo build --bin gen_blockchain_data

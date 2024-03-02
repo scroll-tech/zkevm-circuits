@@ -33,24 +33,25 @@ impl Opcode for OOGSloadSstore {
             call_id,
             CallContextField::TxId,
             tx_id.into(),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::IsStatic,
             (state.call()?.is_static as u8).into(),
-        );
+        )?;
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::CalleeAddress,
             callee_address.to_word(),
-        );
+        )?;
 
-        let key = geth_step.stack.last()?;
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), key)?;
+        let key = state.stack_pop(&mut exec_step)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(key, geth_step.stack.last()?);
 
         let is_warm = state
             .sdb
@@ -65,12 +66,13 @@ impl Opcode for OOGSloadSstore {
                 is_warm,
                 is_warm_prev: is_warm,
             },
-        );
+        )?;
 
         // Special operations are only used for SSTORE.
         if geth_step.op == OpcodeId::SSTORE {
-            let value = geth_step.stack.nth_last(1)?;
-            state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), value)?;
+            let _value = state.stack_pop(&mut exec_step)?;
+            #[cfg(feature = "enable-stack")]
+            assert_eq!(_value, geth_step.stack.nth_last(1)?);
 
             let (_, value_prev) = state.sdb.get_storage(&callee_address, &key);
             let (_, original_value) = state.sdb.get_committed_storage(&callee_address, &key);
@@ -86,10 +88,10 @@ impl Opcode for OOGSloadSstore {
                     tx_id,
                     *original_value,
                 ),
-            );
+            )?;
         }
 
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return((None, None), &mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

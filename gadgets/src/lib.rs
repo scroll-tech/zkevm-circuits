@@ -13,11 +13,14 @@
 
 pub mod batched_is_zero;
 pub mod binary_number;
+pub mod comparator;
 pub mod evm_word;
+pub mod is_equal;
 pub mod is_zero;
 pub mod less_than;
 pub mod monotone;
 pub mod mul_add;
+pub mod range;
 pub mod util;
 
 use eth_types::Field;

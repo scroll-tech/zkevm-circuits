@@ -62,8 +62,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let code_size = cb.query_word_rlc();
         cb.condition(exists.expr(), |cb| {
+            #[cfg(feature = "scroll")]
+            cb.account_read(
+                address.expr(),
+                AccountFieldTag::CodeSize,
+                from_bytes::expr(&code_size.cells),
+            );
+            #[cfg(not(feature = "scroll"))]
             cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
         });
+
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
         });
@@ -76,8 +84,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
 
+        let rw_counter_delta = 7.expr();
+        #[cfg(feature = "scroll")]
+        let rw_counter_delta = rw_counter_delta + exists;
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),
+            rw_counter: Delta(rw_counter_delta),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
@@ -131,11 +142,18 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, region.code_hash(code_hash))?;
         self.not_exists
-            .assign_value(region, offset, region.word_rlc(code_hash))?;
+            .assign_value(region, offset, region.code_hash(code_hash))?;
 
-        let code_size = block.rws[step.rw_indices[6]].stack_value().as_u64();
+        let rw_offset = 6;
+        #[cfg(feature = "scroll")]
+        let rw_offset = if code_hash.is_zero() {
+            rw_offset
+        } else {
+            rw_offset + 1
+        };
+        let code_size = block.rws[step.rw_indices[rw_offset]].stack_value().as_u64();
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 
@@ -154,14 +172,23 @@ mod test {
 
     #[test]
     fn test_extcodesize_gadget_simple() {
+        // Test for empty account.
+        let mut empty_address_bytes = [0; 20];
+        empty_address_bytes[12] = 234;
+        assert!(Account::default().is_empty());
+        test_ok(
+            &Account {
+                address: empty_address_bytes.into(),
+                ..Default::default()
+            },
+            false,
+        );
+
         let account = Account {
             address: MOCK_ACCOUNTS[4],
             code: MOCK_CODES[4].clone(),
             ..Default::default()
         };
-
-        // Test for empty account.
-        test_ok(&Account::default(), false);
         // Test for cold account.
         test_ok(&account, false);
         // Test for warm account.

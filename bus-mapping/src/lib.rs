@@ -47,7 +47,7 @@
 //! with all of the Memory, Stack and Storage ops performed
 //! by the provided trace.
 //!
-//! ```rust
+//! ```rust, no_run
 //! use bus_mapping::{Error, mock::BlockData};
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use eth_types::{
@@ -137,12 +137,6 @@
 //!     .unwrap();
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
-//! let geth_trace = GethExecTrace {
-//!     return_value: "".to_string(),
-//!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
-//!     failed: false,
-//!     struct_logs: geth_steps,
-//! };
 //!
 //! // Get an ordered vector with all of the Stack operations of this trace.
 //! let stack_ops = builder.block.container.sorted_stack();
@@ -220,9 +214,13 @@
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
-//#![deny(unsafe_code)] Allowed now until we find a
-// better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![allow(clippy::bool_to_int_with_if)]
+#![allow(clippy::result_large_err)] // it's large, but what can we do?
+#![allow(clippy::collapsible_else_if)]
+#![allow(incomplete_features)]
+#![feature(lazy_cell)]
+#![feature(adt_const_params)]
 
 extern crate alloc;
 extern crate core;
@@ -231,9 +229,12 @@ pub mod circuit_input_builder;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;
-pub(crate) mod geth_errors;
+pub mod l2_predeployed;
 pub mod mock;
 pub mod operation;
+pub mod precompile;
 pub mod rpc;
 pub mod state_db;
+pub mod util;
+
 pub use error::Error;

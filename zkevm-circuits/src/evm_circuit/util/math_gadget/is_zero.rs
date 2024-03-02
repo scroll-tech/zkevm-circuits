@@ -25,11 +25,14 @@ impl<F: Field> IsZeroGadget<F> {
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
         // inverse)
-        cb.add_constraint("value ⋅ (1 - value ⋅ value_inv)", value * is_zero.clone());
+        cb.add_constraint(
+            "IsZeroGadget: value ⋅ (1 - value ⋅ value_inv)",
+            value * is_zero.clone(),
+        );
         // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
         // inverse)`
         cb.add_constraint(
-            "value_inv ⋅ (1 - value ⋅ value_inv)",
+            "IsZeroGadget: value_inv ⋅ (1 - value ⋅ value_inv)",
             inverse.expr() * is_zero.clone(),
         );
 
@@ -46,13 +49,14 @@ impl<F: Field> IsZeroGadget<F> {
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
-        let inverse = value.invert().unwrap_or(F::zero());
-        self.inverse.assign(region, offset, Value::known(inverse))?;
-        Ok(if value.is_zero().into() {
-            F::one()
-        } else {
+        let is_zero = value.is_zero_vartime();
+        let inverse = if is_zero {
             F::zero()
-        })
+        } else {
+            value.invert().unwrap()
+        };
+        self.inverse.assign(region, offset, Value::known(inverse))?;
+        Ok(F::from(is_zero))
     }
 
     pub(crate) fn assign_value(
@@ -109,20 +113,16 @@ mod tests {
 
     #[test]
     fn test_0_is_zero() {
-        try_test!(IsZeroGadgetTestContainer<Fr>, vec![Word::from(0)], true);
+        try_test!(IsZeroGadgetTestContainer<Fr>, [Word::from(0)], true);
     }
 
     #[test]
     fn test_1_is_not_zero() {
-        try_test!(IsZeroGadgetTestContainer<Fr>, vec![Word::from(1)], false);
+        try_test!(IsZeroGadgetTestContainer<Fr>, [Word::from(1)], false);
     }
 
     #[test]
     fn test_large_num_is_not_zero() {
-        try_test!(
-            IsZeroGadgetTestContainer<Fr>,
-            vec![Word::from(10000)],
-            false,
-        );
+        try_test!(IsZeroGadgetTestContainer<Fr>, [Word::from(10000)], false,);
     }
 }

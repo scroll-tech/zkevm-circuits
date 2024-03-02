@@ -6,23 +6,41 @@ use crate::{
         witness::{Block, Call, ExecStep},
     },
     util::Expr,
+    witness::Transaction,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
+use eth_types::{evm_types::GasCost, Field};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::{fmt::Display, iter};
+use std::{fmt::Display, iter, marker::ConstParamTy};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+impl From<PrecompileCalls> for ExecutionState {
+    fn from(value: PrecompileCalls) -> Self {
+        match value {
+            PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
+            PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
+            PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
+            PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
+            PrecompileCalls::Modexp => ExecutionState::PrecompileBigModExp,
+            PrecompileCalls::Bn128Add => ExecutionState::PrecompileBn256Add,
+            PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+            PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+            PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(ConstParamTy, Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum ExecutionState {
     // Internal state
     BeginTx,
     EndTx,
+    EndInnerBlock,
     EndBlock,
     // Opcode successful cases
     STOP,
@@ -61,7 +79,9 @@ pub enum ExecutionState {
     BLOCKHASH,
     BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
     BLOCKCTXU160, // COINBASE
-    BLOCKCTXU256, // DIFFICULTY, BASEFEE
+    BLOCKCTXU256, // BASEFEE, DIFFICULTY (for non-scroll)
+    #[cfg(feature = "scroll")]
+    DIFFICULTY, // DIFFICULTY
     CHAINID,
     SELFBALANCE,
     POP,
@@ -74,40 +94,48 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
-    PUSH, // PUSH1, PUSH2, ..., PUSH32
+    PUSH, // PUSH0, PUSH1, PUSH2, ..., PUSH32
     DUP,  // DUP1, DUP2, ..., DUP16
     SWAP, // SWAP1, SWAP2, ..., SWAP16
     LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
+    CREATE2,
     CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
     RETURN_REVERT, // RETURN, REVERT
-    CREATE2,
     SELFDESTRUCT,
     // Error cases
     ErrorInvalidOpcode,
     ErrorStack,
     ErrorWriteProtection,
-    ErrorDepth,
-    ErrorInsufficientBalance,
-    ErrorContractAddressCollision,
     ErrorInvalidCreationCode,
-    ErrorMaxCodeSizeExceeded,
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
+    ErrorPrecompileFailed,
     ErrorOutOfGasConstant,
     ErrorOutOfGasStaticMemoryExpansion,
     ErrorOutOfGasDynamicMemoryExpansion,
     ErrorOutOfGasMemoryCopy,
     ErrorOutOfGasAccountAccess,
-    ErrorOutOfGasCodeStore,
+    // error for CodeStoreOOG and MaxCodeSizeExceeded
+    ErrorCodeStore,
     ErrorOutOfGasLOG,
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
-    ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasCall,
+    ErrorOutOfGasPrecompile,
     ErrorOutOfGasSloadSstore,
-    ErrorOutOfGasCREATE2,
+    ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,
+    // Precompiles
+    PrecompileEcrecover,
+    PrecompileSha256,
+    PrecompileRipemd160,
+    PrecompileIdentity,
+    PrecompileBigModExp,
+    PrecompileBn256Add,
+    PrecompileBn256ScalarMul,
+    PrecompileBn256Pairing,
+    PrecompileBlake2f,
 }
 
 impl Default for ExecutionState {
@@ -118,7 +146,7 @@ impl Default for ExecutionState {
 
 impl Display for ExecutionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -131,6 +159,39 @@ impl ExecutionState {
         Self::iter().count()
     }
 
+    pub(crate) fn is_precompiled(&self) -> bool {
+        matches!(
+            self,
+            Self::PrecompileEcrecover
+                | Self::PrecompileSha256
+                | Self::PrecompileRipemd160
+                | Self::PrecompileIdentity
+                | Self::PrecompileBigModExp
+                | Self::PrecompileBn256Add
+                | Self::PrecompileBn256ScalarMul
+                | Self::PrecompileBn256Pairing
+                | Self::PrecompileBlake2f
+                | Self::ErrorOutOfGasPrecompile
+                | Self::ErrorPrecompileFailed
+        )
+    }
+
+    pub(crate) fn precompile_base_gas_cost(&self) -> GasCost {
+        (match self {
+            Self::PrecompileEcrecover => PrecompileCalls::Ecrecover,
+            Self::PrecompileSha256 => PrecompileCalls::Sha256,
+            Self::PrecompileRipemd160 => PrecompileCalls::Ripemd160,
+            Self::PrecompileIdentity => PrecompileCalls::Identity,
+            Self::PrecompileBigModExp => PrecompileCalls::Modexp,
+            Self::PrecompileBn256Add => PrecompileCalls::Bn128Add,
+            Self::PrecompileBn256ScalarMul => PrecompileCalls::Bn128Mul,
+            Self::PrecompileBn256Pairing => PrecompileCalls::Bn128Pairing,
+            Self::PrecompileBlake2f => PrecompileCalls::Blake2F,
+            _ => return GasCost(0),
+        })
+        .base_gas_cost()
+    }
+
     pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
@@ -138,7 +199,6 @@ impl ExecutionState {
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorInvalidCreationCode
-                | Self::ErrorMaxCodeSizeExceeded
                 | Self::ErrorInvalidJump
                 | Self::ErrorReturnDataOutOfBound
                 | Self::ErrorOutOfGasConstant
@@ -146,14 +206,13 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasDynamicMemoryExpansion
                 | Self::ErrorOutOfGasMemoryCopy
                 | Self::ErrorOutOfGasAccountAccess
-                | Self::ErrorOutOfGasCodeStore
+                | Self::ErrorCodeStore
                 | Self::ErrorOutOfGasLOG
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
-                | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasSloadSstore
-                | Self::ErrorOutOfGasCREATE2
+                | Self::ErrorOutOfGasCREATE
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }
@@ -212,7 +271,15 @@ impl ExecutionState {
             Self::BLOCKHASH => vec![OpcodeId::BLOCKHASH],
             Self::BLOCKCTXU64 => vec![OpcodeId::TIMESTAMP, OpcodeId::NUMBER, OpcodeId::GASLIMIT],
             Self::BLOCKCTXU160 => vec![OpcodeId::COINBASE],
-            Self::BLOCKCTXU256 => vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE],
+            Self::BLOCKCTXU256 => {
+                if cfg!(feature = "scroll") {
+                    vec![OpcodeId::BASEFEE]
+                } else {
+                    vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE]
+                }
+            }
+            #[cfg(feature = "scroll")]
+            Self::DIFFICULTY => vec![OpcodeId::DIFFICULTY],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::POP => vec![OpcodeId::POP],
@@ -228,6 +295,7 @@ impl ExecutionState {
             Self::GAS => vec![OpcodeId::GAS],
             Self::JUMPDEST => vec![OpcodeId::JUMPDEST],
             Self::PUSH => vec![
+                OpcodeId::PUSH0,
                 OpcodeId::PUSH1,
                 OpcodeId::PUSH2,
                 OpcodeId::PUSH3,
@@ -305,6 +373,7 @@ impl ExecutionState {
                 OpcodeId::LOG4,
             ],
             Self::CREATE => vec![OpcodeId::CREATE],
+            Self::CREATE2 => vec![OpcodeId::CREATE2],
             Self::CALL_OP => vec![
                 OpcodeId::CALL,
                 OpcodeId::CALLCODE,
@@ -312,7 +381,6 @@ impl ExecutionState {
                 OpcodeId::STATICCALL,
             ],
             Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
-            Self::CREATE2 => vec![OpcodeId::CREATE2],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
@@ -328,7 +396,7 @@ impl ExecutionState {
 
     pub fn get_step_height(&self) -> usize {
         self.get_step_height_option()
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
+            .unwrap_or_else(|| panic!("Execution state unknown: {self:?}"))
     }
 }
 
@@ -370,7 +438,7 @@ pub(crate) struct DynamicSelectorHalf<F> {
     pub(crate) target_pairs: Vec<Cell<F>>,
 }
 
-impl<F: FieldExt> DynamicSelectorHalf<F> {
+impl<F: Field> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
         let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
         let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
@@ -465,10 +533,16 @@ pub(crate) struct StepState<F> {
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
+    /// The transaction id of this transaction within the block.
+    pub(crate) tx_id: Cell<F>,
     /// Whether the call is root call
     pub(crate) is_root: Cell<F>,
     /// Whether the call is a create call
     pub(crate) is_create: Cell<F>,
+    /// The block number the state currently is in. This is particularly
+    /// important as multiple blocks can be assigned and proven in a single
+    /// circuit instance.
+    pub(crate) block_number: Cell<F>,
     /// Denotes the hash of the bytecode for the current call.
     /// In the case of a contract creation root call, this denotes the hash of
     /// the tx calldata.
@@ -488,6 +562,8 @@ pub(crate) struct StepState<F> {
     pub(crate) reversible_write_counter: Cell<F>,
     /// The counter for log index
     pub(crate) log_id: Cell<F>,
+    /// Whether this is end_tx. Boolean.
+    pub(crate) end_tx: Cell<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -496,7 +572,7 @@ pub(crate) struct Step<F> {
     pub(crate) cell_manager: CellManager<F>,
 }
 
-impl<F: FieldExt> Step<F> {
+impl<F: Field> Step<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
@@ -517,15 +593,18 @@ impl<F: FieldExt> Step<F> {
                 ),
                 rw_counter: cell_manager.query_cell(CellType::StoragePhase1),
                 call_id: cell_manager.query_cell(CellType::StoragePhase1),
+                tx_id: cell_manager.query_cell(CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(CellType::StoragePhase1),
                 code_hash: cell_manager.query_cell(CellType::StoragePhase2),
+                block_number: cell_manager.query_cell(CellType::StoragePhase1),
                 program_counter: cell_manager.query_cell(CellType::StoragePhase1),
                 stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
                 gas_left: cell_manager.query_cell(CellType::StoragePhase1),
                 memory_word_size: cell_manager.query_cell(CellType::StoragePhase1),
                 reversible_write_counter: cell_manager.query_cell(CellType::StoragePhase1),
                 log_id: cell_manager.query_cell(CellType::StoragePhase1),
+                end_tx: cell_manager.query_cell(CellType::StoragePhase1),
             }
         };
         Self {
@@ -548,6 +627,7 @@ impl<F: FieldExt> Step<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         _block: &Block<F>,
+        tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -563,6 +643,9 @@ impl<F: FieldExt> Step<F> {
             .call_id
             .assign(region, offset, Value::known(F::from(call.id as u64)))?;
         self.state
+            .tx_id
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+        self.state
             .is_root
             .assign(region, offset, Value::known(F::from(call.is_root as u64)))?;
         self.state.is_create.assign(
@@ -571,8 +654,11 @@ impl<F: FieldExt> Step<F> {
             Value::known(F::from(call.is_create as u64)),
         )?;
         self.state
+            .block_number
+            .assign(region, offset, Value::known(F::from(step.block_num)))?;
+        self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash))?;
+            .assign(region, offset, region.code_hash(call.code_hash))?;
         self.state.program_counter.assign(
             region,
             offset,
@@ -599,6 +685,13 @@ impl<F: FieldExt> Step<F> {
         self.state
             .log_id
             .assign(region, offset, Value::known(F::from(step.log_id as u64)))?;
+        self.state.end_tx.assign(
+            region,
+            offset,
+            Value::known(F::from(
+                (step.execution_state == ExecutionState::EndTx) as u64,
+            )),
+        )?;
         Ok(())
     }
 }

@@ -32,24 +32,18 @@ pub enum Error {
     /// `MemoryAddress`.
     WordToMemAddr,
     /// Signature parsing error.
-    Signature(libsecp256k1::Error),
-}
-
-impl From<libsecp256k1::Error> for Error {
-    fn from(err: libsecp256k1::Error) -> Self {
-        Error::Signature(err)
-    }
+    Signature,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
 impl StdError for Error {}
 
-/// Error type for a failure while parsig an Ethereum Address.
+/// Error type for a failure while parsing an Ethereum Address.
 #[derive(Debug)]
 pub enum EthAddressParsingError {
     /// Hex string containing the Ethereum Address is not 20*2 characters

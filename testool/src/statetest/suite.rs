@@ -15,43 +15,56 @@ use std::{
 };
 
 pub fn load_statetests_suite(
-    path: &str,
+    suite: &TestSuite,
     config: Config,
-    mut compiler: Compiler,
+    compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
     let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
-    let files = glob::glob(path)
+    let tcs = glob::glob(&suite.path)
         .context("failed to read glob")?
         .filter_map(|v| v.ok())
         .filter(|f| {
             !skip_paths
                 .iter()
                 .any(|e| f.as_path().to_string_lossy().contains(*e))
-        });
+        })
+        .par_bridge()
+        .filter_map(|file| {
+            file.extension().and_then(|ext| {
+                let ext = &*ext.to_string_lossy();
+                if !["yml", "json"].contains(&ext) {
+                    return None;
+                }
+                let path = file.as_path().to_string_lossy();
+                let tcs = (|| -> Result<Vec<StateTest>> {
+                    let src = std::fs::read_to_string(&file)?;
+                    log::debug!(target: "testool", "Reading file {:?}", file);
+                    let tcs = match ext {
+                        "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src),
+                        "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src),
+                        _ => unreachable!(),
+                    };
+                    let mut tcs = match tcs {
+                        Ok(tcs) => tcs,
+                        Err(e) => {
+                            panic!("fail to load {path:?}, err {e:?}");
+                        }
+                    };
 
-    let mut tests = Vec::new();
-    for file in files {
-        if let Some(ext) = file.extension() {
-            let ext = &*ext.to_string_lossy();
-            if !["yml", "json"].contains(&ext) {
-                continue;
-            }
-            let path = file.as_path().to_string_lossy();
-            let src = std::fs::read_to_string(&file)?;
-            log::debug!(target: "testool", "Reading file {:?}", file);
-            let mut tcs = match ext {
-                "yml" => YamlStateTestBuilder::new(&mut compiler).load_yaml(&path, &src)?,
-                "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
-                _ => unreachable!(),
-            };
+                    tcs.retain(|v| !skip_tests.contains(&&v.id) && suite.allowed(&v.id));
+                    Ok(tcs)
+                })();
 
-            tcs.retain(|v| !skip_tests.contains(&&v.id));
-            tests.append(&mut tcs);
-        }
-    }
-    Ok(tests)
+                Some(tcs)
+            })
+        })
+        .collect::<Result<Vec<Vec<StateTest>>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<StateTest>>();
+    Ok(tcs)
 }
 
 pub fn run_statetests_suite(
@@ -77,7 +90,7 @@ pub fn run_statetests_suite(
 
     // for each test
     let test_count = tcs.len();
-    tcs.into_par_iter().for_each(|ref tc| {
+    let run_state_test = |tc: &StateTest| {
         let (test_id, path) = (tc.id.clone(), tc.path.clone());
         if !suite.allowed(&test_id) {
             results
@@ -98,7 +111,7 @@ pub fn run_statetests_suite(
         log::debug!(
             target : "testool",
             "🐕 running test (done {}/{}) {}#{}...",
-            1 + results.read().unwrap().tests.len(),
+            results.read().unwrap().tests.len(),
             test_count,
             test_id,
             path,
@@ -169,7 +182,20 @@ pub fn run_statetests_suite(
                 path,
             })
             .unwrap();
-    });
+    };
 
+    if circuits_config.super_circuit {
+        tcs.into_iter().for_each(|ref tc| run_state_test(tc));
+    } else {
+        const PARALLELISM: usize = 20;
+        let mut groups =
+            [(); PARALLELISM].map(|_| Vec::with_capacity((tcs.len() / PARALLELISM) + 1));
+        tcs.into_iter().enumerate().for_each(|(i, tc)| {
+            groups[i % PARALLELISM].push(tc);
+        });
+        groups
+            .into_par_iter()
+            .for_each(|chunk| chunk.into_iter().for_each(|ref tc| run_state_test(tc)));
+    }
     Ok(())
 }

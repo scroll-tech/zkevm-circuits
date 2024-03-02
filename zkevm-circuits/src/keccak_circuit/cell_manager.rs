@@ -1,7 +1,7 @@
 use crate::keccak_circuit::util::extract_field;
+use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
@@ -18,7 +18,7 @@ pub(crate) struct Cell<F> {
     pub(crate) rotation: i32,
 }
 
-impl<F: FieldExt> Cell<F> {
+impl<F: Field> Cell<F> {
     pub(crate) fn new(
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
@@ -75,13 +75,13 @@ impl<F: FieldExt> Cell<F> {
     }
 }
 
-impl<F: FieldExt> Expr<F> for Cell<F> {
+impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
-impl<F: FieldExt> Expr<F> for &Cell<F> {
+impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
@@ -89,21 +89,21 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
 
 /// CellColumn
 #[derive(Clone, Debug)]
-pub(crate) struct CellColumn<F> {
-    pub(crate) advice: Column<Advice>,
+pub struct CellColumn<F> {
+    pub advice: Column<Advice>,
     pub(crate) expr: Expression<F>,
 }
 
 /// CellManager
 #[derive(Clone, Debug)]
-pub(crate) struct CellManager<F> {
+pub struct CellManager<F> {
     height: usize,
     columns: Vec<CellColumn<F>>,
     rows: Vec<usize>,
     num_unused_cells: usize,
 }
 
-impl<F: FieldExt> CellManager<F> {
+impl<F: Field> CellManager<F> {
     pub(crate) fn new(height: usize) -> Self {
         Self {
             height,
@@ -153,7 +153,8 @@ impl<F: FieldExt> CellManager<F> {
         self.rows.iter().cloned().max().unwrap()
     }
 
-    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
+    /// Expose the columns used by the cell manager by reference.
+    pub fn columns(&self) -> &[CellColumn<F>] {
         &self.columns
     }
 

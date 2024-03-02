@@ -14,16 +14,29 @@ use crate::{
         Advice, Column, Fixed,
     },
     table::LookupTable,
-    util::Challenges,
 };
+
+#[cfg(not(feature = "onephase"))]
+use crate::util::Challenges;
+#[cfg(feature = "onephase")]
+use crate::util::MockChallenges as Challenges;
+
+use halo2_proofs::plonk::FirstPhase;
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as ThirdPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::ThirdPhase;
+
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
-    plonk::{
-        Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, Selector, ThirdPhase,
-    },
+    plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
@@ -41,7 +54,7 @@ pub(crate) const WORD_SIGNED_MAX: Word = U256([u64::MAX, u64::MAX, u64::MAX, i64
 pub(crate) const WORD_SIGNED_MIN: Word = U256([0, 0, 0, i64::MIN as _]);
 
 pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
-    (1..32).map(|exp| randomness.pow(&[exp, 0, 0, 0])).collect()
+    (1..32).map(|exp| randomness.pow([exp, 0, 0, 0])).collect()
 }
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {
@@ -68,7 +81,6 @@ where
     stored_expressions: Vec<StoredExpression<F>>,
     math_gadget_container: G,
     _marker: PhantomData<F>,
-    challenges: Challenges<Expression<F>>,
 }
 
 pub(crate) struct UnitTestMathGadgetBaseCircuit<G> {
@@ -90,6 +102,8 @@ impl<G> UnitTestMathGadgetBaseCircuit<G> {
 impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseCircuit<G> {
     type Config = (UnitTestMathGadgetBaseCircuitConfig<F, G>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         UnitTestMathGadgetBaseCircuit {
@@ -132,15 +146,15 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
-        let (constraints, stored_expressions, _) = cb.build();
+        let (state_selector, constraints, stored_expressions, _) = cb.build();
 
         if !constraints.step.is_empty() {
             let step_constraints = constraints.step;
             meta.create_gate("MathGadgetTestContainer", |meta| {
                 let q_usable = meta.query_selector(q_usable);
-                step_constraints
-                    .into_iter()
-                    .map(move |(name, constraint)| (name, q_usable.clone() * constraint))
+                step_constraints.into_iter().map(move |(name, constraint)| {
+                    (name, q_usable.clone() * state_selector.clone() * constraint)
+                })
             });
         }
 
@@ -148,7 +162,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 if table == Table::Fixed {
-                    let name = format!("{:?}", table);
+                    let name = format!("{table:?}");
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         let table_expressions = fixed_table.table_exprs(meta);
                         vec![(
@@ -169,7 +183,6 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 stored_expressions,
                 math_gadget_container,
                 _marker: PhantomData,
-                challenges: challenges_exprs,
             },
             challenges,
         )
@@ -181,7 +194,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let (config, challenges) = config;
-        let challenge_values = challenges.values(&mut layouter);
+        let challenge_values = challenges.values(&layouter);
         layouter.assign_region(
             || "assign test container",
             |mut region| {
@@ -191,6 +204,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                     &mut region,
                     &challenge_values,
                     config.advices.to_vec(),
+                    MAX_STEP_HEIGHT * 3,
                     MAX_STEP_HEIGHT * 3,
                     offset,
                 );
@@ -202,9 +216,11 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 config
                     .math_gadget_container
                     .assign_gadget_container(&self.witnesses, cached_region)?;
+
                 for stored_expr in &config.stored_expressions {
                     stored_expr.assign(cached_region, offset)?;
                 }
+
                 Ok(())
             },
         )?;
@@ -220,11 +236,14 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                             .filter(|t| {
                                 matches!(
                                     t,
-                                    FixedTableTag::Range5
+                                    FixedTableTag::Range3
+                                        | FixedTableTag::Range5
+                                        | FixedTableTag::Range8
                                         | FixedTableTag::Range16
                                         | FixedTableTag::Range32
                                         | FixedTableTag::Range64
                                         | FixedTableTag::Range128
+                                        | FixedTableTag::Range192
                                         | FixedTableTag::Range256
                                         | FixedTableTag::Range512
                                         | FixedTableTag::Range1024

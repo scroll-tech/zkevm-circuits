@@ -1,15 +1,12 @@
+#![feature(lazy_cell)]
 #![cfg(feature = "circuit_input_builder")]
 
-use bus_mapping::circuit_input_builder::{
-    build_state_code_db, get_state_accesses, BuilderClient, CircuitsParams,
-};
+use bus_mapping::circuit_input_builder::{build_state_code_db, BuilderClient, CircuitsParams};
 use integration_tests::{get_client, log_init, GenDataOutput};
-use lazy_static::lazy_static;
 use log::trace;
+use std::sync::LazyLock;
 
-lazy_static! {
-    pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
-}
+pub static GEN_DATA: LazyLock<GenDataOutput> = LazyLock::new(GenDataOutput::load);
 
 async fn test_circuit_input_builder_block(block_num: u64) {
     let cli = get_client();
@@ -19,11 +16,15 @@ async fn test_circuit_input_builder_block(block_num: u64) {
             max_rws: 16384,
             max_txs: 1,
             max_calldata: 4000,
+            max_inner_blocks: 64,
             max_bytecode: 4000,
             max_copy_rows: 16384,
+            max_mpt_rows: 4000,
             max_evm_rows: 0,
             max_exp_steps: 1000,
             max_keccak_rows: 0,
+            max_rlp_rows: 4200,
+            ..Default::default()
         },
     )
     .await
@@ -34,7 +35,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
         cli.get_block(block_num).await.unwrap();
 
     // 2. Get State Accesses from TxExecTraces
-    let access_set = get_state_accesses(&eth_block, &geth_trace).unwrap();
+    let access_set = cli.get_state_accesses(&eth_block).await.unwrap();
     trace!("AccessSet: {:#?}", access_set);
 
     // 3. Query geth for all accounts, storage keys, and codes from Accesses

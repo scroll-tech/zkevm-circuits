@@ -127,17 +127,17 @@ mod tests {
         // a == b
         try_test!(
             MinMaxTestContainer<Fr, 4, true>,
-            vec![Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
             MinMaxTestContainer<Fr, 4, true>,
-            vec![Word::from(5), Word::from(5)],
+            [Word::from(5), Word::from(5)],
             true,
         );
         try_test!(
             MinMaxTestContainer<Fr, 16, true>,
-            vec![WORD_LOW_MAX, WORD_LOW_MAX],
+            [WORD_LOW_MAX, WORD_LOW_MAX],
             true,
         );
     }
@@ -147,17 +147,17 @@ mod tests {
         // min == a, max == b
         try_test!(
             MinMaxTestContainer<Fr, 1, true>,
-            vec![Word::from(0), Word::from(1)],
+            [Word::from(0), Word::from(1)],
             true,
         );
         try_test!(
             MinMaxTestContainer<Fr, 1, true>,
-            vec![Word::from(3), Word::from(5)],
+            [Word::from(3), Word::from(5)],
             true,
         );
         try_test!(
             MinMaxTestContainer<Fr, 31, true>,
-            vec![WORD_LOW_MAX, WORD_LOW_MAX],
+            [WORD_LOW_MAX, WORD_LOW_MAX],
             true,
         );
     }
@@ -167,17 +167,17 @@ mod tests {
         // min == b, max == a
         try_test!(
             MinMaxTestContainer<Fr, 1, true>,
-            vec![Word::from(1), Word::from(0)],
+            [Word::from(1), Word::from(0)],
             false,
         );
         try_test!(
             MinMaxTestContainer<Fr, 1, true>,
-            vec![Word::from(256), Word::from(3)],
+            [Word::from(256), Word::from(3)],
             false,
         );
         try_test!(
             MinMaxTestContainer<Fr, 31, true>,
-            vec![WORD_LOW_MAX, Word::from(123456)],
+            [WORD_LOW_MAX, Word::from(123456)],
             false,
         );
     }
@@ -187,19 +187,19 @@ mod tests {
         // min == a, max == b
         try_test!(
             MinMaxTestContainer<Fr, 1, false>,
-            vec![Word::from(1), Word::from(0)],
+            [Word::from(1), Word::from(0)],
             true,
         );
 
         try_test!(
             MinMaxTestContainer<Fr, 4, false>,
-            vec![Word::from(777), Word::from(44)],
+            [Word::from(777), Word::from(44)],
             true,
         );
 
         try_test!(
             MinMaxTestContainer<Fr, 17, false>,
-            vec![WORD_LOW_MAX+1, WORD_LOW_MAX],
+            [WORD_LOW_MAX+1, WORD_LOW_MAX],
             true,
         );
     }

@@ -1,7 +1,10 @@
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        from_bytes, pow_of_two, transpose_val_ret, CachedRegion, Cell,
+    evm_circuit::{
+        param::MAX_N_BYTES_INTEGER,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            from_bytes, pow_of_two, transpose_val_ret, CachedRegion, Cell,
+        },
     },
     util::Expr,
 };
@@ -34,6 +37,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
+        assert!(N_BYTES <= MAX_N_BYTES_INTEGER);
         let lt = cb.query_bool();
         let diff = cb.query_bytes();
         let range = pow_of_two(N_BYTES * 8);
@@ -148,12 +152,12 @@ mod tests {
     fn test_lt_expect() {
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(1)],
+            [Word::from(0), Word::from(1)],
             true,
         );
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0)],
             false,
         );
     }
@@ -162,7 +166,7 @@ mod tests {
     fn test_lt_just_in_range() {
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
+            [Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
             true,
         );
     }
@@ -171,7 +175,7 @@ mod tests {
     fn test_lt_out_of_range() {
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(2 << (N * 8))],
+            [Word::from(1), Word::from(2 << (N * 8))],
             false,
         );
     }

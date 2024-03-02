@@ -1,8 +1,8 @@
 //! Utility traits, functions used in the crate.
 
-use super::param::*;
+use super::{keccak_packed_multi::keccak_unusable_rows, param::*};
 use eth_types::{Field, ToScalar, Word};
-use halo2_proofs::{circuit::Value, halo2curves::FieldExt};
+use halo2_proofs::circuit::Value;
 use std::env::var;
 
 /// Description of which bits (positions) a part contains
@@ -210,21 +210,21 @@ pub(crate) fn get_rotate_count(count: usize, part_size: usize) -> usize {
 /// Get the degree of the circuit from the KECCAK_DEGREE env variable
 pub(crate) fn get_degree() -> usize {
     var("KECCAK_DEGREE")
-        .unwrap_or_else(|_| "8".to_string())
+        .unwrap_or_else(|_| "19".to_string())
         .parse()
         .expect("Cannot parse KECCAK_DEGREE env var as usize")
 }
 
 /// Returns how many bits we can process in a single lookup given the range of
 /// values the bit can have and the height of the circuit (via KECCAK_DEGREE).
-pub(crate) fn get_num_bits_per_lookup(range: usize) -> usize {
+pub fn get_num_bits_per_lookup(range: usize) -> usize {
     let log_height = get_degree();
     get_num_bits_per_lookup_impl(range, log_height)
 }
 
 // Implementation of the above without environment dependency.
 pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> usize {
-    let num_unusable_rows = 31;
+    let num_unusable_rows = keccak_unusable_rows();
     let height = 2usize.pow(log_height as u32);
     let mut num_bits = 1;
     while range.pow(num_bits + 1) + num_unusable_rows <= height {
@@ -233,7 +233,7 @@ pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> u
     num_bits as usize
 }
 
-pub(crate) fn extract_field<F: FieldExt>(value: Value<F>) -> F {
+pub(crate) fn extract_field<F: Field>(value: Value<F>) -> F {
     let mut field = F::zero();
     let _ = value.map(|f| {
         field = f;

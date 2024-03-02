@@ -1,6 +1,10 @@
 //! Mock Block definition and builder related methods.
 
-use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
+#[cfg(not(feature = "scroll"))]
+use crate::MOCK_DIFFICULTY;
+#[cfg(feature = "scroll")]
+use crate::MOCK_DIFFICULTY_L2GETH as MOCK_DIFFICULTY;
+use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_GASLIMIT};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
 use ethers_core::types::{Bloom, OtherFields};
 
@@ -34,7 +38,7 @@ pub struct MockBlock {
     // This field is handled here as we assume that all block txs have the same ChainId.
     // Also, the field is stored in the block_table since we don't have a chain_config
     // structure/table.
-    pub(crate) chain_id: Word,
+    pub(crate) chain_id: u64,
 }
 
 impl Default for MockBlock {
@@ -62,7 +66,7 @@ impl Default for MockBlock {
             size: Word::zero(),
             mix_hash: Hash::zero(),
             nonce: H64::zero(),
-            chain_id: *MOCK_CHAIN_ID,
+            chain_id: MOCK_CHAIN_ID,
         }
     }
 }
@@ -90,13 +94,21 @@ impl From<MockBlock> for Block<Transaction> {
             transactions: mock
                 .transactions
                 .iter_mut()
-                .map(|mock_tx| (mock_tx.chain_id(mock.chain_id).to_owned()).into())
+                .map(|mock_tx| {
+                    (mock_tx
+                        .chain_id(mock.chain_id)
+                        .block_number(mock.number.as_u64())
+                        .to_owned())
+                    .into()
+                })
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
             nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
+            withdrawals: None,
+            withdrawals_root: None,
         }
     }
 }
@@ -127,6 +139,8 @@ impl From<MockBlock> for Block<()> {
             nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
+            withdrawals: None,
+            withdrawals_root: None,
         }
     }
 }
@@ -269,7 +283,7 @@ impl MockBlock {
     }
 
     /// Set chain_id field for the MockBlock.
-    pub fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+    pub fn chain_id(&mut self, chain_id: u64) -> &mut Self {
         self.chain_id = chain_id;
         self
     }

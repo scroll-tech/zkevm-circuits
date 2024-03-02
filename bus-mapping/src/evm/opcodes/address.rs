@@ -4,7 +4,7 @@ use crate::{
     operation::CallContextField,
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToWord};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Address;
@@ -17,8 +17,9 @@ impl Opcode for Address {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        // Get address result from next step.
-        let address = geth_steps[1].stack.last()?;
+        let address = state.call()?.address.to_word();
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(address, geth_steps[1].stack.last()?);
 
         // Read the callee address in call context.
         state.call_context_read(
@@ -26,14 +27,10 @@ impl Opcode for Address {
             state.call()?.call_id,
             CallContextField::CalleeAddress,
             address,
-        );
+        )?;
 
         // Write the address to stack.
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            address,
-        )?;
+        state.stack_push(&mut exec_step, address)?;
 
         Ok(vec![exec_step])
     }

@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::{
         param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
+            N_PHASE2_COLUMNS, N_PHASE2_COPY_COLUMNS,
         },
         table::Table,
     },
@@ -10,10 +11,10 @@ use crate::{
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{Address, ToLittleEndian, ToWord, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
+    halo2curves::group::ff::BatchInvert,
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -28,6 +29,8 @@ pub(crate) mod constraint_builder;
 pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
+pub(crate) mod padding_gadget;
+pub(crate) mod precompile_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
@@ -41,7 +44,7 @@ pub(crate) struct Cell<F> {
     cell_column_index: usize,
 }
 
-impl<F: FieldExt> Cell<F> {
+impl<F: Field> Cell<F> {
     pub(crate) fn new(
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
@@ -61,7 +64,7 @@ impl<F: FieldExt> Cell<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<Option<AssignedCell<F, F>>, Error> {
         region.assign_advice(
             || {
                 format!(
@@ -76,33 +79,40 @@ impl<F: FieldExt> Cell<F> {
     }
 }
 
-impl<F: FieldExt> Expr<F> for Cell<F> {
+impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
-impl<F: FieldExt> Expr<F> for &Cell<F> {
+impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
-pub struct CachedRegion<'r, 'b, F: FieldExt> {
+pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
     challenges: &'r Challenges<Value<F>>,
     advice_columns: Vec<Column<Advice>>,
     width_start: usize,
     height_start: usize,
+    // the `CachedRegion` can be seen as a written buffer for real halo2 regions.
+    // All writes beyond `height_limit` will not be written through to halo2 columns.
+    // This is used for the evm step "assign next then assign current" pattern.
+    // When we remove this pattern later, this field can also be removed.
+    // More: <https://github.com/scroll-tech/zkevm-circuits/pull/1014>
+    height_limit: usize,
 }
 
-impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
+impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
         challenges: &'r Challenges<Value<F>>,
         advice_columns: Vec<Column<Advice>>,
         height: usize,
+        height_limit: usize,
         height_start: usize,
     ) -> Self {
         Self {
@@ -111,6 +121,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             challenges,
             width_start: advice_columns[0].index(),
             height_start,
+            height_limit,
             advice_columns,
         }
     }
@@ -149,13 +160,15 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     /// Assign an advice column value (witness).
+    /// If return value is None, it means the assignment will only happen
+    /// inside the CachedRegion, and is not written into real halo2 columns.
     pub fn assign_advice<'v, V, VR, A, AR>(
         &'v mut self,
         annotation: A,
         column: Column<Advice>,
         offset: usize,
         to: V,
-    ) -> Result<AssignedCell<VR, F>, Error>
+    ) -> Result<Option<AssignedCell<VR, F>>, Error>
     where
         V: Fn() -> Value<VR> + 'v,
         for<'vr> Assigned<F>: From<&'vr VR>,
@@ -163,18 +176,26 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         AR: Into<String>,
     {
         // Actually set the value
-        let res = self.region.assign_advice(annotation, column, offset, &to);
-        // Cache the value
-        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
-        // the column has different phase than current one, so we call to `to`
-        // again here to cache the value.
-        if res.is_ok() {
+        if offset - self.height_start < self.height_limit {
+            let res = self.region.assign_advice(annotation, column, offset, &to);
+            // Cache the value
+            // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+            // the column has different phase than current one, so we call to `to`
+            // again here to cache the value.
+            if res.is_ok() {
+                to().map(|f| {
+                    self.advice[column.index() - self.width_start][offset - self.height_start] =
+                        Assigned::from(&f).evaluate();
+                });
+            }
+            Ok(Some(res?))
+        } else {
             to().map(|f| {
                 self.advice[column.index() - self.width_start][offset - self.height_start] =
                     Assigned::from(&f).evaluate();
             });
+            Ok(None)
         }
-        res
     }
 
     pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
@@ -195,8 +216,26 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
+
+    pub fn code_hash(&self, n: U256) -> Value<F> {
+        if cfg!(feature = "poseidon-codehash") {
+            // only Field is not enough for ToScalar trait so we have to make workaround
+            Value::known(rlc::value(&n.to_le_bytes(), F::from(256u64)))
+        } else {
+            self.challenges
+                .evm_word()
+                .map(|r| rlc::value(&n.to_le_bytes(), r))
+        }
+    }
+
+    pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
+        self.challenges
+            .keccak_input()
+            .map(|r| rlc::value(le_bytes, r))
+    }
+
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(CodeDB::empty_code_hash().to_word())
+        self.code_hash(CodeDB::empty_code_hash().to_word())
     }
 
     /// Constrains a cell to have a constant value.
@@ -231,7 +270,7 @@ impl<F> Hash for StoredExpression<F> {
     }
 }
 
-impl<F: FieldExt> StoredExpression<F> {
+impl<F: Field> StoredExpression<F> {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -271,13 +310,14 @@ pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
+    StoragePermutationPhase2,
     LookupByte,
     Lookup(Table),
 }
 
 impl CellType {
     // The phase that given `Expression` becomes evaluateable.
-    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
+    fn expr_phase<F: Field>(expr: &Expression<F>) -> u8 {
         use Expression::*;
         match expr {
             Challenge(challenge) => challenge.phase() + 1,
@@ -298,7 +338,7 @@ impl CellType {
     }
 
     /// Return the storage cell of the expression
-    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
+    pub(crate) fn storage_for_expr<F: Field>(expr: &Expression<F>) -> CellType {
         Self::storage_for_phase(Self::expr_phase::<F>(expr))
     }
 }
@@ -311,7 +351,7 @@ pub(crate) struct CellColumn<F> {
     pub(crate) expr: Expression<F>,
 }
 
-impl<F: FieldExt> Expr<F> for CellColumn<F> {
+impl<F: Field> Expr<F> for CellColumn<F> {
     fn expr(&self) -> Expression<F> {
         self.expr.clone()
     }
@@ -325,7 +365,7 @@ pub(crate) struct CellManager<F> {
     columns: Vec<CellColumn<F>>,
 }
 
-impl<F: FieldExt> CellManager<F> {
+impl<F: Field> CellManager<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         height: usize,
@@ -360,8 +400,15 @@ impl<F: FieldExt> CellManager<F> {
             }
         }
 
+        // Mark columns used for copy constraints on phase2
+        for _ in 0..N_PHASE2_COPY_COLUMNS {
+            meta.enable_equality(advices[column_idx]);
+            columns[column_idx].cell_type = CellType::StoragePermutationPhase2;
+            column_idx += 1;
+        }
+
         // Mark columns used for Phase2 constraints
-        for _ in 0..N_PHASE2_COLUMNS {
+        for _ in N_PHASE2_COPY_COLUMNS..N_PHASE2_COLUMNS {
             columns[column_idx].cell_type = CellType::StoragePhase2;
             column_idx += 1;
         }
@@ -412,8 +459,8 @@ impl<F: FieldExt> CellManager<F> {
                 best_height = column.height;
             }
         }
-        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
-        // better height
+        // Replace a CellType::Storage by CellType::StoragePermutation (phase 1 or phase 2) if the
+        // later has better height
         if cell_type == CellType::StoragePhase1 {
             for column in self.columns.iter() {
                 if column.cell_type == CellType::StoragePermutation && column.height < best_height {
@@ -421,12 +468,22 @@ impl<F: FieldExt> CellManager<F> {
                     best_height = column.height;
                 }
             }
+        } else if cell_type == CellType::StoragePhase2 {
+            for column in self.columns.iter() {
+                if column.cell_type == CellType::StoragePermutationPhase2
+                    && column.height < best_height
+                {
+                    best_index = Some(column.index);
+                    best_height = column.height;
+                }
+            }
         }
+
         match best_index {
             Some(index) => index,
             // If we reach this case, it means that all the columns of cell_type have assignments
             // taking self.height rows, so there's no more space.
-            None => panic!("not enough cells for query: {:?}", cell_type),
+            None => panic!("not enough cells for query: {cell_type:?}"),
         }
     }
 
@@ -436,6 +493,10 @@ impl<F: FieldExt> CellManager<F> {
             .map(|column| column.height)
             .max()
             .unwrap()
+    }
+
+    pub(crate) fn get_heights(&self) -> Vec<usize> {
+        self.columns().iter().map(|column| column.height).collect()
     }
 
     /// Returns a map of CellType -> (width, height, num_cells)
@@ -465,7 +526,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
     pub(crate) cells: [Cell<F>; N],
 }
 
-impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
@@ -480,7 +541,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: Option<[u8; N]>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<Vec<Option<AssignedCell<F, F>>>, Error> {
         bytes.map_or(Err(Error::Synthesis), |bytes| {
             self.cells
                 .iter()
@@ -493,21 +554,23 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     }
 }
 
-impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
 pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
+pub(crate) type U64Word<F> = RandomLinearCombination<F, N_BYTES_U64>;
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
@@ -521,7 +584,7 @@ pub(crate) mod from_bytes {
         value
     }
 
-    pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
+    pub(crate) fn value<F: Field>(bytes: &[u8]) -> F {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
@@ -536,15 +599,51 @@ pub(crate) mod from_bytes {
     }
 }
 
+/// Decodes a field element from its binary representation
+pub(crate) mod from_bits {
+    use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
+
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bits: &[E]) -> Expression<F> {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = 0.expr();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value = value + bit.expr() * multiplier;
+            multiplier *= F::from(2);
+        }
+        value
+    }
+
+    pub(crate) fn value<F: Field>(bits: &[bool]) -> F {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = F::zero();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value += F::from(*bit as u64) * multiplier;
+            multiplier *= F::from(2);
+        }
+        value
+    }
+}
+
 /// Returns the random linear combination of the inputs.
 /// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
 pub(crate) mod rlc {
     use std::ops::{Add, Mul};
 
     use crate::util::Expr;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
         if !expressions.is_empty() {
             generic(expressions.iter().map(|e| e.expr()), randomness.expr())
         } else {
@@ -552,7 +651,7 @@ pub(crate) mod rlc {
         }
     }
 
-    pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
+    pub(crate) fn value<'a, F: Field, I>(values: I, randomness: F) -> F
     where
         I: IntoIterator<Item = &'a u8>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
@@ -581,13 +680,13 @@ pub(crate) mod rlc {
     }
 }
 
-/// Returns 2**by as FieldExt
-pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
-    F::from(2).pow(&[by as u64, 0, 0, 0])
+/// Returns 2**by as Field
+pub(crate) fn pow_of_two<F: Field>(by: usize) -> F {
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
 /// Returns 2**by as Expression
-pub(crate) fn pow_of_two_expr<F: FieldExt>(by: usize) -> Expression<F> {
+pub(crate) fn pow_of_two_expr<F: Field>(by: usize) -> Expression<F> {
     Expression::Constant(pow_of_two(by))
 }
 
@@ -640,6 +739,10 @@ impl<'a> StepRws<'a> {
     }
     /// Increment the step rw operation offset by `offset`.
     pub(crate) fn offset_add(&mut self, offset: usize) {
+        self.offset += offset
+    }
+    /// Set the step rw operation offset by `offset`.
+    pub(crate) fn offset_set(&mut self, offset: usize) {
         self.offset = offset
     }
     /// Return the next rw operation from the step.
@@ -647,5 +750,29 @@ impl<'a> StepRws<'a> {
         let rw = self.rws[self.rw_indices[self.offset]];
         self.offset += 1;
         rw
+    }
+}
+
+/// A struct to cache field inversions.
+pub struct Inverter<F> {
+    inverses: Vec<F>,
+}
+
+impl<F: Field> Inverter<F> {
+    /// Create a new Inverter with preloaded inverses up to `preload_up_to` inclusive.
+    pub fn new(preload_up_to: u64) -> Self {
+        let mut inverses = (0..=preload_up_to).map(F::from).collect::<Vec<F>>();
+
+        inverses.iter_mut().skip(1).batch_invert();
+
+        Self { inverses }
+    }
+
+    /// Return the inverse of `value`, from cache or calculated.
+    pub fn get(&self, value: u64) -> F {
+        match self.inverses.get(value as usize) {
+            Some(i) => *i,
+            None => F::from(value).invert().unwrap(),
+        }
     }
 }

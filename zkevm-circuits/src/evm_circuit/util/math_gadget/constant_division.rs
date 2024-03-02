@@ -1,8 +1,11 @@
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        math_gadget::*,
-        transpose_val_ret, CachedRegion, Cell, CellType,
+    evm_circuit::{
+        param::MAX_N_BYTES_INTEGER,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::*,
+            transpose_val_ret, CachedRegion, Cell, CellType,
+        },
     },
     util::Expr,
 };
@@ -31,6 +34,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
+        assert!(N_BYTES * 8 + 64 - denominator.leading_zeros() as usize <= MAX_N_BYTES_INTEGER * 8);
         let quotient = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
         let remainder = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
 
@@ -165,7 +169,7 @@ mod tests {
     fn test_constantdivisiongadget_0div5_rem0() {
         try_test!(
             ConstantDivisionTestContainer<Fr, 4, 5, 0, 0>,
-            vec![Word::from(0)],
+            [Word::from(0)],
             true,
         );
     }
@@ -174,7 +178,7 @@ mod tests {
     fn test_constantdivisiongadget_5div5_rem0() {
         try_test!(
             ConstantDivisionTestContainer<Fr, 4, 5, 1, 0>,
-            vec![Word::from(5)],
+            [Word::from(5)],
             true,
         );
     }
@@ -183,7 +187,7 @@ mod tests {
     fn test_constantdivisiongadget_1div5_rem1() {
         try_test!(
             ConstantDivisionTestContainer<Fr, 4, 5, 0, 1>,
-            vec![Word::from(1)],
+            [Word::from(1)],
             true,
         );
     }
@@ -192,7 +196,7 @@ mod tests {
     fn test_constantdivisiongadget_1div5_rem4() {
         try_test!(
             ConstantDivisionTestContainer<Fr, 4, 5, 1, 4>,
-            vec![Word::from(1)],
+            [Word::from(1)],
             false,
         );
     }
@@ -201,7 +205,7 @@ mod tests {
     fn test_constantdivisiongadget_quotient_overflow() {
         try_test!(
             ConstantDivisionTestContainer<Fr, 4, 5, 4294967296u64, 1>,
-            vec![Word::from(1u64 << (4 * 8)) * 5 + 1],
+            [Word::from(1u64 << (4 * 8)) * 5 + 1],
             false,
         );
     }
@@ -210,7 +214,7 @@ mod tests {
     fn test_constantdivisiongadget_33_div16_rem17() {
         try_test!(
             ConstantDivisionTestContainer<Fr, 4, 16, 1, 17>,
-            vec![Word::from(33)],
+            [Word::from(33)],
             false,
         );
     }

@@ -3,11 +3,8 @@ use super::{
     param::*, random_linear_combination::Queries as RlcQueries,
 };
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        util::{math_gadget::generate_lagrange_base_polynomial, not},
-    },
-    table::{AccountFieldTag, MPTProofType, RwTableTag},
+    evm_circuit::{param::N_BYTES_WORD, util::not},
+    table::{AccountFieldTag, MPTProofType as ProofType, RwTableTag},
     util::Expr,
 };
 use eth_types::Field;
@@ -35,6 +32,7 @@ pub struct RwTableQueries<F: Field> {
 
 #[derive(Clone)]
 pub struct MptUpdateTableQueries<F: Field> {
+    pub q_enable: Expression<F>,
     pub address: Expression<F>,
     pub storage_key: Expression<F>,
     pub proof_type: Expression<F>,
@@ -220,11 +218,15 @@ impl<F: Field> ConstraintBuilder<F> {
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
-        // 2.3. value is a byte
+
+        // The address is aligned.
+        let inv_32 = F::from(32).invert().unwrap();
         self.add_lookup(
-            "memory value is a byte",
-            vec![(q.rw_table.value.clone(), q.lookups.u8.clone())],
+            "limb fits into u16",
+            vec![(q.address.limbs[0].clone() * inv_32, q.lookups.u16.clone())],
         );
+
+        // 2.3. value is a word
         // 2.4. Start initial value is 0
         self.require_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
@@ -233,11 +235,14 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_equal(
-            "value_prev column equals initial_value for Memory",
-            q.value_prev_column(),
-            q.initial_value(),
-        );
+        // 2.6. The value on the previous row equals the value_prev column.
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
@@ -279,7 +284,13 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
         // ref. spec 4.0. Unused keys are 0
-        self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
+        // See comment above configure for is_non_exist in state_circuit.rs for a explanation of why
+        // this is required.
+        self.require_equal(
+            "field_tag is AccountFieldTag::CodeHash for AccountStorage",
+            q.field_tag(),
+            AccountFieldTag::CodeHash.expr(),
+        );
 
         // value = 0 means the leaf doesn't exist. 0->0 transition requires a
         // non-existing proof.
@@ -287,8 +298,8 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_equal(
             "mpt_proof_type is field_tag or NonExistingStorageProof",
             q.mpt_proof_type(),
-            is_non_exist.expr() * MPTProofType::NonExistingStorageProof.expr()
-                + (1.expr() - is_non_exist) * MPTProofType::StorageMod.expr(),
+            is_non_exist.expr() * (ProofType::StorageDoesNotExist as u64).expr()
+                + (1.expr() - is_non_exist) * (ProofType::StorageChanged as u64).expr(),
         );
 
         // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
@@ -296,6 +307,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
                 vec![
+                    (1.expr(), q.mpt_update_table.q_enable.clone()),
                     (
                         q.rw_table.address.clone(),
                         q.mpt_update_table.address.clone(),
@@ -408,35 +420,19 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for Account",
             q.rw_table.storage_key.clone(),
         );
-        self.require_in_set(
-            "field_tag in AccountFieldTag range",
-            q.field_tag(),
-            set::<F, AccountFieldTag>(),
-        );
 
-        // We use code_hash = 0 as non-existing account state.  code_hash: 0->0
-        // transition requires a non-existing proof.
-        // is_non_exist degree = 4
-        //   q.is_non_exist() degree = 1
-        //   generate_lagrange_base_polynomial() degree = 3
-        let is_non_exist = q.is_non_exist()
-            * generate_lagrange_base_polynomial(
-                q.field_tag(),
-                AccountFieldTag::CodeHash as usize,
-                [
-                    AccountFieldTag::Nonce,
-                    AccountFieldTag::Balance,
-                    AccountFieldTag::CodeHash,
-                ]
-                .iter()
-                .map(|t| *t as usize),
-            );
+        // mpt circuit will verify correctness of mpt proof type and therefore the field
+        // tag. self.require_in_set(
+        //     "field_tag in AccountFieldTag range",
+        //     q.field_tag(),
+        //     set::<F, AccountFieldTag>(),
+        // );
+
         self.require_equal(
             "mpt_proof_type is field_tag or NonExistingAccountProofs",
             q.mpt_proof_type(),
-            // degree = max(4, 4 + 1) = 5
-            is_non_exist.expr() * MPTProofType::NonExistingAccountProof.expr()
-                + (1.expr() - is_non_exist) * q.field_tag(),
+            q.is_non_exist() * (ProofType::AccountDoesNotExist as u64).expr()
+                + (1.expr() - q.is_non_exist()) * q.field_tag(),
         );
 
         // last_access degree = 1
@@ -444,6 +440,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for Account last access",
                 vec![
+                    (1.expr(), q.mpt_update_table.q_enable.clone()),
                     (
                         q.rw_table.address.clone(),
                         q.mpt_update_table.address.clone(),
@@ -621,12 +618,20 @@ impl<F: Field> Queries<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
+    // be careful! not boolean!!
     fn first_access(&self) -> Expression<F> {
         not::expr(self.not_first_access.clone())
+    }
+    fn not_first_access(&self) -> Expression<F> {
+        self.not_first_access.clone()
     }
 
     fn address_change(&self) -> Expression<F> {
         self.rw_table.address.clone() - self.rw_table.prev_address.clone()
+    }
+
+    fn address_not_change(&self) -> Expression<F> {
+        not::expr(self.address_change())
     }
 
     fn rw_counter_change(&self) -> Expression<F> {

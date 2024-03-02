@@ -4,7 +4,7 @@ use crate::{
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
 };
-use eth_types::{GethExecStep, ToAddress, ToWord, H256};
+use eth_types::{GethExecStep, ToAddress, ToWord, Word, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodesize;
@@ -18,9 +18,10 @@ impl Opcode for Extcodesize {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Read account address from stack.
-        let address_word = geth_step.stack.last()?;
+        let address_word = state.stack_pop(&mut exec_step)?;
         let address = address_word.to_address();
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(address_word, geth_step.stack.last()?);
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent from call
         // context.
@@ -35,7 +36,7 @@ impl Opcode for Extcodesize {
                 state.call()?.is_persistent.to_word(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
         }
 
         // Update transaction access list for account address.
@@ -53,30 +54,33 @@ impl Opcode for Extcodesize {
         // Read account code hash and get code length.
         let account = state.sdb.get_account(&address).1;
         let exists = !account.is_empty();
-        let code_hash = if exists {
-            account.code_hash
+        let (code_hash, code_size) = if exists {
+            (
+                account.code_hash,
+                state.code(account.code_hash)?.len().into(),
+            )
         } else {
-            H256::zero()
+            (H256::zero(), Word::zero())
         };
         state.account_read(
             &mut exec_step,
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-        );
-        let code_size = if exists {
-            state.code(code_hash)?.len()
-        } else {
-            0
-        };
+        )?;
+        // If "scroll" feature is enabled, CodeSize is read of AccountTrie,
+        // so the full code don't need to be put into bytecode circuit.
+        // TODO: check the bytecode circuit assignment codes, to make sure this optimization
+        // is correctly applied.
+        #[cfg(feature = "scroll")]
+        if exists {
+            state.account_read(&mut exec_step, address, AccountField::CodeSize, code_size)?;
+        }
 
         // Write the EXTCODESIZE result to stack.
-        debug_assert_eq!(code_size, geth_steps[1].stack.last()?.as_usize());
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.nth_last_filled(0),
-            code_size.into(),
-        )?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(code_size, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, code_size)?;
 
         Ok(vec![exec_step])
     }
@@ -97,7 +101,7 @@ mod extcodesize_tests {
         geth_types::{Account, GethData},
         Bytecode, U256,
     };
-    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
+    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES, MOCK_COINBASE};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -151,7 +155,7 @@ mod extcodesize_tests {
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
             },
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| block.author(*MOCK_COINBASE).number(0xcafeu64),
         )
         .unwrap()
         .into();
@@ -241,12 +245,29 @@ mod extcodesize_tests {
             &AccountOp {
                 address: account.address,
                 field: AccountField::CodeHash,
-                value: if exists { code_hash } else { U256::zero() },
-                value_prev: if exists { code_hash } else { U256::zero() },
+                value: if exists { code_hash } else { Word::zero() },
+                value_prev: if exists { code_hash } else { Word::zero() },
             }
         );
-
-        let operation = &container.stack[indices[6].as_usize()];
+        #[cfg(feature = "scroll")]
+        if exists {
+            let code_size = account.code.len().to_word();
+            let operation = &container.account[indices[6].as_usize()];
+            assert_eq!(operation.rw(), RW::READ);
+            assert_eq!(
+                operation.op(),
+                &AccountOp {
+                    address: account.address,
+                    field: AccountField::CodeSize,
+                    value: code_size,
+                    value_prev: code_size,
+                },
+            );
+        }
+        let rw_offset = 6;
+        #[cfg(feature = "scroll")]
+        let rw_offset = if exists { rw_offset + 1 } else { rw_offset };
+        let operation = &container.stack[indices[rw_offset].as_usize()];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),

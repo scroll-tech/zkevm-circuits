@@ -1,15 +1,17 @@
 use super::{
     parse,
-    spec::{AccountMatch, Env, StateTest},
+    spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
 };
 use crate::{utils::MainnetFork, Compiler};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
-use std::{collections::HashMap, convert::TryInto, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    convert::TryInto,
+    str::FromStr,
+};
 use yaml_rust::Yaml;
-
-type Label = String;
 
 #[derive(Debug, Clone)]
 enum Ref {
@@ -38,11 +40,11 @@ impl Refs {
 }
 
 pub struct YamlStateTestBuilder<'a> {
-    compiler: &'a mut Compiler,
+    compiler: &'a Compiler,
 }
 
 impl<'a> YamlStateTestBuilder<'a> {
-    pub fn new(compiler: &'a mut Compiler) -> Self {
+    pub fn new(compiler: &'a Compiler) -> Self {
         Self { compiler }
     }
 
@@ -71,8 +73,8 @@ impl<'a> YamlStateTestBuilder<'a> {
             let env = Self::parse_env(&yaml_test["env"])?;
 
             // parse pre (account states before executing the transaction)
-            let pre: HashMap<Address, Account> = self
-                .parse_accounts(&yaml_test["pre"])?
+            let pre: BTreeMap<Address, Account> = self
+                .parse_accounts(&yaml_test["pre"], None)?
                 .into_iter()
                 .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
                 .collect();
@@ -100,14 +102,23 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
-            let gas_price =
-                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| U256::one());
+            let max_priority_fee_per_gas =
+                Self::parse_u256(&yaml_transaction["maxPriorityFeePerGas"]).ok();
+            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"]).ok();
 
-            // TODO handle maxPriorityFeePerGas & maxFeePerGas
+            // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
+            // EIP-1559 transaction.
+            // <https://github.com/ethereum/go-ethereum/blob/1485814f89d8206bb4a1c8e10a4a2893920f683a/core/state_transition.go#L167>
+            let gas_price = Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| {
+                max_fee_per_gas
+                    .unwrap()
+                    .min(max_priority_fee_per_gas.unwrap() + env.current_base_fee)
+            });
+
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
-            let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
+            let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
 
             // parse expects (account states before executing the transaction)
             let mut expects = Vec::new();
@@ -135,34 +146,37 @@ impl<'a> YamlStateTestBuilder<'a> {
                 }
 
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
-                let gparse_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
+                let gas_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"])?;
-                let result = self.parse_accounts(&expect["result"])?;
+
+                // Pass the account addresses before transaction as expected for result.
+                let expected_addresses = pre.keys().collect();
+                let result = self.parse_accounts(&expect["result"], Some(&expected_addresses))?;
 
                 if MainnetFork::in_network_range(&networks)? {
-                    expects.push((exception, data_refs, gparse_refs, value_refs, result));
+                    expects.push((exception, data_refs, gas_refs, value_refs, result));
                 }
             }
 
             // generate all the tests defined in the transaction by generating product of
             // data x gas x value
-            for (idx_data, data) in data_s.iter().enumerate() {
+            for (idx_data, calldata) in data_s.iter().enumerate() {
                 for (idx_gas, gas_limit) in gas_limit_s.iter().enumerate() {
                     for (idx_value, value) in value_s.iter().enumerate() {
                         // find the first result that fulfills the pattern
-                        for (exception, data_refs, parse_refs, value_refs, result) in &expects {
+                        for (exception, data_refs, gas_refs, value_refs, result) in &expects {
                             // check if this result can be applied to the current test
                             let mut data_label = String::new();
-                            if let Some(label) = &data.1 {
+                            if let Some(label) = &calldata.label {
                                 if !data_refs.contains_label(label) {
                                     continue;
                                 }
-                                data_label = format!("({})", label);
+                                data_label = format!("({label})");
                             } else if !data_refs.contains_index(idx_data) {
                                 continue;
                             }
 
-                            if !parse_refs.contains_index(idx_gas) {
+                            if !gas_refs.contains_index(idx_gas) {
                                 continue;
                             }
 
@@ -174,8 +188,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                             tests.push(StateTest {
                                 path: path.to_string(),
                                 id: format!(
-                                    "{}_d{}{}_g{}_v{}",
-                                    test_name, idx_data, data_label, idx_gas, idx_value
+                                    "{test_name}_d{idx_data}{data_label}_g{idx_gas}_v{idx_value}"
                                 ),
                                 env: env.clone(),
                                 pre: pre.clone(),
@@ -184,10 +197,13 @@ impl<'a> YamlStateTestBuilder<'a> {
                                 secret_key: secret_key.clone(),
                                 to,
                                 gas_limit: *gas_limit,
+                                max_priority_fee_per_gas,
+                                max_fee_per_gas,
                                 gas_price,
                                 nonce,
                                 value: *value,
-                                data: data.0.clone(),
+                                data: calldata.data.clone(),
+                                access_list: calldata.access_list.clone(),
                                 exception: *exception,
                             });
                             break;
@@ -203,7 +219,9 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// parse env section
     fn parse_env(yaml: &Yaml) -> Result<Env> {
         Ok(Env {
-            current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
+            current_base_fee: Self::parse_u256(&yaml["currentBaseFee"])
+                .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
+            current_coinbase: Self::parse_address(&yaml["currentCoinbase"], None)?,
             current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
             current_number: Self::parse_u64(&yaml["currentNumber"])?,
@@ -213,7 +231,11 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 
     /// parse a vector of address=>(storage,balance,code,nonce) entry
-    fn parse_accounts(&mut self, yaml: &Yaml) -> Result<HashMap<Address, AccountMatch>> {
+    fn parse_accounts(
+        &mut self,
+        yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>,
+    ) -> Result<HashMap<Address, AccountMatch>> {
         let mut accounts = HashMap::new();
         for (address, account) in yaml.as_hash().context("parse_hash")?.iter() {
             let acc_storage = &account["storage"];
@@ -228,7 +250,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 }
             }
 
-            let address = Self::parse_address(address)?;
+            let address = Self::parse_address(address, expected_addresses)?;
             let account = AccountMatch {
                 address,
                 balance: if acc_balance.is_badvalue() {
@@ -282,16 +304,30 @@ impl<'a> YamlStateTestBuilder<'a> {
         tags
     }
     /// returns the element as an address
-    fn parse_address(yaml: &Yaml) -> Result<Address> {
+    fn parse_address(
+        yaml: &Yaml,
+        expected_addresses: Option<&HashSet<&Address>>,
+    ) -> Result<Address> {
         if let Some(as_str) = yaml.as_str() {
             parse::parse_address(as_str)
         } else if let Some(as_i64) = yaml.as_i64() {
-            let hex = format!("{:0>40}", as_i64);
-            Ok(Address::from_slice(&hex::decode(hex)?))
+            // Try to convert the integer to hex if has expected addresses for
+            // accounts after transaction (result).
+            // e.g. 10 -> 0xa
+            if let Some(expected_addresses) = expected_addresses {
+                let address = Address::from_slice(&hex::decode(format!("{as_i64:040x}"))?);
+                if expected_addresses.contains(&address) {
+                    return Ok(address);
+                }
+            }
+
+            // Format as a hex string directly for accounts before transaction (pre).
+            // e.g. 10 -> 0x10
+            Ok(Address::from_slice(&hex::decode(format!("{as_i64:0>40}"))?))
         } else if let Yaml::Real(as_real) = yaml {
             Ok(Address::from_str(as_real)?)
         } else {
-            bail!("cannot parse address {:?}", yaml);
+            bail!("cannot parse address {yaml:?}");
         }
     }
 
@@ -315,12 +351,15 @@ impl<'a> YamlStateTestBuilder<'a> {
 
     /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
     /// { LLL }
-    fn parse_calldata(&mut self, yaml: &Yaml) -> Result<(Bytes, Option<Label>)> {
+    fn parse_calldata(&mut self, yaml: &Yaml) -> Result<parse::Calldata> {
         if let Some(as_str) = yaml.as_str() {
-            return parse::parse_calldata(self.compiler, as_str);
-        } else if let Some(as_map) = yaml.as_hash() {
+            return parse::parse_calldata(self.compiler, as_str, &None);
+        }
+        if let Some(as_map) = yaml.as_hash() {
             if let Some(Yaml::String(data)) = as_map.get(&Yaml::String("data".to_string())) {
-                return parse::parse_calldata(self.compiler, data);
+                let raw_access_list =
+                    parse_raw_access_list(as_map.get(&Yaml::String("accessList".to_string())))?;
+                return parse::parse_calldata(self.compiler, data, &raw_access_list);
             } else {
                 bail!("do not know what to do with calldata(3): {:?}", yaml);
             }
@@ -333,9 +372,9 @@ impl<'a> YamlStateTestBuilder<'a> {
         let as_str = if let Some(as_str) = yaml.as_str() {
             as_str.to_string()
         } else if let Some(as_int) = yaml.as_i64() {
-            format!("0x{:x}", as_int)
+            format!("0x{as_int:x}")
         } else {
-            bail!(format!("code '{:?}' not an str", yaml));
+            bail!(format!("code '{yaml:?}' not an str"));
         };
         parse::parse_code(self.compiler, &as_str)
     }
@@ -382,6 +421,11 @@ impl<'a> YamlStateTestBuilder<'a> {
     ///   <range_lo>-<range_hi> >= Ref::Index(range_lo)..=RefIndex(range_hi)
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn parse_refs(yaml: &Yaml) -> Result<Refs> {
+        if yaml.is_badvalue() {
+            // It is considered as Any if missing this field.
+            return Ok(Refs(vec![Ref::Any]));
+        }
+
         // convert a unique element into a list
         let yamls = if yaml.is_array() {
             yaml.as_vec().context("as_vec")?.iter().collect()
@@ -423,6 +467,59 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
 }
 
+fn parse_raw_access_list(access_list: Option<&Yaml>) -> Result<Option<parse::RawAccessList>> {
+    if let Some(Yaml::Array(access_items)) = access_list {
+        let access_list = access_items
+            .iter()
+            .map(|item| {
+                item.as_hash().map_or(
+                    Err(anyhow!("Parsed access list item must be a hash")),
+                    |item| {
+                        let address = match item.get(&Yaml::String("address".to_string())) {
+                            Some(Yaml::Integer(i)) => format!("{i:x}"),
+                            Some(Yaml::String(s)) => {
+                                assert!(s.starts_with("0x"));
+                                s[2..].to_string()
+                            }
+                            val => bail!("Failed to parse access list address = {val:?}"),
+                        };
+                        let address = format!("0x{:0>40}", address);
+
+                        let storage_keys = if let Some(Yaml::Array(storage_keys)) =
+                            item.get(&Yaml::String("storageKeys".to_string()))
+                        {
+                            storage_keys
+                                .iter()
+                                .map(|key| {
+                                    let key = match key {
+                                        Yaml::Integer(i) => format!("{i:x}"),
+                                        Yaml::String(s) => {
+                                            assert!(s.starts_with("0x"));
+                                            s[2..].to_string()
+                                        }
+                                        val => bail!(
+                                            "Failed to parse access list storage key = {val:?}"
+                                        ),
+                                    };
+                                    Ok(format!("0x{:0>64}", key))
+                                })
+                                .collect::<Result<_>>()?
+                        } else {
+                            bail!("Parsed access list storage keys must be an array");
+                        };
+
+                        Ok(parse::RawAccessListItem::new(address, storage_keys))
+                    },
+                )
+            })
+            .collect::<Result<_>>()?;
+
+        return Ok(Some(access_list));
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -430,7 +527,7 @@ mod test {
         config::TestSuite,
         statetest::{run_test, CircuitsConfig, StateTestError},
     };
-    use eth_types::address;
+    use eth_types::{address, AccessList, AccessListItem};
 
     const TEMPLATE: &str = r#"
 arith:
@@ -456,7 +553,12 @@ arith:
   transaction:
     data:
     - :raw 0x00
-    - :label data1 :raw 0x01
+    - data: :label data1 :raw 0x01
+      accessList:
+      - address: 0xF00000000000000000000000000000000000F101
+        storageKeys:
+        - 0x60A7
+        - 0xBEEF
     gasLimit:
     - '80000000'
     - '80000001'
@@ -561,7 +663,7 @@ arith:
 
     #[test]
     fn combinations() -> Result<()> {
-        let tcs = YamlStateTestBuilder::new(&mut Compiler::default())
+        let tcs = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?
             .into_iter()
             .map(|v| (v.id.clone(), v))
@@ -571,12 +673,7 @@ arith:
 
         let ccccc = address!("cccccccccccccccccccccccccccccccccccccccc");
         let check_ccccc_balance = |id: &str, v: u64| {
-            assert_eq!(
-                tcs[id].result[&ccccc].balance,
-                Some(U256::from(v)),
-                "{}",
-                id
-            )
+            assert_eq!(tcs[id].result[&ccccc].balance, Some(U256::from(v)), "{id}")
         };
 
         check_ccccc_balance("arith_d0_g0_v0", 1000000000001);
@@ -587,18 +684,21 @@ arith:
     }
 
     #[test]
-    fn parse() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
+    fn test_yaml_parse() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
-        let current = tc.remove(0);
+
+        // Check the last test.
+        let current = tc.pop().unwrap();
 
         let a94f5 = address!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
         let ccccc = address!("cccccccccccccccccccccccccccccccccccccccc");
 
         let expected = StateTest {
             path: "".into(),
-            id: "arith_d0_g0_v0".into(),
+            id: "arith_d1(data1)_g1_v1".into(),
             env: Env {
+                current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
                 current_difficulty: U256::from(0x20000u64),
                 current_number: 1,
@@ -613,12 +713,18 @@ arith:
             )?),
             from: a94f5,
             to: Some(ccccc),
-            gas_limit: 80000000,
+            gas_limit: 80000001,
             gas_price: U256::from(10u64),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
             nonce: U256::zero(),
-            value: U256::one(),
-            data: Bytes::from(&[0]),
-            pre: HashMap::from([
+            value: U256::from(2),
+            data: Bytes::from(&[1]),
+            access_list: Some(AccessList(vec![AccessListItem {
+                address: address!("0xf00000000000000000000000000000000000f101"),
+                storage_keys: vec![H256::from_low_u64_be(0x60a7), H256::from_low_u64_be(0xbeef)],
+            }])),
+            pre: BTreeMap::from([
                 (
                     ccccc,
                     Account {
@@ -626,7 +732,6 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01, 0x00]),
                         nonce: U256::zero(),
-
                         storage: HashMap::from([(U256::zero(), U256::one())]),
                     },
                 ),
@@ -637,7 +742,6 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::default(),
                         nonce: U256::zero(),
-
                         storage: HashMap::new(),
                     },
                 ),
@@ -646,10 +750,10 @@ arith:
                 ccccc,
                 AccountMatch {
                     address: ccccc,
-                    balance: Some(U256::from(1000000000001u64)),
-                    nonce: Some(U256::from(0)),
-                    code: Some(Bytes::from(&[0x60, 0x01, 0x00])),
-                    storage: HashMap::from([(U256::zero(), U256::one())]),
+                    balance: Some(U256::from(10u64)),
+                    nonce: None,
+                    code: None,
+                    storage: HashMap::new(),
                 },
             )]),
             exception: false,
@@ -661,9 +765,7 @@ arith:
 
     #[test]
     fn result_pass() -> Result<()> {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);
         run_test(t1, TestSuite::default(), CircuitsConfig::default())?;
@@ -671,7 +773,7 @@ arith:
     }
     #[test]
     fn test_result_bad_storage() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_storage: "2".into(),
@@ -696,7 +798,7 @@ arith:
     }
     #[test]
     fn bad_balance() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_balance: "1000000000002".into(),
@@ -721,7 +823,7 @@ arith:
 
     #[test]
     fn bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_code: ":raw 0x600200".into(),
@@ -746,7 +848,7 @@ arith:
 
     #[test]
     fn bad_nonce() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_nonce: "2".into(),
@@ -772,7 +874,7 @@ arith:
 
     #[test]
     fn sstore() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0x607760005500".into(),
@@ -789,7 +891,7 @@ arith:
 
     #[test]
     fn marked_as_exception_and_fails() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 gas_limit: "2300".into(),
@@ -804,7 +906,7 @@ arith:
     }
     #[test]
     fn marked_as_exception_but_does_not_fail() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 res_exception: true,
@@ -821,7 +923,7 @@ arith:
     #[cfg(feature = "warn-unimplemented")]
     #[test]
     fn fail_bad_code() -> Result<()> {
-        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+        let mut tc = YamlStateTestBuilder::new(&Compiler::default()).load_yaml(
             "",
             &Template {
                 pre_code: ":raw 0xF4".into(),

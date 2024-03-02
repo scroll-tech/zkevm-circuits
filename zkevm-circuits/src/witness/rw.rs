@@ -1,10 +1,15 @@
 #![allow(missing_docs)]
 use std::collections::HashMap;
 
-use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
-use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use bus_mapping::{
+    operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
+    Error,
+};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
+use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 use crate::{
     evm_circuit::util::rlc,
@@ -13,6 +18,9 @@ use crate::{
 };
 
 use super::MptUpdates;
+
+const ERR_MSG_FIRST: &str = "first access reads don't change value";
+const ERR_MSG_NON_FIRST: &str = "non-first access reads don't change value";
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
@@ -40,13 +48,63 @@ impl RwMap {
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }
+
+    /// Check value but don't construct mpt
+    pub fn check_value(&self) -> Result<(), Error> {
+        let rows = self.table_assignments_with_idx();
+        let errs = rows
+            .into_values()
+            .par_bridge()
+            .flat_map(|group| {
+                // assumption: errs is mostly empty, Vec::new won't do heap allocation
+                let mut errs = Vec::new();
+                debug_assert!(!group.is_empty(), "group cannot be empty");
+                let mut group = group.into_iter();
+                let (idx, first) = group.next().unwrap();
+                let mut prev = first;
+                if !first.is_write() {
+                    // first access reads don't change value
+                    if first.value_word() != U256::zero()
+                        && !(first.tag() == RwTableTag::TxAccessListAccountStorage
+                            || first.tag() == RwTableTag::Account
+                            || first.tag() == RwTableTag::AccountStorage)
+                    {
+                        errs.push((idx, ERR_MSG_FIRST, first, None));
+                    }
+                }
+                for (idx, rw) in group {
+                    if !rw.is_write() {
+                        // non-first access reads don't change value
+                        if rw.value_word() != prev.value_word() {
+                            errs.push((idx, ERR_MSG_NON_FIRST, rw, Some(prev)));
+                        }
+                    }
+                    prev = rw;
+                }
+                errs
+            })
+            .collect::<Vec<_>>();
+        if !errs.is_empty() {
+            log::error!("rw value check err num: {}", errs.len());
+            for e in errs {
+                log::error!("err is {:?}", e);
+            }
+            Err(Error::InternalError("check rw failed"))
+        } else {
+            log::debug!("rw value check err num: {}", errs.len());
+            Ok(())
+        }
+    }
+
     /// Check value in the same way like StateCircuit
-    pub fn check_value(&self) {
+    pub fn check_value_strict(&self) {
         let mock_rand = Fr::from(0x1000u64);
-        let err_msg_first = "first access reads don't change value";
-        let err_msg_non_first = "non-first access reads don't change value";
         let rows = self.table_assignments();
-        let updates = MptUpdates::mock_from(&rows);
+        let updates = MptUpdates::from_rws_with_mock_state_roots(
+            &rows,
+            0xcafeu64.into(),
+            0xdeadbeefu64.into(),
+        );
         let mut errs = Vec::new();
         for idx in 1..rows.len() {
             let row = &rows[idx];
@@ -72,29 +130,27 @@ impl RwMap {
                         .map(|u| u.value_assignments(mock_rand).1)
                         .unwrap_or_default();
                     if value != init_value {
-                        errs.push((idx, err_msg_first, *row, *prev_row));
+                        // EIP2930
+                        if row.tag() != RwTableTag::TxAccessListAccountStorage {
+                            errs.push((idx, ERR_MSG_FIRST, *row, None));
+                        }
                     }
                 } else {
                     // value == prev_value
                     let prev_value = prev_row.value_assignment::<Fr>(mock_rand);
-
                     if value != prev_value {
-                        errs.push((idx, err_msg_non_first, *row, *prev_row));
+                        errs.push((idx, ERR_MSG_NON_FIRST, *row, Some(*prev_row)));
                     }
                 }
             }
         }
         if !errs.is_empty() {
-            log::error!("after rw value check, err num: {}", errs.len());
-            for (idx, err_msg, row, prev_row) in errs {
-                log::error!(
-                    "err: rw idx: {}, reason: \"{}\", row: {:?}, prev_row: {:?}",
-                    idx,
-                    err_msg,
-                    row,
-                    prev_row
-                );
+            log::error!("rw value check err num: {}", errs.len());
+            for e in errs {
+                log::error!("err is {:?}", e);
             }
+        } else {
+            log::debug!("rw value check err num: {}", errs.len());
         }
     }
     /// Calculates the number of Rw::Start rows needed.
@@ -124,28 +180,48 @@ impl RwMap {
             .collect();
         let padding_length = Self::padding_len(rows.len(), target_len);
         let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
-        (padding.chain(rows.into_iter()).collect(), padding_length)
+        (padding.chain(rows).collect(), padding_length)
     }
     /// Build Rws for assignment
+    #[inline(always)]
+    pub fn table_assignments_unsorted(&self) -> Vec<Rw> {
+        self.0.values().flatten().cloned().collect()
+    }
+
+    /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
-        let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        rows.sort_by_key(|row| {
-            (
-                row.tag() as u64,
-                row.id().unwrap_or_default(),
-                row.address().unwrap_or_default(),
-                row.field_tag().unwrap_or_default(),
-                row.storage_key().unwrap_or_default(),
-                row.rw_counter(),
-            )
-        });
+        let mut rows = self.table_assignments_unsorted();
+        rows.sort_by_cached_key(Rw::as_key);
         rows
+    }
+
+    /// Build Rws for assignment
+    pub fn table_assignments_with_idx(&self) -> HashMap<RwKey, Vec<(usize, Rw)>> {
+        // key/value ratio is about 23-24
+        // each key has about ~250 rows
+        // each Rw has size of 168 bytes
+        // so each array has size of ~42KB
+        let total_len = self.0.values().map(|v| v.len()).sum::<usize>();
+        // take roughly estimated capacity
+        let mut map = HashMap::<RwKey, Vec<(usize, Rw)>>::with_capacity(total_len / 22);
+        for (idx, row) in self.0.values().flatten().copied().enumerate() {
+            map.entry(row.as_key()).or_default().push((idx, row));
+        }
+        map
+    }
+
+    /// Return rw number for the specified tag.
+    pub fn rw_num(&self, tag: RwTableTag) -> usize {
+        self.0.get(&tag).map(|v| v.len()).unwrap_or_default()
     }
 }
 
+/// Rw key
+pub type RwKey = (u64, usize, Address, u64, Word);
+
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Rw {
     /// Start
     Start { rw_counter: usize },
@@ -218,7 +294,8 @@ pub enum Rw {
         is_write: bool,
         call_id: usize,
         memory_address: u64,
-        byte: u8,
+        value: Word,
+        value_prev: Word,
     },
     /// TxLog
     TxLog {
@@ -278,8 +355,8 @@ impl<F: Field> RwRow<F> {
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {
         let values = self.values();
-        values
-            .iter()
+        std::iter::once(&F::one())
+            .chain(values.iter())
             .rev()
             .fold(F::zero(), |acc, value| acc * randomness + value)
     }
@@ -290,7 +367,7 @@ impl<F: Field> RwRow<F> {
 }
 
 impl Rw {
-    pub(crate) fn tx_access_list_value_pair(&self) -> (bool, bool) {
+    pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
                 is_warm,
@@ -302,40 +379,71 @@ impl Rw {
                 is_warm_prev,
                 ..
             } => (*is_warm, *is_warm_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn tx_refund_value_pair(&self) -> (u64, u64) {
+    pub fn tx_refund_value_pair(&self) -> (u64, u64) {
         match self {
             Self::TxRefund {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn account_value_pair(&self) -> (Word, Word) {
+    pub fn account_value_pair(&self) -> (Word, Word) {
         match self {
             Self::Account {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn aux_pair(&self) -> (usize, Word) {
+    pub fn account_balance_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::Balance)
+    }
+    pub fn account_codehash_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::CodeHash)
+    }
+    pub fn account_keccak_codehash_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::KeccakCodeHash)
+    }
+    pub fn account_nonce_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::Nonce)
+    }
+
+    pub fn account_value_pair_field_tag(
+        &self,
+        required_field_tag: AccountFieldTag,
+    ) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(*field_tag, required_field_tag, "invalid rw {:?}", &self);
+                (*value, *value_prev)
+            }
+            _ => unreachable!("{:?}", self),
+        }
+    }
+
+    pub fn aux_pair(&self) -> (usize, Word) {
         match self {
             Self::AccountStorage {
                 tx_id,
                 committed_value,
                 ..
             } => (*tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
+    pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
         match self {
             Self::AccountStorage {
                 value,
@@ -344,42 +452,45 @@ impl Rw {
                 committed_value,
                 ..
             } => (*value, *value_prev, *tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn call_context_value(&self) -> Word {
+    pub fn call_context_value(&self) -> Word {
         match self {
             Self::CallContext { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn stack_value(&self) -> Word {
+    pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn log_value(&self) -> Word {
+    pub fn log_value(&self) -> Word {
         match self {
             Self::TxLog { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn receipt_value(&self) -> u64 {
+    pub fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
-    pub(crate) fn memory_value(&self) -> u8 {
+    /// Return the memory word read or written, and its value before the operation.
+    pub fn memory_word_pair(&self) -> (Word, Word) {
         match self {
-            Self::Memory { byte, .. } => *byte,
-            _ => unreachable!(),
+            Self::Memory {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -432,7 +543,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn rw_counter(&self) -> usize {
+    pub fn rw_counter(&self) -> usize {
         match self {
             Self::Start { rw_counter }
             | Self::Memory { rw_counter, .. }
@@ -448,7 +559,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn is_write(&self) -> bool {
+    pub fn is_write(&self) -> bool {
         match self {
             Self::Start { .. } => false,
             Self::Memory { is_write, .. }
@@ -464,7 +575,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn tag(&self) -> RwTableTag {
+    pub fn tag(&self) -> RwTableTag {
         match self {
             Self::Start { .. } => RwTableTag::Start,
             Self::Memory { .. } => RwTableTag::Memory,
@@ -480,7 +591,8 @@ impl Rw {
         }
     }
 
-    pub(crate) fn id(&self) -> Option<usize> {
+    #[inline(always)]
+    pub fn id(&self) -> Option<usize> {
         match self {
             Self::AccountStorage { tx_id, .. }
             | Self::TxAccessListAccount { tx_id, .. }
@@ -495,7 +607,8 @@ impl Rw {
         }
     }
 
-    pub(crate) fn address(&self) -> Option<Address> {
+    #[inline(always)]
+    pub fn address(&self) -> Option<Address> {
         match self {
             Self::TxAccessListAccount {
                 account_address, ..
@@ -509,9 +622,9 @@ impl Rw {
             | Self::AccountStorage {
                 account_address, ..
             } => Some(*account_address),
-            Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
+            Self::Memory { memory_address, .. } => Some(Address::from_low_u64_be(*memory_address)),
             Self::Stack { stack_pointer, .. } => {
-                Some(U256::from(*stack_pointer as u64).to_address())
+                Some(Address::from_low_u64_be(*stack_pointer as u64))
             }
             Self::TxLog {
                 log_id,
@@ -529,15 +642,18 @@ impl Rw {
         }
     }
 
-    pub(crate) fn field_tag(&self) -> Option<u64> {
+    #[inline(always)]
+    pub fn field_tag(&self) -> Option<u64> {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
+            // See comment above configure for is_non_exist in state_circuit.rs for the explanation
+            // for why the field tag for AccountStorage is CodeHash instead of None.
+            Self::AccountStorage { .. } => Some(AccountFieldTag::CodeHash as u64),
             Self::Start { .. }
             | Self::Memory { .. }
             | Self::Stack { .. }
-            | Self::AccountStorage { .. }
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
@@ -545,7 +661,8 @@ impl Rw {
         }
     }
 
-    pub(crate) fn storage_key(&self) -> Option<Word> {
+    #[inline(always)]
+    pub fn storage_key(&self) -> Option<Word> {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
@@ -569,20 +686,34 @@ impl Rw {
             } => {
                 match field_tag {
                     // Only these two tags have values that may not fit into a scalar, so we need to
-                    // RLC.
-                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
-                        rlc::value(&value.to_le_bytes(), randomness)
+                    // RLC. (for poseidon hash feature, CodeHash not need rlc)
+                    CallContextFieldTag::CodeHash => {
+                        if cfg!(feature = "poseidon-codehash") {
+                            value.to_scalar().unwrap()
+                        } else {
+                            rlc::value(&value.to_le_bytes(), randomness)
+                        }
                     }
+                    CallContextFieldTag::Value => rlc::value(&value.to_le_bytes(), randomness),
                     _ => value.to_scalar().unwrap(),
                 }
             }
             Self::Account {
                 value, field_tag, ..
             } => match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance => {
                     rlc::value(&value.to_le_bytes(), randomness)
                 }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
+                AccountFieldTag::CodeHash => {
+                    if cfg!(feature = "poseidon-codehash") {
+                        value.to_scalar().unwrap()
+                    } else {
+                        rlc::value(&value.to_le_bytes(), randomness)
+                    }
+                }
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value.to_scalar().unwrap(),
             },
             Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 rlc::value(&value.to_le_bytes(), randomness)
@@ -592,13 +723,29 @@ impl Rw {
                 field_tag, value, ..
             } => match field_tag {
                 TxLogFieldTag::Topic => rlc::value(&value.to_le_bytes(), randomness),
+                TxLogFieldTag::Data => rlc::value(&value.to_le_bytes(), randomness),
                 _ => value.to_scalar().unwrap(),
             },
 
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
-            Self::Memory { byte, .. } => F::from(u64::from(*byte)),
+            Self::Memory { value, .. } => rlc::value(&value.to_le_bytes(), randomness),
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
+        }
+    }
+
+    pub(crate) fn value_word(&self) -> U256 {
+        match self {
+            Self::Start { .. } => U256::zero(),
+            Self::CallContext { value, .. } => *value,
+            Self::Account { value, .. }
+            | Self::AccountStorage { value, .. }
+            | Self::Stack { value, .. }
+            | Self::Memory { value, .. }
+            | Self::TxLog { value, .. } => *value,
+            Self::TxAccessListAccount { is_warm, .. }
+            | Self::TxAccessListAccountStorage { is_warm, .. } => U256::from(*is_warm as u64),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => U256::from(*value),
         }
     }
 
@@ -609,14 +756,24 @@ impl Rw {
                 field_tag,
                 ..
             } => Some(match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance => {
                     rlc::value(&value_prev.to_le_bytes(), randomness)
                 }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
-                    value_prev.to_scalar().unwrap()
+                AccountFieldTag::CodeHash => {
+                    if cfg!(feature = "poseidon-codehash") {
+                        value_prev.to_scalar().unwrap()
+                    } else {
+                        rlc::value(&value_prev.to_le_bytes(), randomness)
+                    }
                 }
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value_prev.to_scalar().unwrap(),
             }),
             Self::AccountStorage { value_prev, .. } => {
+                Some(rlc::value(&value_prev.to_le_bytes(), randomness))
+            }
+            Self::Memory { value_prev, .. } => {
                 Some(rlc::value(&value_prev.to_le_bytes(), randomness))
             }
             Self::TxAccessListAccount { is_warm_prev, .. }
@@ -626,7 +783,6 @@ impl Rw {
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
-            | Self::Memory { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
@@ -640,6 +796,17 @@ impl Rw {
             } => Some(rlc::value(&committed_value.to_le_bytes(), randomness)),
             _ => None,
         }
+    }
+
+    #[inline(always)]
+    pub(crate) fn as_key(&self) -> RwKey {
+        (
+            self.tag() as u64,
+            self.id().unwrap_or_default(),
+            self.address().unwrap_or_default(),
+            self.field_tag().unwrap_or_default(),
+            self.storage_key().unwrap_or_default(),
+        )
     }
 }
 
@@ -715,6 +882,8 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
+                        AccountField::KeccakCodeHash => AccountFieldTag::KeccakCodeHash,
+                        AccountField::CodeSize => AccountFieldTag::CodeSize,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,
@@ -781,6 +950,7 @@ impl From<&operation::OperationContainer> for RwMap {
                         CallContextField::ReversibleWriteCounter => {
                             CallContextFieldTag::ReversibleWriteCounter
                         }
+                        CallContextField::L1Fee => CallContextFieldTag::L1Fee,
                     },
                     value: op.op().value,
                 })
@@ -812,7 +982,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     memory_address: u64::from_le_bytes(
                         op.op().address().to_le_bytes()[..8].try_into().unwrap(),
                     ),
-                    byte: op.op().value(),
+                    value: op.op().value(),
+                    value_prev: op.op().value_prev(),
                 })
                 .collect(),
         );

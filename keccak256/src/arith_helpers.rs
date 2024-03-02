@@ -147,7 +147,7 @@ pub fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
     // with the special chunk in the middle
     let rotated: Vec<u8> = right
         .iter()
-        .chain(vec![special].iter())
+        .chain([special].iter())
         .chain(left.iter())
         .map(|&x| convert_b13_coef(x))
         .collect_vec();
@@ -187,7 +187,7 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .unwrap_or(0)
 }
 
-/// This function allows us to inpect coefficients of big-numbers in different
+/// This function allows us to inspect coefficients of big-numbers in different
 /// bases.
 pub fn inspect(x: BigUint, name: &str, base: u8) {
     let mut chunks = x.to_radix_le(base.into());
@@ -199,7 +199,7 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
 pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {
     let base = F::from(base as u64);
     buf.iter()
-        .fold(F::zero(), |acc, &x| acc * base + F::from(x as u64))
+        .fold(F::ZERO, |acc, &x| acc * base + F::from(x as u64))
 }
 
 #[cfg(test)]

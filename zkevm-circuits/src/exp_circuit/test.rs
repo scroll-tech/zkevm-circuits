@@ -2,6 +2,7 @@
 use crate::{
     evm_circuit::witness::{block_convert, Block},
     exp_circuit::ExpCircuit,
+    util::{unusable_rows, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
@@ -13,6 +14,14 @@ use halo2_proofs::{
     circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
 };
 use mock::TestContext;
+
+#[test]
+fn exp_circuit_unusable_rows() {
+    assert_eq!(
+        ExpCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, ExpCircuit::<Fr>>(),
+    )
+}
 
 /// Test exponentiation circuit with the provided block witness
 pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) {

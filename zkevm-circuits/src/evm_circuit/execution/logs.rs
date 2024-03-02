@@ -1,15 +1,17 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_MEMORY_WORD_SIZE,
+        param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{SameContextGadget, WordByteRangeGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
+            },
             not, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -28,6 +30,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct LogGadget<F> {
     same_context: SameContextGadget<F>,
+    // TODO: It has a duplicate word with `memory_address`.
+    mstart_word: WordByteRangeGadget<F, N_BYTES_U64>,
     // memory address
     memory_address: MemoryAddressGadget<F>,
     phase2_topics: [Cell<F>; 4],
@@ -38,6 +42,7 @@ pub(crate) struct LogGadget<F> {
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
     copy_rwc_inc: Cell<F>,
+
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
@@ -47,12 +52,13 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let mstart = cb.query_cell_phase2();
+        let mstart_word = WordByteRangeGadget::construct(cb);
         let msize = cb.query_word_rlc();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.expr());
+        cb.stack_pop(mstart_word.original_word());
         cb.stack_pop(msize.expr());
+
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // constrain not in static call
@@ -117,11 +123,23 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
+        let mstart = cb.query_cell_phase2();
+        let memory_address = MemoryAddressGadget::construct(cb, mstart.clone(), msize);
+        cb.require_equal(
+            "mstart == mstart_word value",
+            mstart.expr(),
+            mstart_word.original_word(),
+        );
+        cb.condition(mstart_word.overflow(), |cb| {
+            cb.require_zero(
+                "Memory size must be zero if memory start is overflow",
+                memory_address.has_length(),
+            );
+        });
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.end_offset()]);
 
         let copy_rwc_inc = cb.query_cell();
         let dst_addr = build_tx_log_expression(
@@ -137,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 tx_id.expr(),
                 CopyDataType::TxLog.expr(),
                 memory_address.offset(),
-                memory_address.address(),
+                memory_address.end_offset(),
                 dst_addr,
                 memory_address.length(),
                 0.expr(), // for LOGN, rlc_acc is 0
@@ -171,6 +189,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         Self {
             same_context,
+            mstart_word,
             memory_address,
             phase2_topics,
             topic_selectors,
@@ -196,6 +215,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let [memory_start, msize] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+
+        self.mstart_word.assign(region, offset, memory_start)?;
 
         let memory_address = self
             .memory_address
@@ -245,13 +266,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, Value::known(F::from(is_persistent)))?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
-        // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
-        // log writes when `is_persistent` is true.
+
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                ((msize + msize) * U256::from(is_persistent))
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
@@ -272,15 +292,16 @@ mod test {
     fn log_gadget_simple() {
         // 1. tests for is_persistent = true cases
         // zero topic: log0
-        test_log_ok(&[], true);
+        test_log_ok(&[], true, None);
         // one topic: log1
-        test_log_ok(&[Word::from(0xA0)], true);
+        test_log_ok(&[Word::from(0xA0)], true, None);
         // two topics: log2
-        test_log_ok(&[Word::from(0xA0), Word::from(0xef)], true);
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef)], true, None);
         // three topics: log3
         test_log_ok(
             &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
             true,
+            None,
         );
         // four topics: log4
         test_log_ok(
@@ -291,13 +312,14 @@ mod test {
                 Word::from(0x37),
             ],
             true,
+            None,
         );
 
         // 2. tests for is_persistent = false cases
         // log0
-        test_log_ok(&[], false);
+        test_log_ok(&[], false, None);
         // log1
-        test_log_ok(&[Word::from(0xA0)], false);
+        test_log_ok(&[Word::from(0xA0)], false, None);
         // log4
         test_log_ok(
             &[
@@ -307,6 +329,7 @@ mod test {
                 Word::from(0x37),
             ],
             false,
+            None,
         );
     }
 
@@ -329,8 +352,41 @@ mod test {
         ]);
     }
 
+    #[test]
+    fn log_gadget_with_overflow_mstart_and_zero_msize() {
+        let stack = Some(Stack {
+            mstart: Word::MAX,
+            msize: Word::zero(),
+        });
+
+        test_log_ok(&[], false, stack);
+        test_log_ok(&[Word::from(0xA0)], true, stack);
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef)], false, stack);
+        test_log_ok(
+            &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+            true,
+            stack,
+        );
+        test_log_ok(
+            &[
+                Word::from(0xA0),
+                Word::from(0xef),
+                Word::from(0xb0),
+                Word::from(0x37),
+            ],
+            true,
+            stack,
+        );
+    }
+
+    #[derive(Clone, Copy)]
+    struct Stack {
+        mstart: Word,
+        msize: Word,
+    }
+
     // test single log code and single copy log step
-    fn test_log_ok(topics: &[Word], is_persistent: bool) {
+    fn test_log_ok(topics: &[Word], is_persistent: bool, stack: Option<Stack>) {
         let mut pushdata = [0u8; 320];
         rand::thread_rng().try_fill(&mut pushdata[..]).unwrap();
         let mut code_prepare = prepare_code(&pushdata, 1);
@@ -347,15 +403,17 @@ mod test {
         let cur_op_code = log_codes[topic_count];
 
         // use more than 256 for testing offset rlc
-        let mstart = 0x102usize;
-        let msize = 0x20usize;
+        let stack = stack.unwrap_or(Stack {
+            mstart: 0x102_usize.into(),
+            msize: 0x20_usize.into(),
+        });
         let mut code = Bytecode::default();
         // make dynamic topics push operations
         for topic in topics {
             code.push(32, *topic);
         }
-        code.push(32, Word::from(msize));
-        code.push(32, Word::from(mstart));
+        code.push(32, stack.msize);
+        code.push(32, stack.mstart);
         code.write_op(cur_op_code);
         if is_persistent {
             code.op_stop();
@@ -390,7 +448,7 @@ mod test {
         let topic_count = topics.len();
         let cur_op_code = log_codes[topic_count];
 
-        let mut mstart = 0x00usize;
+        let mut mstart = 0x20usize;
         let mut msize = 0x10usize;
         // first log op code
         let mut code = Bytecode::default();

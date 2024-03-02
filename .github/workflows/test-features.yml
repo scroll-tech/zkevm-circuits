@@ -23,7 +23,7 @@ jobs:
 
   test_features:
     needs: [skip_check]
-    if: |
+    if: false &&
       github.event.pull_request.draft == false &&
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
     timeout-minutes: 30
@@ -39,10 +39,10 @@ jobs:
           - test-circuits
           - warn-unimplemented
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          override: false
+          toolchain: nightly-2023-12-03
 
       # Go cache for building geth-utils
       - name: Go cache

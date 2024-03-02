@@ -58,6 +58,12 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         cb.stack_push(phase2_value.expr());
 
         let is_warm = cb.query_bool();
+        cb.account_storage_access_list_read(
+            tx_id.expr(),
+            callee_address.expr(),
+            phase2_key.expr(),
+            is_warm.expr(),
+        );
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.expr(),
@@ -69,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         let gas_cost = SloadGasGadget::construct(cb, is_warm.expr()).expr();
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(8.expr()),
+            rw_counter: Delta(9.expr()),
             program_counter: Delta(1.expr()),
             reversible_write_counter: Delta(1.expr()),
             gas_left: Delta(-gas_cost),

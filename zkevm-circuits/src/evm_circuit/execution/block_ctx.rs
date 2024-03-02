@@ -42,7 +42,7 @@ impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
         } else {
             from_bytes::expr(&value.cells)
         };
-        cb.block_lookup(blockctx_tag, None, value_expr);
+        cb.block_lookup(blockctx_tag, cb.curr.state.block_number.expr(), value_expr);
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -147,6 +147,11 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
     }
 }
 
+// TODO:
+// This gadget is used for `BASEFEE` opcode. With current `scroll` feature, it's
+// disabled by l2geth and converted to an invalid opcode.
+// <https://github.com/scroll-tech/zkevm-circuits/blob/develop/eth-types/src/evm_types/opcode_ids.rs#L1062>
+// So need to test it after `BASEFEE` opcode is enabled in scroll l2geth.
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxU256Gadget<F> {
     value_u256: BlockCtxGadget<F, N_BYTES_WORD>,
@@ -172,6 +177,11 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        if cfg!(feature = "scroll") {
+            panic!("BASEFEE is disabled by scroll for now");
+        }
+        log::debug!("BlockCtxU256Gadget assign for {:?}", step.opcode);
+
         self.value_u256
             .same_context
             .assign_exec_step(region, offset, step)?;
@@ -183,6 +193,48 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "scroll")]
+#[derive(Clone, Debug)]
+pub(crate) struct DifficultyGadget<F> {
+    same_context: SameContextGadget<F>,
+}
+
+#[cfg(feature = "scroll")]
+impl<F: Field> ExecutionGadget<F> for DifficultyGadget<F> {
+    const NAME: &'static str = "DIFFICULTY";
+
+    const EXECUTION_STATE: ExecutionState = ExecutionState::DIFFICULTY;
+
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        // Always returns 0 for scroll.
+        cb.stack_push(0.expr());
+        let opcode = cb.query_cell();
+        // State transition
+        let step_state_transition = StepStateTransition {
+            rw_counter: Delta(1.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(-OpcodeId::DIFFICULTY.constant_gas_cost().expr()),
+            ..Default::default()
+        };
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
+
+        Self { same_context }
+    }
+
+    fn assign_exec_step(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        _block: &Block<F>,
+        _: &Transaction,
+        _: &Call,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        self.same_context.assign_exec_step(region, offset, step)
     }
 }
 

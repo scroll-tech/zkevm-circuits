@@ -7,7 +7,6 @@
 //! looked up. Instead, it will be folded into the bus mapping lookup.
 
 use crate::Variable;
-use digest::{FixedOutput, Input};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
@@ -24,16 +23,16 @@ use halo2_proofs::circuit::Layouter;
 pub fn r<F: Field>() -> F {
     let mut hasher = Keccak256::new();
     for byte in 0..=u8::MAX {
-        hasher.process(&[byte]);
+        hasher.update([byte]);
     }
     let mut r = [0; 64];
-    r[..32].copy_from_slice(hasher.fixed_result().as_slice());
-    F::from_bytes_wide(&r)
+    r[..32].copy_from_slice(hasher.finalize().as_slice());
+    F::from_uniform_bytes(&r)
 }
 
 /// Returns encoding of big-endian representation of a 256-bit word.
 pub fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
-    vals.fold(F::zero(), |acc, val| {
+    vals.fold(F::ZERO, |acc, val| {
         let byte = F::from(val as u64);
         acc * r + byte
     })
@@ -73,7 +72,7 @@ impl<F: Field> WordConfig<F> {
         byte_lookup: Column<Fixed>,
     ) -> Self {
         // Expression representing `encode(word)`.
-        let mut encode_word_expr = Expression::Constant(F::zero());
+        let mut encode_word_expr = Expression::Constant(F::ZERO);
 
         // Lookup each byte in the witnessed word representation to
         // range-constrain it to 8 bits.
@@ -110,7 +109,7 @@ impl<F: Field> WordConfig<F> {
             |mut meta| {
                 for byte in 0..=u8::MAX {
                     meta.assign_fixed(
-                        || format!("load {}", byte),
+                        || format!("load {byte}"),
                         self.byte_lookup,
                         byte.into(),
                         || Value::known(F::from(byte as u64)),
@@ -137,7 +136,7 @@ impl<F: Field> WordConfig<F> {
 
             let byte_field_elem = byte.map(|byte| F::from(byte as u64));
             let cell = region.assign_advice(
-                || format!("assign byte {}", idx),
+                || format!("assign byte {idx}"),
                 *column,
                 offset,
                 || byte_field_elem,
@@ -178,6 +177,8 @@ mod tests {
             // commitment which will be provided as public inputs.
             type Config = (WordConfig<F>, Column<Instance>);
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -254,7 +255,7 @@ mod tests {
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
-                    name: "Encoded word / Pub inputs",
+                    name: "Encoded word / Pub inputs".to_string(),
                     lookup_index: 32,
                     location: FailureLocation::InRegion {
                         region: halo2_proofs::dev::metadata::Region::from((

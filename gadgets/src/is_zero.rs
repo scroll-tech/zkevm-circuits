@@ -43,15 +43,26 @@ impl<F: Field> IsZeroConfig<F> {
         self.is_zero_expression.clone()
     }
 
+    /// Returns the is_zero expression from inputs, at any rotation where q_enable=1.
+    pub fn expr_at(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+        at: Rotation,
+        value: Expression<F>,
+    ) -> Expression<F> {
+        1.expr() - value * meta.query_advice(self.value_inv, at)
+    }
+
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
         [(self.value_inv, "GADGETS_IS_ZERO_inverse_witness")]
             .iter()
-            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+            .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
     }
 }
 
 /// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
+#[derive(Clone, Debug)]
 pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }
@@ -115,7 +126,9 @@ impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
         value: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
-        let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
+        // postpone the invert to prover which has batch_invert function to
+        // amortize among all is_zero_chip assignments.
+        let value_invert = value.into_field().invert();
         region.assign_advice(
             || "witness inverse of value",
             config.value_inv,
@@ -143,6 +156,7 @@ impl<F: Field> Chip<F> for IsZeroChip<F> {
 #[cfg(test)]
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+
     use eth_types::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -166,7 +180,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            prover.assert_satisfied_par()
+            prover.assert_satisfied()
         }};
     }
 
@@ -208,6 +222,8 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -335,6 +351,8 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            #[cfg(feature = "circuit-params")]
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()

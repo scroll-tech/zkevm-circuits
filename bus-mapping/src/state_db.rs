@@ -1,27 +1,37 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
+use crate::{
+    precompile::is_precompiled,
+    util::{hash_code, KECCAK_CODE_HASH_EMPTY},
+};
 use eth_types::{Address, Hash, Word, H256, U256};
-use ethers_core::utils::keccak256;
-use lazy_static::lazy_static;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    sync::LazyLock,
+};
 
-lazy_static! {
-    static ref ACCOUNT_ZERO: Account = Account::zero();
-    static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
-    /// bytes of empty code hash, in little endian order.
-    pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
-        let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
-        bytes.reverse();
-        bytes
-    };
-}
+static ACCOUNT_ZERO: LazyLock<Account> = LazyLock::new(Account::zero);
+/// Hash value for empty code hash.
+static EMPTY_CODE_HASH: LazyLock<Hash> = LazyLock::new(|| CodeDB::hash(&[]));
+/// bytes of empty code hash, in little endian order.
+pub static EMPTY_CODE_HASH_LE: LazyLock<[u8; 32]> = LazyLock::new(|| {
+    let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
+    bytes.reverse();
+    bytes
+});
 
 const VALUE_ZERO: Word = Word::zero();
 
 /// Memory storage for contract code by code hash.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
+
+impl Clone for CodeDB {
+    fn clone(&self) -> Self {
+        CodeDB(self.0.clone())
+    }
+}
 
 impl Default for CodeDB {
     fn default() -> Self {
@@ -32,29 +42,31 @@ impl Default for CodeDB {
 impl CodeDB {
     /// Create a new empty Self.
     pub fn new() -> Self {
-        Self(HashMap::new())
+        let mut codedb = Self(HashMap::new());
+        codedb.insert(Vec::new());
+        codedb
     }
     /// Insert code indexed by code hash, and return the code hash.
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
         let hash = Self::hash(&code);
+
         self.0.insert(hash, code);
         hash
+    }
+    /// Specify code hash for empty code (nil)
+    pub fn empty_code_hash() -> Hash {
+        *EMPTY_CODE_HASH
     }
 
     /// Compute hash of given code.
     pub fn hash(code: &[u8]) -> Hash {
-        H256(keccak256(code))
-    }
-
-    /// Code hash of empty code.
-    pub fn empty_code_hash() -> Hash {
-        *EMPTY_CODE_HASH
+        H256(hash_code(code).into())
     }
 }
 
 /// Account of the Ethereum State Trie, which contains an in-memory key-value
 /// database that represents the Account Storage Trie.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct Account {
     /// Nonce
     pub nonce: Word,
@@ -62,8 +74,12 @@ pub struct Account {
     pub balance: Word,
     /// Storage key-value map
     pub storage: HashMap<Word, Word>,
-    /// Code hash
+    /// Poseidon hash of code
     pub code_hash: Hash,
+    /// Keccak hash of code
+    pub keccak_code_hash: Hash,
+    /// Size of code, i.e. code length
+    pub code_size: Word,
 }
 
 impl Account {
@@ -73,13 +89,35 @@ impl Account {
             nonce: Word::zero(),
             balance: Word::zero(),
             storage: HashMap::new(),
-            code_hash: *EMPTY_CODE_HASH,
+            code_hash: CodeDB::empty_code_hash(),
+            keccak_code_hash: *KECCAK_CODE_HASH_EMPTY,
+            code_size: Word::zero(),
         }
     }
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&EMPTY_CODE_HASH)
+        debug_assert_ne!(
+            self.code_hash,
+            Hash::zero(),
+            "codehash inside statedb should never be 0, {self:?}"
+        );
+        let is_code_hash_empty = self.code_hash.eq(&CodeDB::empty_code_hash());
+        if is_code_hash_empty {
+            debug_assert_eq!(Word::zero(), self.code_size);
+        }
+        self.nonce.is_zero() && self.balance.is_zero() && is_code_hash_empty
+    }
+
+    /// Return the expected read code hash, i.e. in
+    /// empty (non-existed) account it is expected
+    /// to be 0
+    pub fn code_hash_read(&self) -> Hash {
+        if self.is_empty() {
+            Hash::zero()
+        } else {
+            self.code_hash
+        }
     }
 }
 
@@ -100,6 +138,10 @@ pub struct StateDB {
     // Accounts that have been through `SELFDESTRUCT` under the situation that `is_persistent` is
     // `true`. These accounts will be reset once `commit_tx` is called.
     destructed_account: HashSet<Address>,
+    // Accounts that are still "empty", but an Account Rw {value_prev: 0x0, value: empty_code_hash}
+    // has already been applied.
+    // TODO: a better name?
+    touched_account: HashSet<Address>,
     refund: u64,
 }
 
@@ -123,6 +165,29 @@ impl StateDB {
         }
     }
 
+    /// List all account addresses in current state db
+    pub fn list_accounts(&self) {
+        let addrs: BTreeSet<_> = self.state.keys().collect();
+        log::debug!("sdb list_accounts begin");
+        for addr in addrs {
+            log::debug!("{addr:?}");
+        }
+        log::debug!("sdb list_accounts end");
+    }
+
+    /// If the returned value is false, then this address is real non existed address.
+    /// Any non codehash WriteRw cannot be applied.
+    pub fn is_touched(&self, addr: &Address) -> bool {
+        self.touched_account.contains(addr)
+    }
+
+    /// Even though this addr is still empty, an Account Rw {value_prev: 0x0, value:
+    /// empty_code_hash}
+    // has already been applied. So furthur Account Write Rw is allowed.
+    pub fn set_touched(&mut self, addr: &Address) -> bool {
+        self.touched_account.insert(*addr)
+    }
+
     /// Get a mutable reference to the [`Account`] at `addr`.  If the
     /// [`Account`] is not found in the state, a zero one will be inserted
     /// and returned along with false.
@@ -130,6 +195,7 @@ impl StateDB {
         let found = if self.state.contains_key(addr) {
             true
         } else {
+            log::trace!("insert empty account for addr {:?}", addr);
             self.state.insert(*addr, Account::zero());
             false
         };
@@ -184,6 +250,12 @@ impl StateDB {
         self.dirty_storage.insert((*addr, *key), *value);
     }
 
+    /// Get balance of account with the given address.
+    pub fn get_balance(&self, addr: &Address) -> Word {
+        let (_, account) = self.get_account(addr);
+        account.balance
+    }
+
     /// Get nonce of account with `addr`.
     pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
@@ -199,8 +271,11 @@ impl StateDB {
     }
 
     /// Check whether `addr` exists in account access list.
+    ///
+    /// Note: After the hardfork Berlin,
+    /// all the precompiled contracts addresses are always considered warm.
     pub fn check_account_in_access_list(&self, addr: &Address) -> bool {
-        self.access_list_account.contains(addr)
+        is_precompiled(addr) || self.access_list_account.contains(addr)
     }
 
     /// Add `addr` into account access list. Returns `true` if it's not in the
@@ -234,6 +309,7 @@ impl StateDB {
 
     /// Set account as self destructed.
     pub fn destruct_account(&mut self, addr: Address) {
+        self.state.insert(addr, Account::zero());
         self.destructed_account.insert(addr);
     }
 
@@ -258,6 +334,7 @@ impl StateDB {
             *ptr = value;
         }
         self.dirty_storage = HashMap::new();
+        self.touched_account = HashSet::new();
         for addr in self.destructed_account.clone() {
             let (_, account) = self.get_account_mut(&addr);
             *account = ACCOUNT_ZERO.clone();

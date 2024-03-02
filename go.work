@@ -1,0 +1,5 @@
+go 1.18
+
+use ./geth-utils/l1geth
+
+use ./geth-utils/l2geth

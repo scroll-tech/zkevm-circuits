@@ -3,7 +3,7 @@ use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -13,11 +13,14 @@ use strum_macros::EnumIter;
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
+    Range3,
     Range5,
+    Range8,
     Range16,
     Range32,
     Range64,
     Range128,
+    Range192,
     Range256,
     Range512,
     Range1024,
@@ -28,6 +31,7 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
     ConstantGasCost,
+    PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
 
@@ -36,8 +40,14 @@ impl FixedTableTag {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
+            Self::Range3 => {
+                Box::new((0..3).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
             Self::Range5 => {
                 Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
+            Self::Range8 => {
+                Box::new((0..8).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range16 => {
                 Box::new((0..16).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
@@ -50,6 +60,9 @@ impl FixedTableTag {
             }
             Self::Range128 => {
                 Box::new((0..128).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+            }
+            Self::Range192 => {
+                Box::new((0..192).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range256 => {
                 Box::new((0..256).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
@@ -117,6 +130,17 @@ impl FixedTableTag {
                         ]
                     }),
             ),
+            Self::PrecompileInfo => Box::new(PrecompileCalls::iter().map(move |precompile| {
+                [
+                    tag,
+                    F::from({
+                        let state: ExecutionState = precompile.into();
+                        state.as_u64()
+                    }),
+                    F::from(u64::from(precompile)),
+                    F::from(precompile.base_gas_cost().0),
+                ]
+            })),
         }
     }
 }
@@ -130,7 +154,12 @@ pub(crate) enum Table {
     Block,
     Copy,
     Keccak,
+    Sha256,
     Exp,
+    Sig,
+    ModExp,
+    Ecc,
+    PowOfRand,
 }
 
 #[derive(Clone, Debug)]
@@ -172,7 +201,7 @@ impl<F: Field> RwValues<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
-    /// Lookup to fixed table, which contains serveral pre-built tables such as
+    /// Lookup to fixed table, which contains several pre-built tables such as
     /// range tables or bitwise tables.
     Fixed {
         /// Tag to specify which table to lookup.
@@ -221,13 +250,16 @@ pub(crate) enum Lookup<F> {
         is_code: Expression<F>,
         /// Value corresponding to the tag.
         value: Expression<F>,
+        /// The RLC of the PUSH data (LE order), or 0.
+        /// Warning: If the bytecode is truncated, this is the actual data, without zero-padding.
+        push_rlc: Expression<F>,
     },
     /// Lookup to block table, which contains constants of this block.
     Block {
         /// Tag to specify which field to read.
         field_tag: Expression<F>,
-        /// Stores the block number only when field_tag is BlockHash, otherwise
-        /// should be set to 0.
+        /// Stores the block's number in all cases except `BLOCKHASH` where this
+        /// indicates a parent block number.
         number: Expression<F>,
         /// Value of the field.
         value: Expression<F>,
@@ -272,13 +304,50 @@ pub(crate) enum Lookup<F> {
         /// the final output keccak256 hash of the input.
         output_rlc: Expression<F>,
     },
+    /// Lookup to sha256 table.
+    Sha256Table {
+        /// Accumulator to the input.
+        input_rlc: Expression<F>,
+        /// Length of input that is being hashed.
+        input_len: Expression<F>,
+        /// Output (hash) until this state. This is the RLC representation of
+        /// the final output sha256 hash of the input.
+        output_rlc: Expression<F>,
+    },
     /// Lookup to exponentiation table.
     ExpTable {
-        identifier: Expression<F>,
-        is_last: Expression<F>,
         base_limbs: [Expression<F>; 4],
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
+    },
+    SigTable {
+        msg_hash_rlc: Expression<F>,
+        sig_v: Expression<F>,
+        sig_r_rlc: Expression<F>,
+        sig_s_rlc: Expression<F>,
+        recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
+    },
+    ModExpTable {
+        base_limbs: [Expression<F>; 3],
+        exp_limbs: [Expression<F>; 3],
+        modulus_limbs: [Expression<F>; 3],
+        result_limbs: [Expression<F>; 3],
+    },
+    EccTable {
+        op_type: Expression<F>,
+        is_valid: Expression<F>,
+        arg1_rlc: Expression<F>,
+        arg2_rlc: Expression<F>,
+        arg3_rlc: Expression<F>,
+        arg4_rlc: Expression<F>,
+        input_rlc: Expression<F>,
+        output1_rlc: Expression<F>,
+        output2_rlc: Expression<F>,
+    },
+    PowOfRandTable {
+        exponent: Expression<F>,
+        pow_of_rand: Expression<F>,
     },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
@@ -298,7 +367,12 @@ impl<F: Field> Lookup<F> {
             Self::Block { .. } => Table::Block,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
+            Self::Sha256Table { .. } => Table::Sha256,
             Self::ExpTable { .. } => Table::Exp,
+            Self::SigTable { .. } => Table::Sig,
+            Self::ModExpTable { .. } => Table::ModExp,
+            Self::EccTable { .. } => Table::Ecc,
+            Self::PowOfRandTable { .. } => Table::PowOfRand,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -311,7 +385,13 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 index,
                 value,
-            } => vec![id.clone(), field_tag.clone(), index.clone(), value.clone()],
+            } => vec![
+                1.expr(),
+                id.clone(),
+                field_tag.clone(),
+                index.clone(),
+                value.clone(),
+            ],
             Self::Rw {
                 counter,
                 is_write,
@@ -319,6 +399,7 @@ impl<F: Field> Lookup<F> {
                 values,
             } => {
                 vec![
+                    1.expr(),
                     counter.clone(),
                     is_write.clone(),
                     tag.clone(),
@@ -338,13 +419,16 @@ impl<F: Field> Lookup<F> {
                 index,
                 is_code,
                 value,
+                push_rlc,
             } => {
                 vec![
+                    1.expr(), // q_enable
                     hash.clone(),
                     tag.clone(),
                     index.clone(),
                     is_code.clone(),
                     value.clone(),
+                    push_rlc.clone(),
                 ]
             }
             Self::Block {
@@ -368,6 +452,7 @@ impl<F: Field> Lookup<F> {
                 rw_counter,
                 rwc_inc,
             } => vec![
+                1.expr(),
                 is_first.clone(),
                 src_id.clone(),
                 src_tag.clone(),
@@ -386,21 +471,30 @@ impl<F: Field> Lookup<F> {
                 input_len,
                 output_rlc,
             } => vec![
-                1.expr(), // is_enabled
+                1.expr(), // q_enable
+                1.expr(), // is_final
+                input_rlc.clone(),
+                input_len.clone(),
+                output_rlc.clone(),
+            ],
+            Self::Sha256Table {
+                input_rlc,
+                input_len,
+                output_rlc,
+            } => vec![
+                1.expr(), // q_enable
+                1.expr(), // is_final
                 input_rlc.clone(),
                 input_len.clone(),
                 output_rlc.clone(),
             ],
             Self::ExpTable {
-                identifier,
-                is_last,
                 base_limbs,
                 exponent_lo_hi,
                 exponentiation_lo_hi,
             } => vec![
+                1.expr(), // q_enable
                 1.expr(), // is_step
-                identifier.clone(),
-                is_last.clone(),
                 base_limbs[0].clone(),
                 base_limbs[1].clone(),
                 base_limbs[2].clone(),
@@ -409,6 +503,71 @@ impl<F: Field> Lookup<F> {
                 exponent_lo_hi[1].clone(),
                 exponentiation_lo_hi[0].clone(),
                 exponentiation_lo_hi[1].clone(),
+            ],
+            Self::SigTable {
+                msg_hash_rlc,
+                sig_v,
+                sig_r_rlc,
+                sig_s_rlc,
+                recovered_addr,
+                is_valid,
+            } => vec![
+                1.expr(), // q_enable
+                msg_hash_rlc.clone(),
+                sig_v.clone(),
+                sig_r_rlc.clone(),
+                sig_s_rlc.clone(),
+                recovered_addr.clone(),
+                is_valid.clone(),
+            ],
+            Self::ModExpTable {
+                base_limbs,
+                exp_limbs,
+                modulus_limbs,
+                result_limbs,
+            } => vec![
+                1.expr(), // q_head
+                base_limbs[0].clone(),
+                exp_limbs[0].clone(),
+                modulus_limbs[0].clone(),
+                result_limbs[0].clone(),
+                base_limbs[1].clone(),
+                exp_limbs[1].clone(),
+                modulus_limbs[1].clone(),
+                result_limbs[1].clone(),
+                base_limbs[2].clone(),
+                exp_limbs[2].clone(),
+                modulus_limbs[2].clone(),
+                result_limbs[2].clone(),
+            ],
+            Self::EccTable {
+                op_type,
+                is_valid,
+                arg1_rlc,
+                arg2_rlc,
+                arg3_rlc,
+                arg4_rlc,
+                input_rlc,
+                output1_rlc,
+                output2_rlc,
+            } => vec![
+                op_type.expr(),
+                is_valid.expr(),
+                arg1_rlc.expr(),
+                arg2_rlc.expr(),
+                arg3_rlc.expr(),
+                arg4_rlc.expr(),
+                input_rlc.expr(),
+                output1_rlc.expr(),
+                output2_rlc.expr(),
+            ],
+            Self::PowOfRandTable {
+                exponent,
+                pow_of_rand,
+            } => vec![
+                1.expr(), /* q_enable */
+                exponent.clone(),
+                pow_of_rand.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

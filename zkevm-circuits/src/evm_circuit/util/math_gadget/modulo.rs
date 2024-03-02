@@ -3,7 +3,7 @@ use crate::{
         self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        sum, CachedRegion,
+        select, sum, CachedRegion,
     },
     util::Expr,
 };
@@ -20,30 +20,36 @@ use halo2_proofs::plonk::Error;
 /// case of n=0. Unlike the usual k * n + r = a, which forces r = a when n=0,
 /// this equation assures that r<n or r=n=0.
 #[derive(Clone, Debug)]
-pub(crate) struct ModGadget<F> {
+pub(crate) struct ModGadget<F, const IS_EVM: bool> {
     k: util::Word<F>,
     a_or_zero: util::Word<F>,
     mul_add_words: MulAddWordsGadget<F>,
     n_is_zero: IsZeroGadget<F>,
     a_or_is_zero: IsZeroGadget<F>,
-    eq: IsEqualGadget<F>,
     lt: LtWordGadget<F>,
 }
-impl<F: Field> ModGadget<F> {
+impl<F: Field, const IS_EVM: bool> ModGadget<F, IS_EVM> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
-        let k = cb.query_word_rlc();
-        let a_or_zero = cb.query_word_rlc();
+        let k = if IS_EVM {
+            cb.query_word_rlc()
+        } else {
+            cb.query_keccak_rlc()
+        };
+        let a_or_zero = if IS_EVM {
+            cb.query_word_rlc()
+        } else {
+            cb.query_keccak_rlc()
+        };
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
-        let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
         let lt = LtWordGadget::construct(cb, r, n);
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
-        // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
-        cb.add_constraint(
-            " (1 - (a == a_or_zero)) * ( 1 - (n == 0) * (a_or_zero == 0)",
-            (1.expr() - eq.expr()) * (1.expr() - n_is_zero.expr() * a_or_is_zero.expr()),
+        cb.require_equal(
+            "a_or_zero == if n == 0 { 0 } else { a }",
+            a_or_zero.expr(),
+            select::expr(n_is_zero.expr(), 0.expr(), a.expr()),
         );
 
         // Constrain the result r to be valid: (r<n) ^ n==0
@@ -61,7 +67,6 @@ impl<F: Field> ModGadget<F> {
             mul_add_words,
             n_is_zero,
             a_or_is_zero,
-            eq,
             lt,
         }
     }
@@ -89,13 +94,6 @@ impl<F: Field> ModGadget<F> {
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
-        self.eq.assign_value(
-            region,
-            offset,
-            region.word_rlc(a),
-            region.word_rlc(a_or_zero),
-        )?;
-
         Ok(())
     }
 }
@@ -109,7 +107,7 @@ mod tests {
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
-        mod_gadget: ModGadget<F>,
+        mod_gadget: ModGadget<F, true>,
         a: util::Word<F>,
         n: util::Word<F>,
         r: util::Word<F>,
@@ -120,7 +118,7 @@ mod tests {
             let a = cb.query_word_rlc();
             let n = cb.query_word_rlc();
             let r = cb.query_word_rlc();
-            let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
+            let mod_gadget = ModGadget::construct(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,
                 a,
@@ -157,37 +155,37 @@ mod tests {
     fn test_mod_n_expected_rem() {
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(0), Word::from(0)],
+            [Word::from(1), Word::from(0), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(548), Word::from(50), Word::from(48)],
+            [Word::from(548), Word::from(50), Word::from(48)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(30), Word::from(50), Word::from(30)],
+            [Word::from(30), Word::from(50), Word::from(30)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
+            [WORD_LOW_MAX, Word::from(1024), Word::from(1023)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
+            [WORD_HIGH_MAX, Word::from(1024), Word::from(0)],
             true,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, Word::from(2), Word::from(0)],
+            [WORD_CELL_MAX, Word::from(2), Word::from(0)],
             true,
         );
     }
@@ -204,7 +202,7 @@ mod tests {
         // ModGadget, the statement would be invalid in the ModGadget.
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![
+            [
                 Word::from(2),
                 Word::from(3),
                 Word::from(0),
@@ -215,27 +213,27 @@ mod tests {
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(1), Word::from(1)],
+            [Word::from(1), Word::from(1), Word::from(1)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![Word::from(46), Word::from(50), Word::from(48)],
+            [Word::from(46), Word::from(50), Word::from(48)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
+            [WORD_LOW_MAX, Word::from(999999), Word::from(888888)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
+            [WORD_CELL_MAX, Word::from(999999999), Word::from(666666666)],
             false,
         );
         try_test!(
             ModGadgetTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
+            [WORD_HIGH_MAX, Word::from(999999), Word::from(777777)],
             false,
         );
     }

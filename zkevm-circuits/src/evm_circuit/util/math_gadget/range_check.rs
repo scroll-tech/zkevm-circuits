@@ -1,6 +1,9 @@
-use crate::evm_circuit::util::{
-    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-    from_bytes, CachedRegion, Cell,
+use crate::evm_circuit::{
+    param::MAX_N_BYTES_INTEGER,
+    util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes, CachedRegion, Cell,
+    },
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -17,6 +20,7 @@ pub struct RangeCheckGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, value: Expression<F>) -> Self {
+        assert!(N_BYTES <= MAX_N_BYTES_INTEGER);
         let parts = cb.query_bytes();
 
         // Require that the reconstructed value from the parts equals the
@@ -87,13 +91,13 @@ mod tests {
 
     #[test]
     fn test_rangecheck_just_in_range() {
-        try_test!(RangeCheckTestContainer<Fr, 4>, vec![Word::from(0)], true);
+        try_test!(RangeCheckTestContainer<Fr, 4>, [Word::from(0)], true);
 
-        try_test!(RangeCheckTestContainer<Fr, 4>, vec![Word::from(1)], true);
+        try_test!(RangeCheckTestContainer<Fr, 4>, [Word::from(1)], true);
         // max - 1
         try_test!(
             RangeCheckTestContainer<Fr, 4>,
-            vec![Word::from((1u64 << 32) - 1)],
+            [Word::from((1u64 << 32) - 1)],
             true,
         );
     }
@@ -102,7 +106,7 @@ mod tests {
     fn test_rangecheck_out_of_range() {
         try_test!(
             RangeCheckTestContainer<Fr, 4>,
-            vec![Word::from(1u64 << 32)],
+            [Word::from(1u64 << 32)],
             false,
         );
     }

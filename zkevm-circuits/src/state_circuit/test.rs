@@ -2,7 +2,7 @@
 pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::SubCircuit,
+    util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -28,6 +28,14 @@ use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
 
+#[test]
+fn state_circuit_unusable_rows() {
+    assert_eq!(
+        StateCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, StateCircuit::<Fr>>(),
+    )
+}
+
 fn test_state_circuit_ok(
     memory_ops: Vec<Operation<MemoryOp>>,
     stack_ops: Vec<Operation<StackOp>>,
@@ -43,7 +51,7 @@ fn test_state_circuit_ok(
     let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS);
     let instance = circuit.instance();
 
-    let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
+    let prover = MockProver::<Fr>::run(17, &circuit, instance).unwrap();
     let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
 }
@@ -65,7 +73,7 @@ fn verifying_key_independent_of_rw_length() {
             memory: vec![Operation::new(
                 RWCounter::from(1),
                 RW::WRITE,
-                MemoryOp::new(1, MemoryAddress::from(0), 32),
+                MemoryOp::new(1, MemoryAddress::from(0), 32.into()),
             )],
             ..Default::default()
         }),
@@ -89,23 +97,23 @@ fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(24),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
 
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(1), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(96), 32.into(), 0.into()),
     );
     let memory_op_3 = Operation::new(
         RWCounter::from(87),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(1), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(96), 32.into(), 32.into()),
     );
 
     let stack_op_0 = Operation::new(
@@ -168,12 +176,12 @@ fn state_circuit_simple_6() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     let storage_op_2 = Operation::new(
         RWCounter::from(19),
@@ -195,7 +203,7 @@ fn lexicographic_ordering_test_1() {
     let memory_op = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let storage_op = Operation::new(
         RWCounter::from(19),
@@ -217,12 +225,12 @@ fn lexicographic_ordering_test_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     test_state_circuit_ok(vec![memory_op_0, memory_op_1], vec![], vec![]);
 }
@@ -398,7 +406,7 @@ fn address_limb_out_of_range() {
 
     let result = verify_with_overrides(rows, overrides);
 
-    assert_error_matches(result, "mpi limb fits into u16");
+    assert_error_matches(result, "limb fits into u16");
 }
 
 #[test]
@@ -469,8 +477,9 @@ fn nonlexicographic_order_tag() {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
-        memory_address: 10,
-        byte: 12,
+        memory_address: 0,
+        value: 12.into(),
+        value_prev: 0.into(),
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -481,7 +490,7 @@ fn nonlexicographic_order_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+    assert_error_matches(verify(vec![second, first]), "limb fits into u16");
 }
 
 #[test]
@@ -502,7 +511,7 @@ fn nonlexicographic_order_field_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+    assert_error_matches(verify(vec![second, first]), "limb fits into u16");
 }
 
 #[test]
@@ -523,7 +532,7 @@ fn nonlexicographic_order_id() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+    assert_error_matches(verify(vec![second, first]), "limb fits into u16");
 }
 
 #[test]
@@ -546,7 +555,7 @@ fn nonlexicographic_order_address() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+    assert_error_matches(verify(vec![second, first]), "limb fits into u16");
 }
 
 #[test]
@@ -573,7 +582,7 @@ fn nonlexicographic_order_storage_key_upper() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+    assert_error_matches(verify(vec![second, first]), "limb fits into u16");
 }
 
 #[test]
@@ -600,7 +609,7 @@ fn nonlexicographic_order_storage_key_lower() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+    assert_error_matches(verify(vec![second, first]), "limb fits into u16");
 }
 
 #[test]
@@ -621,7 +630,7 @@ fn nonlexicographic_order_rw_counter() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
+    assert_error_matches(verify(vec![second, first]), "limb fits into u16");
 }
 
 #[test]
@@ -662,24 +671,54 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
 
 #[test]
 fn read_inconsistency() {
+    // memory word checking read_inconsistency
     let rows = vec![
         Rw::Memory {
             rw_counter: 10,
             is_write: false,
             call_id: 1,
-            memory_address: 10,
-            byte: 0,
+            memory_address: 32,
+            value: 0.into(),
+            value_prev: 0.into(),
         },
         Rw::Memory {
             rw_counter: 40,
             is_write: false,
             call_id: 1,
-            memory_address: 10,
-            byte: 200,
+            memory_address: 32,
+            value: 200.into(),
+            value_prev: 0.into(),
         },
     ];
 
     assert_error_matches(verify(rows), "non-first access reads don't change value");
+}
+
+#[test]
+fn memory_write_inconsistency() {
+    let rows = vec![
+        Rw::Memory {
+            rw_counter: 10,
+            is_write: true,
+            call_id: 1,
+            memory_address: 32,
+            value: 100.into(),
+            value_prev: 0.into(),
+        },
+        Rw::Memory {
+            rw_counter: 40,
+            is_write: true,
+            call_id: 1,
+            memory_address: 32,
+            value: 200.into(),
+            value_prev: 0.into(), // should have been 100.
+        },
+    ];
+
+    assert_error_matches(
+        verify(rows),
+        "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+    );
 }
 
 #[test]
@@ -712,10 +751,27 @@ fn invalid_memory_address() {
         is_write: true,
         call_id: 1,
         memory_address: 1u64 << 32,
-        byte: 12,
+        value: 12.into(),
+        value_prev: 0.into(),
     }];
 
     assert_error_matches(verify(rows), "memory address fits into 2 limbs");
+}
+
+#[test]
+fn misaligned_memory_address() {
+    for memory_address in [1, 31, 0x010010, u32::MAX as u64] {
+        let rows = vec![Rw::Memory {
+            rw_counter: 1,
+            is_write: true,
+            call_id: 1,
+            memory_address,
+            value: 12.into(),
+            value_prev: 0.into(),
+        }];
+
+        assert_error_matches(verify(rows), "limb fits into u16");
+    }
 }
 
 #[test]
@@ -724,8 +780,9 @@ fn bad_initial_memory_value() {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
-        memory_address: 10,
-        byte: 0,
+        memory_address: 32,
+        value: 0.into(),
+        value_prev: 0.into(),
     }];
 
     let v = Fr::from(200);
@@ -740,26 +797,6 @@ fn bad_initial_memory_value() {
     let result = verify_with_overrides(rows, overrides);
 
     assert_error_matches(result, "initial Memory value is 0");
-}
-
-#[test]
-fn invalid_memory_value() {
-    let rows = vec![Rw::Memory {
-        rw_counter: 1,
-        is_write: true,
-        call_id: 1,
-        memory_address: 10,
-        byte: 1,
-    }];
-    let v = Fr::from(256);
-    let overrides = HashMap::from([
-        ((AdviceColumn::Value, 0), v),
-        ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
-    ]);
-
-    let result = verify_with_overrides(rows, overrides);
-
-    assert_error_matches(result, "memory value is a byte");
 }
 
 #[test]
@@ -954,7 +991,8 @@ fn variadic_size_check() {
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
-        _marker: std::marker::PhantomData::default(),
+        exports: Default::default(),
+        _marker: std::marker::PhantomData,
     };
     let power_of_randomness = circuit.instance();
     let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
@@ -982,7 +1020,8 @@ fn variadic_size_check() {
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
-        _marker: std::marker::PhantomData::default(),
+        exports: Default::default(),
+        _marker: std::marker::PhantomData,
     };
     let power_of_randomness = circuit.instance();
     let prover2 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
@@ -1013,14 +1052,15 @@ fn bad_initial_tx_receipt_value() {
     );
 }
 
-fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
+fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<'static, Fr> {
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,
         overrides,
         n_rows: N_ROWS,
-        _marker: std::marker::PhantomData::default(),
+        exports: Default::default(),
+        _marker: std::marker::PhantomData,
     };
     let instance = circuit.instance();
 
@@ -1049,14 +1089,14 @@ fn verify_with_overrides(
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.expect_err("result is not an error");
-    assert_eq!(errors.len(), 1, "{:?}", errors);
+    assert_eq!(errors.len(), 1, "{errors:?}");
     match &errors[0] {
         VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
             // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
             // to match off of its format string.
-            let constraint = format!("{}", constraint);
+            let constraint = format!("{constraint}");
             if !constraint.contains(name) {
-                panic!("{} does not contain {}", constraint, name);
+                panic!("{constraint} does not contain {name}");
             }
         }
         VerifyFailure::Lookup {
@@ -1067,5 +1107,6 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
         VerifyFailure::CellNotAssigned { .. } => panic!(),
         VerifyFailure::ConstraintPoisoned { .. } => panic!(),
         VerifyFailure::Permutation { .. } => panic!(),
+        &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } => todo!(),
     }
 }

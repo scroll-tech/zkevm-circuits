@@ -1,35 +1,51 @@
 [package]
 name = "bus-mapping"
-version = "0.1.0"
-edition = "2021"
-authors = ["CPerezz <c.perezbaro@gmail.com>"]
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-keccak256 = { path = "../keccak256" }
+mpt-zktrie = {path = "../zktrie"}
 mock = { path = "../mock", optional = true }
 
-ethers-core = "0.17.0"
-ethers-providers = "0.17.0"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
-itertools = "0.10"
-lazy_static = "1.4"
-log = "0.4.14"
-rand = { version = "0.8", optional = true }
-serde = {version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.66"
-strum = "0.24"
-strum_macros = "0.24"
+ethers-core.workspace = true
+ethers-signers.workspace = true
+ethers-providers.workspace = true
+halo2_proofs.workspace = true
+hash-circuit.workspace = true
+itertools.workspace = true
+log.workspace = true
+num.workspace = true
+rand = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+strum.workspace = true
+hex.workspace = true
+strum_macros.workspace = true
+
+# precompile related crates
+revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-fix" }
 
 [dev-dependencies]
-hex = "0.4.3"
-pretty_assertions = "1.0.0"
-tokio = { version = "1.13", features = ["macros"] }
-url = "2.2.2"
+hex.workspace = true
+pretty_assertions.workspace = true
+tokio.workspace = true
+url.workspace = true
+ctor.workspace = true
+env_logger.workspace = true
 mock = { path = "../mock" }
-rand = "0.8"
+rand.workspace = true
+rayon.workspace = true
 
 [features]
+default = ["test", "enable-storage"]
 test = ["mock", "rand"]
+scroll = ["eth-types/scroll", "mock?/scroll"]
+# Enable shanghai feature of mock only if mock is enabled (by test).
+shanghai = ["eth-types/shanghai", "mock?/shanghai"]
+tracer-tests = ["enable-memory"]
+enable-stack = ["eth-types/enable-stack", "mock?/enable-stack"]
+enable-memory = ["eth-types/enable-memory", "mock?/enable-memory"]
+enable-storage = ["eth-types/enable-storage", "mock?/enable-storage"]

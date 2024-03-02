@@ -1,6 +1,6 @@
 //! Mock Transaction definition and builder related methods.
 
-use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
+use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID};
 use eth_types::{
     geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
     Transaction, Word, U64,
@@ -10,25 +10,28 @@ use ethers_core::{
     types::{OtherFields, TransactionRequest},
 };
 use ethers_signers::{LocalWallet, Signer};
-use lazy_static::lazy_static;
 use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
+use rand_chacha::{rand_core::OsRng, ChaCha20Rng};
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// Collection of correctly hashed and signed Transactions which can be used to test circuits or opcodes that have to check integrity of the Tx itself.
-    /// Some of the parameters of the Tx are hardcoded such as `nonce`, `value`, `gas_price` etc...
-    pub static ref CORRECT_MOCK_TXS: Vec<MockTransaction> = {
-        let mut rng = ChaCha20Rng::seed_from_u64(2u64);
+/// Collection of correctly hashed and signed Transactions which can be used to test circuits or
+/// opcodes that have to check integrity of the Tx itself. Some of the parameters of the Tx are
+/// hardcoded such as `nonce`, `value`, `gas_price` etc...
+pub static CORRECT_MOCK_TXS: LazyLock<Vec<MockTransaction>> = LazyLock::new(|| {
+    let mut rng = ChaCha20Rng::seed_from_u64(2u64);
 
-        vec![MockTransaction::default()
+    vec![
+        MockTransaction::default()
+            .transaction_idx(1u64)
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[0])
             .nonce(word!("0x103"))
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
-            .input(Bytes::from(b"hello"))
+            .input(vec![1, 2, 3, 4, 5, 0, 6, 7, 8, 9].into()) // call data gas cost of 0 is 4
             .build(),
-            MockTransaction::default()
+        MockTransaction::default()
+            .transaction_idx(2u64)
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[1])
             .nonce(word!("0x104"))
@@ -36,7 +39,8 @@ lazy_static! {
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
             .build(),
-            MockTransaction::default()
+        MockTransaction::default()
+            .transaction_idx(3u64)
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[2])
             .nonce(word!("0x105"))
@@ -44,16 +48,35 @@ lazy_static! {
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
             .build(),
-            MockTransaction::default()
+        MockTransaction::default()
+            .transaction_idx(4u64)
             .from(AddrOrWallet::random(&mut rng))
-            .to(MOCK_ACCOUNTS[0])
+            .to(MOCK_ACCOUNTS[3])
             .nonce(word!("0x106"))
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b""))
+            .build(),
+        MockTransaction::default()
+            .transaction_idx(5u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[4])
+            .nonce(word!("0x0"))
+            .value(word!("0x0"))
+            .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
-            .build(),]
-    };
-}
+            .build(),
+        MockTransaction::default()
+            .transaction_idx(6u64)
+            .from(AddrOrWallet::random(&mut rng))
+            .to(AddrOrWallet::Addr(Address::zero()))
+            .nonce(word!("0x0"))
+            .value(word!("0x0"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+    ]
+});
 
 #[derive(Debug, Clone)]
 pub enum AddrOrWallet {
@@ -126,7 +149,7 @@ pub struct MockTransaction {
     pub from: AddrOrWallet,
     pub to: Option<AddrOrWallet>,
     pub value: Word,
-    pub gas_price: Word,
+    pub gas_price: Option<Word>,
     pub gas: Word,
     pub input: Bytes,
     pub v: Option<U64>,
@@ -136,7 +159,7 @@ pub struct MockTransaction {
     pub access_list: AccessList,
     pub max_priority_fee_per_gas: Word,
     pub max_fee_per_gas: Word,
-    pub chain_id: Word,
+    pub chain_id: u64,
 }
 
 impl Default for MockTransaction {
@@ -147,10 +170,11 @@ impl Default for MockTransaction {
             block_hash: Hash::zero(),
             block_number: U64::zero(),
             transaction_index: U64::zero(),
-            from: AddrOrWallet::Addr(MOCK_ACCOUNTS[0]),
+            //from: AddrOrWallet::Addr(MOCK_ACCOUNTS[0]),
+            from: AddrOrWallet::random(&mut OsRng),
             to: None,
             value: Word::zero(),
-            gas_price: *MOCK_GASPRICE,
+            gas_price: None,
             gas: Word::from(1_000_000u64),
             input: Bytes::default(),
             v: None,
@@ -160,7 +184,7 @@ impl Default for MockTransaction {
             access_list: AccessList::default(),
             max_priority_fee_per_gas: Word::zero(),
             max_fee_per_gas: Word::zero(),
-            chain_id: *MOCK_CHAIN_ID,
+            chain_id: MOCK_CHAIN_ID,
         }
     }
 }
@@ -176,7 +200,7 @@ impl From<MockTransaction> for Transaction {
             from: mock.from.address(),
             to: mock.to.map(|addr| addr.address()),
             value: mock.value,
-            gas_price: Some(mock.gas_price),
+            gas_price: mock.gas_price,
             gas: mock.gas,
             input: mock.input,
             v: mock.v.unwrap_or_default(),
@@ -186,7 +210,7 @@ impl From<MockTransaction> for Transaction {
             access_list: Some(mock.access_list),
             max_priority_fee_per_gas: Some(mock.max_priority_fee_per_gas),
             max_fee_per_gas: Some(mock.max_fee_per_gas),
-            chain_id: Some(mock.chain_id),
+            chain_id: Some(mock.chain_id.into()),
             other: OtherFields::default(),
         }
     }
@@ -250,7 +274,7 @@ impl MockTransaction {
 
     /// Set gas_price field for the MockTransaction.
     pub fn gas_price(&mut self, gas_price: Word) -> &mut Self {
-        self.gas_price = gas_price;
+        self.gas_price = Some(gas_price);
         self
     }
 
@@ -299,7 +323,7 @@ impl MockTransaction {
     }
 
     /// Set chain_id field for the MockTransaction.
-    pub(crate) fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+    pub fn chain_id(&mut self, chain_id: u64) -> &mut Self {
         self.chain_id = chain_id;
         self
     }
@@ -309,13 +333,22 @@ impl MockTransaction {
     pub fn build(&mut self) -> Self {
         let tx = TransactionRequest::new()
             .from(self.from.address())
-            .to(self.to.clone().unwrap_or_default().address())
             .nonce(self.nonce)
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
-            .gas_price(self.gas_price)
-            .chain_id(self.chain_id.low_u64());
+            .chain_id(self.chain_id);
+
+        let tx = if let Some(gas_price) = self.gas_price {
+            tx.gas_price(gas_price)
+        } else {
+            tx
+        };
+        let tx = if let Some(to_addr) = self.to.clone() {
+            tx.to(to_addr.address())
+        } else {
+            tx
+        };
 
         match (self.v, self.r, self.s) {
             (None, None, None) => {
@@ -324,8 +357,9 @@ impl MockTransaction {
                     let sig = self
                         .from
                         .as_wallet()
-                        .with_chain_id(self.chain_id.low_u64())
-                        .sign_transaction_sync(&tx.into());
+                        .with_chain_id(self.chain_id)
+                        .sign_transaction_sync(&tx.into())
+                        .expect("sign mock tx");
                     // Set sig parameters
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
@@ -337,6 +371,8 @@ impl MockTransaction {
         // Compute tx hash in case is not already set
         if self.hash.is_none() {
             let tmp_tx = Transaction::from(self.to_owned());
+            // FIXME: Note that tmp_tx does not have sigs if self.from.is_wallet() = false.
+            //  This means tmp_tx.hash() is not correct.
             self.hash(tmp_tx.hash());
         }
 

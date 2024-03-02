@@ -14,6 +14,8 @@ use halo2_proofs::{
 impl<F: Field> Circuit<F> for KeccakCircuit<F> {
     type Config = (KeccakCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    #[cfg(feature = "circuit-params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -41,7 +43,7 @@ impl<F: Field> Circuit<F> for KeccakCircuit<F> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

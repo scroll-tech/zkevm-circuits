@@ -2,7 +2,7 @@
 mod cell_manager;
 /// Keccak packed multi
 pub mod keccak_packed_multi;
-mod param;
+pub(crate) mod param;
 mod table;
 /// Util
 mod util;
@@ -11,15 +11,17 @@ mod util;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
+
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::KeccakCircuit as TestKeccakCircuit;
+use std::cmp::max;
 
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;
 
 use self::{
     cell_manager::*,
-    keccak_packed_multi::{multi_keccak, KeccakRow},
+    keccak_packed_multi::{keccak_unusable_rows, multi_keccak, KeccakRow},
     param::*,
     table::*,
     util::*,
@@ -38,11 +40,10 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{and, not, select, sum, Expr};
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells},
     poly::Rotation,
 };
-use log::info;
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
@@ -56,17 +57,21 @@ pub struct KeccakCircuitConfig<F> {
     q_padding_last: Column<Fixed>,
     /// The columns for other circuits to lookup Keccak hash results
     pub keccak_table: KeccakTable,
-    cell_manager: CellManager<F>,
+    /// The cell manager that stores/allocates the advice columns
+    pub cell_manager: CellManager<F>,
     round_cst: Column<Fixed>,
     normalize_3: [TableColumn; 2],
     normalize_4: [TableColumn; 2],
     normalize_6: [TableColumn; 2],
     chi_base_table: [TableColumn; 2],
     pack_table: [TableColumn; 2],
+    /// The column for enabling copy constraints in aggregator
+    pub preimage_column_index: usize,
     _marker: PhantomData<F>,
 }
 
 /// Circuit configuration arguments
+#[derive(Debug, Clone)]
 pub struct KeccakCircuitConfigArgs<F: Field> {
     /// KeccakTable
     pub keccak_table: KeccakTable,
@@ -89,7 +94,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             get_num_rows_per_round() > NUM_BYTES_PER_WORD,
             "KeccakCircuit requires KECCAK_ROWS>=9"
         );
-        let q_enable = meta.fixed_column();
+        let q_enable = keccak_table.q_enable;
+
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
@@ -98,7 +104,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let q_padding_last = meta.fixed_column();
         let round_cst = meta.fixed_column();
 
-        let is_final = keccak_table.is_enabled;
+        let is_final = keccak_table.is_final;
         let length = keccak_table.input_len;
         let data_rlc = keccak_table.input_rlc;
         let hash_rlc = keccak_table.output_rlc;
@@ -134,6 +140,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 s_next[i][j] = cell.at_offset(meta, get_num_rows_per_round() as i32).expr();
             }
         }
+        log::debug!("- Post states:");
+        log::debug!("Columns: {}", cell_manager.get_width());
         // Absorb data
         let absorb_from = cell_manager.query_cell(meta);
         let absorb_data = cell_manager.query_cell(meta);
@@ -178,9 +186,10 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             decode::expr(absorb_res),
             absorb_result.expr(),
         );
-        info!("- Post absorb:");
-        info!("Lookups: {}", lookup_counter);
-        info!("Columns: {}", cell_manager.get_width());
+        log::debug!("- Post absorb:");
+        log::debug!("Lookups: {}", lookup_counter);
+        log::debug!("Columns: {}", cell_manager.get_width());
+        let preimage_column_index: usize = cell_manager.get_width() + 1;
         total_lookup_counter += lookup_counter;
 
         // Process inputs.
@@ -220,9 +229,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         for _ in input_bytes.iter() {
             is_paddings.push(cell_manager.query_cell(meta));
         }
-        info!("- Post padding:");
-        info!("Lookups: {}", lookup_counter);
-        info!("Columns: {}", cell_manager.get_width());
+        log::debug!("- Post padding:");
+        log::debug!("Lookups: {}", lookup_counter);
+        log::debug!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
         // Theta
@@ -278,9 +287,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             }
         }
         s = os.clone();
-        info!("- Post theta:");
-        info!("Lookups: {}", lookup_counter);
-        info!("Columns: {}", cell_manager.get_width());
+        log::debug!("- Post theta:");
+        log::debug!("Lookups: {}", lookup_counter);
+        log::debug!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
         // Rho/Pi
@@ -300,7 +309,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         // multiple rows with lookups in a way that doesn't require any
         // extra additional cells or selectors we have to put all `s[i]`'s on the same
         // row. This isn't that strong of a requirement actually because we the
-        // words are split into multipe parts, and so only the parts at the same
+        // words are split into multiple parts, and so only the parts at the same
         // position of those words need to be on the same row.
         let target_word_sizes = target_part_sizes(part_size);
         let num_word_parts = target_word_sizes.len();
@@ -366,9 +375,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             });
             lookup_counter += 1;
         }
-        info!("- Post rho/pi:");
-        info!("Lookups: {}", lookup_counter);
-        info!("Columns: {}", cell_manager.get_width());
+        log::debug!("- Post rho/pi:");
+        log::debug!("Lookups: {}", lookup_counter);
+        log::debug!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
         // Chi
@@ -446,9 +455,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 cb.require_equal("next row check", s[i][j].clone(), s_next[i][j].clone());
             }
         }
-        info!("- Post chi:");
-        info!("Lookups: {}", lookup_counter);
-        info!("Columns: {}", cell_manager.get_width());
+        log::debug!("- Post chi:");
+        log::debug!("Lookups: {}", lookup_counter);
+        log::debug!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
         let mut lookup_counter = 0;
@@ -486,9 +495,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 .unwrap(),
             true,
         );
-        info!("- Post squeeze:");
-        info!("Lookups: {}", lookup_counter);
-        info!("Columns: {}", cell_manager.get_width());
+        log::debug!("- Post squeeze:");
+        log::debug!("Lookups: {}", lookup_counter);
+        log::debug!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
         // The round constraints that we've been building up till now
@@ -751,6 +760,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                                 .map(|is_padding| not::expr(is_padding.expr())),
                         ),
                 );
+
                 let mut new_data_rlc = data_rlcs[NUM_BYTES_PER_WORD].expr();
 
                 // At the start of a hash, start at 0. Otherwise, continue from the previous
@@ -808,36 +818,36 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         keccak_table.annotate_columns(meta);
 
         normalize_3.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_3_{}", idx))
+            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_3_{idx}"))
         });
         normalize_4.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_4_{}", idx))
+            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_4_{idx}"))
         });
         normalize_6.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_6_{}", idx))
+            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_6_{idx}"))
         });
         chi_base_table.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_column(col, || format!("KECCAK_chi_base_{}", idx))
+            meta.annotate_lookup_column(col, || format!("KECCAK_chi_base_{idx}"))
         });
         pack_table.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_column(col, || format!("KECCAK_pack_table_{}", idx))
+            meta.annotate_lookup_column(col, || format!("KECCAK_pack_table_{idx}"))
         });
 
-        info!("Degree: {}", meta.degree());
-        info!("Minimum rows: {}", meta.minimum_rows());
-        info!("Total Lookups: {}", total_lookup_counter);
-        info!("Total Columns: {}", cell_manager.get_width());
-        info!("num unused cells: {}", cell_manager.get_num_unused_cells());
-        info!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
-        info!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
-        info!(
+        log::debug!("Degree: {}", meta.degree());
+        log::debug!("Minimum rows: {}", meta.minimum_rows());
+        log::debug!("Total Lookups: {}", total_lookup_counter);
+        log::debug!("Total Columns: {}", cell_manager.get_width());
+        log::debug!("num unused cells: {}", cell_manager.get_num_unused_cells());
+        log::debug!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
+        log::debug!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
+        log::debug!(
             "part_size theta c: {}",
             get_num_bits_per_lookup(THETA_C_LOOKUP_RANGE)
         );
-        info!("part_size theta t: {}", get_num_bits_per_lookup(4));
-        info!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
-        info!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
-        info!(
+        log::debug!("part_size theta t: {}", get_num_bits_per_lookup(4));
+        log::debug!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
+        log::debug!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
+        log::debug!(
             "uniform part sizes: {:?}",
             target_part_sizes(get_num_bits_per_theta_c_lookup())
         );
@@ -858,20 +868,29 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             normalize_6,
             chi_base_table,
             pack_table,
+            preimage_column_index,
             _marker: PhantomData,
         }
     }
 }
 
 impl<F: Field> KeccakCircuitConfig<F> {
+    /// Assign the circuit for hash function
     pub(crate) fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
         witness: &[KeccakRow<F>],
     ) -> Result<(), Error> {
+        let mut is_first_time = true;
         layouter.assign_region(
             || "assign keccak rows",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    let offset = witness.len() - 1;
+                    self.set_row(&mut region, offset, &witness[offset])?;
+                    return Ok(());
+                }
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     self.set_row(&mut region, offset, keccak_row)?;
                 }
@@ -882,12 +901,13 @@ impl<F: Field> KeccakCircuitConfig<F> {
         )
     }
 
-    fn set_row(
+    /// Set the cells for a keccak row; return the cells that are assigned.
+    pub fn set_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         row: &KeccakRow<F>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         // Fixed selectors
         for (name, column, value) in &[
             ("q_enable", self.q_enable, F::from(row.q_enable)),
@@ -903,14 +923,15 @@ impl<F: Field> KeccakCircuitConfig<F> {
             ),
         ] {
             region.assign_fixed(
-                || format!("assign {} {}", name, offset),
+                || format!("assign {name} {offset}"),
                 *column,
                 offset,
                 || Value::known(*value),
             )?;
         }
 
-        self.keccak_table.assign_row(
+        // table values
+        let mut res = self.keccak_table.assign_row(
             region,
             offset,
             [
@@ -928,26 +949,27 @@ impl<F: Field> KeccakCircuitConfig<F> {
             .zip(self.cell_manager.columns())
             .enumerate()
         {
-            region.assign_advice(
-                || format!("assign lookup value {} {}", idx, offset),
+            res.push(region.assign_advice(
+                || format!("assign lookup value {idx} {offset}"),
                 column.advice,
                 offset,
                 || Value::known(*bit),
-            )?;
+            )?);
         }
 
         // Round constant
         region.assign_fixed(
-            || format!("assign round cst {}", offset),
+            || format!("assign round cst {offset}"),
             self.round_cst,
             offset,
             || Value::known(row.round_cst),
         )?;
 
-        Ok(())
+        Ok(res)
     }
 
-    pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    /// Load the auxiliary tables for keccak circuit
+    pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         load_normalize_table(layouter, "normalize_6", &self.normalize_6, 6u64)?;
         load_normalize_table(layouter, "normalize_4", &self.normalize_4, 4u64)?;
         load_normalize_table(layouter, "normalize_3", &self.normalize_3, 3u64)?;
@@ -961,8 +983,9 @@ impl<F: Field> KeccakCircuitConfig<F> {
         load_pack_table(layouter, &self.pack_table)
     }
 
-    fn annotate_circuit(&self, region: &mut Region<F>) {
-        region.name_column(|| "KECCAK_q_enable", self.q_enable);
+    /// Annotate the circuit
+    pub fn annotate_circuit(&self, region: &mut Region<F>) {
+        //region.name_column(|| "KECCAK_q_enable", self.q_enable);
         region.name_column(|| "KECCAK_q_first", self.q_first);
         region.name_column(|| "KECCAK_q_round", self.q_round);
         region.name_column(|| "KECCAK_q_absorb", self.q_absorb);
@@ -974,7 +997,12 @@ impl<F: Field> KeccakCircuitConfig<F> {
 /// KeccakCircuit
 #[derive(Default, Clone, Debug)]
 pub struct KeccakCircuit<F: Field> {
+    // The input is a two dimensional vector
+    // Each input row is a pre-image of the hash
+    // The output row of the hash, i.e., the digest is NOT part of the circuit input
     inputs: Vec<Vec<u8>>,
+    // The maximum number of rows, for example, 2^20
+    // This needs to be large enough for the circuit.
     num_rows: usize,
     _marker: PhantomData<F>,
 }
@@ -982,7 +1010,11 @@ pub struct KeccakCircuit<F: Field> {
 impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     type Config = KeccakCircuitConfig<F>;
 
-    /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
+    fn unusable_rows() -> usize {
+        keccak_unusable_rows()
+    }
+
+    /// The `block.circuits_params.keccak_padding` parameter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
     /// independently of the permutations required by `inputs`.
     fn new_from_block(block: &witness::Block<F>) -> Self {
@@ -995,13 +1027,23 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let rows_per_chunk = (NUM_ROUNDS + 1) * get_num_rows_per_round();
+        let aux_tables_rows = [
+            normalize_table_size(6),
+            normalize_table_size(4),
+            normalize_table_size(3),
+            lookup_table_size(CHI_BASE_LOOKUP_TABLE.len()),
+        ];
         (
             block
                 .keccak_inputs
                 .iter()
                 .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
-                .sum(),
-            block.circuits_params.max_keccak_rows,
+                .sum::<usize>()
+                + get_num_rows_per_round(), // reserved for first 12 dummy rows
+            max(
+                block.circuits_params.max_keccak_rows,
+                *(aux_tables_rows.iter().max().unwrap()),
+            ),
         )
     }
 
@@ -1030,9 +1072,15 @@ impl<F: Field> KeccakCircuit<F> {
 
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> Option<usize> {
-        if self.num_rows > 0 {
+        Self::capacity_for_row(self.num_rows)
+    }
+
+    /// The number of keccak_f's that can be done for
+    /// a particular row number depending on current Keccak params
+    pub fn capacity_for_row(num_rows: usize) -> Option<usize> {
+        if num_rows > 0 {
             // Subtract two for unusable rows
-            Some(self.num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
+            Some(num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
         } else {
             None
         }

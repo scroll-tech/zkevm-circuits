@@ -7,7 +7,7 @@ use crate::{
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
+/// corresponding to the [`OpcodeId::CALLVALUE`](crate::evm::OpcodeId::CALLVALUE) `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Callvalue;
 
@@ -19,21 +19,19 @@ impl Opcode for Callvalue {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         // Get call_value result from next step
-        let value = geth_steps[1].stack.last()?;
+        let value = state.call()?.value;
         // CallContext read of the call_value
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::Value,
             value,
-        );
+        )?;
 
         // Stack write of the call_value
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            value,
-        )?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(value, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, value)?;
 
         Ok(vec![exec_step])
     }

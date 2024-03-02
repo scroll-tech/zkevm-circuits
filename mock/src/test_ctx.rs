@@ -1,11 +1,17 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{eth, MockAccount, MockBlock, MockTransaction};
+use crate::{eth, MockAccount, MockBlock, MockTransaction, MOCK_WALLETS};
+#[cfg(feature = "scroll")]
+use eth_types::l2_types::BlockTrace;
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
-    Block, Bytecode, Error, GethExecTrace, Transaction, Word,
+    BigEndianHash, Block, Bytecode, Error, Transaction, Word, H256,
 };
-use external_tracer::{trace, TraceConfig};
+#[cfg(feature = "scroll")]
+use external_tracer::l2trace;
+#[cfg(not(feature = "scroll"))]
+use external_tracer::trace;
+use external_tracer::TraceConfig;
 use helpers::*;
 use itertools::Itertools;
 
@@ -27,7 +33,6 @@ pub use external_tracer::LoggerConfig;
 /// ```rust
 /// use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
 /// use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
-/// use lazy_static::lazy_static;
 /// use mock::test_ctx::{helpers::*, TestContext};
 /// // code_a calls code
 /// // jump to 0x10 which is outside the code (and also not marked with
@@ -79,7 +84,7 @@ pub use external_tracer::LoggerConfig;
 #[derive(Debug)]
 pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// Account list
     pub accounts: [Account; NACC],
     /// history hashes contains most recent 256 block hashes in history, where
@@ -89,6 +94,8 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
+    #[cfg(feature = "scroll")]
+    block_trace: BlockTrace,
 }
 
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
@@ -99,6 +106,8 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
             accounts: ctx.accounts.into(),
+            #[cfg(feature = "scroll")]
+            block_trace: ctx.block_trace,
         }
     }
 }
@@ -155,6 +164,11 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 
         // Build Block modifiers
         let mut block = MockBlock::default();
+        let parent_hash = history_hashes
+            .as_ref()
+            .and_then(|hashes| hashes.last().copied())
+            .unwrap_or_default();
+        block.parent_hash(H256::from_uint(&parent_hash));
         block.transactions.extend_from_slice(&transactions);
         func_block(&mut block, transactions).build();
 
@@ -168,7 +182,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .try_into()
             .expect("Mismatched acc len");
 
-        let geth_traces = gen_geth_traces(
+        let trace_config = gen_trace_config(
             chain_id,
             block.clone(),
             accounts.to_vec(),
@@ -176,12 +190,28 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             logger_config,
         )?;
 
+        #[cfg(feature = "scroll")]
+        let block_trace = l2trace(&trace_config)?;
+
+        #[cfg(feature = "scroll")]
+        let geth_traces = block_trace
+            .execution_results
+            .clone()
+            .into_iter()
+            .map(From::from)
+            .collect::<Vec<_>>();
+
+        #[cfg(not(feature = "scroll"))]
+        let geth_traces = trace(&trace_config)?;
+
         Ok(Self {
             chain_id,
             accounts,
             history_hashes: history_hashes.unwrap_or_default(),
             eth_block: block,
             geth_traces,
+            #[cfg(feature = "scroll")]
+            block_trace,
         })
     }
 
@@ -211,31 +241,39 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         )
     }
 
+    /// obtain the full l2 block trace
+    #[cfg(feature = "scroll")]
+    pub fn l2_trace(&self) -> &BlockTrace {
+        &self.block_trace
+    }
+
     /// Returns a simple TestContext setup with a single tx executing the
     /// bytecode passed as parameters. The balances of the 2 accounts and
     /// addresses are the ones used in [`TestContext::
-    /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
+    /// account_0_code_wallet_0_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
     pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
         TestContext::new(
             None,
-            account_0_code_account_1_no_code(bytecode),
-            tx_from_1_to_0,
-            |block, _txs| block,
+            account_0_code_wallet_0_no_code(bytecode),
+            |mut txs, accs| {
+                txs[0].from(MOCK_WALLETS[0].clone()).to(accs[0].address);
+            },
+            |block, _txs| block.number(0xcafeu64),
         )
     }
 }
 
-/// Generates execution traces for the transactions included in the provided
+/// Generates config to generating execution traces for the transactions included in the provided
 /// Block
-pub fn gen_geth_traces(
-    chain_id: Word,
+pub fn gen_trace_config(
+    chain_id: u64,
     block: Block<Transaction>,
     accounts: Vec<Account>,
     history_hashes: Option<Vec<Word>>,
     logger_config: LoggerConfig,
-) -> Result<Vec<GethExecTrace>, Error> {
-    let trace_config = TraceConfig {
+) -> Result<TraceConfig, Error> {
+    Ok(TraceConfig {
         chain_id,
         history_hashes: history_hashes.unwrap_or_default(),
         block_constants: BlockConstants::try_from(&block)?,
@@ -249,16 +287,21 @@ pub fn gen_geth_traces(
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
-    };
-    let traces = trace(&trace_config)?;
-    Ok(traces)
+        #[cfg(feature = "shanghai")]
+        chain_config: Some(external_tracer::ChainConfig::shanghai()),
+        #[cfg(not(feature = "shanghai"))]
+        chain_config: None,
+        #[cfg(feature = "scroll")]
+        l1_queue_index: 0,
+    })
 }
 
 /// Collection of helper functions which contribute to specific rutines on the
 /// builder pattern used to construct [`TestContext`]s.
 pub mod helpers {
     use super::*;
-    use crate::MOCK_ACCOUNTS;
+    use crate::{MOCK_ACCOUNTS, MOCK_WALLETS};
+    use ethers_signers::Signer;
 
     /// Generate a simple setup which adds balance to two default accounts from
     /// [`static@MOCK_ACCOUNTS`]:
@@ -272,6 +315,23 @@ pub mod helpers {
                 .balance(eth(10))
                 .code(code);
             accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10));
+        }
+    }
+
+    /// Generate a setup which adds balance to two default accounts,
+    /// the receiver is from
+    /// [`static@MOCK_ACCOUNTS`]:
+    /// - 0x000000000000000000000000000000000cafe111
+    /// and sender is a random wallet account from the first of
+    /// [`static@MOCK_WALLETS`];
+    /// And injects the provided bytecode into the first one.
+    pub fn account_0_code_wallet_0_no_code(code: Bytecode) -> impl FnOnce([&mut MockAccount; 2]) {
+        |accs| {
+            accs[0]
+                .address(MOCK_ACCOUNTS[0])
+                .balance(eth(10))
+                .code(code);
+            accs[1].address(MOCK_WALLETS[0].address()).balance(eth(10));
         }
     }
 

@@ -2,18 +2,67 @@ use super::{cell_manager::*, param::*, util::*};
 use crate::{evm_circuit::util::rlc, util::Challenges};
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
-use log::debug;
+use log::{debug, trace};
+use rayon::{iter::IntoParallelRefIterator, prelude::ParallelIterator};
 use std::{env::var, vec};
 
-pub(crate) fn get_num_rows_per_round() -> usize {
-    var("KECCAK_ROWS")
-        .unwrap_or_else(|_| "12".to_string())
+const MAX_DEGREE: usize = 9;
+
+/// Obtain the rows required for 1 iteration of f-box's inner round
+/// function (consisting of 5 phases) within Keccak circuit
+pub fn get_num_rows_per_round() -> usize {
+    let r = var("KECCAK_ROWS")
+        .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
         .parse()
-        .expect("Cannot parse KECCAK_ROWS env var as usize")
+        .expect("Cannot parse KECCAK_ROWS env var as usize");
+    assert!(
+        r > NUM_BYTES_PER_WORD,
+        "env variable KECCAK_ROWS must be greater than (NUM_BYTES_PER_WORD + 1)."
+    );
+    r
+}
+/// Obtain the rows required for 1 iteration of the f-box
+/// function (consisting of nr = 12 + 2*l inner rounds)
+/// within Keccak circuit
+pub fn get_num_rows_per_update() -> usize {
+    get_num_rows_per_round() * (NUM_ROUNDS + 1)
+}
+/// Obtain the column position of the hash inputs
+/// within cell_manager for an inner round.
+/// This value is determined by the number of rows allocated
+/// to each inner round and target part_size for u64
+pub fn get_input_bytes_col_idx_in_cell_manager() -> usize {
+    let mut col: usize = 0;
+    let inner_round_num_rows = get_num_rows_per_round();
+
+    col += NUM_SETUP_VARS_FOR_ROUND / inner_round_num_rows;
+    if inner_round_num_rows * col < NUM_SETUP_VARS_FOR_ROUND {
+        col += 1;
+    }
+
+    let part_size = get_num_bits_per_absorb_lookup();
+    let part_length = WordParts::new(part_size, 0, false).parts.len();
+
+    let mut absorb_parts_col = part_length / inner_round_num_rows;
+    if inner_round_num_rows * absorb_parts_col < part_length {
+        absorb_parts_col += 1;
+    }
+
+    col + absorb_parts_col * 2 + 1
+}
+
+pub(crate) fn keccak_unusable_rows() -> usize {
+    const UNUSABLE_ROWS_BY_KECCAK_ROWS: [usize; 24] = [
+        53, 67, 63, 59, 45, 79, 77, 75, 73, 71, 69, 67, 65, 63, 61, 59, 57, 71, 89, 107, 107, 107,
+        107, 107,
+    ];
+    UNUSABLE_ROWS_BY_KECCAK_ROWS
+        .get(get_num_rows_per_round() - NUM_BYTES_PER_WORD - 1)
+        .cloned()
+        .unwrap_or(107)
 }
 
 pub(crate) fn get_num_bits_per_absorb_lookup() -> usize {
@@ -48,7 +97,7 @@ pub(crate) struct SqueezeData<F: Field> {
 
 /// KeccakRow
 #[derive(Clone, Debug)]
-pub(crate) struct KeccakRow<F: Field> {
+pub struct KeccakRow<F: Field> {
     pub(crate) q_enable: bool,
     pub(crate) q_round: bool,
     pub(crate) q_absorb: bool,
@@ -56,9 +105,12 @@ pub(crate) struct KeccakRow<F: Field> {
     pub(crate) q_padding: bool,
     pub(crate) q_padding_last: bool,
     pub(crate) round_cst: F,
-    pub(crate) is_final: bool,
-    pub(crate) cell_values: Vec<F>,
-    pub(crate) length: usize,
+    /// if the row is the last row of the current keccak round
+    pub is_final: bool,
+    /// the value of the cells that are to be assigned
+    pub cell_values: Vec<F>,
+    /// The input length of the hash function
+    pub length: usize,
     pub(crate) data_rlc: Value<F>,
     pub(crate) hash_rlc: Value<F>,
 }
@@ -84,7 +136,7 @@ pub(crate) struct KeccakRegion<F> {
     pub(crate) rows: Vec<Vec<F>>,
 }
 
-impl<F: FieldExt> KeccakRegion<F> {
+impl<F: Field> KeccakRegion<F> {
     pub(crate) fn new() -> Self {
         Self { rows: Vec::new() }
     }
@@ -409,7 +461,7 @@ pub(crate) mod transform {
     }
 }
 
-// Transfroms values to cells
+// Transforms values to cells
 pub(crate) mod transform_to {
     use super::{Cell, KeccakRegion, Part, PartValue};
     use crate::{
@@ -476,6 +528,15 @@ pub(crate) mod transform_to {
         }
         output
     }
+}
+
+pub(crate) fn keccak_rows<F: Field>(
+    bytes: &[u8],
+    challenges: Challenges<Value<F>>,
+) -> Vec<KeccakRow<F>> {
+    let mut rows = Vec::new();
+    keccak(&mut rows, bytes, challenges);
+    rows
 }
 
 pub(crate) fn keccak<F: Field>(
@@ -548,6 +609,14 @@ pub(crate) fn keccak<F: Field>(
             absorb_from.assign(&mut region, 0, absorb_row.from);
             absorb_data.assign(&mut region, 0, absorb_row.absorb);
             absorb_result.assign(&mut region, 0, absorb_row.result);
+
+            // Column padding
+            if get_num_rows_per_round() > 28 {
+                for _ in 28..get_num_rows_per_round() {
+                    let padding_cell = cell_manager.query_cell_value();
+                    padding_cell.assign(&mut region, 0, F::zero());
+                }
+            }
 
             // Absorb
             cell_manager.start_region();
@@ -813,17 +882,22 @@ pub(crate) fn keccak<F: Field>(
                     .to_vec()
             })
             .collect::<Vec<_>>();
-        debug!("hash: {:x?}", &(hash_bytes[0..4].concat()));
-        debug!("data rlc: {:x?}", data_rlc);
+        trace!("hash: {:x?}", &(hash_bytes[0..4].concat()));
+        trace!("data rlc: {:x?}", data_rlc);
     }
 }
 
-pub(crate) fn multi_keccak<F: Field>(
+/// ...
+pub fn multi_keccak<F: Field>(
     bytes: &[Vec<u8>],
     challenges: Challenges<Value<F>>,
     capacity: Option<usize>,
 ) -> Result<Vec<KeccakRow<F>>, Error> {
+    log::info!("multi_keccak assign with capacity: {:?}", capacity);
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
+    if let Some(capacity) = capacity {
+        rows.reserve((1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round());
+    }
     // Dummy first row so that the initial data is absorbed
     // The initial data doesn't really matter, `is_final` just needs to be disabled.
     for idx in 0..get_num_rows_per_round() {
@@ -842,10 +916,14 @@ pub(crate) fn multi_keccak<F: Field>(
             cell_values: Vec::new(),
         });
     }
-    // Actual keccaks
-    for bytes in bytes {
-        keccak(&mut rows, bytes, challenges);
-    }
+
+    // TODO: optimize the `extend` using Iter?
+    let real_rows: Vec<_> = bytes
+        .par_iter()
+        .flat_map_iter(|bytes| keccak_rows(bytes, challenges))
+        .collect();
+    rows.extend(real_rows);
+    debug!("keccak rows len without padding: {}", rows.len());
     if let Some(capacity) = capacity {
         let padding_rows = {
             let mut rows = Vec::new();
@@ -861,5 +939,6 @@ pub(crate) fn multi_keccak<F: Field>(
             return Err(Error::BoundsFailure);
         }
     }
+    debug!("keccak witgen done");
     Ok(rows)
 }

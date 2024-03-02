@@ -1,7 +1,7 @@
 //! Utility functions to help calculate gas
 
 use super::GasCost;
-use crate::Word;
+use crate::{AccessList, Word};
 
 /// Calculate memory expansion gas cost by current and next memory word size.
 pub fn memory_expansion_gas_cost(curr_memory_word_size: u64, next_memory_word_size: u64) -> u64 {
@@ -22,9 +22,10 @@ pub fn memory_copier_gas_cost(
     curr_memory_word_size: u64,
     next_memory_word_size: u64,
     num_copy_bytes: u64,
+    per_word_copy_gas: u64,
 ) -> u64 {
     let num_words = (num_copy_bytes + 31) / 32;
-    num_words * GasCost::COPY.as_u64() +
+    num_words * per_word_copy_gas +
         // Note that opcodes with a byte size parameter of 0 will not trigger
         // memory expansion, regardless of their offset parameters.
         if num_words > 0 {
@@ -46,4 +47,22 @@ pub fn eip150_gas(gas_left: u64, gas_specified: Word) -> u64 {
     }
 
     capped_gas
+}
+
+/// Calculate gas cost for access list (EIP 2930).
+pub fn tx_access_list_gas_cost(access_list: &Option<AccessList>) -> u64 {
+    access_list.as_ref().map_or(0, |access_list| {
+        access_list.0.len() as u64 * GasCost::ACCESS_LIST_PER_ADDRESS.as_u64()
+            + access_list
+                .0
+                .iter()
+                .fold(0, |acc, item| acc + item.storage_keys.len() as u64)
+                * GasCost::ACCESS_LIST_PER_STORAGE_KEY.as_u64()
+    })
+}
+
+/// Calculate gas cost for transaction data.
+pub fn tx_data_gas_cost(data: &[u8]) -> u64 {
+    data.iter()
+        .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
 }

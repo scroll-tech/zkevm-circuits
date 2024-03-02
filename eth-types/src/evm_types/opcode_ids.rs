@@ -1,14 +1,15 @@
 //! Doc this
 use crate::{error::Error, evm_types::GasCost};
 use core::fmt::Debug;
-use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
-use std::{fmt, matches, str::FromStr};
+use std::{fmt, marker::ConstParamTy, matches, str::FromStr, sync::LazyLock};
 use strum_macros::EnumIter;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash, EnumIter)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash, EnumIter, PartialOrd, Ord, ConstParamTy,
+)]
 pub enum OpcodeId {
     /// `STOP`
     STOP,
@@ -95,6 +96,8 @@ pub enum OpcodeId {
     JUMPDEST,
 
     // PUSHn
+    /// `PUSH0`
+    PUSH0,
     /// `PUSH1`
     PUSH1,
     /// `PUSH2`
@@ -315,9 +318,30 @@ pub enum OpcodeId {
 }
 
 impl OpcodeId {
+    #[cfg(feature = "shanghai")]
+    /// Returns `true` if the `OpcodeId` is a `PUSHn` (including `PUSH0`).
+    pub fn is_push(&self) -> bool {
+        self.as_u8() >= Self::PUSH0.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
+    }
+    #[cfg(not(feature = "shanghai"))]
     /// Returns `true` if the `OpcodeId` is a `PUSHn`.
     pub fn is_push(&self) -> bool {
         self.as_u8() >= Self::PUSH1.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `PUSH1` .. `PUSH32` (excluding `PUSH0`).
+    pub fn is_push_with_data(&self) -> bool {
+        self.as_u8() >= Self::PUSH1.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
+    }
+
+    /// ..
+    pub fn is_call_with_value(&self) -> bool {
+        matches!(self, Self::CALL | Self::CALLCODE)
+    }
+
+    /// ..
+    pub fn is_call_without_value(&self) -> bool {
+        matches!(self, Self::DELEGATECALL | Self::STATICCALL)
     }
 
     /// Returns `true` if the `OpcodeId` is a `DUPn`.
@@ -402,6 +426,7 @@ impl OpcodeId {
             OpcodeId::PC => 0x58u8,
             OpcodeId::MSIZE => 0x59u8,
             OpcodeId::JUMPDEST => 0x5bu8,
+            OpcodeId::PUSH0 => 0x5fu8,
             OpcodeId::PUSH1 => 0x60u8,
             OpcodeId::PUSH2 => 0x61u8,
             OpcodeId::PUSH3 => 0x62u8,
@@ -580,6 +605,7 @@ impl OpcodeId {
             OpcodeId::MSIZE => GasCost::QUICK,
             OpcodeId::GAS => GasCost::QUICK,
             OpcodeId::JUMPDEST => GasCost::ONE,
+            OpcodeId::PUSH0 => GasCost::QUICK,
             OpcodeId::PUSH1 => GasCost::FASTEST,
             OpcodeId::PUSH2 => GasCost::FASTEST,
             OpcodeId::PUSH3 => GasCost::FASTEST,
@@ -664,6 +690,15 @@ impl OpcodeId {
 
     /// Returns invalid stack pointers of `OpcodeId`
     pub fn invalid_stack_ptrs(&self) -> Vec<u32> {
+        let (min_stack_ptr, max_stack_ptr) = self.valid_stack_ptr_range();
+
+        (0..min_stack_ptr)
+            // Range (1025..=1024) is valid and it should be converted to an empty vector.
+            .chain(max_stack_ptr.checked_add(1).unwrap()..=1024)
+            .collect()
+    }
+    /// Returns valid stack pointer range of `OpcodeId`
+    pub fn valid_stack_ptr_range(&self) -> (u32, u32) {
         let (min_stack_ptr, max_stack_ptr): (u32, u32) = match self {
             // `min_stack_pointer` 0 means stack overflow never happen, for example, `OpcodeId::ADD`
             // can only encounter underflow error, but never encounter overflow error.
@@ -734,6 +769,7 @@ impl OpcodeId {
             OpcodeId::MSIZE => (1, 1024),
             OpcodeId::GAS => (1, 1024),
             OpcodeId::JUMPDEST => (0, 1024),
+            OpcodeId::PUSH0 => (1, 1024),
             OpcodeId::PUSH1 => (1, 1024),
             OpcodeId::PUSH2 => (1, 1024),
             OpcodeId::PUSH3 => (1, 1024),
@@ -817,11 +853,7 @@ impl OpcodeId {
         };
 
         debug_assert!(max_stack_ptr <= 1024);
-
-        (0..min_stack_ptr)
-            // Range (1025..=1024) is valid and it should be converted to an empty vector.
-            .chain(max_stack_ptr.checked_add(1).unwrap()..=1024)
-            .collect()
+        (min_stack_ptr, max_stack_ptr)
     }
 
     /// Returns `true` if the `OpcodeId` has memory access
@@ -840,8 +872,10 @@ impl OpcodeId {
 
     /// Returns PUSHn opcode from parameter n.
     pub fn push_n(n: u8) -> Result<Self, Error> {
-        if (1..=32).contains(&n) {
-            Ok(OpcodeId::from(OpcodeId::PUSH1.as_u8() + n - 1))
+        let op = OpcodeId::from(OpcodeId::PUSH0.as_u8().checked_add(n).unwrap_or_default());
+
+        if op.is_push() {
+            Ok(op)
         } else {
             Err(Error::InvalidOpConversion)
         }
@@ -850,7 +884,7 @@ impl OpcodeId {
     /// If operation has postfix returns it, otherwise None.
     pub fn postfix(&self) -> Option<u8> {
         if self.is_push() {
-            Some(self.as_u8() - OpcodeId::PUSH1.as_u8() + 1)
+            Some(self.as_u8() - OpcodeId::PUSH0.as_u8())
         } else if self.is_dup() {
             Some(self.as_u8() - OpcodeId::DUP1.as_u8() + 1)
         } else if self.is_swap() {
@@ -863,10 +897,10 @@ impl OpcodeId {
     }
 
     /// Returns number of bytes used by immediate data. This is > 0 only for
-    /// push opcodes.
+    /// `PUSH1` .. `PUSH32` opcodes.
     pub fn data_len(&self) -> usize {
-        if self.is_push() {
-            (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
+        if self.is_push_with_data() {
+            (self.as_u8() - OpcodeId::PUSH0.as_u8()) as usize
         } else {
             0
         }
@@ -936,6 +970,8 @@ impl From<u8> for OpcodeId {
             0x58u8 => OpcodeId::PC,
             0x59u8 => OpcodeId::MSIZE,
             0x5bu8 => OpcodeId::JUMPDEST,
+            #[cfg(feature = "shanghai")]
+            0x5fu8 => OpcodeId::PUSH0,
             0x60u8 => OpcodeId::PUSH1,
             0x61u8 => OpcodeId::PUSH2,
             0x62u8 => OpcodeId::PUSH3,
@@ -1023,6 +1059,7 @@ impl From<u8> for OpcodeId {
             0x45u8 => OpcodeId::GASLIMIT,
             0x46u8 => OpcodeId::CHAINID,
             0x47u8 => OpcodeId::SELFBALANCE,
+            #[cfg(not(feature = "scroll"))]
             0x48u8 => OpcodeId::BASEFEE,
             0x54u8 => OpcodeId::SLOAD,
             0x55u8 => OpcodeId::SSTORE,
@@ -1038,6 +1075,7 @@ impl From<u8> for OpcodeId {
             0xf2u8 => OpcodeId::CALLCODE,
             0xf4u8 => OpcodeId::DELEGATECALL,
             0xfau8 => OpcodeId::STATICCALL,
+            #[cfg(not(feature = "scroll"))]
             0xffu8 => OpcodeId::SELFDESTRUCT,
             b => OpcodeId::INVALID(b),
         }
@@ -1089,6 +1127,10 @@ impl FromStr for OpcodeId {
             "PC" => OpcodeId::PC,
             "MSIZE" => OpcodeId::MSIZE,
             "JUMPDEST" => OpcodeId::JUMPDEST,
+            #[cfg(feature = "shanghai")]
+            "PUSH0" => OpcodeId::PUSH0,
+            #[cfg(not(feature = "shanghai"))]
+            "PUSH0" => OpcodeId::INVALID(0x5f),
             "PUSH1" => OpcodeId::PUSH1,
             "PUSH2" => OpcodeId::PUSH2,
             "PUSH3" => OpcodeId::PUSH3,
@@ -1156,7 +1198,6 @@ impl FromStr for OpcodeId {
             "RETURN" => OpcodeId::RETURN,
             "REVERT" => OpcodeId::REVERT,
             "INVALID" => OpcodeId::INVALID(0xfe),
-            "PUSH0" => OpcodeId::INVALID(0x5f),
             "SHA3" | "KECCAK256" => OpcodeId::SHA3,
             "ADDRESS" => OpcodeId::ADDRESS,
             "BALANCE" => OpcodeId::BALANCE,
@@ -1190,15 +1231,22 @@ impl FromStr for OpcodeId {
             "CALLCODE" => OpcodeId::CALLCODE,
             "DELEGATECALL" => OpcodeId::DELEGATECALL,
             "STATICCALL" => OpcodeId::STATICCALL,
+            #[cfg(feature = "scroll")]
+            "SELFDESTRUCT" => OpcodeId::INVALID(0xffu8),
+            #[cfg(not(feature = "scroll"))]
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
+            #[cfg(not(feature = "scroll"))]
             "BASEFEE" => OpcodeId::BASEFEE,
+            #[cfg(feature = "scroll")]
+            "BASEFEE" => OpcodeId::INVALID(0x48),
+            "TLOAD" => OpcodeId::INVALID(0xb3),
+            "TSTORE" => OpcodeId::INVALID(0xb4),
             _ => {
                 // Parse an invalid opcode value as reported by geth
-                lazy_static! {
-                    static ref RE: Regex = Regex::new("opcode 0x([[:xdigit:]]{1,2}) not defined")
-                        .expect("invalid regex");
-                }
+                static RE: LazyLock<Regex> = LazyLock::new(|| {
+                    Regex::new("opcode 0x([[:xdigit:]]{1,2}) not defined").expect("invalid regex")
+                });
                 if let Some(cap) = RE.captures(s) {
                     if let Some(byte_hex) = cap.get(1).map(|m| m.as_str()) {
                         return Ok(OpcodeId::INVALID(
@@ -1224,7 +1272,7 @@ impl<'de> Deserialize<'de> for OpcodeId {
 
 impl fmt::Display for OpcodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -1234,20 +1282,27 @@ mod opcode_ids_tests {
 
     #[test]
     fn push_n() {
+        #[cfg(feature = "shanghai")]
+        assert!(matches!(OpcodeId::push_n(0), Ok(OpcodeId::PUSH0)));
+        #[cfg(not(feature = "shanghai"))]
+        assert!(matches!(
+            OpcodeId::push_n(0),
+            Err(Error::InvalidOpConversion)
+        ));
         assert!(matches!(OpcodeId::push_n(1), Ok(OpcodeId::PUSH1)));
         assert!(matches!(OpcodeId::push_n(10), Ok(OpcodeId::PUSH10)));
         assert!(matches!(
             OpcodeId::push_n(100),
             Err(Error::InvalidOpConversion)
         ));
-        assert!(matches!(
-            OpcodeId::push_n(0),
-            Err(Error::InvalidOpConversion)
-        ));
     }
 
     #[test]
     fn postfix() {
+        #[cfg(feature = "shanghai")]
+        assert_eq!(OpcodeId::PUSH0.postfix(), Some(0));
+        #[cfg(not(feature = "shanghai"))]
+        assert_eq!(OpcodeId::PUSH0.postfix(), None);
         assert_eq!(OpcodeId::PUSH1.postfix(), Some(1));
         assert_eq!(OpcodeId::PUSH10.postfix(), Some(10));
         assert_eq!(OpcodeId::LOG2.postfix(), Some(2));
@@ -1256,6 +1311,7 @@ mod opcode_ids_tests {
 
     #[test]
     fn data_len() {
+        assert_eq!(OpcodeId::PUSH0.data_len(), 0);
         assert_eq!(OpcodeId::PUSH1.data_len(), 1);
         assert_eq!(OpcodeId::PUSH10.data_len(), 10);
         assert_eq!(OpcodeId::LOG2.data_len(), 0);

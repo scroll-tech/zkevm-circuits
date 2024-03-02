@@ -1,0 +1,33 @@
+[package]
+name = "aggregator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eth-types = { path = "../eth-types" }
+zkevm-circuits = { path = "../zkevm-circuits" }
+
+
+ark-std.workspace = true
+env_logger.workspace = true
+ethers-core.workspace = true
+hex.workspace = true
+log.workspace = true
+itertools.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+
+halo2_proofs.workspace = true
+snark-verifier.workspace = true
+snark-verifier-sdk.workspace = true
+
+
+[features]
+default = [ ]
+print-trace = [ "ark-std/print-trace" ]
+# This feature is useful for unit tests where we check the SAT of pi aggregation circuit
+disable_proof_aggregation = []

@@ -7,7 +7,7 @@ use crate::{
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
+/// corresponding to the [`OpcodeId::GASPRICE`](crate::evm::OpcodeId::GASPRICE) `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct GasPrice;
 
@@ -19,7 +19,7 @@ impl Opcode for GasPrice {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         // Get gasprice result from next step
-        let value = geth_steps[1].stack.last()?;
+        let gasprice = state.tx.gas_price;
         let tx_id = state.tx_ctx.id();
 
         // CallContext read of the TxId
@@ -28,14 +28,12 @@ impl Opcode for GasPrice {
             state.call()?.call_id,
             CallContextField::TxId,
             tx_id.into(),
-        );
+        )?;
 
         // Stack write of the gasprice value
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            value,
-        )?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(gasprice, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, gasprice)?;
 
         Ok(vec![exec_step])
     }
@@ -51,7 +49,10 @@ mod gasprice_tests {
         Error,
     };
     use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, Word};
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{
+        test_ctx::{helpers::*, TestContext},
+        MOCK_WALLETS,
+    };
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -67,10 +68,10 @@ mod gasprice_tests {
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            account_0_code_wallet_0_no_code(code),
             |mut txs, accs| {
                 txs[0]
-                    .from(accs[1].address)
+                    .from(MOCK_WALLETS[0].clone())
                     .to(accs[0].address)
                     .gas_price(two_gwei);
             },

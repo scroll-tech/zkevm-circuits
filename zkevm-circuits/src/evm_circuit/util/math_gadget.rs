@@ -23,11 +23,14 @@ mod pair_select;
 mod range_check;
 mod rlp;
 #[cfg(test)]
-mod test_util;
+pub mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;
-pub(crate) use byte_size::ByteSizeGadget;
+#[allow(unused_imports)]
+pub(crate) use batched_is_zero::BatchedIsZeroGadget;
+pub(crate) use binary_number::BinaryNumberGadget;
+pub(crate) use byte_size::{BitLengthGadget, ByteOrWord, ByteSizeGadget};
 pub(crate) use cmp_words::CmpWordsGadget;
 pub(crate) use comparison::ComparisonGadget;
 pub(crate) use constant_division::ConstantDivisionGadget;

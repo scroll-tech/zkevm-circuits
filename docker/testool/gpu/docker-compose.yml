@@ -1,0 +1,13 @@
+version: '3'
+services:
+  testool:
+    image: {DOCKER_IMAGE}
+    runtime: nvidia
+    container_name: testool-gpu
+    environment:
+      - TESTOOL_IDS_LEN=${TESTOOL_IDS_LEN}
+    volumes:
+      - {PARAMS_DIR}:/opt/test_params
+      - {EXPORT_DIR}:/opt/export
+      - {REPORT_DIR}:/opt/report
+    command: ./run_testool.sh

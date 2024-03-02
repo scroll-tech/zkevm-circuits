@@ -3,7 +3,7 @@ use crate::evm_circuit::{
     table::Table,
     util::{constraint_builder::EVMConstraintBuilder, CellType},
 };
-use halo2_proofs::arithmetic::FieldExt;
+use eth_types::Field;
 use itertools::Itertools;
 
 type StepSize = Vec<(CellType, ColumnSize)>;
@@ -20,7 +20,7 @@ pub(crate) struct Instrument {
 impl Instrument {
     /// Collects `CellManager` stats from a compiled EVMCircuit in order to
     /// extract metrics.
-    pub(crate) fn on_gadget_built<F: FieldExt>(
+    pub(crate) fn on_gadget_built<F: Field>(
         &mut self,
         execution_state: ExecutionState,
         cb: &EVMConstraintBuilder<F>,
@@ -73,6 +73,9 @@ impl Instrument {
                     CellType::StoragePermutation => {
                         report.storage_perm = data_entry;
                     }
+                    CellType::StoragePermutationPhase2 => {
+                        report.storage_perm_2 = data_entry;
+                    }
                     CellType::LookupByte => {
                         report.byte_lookup = data_entry;
                     }
@@ -97,8 +100,23 @@ impl Instrument {
                     CellType::Lookup(Table::Keccak) => {
                         report.keccak_table = data_entry;
                     }
+                    CellType::Lookup(Table::Sha256) => {
+                        report.sha256_table = data_entry;
+                    }
                     CellType::Lookup(Table::Exp) => {
                         report.exp_table = data_entry;
+                    }
+                    CellType::Lookup(Table::Sig) => {
+                        report.sig_table = data_entry;
+                    }
+                    CellType::Lookup(Table::ModExp) => {
+                        report.modexp_table = data_entry;
+                    }
+                    CellType::Lookup(Table::Ecc) => {
+                        report.ecc_table = data_entry;
+                    }
+                    CellType::Lookup(Table::PowOfRand) => {
+                        report.pow_of_rand_table = data_entry;
                     }
                 }
             }
@@ -116,6 +134,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) storage_1: StateReportRow,
     pub(crate) storage_2: StateReportRow,
     pub(crate) storage_perm: StateReportRow,
+    pub(crate) storage_perm_2: StateReportRow,
     pub(crate) byte_lookup: StateReportRow,
     pub(crate) fixed_table: StateReportRow,
     pub(crate) tx_table: StateReportRow,
@@ -124,7 +143,12 @@ pub(crate) struct ExecStateReport {
     pub(crate) block_table: StateReportRow,
     pub(crate) copy_table: StateReportRow,
     pub(crate) keccak_table: StateReportRow,
+    pub(crate) sha256_table: StateReportRow,
     pub(crate) exp_table: StateReportRow,
+    pub(crate) sig_table: StateReportRow,
+    pub(crate) modexp_table: StateReportRow,
+    pub(crate) ecc_table: StateReportRow,
+    pub(crate) pow_of_rand_table: StateReportRow,
 }
 
 impl From<ExecutionState> for ExecStateReport {

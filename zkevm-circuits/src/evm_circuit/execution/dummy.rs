@@ -1,14 +1,12 @@
 use std::marker::PhantomData;
 
-use crate::{
-    evm_circuit::{
-        execution::ExecutionGadget,
-        step::ExecutionState,
-        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word},
-        witness::{Block, Call, ExecStep, Transaction},
-    },
-    util::Expr,
+use crate::evm_circuit::{
+    execution::ExecutionGadget,
+    step::ExecutionState,
+    util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word},
+    witness::{Block, Call, ExecStep, Transaction},
 };
+
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
@@ -29,11 +27,11 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let pops: [Word<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_rlc());
         let pushes: [Word<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_rlc());
-        for pop in pops.iter() {
-            cb.stack_pop(pop.expr());
+        for _pop in pops.iter() {
+            // cb.stack_pop(pop.expr());
         }
-        for push in pushes.iter() {
-            cb.stack_push(push.expr());
+        for _push in pushes.iter() {
+            // cb.stack_push(push.expr());
         }
         Self {
             pops,
@@ -51,12 +49,16 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let full_dummy = true;
+        if full_dummy {
+            return Ok(());
+        }
         // this happens if some opcodes are in the
         // process of being implemented but are still
         // using DummyGadget.
         // See `bus-mapping/src/evm/opcodes.rs`
         if step.rw_indices.len() != N_POP + N_PUSH {
-            log::warn!("DummyGadget: wrong number of rw indices for {:?}", step);
+            // log::warn!("DummyGadget: wrong number of rw indices for {:?}",
         }
 
         for i in 0..N_POP {

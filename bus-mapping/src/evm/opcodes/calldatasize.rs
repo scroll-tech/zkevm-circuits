@@ -4,7 +4,7 @@ use crate::{
     Error,
 };
 
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, Word};
 
 use super::Opcode;
 
@@ -18,20 +18,16 @@ impl Opcode for Calldatasize {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        let value = geth_steps[1].stack.last()?;
+        let call_data_length = Word::from(state.call()?.call_data_length);
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::CallDataLength,
-            value,
-        );
-
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled().map(|a| a - 1),
-            value,
+            call_data_length,
         )?;
-
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(call_data_length, geth_steps[1].stack.last()?);
+        state.stack_push(&mut exec_step, call_data_length)?;
         Ok(vec![exec_step])
     }
 }

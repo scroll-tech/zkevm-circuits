@@ -279,7 +279,7 @@ mod test {
         let pos_extend = 0u8;
         let neg_extend = 0xFFu8;
 
-        for (value, byte_extend) in vec![(pos_value, pos_extend), (neg_value, neg_extend)].iter() {
+        for (value, byte_extend) in [(pos_value, pos_extend), (neg_value, neg_extend)].iter() {
             for idx in 0..33 {
                 test_ok(
                     (idx as u64).into(),

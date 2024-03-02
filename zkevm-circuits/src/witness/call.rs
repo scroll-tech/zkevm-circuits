@@ -23,6 +23,9 @@ pub struct Call {
     pub caller_address: Address,
     /// The callee address
     pub callee_address: Address,
+    /// The code address. This comes handy to differentiate between different kinds of call, for
+    /// instance CALL, DELEGATECALL and so on.
+    pub code_address: Option<Address>,
     /// The call data offset in the memory
     pub call_data_offset: u64,
     /// The length of call data
@@ -31,6 +34,12 @@ pub struct Call {
     pub return_data_offset: u64,
     /// The length of return data
     pub return_data_length: u64,
+    /// Last Callee's id.
+    pub last_callee_id: usize,
+    /// last callee's return data offset
+    pub last_callee_return_data_offset: u64,
+    /// last callee's return data length
+    pub last_callee_return_data_length: u64,
     /// The ether amount of the transaction
     pub value: Word,
     /// Indicate if this call halts successfully.

@@ -1,0 +1,14 @@
+diff --git a/geth-utils/vendor/github.com/ethereum/go-ethereum/core/vm/interpreter.go b/geth-utils/vendor/github.com/ethereum/go-ethereum/core/vm/interpreter.go
+index 4f1ebc43..42e7834a 100644
+--- a/geth-utils/vendor/github.com/ethereum/go-ethereum/core/vm/interpreter.go
++++ b/geth-utils/vendor/github.com/ethereum/go-ethereum/core/vm/interpreter.go
+@@ -220,6 +220,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
+ 			var dynamicCost uint64
+ 			dynamicCost, err = operation.dynamicGas(in.evm, contract, stack, mem, memorySize)
+ 			cost += dynamicCost // for tracing
++			if err == ErrGasUintOverflow {
++				return nil, err
++			}
+ 			if err != nil || !contract.UseGas(dynamicCost) {
+ 				return nil, ErrOutOfGas
+ 			}

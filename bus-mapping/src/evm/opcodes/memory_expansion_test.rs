@@ -15,14 +15,13 @@ fn might_neg_index(index: isize, len: usize) -> usize {
     }
 }
 
-fn assert_expanded(_traces: &[GethExecStep], _before: isize, _after: isize) {
-    // FIXME: memory is removed
-    // let traces_len = traces.len();
-    // let before = might_neg_index(before, traces_len);
-    // let after = might_neg_index(after, traces_len);
-    // let size_before = traces[before].memory.borrow().len();
-    // let size_after = traces[after].memory.borrow().len();
-    // assert_ne!(size_before, size_after);
+fn assert_expanded(traces: &[GethExecStep], before: isize, after: isize) {
+    let traces_len = traces.len();
+    let before = might_neg_index(before, traces_len);
+    let after = might_neg_index(after, traces_len);
+    let size_before = traces[before].memory.0.len();
+    let size_after = traces[after].memory.0.len();
+    assert_ne!(size_before, size_after);
 }
 
 fn trace_and_assert<FN>(code: Bytecode, before: isize, after: isize, assert_fn: FN)

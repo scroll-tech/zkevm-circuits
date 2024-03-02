@@ -18,9 +18,10 @@ impl Opcode for Balance {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Read account address from stack.
-        let address_word = geth_step.stack.last()?;
+        let address_word = state.stack_pop(&mut exec_step)?;
         let address = address_word.to_address();
-        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(address_word, geth_step.stack.last()?);
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent
         // from call context.
@@ -29,19 +30,19 @@ impl Opcode for Balance {
             state.call()?.call_id,
             CallContextField::TxId,
             U256::from(state.tx_ctx.id()),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::RwCounterEndOfReversion,
             U256::from(state.call()?.rw_counter_end_of_reversion as u64),
-        );
+        )?;
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
             CallContextField::IsPersistent,
             U256::from(state.call()?.is_persistent as u64),
-        );
+        )?;
 
         // Update transaction access list for account address.
         let is_warm = state.sdb.check_account_in_access_list(&address);
@@ -69,17 +70,15 @@ impl Opcode for Balance {
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-        );
+        )?;
         if exists {
-            state.account_read(&mut exec_step, address, AccountField::Balance, balance);
+            state.account_read(&mut exec_step, address, AccountField::Balance, balance)?;
         }
 
         // Write the BALANCE result to stack.
-        state.stack_write(
-            &mut exec_step,
-            geth_steps[1].stack.nth_last_filled(0),
-            geth_steps[1].stack.nth_last(0)?,
-        )?;
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(geth_steps[1].stack.last()?, balance);
+        state.stack_push(&mut exec_step, balance)?;
 
         Ok(vec![exec_step])
     }
@@ -105,20 +104,24 @@ mod balance_tests {
 
     #[test]
     fn test_balance_of_non_existing_address() {
-        test_ok(false, false);
+        test_ok(false, false, None);
     }
 
     #[test]
     fn test_balance_of_cold_address() {
-        test_ok(true, false);
+        test_ok(true, false, None);
+        test_ok(true, false, Some(vec![1, 2, 3]))
     }
 
     #[test]
     fn test_balance_of_warm_address() {
-        test_ok(true, true);
+        test_ok(true, true, None);
+        test_ok(true, true, Some(vec![2, 3, 4]))
     }
 
-    fn test_ok(exists: bool, is_warm: bool) {
+    // account_code = None should be the same as exists = false, so we can remove
+    // it.
+    fn test_ok(exists: bool, is_warm: bool, account_code: Option<Vec<u8>>) {
         let address = address!("0xaabbccddee000000000000000000000000000000");
 
         // Pop balance first for warm account.
@@ -149,7 +152,11 @@ mod balance_tests {
                     .balance(Word::from(1u64 << 20))
                     .code(code.clone());
                 if exists {
-                    accs[1].address(address).balance(balance);
+                    if let Some(code) = account_code.clone() {
+                        accs[1].address(address).balance(balance).code(code);
+                    } else {
+                        accs[1].address(address).balance(balance);
+                    }
                 } else {
                     accs[1]
                         .address(address!("0x0000000000000000000000000000000000000020"))
@@ -246,7 +253,13 @@ mod balance_tests {
             }
         );
 
-        let code_hash = CodeDB::empty_code_hash().to_word();
+        let code_hash = if let Some(code) = account_code {
+            CodeDB::hash(&code).to_word()
+        } else if exists {
+            CodeDB::empty_code_hash().to_word()
+        } else {
+            U256::zero()
+        };
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(

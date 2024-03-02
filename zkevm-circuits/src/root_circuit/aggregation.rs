@@ -585,7 +585,7 @@ pub mod test {
     pub struct StandardPlonk<F>(F);
 
     impl<F: FieldExt> StandardPlonk<F> {
-        /// Create a `StandardPlonk` with random instnace.
+        /// Create a `StandardPlonk` with random instance.
         pub fn rand<R: RngCore>(mut rng: R) -> Self {
             Self(F::from(rng.next_u32() as u64))
         }
@@ -682,6 +682,7 @@ pub mod test {
         .collect()
     }
 
+    #[ignore = "not supported with QUERY_INSTANCE enabled in halo2_proofs"]
     #[test]
     fn test_standard_plonk_aggregation() {
         let params = ParamsKZG::<Bn256>::setup(8, OsRng);
@@ -700,6 +701,7 @@ pub mod test {
         );
     }
 
+    #[ignore = "not supported with QUERY_INSTANCE enabled in halo2_proofs"]
     #[test]
     fn test_standard_plonk_aggregation_unmatched_instance() {
         let params = ParamsKZG::<Bn256>::setup(8, OsRng);

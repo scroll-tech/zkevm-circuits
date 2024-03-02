@@ -4,10 +4,10 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 128;
+pub(crate) const STEP_WIDTH: usize = 144;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 21;
 /// The height of the state of a step, used by gates that connect two
@@ -16,7 +16,7 @@ pub const MAX_STEP_HEIGHT: usize = 21;
 pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 
 /// Number of Advice Phase2 columns in the EVM circuit
-pub(crate) const N_PHASE2_COLUMNS: usize = 4;
+pub(crate) const N_PHASE2_COLUMNS: usize = 7;
 
 /// Number of Advice Phase1 columns in the EVM circuit
 pub(crate) const N_PHASE1_COLUMNS: usize =
@@ -24,8 +24,10 @@ pub(crate) const N_PHASE1_COLUMNS: usize =
 
 // Number of copy columns
 pub(crate) const N_COPY_COLUMNS: usize = 2;
+// Number of copy columns for phase2
+pub(crate) const N_PHASE2_COPY_COLUMNS: usize = 1;
 
-pub(crate) const N_BYTE_LOOKUPS: usize = 24;
+pub(crate) const N_BYTE_LOOKUPS: usize = 39;
 
 /// Amount of lookup columns in the EVM circuit dedicated to lookups.
 pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
@@ -35,7 +37,12 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
-    + EXP_TABLE_LOOKUPS;
+    + SHA256_TABLE_LOOKUPS
+    + EXP_TABLE_LOOKUPS
+    + SIG_TABLE_LOOKUPS
+    + MODEXP_TABLE_LOOKUPS
+    + ECC_TABLE_LOOKUPS
+    + POW_OF_RAND_TABLE_LOOKUPS;
 
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -46,11 +53,16 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Block, BLOCK_TABLE_LOOKUPS),
     (Table::Copy, COPY_TABLE_LOOKUPS),
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
+    (Table::Sha256, SHA256_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
+    (Table::Sig, SIG_TABLE_LOOKUPS),
+    (Table::ModExp, MODEXP_TABLE_LOOKUPS),
+    (Table::Ecc, ECC_TABLE_LOOKUPS),
+    (Table::PowOfRand, POW_OF_RAND_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
-pub const FIXED_TABLE_LOOKUPS: usize = 8;
+pub const FIXED_TABLE_LOOKUPS: usize = 10;
 
 /// Tx Table lookups done in EVMCircuit
 pub const TX_TABLE_LOOKUPS: usize = 4;
@@ -59,7 +71,7 @@ pub const TX_TABLE_LOOKUPS: usize = 4;
 pub const RW_TABLE_LOOKUPS: usize = 8;
 
 /// Bytecode Table lookups done in EVMCircuit
-pub const BYTECODE_TABLE_LOOKUPS: usize = 4;
+pub const BYTECODE_TABLE_LOOKUPS: usize = 1;
 
 /// Block Table lookups done in EVMCircuit
 pub const BLOCK_TABLE_LOOKUPS: usize = 1;
@@ -70,8 +82,22 @@ pub const COPY_TABLE_LOOKUPS: usize = 1;
 /// Keccak Table lookups done in EVMCircuit
 pub const KECCAK_TABLE_LOOKUPS: usize = 1;
 
+/// Keccak Table lookups done in EVMCircuit
+pub const SHA256_TABLE_LOOKUPS: usize = 1;
+
 /// Exp Table lookups done in EVMCircuit
 pub const EXP_TABLE_LOOKUPS: usize = 1;
+
+/// Sig Table lookups done in EVMCircuit
+pub const SIG_TABLE_LOOKUPS: usize = 1;
+
+/// ModExp Table lookups done in EVMCircuit
+pub const MODEXP_TABLE_LOOKUPS: usize = 1;
+/// Ecc Table lookups done in EVMCircuit
+pub const ECC_TABLE_LOOKUPS: usize = 1;
+
+/// Power of Randomness lookups done from EVM Circuit.
+pub const POW_OF_RAND_TABLE_LOOKUPS: usize = 1;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.
@@ -80,8 +106,13 @@ pub(crate) const MAX_N_BYTES_INTEGER: usize = 31;
 // Number of bytes an EVM word has.
 pub(crate) const N_BYTES_WORD: usize = 32;
 
+pub(crate) const N_BYTES_EC_PAIR: usize = 192;
+
 // Number of bytes an u64 has.
 pub(crate) const N_BYTES_U64: usize = 8;
+
+// Number of bits a u8 has.
+pub(crate) const N_BITS_U8: usize = 8;
 
 pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 
@@ -90,6 +121,9 @@ pub(crate) const N_BYTES_ACCOUNT_ADDRESS: usize = 20;
 // an out-of-gas error.
 pub(crate) const N_BYTES_MEMORY_ADDRESS: usize = 5;
 pub(crate) const N_BYTES_MEMORY_WORD_SIZE: usize = 4;
+
+/// The size of a chunk of memory that is accessed at once in RW lookups.
+pub(crate) const N_BYTES_MEMORY_CHUNK: usize = N_BYTES_WORD;
 
 pub(crate) const STACK_CAPACITY: usize = 1024;
 
@@ -106,10 +140,10 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
 
-lazy_static::lazy_static! {
-    // Step slot height in evm circuit
-    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
-}
+// Step slot height in evm circuit
+pub(crate) static EXECUTION_STATE_HEIGHT_MAP: LazyLock<HashMap<ExecutionState, usize>> =
+    LazyLock::new(get_step_height_map);
+
 fn get_step_height_map() -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
     let circuit = EvmCircuit::configure(&mut meta);

@@ -4,7 +4,9 @@ use crate::{
         param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, SstoreGasGadget},
+            common_gadget::{
+                cal_sstore_gas_cost_for_assignment, SameContextGadget, SstoreGasGadget,
+            },
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::Delta,
@@ -81,6 +83,12 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let is_warm = cb.query_bool();
+        cb.account_storage_access_list_read(
+            tx_id.expr(),
+            callee_address.expr(),
+            phase2_key.expr(),
+            is_warm.expr(),
+        );
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.expr(),
@@ -126,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(10.expr()),
+            rw_counter: Delta(11.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr()),
             reversible_write_counter: Delta(3.expr()),
@@ -201,7 +209,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[9]].tx_refund_value_pair();
+        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[10]].tx_refund_value_pair();
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 
@@ -214,6 +222,12 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         self.gas_cost
             .assign(region, offset, value, value_prev, original_value, is_warm)?;
+        debug_assert_eq!(
+            cal_sstore_gas_cost_for_assignment(value, value_prev, original_value, is_warm),
+            step.gas_cost,
+            "invalid gas cost in sstore value {:?} value_prev {:?} original_value {:?} is_warm {:?} contract addr {:?} storage key {:?}",
+            value, value_prev, original_value, is_warm, call.callee_address, key
+        );
 
         self.tx_refund.assign(
             region,
@@ -269,21 +283,21 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         let prev_eq_value = prev_eq_value_gadget.expr();
         let original_eq_prev = original_eq_prev_gadget.expr();
 
-        // (value_prev != value) && (original_value != value) && (value ==
-        // Word::from(0))
+        // (value_prev != value) && (original_value != 0) && (value ==
+        // 0)
         let delete_slot =
             not::expr(prev_eq_value.clone()) * not::expr(original_is_zero.clone()) * value_is_zero;
         // (value_prev != value) && (original_value == value) && (original_value !=
-        // Word::from(0))
+        // 0)
         let reset_existing = not::expr(prev_eq_value.clone())
             * original_eq_value.clone()
             * not::expr(original_is_zero.clone());
         // (value_prev != value) && (original_value == value) && (original_value ==
-        // Word::from(0))
+        // 0)
         let reset_inexistent =
             not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
         // (value_prev != value) && (original_value != value_prev) && (value_prev ==
-        // Word::from(0))
+        // 0)
         let recreate_slot =
             not::expr(prev_eq_value) * not::expr(original_eq_prev) * (value_prev_is_zero);
 

@@ -1,13 +1,20 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
-use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
+use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace};
 use log::{error, info};
 use prettytable::Table;
 use std::process::{Command, Stdio};
 
+#[cfg(any(feature = "enable-stack", feature = "enable-storage"))]
+use eth_types::U256;
+
+/// Chain ID of ETH mainnet
+pub const ETH_CHAIN_ID: u64 = 1;
+
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
+    Shanghai = 15,
     Merge = 14,
     GrayGlacier = 13,
     ArrowGlacier = 12,
@@ -24,6 +31,9 @@ pub enum MainnetFork {
     Frontier = 1,
 }
 
+#[cfg(feature = "shanghai")]
+pub const TEST_FORK: MainnetFork = MainnetFork::Shanghai;
+#[cfg(not(feature = "shanghai"))]
 pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
 
 impl FromStr for MainnetFork {
@@ -31,6 +41,7 @@ impl FromStr for MainnetFork {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "Shanghai" => Self::Shanghai,
             "Merge" => Self::Merge,
             "Gray Glacier" => Self::GrayGlacier,
             "Arrow Glacier" => Self::ArrowGlacier,
@@ -39,13 +50,15 @@ impl FromStr for MainnetFork {
             "Berlin" => Self::Berlin,
             "Muir Glacier" => Self::MuirGlacier,
             "Istanbul" => Self::Istanbul,
+            "ConstantinopleFix" => Self::Constantinople,
             "Constantinople" => Self::Constantinople,
             "Byzantium" => Self::Byzantium,
             "Spurious Dragon" => Self::SpuriousDragon,
             "TangeringWhistle" => Self::TangerineWhistle,
+            "EIP158" => Self::TangerineWhistle,
             "Homestead" => Self::Homestead,
             "Frontier" => Self::Frontier,
-            _ => bail!(format!("Unknown network '{}'", s)),
+            _ => bail!(format!("Unknown network '{s}'")),
         })
     }
 }
@@ -61,6 +74,10 @@ impl MainnetFork {
                     if crate::utils::TEST_FORK >= crate::utils::MainnetFork::from_str(network)? {
                         in_network = true;
                     }
+                } else if let Some(network) = network.strip_prefix('<') {
+                    if crate::utils::TEST_FORK < crate::utils::MainnetFork::from_str(network)? {
+                        in_network = true;
+                    }
                 } else if crate::utils::TEST_FORK == crate::utils::MainnetFork::from_str(network)? {
                     in_network = true;
                 }
@@ -73,13 +90,15 @@ impl MainnetFork {
 }
 
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
+    #[cfg(any(feature = "enable-stack", feature = "enable-storage"))]
     fn u256_to_str(u: &U256) -> String {
         if *u > U256::from_str("0x1000000000000000").unwrap() {
-            format!("0x{:x}", u)
+            format!("0x{u:x}")
         } else {
             u.to_string()
         }
     }
+    #[cfg(feature = "enable-storage")]
     fn kv(storage: std::collections::HashMap<U256, U256>) -> Vec<String> {
         let mut keys: Vec<_> = storage.keys().collect();
         keys.sort();
@@ -104,7 +123,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             let item = if count == 1 {
                 v.to_string()
             } else {
-                format!("{}[{}]", v, count)
+                format!("{v}[{count}]")
             };
 
             if current_len > len {
@@ -124,16 +143,31 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
         "PC", "OP", "GAS", "GAS_COST", "DEPTH", "ERR", "STACK", "MEMORY", "STORAGE"
     ]);
     for step in trace.struct_logs {
+        #[cfg(feature = "enable-stack")]
+        let stack = step.stack.0.iter().map(u256_to_str).collect();
+        #[cfg(not(feature = "enable-stack"))]
+        let stack = vec![];
+
+        #[cfg(feature = "enable-memory")]
+        let memory = step.memory.0.iter().map(ToString::to_string).collect();
+        #[cfg(not(feature = "enable-memory"))]
+        let memory = vec![];
+
+        #[cfg(feature = "enable-storage")]
+        let storage = kv(step.storage.0);
+        #[cfg(not(feature = "enable-storage"))]
+        let storage = vec![];
+
         table.add_row(row![
             format!("{}", step.pc.0),
             format!("{:?}", step.op),
             format!("{}", step.gas.0),
             format!("{}", step.gas_cost.0),
             format!("{}", step.depth),
-            step.error.unwrap_or_default(),
-            split(step.stack.0.iter().map(u256_to_str).collect(), 30),
-            split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
-            split(kv(step.storage.0), 30)
+            step.error.map(|e| e.error()).unwrap_or(""),
+            split(stack, 30),
+            split(memory, 30),
+            split(storage, 30)
         ]);
     }
 
@@ -172,18 +206,13 @@ pub fn current_submodule_git_commit() -> Result<String> {
 
 pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {
     let bytecode = if let Ok(bytes) = hex::decode(code) {
-        match Bytecode::try_from(bytes.clone()) {
-            Ok(bytecode) => {
-                for op in bytecode.iter() {
-                    info!("{}", op.to_string());
-                }
-                bytecode
-            }
-            Err(err) => {
-                error!("Failed to parse bytecode {:?}", err);
-                Bytecode::from_raw_unchecked(bytes)
+        let bytecode = Bytecode::from(bytes.clone());
+        if log::log_enabled!(log::Level::Info) {
+            for op in bytecode.iter() {
+                info!("{}", op.to_string());
             }
         }
+        bytecode
     } else {
         let mut bytecode = Bytecode::default();
         for op in code.split(',') {
@@ -203,4 +232,11 @@ mod test {
         assert!(MainnetFork::in_network_range(&[String::from(">=Istanbul")])
             .expect("can parse network"));
     }
+}
+
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }

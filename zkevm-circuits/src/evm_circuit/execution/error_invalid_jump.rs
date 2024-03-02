@@ -4,30 +4,27 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            and,
-            common_gadget::CommonErrorGadget,
+            common_gadget::{CommonErrorGadget, WordByteCapGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            select, sum, CachedRegion, Cell, Word,
+            math_gadget::{IsEqualGadget, IsZeroGadget},
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, U256};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidJumpGadget<F> {
     opcode: Cell<F>,
-    dest_word: Word<F>,
+    dest: WordByteCapGadget<F, N_BYTES_PROGRAM_COUNTER>,
     code_len: Cell<F>,
     value: Cell<F>,
     is_code: Cell<F>,
-    dest_not_overflow: IsZeroGadget<F>,
-    dest_lt_code_len: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
+    push_rlc: Cell<F>,
     is_jump_dest: IsEqualGadget<F>,
     is_jumpi: IsEqualGadget<F>,
     phase2_condition: Cell<F>,
@@ -41,18 +38,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let dest_word = cb.query_word_rlc();
-        let dest_not_overflow =
-            IsZeroGadget::construct(cb, sum::expr(&dest_word.cells[N_BYTES_PROGRAM_COUNTER..]));
-        let dest = select::expr(
-            dest_not_overflow.expr(),
-            from_bytes::expr(&dest_word.cells[..N_BYTES_PROGRAM_COUNTER]),
-            u64::MAX.expr(),
-        );
+        let code_len = cb.query_cell();
+        let dest = WordByteCapGadget::construct(cb, code_len.expr());
 
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
+        let push_rlc = cb.query_cell_phase2();
         let phase2_condition = cb.query_cell_phase2();
 
         cb.require_in_set(
@@ -71,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
 
         // Pop the value from the stack
-        cb.stack_pop(dest_word.expr());
+        cb.stack_pop(dest.original_word());
 
         cb.condition(is_jumpi.expr(), |cb| {
             cb.stack_pop(phase2_condition.expr());
@@ -80,39 +72,33 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         });
 
         // Look up bytecode length
-        let code_len = cb.query_cell();
         cb.bytecode_length(cb.curr.state.code_hash.expr(), code_len.expr());
 
-        let dest_lt_code_len = LtGadget::construct(cb, dest.expr(), code_len.expr());
-
         // If destination is in valid range, lookup for the value.
-        cb.condition(
-            and::expr([dest_not_overflow.expr(), dest_lt_code_len.expr()]),
-            |cb| {
-                cb.bytecode_lookup(
-                    cb.curr.state.code_hash.expr(),
-                    dest.expr(),
-                    is_code.expr(),
-                    value.expr(),
-                );
-                cb.require_zero(
-                    "is_code is false or not JUMPDEST",
-                    is_code.expr() * is_jump_dest.expr(),
-                );
-            },
-        );
+        cb.condition(dest.lt_cap(), |cb| {
+            cb.bytecode_lookup(
+                cb.curr.state.code_hash.expr(),
+                dest.valid_value(),
+                is_code.expr(),
+                value.expr(),
+                push_rlc.expr(),
+            );
+            cb.require_zero(
+                "is_code is false or not JUMPDEST",
+                is_code.expr() * is_jump_dest.expr(),
+            );
+        });
 
         let common_error_gadget =
             CommonErrorGadget::construct(cb, opcode.expr(), 3.expr() + is_jumpi.expr());
 
         Self {
             opcode,
-            dest_word,
+            dest,
             code_len,
             value,
             is_code,
-            dest_not_overflow,
-            dest_lt_code_len,
+            push_rlc,
             is_jump_dest,
             is_jumpi,
             phase2_condition,
@@ -135,10 +121,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let dest = block.rws[step.rw_indices[0]].stack_value();
-        self.dest_word
-            .assign(region, offset, Some(dest.to_le_bytes()))?;
-
         let condition = if is_jumpi {
             block.rws[step.rw_indices[1]].stack_value()
         } else {
@@ -154,38 +136,28 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         self.code_len
             .assign(region, offset, Value::known(F::from(code_len)))?;
 
-        let dest_overflow_hi = dest.to_le_bytes()[N_BYTES_PROGRAM_COUNTER..]
-            .iter()
-            .fold(0, |acc, val| acc + u64::from(*val));
-        self.dest_not_overflow
-            .assign(region, offset, F::from(dest_overflow_hi))?;
-
-        let dest = if dest_overflow_hi == 0 {
-            dest.low_u64()
-        } else {
-            u64::MAX
-        };
+        let dest = block.rws[step.rw_indices[0]].stack_value();
+        self.dest.assign(region, offset, dest, F::from(code_len))?;
 
         // set default value in case can not find value, is_code from bytecode table
-        let mut code_pair = [0u8, 0u8];
+        let dest = u64::try_from(dest).unwrap_or(code_len);
+        let mut code_pair = (0u8, false, Value::known(F::zero()));
         if dest < code_len {
             // get real value from bytecode table
-            code_pair = code.get(dest as usize);
+            code_pair = code.get_byte_row(dest as usize, region.challenges());
         }
 
         self.value
-            .assign(region, offset, Value::known(F::from(code_pair[0] as u64)))?;
+            .assign(region, offset, Value::known(F::from(code_pair.0 as u64)))?;
         self.is_code
-            .assign(region, offset, Value::known(F::from(code_pair[1] as u64)))?;
+            .assign(region, offset, Value::known(F::from(code_pair.1)))?;
+        self.push_rlc.assign(region, offset, code_pair.2)?;
         self.is_jump_dest.assign(
             region,
             offset,
-            F::from(code_pair[0] as u64),
+            F::from(code_pair.0 as u64),
             F::from(OpcodeId::JUMPDEST.as_u64()),
         )?;
-
-        self.dest_lt_code_len
-            .assign(region, offset, F::from(dest), F::from(code_len))?;
 
         self.is_jumpi.assign(
             region,
