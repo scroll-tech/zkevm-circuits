@@ -314,7 +314,7 @@ pub(crate) enum Lookup<F> {
         input_len: Expression<F>,
         /// Output (hash) until this state. This is the RLC representation of
         /// the final output keccak256 hash of the input.
-        output_rlc: Expression<F>,
+        // output_rlc: Expression<F>,
         output: Word<Expression<F>>,
     },
     /// Lookup to sha256 table.
@@ -494,14 +494,12 @@ impl<F: Field> Lookup<F> {
             Self::KeccakTable {
                 input_rlc,
                 input_len,
-                output_rlc,
                 output,
             } => vec![
                 1.expr(), // q_enable
                 1.expr(), // is_final
                 input_rlc.clone(),
                 input_len.clone(),
-                output_rlc.clone(),
                 output.lo(),
                 output.hi(),
             ],

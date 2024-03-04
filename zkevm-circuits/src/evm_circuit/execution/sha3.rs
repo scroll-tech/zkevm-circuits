@@ -78,11 +78,11 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             cb.require_zero("rlc_acc == 0 for size = 0", rlc_acc.expr());
         });
 
-        let output_rlc = cb.word_rlc(sha3_digest.limbs.clone().map(|l| l.expr()));
+        // let output_rlc = cb.word_rlc(sha3_digest.limbs.clone().map(|l| l.expr()));
         cb.keccak_table_lookup(
             rlc_acc.expr(),
             memory_address.length(),
-            output_rlc,
+            //output_rlc,
             sha3_digest.to_word(),
         );
 

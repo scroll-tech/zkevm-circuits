@@ -79,6 +79,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let is_valid = and::expr([block_number.lt_cap(), diff_lt.expr()]);
         //let block_hash = cb.query_word_unchecked(); // use in stage2 after block table --> word
         let block_hash = cb.query_word32();
+        #[cfg(not(feature = "scroll"))]
         let block_hash_rlc = cb.word_rlc(block_hash.limbs.clone().map(|ref l| l.expr()));
 
         cb.condition(is_valid.expr(), |cb| {
@@ -115,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
                         .unwrap(),
                 ),
                 (2 * N_BYTES_U64).expr(),
-                block_hash_rlc,
+                //block_hash_rlc,
                 block_hash.to_word(),
             );
         });

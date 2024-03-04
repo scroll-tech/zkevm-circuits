@@ -35,10 +35,8 @@ use crate::{
     },
     table::{KeccakTable, LookupTable},
     util::{
-        // word::{self, WordExpr},
-        Challenges,
-        SubCircuit,
-        SubCircuitConfig,
+        word::{self, WordExpr},
+        Challenges, SubCircuit, SubCircuitConfig,
     },
     witness,
 };
@@ -112,8 +110,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let is_final = keccak_table.is_final;
         let length = keccak_table.input_len;
         let data_rlc = keccak_table.input_rlc;
-        let hash_rlc = keccak_table.output_rlc;
-        //let hash_word = keccak_table.output;
+        // let hash_rlc = keccak_table.output_rlc;
+        let hash_word = keccak_table.output;
 
         let normalize_3 = array_init::array_init(|_| meta.lookup_table_column());
         let normalize_4 = array_init::array_init(|_| meta.lookup_table_column());
@@ -580,18 +578,18 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 });
             }
             let hash_bytes_le = hash_bytes.into_iter().rev().collect::<Vec<_>>();
-            let rlc = compose_rlc::expr(&hash_bytes_le, challenges.evm_word());
+            // let rlc = compose_rlc::expr(&hash_bytes_le, challenges.evm_word());
             cb.condition(start_new_hash, |cb| {
-                // cb.require_equal_word(
-                //     "hash output check",
-                //     word::Word32::new(hash_bytes_le.try_into().expect("32 limbs")).to_word(),
-                //     hash_word.map(|col| meta.query_advice(col, Rotation::cur())),
-                // );
-                cb.require_equal(
-                    "hash rlc check",
-                    rlc,
-                    meta.query_advice(hash_rlc, Rotation::cur()),
+                cb.require_equal_word(
+                    "hash output check",
+                    word::Word32::new(hash_bytes_le.try_into().expect("32 limbs")).to_word(),
+                    hash_word.map(|col| meta.query_advice(col, Rotation::cur())),
                 );
+                // cb.require_equal(
+                //     "hash rlc check",
+                //     rlc,
+                //     meta.query_advice(hash_rlc, Rotation::cur()),
+                // );
             });
             cb.gate(meta.query_fixed(q_round_last, Rotation::cur()))
         });
@@ -949,7 +947,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
                 Value::known(F::from(row.is_final as u64)),
                 row.data_rlc,
                 Value::known(F::from(row.length as u64)),
-                row.hash_rlc,
+                //row.hash_rlc,
                 row.hash.lo(),
                 row.hash.hi(),
             ],

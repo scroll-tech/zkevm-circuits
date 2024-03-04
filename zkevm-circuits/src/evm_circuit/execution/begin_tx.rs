@@ -443,12 +443,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 1. Handle contract creation transaction.
         let (init_code_rlc, keccak_code_hash) = cb.condition(tx_is_create.expr(), |cb| {
-            let caller_nonce_hash_bytes_rlc =
-                cb.word_rlc(caller_nonce_hash_bytes.limbs.clone().map(|l| l.expr()));
+            // let caller_nonce_hash_bytes_rlc =
+            //     cb.word_rlc(caller_nonce_hash_bytes.limbs.clone().map(|l| l.expr()));
             cb.keccak_table_lookup(
                 create.input_rlc(cb),
                 create.input_length(),
-                caller_nonce_hash_bytes_rlc,
+                //caller_nonce_hash_bytes_rlc,
                 caller_nonce_hash_bytes.to_word(),
             );
 
@@ -456,13 +456,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             let keccak_code_hash = cb.query_word32();
 
             let init_code_rlc = cb.query_cell_phase2();
-            let keccak_code_hash_rlc =
-                cb.word_rlc(keccak_code_hash.limbs.clone().map(|l| l.expr()));
+
             // keccak table lookup for init code.
             cb.keccak_table_lookup(
                 init_code_rlc.expr(),
                 tx_call_data_length.expr(),
-                keccak_code_hash_rlc,
+                // keccak_code_hash_rlc,
                 keccak_code_hash.to_word(),
             );
             // copy table lookup for init code.

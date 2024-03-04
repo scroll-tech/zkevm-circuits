@@ -398,26 +398,25 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             and::expr([is_precheck_ok.clone(), not_address_collision.expr()]),
             |cb| {
                 cb.condition(init_code.has_length(), |cb| {
-                    let keccak_code_hash_rlc =
-                        cb.word_rlc(keccak_code_hash.limbs.clone().map(|l| l.expr()));
+                    // let keccak_code_hash_rlc =
+                    //     cb.word_rlc(keccak_code_hash.limbs.clone().map(|l| l.expr()));
                     cb.keccak_table_lookup(
                         //create.input_rlc(cb),
                         init_code_rlc.expr(),
                         //create.input_length(),
                         init_code.length(),
-                        keccak_code_hash_rlc,
+                        // keccak_code_hash_rlc,
                         keccak_code_hash.to_word(),
                     );
                 });
 
                 // keccak table lookup to verify contract address.
-                let kecck_output_exprs = keccak_output.limbs.clone().map(|l| l.expr());
-                let keccak_output_rlc = cb.word_rlc(kecck_output_exprs);
+                // let kecck_output_exprs = keccak_output.limbs.clone().map(|l| l.expr());
+                // let keccak_output_rlc = cb.word_rlc(kecck_output_exprs);
                 cb.keccak_table_lookup(
                     create.input_rlc(cb),
                     create.input_length(),
-                    keccak_output_rlc,
-                    //keccak_output.expr(),
+                    // keccak_output_rlc,
                     keccak_output.to_word(),
                 );
 

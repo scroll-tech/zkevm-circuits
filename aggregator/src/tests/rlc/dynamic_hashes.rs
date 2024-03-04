@@ -191,6 +191,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
 impl CircuitExt<Fr> for DynamicHashCircuit {}
 
+// TODO: enable it later after other test pass.
 #[test]
 fn test_hash_circuit() {
     const LEN: usize = 100;

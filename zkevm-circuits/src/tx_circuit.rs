@@ -2390,7 +2390,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 1.expr(),                                                 // is_final
                 meta.query_advice(tx_table.value.lo(), Rotation::next()), // input_rlc
                 meta.query_advice(tx_table.value.lo(), Rotation::cur()),  // input_len
-                meta.query_advice(tx_table.value.lo(), Rotation(2)),      // output_rlc
                 meta.query_advice(tx_hash_word.lo(), Rotation::cur()),    // output_word lo
                 meta.query_advice(tx_hash_word.hi(), Rotation::cur()),    // output_word hi
             ]
