@@ -1223,7 +1223,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
 
         self.tx_access_list.assign(region, offset, tx)?;
-
+        // get base_fee from block context
+        let base_fee = block
+            .context
+            .ctxs
+            .get(&tx.block_number)
+            .expect("cound not find block with number = {tx.block_number}")
+            .base_fee;
         self.tx_eip1559.assign(
             region,
             offset,
@@ -1233,6 +1239,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .sender_balance_sub_fee_pair
                 .unwrap()
                 .1,
+            base_fee,
         )
     }
 }
