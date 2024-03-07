@@ -10,20 +10,19 @@ pub struct OperationRef(pub Target, pub usize);
 
 impl fmt::Debug for OperationRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!(
-            "OperationRef{{ {}, {} }}",
-            match self.0 {
-                Target::Start => "Start",
-                Target::Memory => "Memory",
-                Target::Stack => "Stack",
-                Target::Storage => "Storage",
-                Target::TxAccessListAccount => "TxAccessListAccount",
-                Target::TxAccessListAccountStorage => "TxAccessListAccountStorage",
-                Target::TxRefund => "TxRefund",
-                Target::Account => "Account",
-                Target::CallContext => "CallContext",
-                Target::TxReceipt => "TxReceipt",
-                Target::TxLog => "TxLog",
+        write!(f, "OperationRef {{ {}, {} }}", 
+                match self.0 {
+                Target::Start => "Start", // Start of operation
+                Target::Memory => "Memory", // Memory operation
+                Target::Stack => "Stack", // Stack operation
+                Target::Storage => "Storage", // Storage operation
+                Target::TxAccessListAccount => "TxAccessListAccount", // Transaction access list account operation
+                Target::TxAccessListAccountStorage => "TxAccessListAccountStorage", // Transaction access list account storage operation
+                Target::TxRefund => "TxRefund", // Transaction refund operation
+                Target::Account => "Account", // Account operation
+                Target::CallContext => "CallContext", // Call context operation
+                Target::TxReceipt => "TxReceipt", // Transaction receipt operation
+                Target::TxLog => "TxLog", // Transaction log operation
             },
             self.1
         ))
