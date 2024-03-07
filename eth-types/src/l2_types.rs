@@ -5,7 +5,10 @@ use crate::{
     Block, GethCallTrace, GethExecError, GethExecStep, GethExecTrace, GethPrestateTrace, Hash,
     Transaction, Word, H256,
 };
-use ethers_core::types::{Address, Bytes, U256, U64};
+use ethers_core::types::{
+    transaction::eip2930::{AccessList, AccessListItem},
+    Address, Bytes, U256, U64,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -47,7 +50,12 @@ impl From<BlockTrace> for EthBlock {
         let mut txs = Vec::new();
         for (idx, tx_data) in b.transactions.iter().enumerate() {
             let tx_idx = Some(U64::from(idx));
-            let tx = tx_data.to_eth_tx(b.header.hash, b.header.number, tx_idx);
+            let tx = tx_data.to_eth_tx(
+                b.header.hash,
+                b.header.number,
+                tx_idx,
+                b.header.base_fee_per_gas,
+            );
             txs.push(tx)
         }
         EthBlock {
@@ -63,7 +71,12 @@ impl From<&BlockTrace> for EthBlock {
         let mut txs = Vec::new();
         for (idx, tx_data) in b.transactions.iter().enumerate() {
             let tx_idx = Some(U64::from(idx));
-            let tx = tx_data.to_eth_tx(b.header.hash, b.header.number, tx_idx);
+            let tx = tx_data.to_eth_tx(
+                b.header.hash,
+                b.header.number,
+                tx_idx,
+                b.header.base_fee_per_gas,
+            );
             txs.push(tx)
         }
         EthBlock {
@@ -91,6 +104,12 @@ pub struct TransactionTrace {
     #[serde(rename = "gasPrice")]
     /// gas price
     pub gas_price: U256,
+    #[serde(rename = "gasTipCap")]
+    /// gas tip cap
+    pub gas_tip_cap: Option<U256>,
+    #[serde(rename = "gasFeeCap")]
+    /// gas fee cap
+    pub gas_fee_cap: Option<U256>,
     /// from
     pub from: Address,
     /// to, NONE for creation (0 addr)
@@ -105,6 +124,9 @@ pub struct TransactionTrace {
     /// is creation
     #[serde(rename = "isCreate")]
     pub is_create: bool,
+    /// access list
+    #[serde(rename = "accessList")]
+    pub access_list: Option<Vec<AccessListItem>>,
     /// signature v
     pub v: U64,
     /// signature r
@@ -120,7 +142,18 @@ impl TransactionTrace {
         block_hash: Option<H256>,
         block_number: Option<U64>,
         transaction_index: Option<U64>,
+        base_fee_per_gas: Option<U256>,
     ) -> Transaction {
+        let gas_price = if self.type_ == 2 {
+            let priority_fee_per_gas = std::cmp::min(
+                self.gas_tip_cap.unwrap(),
+                self.gas_fee_cap.unwrap() - base_fee_per_gas.unwrap(),
+            );
+            let effective_gas_price = priority_fee_per_gas + base_fee_per_gas.unwrap();
+            effective_gas_price
+        } else {
+            self.gas_price
+        };
         Transaction {
             hash: self.tx_hash,
             nonce: U256::from(self.nonce),
@@ -130,16 +163,16 @@ impl TransactionTrace {
             from: self.from,
             to: self.to,
             value: self.value,
-            gas_price: Some(self.gas_price),
+            gas_price: Some(gas_price),
             gas: U256::from(self.gas),
             input: self.data.clone(),
             v: self.v,
             r: self.r,
             s: self.s,
             transaction_type: Some(U64::from(self.type_ as u64)),
-            access_list: None,
-            max_priority_fee_per_gas: None,
-            max_fee_per_gas: None,
+            access_list: self.access_list.as_ref().map(|al| AccessList(al.clone())),
+            max_priority_fee_per_gas: self.gas_tip_cap,
+            max_fee_per_gas: self.gas_fee_cap,
             chain_id: Some(self.chain_id),
             other: Default::default(),
         }

@@ -1629,7 +1629,8 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let call = self.call()?;
-        trace!("get_step_err: step:\n\tstep:{step:?}\n\tnext_step:{next_step:?}\n\tcall:{call:?}");
+        //trace!("get_step_err:
+        // step:\n\tstep:{step:?}\n\tnext_step:{next_step:?}\n\tcall:{call:?}");
 
         if next_step.is_none() {
             // enumerating call scope successful cases

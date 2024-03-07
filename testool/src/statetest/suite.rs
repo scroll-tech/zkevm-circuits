@@ -40,7 +40,7 @@ pub fn load_statetests_suite(
                 let path = file.as_path().to_string_lossy();
                 let tcs = (|| -> Result<Vec<StateTest>> {
                     let src = std::fs::read_to_string(&file)?;
-                    log::debug!(target: "testool", "Reading file {:?}", file);
+                    //log::debug!(target: "testool", "Reading file {:?}", file);
                     let tcs = match ext {
                         "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src),
                         "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src),
