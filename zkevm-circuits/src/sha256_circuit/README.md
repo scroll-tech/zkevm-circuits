@@ -1,6 +1,6 @@
 # SHA256 Circuit with lookup table
 
-This circuit use a forking of `table16` in `halo2-gadget`, with some patches:
+This circuit use a forking of [table16](https://zcash.github.io/halo2/design/gadgets/sha256/table16.html) in `halo2-gadget`, with some patches:
 
 + Make all code generic for the `Field` trait so that it also work with the `bn254` curve
 + Fix the digest exporting part, output correct digest (the final state ⊕ init state) with correct constraint (rows for 512-bit block increased from **2102** -> **2114**)

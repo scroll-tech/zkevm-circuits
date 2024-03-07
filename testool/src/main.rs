@@ -150,6 +150,8 @@ fn go() -> Result<()> {
     //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
     // "tests/src/GeneralStateTestsFiller/**/" --skip-state-circuit
 
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let args = Args::parse();
 
     let mut circuits_config = CircuitsConfig::default();
@@ -164,8 +166,6 @@ fn go() -> Result<()> {
     }
 
     let config = Config::load()?;
-
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("Using suite '{}'", args.suite);
     log::info!("Parsing and compliling tests...");

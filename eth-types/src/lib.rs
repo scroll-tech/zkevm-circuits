@@ -16,6 +16,7 @@
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![allow(clippy::let_and_return)]
 
 #[macro_use]
 pub mod macros;

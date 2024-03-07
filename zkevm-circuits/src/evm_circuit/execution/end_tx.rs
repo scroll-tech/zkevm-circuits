@@ -122,12 +122,18 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         }
         let effective_tip = cb.query_word_rlc();
         let sub_gas_price_by_base_fee =
-            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
+            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price.clone());
 
         let mul_effective_tip_by_gas_used = cb.condition(not::expr(tx_is_l1msg.expr()), |cb| {
             MulWordByU64Gadget::construct(
                 cb,
-                effective_tip,
+                if cfg!(feature = "scroll") {
+                    // For Scroll mode, basefee will not be burned.
+                    // It will also be sent to coinbase(fee_valut)
+                    tx_gas_price
+                } else {
+                    effective_tip.clone()
+                },
                 gas_used.clone() - effective_refund.min(),
             )
         });
@@ -359,11 +365,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             )?;
         }
         let context = &block.context.ctxs[&tx.block_number];
-        let effective_tip = tx.gas_price - context.base_fee;
+        let effective_tip = if cfg!(feature = "scroll") {
+            tx.gas_price
+        } else {
+            tx.gas_price - context.base_fee
+        };
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
-            [effective_tip, context.base_fee],
+            [tx.gas_price - context.base_fee, context.base_fee],
             tx.gas_price,
         )?;
         let coinbase_reward = if tx.tx_type.is_l1_msg() {
