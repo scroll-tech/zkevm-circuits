@@ -58,7 +58,7 @@ tests = []
 desc = "unimplemented"
 paths = [
 #   "EIP1559",
-   "stExample/eip1559Filler.yml",
+#   "stExample/eip1559Filler.yml",
     "stEIP1559/valCausesOOFFiller.yml",
     "stExample/mergeTestFiller.yml",
 #   "EIP2930",
@@ -72,7 +72,7 @@ paths = [
 #    "stTimeConsuming", # full of useless sstore tests
 #    "stExample",
 #    "stQuadraticComplexityTest",
-#    "50000"
+    "50000"
 ]
 
 [[skip_paths]]

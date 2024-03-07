@@ -194,9 +194,9 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             accounts,
             logger_config: LoggerConfig {
                 enable_memory: cfg!(feature = "enable-memory")
-                    && bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
-                disable_stack: !cfg!(feature = "enable-stack")
-                    && bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
+                    || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
+                disable_stack: !(cfg!(feature = "enable-stack")
+                    || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
                 disable_storage: !cfg!(feature = "enable-storage"),
                 ..Default::default()
             },
