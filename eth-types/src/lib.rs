@@ -1,4 +1,4 @@
-//! Ethereum and Evm types used to deserialize responses from web3 / geth.
+//! Ethereum and EVM types used to deserialize responses from web3 / geth.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
@@ -9,7 +9,7 @@
 #![allow(incomplete_features)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
-// GasCost is used as type parameter
+// GasCost is used as type parameter.
 #![feature(adt_const_params)]
 #![feature(lazy_cell)]
 #![deny(missing_docs)]
@@ -782,7 +782,7 @@ pub struct FlatGethCallTrace {
 }
 
 impl GethCallTrace {
-    /// generate the call_is_success vec
+    /// generate the call_is_success vec.
     pub fn gen_call_is_success(&self, mut call_is_success: Vec<bool>) -> Vec<bool> {
         call_is_success.push(self.error.is_none());
         for call in &self.calls {
