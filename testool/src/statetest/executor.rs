@@ -610,7 +610,6 @@ pub fn run_test(
     //builder.sdb.list_accounts();
 
     let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
-    println!("!! {row_usage:?}, {:?}", get_sub_circuit_limit_l2());
     let mut overflow = false;
     for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
         if num.row_num_real > *limit {
