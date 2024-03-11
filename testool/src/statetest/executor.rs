@@ -197,7 +197,8 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                     || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
                 disable_stack: !(cfg!(feature = "enable-stack")
                     || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
-                disable_storage: !cfg!(feature = "enable-storage"),
+                disable_storage: !(cfg!(feature = "enable-storage")
+                    || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
                 ..Default::default()
             },
             #[cfg(feature = "shanghai")]
