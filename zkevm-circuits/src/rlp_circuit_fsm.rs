@@ -1888,7 +1888,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                 }
             );
 
-            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                not::expr(is_end(meta)),
+            ]))
         });
 
         // Operation-specific constraints
