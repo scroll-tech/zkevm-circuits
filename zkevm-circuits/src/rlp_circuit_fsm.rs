@@ -2828,7 +2828,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "q_enable",
             self.rlp_table.q_enable,
             row,
-            || Value::known(F::zero()),
+            || Value::known(F::one()),
         )?;
         region.assign_advice(
             || "sm.state",
