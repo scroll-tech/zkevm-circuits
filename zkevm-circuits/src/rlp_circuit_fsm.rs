@@ -1888,7 +1888,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                 }
             );
 
-            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                not::expr(is_end(meta)),
+            ]))
         });
 
         // Operation-specific constraints
@@ -2828,7 +2831,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "q_enable",
             self.rlp_table.q_enable,
             row,
-            || Value::known(F::zero()),
+            || Value::known(F::one()),
         )?;
         region.assign_advice(
             || "sm.state",

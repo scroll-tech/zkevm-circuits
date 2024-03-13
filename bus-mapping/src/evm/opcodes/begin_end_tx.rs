@@ -877,6 +877,7 @@ fn add_access_list_storage_key_copy_event(
     let rw_counter_start = state.block_ctx.rwc;
 
     // Build copy access list including addresses and storage keys.
+    let mut sks_acc: usize = 0;
     let access_list = state
         .tx
         .access_list
@@ -886,9 +887,9 @@ fn add_access_list_storage_key_copy_event(
                 .map(|item| {
                     item.storage_keys
                         .iter()
-                        .enumerate()
-                        .map(|(idx, &sk)| {
+                        .map(|&sk| {
                             let sk = sk.to_word();
+                            sks_acc += 1;
 
                             // Add RW write operations for access list address storage keys
                             // (will lookup in copy circuit).
@@ -910,7 +911,7 @@ fn add_access_list_storage_key_copy_event(
                             Ok(CopyAccessList::new(
                                 item.address,
                                 sk,
-                                idx as u64,
+                                sks_acc as u64,
                                 is_warm_prev,
                             ))
                         })

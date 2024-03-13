@@ -3600,8 +3600,14 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         // Since each call data byte at least takes one row in RLP circuit.
         // For L2 tx, each call data byte takes two row in RLP circuit.
         assert!(block.circuits_params.max_calldata < block.circuits_params.max_rlp_rows);
-        let tx_usage = (block.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>()) as f32
-            / block.circuits_params.max_calldata as f32;
+        let sum_calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>();
+        let max_calldata = if block.circuits_params.max_calldata == 0 {
+            // dynamic max_calldata
+            sum_calldata_len
+        } else {
+            block.circuits_params.max_calldata
+        };
+        let tx_usage = sum_calldata_len as f32 / max_calldata as f32;
 
         (
             (tx_usage * block.circuits_params.max_vertical_circuit_rows as f32).ceil() as usize,

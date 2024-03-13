@@ -226,6 +226,7 @@ func Trace(config TraceConfig) (*types.BlockTrace, error) {
 		GasLimit:   toBigInt(config.Block.GasLimit).Uint64(),
 		Extra:      []byte{},
 		Time:       toBigInt(config.Block.Timestamp).Uint64(),
+		BaseFee:    toBigInt(config.Block.BaseFee),
 	}
 	block := types.NewBlockWithHeader(header).WithBody(txs, nil)
 

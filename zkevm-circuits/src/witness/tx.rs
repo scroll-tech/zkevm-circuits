@@ -420,6 +420,7 @@ impl Transaction {
         let mut assignments: Vec<[Value<F>; 5]> = vec![];
 
         if self.access_list.is_some() {
+            let mut sks_acc: usize = 0;
             for (al_idx, al) in self.access_list.as_ref().unwrap().0.iter().enumerate() {
                 assignments.push([
                     Value::known(F::from(self.id as u64)),
@@ -429,11 +430,12 @@ impl Transaction {
                     Value::known(al.address.to_scalar().unwrap()),
                 ]);
 
-                for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
+                for sk in al.storage_keys.iter() {
+                    sks_acc += 1;
                     assignments.push([
                         Value::known(F::from(self.id as u64)),
                         Value::known(F::from(TxContextFieldTag::AccessListStorageKey as u64)),
-                        Value::known(F::from(sk_idx as u64)),
+                        Value::known(F::from(sks_acc as u64)),
                         rlc_be_bytes(&sk.to_fixed_bytes(), challenges.evm_word()),
                         Value::known(al.address.to_scalar().unwrap()),
                     ]);
