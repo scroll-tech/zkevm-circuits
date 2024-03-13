@@ -99,9 +99,9 @@ mod tests {
 
             PairSelectionTestContainer {
                 select_gadget,
-                v,
                 a,
                 b,
+                v,
             }
         }
 
