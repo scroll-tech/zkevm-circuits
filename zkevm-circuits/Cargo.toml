@@ -47,7 +47,7 @@ rayon.workspace = true
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
-criterion = "0.3"
+criterion = "0.5"
 ctor.workspace = true
 mock = { path = "../mock" }
 pretty_assertions.workspace = true

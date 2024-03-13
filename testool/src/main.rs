@@ -34,7 +34,7 @@ const TEST_IDS_FILE: &str = "./test_ids.txt";
 extern crate prettytable;
 
 #[allow(non_camel_case_types)]
-#[derive(PartialEq, Parser, EnumString, Debug)]
+#[derive(PartialEq, Parser, EnumString, Debug, Clone, Copy)]
 enum Circuits {
     basic,
     sc,
