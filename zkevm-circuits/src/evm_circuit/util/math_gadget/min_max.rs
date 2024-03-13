@@ -7,7 +7,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-/// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
+
 /// lhs and rhs `< 256**N_BYTES`
 /// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
 #[derive(Clone, Debug)]
