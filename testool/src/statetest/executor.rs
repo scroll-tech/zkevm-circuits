@@ -445,8 +445,9 @@ pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
 pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
 
 // TODO: refactor & usage
-fn get_sub_circuit_limit_l2() -> Vec<usize> {
-    vec![
+fn get_sub_circuit_limit() -> Vec<usize> {
+    #[allow(unused_mut)]
+    let mut limit = vec![
         MAX_RWS,           // evm
         MAX_RWS,           // state
         MAX_BYTECODE,      // bytecode
@@ -461,8 +462,12 @@ fn get_sub_circuit_limit_l2() -> Vec<usize> {
         MAX_POSEIDON_ROWS, // poseidon
         MAX_VERTICAL_ROWS, // sig
         MAX_VERTICAL_ROWS, // ecc
-        MAX_MPT_ROWS,      // mpt
-    ]
+    ];
+    #[cfg(feature = "scroll")]
+    {
+        limit.push(MAX_MPT_ROWS); // mpt
+    }
+    limit
 }
 
 fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
@@ -611,7 +616,7 @@ pub fn run_test(
 
     let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
     let mut overflow = false;
-    for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
+    for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit().iter()) {
         if num.row_num_real > *limit {
             log::warn!(
                 "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
