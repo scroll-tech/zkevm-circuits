@@ -139,7 +139,10 @@ impl<P: JsonRpcClient> GethClient<P> {
     /// transaction of the block.
     pub async fn trace_block_by_hash(&self, hash: Hash) -> Result<Vec<GethExecTrace>, Error> {
         let hash = serialize(&hash);
-        let cfg = serialize(&GethLoggerConfig::default());
+        let cfg = serialize(&GethLoggerConfig {
+            timeout: Some("300s".to_string()),
+            ..Default::default()
+        });
         let resp: ResultGethExecTraces = self
             .0
             .request("debug_traceBlockByHash", [hash, cfg])
