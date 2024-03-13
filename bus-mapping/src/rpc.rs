@@ -58,10 +58,11 @@ pub(crate) struct GethLoggerConfig {
 impl Default for GethLoggerConfig {
     fn default() -> Self {
         Self {
-            enable_memory: cfg!(feature = "enable-memory") && GETH_TRACE_CHECK_LEVEL.should_check(),
-            disable_stack: !cfg!(feature = "enable-stack") && GETH_TRACE_CHECK_LEVEL.should_check(),
-            disable_storage: !cfg!(feature = "enable-storage")
-                && GETH_TRACE_CHECK_LEVEL.should_check(),
+            enable_memory: cfg!(feature = "enable-memory") || GETH_TRACE_CHECK_LEVEL.should_check(),
+            disable_stack: !(cfg!(feature = "enable-stack")
+                || GETH_TRACE_CHECK_LEVEL.should_check()),
+            disable_storage: !(cfg!(feature = "enable-storage")
+                || GETH_TRACE_CHECK_LEVEL.should_check()),
             enable_return_data: true,
             timeout: None,
         }
