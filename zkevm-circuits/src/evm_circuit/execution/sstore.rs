@@ -308,11 +308,11 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             - recreate_slot * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
 
         Self {
+            tx_refund_old,
+            tx_refund_new,
             value,
             value_prev,
             original_value,
-            tx_refund_old,
-            tx_refund_new,
             value_prev_is_zero_gadget,
             value_is_zero_gadget,
             original_is_zero_gadget,

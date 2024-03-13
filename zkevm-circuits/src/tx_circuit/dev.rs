@@ -78,11 +78,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
         let tx_config = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
-                sig_table,
-                block_table,
                 tx_table,
+                block_table,
                 keccak_table,
                 rlp_table,
+                sig_table,
                 u8_table,
                 u16_table,
                 challenges,
@@ -185,11 +185,11 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             let tx_config = TxCircuitConfig::new(
                 meta,
                 TxCircuitConfigArgs {
-                    sig_table,
-                    block_table,
                     tx_table,
+                    block_table,
                     keccak_table,
                     rlp_table,
+                    sig_table,
                     u8_table,
                     u16_table,
                     challenges,

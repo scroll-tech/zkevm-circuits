@@ -2233,6 +2233,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             tag,
             tag_bits,
             tag_next,
+            is_list,
+            max_length,
             byte_idx,
             byte_rev_idx,
             byte_value,
@@ -2240,31 +2242,21 @@ impl<F: Field> RlpCircuitConfig<F> {
             gas_cost_acc,
             tag_idx,
             tag_value_acc,
-            is_list,
-            max_length,
             depth,
             is_padding_in_dt,
-
-            // data table checks.
             tx_id_check_in_dt,
             format_check_in_dt,
-
             tx_id_check_in_sm,
             format_check_in_sm,
-
-            is_tag_begin,
             is_tag_end,
+            is_tag_begin,
             is_case3,
             transit_to_new_rlp_instance,
             is_same_rlp_instance,
-
-            // access list checks
             is_new_access_list_address,
             is_new_access_list_storage_key,
             is_access_list_end,
             is_storage_key_list_end,
-
-            // decoding table
             stack_op_id_diff,
             is_stack_depth_zero,
             is_stack_depth_one,
@@ -2274,8 +2266,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_stack_depth_diff,
             is_stack_al_idx_diff,
             is_stack_sk_idx_diff,
-
-            // comparators
             byte_value_lte_0x80,
             byte_value_gte_0x80,
             byte_value_lte_0xb8,
@@ -2292,8 +2282,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             depth_eq_two,
             depth_eq_four,
             byte_value_is_zero,
-
-            // internal tables
             data_table,
             rom_table,
             u8_table,

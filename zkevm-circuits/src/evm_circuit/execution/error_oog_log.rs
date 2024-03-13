@@ -85,9 +85,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         Self {
             opcode,
+            memory_address,
             is_static_call,
             is_opcode_logn,
-            memory_address,
             memory_expansion,
             insufficient_gas,
             common_error_gadget,

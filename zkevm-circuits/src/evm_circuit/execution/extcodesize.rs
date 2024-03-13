@@ -102,8 +102,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         Self {
             same_context,
             address_word,
-            tx_id,
             reversion_info,
+            tx_id,
             is_warm,
             code_hash,
             not_exists,

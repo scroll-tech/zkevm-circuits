@@ -300,23 +300,19 @@ impl CircuitConfig {
         let ret = Self {
             table16,
             byte_range,
-
             copied_data,
             trans_byte,
             bytes_rlc,
             helper,
-
             s_final_block,
-            s_common_bytes,
-            s_padding_size,
             s_padding,
             byte_counter,
-
             s_output,
-
             s_begin,
             s_final,
             s_enable,
+            s_common_bytes,
+            s_padding_size,
             s_assigned_u16,
         };
 

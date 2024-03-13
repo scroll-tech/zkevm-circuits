@@ -192,10 +192,10 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
         Self {
             ecdsa_config,
+            rlc_column,
+            q_keccak,
             keccak_table,
             sig_table,
-            q_keccak,
-            rlc_column,
         }
     }
 }

@@ -75,10 +75,10 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
         };
 
         Self {
-            pow_lookup,
             bits,
-            pow,
+            pow_lookup,
             cache_for_degree,
+            pow,
         }
     }
 
@@ -524,8 +524,8 @@ impl<F: Field> Limbs<F> {
         ];
 
         Self {
-            byte14_split_hi,
             byte14_split_lo,
+            byte14_split_hi,
             limbs,
         }
     }
@@ -627,8 +627,8 @@ impl<F: Field> ModExpGasCost<F> {
             words,
             exp_is_zero,
             exp_byte_size,
-            exp_msb,
             exp_msb_bit_length,
+            exp_msb,
             calc_gas,
             dynamic_gas,
         }

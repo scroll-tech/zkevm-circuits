@@ -284,9 +284,9 @@ impl MptUpdates {
             })
             .collect();
         let mpt_updates = MptUpdates {
-            updates,
             old_root,
             new_root,
+            updates,
             ..Default::default()
         };
         // FIXME: we can remove this assert after the code runs a while and everything is ok?
@@ -319,9 +319,9 @@ impl MptUpdates {
             })
             .collect();
         MptUpdates {
-            updates,
             old_root,
             new_root,
+            updates,
             ..Default::default()
         }
     }

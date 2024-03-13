@@ -42,8 +42,8 @@ impl<F: Field> SubCircuitConfig<F> for ModExpCircuitConfig {
         let rangecheck_config = RangeCheckChip::configure(meta);
         let modexp_config = ModExpChip::configure(meta, &rangecheck_config);
         Self {
-            rangecheck_config,
             modexp_config,
+            rangecheck_config,
             modexp_table,
         }
     }

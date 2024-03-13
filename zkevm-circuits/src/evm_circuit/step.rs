@@ -444,8 +444,8 @@ impl<F: Field> DynamicSelectorHalf<F> {
         let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
         Self {
             count,
-            target_pairs,
             target_odd,
+            target_pairs,
         }
     }
 

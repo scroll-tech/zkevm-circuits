@@ -66,8 +66,8 @@ impl<F: Field> TxL1MsgGadget<F> {
 
         Self {
             tx_is_l1msg,
-            caller_codehash,
             is_caller_empty,
+            caller_codehash,
         }
     }
 

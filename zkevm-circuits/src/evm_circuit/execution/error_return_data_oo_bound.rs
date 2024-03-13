@@ -66,8 +66,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         Self {
             opcode,
             memory_offset,
-            overflow_gadget,
             return_data_length,
+            overflow_gadget,
             common_error_gadget,
         }
     }
