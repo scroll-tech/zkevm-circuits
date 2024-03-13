@@ -60,7 +60,7 @@ impl SubCircuitConfig<Fr> for CircuitConfig {
     }
 }
 
-/// ModExp circuit for precompile modexp
+/// SHA-256 circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
 pub struct SHA256Circuit<F: Field>(Vec<SHA256>, usize, std::marker::PhantomData<F>);
 
