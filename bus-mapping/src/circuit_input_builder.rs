@@ -30,7 +30,7 @@ use eth_types::{
     evm_types::GasCost,
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Address, GethExecTrace, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecTrace, ToBigEndian, ToWord, Word, H160, H256,
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -44,16 +44,29 @@ use eth_types::sign_types::get_dummy_tx;
 use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
+use lazy_static::lazy_static;
+use linked_hash_map::LinkedHashMap;
 use log::warn;
 #[cfg(feature = "scroll")]
 use mpt_zktrie::state::ZktrieState;
 use std::{
     collections::{BTreeMap, HashMap},
     iter,
+    ops::Deref,
+    sync::Arc,
 };
+use tokio::sync::Mutex;
 pub use transaction::{
     Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
 };
+
+lazy_static! {
+    /// cached parent state_root.
+    pub static ref PARENT_STATE_ROOT: Arc<Mutex<Word>> = Arc::new(Mutex::new(Word::zero())) ;
+    ///  cached <cur_block_hash, parent_hash>
+    pub static ref ANCESTOR_BLOCKS: Arc<Mutex<LinkedHashMap<H256, H256>>> =
+        Arc::new(Mutex::new(LinkedHashMap::new()));
+}
 
 #[cfg(feature = "enable-stack")]
 use eth_types::evm_types::OpcodeId;
@@ -1020,23 +1033,40 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         while n_blocks > 0 {
             n_blocks -= 1;
 
-            // TODO: consider replacing it with `eth_getHeaderByHash`, it's faster
-            let header = self.cli.get_block_by_hash(next_hash).await?;
+            // Here we use cache-and-get: check if the parent_hash in cache, if not, query and cache
+            // it. Then we can obtain all it from cache.
+            let mut acestor_block_map = ANCESTOR_BLOCKS.lock().await;
+            if !acestor_block_map.contains_key(&next_hash) {
+                // TODO: consider replacing it with `eth_getHeaderByHash`, it's faster
+                let header = self.cli.get_block_by_hash(next_hash.clone()).await?;
+                let parent_hash = header.parent_hash;
+                acestor_block_map.insert(next_hash.clone(), parent_hash);
 
-            // set the previous state root
-            if prev_state_root.is_none() {
-                prev_state_root = Some(header.state_root.to_word());
+                if prev_state_root.is_none() {
+                    let mut parent_block = PARENT_STATE_ROOT.lock().await;
+                    *parent_block = header.state_root.to_word();
+                }
             }
 
-            // latest block hash is the last item
-            let block_hash = header
-                .hash
-                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
-                .to_word();
-            history_hashes[n_blocks] = block_hash;
+            // set the previous state root only for the latest parent header.
+            if prev_state_root.is_none() {
+                let parent_block = PARENT_STATE_ROOT.lock().await;
+                prev_state_root = Some(parent_block.to_word());
+            }
 
-            // continue
-            next_hash = header.parent_hash;
+            history_hashes[n_blocks] = next_hash.to_word();
+
+            // continue, naxt_hash = next_parent_hash
+            next_hash = *acestor_block_map.get(&next_hash).unwrap();
+
+            // remove the oldest block, as we at most need 256.
+            // For now, I've resize the map to 2*256, Here's some waste.
+            if acestor_block_map.len() > 2 * 256 {
+                for _ in 0..(acestor_block_map.len() - 256) {
+                    // acestor_block_map.pop_front();
+                    let value = acestor_block_map.pop_front();
+                }
+            }
         }
 
         Ok((

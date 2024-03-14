@@ -494,6 +494,8 @@ dependencies = [
  "halo2_proofs",
  "hex",
  "itertools 0.11.0",
+ "lazy_static",
+ "linked-hash-map",
  "log",
  "mock",
  "mpt-zktrie",
