@@ -16,7 +16,7 @@ use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
 use crate::{
-    table::{BlockTable, LookupTable, TxTable},
+    table::{BlockTable, LookupTable, PowOfRandTable, TxTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 #[cfg(feature = "onephase")]
@@ -297,7 +297,6 @@ impl PublicData {
     fn q_chunk_txbytes_start_offset(&self) -> usize {
         self.data_bytes_end_offset()
             + 1 // a row is reserved for the keccak256(rlc(data_bytes)) == data_hash lookup.
-            + 1 // an empty header row is provided for calculating differential len in chunk_txbytes section.
             + 1 // new row
     }
 
@@ -381,6 +380,7 @@ pub struct PiCircuitConfig<F: Field> {
     rpi_field_bytes_acc: Column<Advice>,
     rpi_rlc_acc: Column<Advice>, // RLC(rpi) as the input to Keccak table
     rpi_length_acc: Column<Advice>,
+    pow_of_rand: Column<Advice>,
 
     // columns for padding in block context and tx hashes
     is_rpi_padding: Column<Advice>,
@@ -409,6 +409,7 @@ pub struct PiCircuitConfig<F: Field> {
     block_table: BlockTable,
     tx_table: TxTable,
     keccak_table: KeccakTable,
+    pow_of_rand_table: PowOfRandTable,
 
     _marker: PhantomData<F>,
 }
@@ -421,6 +422,8 @@ pub struct PiCircuitConfigArgs<F: Field> {
     pub block_table: BlockTable,
     /// Keccak Table
     pub keccak_table: KeccakTable,
+    /// PowOfRand Table
+    pub pow_of_rand_table: PowOfRandTable,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
 }
@@ -435,6 +438,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             block_table,
             tx_table,
             keccak_table,
+            pow_of_rand_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -461,6 +465,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let rpi_rlc_acc = meta.advice_column_in(SecondPhase);
         // hold the accumulated length of rpi_bytes for looking into keccak table
         let rpi_length_acc = meta.advice_column();
+        // hold the power of randomness for rlc accumulation (only used in chunk txbytes section)
+        let pow_of_rand = meta.advice_column_in(SecondPhase);
 
         // boolean column for indicating if the rpi_bytes is padding
         let is_rpi_padding = meta.advice_column();
@@ -503,6 +509,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta.enable_equality(tx_table.value); // copy tx hashes to rpi
         meta.enable_equality(cum_num_txs);
         meta.enable_equality(pi);
+        meta.enable_equality(pow_of_rand);
 
         // 1. constrain rpi_bytes, rpi_bytes_acc, and rpi for each field
         meta.create_gate(
@@ -555,6 +562,32 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 );
 
                 cb.gate(meta.query_selector(q_not_end))
+            },
+        );
+
+        // 2b. constrain rpi_rlc and rpi_length_acc within chunk_txbytes section
+        meta.create_gate(
+            "rpi_rlc_acc[i+1] = rpi_rlc_acc[i] * rand ^ len + rpi_bytes[i+1]",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+
+                let is_rpi_padding = meta.query_advice(is_rpi_padding, Rotation::cur());
+                let bytes_rlc = meta.query_advice(rpi_bytes, Rotation::cur());
+                let rpi_rlc_acc_prev = meta.query_advice(rpi_rlc_acc, Rotation::prev());
+                let rpi_rlc_acc_cur = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+                let pow_of_rand = meta.query_advice(pow_of_rand, Rotation::cur());
+
+                cb.require_equal(
+                    "rpi_rlc_acc = is_rpi_padding ? rpi_rlc_acc::prev : rpi_rlc_acc::prev * r + rpi_bytes",
+                    rpi_rlc_acc_cur,
+                    select::expr(
+                        is_rpi_padding.expr(),
+                        rpi_rlc_acc_prev.clone(),
+                        rpi_rlc_acc_prev * pow_of_rand + bytes_rlc,
+                    ),
+                );
+
+                cb.gate(meta.query_fixed(q_chunk_txbytes, Rotation::cur()))
             },
         );
 
@@ -748,6 +781,28 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 .collect()
         });
 
+        // Look up pow_of_rand with length differential in the chunk txbytes section
+        meta.lookup_any("PowOfRand", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_chunk_txbytes, Rotation::cur()),
+                not::expr(meta.query_advice(is_rpi_padding, Rotation::cur())),
+            ]);
+
+            let len = meta.query_advice(rpi_length_acc, Rotation::cur())
+                - meta.query_advice(rpi_length_acc, Rotation::prev());
+            let pow_of_rand = meta.query_advice(pow_of_rand, Rotation::cur());
+            
+            vec![
+                1.expr(), // q_enable
+                len, // exponent
+                pow_of_rand, // pow_of_rand
+            ]
+            .into_iter()
+            .zip(pow_of_rand_table.table_exprs(meta))
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
+
         // 3. constrain block_table
         meta.create_gate(
             "cum_num_txs::next == cum_num_txs::cur + (block_table.tag == NumTxs) ? block_table.value : 0",
@@ -784,12 +839,14 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             block_table,
             tx_table,
             keccak_table,
+            pow_of_rand_table,
             constant,
             raw_public_inputs: rpi,
             rpi_field_bytes: rpi_bytes,
             rpi_field_bytes_acc: rpi_bytes_acc,
             rpi_rlc_acc,
             rpi_length_acc,
+            pow_of_rand,
             is_rpi_padding,
             real_rpi,
             q_tx_hashes,
@@ -1141,7 +1198,7 @@ impl<F: Field> PiCircuitConfig<F> {
         self.q_keccak.enable(region, offset)?;
 
         // After the data bytes, an empty header row is provided for the chunk_txbytes section
-        Ok((offset + 2, data_hash_rlc_cell))
+        Ok((offset + 1, data_hash_rlc_cell))
     }
 
     /// Assign chunk txbytes, the pre-image to chunk_txbytes_hash
@@ -1160,7 +1217,7 @@ impl<F: Field> PiCircuitConfig<F> {
     /// the Keccak table record.
     ///
     /// |       rpi       |      rpi_bytes      |                         rpi_rlc_acc                        |          rpi_length_acc         |  q_keccak |
-    /// |                                              (empty header row; this is for differential len calculation)                                        |
+    /// |                                                              (empty init row)                                                                    |
     /// | ChunkTxbytesRLC | l2tx\[0\].TxHashRLC | prev * rand^l2tx\[0\].rlp_signed.len + l2tx\[0\].TxHashRLC | prev + l2tx\[0\].rlp_signed.len |     0     |
     /// | ChunkTxbytesRLC | l2tx\[1\].TxHashRLC | prev * rand^l2tx\[1\].rlp_signed.len + l2tx\[1\].TxHashRLC | prev + l2tx\[1\].rlp_signed.len |     0     |
     /// |       ...       |         ...         |                             ...                            |                ...              |     0     |
@@ -1181,7 +1238,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // Enable fixed columns for l2 tx hashRLC
         for q_offset in
-            public_data.q_chunk_txbytes_start_offset()..public_data.q_chunk_txbytes_end_offset()
+            (public_data.q_chunk_txbytes_start_offset() + 1)..public_data.q_chunk_txbytes_end_offset()
         {
             region.assign_fixed(
                 || "q_chunk_txbytes",
@@ -1343,6 +1400,8 @@ impl<F: Field> PiCircuitConfig<F> {
             }
 
             let pow_of_rand = pows_of_rand[tx_hash_len];
+
+            region.assign_advice(|| "pow_of_rand", self.pow_of_rand, offset, || pow_of_rand)?;
 
             rpi_rlc_acc = rpi_rlc_acc * pow_of_rand + tx_hash_rlc;
             rpi_length = rpi_length + Value::known(F::from(tx_hash_len as u64));

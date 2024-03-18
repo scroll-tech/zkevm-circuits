@@ -249,6 +249,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 block_table: block_table.clone(),
                 keccak_table: keccak_table.clone(),
                 tx_table: tx_table.clone(),
+                pow_of_rand_table,
                 challenges: challenges_expr.clone(),
             },
         );
