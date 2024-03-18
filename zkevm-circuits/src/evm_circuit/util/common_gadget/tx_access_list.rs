@@ -144,7 +144,11 @@ impl<F: Field> TxAccessListGadget<F> {
     }
 
     pub(crate) fn rw_delta_expr(&self) -> Expression<F> {
-        self.address_len.expr() + self.storage_key_len.expr()
+        select::expr(
+            or::expr([self.is_eip1559_tx.expr(), self.is_eip2930_tx.expr()]),
+            self.address_len.expr() + self.storage_key_len.expr(),
+            0.expr(),
+        )
     }
 
     pub(crate) fn rw_delta_value(tx: &Transaction) -> u64 {
