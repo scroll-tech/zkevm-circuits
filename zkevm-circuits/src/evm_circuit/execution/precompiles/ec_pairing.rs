@@ -148,6 +148,15 @@ impl<F: Field> ExecutionGadget<F> for EcPairingGadget<F> {
                 )
             },
         );
+
+        // when input is zero then input mod_192 is zero
+        cb.condition(input_is_zero.expr(), |cb| {
+            cb.require_true(
+                "when input is zero, then input mod192 is zero",
+                input_mod_192_is_zero.expr(),
+            );
+        });
+
         cb.condition(
             // (len(input) > 768) || (len(input) % 192 != 0)
             or::expr([
