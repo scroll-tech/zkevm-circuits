@@ -1816,8 +1816,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                     );
                     cb.require_equal(
                         "Unless stack is init, no change on format",
-                        meta.query_advice(rlp_decoding_table.tx_id, Rotation::prev()),
-                        meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
+                        meta.query_advice(rlp_decoding_table.format, Rotation::prev()),
+                        meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     );
                 }
             );
