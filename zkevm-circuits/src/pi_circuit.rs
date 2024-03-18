@@ -791,10 +791,10 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let len = meta.query_advice(rpi_length_acc, Rotation::cur())
                 - meta.query_advice(rpi_length_acc, Rotation::prev());
             let pow_of_rand = meta.query_advice(pow_of_rand, Rotation::cur());
-            
+
             vec![
-                1.expr(), // q_enable
-                len, // exponent
+                1.expr(),    // q_enable
+                len,         // exponent
                 pow_of_rand, // pow_of_rand
             ]
             .into_iter()
@@ -1237,8 +1237,8 @@ impl<F: Field> PiCircuitConfig<F> {
         let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
 
         // Enable fixed columns for l2 tx hashRLC
-        for q_offset in
-            (public_data.q_chunk_txbytes_start_offset() + 1)..public_data.q_chunk_txbytes_end_offset()
+        for q_offset in (public_data.q_chunk_txbytes_start_offset() + 1)
+            ..public_data.q_chunk_txbytes_end_offset()
         {
             region.assign_fixed(
                 || "q_chunk_txbytes",
