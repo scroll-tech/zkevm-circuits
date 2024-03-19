@@ -1395,7 +1395,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 update_state!(meta, cb, tag_value_acc, byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::LongList);
 
-                constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, tag, tag_next);
+                constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, tag, tag_next, depth);
             });
 
             cb.gate(and::expr([
