@@ -63,6 +63,7 @@ pub struct BarycentricEvaluationCells {
     pub(crate) z_le: Vec<AssignedValue<Fr>>,
     pub(crate) y_le: Vec<AssignedValue<Fr>>,
 }
+
 impl BarycentricEvaluationConfig {
     pub fn construct(range: RangeConfig<Fr>) -> Self {
         Self {
@@ -305,8 +306,6 @@ impl BarycentricEvaluationConfig {
             barycentric_assignments: blob_crts
                 .into_iter()
                 .chain(std::iter::once(challenge_digest_crt))
-                .chain(std::iter::once(challenge_crt))
-                .chain(std::iter::once(evaluation_crt))
                 .collect(),
             z_le: challenge_le,
             y_le: evaluation_le,

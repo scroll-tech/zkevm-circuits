@@ -644,7 +644,7 @@ impl BlobDataConfig {
                 //////////////////////////////////// LINKING ///////////////////////////////////
                 ////////////////////////////////////////////////////////////////////////////////
 
-                assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 2);
+                assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 1);
                 let blob_crts = barycentric_assignments
                     .iter()
                     .take(BLOB_WIDTH)

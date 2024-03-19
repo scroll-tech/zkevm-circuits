@@ -180,7 +180,7 @@ impl Circuit<Fr> for AggregationCircuit {
                     let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
                     // stores public inputs for all snarks, including the padded ones
                     let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
-                    let mut ctx = Context::new(
+                    let ctx = Context::new(
                         region,
                         ContextParams {
                             max_rows: config.flex_gate().max_rows,
