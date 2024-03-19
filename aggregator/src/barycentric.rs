@@ -5,16 +5,16 @@ use halo2_base::{
     AssignedValue, QuantumCell,
 };
 use halo2_ecc::{
-    bigint::CRTInteger,
+    bigint::{CRTInteger, OverflowInteger},
     fields::{fp::FpConfig, FieldChip},
-    halo2_base::Context,
+    halo2_base::{utils::decompose_bigint_option, Context},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Value},
+    circuit::Value,
     halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField},
 };
 use itertools::Itertools;
-use num_bigint::BigUint;
+use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
@@ -64,6 +64,33 @@ impl BarycentricEvaluationConfig {
         }
     }
 
+    fn load_u256(&self, ctx: &mut Context<Fr>, a: U256) -> CRTInteger<Fr> {
+        // borrowed from halo2-ecc/src/fields/fp.rs
+        // similar to FpChip.load_private without range check.
+
+        let a_val = Value::known(BigInt::from_bytes_le(Sign::Plus, &a.to_le_bytes()));
+        let a_vec = decompose_bigint_option::<Fr>(
+            a_val.as_ref(),
+            self.scalar.num_limbs,
+            self.scalar.limb_bits,
+        );
+        let limbs = self.scalar.range().gate.assign_witnesses(ctx, a_vec);
+
+        let a_native = OverflowInteger::<Fr>::evaluate(
+            &self.scalar.range().gate,
+            //&self.bigint_chip,
+            ctx,
+            &limbs,
+            self.scalar.limb_bases.iter().cloned(),
+        );
+
+        CRTInteger::construct(
+            OverflowInteger::construct(limbs, self.scalar.limb_bits),
+            a_native,
+            a_val,
+        )
+    }
+
     pub fn assign2(
         &self,
         ctx: &mut Context<Fr>,
@@ -82,10 +109,8 @@ impl BarycentricEvaluationConfig {
         .expect("BLS_MODULUS from decimal string");
         let (_, challenge) = challenge_digest.div_mod(bls_modulus);
         let challenge_scalar = Scalar::from_raw(challenge.0);
-        let challenge_digest_crt = self.scalar.load_private(
-            ctx,
-            Value::known(BigUint::from_bytes_le(&challenge_digest.to_le_bytes()).into()),
-        );
+
+        let challenge_digest_crt = self.load_u256(ctx, challenge_digest);
         let challenge_le = self.scalar.range().gate.assign_witnesses(
             ctx,
             challenge

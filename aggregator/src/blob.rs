@@ -50,7 +50,7 @@ impl Blob {
 
     fn bytes(&self) -> impl Iterator<Item = u8> + '_ {
         self.metadata_bytes()
-            .chain(self.0.iter().flat_map(|x| x.into_iter().map(|x| *x)))
+            .chain(self.0.iter().flat_map(|x| x.iter().map(|x| *x)))
     }
 }
 
