@@ -707,8 +707,8 @@ impl BlobDataConfig {
                     )?;
                     let limb3 = rlc_config.inner_product(
                         &mut region,
-                        &blob_field[22..32],
-                        &powers_of_256[22..32],
+                        &blob_field[22..31],
+                        &powers_of_256[22..31],
                         &mut rlc_config_offset,
                     )?;
                     region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell())?;
