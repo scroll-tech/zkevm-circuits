@@ -1828,7 +1828,7 @@ impl<F: Field> TxCircuitConfig<F> {
             .into_iter()
             .zip(vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.tag, Rotation::cur()),
                 meta.query_advice(calldata_gas_cost_acc, Rotation::cur()),
                 meta.query_advice(is_final, Rotation::cur()),
             ])
@@ -1857,7 +1857,7 @@ impl<F: Field> TxCircuitConfig<F> {
             .into_iter()
             .zip(vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.tag, Rotation::cur()),
                 meta.query_advice(tx_table.index, Rotation::cur()),
                 meta.query_advice(is_final, Rotation::cur()),
             ])
@@ -1882,7 +1882,7 @@ impl<F: Field> TxCircuitConfig<F> {
             ];
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.tag, Rotation::cur()),
                 meta.query_advice(tx_table.value, Rotation::cur()),
             ];
 
@@ -1907,7 +1907,7 @@ impl<F: Field> TxCircuitConfig<F> {
             ];
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.tag, Rotation::cur()),
                 meta.query_advice(tx_table.value, Rotation::cur()),
             ];
 
@@ -1932,7 +1932,7 @@ impl<F: Field> TxCircuitConfig<F> {
             ];
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.tag, Rotation::cur()),
                 meta.query_advice(tx_table.value, Rotation::cur()),
             ];
 
@@ -1957,7 +1957,7 @@ impl<F: Field> TxCircuitConfig<F> {
             ];
             let table_exprs = vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                meta.query_fixed(tx_table.tag, Rotation::cur()),
+                meta.query_advice(tx_table.tag, Rotation::cur()),
                 meta.query_advice(tx_table.value, Rotation::cur()),
             ];
 
@@ -3097,13 +3097,8 @@ impl<F: Field> TxCircuitConfig<F> {
             Value::known(F::from(tx_id_next as u64)),
         )?;
 
-        // fixed columns
-        for (col_anno, col, col_val) in [
-            ("q_enable", self.tx_table.q_enable, F::one()),
-            ("tag", self.tx_table.tag, F::from(usize::from(tag) as u64)),
-        ] {
-            region.assign_fixed(|| col_anno, col, offset, || Value::known(col_val))?;
-        }
+        region.assign_fixed(|| "q_enable", self.tx_table.q_enable, offset, || Value::known(F::one()))?;
+        region.assign_advice(|| "tag", self.tx_table.tag, offset, || Value::known(F::from(usize::from(tag) as u64)))?;
 
         // 1st phase columns
         for (col_anno, col, col_val) in [
@@ -3175,7 +3170,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 offset,
                 || Value::known(F::from(usize::from(Null) as u64)),
             )?;
-            region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+            region.assign_advice(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
             tag_chip.assign(region, offset, &CallData)?;
             // no need to assign tx_id_is_zero_chip for real prover as tx_id = 0
             tx_id_is_zero_chip.assign(region, offset, Value::known(F::zero()))?;
@@ -3219,7 +3214,7 @@ impl<F: Field> TxCircuitConfig<F> {
         end: usize,
     ) -> Result<(), Error> {
         for offset in start..end {
-            region.assign_fixed(
+            region.assign_advice(
                 || "tag",
                 self.tx_table.tag,
                 offset,
