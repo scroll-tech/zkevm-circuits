@@ -1652,9 +1652,20 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 },
             );
 
-            // TODO:
-            //  4. eip1559 tx: v Є {0, 1}
-            //  5. eip2930 tx: v Є {0, 1}
+            // 4. EPI1559/2930: v Є {0, 1}
+            cb.condition(
+                and::expr([
+                    is_chain_id.expr(),
+                    sum::expr([
+                        tx_type_bits.value_equals(Eip1559, Rotation::cur())(meta),
+                        tx_type_bits.value_equals(Eip2930, Rotation::cur())(meta),    
+                    ]),
+                ]),
+                |cb| {
+                    let v = meta.query_advice(tx_table.value, Rotation::next());
+                    cb.require_boolean("v Є {0, 1}", v);
+                },
+            );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
