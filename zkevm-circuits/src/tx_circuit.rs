@@ -462,6 +462,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         ("num_txs", num_txs),
                         ("cum_num_txs", cum_num_txs),
                         ("num_all_txs_acc", num_all_txs_acc),
+                        ("tx_nonce", tx_nonce),
                         // is_l1_msg does not need to spread out as it's extracted from tx_type
 
                         // these do not need to spread out as they are related to tx_table.tag
