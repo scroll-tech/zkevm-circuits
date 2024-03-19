@@ -57,7 +57,6 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    less_than::{LtChip, LtConfig, LtInstruction},
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
@@ -182,7 +181,6 @@ pub struct TxCircuitConfig<F: Field> {
     is_padding_tx: Column<Advice>,
     /// Tx id must be no greater than cum_num_txs
     tx_id_cmp_cum_num_txs: ComparatorConfig<F, 2>,
-    tx_id_gt_prev_cnt: LtConfig<F, 2>,
     /// Cumulative number of txs up to a block
     cum_num_txs: Column<Advice>,
     /// Number of txs in a block
@@ -1180,25 +1178,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        // prev block's cum_num_txs < tx_id
-        let tx_id_gt_prev_cnt = LtChip::configure(
-            meta,
-            |meta| {
-                and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(is_tag_block_num, Rotation::cur()),
-                ])
-            },
-            |meta| {
-                let num_txs = meta.query_advice(num_txs, Rotation::cur());
-                let cum_num_txs = meta.query_advice(cum_num_txs, Rotation::cur());
-
-                cum_num_txs - num_txs
-            },
-            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
-            u8_table.into(),
-        );
-
         // last non-padding tx must have tx_id == cum_num_txs
         meta.create_gate(
             "last non-padding tx must have tx_id == cum_num_txs",
@@ -1724,7 +1703,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_tx_id_zero,
             is_caller_address,
             tx_id_cmp_cum_num_txs,
-            tx_id_gt_prev_cnt,
             cum_num_txs,
             is_padding_tx,
             lookup_conditions,
@@ -2829,13 +2807,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 *offset,
                 F::from(tx.id as u64),
                 F::from(cum_num_txs),
-            )?;
-            let tx_id_gt_prev_cnt = LtChip::construct(self.tx_id_gt_prev_cnt);
-            tx_id_gt_prev_cnt.assign(
-                region,
-                *offset,
-                F::from(cum_num_txs - num_txs),
-                F::from(tx.id as u64),
             )?;
 
             *offset += 1;
