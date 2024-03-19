@@ -165,6 +165,12 @@ pub(crate) struct ExpectedBlobCells {
     pub(crate) chunk_tx_data_hashes: Vec<Vec<AssignedCell<Fr, Fr>>>,
 }
 
+pub(crate) struct AssignedBatchHash {
+    pub(crate) hash_output: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) blob: ExpectedBlobCells,
+    pub(crate) rlc_config_offset: usize,
+}
+
 /// Input the hash input bytes,
 /// assign the circuit for the hash function,
 /// return
@@ -194,7 +200,7 @@ pub(crate) fn assign_batch_hashes(
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     preimages: &[Vec<u8>],
-) -> Result<(Vec<AssignedCell<Fr, Fr>>, ExpectedBlobCells, usize), Error> {
+) -> Result<AssignedBatchHash, Error> {
     let extracted_hash_cells = extract_hash_cells(
         &config.keccak_circuit_config,
         layouter,
@@ -232,7 +238,6 @@ pub(crate) fn assign_batch_hashes(
         z: batch_pi_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + 32].to_vec(),
         y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + 32].to_vec(),
         chunk_tx_data_hashes: (0..MAX_AGG_SNARKS)
-            .into_iter()
             .map(|i| {
                 extracted_hash_cells.hash_input_cells
                     [INPUT_LEN_PER_ROUND * (2 + 2 * i)..INPUT_LEN_PER_ROUND * (2 + 2 * (i + 1))]
@@ -240,11 +245,11 @@ pub(crate) fn assign_batch_hashes(
             })
             .collect(),
     };
-    Ok((
-        extracted_hash_cells.hash_output_cells,
-        expected_blob_cells,
+    Ok(AssignedBatchHash {
+        hash_output: extracted_hash_cells.hash_output_cells,
+        blob: expected_blob_cells,
         rlc_config_offset,
-    ))
+    })
 }
 
 pub(crate) fn extract_hash_cells(

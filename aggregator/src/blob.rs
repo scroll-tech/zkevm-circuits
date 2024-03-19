@@ -50,7 +50,7 @@ impl Blob {
 
     fn bytes(&self) -> impl Iterator<Item = u8> + '_ {
         self.metadata_bytes()
-            .chain(self.0.iter().flat_map(|x| x.iter().map(|x| *x)))
+            .chain(self.0.iter().flat_map(|x| x.iter().copied()))
     }
 }
 
@@ -168,7 +168,7 @@ mod tests {
         let blob = RethBlob::from_bytes(
             &coefficients
                 .into_iter()
-                .flat_map(|x| to_be_bytes(x))
+                .flat_map(to_be_bytes)
                 .collect::<Vec<_>>(),
         )
         .unwrap();

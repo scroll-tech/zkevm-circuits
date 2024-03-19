@@ -127,14 +127,14 @@ impl RlcConfig {
             column: self.fixed.into(),
         }
     }
-    #[inline]
-    pub(crate) fn one_hundred_and_thirty_six_cell(&self, region_index: RegionIndex) -> Cell {
-        Cell {
-            region_index,
-            row_offset: 7,
-            column: self.fixed.into(),
-        }
-    }
+    // #[inline]
+    // pub(crate) fn one_hundred_and_thirty_six_cell(&self, region_index: RegionIndex) -> Cell {
+    //     Cell {
+    //         region_index,
+    //         row_offset: 7,
+    //         column: self.fixed.into(),
+    //     }
+    // }
 
     #[inline]
     pub(crate) fn two_to_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {

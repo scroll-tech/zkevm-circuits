@@ -39,7 +39,7 @@ pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
     let bit_reversed_order: Vec<_> = (0..BLOB_WIDTH)
         .map(|i| {
             let j = u16::try_from(i).unwrap().reverse_bits() >> (16 - LOG_BLOG_WIDTH);
-            ascending_order[usize::try_from(j).unwrap()]
+            ascending_order[usize::from(j)]
         })
         .collect();
     bit_reversed_order.try_into().unwrap()
@@ -57,6 +57,12 @@ pub struct BarycentricEvaluationAssignments {
     blob: [CRTInteger<Fr>; BLOB_WIDTH],
 }
 
+#[derive(Default)]
+pub struct BarycentricEvaluationCells {
+    pub(crate) barycentric_assignments: Vec<CRTInteger<Fr>>,
+    pub(crate) z_le: Vec<AssignedValue<Fr>>,
+    pub(crate) y_le: Vec<AssignedValue<Fr>>,
+}
 impl BarycentricEvaluationConfig {
     pub fn construct(range: RangeConfig<Fr>) -> Self {
         Self {
@@ -97,11 +103,7 @@ impl BarycentricEvaluationConfig {
         blob: [U256; BLOB_WIDTH],
         challenge_digest: U256,
         evaluation: U256,
-    ) -> (
-        Vec<CRTInteger<Fr>>,
-        Vec<AssignedValue<Fr>>,
-        Vec<AssignedValue<Fr>>,
-    ) {
+    ) -> BarycentricEvaluationCells {
         // prechecks (challenge point z)
         let bls_modulus = U256::from_dec_str(
             "52435875175126190479447740508185965837690552500527637822603658699938581184513",
@@ -299,16 +301,16 @@ impl BarycentricEvaluationConfig {
         self.scalar
             .assert_equal(ctx, &evaluation_computed, &evaluation_crt);
 
-        (
-            blob_crts
+        BarycentricEvaluationCells {
+            barycentric_assignments: blob_crts
                 .into_iter()
                 .chain(std::iter::once(challenge_digest_crt))
                 .chain(std::iter::once(challenge_crt))
                 .chain(std::iter::once(evaluation_crt))
                 .collect(),
-            challenge_le,
-            evaluation_le,
-        )
+            z_le: challenge_le,
+            y_le: evaluation_le,
+        }
     }
 
     pub fn assign(
