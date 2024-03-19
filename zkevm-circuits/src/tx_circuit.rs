@@ -1509,9 +1509,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(sk_idx, Rotation::cur()),
                 );
                 cb.require_equal(
-                    "section_rlc accumulation: r = rand^20, section_rlc' = section_rlc * r + field_rlc'",
+                    "section_rlc' = section_rlc * r ^ pow(len::next) + field_rlc'",
                     meta.query_advice(section_rlc, Rotation::next()),
-                    meta.query_advice(section_rlc, Rotation::cur()) * r20
+                    meta.query_advice(section_rlc, Rotation::cur()) 
+                        * select::expr(
+                            meta.query_advice(is_access_list_storage_key, Rotation::next()), 
+                            r32.clone(), 
+                            r20.clone(),
+                        )
                         + meta.query_advice(field_rlc, Rotation::next()),
                 );
             });
@@ -1529,9 +1534,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(tx_table.index, Rotation::cur()),
                 );
                 cb.require_equal(
-                    "section_rlc accumulation: r = rand^32, section_rlc' = section_rlc * r + field_rlc'",
+                    "section_rlc' = section_rlc * r ^ pow(len::next) + field_rlc'",
                     meta.query_advice(section_rlc, Rotation::next()),
-                    meta.query_advice(section_rlc, Rotation::cur()) * r32
+                    meta.query_advice(section_rlc, Rotation::cur()) 
+                        * select::expr(
+                            meta.query_advice(is_access_list_storage_key, Rotation::next()), 
+                            r32.clone(), 
+                            r20.clone(),
+                        )
                         + meta.query_advice(field_rlc, Rotation::next()),
                 );
             });
@@ -1854,6 +1864,7 @@ impl<F: Field> TxCircuitConfig<F> {
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
+
         meta.lookup_any("lookup CallDataRLC in the calldata part", |meta| {
             let is_call_data = meta.query_advice(is_calldata, Rotation::cur());
             let section_rlc = meta.query_advice(section_rlc, Rotation::cur());
@@ -1881,6 +1892,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
+
         meta.lookup_any("lookup AccessListAddressLen in the TxTable", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1905,6 +1917,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
+
         meta.lookup_any("lookup AccessListStorageKeysLen in the TxTable", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1929,6 +1942,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
+
         meta.lookup_any("lookup AccessListRLC in the TxTable", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1953,6 +1967,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 .map(|(input, table)| (input * enable.expr(), table))
                 .collect()
         });
+        
         meta.lookup_any("is_final access list row should be present", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -2925,7 +2940,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
                 let field_rlc =
                     rlc_be_bytes(&al.address.to_fixed_bytes(), challenges.keccak_input());
-                section_rlc = section_rlc * r32 + field_rlc;
+                section_rlc = section_rlc * r20 + field_rlc;
 
                 let tx_id_next = if curr_row == total_rows {
                     next_tx.map_or(0, |tx| tx.id)
@@ -2979,11 +2994,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     let is_final = curr_row == total_rows;
 
                     let field_rlc = rlc_be_bytes(&sk.to_fixed_bytes(), challenges.keccak_input());
-                    section_rlc = if sk_idx > 0 {
-                        section_rlc * r32 + field_rlc
-                    } else {
-                        section_rlc * r20 + field_rlc
-                    };
+                    section_rlc = section_rlc * r32 + field_rlc;
 
                     let tx_id_next = if curr_row == total_rows {
                         next_tx.map_or(0, |tx| tx.id)
@@ -3735,15 +3746,11 @@ pub fn access_list_rlc<F: Field>(
 
         for al in access_list.as_ref().unwrap().0.iter() {
             let field_rlc = rlc_be_bytes(&al.address.to_fixed_bytes(), challenges.keccak_input());
-            section_rlc = section_rlc * r32 + field_rlc;
+            section_rlc = section_rlc * r20 + field_rlc;
 
-            for (sk_idx, sk) in al.storage_keys.iter().enumerate() {
+            for sk in al.storage_keys.iter() {
                 let field_rlc = rlc_be_bytes(&sk.to_fixed_bytes(), challenges.keccak_input());
-                section_rlc = if sk_idx > 0 {
-                    section_rlc * r32 + field_rlc
-                } else {
-                    section_rlc * r20 + field_rlc
-                };
+                section_rlc = section_rlc * r32 + field_rlc;
             }
         }
 
