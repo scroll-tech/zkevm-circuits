@@ -630,6 +630,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 meta.query_advice(is_calldata, Rotation::cur()),
             );
 
+            // Ensure continuity of is_calldata when is_final is false
+            cb.condition(and::expr([
+                meta.query_advice(is_calldata, Rotation::cur()),
+                not::expr(meta.query_advice(is_final, Rotation::cur())),
+            ]),
+            |cb| {
+                cb.require_zero(
+                    "is_calldata is continuous when is_final is false.", 
+                    meta.query_advice(is_calldata, Rotation::next()) - 1.expr(),
+                )
+            });
+
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
@@ -656,6 +668,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 ]),
                 meta.query_advice(is_access_list, Rotation::cur()),
             );
+
+            // Ensure continuity of is_access_list when is_final is false
+            cb.condition(and::expr([
+                meta.query_advice(is_access_list, Rotation::cur()),
+                not::expr(meta.query_advice(is_final, Rotation::cur())),
+            ]),
+            |cb| {
+                cb.require_zero(
+                    "is_access_list is continuous when is_final is false", 
+                    meta.query_advice(is_access_list, Rotation::next()) - 1.expr(),
+                )
+            });
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
