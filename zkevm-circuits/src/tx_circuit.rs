@@ -1036,7 +1036,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
             let queue_index = tx_nonce;
             // first tx in tx table
-            cb.condition(meta.query_fixed(q_first, Rotation::next()), |cb| {
+            cb.condition(meta.query_fixed(q_first, Rotation::cur()), |cb| {
                 cb.require_equal(
                     "num_all_txs_acc = is_l1_msg ? queue_index - total_l1_popped_before + 1 : 1",
                     meta.query_advice(num_all_txs_acc, Rotation::cur()),
