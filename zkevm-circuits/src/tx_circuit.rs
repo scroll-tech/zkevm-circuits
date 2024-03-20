@@ -1546,6 +1546,51 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 );
             });
 
+            // When is_final_cur is false, tx_id stays the same for either AccessList or AccessListStorageKey
+            cb.condition(not::expr(is_final_cur.clone()), |cb| {
+                cb.require_equal(
+                    "tx_id::next == tx_id::cur",
+                    tx_id_unchanged.is_equal_expression.clone(),
+                    1.expr(),
+                );
+            });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             // within same tx, next tag is AccessListAddress
             cb.condition(
                 and::expr([
@@ -1599,7 +1644,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             // conditions are defined using the tail location of calldata (in the previous constraint block)
             cb.condition(
                 and::expr([
-                    is_final_cur,
+                    is_final_cur.clone(),
                     not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
                     meta.query_advice(is_access_list, Rotation::next()),
                 ]),
@@ -1612,6 +1657,20 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     cb.require_zero(
                         "sks_acc starts with 0",
                         meta.query_advice(sks_acc, Rotation::next()),
+                    );
+                }
+            );
+
+            // When is_final_cur is true, the tx_id must change for the next dynamic section
+            cb.condition(
+                and::expr([
+                    is_final_cur,
+                    not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
+                ]),
+                |cb| {
+                    cb.require_zero(
+                        "tx_id changes at is_final == 1",
+                        tx_id_unchanged.is_equal_expression.clone(),
                     );
                 }
             );
