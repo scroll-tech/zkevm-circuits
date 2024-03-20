@@ -615,6 +615,37 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 },
             );
 
+            // AccessListAddressLen = 0 must force AccessListStorageKeysLen = 0 and AccessListRLC = 0
+            cb.condition(and::expr([
+                is_access_list_addresses_len(meta), 
+                meta.query_advice(is_none, Rotation::cur()),
+            ]), |cb| {
+                cb.require_equal(
+                    "AccessListStorageKeysLen = 0",
+                    meta.query_advice(tx_table.value, Rotation::next()),
+                    0.expr(),
+                );
+                cb.require_equal(
+                    "AccessListRLC = 0",
+                    meta.query_advice(tx_table.value, Rotation(2)),
+                    0.expr(),
+                );
+            });
+
+            // AccessListAddressLen != 0 must force AccessListRLC != 0
+            cb.condition(
+                and::expr([
+                    is_access_list_addresses_len(meta), 
+                    not::expr(meta.query_advice(is_none, Rotation::cur())),
+                ]),
+                |cb| {
+                    cb.require_zero(
+                        "AccessListRLC != 0",
+                        value_is_zero.expr(Rotation(2))(meta),
+                    );
+                },
+            );
+
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
@@ -2644,21 +2675,31 @@ impl<F: Field> TxCircuitConfig<F> {
             ),
             (
                 AccessListAddressesLen,
-                None,
+                Some(RlpTableInputValue {
+                    tag: Null,
+                    is_none: access_list_address_size.is_zero(),
+                    be_bytes_len: 0,
+                    be_bytes_rlc: zero_rlc,
+                }),
                 Value::known(F::from(access_list_address_size)),
             ),
             (
                 AccessListStorageKeysLen,
-                None,
+                Some(RlpTableInputValue {
+                    tag: Null,
+                    is_none: access_list_storage_key_size.is_zero(),
+                    be_bytes_len: 0,
+                    be_bytes_rlc: zero_rlc,
+                }),
                 Value::known(F::from(access_list_storage_key_size)),
             ),
             (
                 AccessListRLC,
                 Some(RlpTableInputValue {
                     tag: RLC,
-                    is_none: false,
-                    be_bytes_len: 0,
-                    be_bytes_rlc: zero_rlc,
+                    is_none: !tx.access_list.is_some(),
+                    be_bytes_len: access_list_len::<F>(&tx.access_list),
+                    be_bytes_rlc: access_list_rlc(&tx.access_list, challenges),
                 }),
                 access_list_rlc(&tx.access_list, challenges),
             ),
@@ -3814,5 +3855,21 @@ pub fn access_list_rlc<F: Field>(
         section_rlc
     } else {
         Value::known(F::zero())
+    }
+}
+
+/// Returns the length of the access list including addresses and storage keys
+pub fn access_list_len<F: Field>(
+    access_list: &Option<AccessList>
+) -> u32 {
+    if access_list.is_some() {
+        let mut len = 0;
+        for al in access_list.as_ref().unwrap().0.iter() {
+            len += 20;
+            len += 32 * (al.storage_keys.len() as u32);
+        }
+        len
+    } else {
+        0
     }
 }
