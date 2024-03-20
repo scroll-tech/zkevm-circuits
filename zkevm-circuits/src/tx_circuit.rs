@@ -1448,10 +1448,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_advice(is_access_list, Rotation::next()),
                 ]),
                 |cb| {
-                    cb.require_zero(
-                        "tx_id stays the same for access list section at is_final == 1",
-                        tx_id_unchanged.is_equal_expression.clone() - 1.expr(),
-                    );
                     cb.require_equal(
                         "al_idx starts with 1",
                         meta.query_advice(al_idx, Rotation::next()),
