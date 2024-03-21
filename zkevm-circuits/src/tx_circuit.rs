@@ -1222,6 +1222,44 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let is_tag_caller_addr = is_caller_addr(meta);
             let mut cb = BaseConstraintBuilder::default();
 
+            // is_padding_tx is boolean
+            cb.require_boolean(
+                "is_padding_tx is boolean",
+                meta.query_advice(is_padding_tx, Rotation::cur()),
+            );
+
+            // is_padding_tx starts with 0
+            cb.condition(
+                meta.query_fixed(q_first, Rotation::cur()),
+                |cb| {
+                    cb.require_zero(
+                        "is_padding_tx = 0 on the first row",
+                        meta.query_advice(is_padding_tx, Rotation::cur()),
+                    );
+                }
+            );
+
+            // is_padding_tx changes only once from 0 -> 1
+            cb.condition(
+                and::expr([
+                    not::expr(meta.query_fixed(q_first, Rotation::next())),
+                    not::expr(sum::expr([
+                        meta.query_advice(is_calldata, Rotation::next()),
+                        meta.query_advice(is_access_list, Rotation::next()),
+                    ]))
+                ]),
+                |cb| {
+                    cb.require_zero(
+                        "is_padding_tx changes from 0 -> 1 only once in the fixed section",
+                        meta.query_advice(is_padding_tx, Rotation::cur())
+                        * (
+                            meta.query_advice(is_padding_tx, Rotation::next())
+                            - meta.query_advice(is_padding_tx, Rotation::cur())
+                        )
+                    );
+                }
+            );
+            
             // if tag == CallerAddress
             cb.condition(is_tag_caller_addr.expr(), |cb| {
                 cb.require_equal(
@@ -1230,6 +1268,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     value_is_zero.expr(Rotation::cur())(meta),
                 );
             });
+
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
