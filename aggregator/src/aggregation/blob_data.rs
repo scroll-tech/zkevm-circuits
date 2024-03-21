@@ -361,10 +361,13 @@ impl BlobDataConfig {
         layouter.assign_region(
             || "BlobData internal checks",
             |mut region| {
+                rlc_config.init(&mut region)?;
                 let mut rlc_config_offset = 0;
+
                 ////////////////////////////////////////////////////////////////////////////////
                 ////////////////////////////////// NUM_CHUNKS //////////////////////////////////
                 ////////////////////////////////////////////////////////////////////////////////
+
                 let two_fifty_six = {
                     let two_fifty_six = rlc_config.load_private(
                         &mut region,
@@ -556,13 +559,24 @@ impl BlobDataConfig {
                     region.constrain_equal(i_val.cell(), row.chunk_idx.cell())?;
                 }
 
-                let r = rlc_config.read_challenge(
+                let r_keccak = rlc_config.read_challenge1(
                     &mut region,
                     challenge_value,
                     &mut rlc_config_offset,
                 )?;
+                let r_evm = rlc_config.read_challenge2(
+                    &mut region,
+                    challenge_value,
+                    &mut rlc_config_offset,
+                )?;
+                // keccak_input ^ 32
                 let r32 = {
-                    let r2 = rlc_config.mul(&mut region, &r, &r, &mut rlc_config_offset)?;
+                    let r2 = rlc_config.mul(
+                        &mut region,
+                        &r_keccak,
+                        &r_keccak,
+                        &mut rlc_config_offset,
+                    )?;
                     let r4 = rlc_config.mul(&mut region, &r2, &r2, &mut rlc_config_offset)?;
                     let r8 = rlc_config.mul(&mut region, &r4, &r4, &mut rlc_config_offset)?;
                     let r16 = rlc_config.mul(&mut region, &r8, &r8, &mut rlc_config_offset)?;
@@ -579,9 +593,14 @@ impl BlobDataConfig {
                     region.constrain_equal(cell.cell(), fixed_cell)?;
                     empty_digest_cells.push(cell);
                 }
+
                 // RLC of digest of empty bytes = RLC(keccak([]), r)
-                let empty_digest_rlc =
-                    rlc_config.rlc(&mut region, &empty_digest_cells, &r, &mut rlc_config_offset)?;
+                let empty_digest_evm_rlc = rlc_config.rlc(
+                    &mut region,
+                    &empty_digest_cells,
+                    &r_evm,
+                    &mut rlc_config_offset,
+                )?;
 
                 let blob_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
                 let blob_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
@@ -598,8 +617,7 @@ impl BlobDataConfig {
                     metadata_digest_rlc_specified.cell(),
                 )?;
 
-                let mut chunk_digest_rlcs = Vec::with_capacity(MAX_AGG_SNARKS);
-                let mut blob_preimage_rlc_computed = metadata_digest_rlc_specified.clone();
+                let mut chunk_digest_evm_rlcs = Vec::with_capacity(MAX_AGG_SNARKS);
                 for ((row, chunk_size_decoded), is_empty) in rows
                     .iter()
                     .skip(1)
@@ -607,19 +625,13 @@ impl BlobDataConfig {
                     .zip_eq(chunk_sizes)
                     .zip_eq(is_empty_chunks)
                 {
-                    let chunk_digest_rlc = rlc_config.select(
+                    // if the chunk is empty, the chunk data digest should be the empty keccak
+                    // digest.
+                    rlc_config.conditional_enforce_equal(
                         &mut region,
-                        &empty_digest_rlc,
                         &row.digest_rlc,
+                        &empty_digest_evm_rlc,
                         &is_empty,
-                        &mut rlc_config_offset,
-                    )?;
-                    // compute running RLC of digest RLCs.
-                    blob_preimage_rlc_computed = rlc_config.mul_add(
-                        &mut region,
-                        &blob_preimage_rlc_computed,
-                        &r32,
-                        &chunk_digest_rlc,
                         &mut rlc_config_offset,
                     )?;
 
@@ -634,24 +646,21 @@ impl BlobDataConfig {
                     region
                         .constrain_equal(chunk_size_specified.cell(), chunk_size_decoded.cell())?;
 
-                    chunk_digest_rlcs.push(&row.digest_rlc);
+                    chunk_digest_evm_rlcs.push(&row.digest_rlc);
                 }
-                region.constrain_equal(
-                    blob_preimage_rlc_computed.cell(),
-                    blob_preimage_rlc_specified.cell(),
-                )?;
 
                 ////////////////////////////////////////////////////////////////////////////////
                 ///////////////////////////////// DIGEST BYTES /////////////////////////////////
                 ////////////////////////////////////////////////////////////////////////////////
 
+                let mut blob_preimage_keccak_rlc = zero.clone();
                 let rows = assigned_rows
                     .iter()
                     .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC)
                     .take(N_ROWS_DIGEST_BYTES)
                     .collect::<Vec<_>>();
                 for (i, digest_rlc_specified) in std::iter::once(metadata_digest_rlc_specified)
-                    .chain(chunk_digest_rlcs)
+                    .chain(chunk_digest_evm_rlcs)
                     .chain(std::iter::once(blob_digest_rlc_specified))
                     .enumerate()
                 {
@@ -664,11 +673,37 @@ impl BlobDataConfig {
                         .iter()
                         .map(|row| row.byte.clone())
                         .collect::<Vec<_>>();
-                    let digest_rlc_computed =
-                        rlc_config.rlc(&mut region, &digest_bytes, &r, &mut rlc_config_offset)?;
+                    let digest_rlc_computed = rlc_config.rlc(
+                        &mut region,
+                        &digest_bytes,
+                        &r_evm,
+                        &mut rlc_config_offset,
+                    )?;
                     region
                         .constrain_equal(digest_rlc_computed.cell(), digest_rlc_specified.cell())?;
+
+                    // compute the keccak input RLC:
+                    // we do this only for the metadata and chunks, not for the blob row itself.
+                    if i < MAX_AGG_SNARKS + 1 {
+                        let digest_keccak_rlc = rlc_config.rlc(
+                            &mut region,
+                            &digest_bytes,
+                            &r_keccak,
+                            &mut rlc_config_offset,
+                        )?;
+                        blob_preimage_keccak_rlc = rlc_config.mul_add(
+                            &mut region,
+                            &blob_preimage_keccak_rlc,
+                            &r32,
+                            &digest_keccak_rlc,
+                            &mut rlc_config_offset,
+                        )?;
+                    }
                 }
+                region.constrain_equal(
+                    blob_preimage_keccak_rlc.cell(),
+                    blob_preimage_rlc_specified.cell(),
+                )?;
 
                 ////////////////////////////////////////////////////////////////////////////////
                 //////////////////////////////////// EXPORT ////////////////////////////////////

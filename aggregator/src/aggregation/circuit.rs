@@ -487,14 +487,15 @@ impl CircuitExt<Fr> for AggregationCircuit {
 
     fn selectors(config: &Self::Config) -> Vec<Selector> {
         // - advice columns from flex gate
-        // - selector from RLC gate
+        // - selectors from RLC gate
         config.0.flex_gate().basic_gates[0]
             .iter()
             .map(|gate| gate.q_enable)
             .chain(
                 [
                     config.0.rlc_config.selector,
-                    config.0.rlc_config.enable_challenge,
+                    config.0.rlc_config.enable_challenge1,
+                    config.0.rlc_config.enable_challenge2,
                 ]
                 .iter()
                 .cloned(),

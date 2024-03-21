@@ -968,7 +968,7 @@ pub(crate) fn conditional_constraints(
                 // 8. batch data hash is correct w.r.t. its RLCs
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
                 let challenge_cell =
-                    rlc_config.read_challenge(&mut region, challenges, &mut offset)?;
+                    rlc_config.read_challenge1(&mut region, challenges, &mut offset)?;
 
                 let flags = chunk_is_valid_cells
                     .iter()
