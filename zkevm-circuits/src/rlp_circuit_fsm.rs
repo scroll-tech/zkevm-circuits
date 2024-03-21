@@ -1536,7 +1536,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
                 is_access_list_storage_key(meta),
             );
-            
+
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 is_decode_tag_start(meta),
@@ -1559,6 +1559,26 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 is_tag_end_vector(meta),
+            ]))
+        });
+
+        // Access List Init
+        meta.create_gate("access list: access_list_idx increments", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "access_list_idx starts at 0",
+                meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
+            );
+
+            cb.require_zero(
+                "storage_key_idx starts at 0",
+                meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                meta.query_fixed(q_first, Rotation::cur()),
             ]))
         });
 
