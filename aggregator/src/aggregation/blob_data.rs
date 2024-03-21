@@ -123,20 +123,23 @@ impl BlobDataConfig {
             let is_data = meta.query_selector(config.data_selector);
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
             let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
+
             let cond = is_data * is_boundary;
+
             let len_next = meta.query_advice(config.accumulator, Rotation::next());
-            let preimage_rlc = meta.query_advice(config.preimage_rlc, Rotation::next());
+            let preimage_rlc_next = meta.query_advice(config.preimage_rlc, Rotation::next());
             let byte_next = meta.query_advice(config.byte, Rotation::next());
+
             vec![
                 // if boundary followed by padding, length and preimage_rlc is 0.
                 cond.expr() * is_padding_next.expr() * len_next.expr(),
-                cond.expr() * is_padding_next.expr() * preimage_rlc.expr(),
+                cond.expr() * is_padding_next.expr() * preimage_rlc_next.expr(),
                 // if boundary not followed by padding, length resets to 1, preimage_rlc resets to
                 // the byte value.
                 cond.expr() * (1.expr() - is_padding_next.expr()) * (len_next.expr() - 1.expr()),
                 cond.expr()
                     * (1.expr() - is_padding_next.expr())
-                    * (preimage_rlc - byte_next.expr()),
+                    * (preimage_rlc_next - byte_next.expr()),
             ]
         });
 
@@ -144,15 +147,18 @@ impl BlobDataConfig {
             let is_data = meta.query_selector(config.data_selector);
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
             let is_padding = meta.query_advice(config.is_padding, Rotation::cur());
-            let chunk_idx_curr = meta.query_advice(config.chunk_idx, Rotation::cur());
-            let chunk_idx_next = meta.query_advice(config.chunk_idx, Rotation::next());
+
             // in the data section (not padding) when we traverse the same chunk.
             let cond = is_data * (1.expr() - is_padding) * (1.expr() - is_boundary);
-            let len_next = meta.query_advice(config.accumulator, Rotation::next());
+
+            let chunk_idx_curr = meta.query_advice(config.chunk_idx, Rotation::cur());
+            let chunk_idx_next = meta.query_advice(config.chunk_idx, Rotation::next());
             let len_curr = meta.query_advice(config.accumulator, Rotation::cur());
-            let preimage_rlc_next = meta.query_advice(config.preimage_rlc, Rotation::next());
+            let len_next = meta.query_advice(config.accumulator, Rotation::next());
             let preimage_rlc_curr = meta.query_advice(config.preimage_rlc, Rotation::cur());
+            let preimage_rlc_next = meta.query_advice(config.preimage_rlc, Rotation::next());
             let byte_next = meta.query_advice(config.byte, Rotation::next());
+
             vec![
                 // chunk idx unchanged.
                 cond.expr() * (chunk_idx_next - chunk_idx_curr),
@@ -165,33 +171,43 @@ impl BlobDataConfig {
 
         meta.create_gate("BlobDataConfig (boundary/padding/accumulator)", |meta| {
             let is_data = meta.query_selector(config.data_selector);
-            let is_hash = meta.query_selector(config.hash_selector);
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
             let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
             let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
             let diff = is_padding_next - is_padding_curr.expr();
-            let accumulator = meta.query_advice(config.accumulator, Rotation::cur());
 
             vec![
-                is_data.expr() * is_boundary.expr() * (1.expr() - is_boundary.expr()),
-                is_hash.expr() * is_boundary.expr(),
-                is_data.expr() * is_padding_curr.expr() * (1.expr() - is_padding_curr.expr()),
+                // is_boundary is boolean.
+                is_boundary.expr() * (1.expr() - is_boundary.expr()),
+                // is_padding is boolean.
+                is_padding_curr.expr() * (1.expr() - is_padding_curr.expr()),
+                // is_padding is meaningful only for "chunk data" section, i.e.
+                // is_padding is 0 for other sections.
+                (1.expr() - is_data.expr()) * is_padding_curr.expr(),
+                // is_padding transitions from 0 -> 1 only once
                 is_data * diff.expr() * (1.expr() - diff.expr()),
-                is_hash.expr() * is_padding_curr.expr(),
-                is_hash * accumulator.expr(),
             ]
         });
 
         // lookup to keccak table.
         meta.lookup_any("BlobDataConfig (keccak table)", |meta| {
             let is_data = meta.query_selector(config.data_selector);
+            let is_hash = meta.query_selector(config.hash_selector);
+            let is_not_hash = 1.expr() - is_hash;
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
-            let cond = is_data * is_boundary;
+
+            // in the "metadata" or "chunk data" section, wherever is_boundary is set.
+            let cond = is_not_hash * is_boundary;
+
+            let accumulator = meta.query_advice(config.accumulator, Rotation::cur());
+            let preimage_len =
+                is_data.expr() * accumulator + (1.expr() - is_data) * N_ROWS_METADATA.expr();
+
             [
                 1.expr(),                                                // q_enable
                 1.expr(),                                                // is final
                 meta.query_advice(config.preimage_rlc, Rotation::cur()), // input RLC
-                meta.query_advice(config.accumulator, Rotation::cur()),  // input len
+                preimage_len,                                            // input len
                 meta.query_advice(config.digest_rlc, Rotation::cur()),   // output RLC
             ]
             .into_iter()
@@ -200,13 +216,15 @@ impl BlobDataConfig {
             .collect()
         });
 
-        // TODO: lookup to keccak table for metadata bytes
 
         // lookup for digest RLC to the hash section.
         meta.lookup_any("BlobDataConfig (hash section)", |meta| {
             let is_data = meta.query_selector(config.data_selector);
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
+
+            // in the "chunk data" section when we encounter a chunk boundary
             let cond = is_data * is_boundary;
+
             let hash_section_table = vec![
                 meta.query_selector(config.hash_selector),
                 meta.query_advice(config.chunk_idx, Rotation::cur()),
@@ -229,12 +247,20 @@ impl BlobDataConfig {
         meta.lookup_any("BlobDataConfig (z := keccak(preimage_z))", |meta| {
             let is_hash = meta.query_selector(config.hash_selector);
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
+
+            // when is_boundary is set in the "digest RLC" section.
+            // this is also the last row of the "digest RLC" section.
             let cond = is_hash * is_boundary;
+
+            // - metadata_digest: 32 bytes
+            // - chunk[i].chunk_data_digest: 32 bytes each
+            let preimage_len = 32.expr() * (MAX_AGG_SNARKS + 1).expr();
+
             [
                 1.expr(),                                                // q_enable
                 1.expr(),                                                // is final
                 meta.query_advice(config.preimage_rlc, Rotation::cur()), // input rlc
-                32.expr() * (MAX_AGG_SNARKS + 1).expr(),                 // input len
+                preimage_len,                                            // input len
                 meta.query_advice(config.digest_rlc, Rotation::cur()),   // output rlc
             ]
             .into_iter()
@@ -446,12 +472,8 @@ impl BlobDataConfig {
                 }
                 region.constrain_equal(num_nonempty_chunks.cell(), num_chunks.cell())?;
 
-                ////////////////////////////////////////////////////////////////////////////////
-                ////////////////////////////////// CHUNK_DATA //////////////////////////////////
-                ////////////////////////////////////////////////////////////////////////////////
-
-                // the first data row has a length (accumulator) of 1.
-                let row = assigned_rows.get(N_ROWS_METADATA).unwrap();
+                // on the last row of the "metadata" section we want to ensure the keccak table
+                // lookup would be enabled for the metadata digest
                 let one = {
                     let one =
                         rlc_config.load_private(&mut region, &Fr::one(), &mut rlc_config_offset)?;
@@ -459,14 +481,22 @@ impl BlobDataConfig {
                     region.constrain_equal(one.cell(), one_cell)?;
                     one
                 };
-                let is_one = rlc_config.is_equal(
-                    &mut region,
-                    &row.accumulator,
-                    &one,
-                    &mut rlc_config_offset,
+                region.constrain_equal(
+                    assigned_rows
+                        .get(N_ROWS_METADATA - 1)
+                        .unwrap()
+                        .is_boundary
+                        .cell(),
+                    one.cell(),
                 )?;
-                let is_not_one = rlc_config.not(&mut region, &is_one, &mut rlc_config_offset)?;
-                rlc_config.enforce_zero(&mut region, &is_not_one)?;
+
+                ////////////////////////////////////////////////////////////////////////////////
+                ////////////////////////////////// CHUNK_DATA //////////////////////////////////
+                ////////////////////////////////////////////////////////////////////////////////
+
+                // the first data row has a length (accumulator) of 1.
+                let row = assigned_rows.get(N_ROWS_METADATA).unwrap();
+                region.constrain_equal(row.accumulator.cell(), one.cell())?;
 
                 let rows = assigned_rows
                     .iter()
@@ -523,13 +553,7 @@ impl BlobDataConfig {
                 let mut i_val = zero.clone();
                 for row in rows.iter().skip(1).take(MAX_AGG_SNARKS) {
                     i_val = rlc_config.add(&mut region, &i_val, &one, &mut rlc_config_offset)?;
-                    let diff = rlc_config.sub(
-                        &mut region,
-                        &row.chunk_idx,
-                        &i_val,
-                        &mut rlc_config_offset,
-                    )?;
-                    rlc_config.enforce_zero(&mut region, &diff)?;
+                    region.constrain_equal(i_val.cell(), row.chunk_idx.cell())?;
                 }
 
                 let r = rlc_config.read_challenge(
@@ -562,10 +586,12 @@ impl BlobDataConfig {
                 let blob_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
                 let blob_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
 
-                // assert that metadata_digest which we get through lookup into keccak table is
-                // equal to the one we assigned in hash section
+                // ensure that on the last row of this section the is_boundary is turned on
+                // which would enable the keccak table lookup for challenge_digest
+                region.constrain_equal(rows.last().unwrap().is_boundary.cell(), one.cell())?;
+
                 let metadata_digest_rlc_computed =
-                    &assigned_rows.get(N_ROWS_METADATA).unwrap().digest_rlc;
+                    &assigned_rows.get(N_ROWS_METADATA - 1).unwrap().digest_rlc;
                 let metadata_digest_rlc_specified = &rows.first().unwrap().digest_rlc;
                 region.constrain_equal(
                     metadata_digest_rlc_computed.cell(),
@@ -605,13 +631,8 @@ impl BlobDataConfig {
                         &is_empty,
                         &mut rlc_config_offset,
                     )?;
-                    let diff = rlc_config.sub(
-                        &mut region,
-                        &chunk_size_specified,
-                        &chunk_size_decoded,
-                        &mut rlc_config_offset,
-                    )?;
-                    rlc_config.enforce_zero(&mut region, &diff)?;
+                    region
+                        .constrain_equal(chunk_size_specified.cell(), chunk_size_decoded.cell())?;
 
                     chunk_digest_rlcs.push(&row.digest_rlc);
                 }
@@ -629,7 +650,7 @@ impl BlobDataConfig {
                     .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC)
                     .take(N_ROWS_DIGEST_BYTES)
                     .collect::<Vec<_>>();
-                for (i, digest_rlc) in std::iter::once(metadata_digest_rlc_specified)
+                for (i, digest_rlc_specified) in std::iter::once(metadata_digest_rlc_specified)
                     .chain(chunk_digest_rlcs)
                     .chain(std::iter::once(blob_digest_rlc_specified))
                     .enumerate()
@@ -645,13 +666,8 @@ impl BlobDataConfig {
                         .collect::<Vec<_>>();
                     let digest_rlc_computed =
                         rlc_config.rlc(&mut region, &digest_bytes, &r, &mut rlc_config_offset)?;
-                    let diff = rlc_config.sub(
-                        &mut region,
-                        digest_rlc,
-                        &digest_rlc_computed,
-                        &mut rlc_config_offset,
-                    )?;
-                    rlc_config.enforce_zero(&mut region, &diff)?;
+                    region
+                        .constrain_equal(digest_rlc_computed.cell(), digest_rlc_specified.cell())?;
                 }
 
                 ////////////////////////////////////////////////////////////////////////////////
