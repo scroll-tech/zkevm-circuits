@@ -408,6 +408,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         is_data_length(meta),
                         // if call data byte is zero, then gas_cost = 4 (16 otherwise)
                         is_data(meta),
+                        // if access_list_addresses_len is zero, then access_list_storage_keys_len = 0 and access_list_rlc = 0
+                        is_access_list_addresses_len(meta),
                     ]),
                 ])
             },
