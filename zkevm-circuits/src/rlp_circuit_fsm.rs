@@ -1536,15 +1536,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
                 is_access_list_storage_key(meta),
             );
-            cb.require_boolean(
-                "is_new_access_list_address is boolean",
-                meta.query_advice(is_new_access_list_address, Rotation::cur()),
-            );
-            cb.require_boolean(
-                "is_new_access_list_storage_key is boolean",
-                meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
-            );
-
+            
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 is_decode_tag_start(meta),
@@ -1562,14 +1554,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 "is_storage_key_list_end",
                 meta.query_advice(is_storage_key_list_end, Rotation::cur()),
                 depth_eq_four.is_equal_expression.expr(),
-            );
-            cb.require_boolean(
-                "is_access_list_end is boolean",
-                meta.query_advice(is_access_list_end, Rotation::cur()),
-            );
-            cb.require_boolean(
-                "is_storage_key_list_end is boolean",
-                meta.query_advice(is_storage_key_list_end, Rotation::cur()),
             );
 
             cb.gate(and::expr([
@@ -1802,7 +1786,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
             },
         );
-        
+
         meta.create_gate(
             "Decoding table depth, operation and key change indicators",
             |meta| {
