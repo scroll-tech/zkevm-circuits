@@ -171,6 +171,12 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             * F::hash_block_size();
         let total_row_num = mpt_row_num + byte_row_num;
         log::debug!("poseidon circuit row num: {mpt_row_num}(mpt) + {byte_row_num}(bytecode) = {total_row_num}");
+        let mpt_circuit_rows = (3 * 32 * block.mpt_updates.len());
+        let poseidon_mpt_ratio = mpt_row_num as f64 / mpt_circuit_rows as f64;
+        log::debug!(
+            "poseidon_mpt_ratio {poseidon_mpt_ratio:.3}, 12x naive poseidon rows {}",
+            12 * mpt_circuit_rows
+        );
         (
             total_row_num,
             block.circuits_params.max_poseidon_rows.max(total_row_num),
