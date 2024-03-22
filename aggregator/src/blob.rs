@@ -8,7 +8,7 @@ pub const BYTES_PER_BLOB_ELEMENT: usize = 32;
 pub const LOG_BLOG_WIDTH: usize = 12;
 
 #[derive(Clone, Debug, Default)]
-pub struct Blob(Vec<Vec<u8>>);
+pub struct Blob(pub Vec<Vec<u8>>);
 
 impl Blob {
     pub fn new(chunk_hashes: &[ChunkHash]) -> Self {

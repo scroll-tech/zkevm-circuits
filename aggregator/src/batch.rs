@@ -3,11 +3,15 @@
 
 use eth_types::{Field, ToBigEndian, H256, U256};
 use ethers_core::utils::keccak256;
-use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    circuit::Value,
+    halo2curves::{bls12_381::Scalar, bn256::Fr},
+};
 use itertools::Itertools;
 use zkevm_circuits::util::Challenges;
 
 use crate::{
+    barycentric::interpolate,
     blob::{Blob, BlobAssignments},
     chunk::ChunkHash,
     constants::MAX_AGG_SNARKS,
@@ -301,6 +305,7 @@ impl BatchHash {
 }
 
 /// Helper struct to generate witness for the Blob Data Config.
+#[derive(Clone, Debug, Default)]
 pub struct BlobData {
     /// The number of chunks that have non-empty L2 tx data.
     pub number_non_empty_chunks: u16,
@@ -308,6 +313,37 @@ pub struct BlobData {
     pub chunk_sizes: [u32; MAX_AGG_SNARKS],
     /// The L2 signed transaction bytes, flattened RLP-encoded, for each chunk.
     pub chunk_bytes: [Vec<u8>; MAX_AGG_SNARKS],
+}
+
+impl From<Blob> for BlobData {
+    fn from(blob: Blob) -> Self {
+        Self {
+            number_non_empty_chunks: blob
+                .0
+                .iter()
+                .filter(|chunk| !chunk.is_empty())
+                .count()
+                .try_into()
+                .unwrap(),
+            chunk_sizes: blob
+                .0
+                .iter()
+                .map(|x| u32::try_from(x.len()).unwrap())
+                .chain(std::iter::repeat(0))
+                .take(MAX_AGG_SNARKS)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            chunk_bytes: blob
+                .0
+                .into_iter()
+                .chain(std::iter::repeat(vec![]))
+                .take(MAX_AGG_SNARKS)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        }
+    }
 }
 
 /// Witness row to the Blob Data Config.
@@ -337,6 +373,73 @@ impl BlobDataRow<Fr> {
             digest_rlc: Value::known(Fr::zero()),
             ..Default::default()
         }
+    }
+}
+
+impl From<BlobData> for BlobAssignments {
+    fn from(blob: BlobData) -> Self {
+        let coefficients = blob.get_coefficients();
+        let coefficients_scalar = coefficients.map(|coeff| Scalar::from_raw(coeff.0));
+        let challenge_digest = blob.get_challenge_digest();
+        let bls_modulus = U256::from_str_radix(
+            "52435875175126190479447740508185965837690552500527637822603658699938581184513",
+            10,
+        )
+        .unwrap();
+        let (_, z) = challenge_digest.div_mod(bls_modulus);
+
+        Self {
+            z,
+            challenge_digest,
+            evaluation: U256::from_little_endian(
+                &interpolate(Scalar::from_raw(challenge_digest.0), coefficients_scalar).to_bytes(),
+            ),
+            coefficients,
+        }
+    }
+}
+
+impl BlobData {
+    /// Get the preimage of the challenge digest.
+    pub(crate) fn get_challenge_digest_preimage(&self) -> Vec<u8> {
+        let metadata_digest = keccak256(self.to_metadata_bytes());
+        let chunk_digests = self.chunk_bytes.iter().map(keccak256);
+        std::iter::empty()
+            .chain(metadata_digest)
+            .chain(chunk_digests.flatten())
+            .collect::<Vec<_>>()
+    }
+
+    /// Compute the challenge digest from blob bytes.
+    pub(crate) fn get_challenge_digest(&self) -> U256 {
+        let challenge_digest = keccak256(self.get_challenge_digest_preimage());
+        U256::from_big_endian(&challenge_digest)
+    }
+
+    /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
+    pub(crate) fn get_coefficients(&self) -> [U256; BLOB_WIDTH] {
+        let mut coefficients = [[0u8; N_BYTES_32]; BLOB_WIDTH];
+        let metadata_bytes = self.to_metadata_bytes();
+        let blob_bytes = metadata_bytes
+            .iter()
+            .chain(self.chunk_bytes.iter().flatten());
+        for (i, &byte) in blob_bytes.enumerate() {
+            coefficients[i / 31][i % 31] = byte;
+        }
+        coefficients.map(|coeff| U256::from_little_endian(&coeff))
+    }
+
+    /// Get the list of preimages that need to go through the keccak hashing function, and
+    /// eventually required to be checked for the consistency of blob's metadata, its chunks' bytes
+    /// and the final blob preimage.
+    pub fn preimages(&self) -> Vec<Vec<u8>> {
+        let mut preimages = Vec::with_capacity(2 + MAX_AGG_SNARKS);
+        preimages.push(self.to_metadata_bytes());
+        for chunk in &self.chunk_bytes {
+            preimages.push(chunk.to_vec());
+        }
+        preimages.push(self.get_challenge_digest_preimage());
+        preimages
     }
 }
 

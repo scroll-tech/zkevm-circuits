@@ -433,7 +433,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
-                &self.batch_hash,
+                &self.batch_hash.to_blob_data(),
                 barycentric_assignments,
             )?;
 
