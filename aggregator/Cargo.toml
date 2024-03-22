@@ -25,11 +25,12 @@ halo2_proofs.workspace = true
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
-reth-primitives.workspace = true
 revm-precompile.workspace = true
 c-kzg.workspace = true
 num-bigint.workspace = true
 
+[dev-dependencies]
+reth-primitives = { git = "https://github.com/paradigmxyz/reth" }
 
 [features]
 default = [ ]

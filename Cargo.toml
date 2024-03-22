@@ -61,7 +61,6 @@ subtle = "2.4"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2"
 
-reth-primitives = { git = "https://github.com/paradigmxyz/reth" }
 revm-precompile = { git = "https://github.com/bluealloy/revm" }
 c-kzg = "0.4.2"
 
