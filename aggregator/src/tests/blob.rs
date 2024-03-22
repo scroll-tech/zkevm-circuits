@@ -2,7 +2,7 @@ use crate::{
     aggregation::{BlobDataConfig, RlcConfig},
     barycentric::{BarycentricEvaluationCells, BarycentricEvaluationConfig},
     batch::BlobData,
-    blob::{Blob, BlobAssignments},
+    blob::{Blob, BlobAssignments, BLOB_WIDTH},
     param::ConfigParams,
     MAX_AGG_SNARKS,
 };
@@ -182,10 +182,50 @@ fn blob_circuit_completeness() {
     }
 }
 
-#[test]
-#[ignore = "TODO: enable later"]
-fn blob_circuit_soundness() {
-    let padding_chunk_with_bytes = BlobData::default();
-
-    assert_eq!(check_circuit(padding_chunk_with_bytes), Ok(()));
+fn generic_blob_data() -> BlobData {
+    BlobData::from(Blob(vec![
+        vec![3, 100, 24, 30],
+        vec![],
+        vec![100; 300],
+        vec![100, 23, 34, 24, 10],
+        vec![200; 20],
+        vec![200; 20],
+        vec![],
+    ]))
 }
+
+#[test]
+fn inconsistent_chunk_size() {
+    let mut blob_data = generic_blob_data();
+    blob_data.chunk_sizes[4] += 1;
+    assert!(check_circuit(blob_data).is_err());
+}
+
+#[test]
+fn too_many_empty_chunks() {
+    let mut blob_data = generic_blob_data();
+    blob_data.number_non_empty_chunks += 1;
+    assert!(check_circuit(blob_data).is_err());
+}
+
+#[test]
+fn too_few_empty_chunks() {
+    let mut blob_data = generic_blob_data();
+    blob_data.number_non_empty_chunks -= 1;
+    assert!(check_circuit(blob_data).is_err());
+}
+
+#[test]
+fn inconsistent_chunk_bytes() {
+    let mut blob_data = generic_blob_data();
+    blob_data.chunk_bytes[0].push(128);
+    assert!(check_circuit(blob_data).is_err());
+}
+
+// This is not possible to check right now becuase of the assignment code.
+// #[test]
+// fn too_many_chunk_bytes() {
+//     let mut blob_data = generic_blob_data();
+//     blob_data.chunk_bytes[0].extend(vec![100; BLOB_WIDTH * 31]);
+//     assert!(check_circuit(blob_data).is_err());
+// }
