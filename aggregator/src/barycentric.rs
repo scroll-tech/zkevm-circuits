@@ -18,19 +18,18 @@ use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
-    blob::{BLOB_WIDTH, LOG_BLOG_WIDTH},
+    blob::{BLOB_WIDTH, LOG_BLOB_WIDTH},
     constants::{BITS, LIMBS},
 };
 
-/*
-mod scalar_field_element;
-use scalar_field_element::ScalarFieldElement;
-*/
+pub static BLS_MODULUS: LazyLock<U256> = LazyLock::new(|| {
+    U256::from_str_radix(Scalar::MODULUS, 16).expect("BLS_MODULUS from bls crate")
+});
 
 pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
     // https://github.com/ethereum/consensus-specs/blob/dev/specs/deneb/polynomial-commitments.md#constants
     let primitive_root_of_unity = Scalar::from(7);
-    let modulus = U256::from_str_radix(Scalar::MODULUS, 16).unwrap();
+    let modulus = *BLS_MODULUS;
 
     let exponent = (modulus - U256::one()) / U256::from(4096);
     let root_of_unity = primitive_root_of_unity.pow(&exponent.0);
@@ -40,7 +39,7 @@ pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
         .collect();
     let bit_reversed_order: Vec<_> = (0..BLOB_WIDTH)
         .map(|i| {
-            let j = u16::try_from(i).unwrap().reverse_bits() >> (16 - LOG_BLOG_WIDTH);
+            let j = u16::try_from(i).unwrap().reverse_bits() >> (16 - LOG_BLOB_WIDTH);
             ascending_order[usize::from(j)]
         })
         .collect();
@@ -108,11 +107,7 @@ impl BarycentricEvaluationConfig {
         evaluation: U256,
     ) -> BarycentricEvaluationCells {
         // prechecks (challenge point z)
-        let bls_modulus = U256::from_dec_str(
-            "52435875175126190479447740508185965837690552500527637822603658699938581184513",
-        )
-        .expect("BLS_MODULUS from decimal string");
-        let (_, challenge) = challenge_digest.div_mod(bls_modulus);
+        let (_, challenge) = challenge_digest.div_mod(*BLS_MODULUS);
         let challenge_scalar = Scalar::from_raw(challenge.0);
 
         let challenge_digest_crt = self.load_u256(ctx, challenge_digest);
@@ -291,7 +286,7 @@ impl BarycentricEvaluationConfig {
         let blob_width = self
             .scalar
             .load_constant(ctx, fe_to_biguint(&Fr::from(BLOB_WIDTH as u64)));
-        let z_to_blob_width = (0..LOG_BLOG_WIDTH).fold(challenge_crt.clone(), |acc, _| {
+        let z_to_blob_width = (0..LOG_BLOB_WIDTH).fold(challenge_crt.clone(), |acc, _| {
             self.scalar.mul(ctx, &acc, &acc)
         });
         let z_to_blob_width_minus_one = self.scalar.sub_no_carry(ctx, &z_to_blob_width, &one);
@@ -315,48 +310,6 @@ impl BarycentricEvaluationConfig {
             y_le: evaluation_le,
         }
     }
-
-    /*
-    pub fn assign(
-        &self,
-        ctx: &mut Context<Fr>,
-        blob: [Scalar; BLOB_WIDTH],
-        z: Scalar,
-    ) -> BarycentricEvaluationAssignments {
-        let one = ScalarFieldElement::constant(Scalar::one());
-        let blob_width = ScalarFieldElement::constant(u64::try_from(BLOB_WIDTH).unwrap().into());
-
-        let z = self
-            .scalar
-            .load_private(ctx, Value::known(fe_to_biguint(&z).into()));
-        let blob = blob.map(|e| {
-            self.scalar
-                .load_private(ctx, Value::known(fe_to_biguint(&e).into()))
-        });
-        let z_to_blob_width = successors(Some(ScalarFieldElement::private(z.clone())), |z| {
-            Some(z.clone() * z.clone())
-        })
-        .take(LOG_BLOG_WIDTH)
-        .last()
-        .unwrap();
-        let y = (z_to_blob_width - one)
-            * ROOTS_OF_UNITY
-                .map(ScalarFieldElement::constant)
-                .into_iter()
-                .zip_eq(blob.clone().map(ScalarFieldElement::private))
-                .map(|(root, f)| {
-                    f * (root.clone() / (ScalarFieldElement::private(z.clone()) - root)).carry()
-                })
-                .sum()
-            / blob_width;
-
-        BarycentricEvaluationAssignments {
-            z,
-            y: y.resolve(ctx, &self.scalar),
-            blob,
-        }
-    }
-    */
 }
 
 pub fn interpolate(z: Scalar, coefficients: [Scalar; BLOB_WIDTH]) -> Scalar {
@@ -377,12 +330,12 @@ mod tests {
 
     #[test]
     fn log_blob_width() {
-        assert_eq!(2_usize.pow(LOG_BLOG_WIDTH.try_into().unwrap()), BLOB_WIDTH);
+        assert_eq!(2_usize.pow(LOG_BLOB_WIDTH.try_into().unwrap()), BLOB_WIDTH);
     }
 
     #[test]
     fn scalar_field_modulus() {
-        let bls_modulus = U256::from_str_radix(Scalar::MODULUS, 16).unwrap();
+        let bls_modulus = *BLS_MODULUS;
         // BLS_MODULUS as decimal string from https://eips.ethereum.org/EIPS/eip-4844.
         let expected_bls_modulus = U256::from_str_radix(
             "52435875175126190479447740508185965837690552500527637822603658699938581184513",

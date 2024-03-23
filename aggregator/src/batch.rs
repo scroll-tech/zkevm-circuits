@@ -3,16 +3,9 @@
 
 use eth_types::{Field, ToBigEndian, H256, U256};
 use ethers_core::utils::keccak256;
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::{bls12_381::Scalar, bn256::Fr},
-};
-use itertools::Itertools;
-use zkevm_circuits::util::Challenges;
 
 use crate::{
-    barycentric::interpolate,
-    blob::{Blob, BlobAssignments},
+    blob::{BlobAssignments, BlobData},
     chunk::ChunkHash,
     constants::MAX_AGG_SNARKS,
 };
@@ -122,7 +115,8 @@ impl BatchHash {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
-        let blob = BlobAssignments::from(&Blob::new(chunks_with_padding));
+        let blob_data = BlobData::new(number_of_valid_chunks, chunks_with_padding);
+        let blob_assignments = BlobAssignments::from(&blob_data);
 
         // public input hash is build as
         // keccak(
@@ -144,8 +138,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             batch_data_hash.as_slice(),
-            blob.z.to_be_bytes().as_ref(),
-            blob.evaluation.to_be_bytes().as_ref(),
+            blob_assignments.challenge.to_be_bytes().as_ref(),
+            blob_assignments.evaluation.to_be_bytes().as_ref(),
         ]
         .concat();
         let public_input_hash = keccak256(preimage);
@@ -154,37 +148,9 @@ impl BatchHash {
             chain_id: chunks_with_padding[0].chain_id,
             chunks_with_padding: chunks_with_padding.to_vec(),
             data_hash: batch_data_hash.into(),
-            blob,
+            blob: blob_assignments,
             public_input_hash: public_input_hash.into(),
             number_of_valid_chunks,
-        }
-    }
-
-    /// Convert a batch of chunks to blob data.
-    pub(crate) fn to_blob_data(&self) -> BlobData {
-        let number_non_empty_chunks = self
-            .chunks_with_padding
-            .iter()
-            .filter(|chunk| !chunk.tx_bytes.is_empty())
-            .count() as u16;
-        let chunk_sizes = self
-            .chunks_with_padding
-            .iter()
-            .map(|chunk| chunk.tx_bytes.len() as u32)
-            .collect::<Vec<u32>>()
-            .try_into()
-            .unwrap();
-        let chunk_bytes = self
-            .chunks_with_padding
-            .iter()
-            .map(|chunk| chunk.tx_bytes.to_vec())
-            .collect::<Vec<Vec<u8>>>()
-            .try_into()
-            .unwrap();
-        BlobData {
-            number_non_empty_chunks,
-            chunk_sizes,
-            chunk_bytes,
         }
     }
 
@@ -195,8 +161,9 @@ impl BatchHash {
     /// - batch_public_input_hash
     /// - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
     /// - batch_data_hash_preimage
-    /// - chunk\[i\].tx_bytes for i in \[0, MAX_AGG_SNARKS)
-    /// - pre-image for z (random challenge point)
+    /// - preimage for blob metadata
+    /// - chunk\[i\].flattened_l2_signed_data for i in \[0, MAX_AGG_SNARKS)
+    /// - preimage for challenge digest
     pub(crate) fn extract_hash_preimages(&self) -> Vec<Vec<u8>> {
         let mut res = vec![];
 
@@ -257,37 +224,18 @@ impl BatchHash {
             .collect();
         res.push(batch_data_hash_preimage);
 
-        // flattened RLP-signed tx bytes for all L2 txs in chunk.
+        // This is the end of part where preimages to the keccak hashing function are of known
+        // size. We now move to the part where the preimage is dynamic.
         //
-        // This is eventually used in the chunk PI hash (defined above).
-        for chunk in self.chunks_with_padding.iter() {
-            res.push(chunk.tx_bytes.clone());
+        // These include:
+        // - preimage for blob metadata
+        // - preimage for each chunk's flattened L2 signed tx data
+        // - preimage for the challenge digest
+        let blob_data = BlobData::from(self);
+        let dynamic_preimages = blob_data.preimages();
+        for dynamic_preimage in dynamic_preimages {
+            res.push(dynamic_preimage);
         }
-
-        // flattened RLP-signed tx bytes for all L2 txs in batch.
-        //
-        // This is used to compute the random challenge point z, where:
-        //
-        // z := keccak256(
-        //     keccak256(metadata)          ||
-        //     keccak256(chunk[0].tx_bytes) ||
-        //     ...                          ||
-        //     keccak256(chunk[i].tx_bytes) ||
-        //     ...                          ||
-        //     keccak256(chunk[MAX_AGG_SNARKS-1].tx_bytes)
-        // )
-        let blob_data = self.to_blob_data();
-        res.push(blob_data.to_metadata_bytes());
-        res.push(
-            std::iter::empty()
-                .chain(keccak256(blob_data.to_metadata_bytes()))
-                .chain(
-                    self.chunks_with_padding
-                        .iter()
-                        .flat_map(|chunk| keccak256(&chunk.tx_bytes)),
-                )
-                .collect::<Vec<u8>>(),
-        );
 
         res
     }
@@ -303,373 +251,3 @@ impl BatchHash {
             .collect()]
     }
 }
-
-/// Helper struct to generate witness for the Blob Data Config.
-#[derive(Clone, Debug, Default)]
-pub struct BlobData {
-    /// The number of chunks that have non-empty L2 tx data.
-    pub number_non_empty_chunks: u16,
-    /// The size of each chunk.
-    pub chunk_sizes: [u32; MAX_AGG_SNARKS],
-    /// The L2 signed transaction bytes, flattened RLP-encoded, for each chunk.
-    pub chunk_bytes: [Vec<u8>; MAX_AGG_SNARKS],
-}
-
-impl From<Blob> for BlobData {
-    fn from(blob: Blob) -> Self {
-        Self {
-            number_non_empty_chunks: blob
-                .0
-                .iter()
-                .filter(|chunk| !chunk.is_empty())
-                .count()
-                .try_into()
-                .unwrap(),
-            chunk_sizes: blob
-                .0
-                .iter()
-                .map(|x| u32::try_from(x.len()).unwrap())
-                .chain(std::iter::repeat(0))
-                .take(MAX_AGG_SNARKS)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-            chunk_bytes: blob
-                .0
-                .into_iter()
-                .chain(std::iter::repeat(vec![]))
-                .take(MAX_AGG_SNARKS)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        }
-    }
-}
-
-/// Witness row to the Blob Data Config.
-#[derive(Clone, Copy, Default, Debug)]
-pub struct BlobDataRow<Fr> {
-    /// Byte value at this row.
-    pub byte: u8,
-    /// Multi-purpose accumulator value.
-    pub accumulator: u64,
-    /// The chunk index we are currently traversing.
-    pub chunk_idx: u64,
-    /// Whether this marks the end of a chunk.
-    pub is_boundary: bool,
-    /// Whether the row represents right-padded 0s to the blob data.
-    pub is_padding: bool,
-    /// A running accumulator of RLC of preimages.
-    pub preimage_rlc: Value<Fr>,
-    /// RLC of the digest.
-    pub digest_rlc: Value<Fr>,
-}
-
-impl BlobDataRow<Fr> {
-    fn padding_row() -> Self {
-        Self {
-            is_padding: true,
-            preimage_rlc: Value::known(Fr::zero()),
-            digest_rlc: Value::known(Fr::zero()),
-            ..Default::default()
-        }
-    }
-}
-
-impl From<BlobData> for BlobAssignments {
-    fn from(blob: BlobData) -> Self {
-        let coefficients = blob.get_coefficients();
-        let coefficients_scalar = coefficients.map(|coeff| Scalar::from_raw(coeff.0));
-        let challenge_digest = blob.get_challenge_digest();
-        let bls_modulus = U256::from_str_radix(
-            "52435875175126190479447740508185965837690552500527637822603658699938581184513",
-            10,
-        )
-        .unwrap();
-        let (_, z) = challenge_digest.div_mod(bls_modulus);
-
-        Self {
-            z,
-            challenge_digest,
-            evaluation: U256::from_little_endian(
-                &interpolate(Scalar::from_raw(challenge_digest.0), coefficients_scalar).to_bytes(),
-            ),
-            coefficients,
-        }
-    }
-}
-
-impl BlobData {
-    /// Get the preimage of the challenge digest.
-    pub(crate) fn get_challenge_digest_preimage(&self) -> Vec<u8> {
-        let metadata_digest = keccak256(self.to_metadata_bytes());
-        let chunk_digests = self.chunk_bytes.iter().map(keccak256);
-        std::iter::empty()
-            .chain(metadata_digest)
-            .chain(chunk_digests.flatten())
-            .collect::<Vec<_>>()
-    }
-
-    /// Compute the challenge digest from blob bytes.
-    pub(crate) fn get_challenge_digest(&self) -> U256 {
-        let challenge_digest = keccak256(self.get_challenge_digest_preimage());
-        U256::from_big_endian(&challenge_digest)
-    }
-
-    /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
-    pub(crate) fn get_coefficients(&self) -> [U256; BLOB_WIDTH] {
-        let mut coefficients = [[0u8; N_BYTES_32]; BLOB_WIDTH];
-        let metadata_bytes = self.to_metadata_bytes();
-        let blob_bytes = metadata_bytes
-            .iter()
-            .chain(self.chunk_bytes.iter().flatten());
-        for (i, &byte) in blob_bytes.enumerate() {
-            coefficients[i / 31][i % 31] = byte;
-        }
-        coefficients.map(|coeff| U256::from_little_endian(&coeff))
-    }
-
-    /// Get the list of preimages that need to go through the keccak hashing function, and
-    /// eventually required to be checked for the consistency of blob's metadata, its chunks' bytes
-    /// and the final blob preimage.
-    pub fn preimages(&self) -> Vec<Vec<u8>> {
-        let mut preimages = Vec::with_capacity(2 + MAX_AGG_SNARKS);
-        preimages.push(self.to_metadata_bytes());
-        for chunk in &self.chunk_bytes {
-            preimages.push(chunk.to_vec());
-        }
-        preimages.push(self.get_challenge_digest_preimage());
-        preimages
-    }
-}
-
-impl BlobData {
-    fn to_metadata_bytes(&self) -> Vec<u8> {
-        std::iter::empty()
-            .chain(self.number_non_empty_chunks.to_be_bytes())
-            .chain(
-                self.chunk_sizes
-                    .iter()
-                    .flat_map(|chunk_size| chunk_size.to_be_bytes()),
-            )
-            .collect()
-    }
-
-    fn to_metadata_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
-        // metadata bytes.
-        let bytes = self.to_metadata_bytes();
-
-        // accumulators of linear combination of lengths.
-        let accumulators_iter =
-            std::iter::empty()
-                .chain(self.number_non_empty_chunks.to_be_bytes().into_iter().scan(
-                    0u64,
-                    |acc, x| {
-                        *acc = *acc * 256 + (x as u64);
-                        Some(*acc)
-                    },
-                ))
-                .chain(self.chunk_sizes.into_iter().flat_map(|chunk_size| {
-                    chunk_size.to_be_bytes().into_iter().scan(0u64, |acc, x| {
-                        *acc = *acc * 256 + (x as u64);
-                        Some(*acc)
-                    })
-                }));
-
-        // iterator for digest rlc
-        let digest_rlc_iter = {
-            let digest = keccak256(&bytes);
-            let digest_rlc = digest.iter().fold(Value::known(Fr::zero()), |acc, &x| {
-                acc * challenge.evm_word() + Value::known(Fr::from(x as u64))
-            });
-            std::iter::repeat(Value::known(Fr::zero()))
-                .take(61) // 2 (n_chunks) + 15 * 4 (chunk_size) - 1
-                .chain(std::iter::once(digest_rlc))
-        };
-
-        // iterator for preimage rlc
-        let preimage_rlc_iter = bytes.iter().scan(Value::known(Fr::zero()), |acc, &x| {
-            *acc = *acc * challenge.keccak_input() + Value::known(Fr::from(x as u64));
-            Some(*acc)
-        });
-
-        bytes
-            .iter()
-            .zip_eq(accumulators_iter)
-            .zip_eq(preimage_rlc_iter)
-            .zip_eq(digest_rlc_iter)
-            .enumerate()
-            .map(
-                |(i, (((&byte, accumulator), preimage_rlc), digest_rlc))| BlobDataRow {
-                    byte,
-                    accumulator,
-                    preimage_rlc,
-                    digest_rlc,
-                    is_boundary: i == bytes.len() - 1,
-                    ..Default::default()
-                },
-            )
-            .collect()
-    }
-
-    fn to_data_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
-        self.chunk_bytes
-            .iter()
-            .enumerate()
-            .flat_map(|(i, bytes)| {
-                let chunk_idx = (i + 1) as u64;
-                let chunk_size = bytes.len();
-                let chunk_digest = keccak256(bytes);
-                let digest_rlc = chunk_digest
-                    .iter()
-                    .fold(Value::known(Fr::zero()), |acc, &byte| {
-                        acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
-                    });
-                bytes.iter().enumerate().scan(
-                    (0u64, Value::known(Fr::zero())),
-                    move |acc, (j, &byte)| {
-                        acc.0 += 1;
-                        acc.1 =
-                            acc.1 * challenge.keccak_input() + Value::known(Fr::from(byte as u64));
-                        Some(BlobDataRow {
-                            byte,
-                            accumulator: acc.0,
-                            chunk_idx,
-                            is_boundary: j == chunk_size - 1,
-                            is_padding: false,
-                            preimage_rlc: acc.1,
-                            digest_rlc: if j == chunk_size - 1 {
-                                digest_rlc
-                            } else {
-                                Value::known(Fr::zero())
-                            },
-                        })
-                    },
-                )
-            })
-            .chain(std::iter::repeat(BlobDataRow::padding_row()))
-            .take(N_ROWS_DATA)
-            .collect()
-    }
-
-    fn to_hash_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
-        let zero = Value::known(Fr::zero());
-
-        // metadata
-        let metadata_bytes = self.to_metadata_bytes();
-        let metadata_digest = keccak256(metadata_bytes);
-        let metadata_digest_rlc = metadata_digest.iter().fold(zero, |acc, &byte| {
-            acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
-        });
-
-        // chunk data
-        let (chunk_digests, chunk_digest_rlcs): (Vec<[u8; 32]>, Vec<Value<Fr>>) = self
-            .chunk_bytes
-            .iter()
-            .map(|chunk| {
-                let digest = keccak256(chunk);
-                let digest_rlc = digest.iter().fold(zero, |acc, &byte| {
-                    acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
-                });
-                (digest, digest_rlc)
-            })
-            .unzip();
-
-        // blob
-        let blob_preimage = std::iter::empty()
-            .chain(metadata_digest.iter())
-            .chain(chunk_digests.iter().flatten())
-            .cloned()
-            .collect::<Vec<u8>>();
-        let blob_preimage_rlc = blob_preimage.iter().fold(zero, |acc, &byte| {
-            acc * challenge.keccak_input() + Value::known(Fr::from(byte as u64))
-        });
-        let blob_digest = keccak256(&blob_preimage);
-        let blob_digest_rlc = blob_digest.iter().fold(zero, |acc, &byte| {
-            acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
-        });
-
-        std::iter::empty()
-            .chain(std::iter::once(BlobDataRow {
-                digest_rlc: metadata_digest_rlc,
-                preimage_rlc: Value::known(Fr::zero()),
-                // this is_padding assignment does not matter as we have already crossed the "chunk
-                // data" section. This assignment to 1 is simply to allow the custom gate to check:
-                // - padding transitions from 0 -> 1 only once.
-                is_padding: true,
-                ..Default::default()
-            }))
-            .chain(
-                chunk_digest_rlcs
-                    .iter()
-                    .zip_eq(self.chunk_bytes.iter())
-                    .enumerate()
-                    .map(|(i, (&digest_rlc, chunk_bytes))| BlobDataRow {
-                        digest_rlc,
-                        chunk_idx: (i + 1) as u64,
-                        accumulator: chunk_bytes.len() as u64,
-                        preimage_rlc: Value::known(Fr::zero()),
-                        ..Default::default()
-                    }),
-            )
-            .chain(std::iter::once(BlobDataRow {
-                preimage_rlc: blob_preimage_rlc,
-                digest_rlc: blob_digest_rlc,
-                accumulator: 32 * (MAX_AGG_SNARKS + 1) as u64,
-                is_boundary: true,
-                ..Default::default()
-            }))
-            .chain(metadata_digest.iter().map(|&byte| BlobDataRow {
-                byte,
-                preimage_rlc: Value::known(Fr::zero()),
-                digest_rlc: Value::known(Fr::zero()),
-                ..Default::default()
-            }))
-            .chain(chunk_digests.iter().flat_map(|digest| {
-                digest.iter().map(|&byte| BlobDataRow {
-                    byte,
-                    preimage_rlc: Value::known(Fr::zero()),
-                    digest_rlc: Value::known(Fr::zero()),
-                    ..Default::default()
-                })
-            }))
-            .chain(blob_digest.iter().map(|&byte| BlobDataRow {
-                byte,
-                preimage_rlc: Value::known(Fr::zero()),
-                digest_rlc: Value::known(Fr::zero()),
-                ..Default::default()
-            }))
-            .collect()
-    }
-
-    pub(crate) fn to_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
-        let metadata_rows = self.to_metadata_rows(challenge);
-        assert_eq!(metadata_rows.len(), N_ROWS_METADATA);
-
-        let data_rows = self.to_data_rows(challenge);
-        assert_eq!(data_rows.len(), N_ROWS_DATA);
-
-        let hash_rows = self.to_hash_rows(challenge);
-        assert_eq!(hash_rows.len(), N_ROWS_DIGEST);
-
-        std::iter::empty()
-            .chain(metadata_rows)
-            .chain(data_rows)
-            .chain(hash_rows)
-            .collect::<Vec<BlobDataRow<Fr>>>()
-    }
-}
-
-pub const BLOB_WIDTH: usize = 4096;
-pub const N_BYTES_32: usize = 32;
-pub const N_BYTES_31: usize = N_BYTES_32 - 1;
-pub const N_ROWS_NUM_CHUNKS: usize = 2;
-pub const N_ROWS_CHUNK_SIZES: usize = MAX_AGG_SNARKS * 4;
-// pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_BYTES_32;
-pub const N_CANONICAL_BLOB_BYTES: usize = BLOB_WIDTH * N_BYTES_31;
-pub const N_ROWS_METADATA: usize = N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES;
-pub const N_ROWS_DATA: usize = N_CANONICAL_BLOB_BYTES - N_ROWS_METADATA;
-pub const N_ROWS_DIGEST_RLC: usize = 1 + 1 + MAX_AGG_SNARKS;
-pub const N_ROWS_DIGEST_BYTES: usize = N_ROWS_DIGEST_RLC * N_BYTES_32;
-pub const N_ROWS_DIGEST: usize = N_ROWS_DIGEST_RLC + N_ROWS_DIGEST_BYTES;
-pub const N_ROWS_BLOB_DATA_CONFIG: usize = N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST;

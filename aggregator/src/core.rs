@@ -162,12 +162,14 @@ pub(crate) struct ExtractedHashCells {
 pub(crate) struct ExpectedBlobCells {
     pub(crate) z: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) y: Vec<AssignedCell<Fr, Fr>>,
-    pub(crate) chunk_tx_data_hashes: Vec<Vec<AssignedCell<Fr, Fr>>>,
+    pub(crate) chunk_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
 }
 
 pub(crate) struct AssignedBatchHash {
     pub(crate) hash_output: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) blob: ExpectedBlobCells,
+    pub(crate) num_valid_snarks: AssignedCell<Fr, Fr>,
+    pub(crate) chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
 }
 
 /// Input the hash input bytes,
@@ -224,7 +226,7 @@ pub(crate) fn assign_batch_hashes(
     // - batch's data_hash length is 32 * number_of_valid_snarks
     // 8. batch data hash is correct w.r.t. its RLCs
     // 9. is_final_cells are set correctly
-    conditional_constraints(
+    let (num_valid_snarks, chunks_are_padding) = conditional_constraints(
         &config.rlc_config,
         layouter,
         challenges,
@@ -236,7 +238,7 @@ pub(crate) fn assign_batch_hashes(
     let expected_blob_cells = ExpectedBlobCells {
         z: batch_pi_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + 32].to_vec(),
         y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + 32].to_vec(),
-        chunk_tx_data_hashes: (0..MAX_AGG_SNARKS)
+        chunk_data_digests: (0..MAX_AGG_SNARKS)
             .map(|i| {
                 let chunk_pi_input = &extracted_hash_cells.hash_input_cells
                     [INPUT_LEN_PER_ROUND * (2 + 2 * i)..INPUT_LEN_PER_ROUND * (2 + 2 * (i + 1))];
@@ -244,9 +246,12 @@ pub(crate) fn assign_batch_hashes(
             })
             .collect(),
     };
+
     Ok(AssignedBatchHash {
         hash_output: extracted_hash_cells.hash_output_cells,
         blob: expected_blob_cells,
+        num_valid_snarks,
+        chunks_are_padding,
     })
 }
 
@@ -536,14 +541,14 @@ fn copy_constraints(
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
+#[allow(clippy::type_complexity)]
 pub(crate) fn conditional_constraints(
     rlc_config: &RlcConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     extracted_hash_cells: &ExtractedHashCells,
-) -> Result<(), Error> {
-    // let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+) -> Result<(AssignedCell<Fr, Fr>, Vec<AssignedCell<Fr, Fr>>), Error> {
     let ExtractedHashCells {
         hash_input_cells,
         hash_output_cells,
@@ -555,7 +560,10 @@ pub(crate) fn conditional_constraints(
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<(), halo2_proofs::plonk::Error> {
+            |mut region| -> Result<
+                (AssignedCell<Fr, Fr>, Vec<AssignedCell<Fr, Fr>>),
+                halo2_proofs::plonk::Error,
+            > {
                 rlc_config.init(&mut region)?;
                 let mut offset = 0;
                 // ====================================================
@@ -1091,7 +1099,7 @@ pub(crate) fn conditional_constraints(
                     .constrain_equal(left.cell(), rlc_config.one_cell(left.cell().region_index))?;
 
                 log::trace!("rlc chip uses {} rows", offset);
-                Ok(())
+                Ok((num_valid_snarks, chunks_are_padding))
             },
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))

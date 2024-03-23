@@ -1,8 +1,7 @@
 use crate::{
     aggregation::{BlobDataConfig, RlcConfig},
     barycentric::{BarycentricEvaluationCells, BarycentricEvaluationConfig},
-    batch::BlobData,
-    blob::{Blob, BlobAssignments, BLOB_WIDTH},
+    blob::{BlobAssignments, BlobData},
     param::ConfigParams,
     MAX_AGG_SNARKS,
 };
@@ -11,7 +10,7 @@ use halo2_base::{
     Context, ContextParams,
 };
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
@@ -115,7 +114,7 @@ impl Circuit<Fr> for BlobCircuit {
                     },
                 );
 
-                let blob = BlobAssignments::from(self.data.clone());
+                let blob = BlobAssignments::from(&self.data);
                 Ok(config.barycentric.assign2(
                     &mut ctx,
                     blob.coefficients,
@@ -125,10 +124,32 @@ impl Circuit<Fr> for BlobCircuit {
             },
         )?;
 
+        let chunks_are_padding = layouter.assign_region(
+            || "dev: chunks are padding or not",
+            |mut region| -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+                let rlc_config = &config.rlc;
+                rlc_config.init(&mut region)?;
+                let mut rlc_config_offset = 0;
+
+                let mut chunks_are_padding = Vec::with_capacity(MAX_AGG_SNARKS);
+                for i in 0..MAX_AGG_SNARKS {
+                    let is_padding = (i as u16) >= self.data.num_valid_chunks;
+                    chunks_are_padding.push(rlc_config.load_private(
+                        &mut region,
+                        &Fr::from(is_padding as u64),
+                        &mut rlc_config_offset,
+                    )?);
+                }
+
+                Ok(chunks_are_padding)
+            },
+        )?;
+
         config.blob_data.assign(
             &mut layouter,
             challenge_values,
             &config.rlc,
+            &chunks_are_padding,
             &self.data,
             &barycentric_assignments.barycentric_assignments,
         )?;
@@ -146,23 +167,25 @@ fn check_circuit(data: BlobData) -> Result<(), Vec<VerifyFailure>> {
 
 #[test]
 fn blob_circuit_completeness() {
-    let all_empty_chunks = Blob(vec![vec![]; MAX_AGG_SNARKS]);
-    let one_chunk = Blob(vec![vec![2, 3, 4, 100, 1]]);
-    let two_chunks = Blob(vec![vec![100; 1000], vec![2, 3, 4, 100, 1]]);
-    let max_chunks = Blob(
-        (0..MAX_AGG_SNARKS)
-            .map(|i| (10u8..10 + u8::try_from(i).unwrap()).collect())
-            .collect(),
-    );
-    let empty_chunk_followed_by_nonempty_chunk = Blob(vec![vec![], vec![3, 100, 24, 30]]);
-    let nonempty_chunk_followed_by_empty_chunk = Blob(vec![vec![3, 100, 24, 30], vec![]]);
-    let empty_and_nonempty_chunks = Blob(vec![
+    let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
+    let one_chunk = vec![vec![2, 3, 4, 100, 1]];
+    let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
+    let max_chunks: Vec<Vec<u8>> = (0..MAX_AGG_SNARKS)
+        .map(|i| (10u8..10 + u8::try_from(i).unwrap()).collect())
+        .collect();
+    let empty_chunk_followed_by_nonempty_chunk = vec![vec![], vec![3, 100, 24, 30]];
+    let nonempty_chunk_followed_by_empty_chunk = vec![vec![3, 100, 24, 30], vec![]];
+    let empty_and_nonempty_chunks = vec![
         vec![3, 100, 24, 30],
         vec![],
         vec![],
         vec![100, 23, 34, 24, 10],
         vec![],
-    ]);
+    ];
+    let all_empty_except_last = std::iter::repeat(vec![])
+        .take(MAX_AGG_SNARKS - 1)
+        .chain(std::iter::once(vec![3, 100, 24, 30]))
+        .collect::<Vec<_>>();
 
     for blob in [
         one_chunk,
@@ -172,18 +195,14 @@ fn blob_circuit_completeness() {
         empty_chunk_followed_by_nonempty_chunk,
         nonempty_chunk_followed_by_empty_chunk,
         empty_and_nonempty_chunks,
+        all_empty_except_last,
     ] {
-        assert_eq!(
-            check_circuit(BlobData::from(blob.clone())),
-            Ok(()),
-            "{:?}",
-            blob
-        );
+        assert_eq!(check_circuit(BlobData::from(&blob)), Ok(()), "{:?}", blob);
     }
 }
 
 fn generic_blob_data() -> BlobData {
-    BlobData::from(Blob(vec![
+    BlobData::from(&vec![
         vec![3, 100, 24, 30],
         vec![],
         vec![100; 300],
@@ -191,7 +210,7 @@ fn generic_blob_data() -> BlobData {
         vec![200; 20],
         vec![200; 20],
         vec![],
-    ]))
+    ])
 }
 
 #[test]
@@ -204,21 +223,21 @@ fn inconsistent_chunk_size() {
 #[test]
 fn too_many_empty_chunks() {
     let mut blob_data = generic_blob_data();
-    blob_data.number_non_empty_chunks += 1;
+    blob_data.num_valid_chunks += 1;
     assert!(check_circuit(blob_data).is_err());
 }
 
 #[test]
 fn too_few_empty_chunks() {
     let mut blob_data = generic_blob_data();
-    blob_data.number_non_empty_chunks -= 1;
+    blob_data.num_valid_chunks -= 1;
     assert!(check_circuit(blob_data).is_err());
 }
 
 #[test]
 fn inconsistent_chunk_bytes() {
     let mut blob_data = generic_blob_data();
-    blob_data.chunk_bytes[0].push(128);
+    blob_data.chunk_data[0].push(128);
     assert!(check_circuit(blob_data).is_err());
 }
 

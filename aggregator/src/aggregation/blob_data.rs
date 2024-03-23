@@ -13,7 +13,7 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    batch::{
+    blob::{
         BlobData, BLOB_WIDTH, N_BYTES_31, N_BYTES_32, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA,
         N_ROWS_DIGEST_BYTES, N_ROWS_DIGEST_RLC, N_ROWS_METADATA,
     },
@@ -55,6 +55,7 @@ pub struct BlobDataConfig {
 }
 
 pub struct AssignedBlobDataExport {
+    pub num_valid_chunks: AssignedCell<Fr, Fr>,
     pub blob_fields: Vec<Vec<AssignedCell<Fr, Fr>>>,
     pub challenge_digest: Vec<AssignedCell<Fr, Fr>>,
     pub chunk_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
@@ -111,12 +112,13 @@ impl BlobDataConfig {
         meta.lookup(
             "BlobDataConfig (chunk idx transition on boundary)",
             |meta| {
-                let is_data = meta.query_selector(config.data_selector);
-                let is_padding = meta.query_advice(config.is_padding, Rotation::next());
+                let is_hash = meta.query_selector(config.hash_selector);
+                let is_not_hash = 1.expr() - is_hash;
+                let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
                 let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
-                // if we are in the data section, encounter a boundary and the next row is not
-                // padding.
-                let cond = is_data * is_boundary * (1.expr() - is_padding);
+                // if we are in the data section, encounter a boundary and the next row is not a
+                // padding row.
+                let cond = is_not_hash * is_boundary * (1.expr() - is_padding_next);
                 let chunk_idx_curr = meta.query_advice(config.chunk_idx, Rotation::cur());
                 let chunk_idx_next = meta.query_advice(config.chunk_idx, Rotation::next());
                 vec![(cond * (chunk_idx_next - chunk_idx_curr), range_table.into())]
@@ -173,14 +175,17 @@ impl BlobDataConfig {
             ]
         });
 
-        meta.create_gate("BlobDataConfig (boundary/padding)", |meta| {
+        meta.create_gate("BlobDataConfig (\"chunk data\" section)", |meta| {
             let is_data = meta.query_selector(config.data_selector);
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
             let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
             let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
             let diff = is_padding_next - is_padding_curr.expr();
+            let byte = meta.query_advice(config.byte, Rotation::cur());
 
             vec![
+                // byte is 0 when padding in the "chunk data" section.
+                is_data.expr() * is_padding_curr.expr() * byte,
                 // is_boundary is boolean.
                 is_data.expr() * is_boundary.expr() * (1.expr() - is_boundary.expr()),
                 // is_padding is boolean.
@@ -190,86 +195,96 @@ impl BlobDataConfig {
             ]
         });
 
-        // lookup to keccak table.
-        meta.lookup_any("BlobDataConfig (keccak table)", |meta| {
-            let is_data = meta.query_selector(config.data_selector);
-            let is_hash = meta.query_selector(config.hash_selector);
-            let is_not_hash = 1.expr() - is_hash;
-            let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
+        // lookup metadata and chunk data digests in keccak table.
+        meta.lookup_any(
+            "BlobDataConfig (chunk data digests in keccak table)",
+            |meta| {
+                let is_data = meta.query_selector(config.data_selector);
+                let is_hash = meta.query_selector(config.hash_selector);
+                let is_not_hash = 1.expr() - is_hash;
+                let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
 
-            // in the "metadata" or "chunk data" section, wherever is_boundary is set.
-            let cond = is_not_hash * is_boundary;
+                // in the "metadata" or "chunk data" section, wherever is_boundary is set.
+                let cond = is_not_hash * is_boundary;
 
-            let accumulator = meta.query_advice(config.accumulator, Rotation::cur());
-            let preimage_len =
-                is_data.expr() * accumulator + (1.expr() - is_data) * N_ROWS_METADATA.expr();
+                let accumulator = meta.query_advice(config.accumulator, Rotation::cur());
+                let preimage_len =
+                    is_data.expr() * accumulator + (1.expr() - is_data) * N_ROWS_METADATA.expr();
 
-            [
-                1.expr(),                                                // q_enable
-                1.expr(),                                                // is final
-                meta.query_advice(config.preimage_rlc, Rotation::cur()), // input RLC
-                preimage_len,                                            // input len
-                meta.query_advice(config.digest_rlc, Rotation::cur()),   // output RLC
-            ]
-            .into_iter()
-            .zip_eq(keccak_table.table_exprs(meta))
-            .map(|(value, table)| (cond.expr() * value, table))
-            .collect()
-        });
+                [
+                    1.expr(),                                                // q_enable
+                    1.expr(),                                                // is final
+                    meta.query_advice(config.preimage_rlc, Rotation::cur()), // input RLC
+                    preimage_len,                                            // input len
+                    meta.query_advice(config.digest_rlc, Rotation::cur()),   // output RLC
+                ]
+                .into_iter()
+                .zip_eq(keccak_table.table_exprs(meta))
+                .map(|(value, table)| (cond.expr() * value, table))
+                .collect()
+            },
+        );
 
-        // lookup for digest RLC to the hash section.
-        meta.lookup_any("BlobDataConfig (hash section)", |meta| {
-            let is_data = meta.query_selector(config.data_selector);
-            let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
+        // lookup chunk data digests in the "digest rlc section" of BlobDataConfig.
+        meta.lookup_any(
+            "BlobDataConfig (chunk data digests in BlobDataConfig \"hash section\")",
+            |meta| {
+                let is_data = meta.query_selector(config.data_selector);
+                let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
 
-            // in the "chunk data" section when we encounter a chunk boundary
-            let cond = is_data * is_boundary;
+                // in the "chunk data" section when we encounter a chunk boundary
+                let cond = is_data * is_boundary;
 
-            let hash_section_table = vec![
-                meta.query_selector(config.hash_selector),
-                meta.query_advice(config.chunk_idx, Rotation::cur()),
-                meta.query_advice(config.accumulator, Rotation::cur()),
-                meta.query_advice(config.digest_rlc, Rotation::cur()),
-            ];
-            [
-                1.expr(),                                               // hash section
-                meta.query_advice(config.chunk_idx, Rotation::cur()),   // chunk idx
-                meta.query_advice(config.accumulator, Rotation::cur()), // chunk len
-                meta.query_advice(config.digest_rlc, Rotation::cur()),  // digest rlc
-            ]
-            .into_iter()
-            .zip(hash_section_table)
-            .map(|(value, table)| (cond.expr() * value, table))
-            .collect()
-        });
+                let hash_section_table = vec![
+                    meta.query_selector(config.hash_selector),
+                    meta.query_advice(config.chunk_idx, Rotation::cur()),
+                    meta.query_advice(config.accumulator, Rotation::cur()),
+                    meta.query_advice(config.digest_rlc, Rotation::cur()),
+                ];
+                [
+                    1.expr(),                                               // hash section
+                    meta.query_advice(config.chunk_idx, Rotation::cur()),   // chunk idx
+                    meta.query_advice(config.accumulator, Rotation::cur()), // chunk len
+                    meta.query_advice(config.digest_rlc, Rotation::cur()),  // digest rlc
+                ]
+                .into_iter()
+                .zip(hash_section_table)
+                .map(|(value, table)| (cond.expr() * value, table))
+                .collect()
+            },
+        );
 
-        // lookup for challenge_digest := keccak(preimage_challenge_digest)
-        meta.lookup_any("BlobDataConfig (z := keccak(preimage_z))", |meta| {
-            let is_hash = meta.query_selector(config.hash_selector);
-            let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
+        // lookup challenge digest in keccak table.
+        meta.lookup_any(
+            "BlobDataConfig (challenge digest in keccak table)",
+            |meta| {
+                let is_hash = meta.query_selector(config.hash_selector);
+                let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
 
-            // when is_boundary is set in the "digest RLC" section.
-            // this is also the last row of the "digest RLC" section.
-            let cond = is_hash * is_boundary;
+                // when is_boundary is set in the "digest RLC" section.
+                // this is also the last row of the "digest RLC" section.
+                let cond = is_hash * is_boundary;
 
-            // - metadata_digest: 32 bytes
-            // - chunk[i].chunk_data_digest: 32 bytes each
-            let preimage_len = 32.expr() * (MAX_AGG_SNARKS + 1).expr();
+                // - metadata_digest: 32 bytes
+                // - chunk[i].chunk_data_digest: 32 bytes each
+                let preimage_len = 32.expr() * (MAX_AGG_SNARKS + 1).expr();
 
-            [
-                1.expr(),                                                // q_enable
-                1.expr(),                                                // is final
-                meta.query_advice(config.preimage_rlc, Rotation::cur()), // input rlc
-                preimage_len,                                            // input len
-                meta.query_advice(config.digest_rlc, Rotation::cur()),   // output rlc
-            ]
-            .into_iter()
-            .zip_eq(keccak_table.table_exprs(meta))
-            .map(|(value, table)| (cond.expr() * value, table))
-            .collect()
-        });
+                [
+                    1.expr(),                                                // q_enable
+                    1.expr(),                                                // is final
+                    meta.query_advice(config.preimage_rlc, Rotation::cur()), // input rlc
+                    preimage_len,                                            // input len
+                    meta.query_advice(config.digest_rlc, Rotation::cur()),   // output rlc
+                ]
+                .into_iter()
+                .zip_eq(keccak_table.table_exprs(meta))
+                .map(|(value, table)| (cond.expr() * value, table))
+                .collect()
+            },
+        );
 
         assert!(meta.degree() <= 5);
+
         config
     }
 
@@ -278,6 +293,9 @@ impl BlobDataConfig {
         layouter: &mut impl Layouter<Fr>,
         challenge_value: Challenges<Value<Fr>>,
         rlc_config: &RlcConfig,
+        // The chunks_are_padding assigned cells are exports from the conditional constraints in
+        // `core.rs`. Since these are already constrained, we can just use them as is.
+        chunks_are_padding: &[AssignedCell<Fr, Fr>],
         blob: &BlobData,
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
@@ -366,10 +384,24 @@ impl BlobDataConfig {
                 rlc_config.init(&mut region)?;
                 let mut rlc_config_offset = 0;
 
-                ////////////////////////////////////////////////////////////////////////////////
-                ////////////////////////////////// NUM_CHUNKS //////////////////////////////////
-                ////////////////////////////////////////////////////////////////////////////////
-
+                // load some constants that we will use later.
+                let zero = {
+                    let zero = rlc_config.load_private(
+                        &mut region,
+                        &Fr::zero(),
+                        &mut rlc_config_offset,
+                    )?;
+                    let zero_cell = rlc_config.zero_cell(zero.cell().region_index);
+                    region.constrain_equal(zero.cell(), zero_cell)?;
+                    zero
+                };
+                let one = {
+                    let one =
+                        rlc_config.load_private(&mut region, &Fr::one(), &mut rlc_config_offset)?;
+                    let one_cell = rlc_config.one_cell(one.cell().region_index);
+                    region.constrain_equal(one.cell(), one_cell)?;
+                    one
+                };
                 let two_fifty_six = {
                     let two_fifty_six = rlc_config.load_private(
                         &mut region,
@@ -381,6 +413,54 @@ impl BlobDataConfig {
                     region.constrain_equal(two_fifty_six.cell(), two_fifty_six_fixed)?;
                     two_fifty_six
                 };
+
+                // read randomness challenges for RLC computations.
+                let r_keccak = rlc_config.read_challenge1(
+                    &mut region,
+                    challenge_value,
+                    &mut rlc_config_offset,
+                )?;
+                let r_evm = rlc_config.read_challenge2(
+                    &mut region,
+                    challenge_value,
+                    &mut rlc_config_offset,
+                )?;
+                let r32 = {
+                    let r2 = rlc_config.mul(
+                        &mut region,
+                        &r_keccak,
+                        &r_keccak,
+                        &mut rlc_config_offset,
+                    )?;
+                    let r4 = rlc_config.mul(&mut region, &r2, &r2, &mut rlc_config_offset)?;
+                    let r8 = rlc_config.mul(&mut region, &r4, &r4, &mut rlc_config_offset)?;
+                    let r16 = rlc_config.mul(&mut region, &r8, &r8, &mut rlc_config_offset)?;
+                    rlc_config.mul(&mut region, &r16, &r16, &mut rlc_config_offset)?
+                };
+
+                // load cells representing the keccak digest of empty bytes.
+                let mut empty_digest_cells = Vec::with_capacity(N_BYTES_32);
+                for (i, &byte) in keccak256([]).iter().enumerate() {
+                    let cell = rlc_config.load_private(
+                        &mut region,
+                        &Fr::from(byte as u64),
+                        &mut rlc_config_offset,
+                    )?;
+                    let fixed_cell = rlc_config.empty_keccak_cell_i(cell.cell().region_index, i);
+                    region.constrain_equal(cell.cell(), fixed_cell)?;
+                    empty_digest_cells.push(cell);
+                }
+                let empty_digest_evm_rlc = rlc_config.rlc(
+                    &mut region,
+                    &empty_digest_cells,
+                    &r_evm,
+                    &mut rlc_config_offset,
+                )?;
+
+                ////////////////////////////////////////////////////////////////////////////////
+                /////////////////////////////// NUM_VALID_CHUNKS ///////////////////////////////
+                ////////////////////////////////////////////////////////////////////////////////
+
                 let rows = assigned_rows.iter().take(2).collect::<Vec<_>>();
                 let (byte_hi, byte_lo, lc1, lc2) = (
                     &rows[0].byte,
@@ -393,29 +473,20 @@ impl BlobDataConfig {
                 region.constrain_equal(byte_hi.cell(), lc1.cell())?;
 
                 // do the linear combination.
-                let num_chunks = rlc_config.mul_add(
+                let num_valid_chunks = rlc_config.mul_add(
                     &mut region,
                     lc1,
                     &two_fifty_six,
                     byte_lo,
                     &mut rlc_config_offset,
                 )?;
-                region.constrain_equal(num_chunks.cell(), lc2.cell())?;
+                region.constrain_equal(num_valid_chunks.cell(), lc2.cell())?;
 
                 ////////////////////////////////////////////////////////////////////////////////
                 ////////////////////////////////// CHUNK_SIZE //////////////////////////////////
                 ////////////////////////////////////////////////////////////////////////////////
 
-                let mut num_nonempty_chunks = {
-                    let zero = rlc_config.load_private(
-                        &mut region,
-                        &Fr::zero(),
-                        &mut rlc_config_offset,
-                    )?;
-                    let zero_cell = rlc_config.zero_cell(zero.cell().region_index);
-                    region.constrain_equal(zero.cell(), zero_cell)?;
-                    zero
-                };
+                let mut num_nonempty_chunks = zero.clone();
                 let mut is_empty_chunks = Vec::with_capacity(MAX_AGG_SNARKS);
                 let mut chunk_sizes = Vec::with_capacity(MAX_AGG_SNARKS);
                 for i in 0..MAX_AGG_SNARKS {
@@ -475,34 +546,16 @@ impl BlobDataConfig {
                     is_empty_chunks.push(is_empty_chunk);
                     chunk_sizes.push(chunk_size);
                 }
-                region.constrain_equal(num_nonempty_chunks.cell(), num_chunks.cell())?;
-                let has_no_chunks = rlc_config.is_zero(
+                let all_chunks_empty = rlc_config.is_zero(
                     &mut region,
                     &num_nonempty_chunks,
                     &mut rlc_config_offset,
                 )?;
-                let has_at_least_one_chunk =
-                    rlc_config.not(&mut region, &has_no_chunks, &mut rlc_config_offset)?;
+                let not_all_chunks_empty =
+                    rlc_config.not(&mut region, &all_chunks_empty, &mut rlc_config_offset)?;
 
                 // on the last row of the "metadata" section we want to ensure the keccak table
                 // lookup would be enabled for the metadata digest
-                let zero = {
-                    let zero = rlc_config.load_private(
-                        &mut region,
-                        &Fr::zero(),
-                        &mut rlc_config_offset,
-                    )?;
-                    let zero_cell = rlc_config.zero_cell(zero.cell().region_index);
-                    region.constrain_equal(zero.cell(), zero_cell)?;
-                    zero
-                };
-                let one = {
-                    let one =
-                        rlc_config.load_private(&mut region, &Fr::one(), &mut rlc_config_offset)?;
-                    let one_cell = rlc_config.one_cell(one.cell().region_index);
-                    region.constrain_equal(one.cell(), one_cell)?;
-                    one
-                };
                 region.constrain_equal(
                     assigned_rows
                         .get(N_ROWS_METADATA - 1)
@@ -518,41 +571,44 @@ impl BlobDataConfig {
 
                 // the first data row has a length (accumulator) of 1. But in the special case that
                 // there are no non-empty chunks, this will be 0 and must also be a padding row.
-                let row = assigned_rows.get(N_ROWS_METADATA).unwrap();
-                rlc_config.conditional_enforce_equal(
-                    &mut region,
-                    &row.accumulator,
-                    &one,
-                    &has_at_least_one_chunk,
-                    &mut rlc_config_offset,
-                )?;
-                rlc_config.conditional_enforce_equal(
-                    &mut region,
-                    &row.is_padding,
-                    &zero,
-                    &has_at_least_one_chunk,
-                    &mut rlc_config_offset,
-                )?;
-                rlc_config.conditional_enforce_equal(
-                    &mut region,
-                    &row.accumulator,
-                    &zero,
-                    &has_no_chunks,
-                    &mut rlc_config_offset,
-                )?;
-                rlc_config.conditional_enforce_equal(
-                    &mut region,
-                    &row.is_padding,
-                    &one,
-                    &has_no_chunks,
-                    &mut rlc_config_offset,
-                )?;
-
                 let rows = assigned_rows
                     .iter()
                     .skip(N_ROWS_METADATA)
                     .take(N_ROWS_DATA)
                     .collect::<Vec<_>>();
+                rlc_config.conditional_enforce_equal(
+                    &mut region,
+                    &rows[0].accumulator,
+                    &one,
+                    &not_all_chunks_empty,
+                    &mut rlc_config_offset,
+                )?;
+                rlc_config.conditional_enforce_equal(
+                    &mut region,
+                    &rows[0].is_padding,
+                    &zero,
+                    &not_all_chunks_empty,
+                    &mut rlc_config_offset,
+                )?;
+                rlc_config.conditional_enforce_equal(
+                    &mut region,
+                    &rows[0].accumulator,
+                    &zero,
+                    &all_chunks_empty,
+                    &mut rlc_config_offset,
+                )?;
+                rlc_config.conditional_enforce_equal(
+                    &mut region,
+                    &rows[0].is_padding,
+                    &one,
+                    &all_chunks_empty,
+                    &mut rlc_config_offset,
+                )?;
+
+                // we do a lookup to the keccak table (from the "chunk data" section) every time we
+                // encounter a boundary. And such a lookup is done only for non-empty chunks, i.e.
+                // chunks that have at least one L2 transaction. We wish to equate this summation
+                // to the number of non-empty chunks we decoded from the metadata.
                 let mut num_lookups = zero.clone();
                 // TODO: optimize this loop as each add takes 4 rows
                 for row in rows.iter() {
@@ -563,11 +619,7 @@ impl BlobDataConfig {
                         &mut rlc_config_offset,
                     )?;
                 }
-                log::debug!(
-                    "rlc_config_offset after getting num_lookups: {}",
-                    rlc_config_offset
-                );
-                region.constrain_equal(num_lookups.cell(), num_chunks.cell())?;
+                region.constrain_equal(num_lookups.cell(), num_nonempty_chunks.cell())?;
 
                 ////////////////////////////////////////////////////////////////////////////////
                 ////////////////////////////////// DIGEST RLC //////////////////////////////////
@@ -580,55 +632,14 @@ impl BlobDataConfig {
                     .collect::<Vec<_>>();
 
                 // rows have chunk_idx set from 0 (metadata) -> MAX_AGG_SNARKS.
-                rlc_config.enforce_zero(&mut region, &rows[0].chunk_idx)?;
+                region.constrain_equal(rows[0].chunk_idx.cell(), zero.cell())?;
+                // TODO: this can be replaced by fetching 1 -> MAX_AGG_SNARKS from fixed column
+                // instead. The additions will be avoided.
                 let mut i_val = zero.clone();
                 for row in rows.iter().skip(1).take(MAX_AGG_SNARKS) {
                     i_val = rlc_config.add(&mut region, &i_val, &one, &mut rlc_config_offset)?;
                     region.constrain_equal(i_val.cell(), row.chunk_idx.cell())?;
                 }
-
-                let r_keccak = rlc_config.read_challenge1(
-                    &mut region,
-                    challenge_value,
-                    &mut rlc_config_offset,
-                )?;
-                let r_evm = rlc_config.read_challenge2(
-                    &mut region,
-                    challenge_value,
-                    &mut rlc_config_offset,
-                )?;
-                // keccak_input ^ 32
-                let r32 = {
-                    let r2 = rlc_config.mul(
-                        &mut region,
-                        &r_keccak,
-                        &r_keccak,
-                        &mut rlc_config_offset,
-                    )?;
-                    let r4 = rlc_config.mul(&mut region, &r2, &r2, &mut rlc_config_offset)?;
-                    let r8 = rlc_config.mul(&mut region, &r4, &r4, &mut rlc_config_offset)?;
-                    let r16 = rlc_config.mul(&mut region, &r8, &r8, &mut rlc_config_offset)?;
-                    rlc_config.mul(&mut region, &r16, &r16, &mut rlc_config_offset)?
-                };
-
-                // RLC of digest of empty bytes = RLC(keccak([]), r)
-                let mut empty_digest_cells = Vec::with_capacity(N_BYTES_32);
-                for (i, &byte) in keccak256([]).iter().enumerate() {
-                    let cell = rlc_config.load_private(
-                        &mut region,
-                        &Fr::from(byte as u64),
-                        &mut rlc_config_offset,
-                    )?;
-                    let fixed_cell = rlc_config.empty_keccak_cell_i(cell.cell().region_index, i);
-                    region.constrain_equal(cell.cell(), fixed_cell)?;
-                    empty_digest_cells.push(cell);
-                }
-                let empty_digest_evm_rlc = rlc_config.rlc(
-                    &mut region,
-                    &empty_digest_cells,
-                    &r_evm,
-                    &mut rlc_config_offset,
-                )?;
 
                 let blob_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
                 let blob_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
@@ -645,21 +656,49 @@ impl BlobDataConfig {
                     metadata_digest_rlc_specified.cell(),
                 )?;
 
+                // if the chunk is a padded chunk, then its chunk data digest should be the
+                // same as the previous chunk's data digest.
+                //
+                // Also, we know that the first chunk is valid. So we can just start the check from
+                // the second chunk's data digest.
+                region.constrain_equal(chunks_are_padding[0].cell(), zero.cell())?;
+                for i in 1..MAX_AGG_SNARKS {
+                    // Note that in `rows`, the first row is the metadata row (hence anyway skip
+                    // it). That's why we have a +1.
+                    rlc_config.conditional_enforce_equal(
+                        &mut region,
+                        &rows[i + 1].digest_rlc,
+                        &rows[i].digest_rlc,
+                        &chunks_are_padding[i],
+                        &mut rlc_config_offset,
+                    )?;
+                }
+
                 let mut chunk_digest_evm_rlcs = Vec::with_capacity(MAX_AGG_SNARKS);
-                for ((row, chunk_size_decoded), is_empty) in rows
+                for (((row, chunk_size_decoded), is_empty), is_padded_chunk) in rows
                     .iter()
                     .skip(1)
                     .take(MAX_AGG_SNARKS)
                     .zip_eq(chunk_sizes)
                     .zip_eq(is_empty_chunks)
+                    .zip_eq(chunks_are_padding)
                 {
-                    // if the chunk is empty, the chunk data digest should be the empty keccak
+                    // if the chunk is a valid chunk (i.e. not padded chunk), but is empty (i.e. no
+                    // L2 transactions), then the chunk's data digest should be the empty keccak
                     // digest.
+                    let is_valid =
+                        rlc_config.not(&mut region, is_padded_chunk, &mut rlc_config_offset)?;
+                    let is_valid_empty = rlc_config.mul(
+                        &mut region,
+                        &is_valid,
+                        &is_empty,
+                        &mut rlc_config_offset,
+                    )?;
                     rlc_config.conditional_enforce_equal(
                         &mut region,
                         &row.digest_rlc,
                         &empty_digest_evm_rlc,
-                        &is_empty,
+                        &is_valid_empty,
                         &mut rlc_config_offset,
                     )?;
 
@@ -757,6 +796,7 @@ impl BlobDataConfig {
                     chunk_data_digests.push(chunk.to_vec());
                 }
                 let export = AssignedBlobDataExport {
+                    num_valid_chunks,
                     blob_fields,
                     challenge_digest: assigned_rows
                         .iter()

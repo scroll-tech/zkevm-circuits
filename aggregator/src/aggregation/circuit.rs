@@ -1,4 +1,4 @@
-use crate::barycentric::BarycentricEvaluationCells;
+use crate::{barycentric::BarycentricEvaluationCells, blob::BlobData};
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -289,7 +289,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let (hash_digest_cells, expected_blob_cells) = {
+        let assigned_batch_hash = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -300,13 +300,13 @@ impl Circuit<Fr> for AggregationCircuit {
             // - batch_public_input_hash
             // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
             // - batch_data_hash_preimage
-            // - chunk[i]'s tx_data_hash for i in [0, MAX_AGG_SNARKS)
-            // - batch's metadata
-            // - z's preimage
+            // - preimage for blob metadata
+            // - preimage of chunk data digest (only for valid chunks)
+            // - preimage of challenge digest
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                MAX_AGG_SNARKS * 2 + 4,
+                4 + MAX_AGG_SNARKS + self.batch_hash.number_of_valid_chunks,
                 "error extracting preimages"
             );
             end_timer!(timer);
@@ -328,11 +328,12 @@ impl Circuit<Fr> for AggregationCircuit {
             .map_err(|_e| Error::ConstraintSystemFailure)?;
 
             end_timer!(timer);
-            (assigned_batch_hash.hash_output, assigned_batch_hash.blob)
+
+            assigned_batch_hash
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
-            parse_hash_digest_cells(&hash_digest_cells);
+            parse_hash_digest_cells(&assigned_batch_hash.hash_output);
 
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
@@ -429,25 +430,32 @@ impl Circuit<Fr> for AggregationCircuit {
             let challenge_le = &barycentric.z_le;
             let evaluation_le = &barycentric.y_le;
 
+            let blob_data = BlobData::from(&self.batch_hash);
             let blob_data_exports = config.blob_data_config.assign(
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
-                &self.batch_hash.to_blob_data(),
+                &assigned_batch_hash.chunks_are_padding,
+                &blob_data,
                 barycentric_assignments,
             )?;
 
             layouter.assign_region(
                 || "blob checks",
                 |mut region| -> Result<(), Error> {
-                    for (chunk_data_digest, expected_chunk_tx_data_hash) in blob_data_exports
+                    region.constrain_equal(
+                        assigned_batch_hash.num_valid_snarks.cell(),
+                        blob_data_exports.num_valid_chunks.cell(),
+                    )?;
+
+                    for (chunk_data_digest, expected_chunk_data_digest) in blob_data_exports
                         .chunk_data_digests
                         .iter()
-                        .zip_eq(expected_blob_cells.chunk_tx_data_hashes.iter())
+                        .zip_eq(assigned_batch_hash.blob.chunk_data_digests.iter())
                     {
                         for (c, ec) in chunk_data_digest
                             .iter()
-                            .zip_eq(expected_chunk_tx_data_hash.iter())
+                            .zip_eq(expected_chunk_data_digest.iter())
                         {
                             region.constrain_equal(c.cell(), ec.cell())?;
                         }
@@ -455,14 +463,14 @@ impl Circuit<Fr> for AggregationCircuit {
 
                     for (c, ec) in evaluation_le
                         .iter()
-                        .zip_eq(expected_blob_cells.y.iter().rev())
+                        .zip_eq(assigned_batch_hash.blob.y.iter().rev())
                     {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
                     for (c, ec) in challenge_le
                         .iter()
-                        .zip_eq(expected_blob_cells.z.iter().rev())
+                        .zip_eq(assigned_batch_hash.blob.z.iter().rev())
                     {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
@@ -473,6 +481,7 @@ impl Circuit<Fr> for AggregationCircuit {
         }
 
         end_timer!(witness_time);
+
         Ok(())
     }
 }
