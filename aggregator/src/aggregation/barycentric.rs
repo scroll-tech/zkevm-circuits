@@ -51,17 +51,14 @@ pub struct BarycentricEvaluationConfig {
     pub scalar: FpConfig<Fr, Scalar>,
 }
 
-#[allow(dead_code)]
-pub struct BarycentricEvaluationAssignments {
-    z: CRTInteger<Fr>,
-    y: CRTInteger<Fr>,
-    blob: [CRTInteger<Fr>; BLOB_WIDTH],
-}
-
 #[derive(Default)]
-pub struct BarycentricEvaluationCells {
+pub struct AssignedBarycentricEvaluationConfig {
+    /// CRTIntegers for the BLOB_WIDTH number of blob polynomial coefficients, followed by a
+    /// CRTInteger for the challenge digest.
     pub(crate) barycentric_assignments: Vec<CRTInteger<Fr>>,
+    /// 32 Assigned cells representing the LE-bytes of challenge z.
     pub(crate) z_le: Vec<AssignedValue<Fr>>,
+    /// 32 Assigned cells representing the LE-bytes of evaluation y.
     pub(crate) y_le: Vec<AssignedValue<Fr>>,
 }
 
@@ -99,14 +96,29 @@ impl BarycentricEvaluationConfig {
         )
     }
 
-    pub fn assign2(
+    pub fn assign(
         &self,
         ctx: &mut Context<Fr>,
         blob: [U256; BLOB_WIDTH],
         challenge_digest: U256,
         evaluation: U256,
-    ) -> BarycentricEvaluationCells {
-        // prechecks (challenge point z)
+    ) -> AssignedBarycentricEvaluationConfig {
+        // some constants for later use.
+        let one = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::one()));
+        let blob_width = self
+            .scalar
+            .load_constant(ctx, fe_to_biguint(&Fr::from(BLOB_WIDTH as u64)));
+
+        let powers_of_256 =
+            std::iter::successors(Some(Fr::one()), |coeff| Some(Fr::from(256) * coeff))
+                .take(11)
+                .map(QuantumCell::Constant)
+                .collect::<Vec<_>>();
+
+        ////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// PRECHECKS z /////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////
+
         let (_, challenge) = challenge_digest.div_mod(*BLS_MODULUS);
         let challenge_scalar = Scalar::from_raw(challenge.0);
 
@@ -124,24 +136,6 @@ impl BarycentricEvaluationConfig {
             .load_private(ctx, Value::known(fe_to_biguint(&challenge_scalar).into()));
         self.scalar
             .assert_equal(ctx, &challenge_digest_mod, &challenge_crt);
-
-        // prechecks (evaluation y)
-        let evaluation_le = self.scalar.range().gate.assign_witnesses(
-            ctx,
-            evaluation
-                .to_le_bytes()
-                .iter()
-                .map(|&x| Value::known(Fr::from(x as u64))),
-        );
-        let evaluation_scalar = Scalar::from_raw(evaluation.0);
-        let evaluation_crt = self
-            .scalar
-            .load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
-        let powers_of_256 =
-            std::iter::successors(Some(Fr::one()), |coeff| Some(Fr::from(256) * coeff))
-                .take(11)
-                .map(QuantumCell::Constant)
-                .collect::<Vec<_>>();
         let challenge_limb1 = self.scalar.range().gate.inner_product(
             ctx,
             challenge_le[0..11]
@@ -178,6 +172,21 @@ impl BarycentricEvaluationConfig {
             QuantumCell::Existing(challenge_limb3),
             QuantumCell::Existing(challenge_crt.truncation.limbs[2]),
         );
+
+        ////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// PRECHECKS y /////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////
+        let evaluation_le = self.scalar.range().gate.assign_witnesses(
+            ctx,
+            evaluation
+                .to_le_bytes()
+                .iter()
+                .map(|&x| Value::known(Fr::from(x as u64))),
+        );
+        let evaluation_scalar = Scalar::from_raw(evaluation.0);
+        let evaluation_crt = self
+            .scalar
+            .load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
         let evaluation_limb1 = self.scalar.range().gate.inner_product(
             ctx,
             evaluation_le[0..11]
@@ -215,12 +224,15 @@ impl BarycentricEvaluationConfig {
             QuantumCell::Existing(evaluation_crt.truncation.limbs[2]),
         );
 
-        // compute evaluation.
+        ////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////// BARYCENTRIC EVALUATION //////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////
         let mut blob_crts = Vec::with_capacity(BLOB_WIDTH);
         let mut evaluation_computed = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::zero()));
         blob.iter()
             .zip_eq(ROOTS_OF_UNITY.map(|x| self.scalar.load_constant(ctx, fe_to_biguint(&x))))
             .for_each(|(blob_i, root_i_crt)| {
+                // assign LE-bytes of blob scalar field element.
                 let blob_i_le = self.scalar.range().gate.assign_witnesses(
                     ctx,
                     blob_i
@@ -232,6 +244,8 @@ impl BarycentricEvaluationConfig {
                 let blob_i_crt = self
                     .scalar
                     .load_private(ctx, Value::known(fe_to_biguint(&blob_i_scalar).into()));
+
+                // compute the limbs for blob scalar field element.
                 let limb1 = self.scalar.range().gate.inner_product(
                     ctx,
                     blob_i_le[0..11].iter().map(|&x| QuantumCell::Existing(x)),
@@ -262,6 +276,9 @@ impl BarycentricEvaluationConfig {
                     QuantumCell::Existing(limb3),
                     QuantumCell::Existing(blob_i_crt.truncation.limbs[2]),
                 );
+
+                // the most-significant byte of blob scalar field element is 0 as we expect this
+                // representation to be in its canonical form.
                 self.scalar.range().gate.assert_equal(
                     ctx,
                     QuantumCell::Existing(blob_i_le[31]),
@@ -282,10 +299,6 @@ impl BarycentricEvaluationConfig {
                 blob_crts.push(blob_i_crt);
             });
 
-        let one = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::one()));
-        let blob_width = self
-            .scalar
-            .load_constant(ctx, fe_to_biguint(&Fr::from(BLOB_WIDTH as u64)));
         let z_to_blob_width = (0..LOG_BLOB_WIDTH).fold(challenge_crt.clone(), |acc, _| {
             self.scalar.mul(ctx, &acc, &acc)
         });
@@ -297,11 +310,14 @@ impl BarycentricEvaluationConfig {
         evaluation_computed = self.scalar.mul(ctx, &evaluation_computed, &factor);
         evaluation_computed = self.scalar.carry_mod(ctx, &evaluation_computed);
 
-        // The evaluation we computed is correct.
+        // computed evaluation matches the expected evaluation.
         self.scalar
             .assert_equal(ctx, &evaluation_computed, &evaluation_crt);
 
-        BarycentricEvaluationCells {
+        ////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////// EXPORT //////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////
+        AssignedBarycentricEvaluationConfig {
             barycentric_assignments: blob_crts
                 .into_iter()
                 .chain(std::iter::once(challenge_digest_crt))

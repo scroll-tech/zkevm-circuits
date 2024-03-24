@@ -24,7 +24,7 @@ pub(crate) const LOG_DEGREE: u32 = 19;
 // - post_state_root    32 bytes
 // - withdraw_root      32 bytes
 // - chunk_data_hash    32 bytes
-// - chunk_tx_data_hash 32 bytes
+// - chunk_data_digest  32 bytes
 
 pub(crate) const PREV_STATE_ROOT_INDEX: usize = 8;
 pub(crate) const POST_STATE_ROOT_INDEX: usize = 40;
@@ -63,5 +63,4 @@ pub(crate) const BITS: usize = 88;
 /// Max number of snarks to be aggregated in a chunk.
 /// If the input size is less than this, dummy snarks
 /// will be padded.
-// TODO: update me(?)
 pub const MAX_AGG_SNARKS: usize = 15;

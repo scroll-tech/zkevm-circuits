@@ -17,10 +17,9 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    barycentric::BarycentricEvaluationConfig,
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    BlobDataConfig, RlcConfig,
+    BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
 };
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-use crate::{barycentric::BarycentricEvaluationCells, blob::BlobData};
+use crate::blob::BlobData;
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -31,7 +31,7 @@ use crate::{
     constants::{ACC_LEN, DIGEST_LEN, MAX_AGG_SNARKS},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
-    ConfigParams,
+    AssignedBarycentricEvaluationConfig, ConfigParams,
 };
 
 use super::AggregationConfig;
@@ -174,7 +174,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 |region| {
                     if first_pass {
                         first_pass = false;
-                        return Ok(BarycentricEvaluationCells::default());
+                        return Ok(AssignedBarycentricEvaluationConfig::default());
                     }
 
                     let mut ctx = Context::new(
@@ -186,7 +186,7 @@ impl Circuit<Fr> for AggregationCircuit {
                         },
                     );
 
-                    let barycentric = config.barycentric.assign2(
+                    let barycentric = config.barycentric.assign(
                         &mut ctx,
                         self.batch_hash.blob.coefficients,
                         self.batch_hash.blob.challenge_digest,
@@ -210,7 +210,11 @@ impl Circuit<Fr> for AggregationCircuit {
                 |region| {
                     if first_pass {
                         first_pass = false;
-                        return Ok((vec![], vec![], BarycentricEvaluationCells::default()));
+                        return Ok((
+                            vec![],
+                            vec![],
+                            AssignedBarycentricEvaluationConfig::default(),
+                        ));
                     }
 
                     // stores accumulators for all snarks, including the padded ones
@@ -262,7 +266,7 @@ impl Circuit<Fr> for AggregationCircuit {
                     loader.ctx_mut().print_stats(&["snark aggregation"]);
 
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
-                    let barycentric = config.barycentric.assign2(
+                    let barycentric = config.barycentric.assign(
                         &mut ctx,
                         self.batch_hash.blob.coefficients,
                         self.batch_hash.blob.challenge_digest,

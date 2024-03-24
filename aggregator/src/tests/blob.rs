@@ -1,6 +1,7 @@
 use crate::{
-    aggregation::{BlobDataConfig, RlcConfig},
-    barycentric::{BarycentricEvaluationCells, BarycentricEvaluationConfig},
+    aggregation::{
+        AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
+    },
     blob::{BlobAssignments, BlobData},
     param::ConfigParams,
     MAX_AGG_SNARKS,
@@ -25,7 +26,6 @@ struct BlobCircuit {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 struct BlobConfig {
     challenges: Challenges,
 
@@ -98,10 +98,10 @@ impl Circuit<Fr> for BlobCircuit {
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         let barycentric_assignments = layouter.assign_region(
             || "barycentric config",
-            |region| -> Result<BarycentricEvaluationCells, Error> {
+            |region| -> Result<AssignedBarycentricEvaluationConfig, Error> {
                 if first_pass {
                     first_pass = false;
-                    return Ok(BarycentricEvaluationCells::default());
+                    return Ok(AssignedBarycentricEvaluationConfig::default());
                 }
 
                 let gate = &config.barycentric.scalar.range.gate;
@@ -115,7 +115,7 @@ impl Circuit<Fr> for BlobCircuit {
                 );
 
                 let blob = BlobAssignments::from(&self.data);
-                Ok(config.barycentric.assign2(
+                Ok(config.barycentric.assign(
                     &mut ctx,
                     blob.coefficients,
                     blob.challenge_digest,
