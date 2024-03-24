@@ -472,6 +472,7 @@ impl CircuitConfig {
         layouter.assign_region(
             || "sha256 input",
             |mut region| {
+
                 prev_block.s_final.copy_advice(
                     || "inheirt s_final",
                     &mut region,
@@ -874,6 +875,60 @@ impl Hasher {
         let table16_cfg = &self.chip.table16;
 
         let w_halves = table16_cfg.message_process(layouter, input)?;
+
+        let init_working_state = match &self.state {
+            Table16State::Compress(s) => s.as_ref().clone(),
+            Table16State::Dense(s) => {
+                // for the state cells being initialized, we should just 
+                // need to constraint the "dense" cell and the relationships
+                // among the vars / spread cells is handled by compression
+                // gadget
+                let s_inited = table16_cfg.initialize(layouter, s.clone())?;
+
+                // limited by the halo2's entry, we need a empyt region
+                // to bind the input and output initialized cells
+                layouter.assign_region(
+                    || "sha256 state initialized bind",
+                    |mut region| {
+
+                        let extract_dense = {
+                            let (a, b, c, d, e, f, g, h) = s_inited.clone().decompose();
+                            [
+                                a.into_dense(),
+                                b.into_dense(),
+                                c.into_dense(),
+                                d,
+                                e.into_dense(),
+                                f.into_dense(),
+                                g.into_dense(),
+                                h,
+                            ]                            
+                        };
+                        for (den_inp, den_assigned) in s.clone()
+                            .into_iter()
+                            .zip(extract_dense)
+                        {
+                            let (cell_inp_1, cell_inp_2) = den_inp.decompose();
+                            let (cell_assigned_1, cell_assigned_2) = den_assigned.decompose();
+
+                            region.constrain_equal(
+                                cell_inp_1.cell(), 
+                                cell_assigned_1.cell(),
+                            )?;
+                            region.constrain_equal(
+                                cell_inp_2.cell(), 
+                                cell_assigned_2.cell(),
+                            )?;                            
+                        }
+
+                        Ok(())
+                    }
+                )?;
+
+                s_inited
+            },
+        };
+
         self.hasher_state = self.chip.assign_input_block(
             layouter,
             chng,
@@ -881,11 +936,6 @@ impl Hasher {
             &w_halves[..16],
             padding,
         )?;
-
-        let init_working_state = match &self.state {
-            Table16State::Compress(s) => s.as_ref().clone(),
-            Table16State::Dense(s) => table16_cfg.initialize(layouter, s.clone())?,
-        };
 
         let compress_state =
             table16_cfg.compress(layouter, init_working_state.clone(), w_halves)?;
