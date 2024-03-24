@@ -489,7 +489,7 @@ impl BlobDataConfig {
                 let mut num_nonempty_chunks = zero.clone();
                 let mut is_empty_chunks = Vec::with_capacity(MAX_AGG_SNARKS);
                 let mut chunk_sizes = Vec::with_capacity(MAX_AGG_SNARKS);
-                for i in 0..MAX_AGG_SNARKS {
+                for (i, is_padded_chunk) in chunks_are_padding.iter().enumerate() {
                     let rows = assigned_rows
                         .iter()
                         .skip(2 + 4 * i)
@@ -533,6 +533,15 @@ impl BlobDataConfig {
                     )?;
                     region.constrain_equal(chunk_size.cell(), acc3.cell())?;
 
+                    // if the chunk is a padded chunk, its size must be set to 0.
+                    rlc_config.conditional_enforce_equal(
+                        &mut region,
+                        &chunk_size,
+                        &zero,
+                        is_padded_chunk,
+                        &mut rlc_config_offset,
+                    )?;
+
                     let is_empty_chunk =
                         rlc_config.is_zero(&mut region, &chunk_size, &mut rlc_config_offset)?;
                     let is_nonempty_chunk =
@@ -543,6 +552,7 @@ impl BlobDataConfig {
                         &num_nonempty_chunks,
                         &mut rlc_config_offset,
                     )?;
+
                     is_empty_chunks.push(is_empty_chunk);
                     chunk_sizes.push(chunk_size);
                 }
