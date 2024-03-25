@@ -476,7 +476,6 @@ impl CircuitConfig {
         layouter.assign_region(
             || "sha256 input",
             |mut region| {
-
                 prev_block.s_final.copy_advice(
                     || "inheirt s_final",
                     &mut region,
@@ -665,7 +664,6 @@ impl CircuitConfig {
         input_block: &BlockInheritments,
         is_final: bool,
     ) -> Result<[(AssignedBits<Fr, 16>, AssignedBits<Fr, 16>); 8], Error> {
-
         let output_cells = layouter.assign_region(
             || "sha256 digest",
             |mut region| {
@@ -698,12 +696,15 @@ impl CircuitConfig {
                 // assign message state
                 let (export_cells, byte_cells) = self.assign_message_block(
                     &mut region,
-                    state.iter().flat_map(|(lo, hi)| [hi, lo]).zip_eq(Self::IV16),
+                    state
+                        .iter()
+                        .flat_map(|(lo, hi)| [hi, lo])
+                        .zip_eq(Self::IV16),
                     header_offset,
                     is_final,
                 )?;
 
-                for i in 0..32 {
+                for (i, byte_cell) in byte_cells.iter().enumerate().take(32) {
                     let row = i + header_offset;
                     self.s_enable.enable(&mut region, row)?;
                     region.assign_fixed(
@@ -728,7 +729,7 @@ impl CircuitConfig {
                         || "bytes rlc",
                         self.bytes_rlc,
                         row,
-                        || chng * digest_rlc.value() + byte_cells[i].value(),
+                        || chng * digest_rlc.value() + byte_cell.value(),
                     )?;
                     // with gate for padding continue, it
                     // is enough to constraint the last padding as 0
@@ -860,7 +861,7 @@ impl Hasher {
         // init the 16 iv cells and binding them to initialize state
         layouter.assign_region(
             || "sha256 state initialized by iv bind",
-            |mut region|{
+            |mut region| {
                 let extract_dense = {
                     let (a, b, c, d, e, f, g, h) = match state.clone() {
                         Table16State::Compress(s) => s.decompose(),
@@ -875,25 +876,34 @@ impl Hasher {
                         f.into_dense(),
                         g.into_dense(),
                         h,
-                    ]                        
+                    ]
                 };
                 for (i, den_s) in extract_dense.into_iter().enumerate() {
                     let (cell_s_lo, cell_s_hi) = den_s.decompose();
-                    let row_i = i*2;
+                    let row_i = i * 2;
                     // notice the iv is organized as (hi, lo)
-                    let (iv_hi, iv_lo) = (CircuitConfig::IV16[row_i], CircuitConfig::IV16[row_i+1]);
+                    let (iv_hi, iv_lo) =
+                        (CircuitConfig::IV16[row_i], CircuitConfig::IV16[row_i + 1]);
                     let (cell_iv_lo, cell_iv_hi) = (
-                        region.assign_fixed(||"iv_hi", chip.c_data, row_i, 
-                        ||Value::known(Fr::from(iv_lo as u64)))?,
-                        region.assign_fixed(||"iv_hi", chip.c_data, row_i+1,
-                        ||Value::known(Fr::from(iv_hi as u64)))?,
+                        region.assign_fixed(
+                            || "iv_hi",
+                            chip.c_data,
+                            row_i,
+                            || Value::known(Fr::from(iv_lo as u64)),
+                        )?,
+                        region.assign_fixed(
+                            || "iv_hi",
+                            chip.c_data,
+                            row_i + 1,
+                            || Value::known(Fr::from(iv_hi as u64)),
+                        )?,
                     );
                     region.constrain_equal(cell_s_lo.cell(), cell_iv_lo.cell())?;
                     region.constrain_equal(cell_s_hi.cell(), cell_iv_hi.cell())?;
                 }
 
                 Ok(())
-            }
+            },
         )?;
 
         let hasher_state = chip.initialize_block_head(layouter)?;
@@ -923,7 +933,7 @@ impl Hasher {
         let init_working_state = match &self.state {
             Table16State::Compress(s) => s.as_ref().clone(),
             Table16State::Dense(s) => {
-                // for the state cells being initialized, we should just 
+                // for the state cells being initialized, we should just
                 // need to constraint the "dense" cell and the relationships
                 // among the vars / spread cells is handled by compression
                 // gadget
@@ -934,7 +944,6 @@ impl Hasher {
                 layouter.assign_region(
                     || "sha256 state initialized bind",
                     |mut region| {
-
                         let extract_dense = {
                             let (a, b, c, d, e, f, g, h) = s_inited.clone().decompose();
                             [
@@ -946,31 +955,22 @@ impl Hasher {
                                 f.into_dense(),
                                 g.into_dense(),
                                 h,
-                            ]                            
+                            ]
                         };
-                        for (den_inp, den_assigned) in s.clone()
-                            .into_iter()
-                            .zip(extract_dense)
-                        {
+                        for (den_inp, den_assigned) in s.clone().into_iter().zip(extract_dense) {
                             let (cell_inp_1, cell_inp_2) = den_inp.decompose();
                             let (cell_assigned_1, cell_assigned_2) = den_assigned.decompose();
 
-                            region.constrain_equal(
-                                cell_inp_1.cell(), 
-                                cell_assigned_1.cell(),
-                            )?;
-                            region.constrain_equal(
-                                cell_inp_2.cell(), 
-                                cell_assigned_2.cell(),
-                            )?;                            
+                            region.constrain_equal(cell_inp_1.cell(), cell_assigned_1.cell())?;
+                            region.constrain_equal(cell_inp_2.cell(), cell_assigned_2.cell())?;
                         }
 
                         Ok(())
-                    }
+                    },
                 )?;
 
                 s_inited
-            },
+            }
         };
 
         self.hasher_state = self.chip.assign_input_block(
