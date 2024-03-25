@@ -2203,6 +2203,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 ]);
 
                 let input_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur())
+                        + meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) - 1.expr(),
@@ -2210,6 +2212,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(),
                 ];
                 let table_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
@@ -2233,6 +2236,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                 ]);
 
                 let input_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur())
+                        - (meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur())
+                        - meta.query_advice(rlp_decoding_table.value, Rotation::cur())
+                        - 1.expr()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) + 1.expr(),
@@ -2242,6 +2249,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                         - 1.expr(),
                 ];
                 let table_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
