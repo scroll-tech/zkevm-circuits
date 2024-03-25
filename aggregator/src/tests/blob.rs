@@ -2,7 +2,7 @@ use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
     },
-    blob::{BlobAssignments, BlobData},
+    blob::{BlobAssignments, BlobData, N_ROWS_DATA},
     param::ConfigParams,
     MAX_AGG_SNARKS,
 };
@@ -167,6 +167,8 @@ fn check_circuit(data: BlobData) -> Result<(), Vec<VerifyFailure>> {
 
 #[test]
 fn blob_circuit_completeness() {
+    // single chunk in batch, but the chunk has a size of N_ROWS_DATA
+    let full_blob = vec![vec![123; N_ROWS_DATA]];
     let all_empty_chunks: Vec<Vec<u8>> = vec![vec![]; MAX_AGG_SNARKS];
     let one_chunk = vec![vec![2, 3, 4, 100, 1]];
     let two_chunks = vec![vec![100; 1000], vec![2, 3, 4, 100, 1]];
@@ -188,6 +190,7 @@ fn blob_circuit_completeness() {
         .collect::<Vec<_>>();
 
     for blob in [
+        full_blob,
         one_chunk,
         two_chunks,
         max_chunks,

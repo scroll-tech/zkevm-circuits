@@ -315,7 +315,9 @@ impl BlobDataConfig {
                 }
 
                 // enable hash selector
-                for offset in N_ROWS_METADATA + N_ROWS_DATA..N_ROWS_BLOB_DATA_CONFIG {
+                for offset in
+                    N_ROWS_METADATA + N_ROWS_DATA..N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC
+                {
                     self.hash_selector.enable(&mut region, offset)?;
                 }
 
@@ -651,8 +653,8 @@ impl BlobDataConfig {
                     region.constrain_equal(i_val.cell(), row.chunk_idx.cell())?;
                 }
 
-                let blob_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
-                let blob_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
+                let challenge_digest_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
+                let challenge_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
 
                 // ensure that on the last row of this section the is_boundary is turned on
                 // which would enable the keccak table lookup for challenge_digest
@@ -722,7 +724,7 @@ impl BlobDataConfig {
                 ///////////////////////////////// DIGEST BYTES /////////////////////////////////
                 ////////////////////////////////////////////////////////////////////////////////
 
-                let mut blob_preimage_keccak_rlc = zero.clone();
+                let mut challenge_digest_preimage_keccak_rlc = zero.clone();
                 let rows = assigned_rows
                     .iter()
                     .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC)
@@ -730,7 +732,7 @@ impl BlobDataConfig {
                     .collect::<Vec<_>>();
                 for (i, digest_rlc_specified) in std::iter::once(metadata_digest_rlc_specified)
                     .chain(chunk_digest_evm_rlcs)
-                    .chain(std::iter::once(blob_digest_rlc_specified))
+                    .chain(std::iter::once(challenge_digest_rlc_specified))
                     .enumerate()
                 {
                     let digest_rows = rows
@@ -760,9 +762,9 @@ impl BlobDataConfig {
                             &r_keccak,
                             &mut rlc_config_offset,
                         )?;
-                        blob_preimage_keccak_rlc = rlc_config.mul_add(
+                        challenge_digest_preimage_keccak_rlc = rlc_config.mul_add(
                             &mut region,
-                            &blob_preimage_keccak_rlc,
+                            &challenge_digest_preimage_keccak_rlc,
                             &r32,
                             &digest_keccak_rlc,
                             &mut rlc_config_offset,
@@ -770,8 +772,8 @@ impl BlobDataConfig {
                     }
                 }
                 region.constrain_equal(
-                    blob_preimage_keccak_rlc.cell(),
-                    blob_preimage_rlc_specified.cell(),
+                    challenge_digest_preimage_keccak_rlc.cell(),
+                    challenge_digest_preimage_rlc_specified.cell(),
                 )?;
 
                 ////////////////////////////////////////////////////////////////////////////////
