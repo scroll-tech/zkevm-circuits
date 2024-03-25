@@ -55,6 +55,10 @@ The circuit contains fixed layouts of input and output regions, i.e. an input re
 
 ### Defination in regions:
 
+  The 256-bit state to start a new compression is stored in 16 cells extracted from the digest region (see below), each cell for a 16-bit part and is called a "dense state" in table16. Such a dense state is assigned into an initialization region of table16 and export a "working state" for the following compression step. The working state also contain another dense state inside it. The caller to this initialization entry of table16, that is, the sha256 circuit, has a response to constarint the input dense state with the output one.
+  
+  Also, for the first compression step, circuit also constarint the dense state inside of the working state with the constants of the "Initiazation Vector" of sha256.
+
   Each input region captures a 512-bit block and copies the 16 x 32-bit integers (in the form of a pair of assigned cells for their lo and hi 16-bit parts) inside of the `message schedule` region of table16. The region consists of 66 rows: 64 rows for 64 bytes representing the 512-bit block and 2 extra rows at the beginning. For the `s_final_block`, `byte_counter`, `s_padding` and `bytes_rlc` cols, the cells in last row (enabled by `s_last` selector) are connected by equality constraints to the first row of next input region for the subsequent 512-bit block. Additionally the `s_final_block` cells is also connected with the corresponding digest reion. 
   
   The second row at the top of the region determines how the `byte_counter`, `s_padding` and `bytes_rlc` cols begin: if the inherited `s_final_block` cell (at the first row at the top of the region) is 1, these cols will start with an initial value (i.e., 0); else they will start with the "inherited" value of the previous 512-bit block. 
