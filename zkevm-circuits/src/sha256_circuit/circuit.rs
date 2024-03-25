@@ -62,6 +62,7 @@ pub trait SHA256Table {
 pub struct CircuitConfig {
     table16: Table16Config,
     byte_range: TableColumn,
+    c_data: Column<Fixed>,
 
     copied_data: Column<Advice>,
     trans_byte: Column<Advice>,
@@ -287,9 +288,11 @@ impl CircuitConfig {
         let s_enable = meta.selector();
         let s_assigned_u16 = meta.selector();
 
+        let c_data = meta.fixed_column();
         let byte_range = meta.lookup_table_column();
         let table16 = Table16Chip::configure(meta);
 
+        meta.enable_constant(c_data);
         meta.enable_equality(helper);
         meta.enable_equality(copied_data);
         meta.enable_equality(bytes_rlc);
@@ -300,6 +303,7 @@ impl CircuitConfig {
         let ret = Self {
             table16,
             byte_range,
+            c_data,
             copied_data,
             trans_byte,
             bytes_rlc,
@@ -647,6 +651,11 @@ impl CircuitConfig {
         )
     }
 
+    const IV16: [u16; 16] = [
+        0x6a09, 0xe667, 0xbb67, 0xae85, 0x3c6e, 0xf372, 0xa54f, 0xf53a, 0x510e, 0x527f, 0x9b05,
+        0x688c, 0x1f83, 0xd9ab, 0x5be0, 0xcd19,
+    ];
+
     #[allow(clippy::type_complexity)]
     fn assign_output_region(
         &self,
@@ -656,10 +665,6 @@ impl CircuitConfig {
         input_block: &BlockInheritments,
         is_final: bool,
     ) -> Result<[(AssignedBits<Fr, 16>, AssignedBits<Fr, 16>); 8], Error> {
-        const IV16: [u16; 16] = [
-            0x6a09, 0xe667, 0xbb67, 0xae85, 0x3c6e, 0xf372, 0xa54f, 0xf53a, 0x510e, 0x527f, 0x9b05,
-            0x688c, 0x1f83, 0xd9ab, 0x5be0, 0xcd19,
-        ];
 
         let output_cells = layouter.assign_region(
             || "sha256 digest",
@@ -693,7 +698,7 @@ impl CircuitConfig {
                 // assign message state
                 let (export_cells, byte_cells) = self.assign_message_block(
                     &mut region,
-                    state.iter().flat_map(|(lo, hi)| [hi, lo]).zip_eq(IV16),
+                    state.iter().flat_map(|(lo, hi)| [hi, lo]).zip_eq(Self::IV16),
                     header_offset,
                     is_final,
                 )?;
@@ -705,7 +710,7 @@ impl CircuitConfig {
                         || "set s_output for init_iv",
                         self.s_output,
                         row,
-                        || Value::known(Fr::from(IV16[i / 2] as u64)),
+                        || Value::known(Fr::from(Self::IV16[i / 2] as u64)),
                     )?;
                     region.assign_advice(
                         || "byte counter",
@@ -852,6 +857,45 @@ impl Hasher {
 
         let table16_chip = Table16Chip::construct::<Fr>(chip.table16.clone());
         let state = table16_chip.initialization_vector(layouter)?;
+        // init the 16 iv cells and binding them to initialize state
+        layouter.assign_region(
+            || "sha256 state initialized by iv bind",
+            |mut region|{
+                let extract_dense = {
+                    let (a, b, c, d, e, f, g, h) = match state.clone() {
+                        Table16State::Compress(s) => s.decompose(),
+                        _ => unreachable!(),
+                    };
+                    [
+                        a.into_dense(),
+                        b.into_dense(),
+                        c.into_dense(),
+                        d,
+                        e.into_dense(),
+                        f.into_dense(),
+                        g.into_dense(),
+                        h,
+                    ]                        
+                };
+                for (i, den_s) in extract_dense.into_iter().enumerate() {
+                    let (cell_s_lo, cell_s_hi) = den_s.decompose();
+                    let row_i = i*2;
+                    // notice the iv is organized as (hi, lo)
+                    let (iv_hi, iv_lo) = (CircuitConfig::IV16[row_i], CircuitConfig::IV16[row_i+1]);
+                    let (cell_iv_lo, cell_iv_hi) = (
+                        region.assign_fixed(||"iv_hi", chip.c_data, row_i, 
+                        ||Value::known(Fr::from(iv_lo as u64)))?,
+                        region.assign_fixed(||"iv_hi", chip.c_data, row_i+1,
+                        ||Value::known(Fr::from(iv_hi as u64)))?,
+                    );
+                    region.constrain_equal(cell_s_lo.cell(), cell_iv_lo.cell())?;
+                    region.constrain_equal(cell_s_hi.cell(), cell_iv_hi.cell())?;
+                }
+
+                Ok(())
+            }
+        )?;
+
         let hasher_state = chip.initialize_block_head(layouter)?;
         Ok(Self {
             chip,
@@ -1123,7 +1167,6 @@ mod tests {
                 hashes_rlc: meta.advice_column(),
                 is_effect: meta.advice_column(),
             };
-            meta.enable_constant(dev_table.s_enable);
 
             let chng = Expression::Constant(Fr::from(0x1000u64));
             Self::Config::configure(meta, dev_table, chng)
