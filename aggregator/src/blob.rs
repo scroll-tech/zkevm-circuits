@@ -100,7 +100,7 @@ impl From<&Vec<Vec<u8>>> for BlobData {
             .collect::<Vec<_>>()
             .try_into()
             .expect("we have MAX_AGG_SNARKS chunks");
-        assert!(chunk_sizes.iter().sum::<u32>() < N_BLOB_BYTES as u32);
+        assert!(chunk_sizes.iter().sum::<u32>() <= N_ROWS_DATA as u32);
 
         let last_chunk_data = chunks.last().expect("last chunk exists");
         let chunk_data = chunks
@@ -122,11 +122,12 @@ impl From<&Vec<Vec<u8>>> for BlobData {
 
 impl BlobData {
     pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkHash]) -> Self {
-        let num_valid_chunks = num_valid_chunks as u16;
+        assert!(num_valid_chunks > 0);
+        assert!(num_valid_chunks <= MAX_AGG_SNARKS);
 
         // padded chunk has 0 size, valid chunk's size is the number of bytes consumed by the
         // flattened data from signed L2 transactions.
-        let chunk_sizes = chunks_with_padding
+        let chunk_sizes: [u32; MAX_AGG_SNARKS] = chunks_with_padding
             .iter()
             .map(|chunk| {
                 if chunk.is_padding {
@@ -138,6 +139,7 @@ impl BlobData {
             .collect::<Vec<u32>>()
             .try_into()
             .unwrap();
+        assert!(chunk_sizes.iter().sum::<u32>() <= N_ROWS_DATA as u32);
 
         // chunk data of the "last valid chunk" is repeated over the padded chunks for simplicity
         // in calculating chunk_data_digest for those padded chunks. However, for the "chunk data"
@@ -150,7 +152,7 @@ impl BlobData {
             .unwrap();
 
         Self {
-            num_valid_chunks,
+            num_valid_chunks: num_valid_chunks as u16,
             chunk_sizes,
             chunk_data,
         }

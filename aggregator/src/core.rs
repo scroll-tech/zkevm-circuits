@@ -162,7 +162,7 @@ pub(crate) struct ExtractedHashCells {
 pub(crate) struct ExpectedBlobCells {
     pub(crate) z: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) y: Vec<AssignedCell<Fr, Fr>>,
-    pub(crate) chunk_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
+    pub(crate) chunk_tx_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
 }
 
 pub(crate) struct AssignedBatchHash {
@@ -238,7 +238,7 @@ pub(crate) fn assign_batch_hashes(
     let expected_blob_cells = ExpectedBlobCells {
         z: batch_pi_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + 32].to_vec(),
         y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + 32].to_vec(),
-        chunk_data_digests: (0..MAX_AGG_SNARKS)
+        chunk_tx_data_digests: (0..MAX_AGG_SNARKS)
             .map(|i| {
                 let chunk_pi_input = &extracted_hash_cells.hash_input_cells
                     [INPUT_LEN_PER_ROUND * (2 + 2 * i)..INPUT_LEN_PER_ROUND * (2 + 2 * (i + 1))];

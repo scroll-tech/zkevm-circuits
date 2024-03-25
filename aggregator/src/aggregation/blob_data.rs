@@ -197,7 +197,7 @@ impl BlobDataConfig {
 
         // lookup metadata and chunk data digests in keccak table.
         meta.lookup_any(
-            "BlobDataConfig (chunk data digests in keccak table)",
+            "BlobDataConfig (metadata/chunk_data digests in keccak table)",
             |meta| {
                 let is_data = meta.query_selector(config.data_selector);
                 let is_hash = meta.query_selector(config.hash_selector);
@@ -713,15 +713,7 @@ impl BlobDataConfig {
                     )?;
 
                     // constrain chunk size specified here against decoded in metadata.
-                    let chunk_size_specified = rlc_config.select(
-                        &mut region,
-                        &zero,
-                        &row.accumulator,
-                        &is_empty,
-                        &mut rlc_config_offset,
-                    )?;
-                    region
-                        .constrain_equal(chunk_size_specified.cell(), chunk_size_decoded.cell())?;
+                    region.constrain_equal(row.accumulator.cell(), chunk_size_decoded.cell())?;
 
                     chunk_digest_evm_rlcs.push(&row.digest_rlc);
                 }

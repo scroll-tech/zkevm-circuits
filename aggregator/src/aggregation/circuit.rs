@@ -455,7 +455,7 @@ impl Circuit<Fr> for AggregationCircuit {
                     for (chunk_data_digest, expected_chunk_data_digest) in blob_data_exports
                         .chunk_data_digests
                         .iter()
-                        .zip_eq(assigned_batch_hash.blob.chunk_data_digests.iter())
+                        .zip_eq(assigned_batch_hash.blob.chunk_tx_data_digests.iter())
                     {
                         for (c, ec) in chunk_data_digest
                             .iter()
