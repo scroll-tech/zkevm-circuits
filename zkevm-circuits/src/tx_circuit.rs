@@ -1523,7 +1523,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
             let is_final_cur = meta.query_advice(is_final, Rotation::cur());
 
-            // Dynamic section transition #1: calldata -> calldata
+            // Dynamic section transition #1: into calldata
             cb.condition(
                 and::expr([
                     meta.query_advice(is_calldata, Rotation::next()),
@@ -1550,7 +1550,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 },
             );
 
-            // Dynamic section transition #3: access_list -> access_list
+            // Dynamic section transition #2: into access_list
             cb.condition(
                 meta.query_advice(is_access_list, Rotation::next()),
                 |cb| {
