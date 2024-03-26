@@ -176,8 +176,10 @@ impl<'a> CircuitInputStateRef<'a> {
         };
         let rwc = self.block_ctx.rwc.0;
         if rwc > effective_limit {
-            log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
-            return Err(Error::InternalError("rws not enough"));
+            if cfg!(feature = "strict-ccc") {
+                log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
+                return Err(Error::InternalError("rws not enough"));
+            }
         };
         Ok(())
     }
