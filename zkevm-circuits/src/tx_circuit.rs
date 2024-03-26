@@ -1497,11 +1497,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         meta.create_gate("Dymamic section init with access_list", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            
+
             cb.require_equal(
                 "al_idx starts with 1",
                 meta.query_advice(al_idx, Rotation::next()),
-                1.expr()
+                1.expr(),
             );
             cb.require_zero(
                 "sks_acc starts with 0",
@@ -1512,7 +1512,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 meta.query_advice(section_rlc, Rotation::next()),
                 meta.query_advice(field_rlc, Rotation::next()),
             );
-            
+
             cb.gate(and::expr([
                 meta.query_fixed(q_dynamic_first, Rotation::cur()),
                 not::expr(tx_id_is_zero.expr(Rotation::cur())(meta)),
@@ -1526,9 +1526,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             // Dynamic section transition #1: into calldata
             cb.condition(
-                and::expr([
-                    meta.query_advice(is_calldata, Rotation::next()),
-                ]),
+                and::expr([meta.query_advice(is_calldata, Rotation::next())]),
                 |cb| {
                     let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
                     let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
@@ -1552,25 +1550,22 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             );
 
             // Dynamic section transition #2: into access_list
-            cb.condition(
-                meta.query_advice(is_access_list, Rotation::next()),
-                |cb| {
-                    cb.require_equal(
-                        "al_idx starts with 1",
-                        meta.query_advice(al_idx, Rotation::next()),
-                        1.expr()
-                    );
-                    cb.require_zero(
-                        "sks_acc starts with 0",
-                        meta.query_advice(sks_acc, Rotation::next()),
-                    );
-                    cb.require_equal(
-                        "section_rlc::cur == field_rlc::cur",
-                        meta.query_advice(section_rlc, Rotation::next()),
-                        meta.query_advice(field_rlc, Rotation::next()),
-                    );
-                }
-            );
+            cb.condition(meta.query_advice(is_access_list, Rotation::next()), |cb| {
+                cb.require_equal(
+                    "al_idx starts with 1",
+                    meta.query_advice(al_idx, Rotation::next()),
+                    1.expr(),
+                );
+                cb.require_zero(
+                    "sks_acc starts with 0",
+                    meta.query_advice(sks_acc, Rotation::next()),
+                );
+                cb.require_equal(
+                    "section_rlc::cur == field_rlc::cur",
+                    meta.query_advice(section_rlc, Rotation::next()),
+                    meta.query_advice(field_rlc, Rotation::next()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -1711,28 +1706,29 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     not::expr(is_final_cur.clone()),
                     meta.query_advice(is_access_list_storage_key, Rotation::next()),
                 ]),
-            |cb| {
-                cb.require_equal(
-                    "sks_acc' = sks_acc + 1",
-                    meta.query_advice(sks_acc, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(sks_acc, Rotation::next()),
-                );
-                cb.require_equal(
-                    "sk_idx' = sk_idx + 1",
-                    meta.query_advice(sk_idx, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(sk_idx, Rotation::next()),
-                );
-                cb.require_equal(
-                    "al_idx' = al_idx",
-                    meta.query_advice(al_idx, Rotation::cur()),
-                    meta.query_advice(al_idx, Rotation::next()),
-                );
-                cb.require_equal(
-                    "access_list_address' = access_list_address",
-                    meta.query_advice(tx_table.access_list_address, Rotation::cur()),
-                    meta.query_advice(tx_table.access_list_address, Rotation::next()),
-                );
-            });
+                |cb| {
+                    cb.require_equal(
+                        "sks_acc' = sks_acc + 1",
+                        meta.query_advice(sks_acc, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(sks_acc, Rotation::next()),
+                    );
+                    cb.require_equal(
+                        "sk_idx' = sk_idx + 1",
+                        meta.query_advice(sk_idx, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(sk_idx, Rotation::next()),
+                    );
+                    cb.require_equal(
+                        "al_idx' = al_idx",
+                        meta.query_advice(al_idx, Rotation::cur()),
+                        meta.query_advice(al_idx, Rotation::next()),
+                    );
+                    cb.require_equal(
+                        "access_list_address' = access_list_address",
+                        meta.query_advice(tx_table.access_list_address, Rotation::cur()),
+                        meta.query_advice(tx_table.access_list_address, Rotation::next()),
+                    );
+                },
+            );
 
             // When is_final_cur is true, the tx_id must change for the next dynamic section
             cb.condition(
