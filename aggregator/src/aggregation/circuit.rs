@@ -188,7 +188,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
-                        self.batch_hash.blob.coefficients,
+                        &self.batch_hash.blob.coefficients,
                         self.batch_hash.blob.challenge_digest,
                         self.batch_hash.blob.evaluation,
                     );
@@ -268,7 +268,7 @@ impl Circuit<Fr> for AggregationCircuit {
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
-                        self.batch_hash.blob.coefficients,
+                        &self.batch_hash.blob.coefficients,
                         self.batch_hash.blob.challenge_digest,
                         self.batch_hash.blob.evaluation,
                     );

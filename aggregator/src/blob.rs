@@ -511,7 +511,7 @@ impl From<&BlobData> for BlobAssignments {
         let evaluation = U256::from_little_endian(
             &interpolate(
                 Scalar::from_raw(challenge_digest.0),
-                coefficients_as_scalars,
+                &coefficients_as_scalars,
             )
             .to_bytes(),
         );

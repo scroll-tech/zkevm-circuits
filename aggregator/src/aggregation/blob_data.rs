@@ -208,7 +208,7 @@ impl BlobDataConfig {
 
         // lookup metadata and chunk data digests in keccak table.
         meta.lookup_any(
-            "BlobDataConfig (metadata/chunk_data digests in keccak table)",
+            "BlobDataConfig (metadata/chunk_data/challenge digests in keccak table)",
             |meta| {
                 let is_data = meta.query_selector(config.data_selector);
                 let is_hash = meta.query_selector(config.hash_selector);
@@ -267,7 +267,7 @@ impl BlobDataConfig {
 
         // lookup challenge digest in keccak table.
         meta.lookup_any(
-            "BlobDataConfig (challenge digest in keccak table)",
+            "BlobDataConfig (metadata/chunk_data/challenge digests in keccak table)",
             |meta| {
                 let is_hash = meta.query_selector(config.hash_selector);
                 let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
