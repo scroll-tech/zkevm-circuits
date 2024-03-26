@@ -121,7 +121,18 @@ impl BlobDataConfig {
                 let cond = is_not_hash * is_boundary * (1.expr() - is_padding_next);
                 let chunk_idx_curr = meta.query_advice(config.chunk_idx, Rotation::cur());
                 let chunk_idx_next = meta.query_advice(config.chunk_idx, Rotation::next());
-                vec![(cond * (chunk_idx_next - chunk_idx_curr), range_table.into())]
+                // chunk_idx increases by at least 1 and at most MAX_AGG_SNARKS when condition is met.
+                vec![(cond * (chunk_idx_next - chunk_idx_curr - 1.expr()), config.chunk_idx_range_table.into())]
+            },
+        );
+
+        meta.lookup(
+            "chunk_idx for non-padding, data rows in [1..MAX_AGG_SNARKS]",
+            |meta| {
+                let is_data = meta.query_selector(config.data_selector);
+                let is_padding = meta.query_advice(config.is_padding, Rotation::cur());
+                let chunk_idx = meta.query_advice(config.chunk_idx, Rotation::cur());
+                vec![(is_data * (1.expr() - is_padding) * (chunk_idx - 1.expr()), config.chunk_idx_range_table.into())]
             },
         );
 
