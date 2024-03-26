@@ -1820,10 +1820,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
                 ]
                 .iter()
-                .fold(
-                    0.expr(), 
-                    |acc, expr| acc * keccak_input_rand.expr() + expr.clone()
-                );
+                .fold(0.expr(), |acc, expr| {
+                    acc * keccak_input_rand.expr() + expr.clone()
+                });
 
                 cb.require_equal(
                     "id in the rlp_decoding_table is calculated correctly",
@@ -1833,7 +1832,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enabled, Rotation::cur()),
-                    not::expr(is_end(meta))
+                    not::expr(is_end(meta)),
                 ]))
             },
         );
@@ -2203,6 +2202,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 ]);
 
                 let input_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur())
+                        + meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) - 1.expr(),
@@ -2210,6 +2211,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(rlp_decoding_table.value, Rotation::cur()) + 1.expr(),
                 ];
                 let table_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
@@ -2233,6 +2235,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                 ]);
 
                 let input_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur())
+                        - (meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur())
+                            - meta.query_advice(rlp_decoding_table.value, Rotation::cur())
+                            - 1.expr()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()) + 1.expr(),
@@ -2242,6 +2248,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                         - 1.expr(),
                 ];
                 let table_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
