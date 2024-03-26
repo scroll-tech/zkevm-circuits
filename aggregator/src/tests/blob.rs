@@ -117,7 +117,7 @@ impl Circuit<Fr> for BlobCircuit {
                 let blob = BlobAssignments::from(&self.data);
                 Ok(config.barycentric.assign(
                     &mut ctx,
-                    blob.coefficients,
+                    &blob.coefficients,
                     blob.challenge_digest,
                     blob.evaluation,
                 ))
@@ -208,8 +208,8 @@ fn generic_blob_data() -> BlobData {
         vec![100; 300],
         vec![100, 23, 34, 24, 10],
         vec![200; 20],
-        vec![200; 20],
         vec![],
+        vec![200; 20],
     ])
 }
 
@@ -240,11 +240,3 @@ fn inconsistent_chunk_bytes() {
     blob_data.chunk_data[0].push(128);
     assert!(check_circuit(blob_data).is_err());
 }
-
-// This is not possible to check right now becuase of the assignment code.
-// #[test]
-// fn too_many_chunk_bytes() {
-//     let mut blob_data = generic_blob_data();
-//     blob_data.chunk_bytes[0].extend(vec![100; BLOB_WIDTH * 31]);
-//     assert!(check_circuit(blob_data).is_err());
-// }
