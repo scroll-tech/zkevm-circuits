@@ -13,6 +13,7 @@ use zkevm_circuits::{
 };
 
 use crate::{
+    aggregation::rlc::POWS_OF_256,
     blob::{
         BlobData, BLOB_WIDTH, N_BYTES_31, N_BYTES_32, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA,
         N_ROWS_DIGEST_BYTES, N_ROWS_DIGEST_RLC, N_ROWS_METADATA,
@@ -121,8 +122,12 @@ impl BlobDataConfig {
                 let cond = is_not_hash * is_boundary * (1.expr() - is_padding_next);
                 let chunk_idx_curr = meta.query_advice(config.chunk_idx, Rotation::cur());
                 let chunk_idx_next = meta.query_advice(config.chunk_idx, Rotation::next());
-                // chunk_idx increases by at least 1 and at most MAX_AGG_SNARKS when condition is met.
-                vec![(cond * (chunk_idx_next - chunk_idx_curr - 1.expr()), config.chunk_idx_range_table.into())]
+                // chunk_idx increases by at least 1 and at most MAX_AGG_SNARKS when condition is
+                // met.
+                vec![(
+                    cond * (chunk_idx_next - chunk_idx_curr - 1.expr()),
+                    config.chunk_idx_range_table.into(),
+                )]
             },
         );
 
@@ -132,7 +137,10 @@ impl BlobDataConfig {
                 let is_data = meta.query_selector(config.data_selector);
                 let is_padding = meta.query_advice(config.is_padding, Rotation::cur());
                 let chunk_idx = meta.query_advice(config.chunk_idx, Rotation::cur());
-                vec![(is_data * (1.expr() - is_padding) * (chunk_idx - 1.expr()), config.chunk_idx_range_table.into())]
+                vec![(
+                    is_data * (1.expr() - is_padding) * (chunk_idx - 1.expr()),
+                    config.chunk_idx_range_table.into(),
+                )]
             },
         );
 
@@ -415,17 +423,42 @@ impl BlobDataConfig {
                     region.constrain_equal(one.cell(), one_cell)?;
                     one
                 };
-                let two_fifty_six = {
-                    let two_fifty_six = rlc_config.load_private(
-                        &mut region,
-                        &Fr::from(256),
-                        &mut rlc_config_offset,
-                    )?;
-                    let two_fifty_six_fixed = rlc_config
-                        .two_hundred_and_fifty_size_cell(two_fifty_six.cell().region_index);
-                    region.constrain_equal(two_fifty_six.cell(), two_fifty_six_fixed)?;
-                    two_fifty_six
+                let fixed_chunk_indices = {
+                    let mut fixed_chunk_indices = vec![one.clone()];
+                    for i in 2..=MAX_AGG_SNARKS {
+                        let i_cell = rlc_config.load_private(
+                            &mut region,
+                            &Fr::from(i as u64),
+                            &mut rlc_config_offset,
+                        )?;
+                        let i_fixed_cell = rlc_config
+                            .fixed_up_to_max_agg_snarks_cell(i_cell.cell().region_index, i);
+                        region.constrain_equal(i_cell.cell(), i_fixed_cell)?;
+                        fixed_chunk_indices.push(i_cell);
+                    }
+                    fixed_chunk_indices
                 };
+                let pows_of_256 = {
+                    let mut pows_of_256 = vec![one.clone()];
+                    for (exponent, pow_of_256) in (1..=POWS_OF_256).zip_eq(
+                        std::iter::successors(Some(Fr::from(256)), |n| Some(n * Fr::from(256)))
+                            .take(POWS_OF_256),
+                    ) {
+                        let pow_cell = rlc_config.load_private(
+                            &mut region,
+                            &pow_of_256,
+                            &mut rlc_config_offset,
+                        )?;
+                        let fixed_pow_cell = rlc_config.pow_of_two_hundred_and_fifty_six_cell(
+                            pow_cell.cell().region_index,
+                            exponent,
+                        );
+                        region.constrain_equal(pow_cell.cell(), fixed_pow_cell)?;
+                        pows_of_256.push(pow_cell);
+                    }
+                    pows_of_256
+                };
+                let two_fifty_six = pows_of_256[1].clone();
 
                 // read randomness challenges for RLC computations.
                 let r_keccak = rlc_config.read_challenge1(
@@ -656,12 +689,13 @@ impl BlobDataConfig {
 
                 // rows have chunk_idx set from 0 (metadata) -> MAX_AGG_SNARKS.
                 region.constrain_equal(rows[0].chunk_idx.cell(), zero.cell())?;
-                // TODO: this can be replaced by fetching 1 -> MAX_AGG_SNARKS from fixed column
-                // instead. The additions will be avoided.
-                let mut i_val = zero.clone();
-                for row in rows.iter().skip(1).take(MAX_AGG_SNARKS) {
-                    i_val = rlc_config.add(&mut region, &i_val, &one, &mut rlc_config_offset)?;
-                    region.constrain_equal(i_val.cell(), row.chunk_idx.cell())?;
+                for (row, fixed_chunk_idx) in rows
+                    .iter()
+                    .skip(1)
+                    .take(MAX_AGG_SNARKS)
+                    .zip_eq(fixed_chunk_indices.iter())
+                {
+                    region.constrain_equal(row.chunk_idx.cell(), fixed_chunk_idx.cell())?;
                 }
 
                 let challenge_digest_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
@@ -834,33 +868,23 @@ impl BlobDataConfig {
                 let challenge_digest_crt = barycentric_assignments
                     .get(BLOB_WIDTH)
                     .expect("challenge digest CRT");
-                let powers_of_256 = std::iter::successors(Some(Ok(one)), |coeff| {
-                    Some(rlc_config.mul(
-                        &mut region,
-                        &two_fifty_six,
-                        coeff.as_ref().expect("coeff expected"),
-                        &mut rlc_config_offset,
-                    ))
-                })
-                .take(11)
-                .collect::<Result<Vec<_>, Error>>()?;
 
                 let challenge_digest_limb1 = rlc_config.inner_product(
                     &mut region,
                     &export.challenge_digest[0..11],
-                    &powers_of_256[0..11],
+                    &pows_of_256,
                     &mut rlc_config_offset,
                 )?;
                 let challenge_digest_limb2 = rlc_config.inner_product(
                     &mut region,
                     &export.challenge_digest[11..22],
-                    &powers_of_256[0..11],
+                    &pows_of_256,
                     &mut rlc_config_offset,
                 )?;
                 let challenge_digest_limb3 = rlc_config.inner_product(
                     &mut region,
                     &export.challenge_digest[22..32],
-                    &powers_of_256[0..10],
+                    &pows_of_256[0..10],
                     &mut rlc_config_offset,
                 )?;
                 region.constrain_equal(
@@ -879,19 +903,19 @@ impl BlobDataConfig {
                     let limb1 = rlc_config.inner_product(
                         &mut region,
                         &blob_field[0..11],
-                        &powers_of_256[0..11],
+                        &pows_of_256,
                         &mut rlc_config_offset,
                     )?;
                     let limb2 = rlc_config.inner_product(
                         &mut region,
                         &blob_field[11..22],
-                        &powers_of_256[0..11],
+                        &pows_of_256,
                         &mut rlc_config_offset,
                     )?;
                     let limb3 = rlc_config.inner_product(
                         &mut region,
                         &blob_field[22..31],
-                        &powers_of_256[0..9],
+                        &pows_of_256[0..9],
                         &mut rlc_config_offset,
                     )?;
                     region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell())?;
