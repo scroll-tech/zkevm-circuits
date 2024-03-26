@@ -37,6 +37,8 @@ pub struct BlobDataConfig {
     /// A boolean witness that is set only when we encounter the end of a chunk. We enable a lookup
     /// to the Keccak table when the boundary is met.
     is_boundary: Column<Advice>,
+    /// A running accumulator of the boundary counts.
+    boundary_count: Column<Advice>,
     /// A boolean witness to indicate padded rows at the end of the data section.
     is_padding: Column<Advice>,
     /// Represents the running random linear combination of bytes seen so far, that are a part of
@@ -67,6 +69,7 @@ struct AssignedBlobDataConfig {
     pub accumulator: AssignedCell<Fr, Fr>,
     pub chunk_idx: AssignedCell<Fr, Fr>,
     pub is_boundary: AssignedCell<Fr, Fr>,
+    pub boundary_count: AssignedCell<Fr, Fr>,
     pub is_padding: AssignedCell<Fr, Fr>,
     pub preimage_rlc: AssignedCell<Fr, Fr>,
     pub digest_rlc: AssignedCell<Fr, Fr>,
@@ -86,6 +89,7 @@ impl BlobDataConfig {
             byte: meta.advice_column(),
             accumulator: meta.advice_column(),
             is_boundary: meta.advice_column(),
+            boundary_count: meta.advice_column(),
             chunk_idx: meta.advice_column(),
             is_padding: meta.advice_column(),
             preimage_rlc: meta.advice_column_in(SecondPhase),
@@ -98,6 +102,7 @@ impl BlobDataConfig {
         meta.enable_equality(config.byte);
         meta.enable_equality(config.accumulator);
         meta.enable_equality(config.is_boundary);
+        meta.enable_equality(config.boundary_count);
         meta.enable_equality(config.is_padding);
         meta.enable_equality(config.chunk_idx);
         meta.enable_equality(config.preimage_rlc);
@@ -132,7 +137,7 @@ impl BlobDataConfig {
         );
 
         meta.lookup(
-            "chunk_idx for non-padding, data rows in [1..MAX_AGG_SNARKS]",
+            "BlobDataConfig (chunk_idx for non-padding, data rows in [1..MAX_AGG_SNARKS])",
             |meta| {
                 let is_data = meta.query_selector(config.data_selector);
                 let is_padding = meta.query_advice(config.is_padding, Rotation::cur());
@@ -155,6 +160,9 @@ impl BlobDataConfig {
             let preimage_rlc_next = meta.query_advice(config.preimage_rlc, Rotation::next());
             let byte_next = meta.query_advice(config.byte, Rotation::next());
 
+            let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
+            let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
+
             vec![
                 // if boundary followed by padding, length and preimage_rlc is 0.
                 cond.expr() * is_padding_next.expr() * len_next.expr(),
@@ -165,6 +173,9 @@ impl BlobDataConfig {
                 cond.expr()
                     * (1.expr() - is_padding_next.expr())
                     * (preimage_rlc_next - byte_next.expr()),
+                // the boundary count increments, i.e.
+                // - boundary_count_curr == boundary_count_prev + 1
+                cond.expr() * (boundary_count_curr - boundary_count_prev - 1.expr()),
             ]
         });
 
@@ -183,6 +194,8 @@ impl BlobDataConfig {
             let preimage_rlc_curr = meta.query_advice(config.preimage_rlc, Rotation::cur());
             let preimage_rlc_next = meta.query_advice(config.preimage_rlc, Rotation::next());
             let byte_next = meta.query_advice(config.byte, Rotation::next());
+            let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
+            let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
 
             vec![
                 // chunk idx unchanged.
@@ -191,6 +204,8 @@ impl BlobDataConfig {
                 cond.expr() * (len_next - len_curr - 1.expr()),
                 // preimage rlc is updated.
                 cond.expr() * (preimage_rlc_curr * r + byte_next - preimage_rlc_next),
+                // boundary count continues.
+                cond.expr() * (boundary_count_curr - boundary_count_prev),
             ]
         });
 
@@ -201,6 +216,8 @@ impl BlobDataConfig {
             let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
             let diff = is_padding_next - is_padding_curr.expr();
             let byte = meta.query_advice(config.byte, Rotation::cur());
+            let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
+            let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
 
             vec![
                 // byte is 0 when padding in the "chunk data" section.
@@ -211,6 +228,8 @@ impl BlobDataConfig {
                 is_data.expr() * is_padding_curr.expr() * (1.expr() - is_padding_curr.expr()),
                 // is_padding transitions from 0 -> 1 only once.
                 is_data.expr() * diff.expr() * (1.expr() - diff.expr()),
+                // boundary count continues if padding
+                is_data.expr() * is_padding_curr * (boundary_count_curr - boundary_count_prev),
             ]
         });
 
@@ -341,6 +360,7 @@ impl BlobDataConfig {
                 }
 
                 let mut assigned_rows = Vec::with_capacity(N_ROWS_BLOB_DATA_CONFIG);
+                let mut count = 0u64;
                 for (i, row) in rows.iter().enumerate() {
                     let byte = region.assign_advice(
                         || "byte",
@@ -366,6 +386,18 @@ impl BlobDataConfig {
                         i,
                         || Value::known(Fr::from(row.is_boundary as u64)),
                     )?;
+                    let bcount = if (N_ROWS_METADATA..N_ROWS_METADATA + N_ROWS_DATA).contains(&i) {
+                        count += row.is_boundary as u64;
+                        count
+                    } else {
+                        0
+                    };
+                    let boundary_count = region.assign_advice(
+                        || "boundary_count",
+                        self.boundary_count,
+                        i,
+                        || Value::known(Fr::from(bcount)),
+                    )?;
                     let is_padding = region.assign_advice(
                         || "is_padding",
                         self.is_padding,
@@ -389,6 +421,7 @@ impl BlobDataConfig {
                         accumulator,
                         chunk_idx,
                         is_boundary,
+                        boundary_count,
                         is_padding,
                         preimage_rlc,
                         digest_rlc,
@@ -612,6 +645,8 @@ impl BlobDataConfig {
 
                 // on the last row of the "metadata" section we want to ensure the keccak table
                 // lookup would be enabled for the metadata digest
+                //
+                // and boundary_count must be 0
                 region.constrain_equal(
                     assigned_rows
                         .get(N_ROWS_METADATA - 1)
@@ -619,6 +654,14 @@ impl BlobDataConfig {
                         .is_boundary
                         .cell(),
                     one.cell(),
+                )?;
+                region.constrain_equal(
+                    assigned_rows
+                        .get(N_ROWS_METADATA - 1)
+                        .unwrap()
+                        .boundary_count
+                        .cell(),
+                    zero.cell(),
                 )?;
 
                 ////////////////////////////////////////////////////////////////////////////////
@@ -661,21 +704,12 @@ impl BlobDataConfig {
                     &mut rlc_config_offset,
                 )?;
 
-                // we do a lookup to the keccak table (from the "chunk data" section) every time we
-                // encounter a boundary. And such a lookup is done only for non-empty chunks, i.e.
-                // chunks that have at least one L2 transaction. We wish to equate this summation
-                // to the number of non-empty chunks we decoded from the metadata.
-                let mut num_lookups = zero.clone();
-                // TODO: optimize this loop as each add takes 4 rows
-                for row in rows.iter() {
-                    num_lookups = rlc_config.add(
-                        &mut region,
-                        &row.is_boundary,
-                        &num_lookups,
-                        &mut rlc_config_offset,
-                    )?;
-                }
-                region.constrain_equal(num_lookups.cell(), num_nonempty_chunks.cell())?;
+                // get the boundary count at the end of the "chunk data" section, and equate it to
+                // the number of non-empty chunks in the batch.
+                region.constrain_equal(
+                    rows.last().unwrap().boundary_count.cell(),
+                    num_nonempty_chunks.cell(),
+                )?;
 
                 ////////////////////////////////////////////////////////////////////////////////
                 ////////////////////////////////// DIGEST RLC //////////////////////////////////
