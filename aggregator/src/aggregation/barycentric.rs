@@ -26,7 +26,7 @@ pub static BLS_MODULUS: LazyLock<U256> = LazyLock::new(|| {
     U256::from_str_radix(Scalar::MODULUS, 16).expect("BLS_MODULUS from bls crate")
 });
 
-pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
+pub static ROOTS_OF_UNITY: LazyLock<Vec<Scalar>> = LazyLock::new(|| {
     // https://github.com/ethereum/consensus-specs/blob/dev/specs/deneb/polynomial-commitments.md#constants
     let primitive_root_of_unity = Scalar::from(7);
     let modulus = *BLS_MODULUS;
@@ -37,13 +37,12 @@ pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
     let ascending_order: Vec<_> = successors(Some(Scalar::one()), |x| Some(*x * root_of_unity))
         .take(BLOB_WIDTH)
         .collect();
-    let bit_reversed_order: Vec<_> = (0..BLOB_WIDTH)
+    (0..BLOB_WIDTH)
         .map(|i| {
             let j = u16::try_from(i).unwrap().reverse_bits() >> (16 - LOG_BLOB_WIDTH);
             ascending_order[usize::from(j)]
         })
-        .collect();
-    bit_reversed_order.try_into().unwrap()
+        .collect()
 });
 
 #[derive(Clone, Debug)]
@@ -99,7 +98,7 @@ impl BarycentricEvaluationConfig {
     pub fn assign(
         &self,
         ctx: &mut Context<Fr>,
-        blob: [U256; BLOB_WIDTH],
+        blob: &[U256; BLOB_WIDTH],
         challenge_digest: U256,
         evaluation: U256,
     ) -> AssignedBarycentricEvaluationConfig {
@@ -114,6 +113,11 @@ impl BarycentricEvaluationConfig {
                 .take(11)
                 .map(QuantumCell::Constant)
                 .collect::<Vec<_>>();
+
+        let roots_of_unity = ROOTS_OF_UNITY
+            .iter()
+            .map(|x| self.scalar.load_constant(ctx, fe_to_biguint(x)))
+            .collect::<Vec<_>>();
 
         ////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// PRECHECKS z /////////////////////////////////////////
@@ -230,7 +234,7 @@ impl BarycentricEvaluationConfig {
         let mut blob_crts = Vec::with_capacity(BLOB_WIDTH);
         let mut evaluation_computed = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::zero()));
         blob.iter()
-            .zip_eq(ROOTS_OF_UNITY.map(|x| self.scalar.load_constant(ctx, fe_to_biguint(&x))))
+            .zip_eq(roots_of_unity.iter())
             .for_each(|(blob_i, root_i_crt)| {
                 // assign LE-bytes of blob scalar field element.
                 let blob_i_le = self.scalar.range().gate.assign_witnesses(
@@ -286,10 +290,10 @@ impl BarycentricEvaluationConfig {
                 );
 
                 // a = int(polynomial[i]) * int(roots_of_unity_brp[i]) % BLS_MODULUS
-                let a = self.scalar.mul(ctx, &blob_i_crt, &root_i_crt);
+                let a = self.scalar.mul(ctx, &blob_i_crt, root_i_crt);
 
                 // b = (int(BLS_MODULUS) + int(z) - int(roots_of_unity_brp[i])) % BLS_MODULUS
-                let b = self.scalar.sub_no_carry(ctx, &challenge_crt, &root_i_crt);
+                let b = self.scalar.sub_no_carry(ctx, &challenge_crt, root_i_crt);
                 let b = self.scalar.carry_mod(ctx, &b);
 
                 // y += int(div(a, b) % BLS_MODULUS)
@@ -328,11 +332,11 @@ impl BarycentricEvaluationConfig {
     }
 }
 
-pub fn interpolate(z: Scalar, coefficients: [Scalar; BLOB_WIDTH]) -> Scalar {
+pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
     let blob_width = u64::try_from(BLOB_WIDTH).unwrap();
     (z.pow(&[blob_width, 0, 0, 0]) - Scalar::one())
         * ROOTS_OF_UNITY
-            .into_iter()
+            .iter()
             .zip_eq(coefficients)
             .map(|(root, f)| f * root * (z - root).invert().unwrap())
             .sum::<Scalar>()
