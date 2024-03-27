@@ -174,7 +174,7 @@ impl BlobDataConfig {
                     * (1.expr() - is_padding_next.expr())
                     * (preimage_rlc_next - byte_next.expr()),
                 // the boundary count increments, i.e.
-                // - boundary_count_curr == boundary_count_prev + 1
+                // boundary_count_curr == boundary_count_prev + 1
                 cond.expr() * (boundary_count_curr - boundary_count_prev - 1.expr()),
             ]
         });
