@@ -489,7 +489,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         is_tag!(is_tag_end_vector, EndVector);
         is_tag!(is_access_list_address, AccessListAddress);
         is_tag!(is_access_list_storage_key, AccessListStorageKey);
-        is_tag!(is_chain_id, ChainId);
+        is_tag!(is_tag_chain_id, ChainId);
 
         //////////////////////////////////////////////////////////
         //////////// data table checks. //////////////////////////
@@ -2150,48 +2150,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("Decoding table stack op INIT", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "stack init pushes all remaining_bytes onto depth 0",
-                meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
-                meta.query_advice(byte_rev_idx, Rotation::cur()),
-            );
-            cb.require_equal(
-                "stack can only init once with the first byte",
-                meta.query_advice(byte_idx, Rotation::cur()),
-                1.expr(),
-            );
-            cb.require_zero(
-                "stack inits at depth 0",
-                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
-            );
-            cb.require_zero(
-                "stack inits with al_idx at 0",
-                meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
-            );
-            cb.require_zero(
-                "stack inits with sk_idx at 0",
-                meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
-            );
-            cb.condition(
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                |cb| {
-                    cb.require_boolean(
-                        "tx_id can only stay the same or increment by 1",
-                        meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur())
-                            - meta.query_advice(rlp_decoding_table.tx_id, Rotation::prev()),
-                    );
-                },
-            );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
-            ]))
-        });
-
         // Cross-depth stack constraints in the RlpDecodingTable
         // These two sets of lookups ensure exact correspondence of PUSH and POP records
         meta.lookup_any(
@@ -2273,16 +2231,68 @@ impl<F: Field> RlpCircuitConfig<F> {
         // RLP Decoding Table is sorted using an id = (tx_id, format, depth, access_list_idx, storage_key_idx)
         // but bytes in the RLP circuit (rlp_table) is processed in order. Therefore, to prevent malicious injection of stack ops that
         // don't correspond to actual bytes in the RLP circuit, lookups are added to ensure correct correspondence.
+
+        // The Init Op is not affected by sorting and stays at first position in decoding table. 
+        // For this reason, its correctness and correspondence is constrained using a gate instead of lookup. 
+        meta.create_gate("Decoding table stack op INIT correspondence", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "stack init pushes all remaining_bytes onto depth 0",
+                meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                meta.query_advice(byte_rev_idx, Rotation::cur()),
+            );
+            cb.require_equal(
+                "stack can only init once with the first byte",
+                meta.query_advice(byte_idx, Rotation::cur()),
+                1.expr(),
+            );
+            cb.require_zero(
+                "stack inits at depth 0",
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+            );
+            cb.require_zero(
+                "stack inits with al_idx at 0",
+                meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
+            );
+            cb.require_zero(
+                "stack inits with sk_idx at 0",
+                meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
+            );
+            cb.condition(
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                |cb| {
+                    cb.require_boolean(
+                        "tx_id can only stay the same or increment by 1",
+                        meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur())
+                            - meta.query_advice(rlp_decoding_table.tx_id, Rotation::prev()),
+                    );
+                },
+            );
+            cb.require_equal(
+                "Init Op has DecodeTagStart in the state machine",
+                is_decode_tag_start(meta),
+                1.expr(),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
+            ]))
+        });
+
         meta.lookup_any(
-            "PUSH op in decoding table",
+            "Decoding table stack op PUSH correspondence",
             |meta| {
                 let enable = meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur());
 
                 let input_exprs = vec![
                     meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
-                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()) + 1.expr(), // decoding table counts bytes from idx = 0
-                    
+                    // The byte_idx position that triggers the PUSH op is 1 position before the row denoting new state machine values.
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()) + 1.expr(),
+                    1.expr(), // PUSH op increases depth
+
                     // List scenario on each depth.
                     // Sufficiency is achieved by listing all possible depth.
                     meta.query_advice(is_stack_depth_one, Rotation::cur()),
@@ -2294,10 +2304,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(tx_id, Rotation::cur()),
                     meta.query_advice(format, Rotation::cur()),
                     meta.query_advice(byte_idx, Rotation::cur()),
+                    meta.query_advice(depth, Rotation::cur()) - meta.query_advice(depth, Rotation::prev()),
 
                     // Depth 1: Begin decoding actual payload (with out the tx type envelope). Starting at ChainId
                     and::expr([
-                        is_chain_id(meta),
+                        is_tag_chain_id(meta),
                         is_decode_tag_start(meta),
                     ]),
 
@@ -2320,6 +2331,62 @@ impl<F: Field> RlpCircuitConfig<F> {
                     (meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()) 
                         - meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()))
                         * meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
+                ];
+                input_exprs
+                    .into_iter()
+                    .zip(table_exprs)
+                    .map(|(input, table)| (input * enable.expr(), table))
+                    .collect()
+            },
+        );
+
+        meta.lookup_any(
+            "Decoding table stack op POP correspondence",
+            |meta| {
+                let enable = meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur());
+
+                let input_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
+                    // A POP op doesn't correspond to an actual byte, but only the end tag state
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
+                    1.expr(), // A POP op reduces depth level
+                    // A POP follows an end state, either EndVector or EndObject
+                    1.expr(),
+                ];
+                let table_exprs = vec![
+                    meta.query_advice(tx_id, Rotation::cur()),
+                    meta.query_advice(format, Rotation::cur()),
+                    meta.query_advice(byte_idx, Rotation::cur()),
+                    meta.query_advice(depth, Rotation::cur()) - meta.query_advice(depth, Rotation::next()),
+                    meta.query_advice(is_tag_end, Rotation::cur()),
+                ];
+                input_exprs
+                    .into_iter()
+                    .zip(table_exprs)
+                    .map(|(input, table)| (input * enable.expr(), table))
+                    .collect()
+            },
+        );
+
+        meta.lookup_any(
+            "Decoding table stack op UPDATE correspondence",
+            |meta| {
+                let enable = meta.query_advice(rlp_decoding_table.is_stack_update, Rotation::cur());
+
+                let input_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
+                    0.expr(), // UPDATE doesn't change depth level
+                    0.expr(), // UPDATE can't correspond to end states
+                ];
+                let table_exprs = vec![
+                    meta.query_advice(tx_id, Rotation::cur()),
+                    meta.query_advice(format, Rotation::cur()),
+                    meta.query_advice(byte_idx, Rotation::cur()),
+                    meta.query_advice(depth, Rotation::next()) - meta.query_advice(depth, Rotation::cur()),
+                    meta.query_advice(is_tag_end, Rotation::cur()),
                 ];
                 input_exprs
                     .into_iter()
