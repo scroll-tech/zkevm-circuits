@@ -489,6 +489,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         is_tag!(is_tag_end_vector, EndVector);
         is_tag!(is_access_list_address, AccessListAddress);
         is_tag!(is_access_list_storage_key, AccessListStorageKey);
+        is_tag!(is_chain_id, ChainId);
 
         //////////////////////////////////////////////////////////
         //////////// data table checks. //////////////////////////
@@ -2254,6 +2255,71 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
                     meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                ];
+                input_exprs
+                    .into_iter()
+                    .zip(table_exprs)
+                    .map(|(input, table)| (input * enable.expr(), table))
+                    .collect()
+            },
+        );
+
+        debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////
+        /////// Rlp Decoding Table and RLP Circuit Correspondence /////////
+        ///////////////////////////////////////////////////////////////////
+
+        // RLP Decoding Table is sorted using an id = (tx_id, format, depth, access_list_idx, storage_key_idx)
+        // but bytes in the RLP circuit (rlp_table) is processed in order. Therefore, to prevent malicious injection of stack ops that
+        // don't correspond to actual bytes in the RLP circuit, lookups are added to ensure correct correspondence.
+        meta.lookup_any(
+            "PUSH op in decoding table",
+            |meta| {
+                let enable = meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur());
+
+                let input_exprs = vec![
+                    meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
+                    meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()) + 1.expr(), // decoding table counts bytes from idx = 0
+                    
+                    // List scenario on each depth.
+                    // Sufficiency is achieved by listing all possible depth.
+                    meta.query_advice(is_stack_depth_one, Rotation::cur()),
+                    meta.query_advice(is_stack_depth_two, Rotation::cur()),
+                    meta.query_advice(is_stack_depth_three, Rotation::cur()),
+                    meta.query_advice(is_stack_depth_four, Rotation::cur()),
+                ];
+                let table_exprs = vec![
+                    meta.query_advice(tx_id, Rotation::cur()),
+                    meta.query_advice(format, Rotation::cur()),
+                    meta.query_advice(byte_idx, Rotation::cur()),
+
+                    // Depth 1: Begin decoding actual payload (with out the tx type envelope). Starting at ChainId
+                    and::expr([
+                        is_chain_id(meta),
+                        is_decode_tag_start(meta),
+                    ]),
+
+                    // Depth 2: Begin decoding an access list.
+                    and::expr([
+                        is_tag_begin_object(meta),
+                        is_decode_tag_start(meta),
+                    ]),
+
+                    // Depth 3: A new access list address item
+                    meta.query_advice(rlp_table.access_list_idx, Rotation::cur()) 
+                        - meta.query_advice(rlp_table.access_list_idx, Rotation::prev()),
+                    
+                    // Depth 4: The first storage key item.
+                    // Only the first storage key corresponds to a PUSH op. The rest correspond to UPDATE ops.
+
+                    // The difference between current storage_key_idx (in rlp_table) and the previous one is either 0 or 1.
+                    // By multiplying the difference with current storage_key_idx, it guarantees that storage_key_idx::cur = 1
+                    // (which indicates the first storage key in an access list addresses's storage key list)
+                    (meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()) 
+                        - meta.query_advice(rlp_table.storage_key_idx, Rotation::prev()))
+                        * meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()),
                 ];
                 input_exprs
                     .into_iter()
