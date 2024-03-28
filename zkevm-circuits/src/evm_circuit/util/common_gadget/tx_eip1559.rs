@@ -178,7 +178,8 @@ impl<F: Field> TxEip1559Gadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{Error, Word};
-    use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
+    use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS, MOCK_WALLETS};
+    use ethers_signers::Signer;
 
     #[test]
     fn test_eip1559_tx_for_equal_balance() {
@@ -238,13 +239,14 @@ mod test {
         TestContext::new(
             None,
             |accs| {
-                accs[0].address(MOCK_ACCOUNTS[0]).balance(sender_balance);
-                accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(1));
+                accs[0].address(MOCK_WALLETS[0].address())
+                .balance(sender_balance);
+                accs[1].address(MOCK_ACCOUNTS[0]).balance(eth(1));
             },
             |mut txs, _accs| {
                 txs[0]
-                    .from(MOCK_ACCOUNTS[0])
-                    .to(MOCK_ACCOUNTS[1])
+                .from(MOCK_WALLETS[0].clone())
+                .to(MOCK_ACCOUNTS[0])
                     .gas(30_000.into())
                     .value(gwei(20_000))
                     .max_fee_per_gas(max_fee_per_gas)
