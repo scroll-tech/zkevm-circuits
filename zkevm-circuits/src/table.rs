@@ -3057,12 +3057,18 @@ impl PowOfRandTable {
     ) -> Result<(), Error> {
         let r = challenges.keccak_input();
 
+        let max_rows = if cfg!(feature = "test") {
+            4096
+        } else {
+            4094 * 31
+        };
+
         layouter.assign_region(
             || "power of randomness table",
             |mut region| {
                 let pows_of_rand =
                     std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r))
-                        .take(4194 * 31);
+                        .take(max_rows);
 
                 for (idx, pow_of_rand) in pows_of_rand.enumerate() {
                     region.assign_fixed(
