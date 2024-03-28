@@ -3058,7 +3058,7 @@ impl PowOfRandTable {
         let r = challenges.keccak_input();
 
         let max_rows = if cfg!(feature = "test") {
-            4096
+            2048
         } else {
             4094 * 31
         };
