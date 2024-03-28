@@ -3951,10 +3951,10 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             }
         }).sum::<usize>();
 
-        // With the introduction of access list, the max_calldata circuit parameter has to share capacity between calldata and access list rows
+        // With the introduction of access list, the max_calldata circuit parameter now has to share capacity between calldata and access list rows
         // TODO: The max_calldata parameter should be renamed later to max_dynamic
         let max_dynamic_data = if block.circuits_params.max_calldata == 0 {
-            // circuit-specific max_dynamic
+            // input-specific max_dynamic
             sum_calldata_len + sum_access_list_len
         } else {
             block.circuits_params.max_calldata
