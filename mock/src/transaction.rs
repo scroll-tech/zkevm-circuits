@@ -7,7 +7,7 @@ use eth_types::{
 };
 use ethers_core::{
     rand::{CryptoRng, RngCore},
-    types::{OtherFields, TransactionRequest, Eip1559TransactionRequest},
+    types::{Eip1559TransactionRequest, OtherFields, TransactionRequest},
 };
 use ethers_signers::{LocalWallet, Signer};
 use rand::SeedableRng;
@@ -332,7 +332,7 @@ impl MockTransaction {
     /// by value.
     pub fn build(&mut self) -> Self {
         if self.transaction_type == U64::from(2) {
-            return  self.build_1559();
+            return self.build_1559();
         }
         // TODO: handle eip2930 type later when add eip2930 tests.
 
@@ -368,7 +368,7 @@ impl MockTransaction {
                     // Set sig parameters
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
-            },
+            }
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
 
@@ -413,17 +413,17 @@ impl MockTransaction {
                         .with_chain_id(self.chain_id)
                         .sign_transaction_sync(&tx.into())
                         .expect("sign mock 1559 tx");
-                    
-                    // helper `sign_transaction_sync` in ethers-rs lib does not handle correctly about v for non legacy tx, 
-                    // here correct it for 1559 type.
+
+                    // helper `sign_transaction_sync` in ethers-rs lib does not handle correctly
+                    // about v for non legacy tx, here correct it for 1559 type.
                     sig.v = Self::normalize_v(sig.v, self.chain_id); // convert v to [0, 1]
-                  
+
                     self.sig_data((sig.v, sig.r, sig.s));
-                }else {
-                   #[cfg(feature = "scroll")]
-                   panic!("1559 type tx must have signature data, otherwise will be treated as L1Msg type in trace.go of l2geth");
+                } else {
+                    #[cfg(feature = "scroll")]
+                    panic!("1559 type tx must have signature data, otherwise will be treated as L1Msg type in trace.go of l2geth");
                 }
-            },
+            }
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
 
@@ -438,8 +438,8 @@ impl MockTransaction {
         self.to_owned()
     }
 
-    // helper `sign_transaction_sync` in ethers-rs lib compute V using legacy tx pattern(V = recover_id + 2 * chain_id + 35), 
-    // this method converts above V value to origin recover_id. 
+    // helper `sign_transaction_sync` in ethers-rs lib compute V using legacy tx pattern(V =
+    // recover_id + 2 * chain_id + 35), this method converts above V value to origin recover_id.
     pub(crate) fn normalize_v(v: u64, chain_id: u64) -> u64 {
         if v > 1 {
             v - chain_id * 2 - 35
