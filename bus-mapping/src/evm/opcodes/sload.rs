@@ -60,7 +60,11 @@ impl Opcode for Sload {
         let value_from_statedb = *state.sdb.get_storage(&contract_addr, &key).1;
 
         #[cfg(feature = "enable-stack")]
-        assert_eq!(value_from_statedb, geth_steps[1].stack.last()?, "inconsistent sload: step proof {value_from_step:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?);
+        assert_eq!(
+            value_from_statedb,
+            geth_steps[1].stack.last()?,
+            "inconsistent sload: step proof {value_from_statedb:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?,
+        );
 
         let value = value_from_statedb;
 

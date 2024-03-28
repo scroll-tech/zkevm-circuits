@@ -238,22 +238,10 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             &challenges,
         )?;
 
-        // The chunk bytes of all txs are accumulated by rlp_signed length
-        // To accomplish this, PowOfRandTable must provide appropriate rows according to the max
-        // rlp_signed len for lookup
-        let tx_max_challenge_pow = self
-            .tx_circuit
-            .txs
-            .iter()
-            .chain(padding_txs.iter())
-            .map(|tx| tx.rlp_signed.len())
-            .max();
-
-        config.tx_config.pow_of_rand_table.assign(
-            &mut layouter,
-            &challenges,
-            tx_max_challenge_pow,
-        )?;
+        config
+            .tx_config
+            .pow_of_rand_table
+            .assign(&mut layouter, &challenges)?;
         config.tx_config.rlp_table.dev_load(
             &mut layouter,
             self.tx_circuit

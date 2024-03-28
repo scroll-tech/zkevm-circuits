@@ -17,7 +17,7 @@ use crate::{
 use bus_mapping::{
     circuit_input_builder::{
         BigModExp, CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExpEvent,
-        PrecompileEcParams, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
+        PrecompileEcParams,
     },
     precompile::PrecompileCalls,
 };
@@ -3054,22 +3054,15 @@ impl PowOfRandTable {
         &self,
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
-        max_pow_limit: Option<usize>,
     ) -> Result<(), Error> {
         let r = challenges.keccak_input();
-
-        // Determine the maximum pow
-        let mut curr_max_pow = N_PAIRING_PER_OP * N_BYTES_PER_PAIR;
-        if max_pow_limit.is_some() {
-            curr_max_pow = curr_max_pow.max(max_pow_limit.unwrap() + 1);
-        }
 
         layouter.assign_region(
             || "power of randomness table",
             |mut region| {
                 let pows_of_rand =
                     std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r))
-                        .take(curr_max_pow);
+                        .take(4194 * 31);
 
                 for (idx, pow_of_rand) in pows_of_rand.enumerate() {
                     region.assign_fixed(
