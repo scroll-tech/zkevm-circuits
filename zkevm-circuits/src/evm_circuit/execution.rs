@@ -1274,11 +1274,11 @@ impl<F: Field> ExecutionConfig<F> {
         debug_assert_eq!(region1_height, region1_height_sum);
 
         // part2: assign non-last EndBlock steps when padding needed
-
+        assert!(region2_height >= 1);
         let (region2_chunk_size, region2_chunk_num) = chunking_fn("region2", region2_height, 300);
-        let idxs: Vec<usize> = (0..region2_height).collect();
-        let mut region2_is_first_time = vec![true; region2_chunk_num];
-
+        let mut region2_is_first_time: Vec<(usize, bool)> = (0..region2_chunk_num)
+            .map(|chunk_idx| (chunk_idx, true))
+            .collect();
         log::trace!(
             "assign non-last EndBlock in range [{},{})",
             region1_height,
@@ -1286,18 +1286,25 @@ impl<F: Field> ExecutionConfig<F> {
         );
         layouter.assign_regions(
             || "Execution step region2",
-            idxs.chunks(region2_chunk_size)
-                .zip_eq(region2_is_first_time.iter_mut())
-                .map(|(rows, is_first_time)| {
+            region2_is_first_time
+                .iter_mut()
+                .map(|(chunk_idx, is_first_time)| {
                     |mut region: Region<'_, F>| {
+                        let chunk_idx = *chunk_idx;
+                        let begin = chunk_idx * region2_chunk_size;
+                        let end = ((chunk_idx + 1) * region2_chunk_size).min(region2_height);
+                        let region_height = end - begin;
                         if *is_first_time {
                             *is_first_time = false;
-                            return assign_shape_fn(&mut region, rows.len());
+                            return assign_shape_fn(&mut region, region_height);
+                        }
+                        if chunk_idx == 0 && region1_height == 0 {
+                            self.q_step_first.enable(&mut region, 0)?;
                         }
                         self.assign_same_exec_step_in_range(
                             &mut region,
                             0,
-                            rows.len(),
+                            region_height,
                             block,
                             &dummy_tx,
                             &last_call,
@@ -1305,10 +1312,10 @@ impl<F: Field> ExecutionConfig<F> {
                             1,
                             challenges,
                         )?;
-                        for row_idx in 0..rows.len() {
+                        for row_idx in 0..region_height {
                             self.assign_q_step(&mut region, &inverter, row_idx, 1)?;
                         }
-                        Ok(rows.len())
+                        Ok(region_height)
                     }
                 })
                 .collect_vec(),
