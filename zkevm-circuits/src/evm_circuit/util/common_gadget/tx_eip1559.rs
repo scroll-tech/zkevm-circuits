@@ -196,7 +196,7 @@ mod test {
 
         // Return a tracing error if insufficient sender balance.
         if let Error::TracingError(err) = res.unwrap_err() {
-            assert_eq!(err, "Failed to run Trace, err: Failed to apply config.Transactions[0]: insufficient funds for gas * price + value: address 0x000000000000000000000000000000000CAfe111 have 79999000000000 want 80000000000000");
+            assert_eq!(err, "Failed to run Trace, err: Failed to apply config.Transactions[0]: insufficient funds for gas * price + value: address 0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241 have 79999000000000 want 80000000000000");
         } else {
             panic!("Must be a tracing error");
         }
@@ -225,7 +225,7 @@ mod test {
 
         // Return a tracing error if `max_fee_per_gas < max_priority_fee_per_gas`.
         if let Error::TracingError(err) = res.unwrap_err() {
-            assert_eq!(err, "Failed to run Trace, err: Failed to apply config.Transactions[0]: max priority fee per gas higher than max fee per gas: address 0x000000000000000000000000000000000CAfe111, maxPriorityFeePerGas: 2000000000, maxFeePerGas: 1000000000");
+            assert_eq!(err, "Failed to run Trace, err: Failed to apply config.Transactions[0]: max priority fee per gas higher than max fee per gas: address 0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241, maxPriorityFeePerGas: 2000000000, maxFeePerGas: 1000000000");
         } else {
             panic!("Must be a tracing error");
         }
