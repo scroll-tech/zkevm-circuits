@@ -1648,6 +1648,7 @@ dependencies = [
 name = "eth-types"
 version = "0.1.0"
 dependencies = [
+ "base64 0.13.1",
  "ethers-core",
  "ethers-signers",
  "halo2-base",

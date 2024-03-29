@@ -1,6 +1,6 @@
 //! This module implements `Chunk` related data types.
 //! A chunk is a list of blocks.
-use eth_types::{ToBigEndian, H256};
+use eth_types::{ToBigEndian, base64, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::halo2curves::bn256::Fr;
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,7 @@ pub struct ChunkHash {
     /// the data hash of this chunk
     pub data_hash: H256,
     /// Flattened L2 tx bytes (RLP-signed) in this chunk.
+    #[serde(with = "base64")]
     pub tx_bytes: Vec<u8>,
     /// if the chunk is a padded chunk
     pub is_padding: bool,

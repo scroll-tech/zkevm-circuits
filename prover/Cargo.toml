@@ -17,7 +17,7 @@ snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
 anyhow.workspace = true
-base64 = "0.13.0"
+base64.workspace = true
 blake2 = "0.10.3"
 chrono = "0.4.19"
 dotenvy = "0.15.7"
