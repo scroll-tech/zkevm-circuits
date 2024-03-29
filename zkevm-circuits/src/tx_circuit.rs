@@ -372,6 +372,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.enable_equality(chunk_txbytes_rlc);
         meta.enable_equality(chunk_txbytes_len_acc);
         meta.enable_equality(pow_of_rand);
+        meta.enable_equality(tx_table.chunk_txbytes_hash_rlc);
 
         // TODO: add lookup to SignVerify table for sv_address
         let sv_address = meta.advice_column();

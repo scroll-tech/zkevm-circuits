@@ -499,6 +499,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta.enable_equality(block_table.value); // copy block to rpi
         meta.enable_equality(block_table.index);
         meta.enable_equality(tx_table.value); // copy tx hashes to rpi
+        meta.enable_equality(tx_table.chunk_txbytes_hash_rlc); // copy chunk_txbytes_hash
         meta.enable_equality(cum_num_txs);
         meta.enable_equality(pi);
 
