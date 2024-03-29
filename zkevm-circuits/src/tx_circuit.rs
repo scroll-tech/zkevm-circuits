@@ -97,6 +97,13 @@ pub const HASH_LENGTH_OFFSET: usize = 19;
 /// Offset of HashRLC in the tx table
 pub const HASH_RLC_OFFSET: usize = 20;
 
+// TODO: Constants from aggregator shouldn't be manually copied,
+// but importing aggregator causes cyclic dependency
+// CHUNK_TXBYTES_BLOB_LIMIT =
+//      (BLOB_WIDTH * N_BYTES_31) - (N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES)
+// N_ROWS_CHUNK_SIZES = MAX_AGG_SNARKS * 4
+const CHUNK_TXBYTES_BLOB_LIMIT: usize = (4096 * 31) - (2 + 15 * 4);
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
     // lookup into tx table
@@ -3922,17 +3929,62 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         // Since each call data byte at least takes one row in RLP circuit.
         // For L2 tx, each call data byte takes two row in RLP circuit.
         assert!(block.circuits_params.max_calldata < block.circuits_params.max_rlp_rows);
+
+        // Calculate blob capacity usage
+        let chunk_txbytes_len = block
+            .txs
+            .iter()
+            .map(|tx| {
+                if tx.is_chunk_l2_tx() {
+                    tx.rlp_signed.len()
+                } else {
+                    0
+                }
+            })
+            .sum::<usize>();
+        let blob_usage: f32 = chunk_txbytes_len as f32 / CHUNK_TXBYTES_BLOB_LIMIT.clone() as f32;
+
+        // Calculate tx circuit dynamic section usage
         let sum_calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>();
-        let max_calldata = if block.circuits_params.max_calldata == 0 {
-            // dynamic max_calldata
-            sum_calldata_len
+        let sum_access_list_len = block
+            .txs
+            .iter()
+            .map(|tx| {
+                if tx.access_list.is_some() {
+                    let access_list = tx.access_list.clone().unwrap().0;
+                    access_list.len()
+                        + access_list
+                            .iter()
+                            .map(|al| al.storage_keys.len())
+                            .sum::<usize>()
+                } else {
+                    0usize
+                }
+            })
+            .sum::<usize>();
+
+        // With the introduction of access list, the max_calldata circuit parameter now has to share
+        // capacity between calldata and access list rows TODO: The max_calldata parameter
+        // should be renamed later to max_dynamic
+        let max_dynamic_data = if block.circuits_params.max_calldata == 0 {
+            // input-specific max_dynamic
+            sum_calldata_len + sum_access_list_len
         } else {
             block.circuits_params.max_calldata
         };
-        let tx_usage = sum_calldata_len as f32 / max_calldata as f32;
+        let dynamic_usage =
+            (sum_calldata_len + sum_access_list_len) as f32 / max_dynamic_data as f32;
 
+        // Get the highest usage fraction out of all capacities
+        let highest_usage = (vec![blob_usage, dynamic_usage])
+            .iter()
+            .cloned()
+            .fold(0_f32, f32::max);
+
+        // Return the highest usage percentage
         (
-            (tx_usage * block.circuits_params.max_vertical_circuit_rows as f32).ceil() as usize,
+            (highest_usage * block.circuits_params.max_vertical_circuit_rows as f32).ceil()
+                as usize,
             Self::min_num_rows(
                 block.circuits_params.max_txs,
                 block.circuits_params.max_calldata,

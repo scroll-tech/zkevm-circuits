@@ -16,11 +16,18 @@ impl Prover {
         degree: u32,
         rng: &mut (impl Rng + Send),
         circuit: C,
+        desc: &str,
     ) -> Result<Snark> {
         Self::assert_if_mock_prover(id, degree, &circuit);
 
         let (params, pk) = self.params_and_pk(id, degree, &circuit)?;
 
+        log::info!(
+            "gen_snark id {} desc {} vk transcript_repr {:?}",
+            id,
+            desc,
+            pk.get_vk().transcript_repr()
+        );
         Ok(gen_snark_shplonk(params, pk, circuit, rng, None::<String>))
     }
 

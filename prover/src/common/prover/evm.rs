@@ -53,7 +53,10 @@ impl Prover {
         Self::assert_if_mock_prover(id, degree, &circuit);
 
         let (params, pk) = self.params_and_pk(id, degree, &circuit)?;
-
+        log::info!(
+            "super_circuit vk transcript_repr {:?}",
+            pk.get_vk().transcript_repr()
+        );
         let instances = circuit.instances();
         let num_instance = circuit.num_instance();
         let proof = gen_evm_proof_shplonk(params, pk, circuit, instances.clone(), rng);
