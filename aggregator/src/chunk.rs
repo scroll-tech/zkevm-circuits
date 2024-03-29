@@ -1,6 +1,6 @@
 //! This module implements `Chunk` related data types.
 //! A chunk is a list of blocks.
-use eth_types::{ToBigEndian, base64, H256};
+use eth_types::{base64, ToBigEndian, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::halo2curves::bn256::Fr;
 use serde::{Deserialize, Serialize};

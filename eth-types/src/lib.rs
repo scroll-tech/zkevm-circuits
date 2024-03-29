@@ -84,7 +84,6 @@ pub mod base64 {
     }
 }
 
-
 /// Trait used to reduce verbosity with the declaration of the [`Field`]
 /// trait and its repr.
 pub trait Field:
