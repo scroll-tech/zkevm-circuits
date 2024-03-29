@@ -3942,7 +3942,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 }
             })
             .sum::<usize>();
-        let blob_usage: f32 = chunk_txbytes_len as f32 / CHUNK_TXBYTES_BLOB_LIMIT.clone() as f32;
+        let blob_usage: f32 = chunk_txbytes_len as f32 / CHUNK_TXBYTES_BLOB_LIMIT as f32;
 
         // Calculate tx circuit dynamic section usage
         let sum_calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum::<usize>();
@@ -3976,7 +3976,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             (sum_calldata_len + sum_access_list_len) as f32 / max_dynamic_data as f32;
 
         // Get the highest usage fraction out of all capacities
-        let highest_usage = (vec![blob_usage, dynamic_usage])
+        let highest_usage = ([blob_usage, dynamic_usage])
             .iter()
             .cloned()
             .fold(0_f32, f32::max);
