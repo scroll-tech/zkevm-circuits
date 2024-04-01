@@ -264,8 +264,9 @@ impl BlobData {
     /// - num_valid_chunks is u16
     /// - each chunk_size is u32
     fn to_metadata_bytes(&self) -> Vec<u8> {
-        std::iter::empty()
-            .chain(self.num_valid_chunks.to_be_bytes())
+        self.num_valid_chunks
+            .to_be_bytes()
+            .into_iter()
             .chain(
                 self.chunk_sizes
                     .iter()
@@ -280,16 +281,14 @@ impl BlobData {
         let bytes = self.to_metadata_bytes();
 
         // accumulators represent the runnin linear combination of bytes.
-        let accumulators_iter = std::iter::empty()
-            .chain(
-                self.num_valid_chunks
-                    .to_be_bytes()
-                    .into_iter()
-                    .scan(0u64, |acc, x| {
-                        *acc = *acc * 256 + (x as u64);
-                        Some(*acc)
-                    }),
-            )
+        let accumulators_iter = self
+            .num_valid_chunks
+            .to_be_bytes()
+            .into_iter()
+            .scan(0u64, |acc, x| {
+                *acc = *acc * 256 + (x as u64);
+                Some(*acc)
+            })
             .chain(self.chunk_sizes.into_iter().flat_map(|chunk_size| {
                 chunk_size.to_be_bytes().into_iter().scan(0u64, |acc, x| {
                     *acc = *acc * 256 + (x as u64);
@@ -423,57 +422,56 @@ impl BlobData {
         // - metadata digest bytes
         // - chunks[i].chunk_data_digest bytes for each chunk
         // - challenge digest bytes
-        std::iter::empty()
-            .chain(std::iter::once(BlobDataRow {
-                digest_rlc: metadata_digest_rlc,
-                preimage_rlc: Value::known(Fr::zero()),
-                // this is_padding assignment does not matter as we have already crossed the "chunk
-                // data" section. This assignment to 1 is simply to allow the custom gate to check:
-                // - padding transitions from 0 -> 1 only once.
-                is_padding: true,
-                ..Default::default()
-            }))
-            .chain(
-                chunk_digest_rlcs
-                    .iter()
-                    .zip_eq(self.chunk_sizes.iter())
-                    .enumerate()
-                    .map(|(i, (&digest_rlc, &chunk_size))| BlobDataRow {
-                        digest_rlc,
-                        chunk_idx: (i + 1) as u64,
-                        accumulator: chunk_size as u64,
-                        preimage_rlc: Value::known(Fr::zero()),
-                        ..Default::default()
-                    }),
-            )
-            .chain(std::iter::once(BlobDataRow {
-                preimage_rlc: challenge_digest_preimage_rlc,
-                digest_rlc: challenge_digest_rlc,
-                accumulator: 32 * (MAX_AGG_SNARKS + 1) as u64,
-                is_boundary: true,
-                ..Default::default()
-            }))
-            .chain(metadata_digest.iter().map(|&byte| BlobDataRow {
-                byte,
-                preimage_rlc: Value::known(Fr::zero()),
-                digest_rlc: Value::known(Fr::zero()),
-                ..Default::default()
-            }))
-            .chain(chunk_digests.iter().flat_map(|digest| {
-                digest.iter().map(|&byte| BlobDataRow {
-                    byte,
+        std::iter::once(BlobDataRow {
+            digest_rlc: metadata_digest_rlc,
+            preimage_rlc: Value::known(Fr::zero()),
+            // this is_padding assignment does not matter as we have already crossed the "chunk
+            // data" section. This assignment to 1 is simply to allow the custom gate to check:
+            // - padding transitions from 0 -> 1 only once.
+            is_padding: true,
+            ..Default::default()
+        })
+        .chain(
+            chunk_digest_rlcs
+                .iter()
+                .zip_eq(self.chunk_sizes.iter())
+                .enumerate()
+                .map(|(i, (&digest_rlc, &chunk_size))| BlobDataRow {
+                    digest_rlc,
+                    chunk_idx: (i + 1) as u64,
+                    accumulator: chunk_size as u64,
                     preimage_rlc: Value::known(Fr::zero()),
-                    digest_rlc: Value::known(Fr::zero()),
                     ..Default::default()
-                })
-            }))
-            .chain(challenge_digest.iter().map(|&byte| BlobDataRow {
+                }),
+        )
+        .chain(std::iter::once(BlobDataRow {
+            preimage_rlc: challenge_digest_preimage_rlc,
+            digest_rlc: challenge_digest_rlc,
+            accumulator: 32 * (MAX_AGG_SNARKS + 1) as u64,
+            is_boundary: true,
+            ..Default::default()
+        }))
+        .chain(metadata_digest.iter().map(|&byte| BlobDataRow {
+            byte,
+            preimage_rlc: Value::known(Fr::zero()),
+            digest_rlc: Value::known(Fr::zero()),
+            ..Default::default()
+        }))
+        .chain(chunk_digests.iter().flat_map(|digest| {
+            digest.iter().map(|&byte| BlobDataRow {
                 byte,
                 preimage_rlc: Value::known(Fr::zero()),
                 digest_rlc: Value::known(Fr::zero()),
                 ..Default::default()
-            }))
-            .collect()
+            })
+        }))
+        .chain(challenge_digest.iter().map(|&byte| BlobDataRow {
+            byte,
+            preimage_rlc: Value::known(Fr::zero()),
+            digest_rlc: Value::known(Fr::zero()),
+            ..Default::default()
+        }))
+        .collect()
     }
 }
 
