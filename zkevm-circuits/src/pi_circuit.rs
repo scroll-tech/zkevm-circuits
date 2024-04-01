@@ -832,7 +832,8 @@ impl<F: Field> PiCircuitConfig<F> {
     /// |          | next_state_root        |                          |
     /// | ASSIGN   | withdraw_trie_root     |                          |
     /// | PI       | data_hash              |                          |
-    /// | BYTES    |------------------------|--------------------------|
+    /// | BYTES    | chunk_txbytes_hash     |                          |
+    /// |          |------------------------|--------------------------|
     /// |          | rlc(pi_bytes)          | <- q_keccak == 1         |
     /// |----------|------------------------|--------------------------|
     /// | *PART 4* | rpi initialise         |                          |
