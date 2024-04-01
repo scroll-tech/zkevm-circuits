@@ -622,7 +622,7 @@ mod tests {
             let blob: BlobData = tcase.into();
             let blob_assignments = BlobAssignments::from(&blob);
             println!(
-                "{:64}: challenge (z) = {:x}, evaluation (y) = {:x}",
+                "{:60}: challenge (z) = {:0>64x}, evaluation (y) = {:0>64x}",
                 annotation, blob_assignments.challenge, blob_assignments.evaluation
             );
         }
