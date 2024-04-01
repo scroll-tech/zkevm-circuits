@@ -7,7 +7,7 @@ use eth_types::{
 };
 use ethers_core::{
     rand::{CryptoRng, RngCore},
-    types::{OtherFields, TransactionRequest},
+    types::{Eip1559TransactionRequest, OtherFields, TransactionRequest},
 };
 use ethers_signers::{LocalWallet, Signer};
 use rand::SeedableRng;
@@ -331,6 +331,11 @@ impl MockTransaction {
     /// Consumes the mutable ref to the MockTransaction returning the structure
     /// by value.
     pub fn build(&mut self) -> Self {
+        if self.transaction_type == U64::from(2) {
+            return self.build_1559();
+        }
+        // TODO: handle eip2930 type later when add eip2930 tests.
+
         let tx = TransactionRequest::new()
             .from(self.from.address())
             .nonce(self.nonce)
@@ -358,13 +363,67 @@ impl MockTransaction {
                         .from
                         .as_wallet()
                         .with_chain_id(self.chain_id)
-                        .sign_transaction_sync(&tx.into())
+                        .sign_transaction_sync(&tx.into()) // sign for legacy tx type in ethers-rs.
                         .expect("sign mock tx");
                     // Set sig parameters
                     self.sig_data((sig.v, sig.r, sig.s));
                 }
             }
-            (Some(_), Some(_), Some(_)) => (),
+            _ => panic!("Either all or none of the SigData params have to be set"),
+        }
+
+        // Compute tx hash in case is not already set
+        if self.hash.is_none() {
+            let tmp_tx = Transaction::from(self.to_owned());
+            // FIXME: Note that tmp_tx does not have sigs if self.from.is_wallet() = false.
+            //  This means tmp_tx.hash() is not correct.
+
+            self.hash(tmp_tx.hash());
+        }
+
+        self.to_owned()
+    }
+
+    /// build 1559 type tx
+    pub fn build_1559(&mut self) -> Self {
+        let tx = Eip1559TransactionRequest::new()
+            .from(self.from.address())
+            .nonce(self.nonce)
+            .value(self.value)
+            .data(self.input.clone())
+            .gas(self.gas)
+            .chain_id(self.chain_id)
+            .max_priority_fee_per_gas(self.max_priority_fee_per_gas)
+            .max_fee_per_gas(self.max_fee_per_gas)
+            .access_list(self.access_list.clone());
+
+        let tx = if let Some(to_addr) = self.to.clone() {
+            tx.to(to_addr.address())
+        } else {
+            tx
+        };
+
+        match (self.v, self.r, self.s) {
+            (None, None, None) => {
+                // Compute sig params and set them in case we have a wallet as `from` attr.
+                if self.from.is_wallet() && self.hash.is_none() {
+                    let mut sig = self
+                        .from
+                        .as_wallet()
+                        .with_chain_id(self.chain_id)
+                        .sign_transaction_sync(&tx.into())
+                        .expect("sign mock 1559 tx");
+
+                    // helper `sign_transaction_sync` in ethers-rs lib does not handle correctly
+                    // about v for non legacy tx, here correct it for 1559 type.
+                    sig.v = Self::normalize_v(sig.v, self.chain_id); // convert v to [0, 1]
+
+                    self.sig_data((sig.v, sig.r, sig.s));
+                } else {
+                    #[cfg(feature = "scroll")]
+                    panic!("1559 type tx must have signature data, otherwise will be treated as L1Msg type in trace.go of l2geth");
+                }
+            }
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
 
@@ -377,5 +436,15 @@ impl MockTransaction {
         }
 
         self.to_owned()
+    }
+
+    // helper `sign_transaction_sync` in ethers-rs lib compute V using legacy tx pattern(V =
+    // recover_id + 2 * chain_id + 35), this method converts above V value to origin recover_id.
+    pub(crate) fn normalize_v(v: u64, chain_id: u64) -> u64 {
+        if v > 1 {
+            v - chain_id * 2 - 35
+        } else {
+            v
+        }
     }
 }
