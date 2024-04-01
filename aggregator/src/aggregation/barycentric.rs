@@ -435,7 +435,7 @@ mod tests {
         // check that we are calling the reth implementation correctly
         for z in 0..10 {
             let z = Scalar::from(u64::try_from(z).unwrap());
-            assert_eq!(reth_point_evaluation(z, &*ROOTS_OF_UNITY), z)
+            assert_eq!(reth_point_evaluation(z, &ROOTS_OF_UNITY), z)
         }
     }
 
