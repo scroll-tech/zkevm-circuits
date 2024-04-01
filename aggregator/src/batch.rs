@@ -161,6 +161,11 @@ impl BatchHash {
         }
     }
 
+    /// Return the blob polynomial and its evaluation at challenge
+    pub fn blob_assignments(&self) -> BlobAssignments {
+        self.blob.clone()
+    }
+
     /// Extract all the hash inputs that will ever be used.
     /// There are MAX_AGG_SNARKS + 2 hashes.
     ///
