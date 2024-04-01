@@ -95,6 +95,21 @@ impl From<MockBlock> for Block<Transaction> {
                 .transactions
                 .iter_mut()
                 .map(|mock_tx| {
+                    // adjust gas price for eip1559 type tx.
+                    let gas_price = if mock_tx.transaction_type == U64::from(2) {
+                        let base_fee = mock.base_fee_per_gas;
+                        let priority_fee_per_gas = std::cmp::min(
+                            mock_tx.max_priority_fee_per_gas,
+                            mock_tx.max_fee_per_gas - base_fee,
+                        );
+                        let effective_gas_price = priority_fee_per_gas + base_fee;
+                        Some(effective_gas_price)
+                    } else {
+                        mock_tx.gas_price
+                    };
+
+                    mock_tx.gas_price = gas_price;
+
                     (mock_tx
                         .chain_id(mock.chain_id)
                         .block_number(mock.number.as_u64())
