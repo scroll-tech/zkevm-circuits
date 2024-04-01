@@ -10,7 +10,7 @@ use halo2_proofs::{
     halo2curves::{bls12_381::Scalar, bn256::Fr},
 };
 use itertools::Itertools;
-use std::iter::repeat;
+use std::iter::{once, repeat};
 use zkevm_circuits::util::Challenges;
 
 /// The number of coefficients (BLS12-381 scalars) to represent the blob polynomial in evaluation
@@ -303,9 +303,9 @@ impl BlobData {
             let digest_rlc = digest.iter().fold(Value::known(Fr::zero()), |acc, &x| {
                 acc * challenge.evm_word() + Value::known(Fr::from(x as u64))
             });
-            std::iter::repeat(Value::known(Fr::zero()))
+            repeat(Value::known(Fr::zero()))
                 .take(N_ROWS_METADATA - 1)
-                .chain(std::iter::once(digest_rlc))
+                .chain(once(digest_rlc))
         };
 
         // preimage_rlc is the running RLC over bytes in the "metadata" section.
@@ -373,7 +373,7 @@ impl BlobData {
                     },
                 )
             })
-            .chain(std::iter::repeat(BlobDataRow::padding_row()))
+            .chain(repeat(BlobDataRow::padding_row()))
             .take(N_ROWS_DATA)
             .collect()
     }
@@ -422,7 +422,7 @@ impl BlobData {
         // - metadata digest bytes
         // - chunks[i].chunk_data_digest bytes for each chunk
         // - challenge digest bytes
-        std::iter::once(BlobDataRow {
+        once(BlobDataRow {
             digest_rlc: metadata_digest_rlc,
             preimage_rlc: Value::known(Fr::zero()),
             // this is_padding assignment does not matter as we have already crossed the "chunk
@@ -444,7 +444,7 @@ impl BlobData {
                     ..Default::default()
                 }),
         )
-        .chain(std::iter::once(BlobDataRow {
+        .chain(once(BlobDataRow {
             preimage_rlc: challenge_digest_preimage_rlc,
             digest_rlc: challenge_digest_rlc,
             accumulator: 32 * (MAX_AGG_SNARKS + 1) as u64,
@@ -605,23 +605,23 @@ mod tests {
             ),
             (
                 "max number of chunks only last one non-empty not full blob",
-                std::iter::repeat(vec![])
+                repeat(vec![])
                     .take(MAX_AGG_SNARKS - 1)
-                    .chain(std::iter::once(vec![132; N_ROWS_DATA - 1111]))
+                    .chain(once(vec![132; N_ROWS_DATA - 1111]))
                     .collect(),
             ),
             (
                 "max number of chunks only last one non-empty full blob",
-                std::iter::repeat(vec![])
+                repeat(vec![])
                     .take(MAX_AGG_SNARKS - 1)
-                    .chain(std::iter::once(vec![132; N_ROWS_DATA]))
+                    .chain(once(vec![132; N_ROWS_DATA]))
                     .collect(),
             ),
             (
                 "max number of chunks but last is empty",
-                std::iter::repeat(vec![111; 100])
+                repeat(vec![111; 100])
                     .take(MAX_AGG_SNARKS - 1)
-                    .chain(std::iter::once(vec![]))
+                    .chain(once(vec![]))
                     .collect(),
             ),
         ]
