@@ -10,6 +10,7 @@ use halo2_proofs::{
     halo2curves::{bls12_381::Scalar, bn256::Fr},
 };
 use itertools::Itertools;
+use std::iter::repeat;
 use zkevm_circuits::util::Challenges;
 
 /// The number of coefficients (BLS12-381 scalars) to represent the blob polynomial in evaluation
@@ -57,7 +58,7 @@ pub const N_ROWS_DIGEST: usize = N_ROWS_DIGEST_RLC + N_ROWS_DIGEST_BYTES;
 pub const N_ROWS_BLOB_DATA_CONFIG: usize = N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST;
 
 /// Helper struct to generate witness for the Blob Data Config.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct BlobData {
     /// The number of valid chunks in the batch. This could be any number between:
     /// [1, MAX_AGG_SNARKS]
@@ -95,7 +96,7 @@ impl From<&Vec<Vec<u8>>> for BlobData {
         let chunk_sizes: [u32; MAX_AGG_SNARKS] = chunks
             .iter()
             .map(|chunk| chunk.len() as u32)
-            .chain(std::iter::repeat(0))
+            .chain(repeat(0))
             .take(MAX_AGG_SNARKS)
             .collect::<Vec<_>>()
             .try_into()
@@ -105,7 +106,7 @@ impl From<&Vec<Vec<u8>>> for BlobData {
         let last_chunk_data = chunks.last().expect("last chunk exists");
         let chunk_data = chunks
             .iter()
-            .chain(std::iter::repeat(last_chunk_data))
+            .chain(repeat(last_chunk_data))
             .take(MAX_AGG_SNARKS)
             .cloned()
             .collect::<Vec<_>>()
@@ -117,6 +118,13 @@ impl From<&Vec<Vec<u8>>> for BlobData {
             chunk_sizes,
             chunk_data,
         }
+    }
+}
+
+impl Default for BlobData {
+    fn default() -> Self {
+        // default value corresponds to a batch with 1 chunk with no transactions
+        Self::from(&vec![vec![]])
     }
 }
 
@@ -172,8 +180,8 @@ impl BlobData {
         //
         // where chunk_data_digest for a padded chunk is set equal to the "last valid chunk"'s
         // chunk_data_digest.
-        std::iter::empty()
-            .chain(metadata_digest)
+        metadata_digest
+            .into_iter()
             .chain(chunk_digests.flatten())
             .collect::<Vec<_>>()
     }
@@ -237,8 +245,8 @@ impl BlobData {
         let digest_rows = self.to_digest_rows(challenge);
         assert_eq!(digest_rows.len(), N_ROWS_DIGEST);
 
-        std::iter::empty()
-            .chain(metadata_rows)
+        metadata_rows
+            .into_iter()
             .chain(data_rows)
             .chain(digest_rows)
             .collect::<Vec<BlobDataRow<Fr>>>()
@@ -557,9 +565,11 @@ impl BlobDataRow<Fr> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{blob::BlobAssignments, MAX_AGG_SNARKS};
-
-    use super::{BlobData, N_ROWS_DATA};
+    use super::*;
+    use crate::{aggregation::ROOTS_OF_UNITY, blob::BlobAssignments, MAX_AGG_SNARKS};
+    use c_kzg::{Blob as RethBlob, KzgProof, KzgSettings};
+    use once_cell::sync::Lazy;
+    use std::sync::Arc;
 
     #[test]
     #[ignore = "only required for logging challenge digest"]
@@ -627,16 +637,6 @@ mod tests {
             );
         }
     }
-}
-
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::aggregation::ROOTS_OF_UNITY;
-    use c_kzg::{Blob as RethBlob, KzgProof, KzgSettings};
-    use once_cell::sync::Lazy;
-    use std::{io::Write, sync::Arc};
 
     /// KZG trusted setup
     pub static MAINNET_KZG_TRUSTED_SETUP: Lazy<Arc<KzgSettings>> = Lazy::new(|| {
@@ -650,58 +650,35 @@ mod tests {
     });
 
     #[test]
-    fn empty_chunks_random_point() {
-        let empty_blob = Blob::default();
-        assert_eq!(empty_blob.challenge_point(), U256::from(keccak256([0u8])),)
+    fn default_blob_data() {
+        let mut default_metadata = [0u8; 62];
+        default_metadata[1] = 1;
+        let default_metadata_digest = keccak256(default_metadata);
+        let default_chunk_digests = [keccak256([]); MAX_AGG_SNARKS];
+
+        assert_eq!(
+            BlobData::default().get_challenge_digest(),
+            U256::from(keccak256(
+                default_metadata_digest
+                    .into_iter()
+                    .chain(default_chunk_digests.into_iter().flatten())
+                    .collect::<Vec<u8>>()
+            )),
+        )
     }
 
     #[test]
-    fn zero_blob() {
-        let blob = Blob::default();
+    fn coefficients_endianness() {
+        // Check that the blob bytes are being packed into coefficients in big endian order.
+        let coefficients = BlobData::default().get_coefficients();
 
-        let z = Scalar::from_raw(blob.challenge_point().0);
-        let y = interpolate(
-            z,
-            blob.coefficients().map(|coeff| Scalar::from_raw(coeff.0)),
-        );
-
-        assert_eq!(
-            z,
-            from_str("4848d14b5080aacc030c6a2178eda978125553b177d80992ff96a9e164bcc989")
-        );
-        assert_eq!(y, Scalar::zero());
-    }
-
-    #[test]
-    fn generic_blob() {
-        let blob = Blob(vec![
-            vec![30; 56],
-            vec![200; 100],
-            vec![0; 340],
-            vec![10; 23],
-            vec![14; 23],
-            vec![255; 23],
-        ]);
-
-        let z = Scalar::from_raw(blob.challenge_point().0);
-        let y = interpolate(
-            z,
-            blob.coefficients().map(|coeff| Scalar::from_raw(coeff.0)),
-        );
-
-        assert_eq!(
-            z,
-            from_str("17feb47df94b20c6da69f871c980459a7a834adad6a564304a0e8cd8a09bcb27")
-        );
-        assert_eq!(
-            y,
-            from_str("061f4f5d9005302ca556a0847d27f456cad82c6883a588fde6d48088fb4ec6a7")
-        );
+        assert_eq!(coefficients[0], U256::one() << 232);
+        assert_eq!(coefficients[1..], vec![U256::zero(); BLOB_WIDTH - 1]);
     }
 
     #[test]
     fn interpolate_matches_reth_implementation() {
-        let blob = Blob(vec![
+        let blob = BlobData::from(&vec![
             vec![30; 56],
             vec![200; 100],
             vec![0; 340],
@@ -711,16 +688,18 @@ mod tests {
         for z in 0..10 {
             let z = Scalar::from(u64::try_from(13241234 + z).unwrap());
             assert_eq!(
-                reth_point_evaluation(z, blob.coefficients().map(|c| Scalar::from_raw(c.0))),
-                interpolate(z, blob.coefficients().map(|c| Scalar::from_raw(c.0)))
+                reth_point_evaluation(z, &blob.get_coefficients().map(|c| Scalar::from_raw(c.0))),
+                interpolate(z, &blob.get_coefficients().map(|c| Scalar::from_raw(c.0)))
             );
         }
     }
 
-    fn reth_point_evaluation(z: Scalar, coefficients: [Scalar; BLOB_WIDTH]) -> Scalar {
+    fn reth_point_evaluation(z: Scalar, coefficients: &[Scalar]) -> Scalar {
+        assert_eq!(coefficients.len(), BLOB_WIDTH);
         let blob = RethBlob::from_bytes(
             &coefficients
-                .into_iter()
+                .iter()
+                .cloned()
                 .flat_map(to_be_bytes)
                 .collect::<Vec<_>>(),
         )
@@ -736,7 +715,7 @@ mod tests {
         // check that we are calling the reth implementation correctly
         for z in 0..10 {
             let z = Scalar::from(u64::try_from(z).unwrap());
-            assert_eq!(reth_point_evaluation(z, *ROOTS_OF_UNITY), z)
+            assert_eq!(reth_point_evaluation(z, &*ROOTS_OF_UNITY), z)
         }
     }
 
@@ -768,4 +747,3 @@ mod tests {
         assert_eq!(to_be_bytes(Scalar::one()), be_bytes_one);
     }
 }
-*/

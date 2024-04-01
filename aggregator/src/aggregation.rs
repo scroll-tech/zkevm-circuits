@@ -11,6 +11,7 @@ mod rlc;
 
 pub(crate) use barycentric::{
     interpolate, AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BLS_MODULUS,
+    ROOTS_OF_UNITY,
 };
 pub(crate) use blob_data::BlobDataConfig;
 pub use circuit::AggregationCircuit;
