@@ -19,11 +19,11 @@ pub const BLOB_WIDTH: usize = 4096;
 /// Logarithm to the base 2 of BLOB_WIDTH.
 pub const LOG_BLOB_WIDTH: usize = 12;
 
-/// The number 32
-pub const N_BYTES_32: usize = 32;
+/// The number of bytes to represent an unsigned 256 bit number.
+pub const N_BYTES_U256: usize = 32;
 
-/// The number 31
-pub const N_BYTES_31: usize = N_BYTES_32 - 1;
+/// The number data bytes we pack into each BLS12-381 scalar. The most 32nd byte is is 0.
+pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
 
 /// The number of rows to encode number of valid chunks (num_valid_snarks) in a batch, in the Blob
 /// Data config. Since num_valid_chunks is u16, we use 2 bytes/rows.
@@ -36,7 +36,7 @@ pub const N_ROWS_CHUNK_SIZES: usize = MAX_AGG_SNARKS * 4;
 /// The number of bytes that we can fit in a blob. Note that each coefficient is represented in 32
 /// bytes, however, since those 32 bytes must represent a BLS12-381 scalar in its canonical form,
 /// we explicitly set the most-significant byte to 0, effectively utilising only 31 bytes.
-pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_BYTES_31;
+pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 
 /// The number of rows in Blob Data config's layout to represent the "blob metadata" section.
 pub const N_ROWS_METADATA: usize = N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES;
@@ -48,7 +48,7 @@ pub const N_ROWS_DATA: usize = N_BLOB_BYTES - N_ROWS_METADATA;
 pub const N_ROWS_DIGEST_RLC: usize = 1 + 1 + MAX_AGG_SNARKS;
 
 /// The number of rows in Blob Data config's layout to represent the "digest bytes" section.
-pub const N_ROWS_DIGEST_BYTES: usize = N_ROWS_DIGEST_RLC * N_BYTES_32;
+pub const N_ROWS_DIGEST_BYTES: usize = N_ROWS_DIGEST_RLC * N_BYTES_U256;
 
 /// The total number of rows in "digest rlc" and "digest bytes" sections.
 pub const N_ROWS_DIGEST: usize = N_ROWS_DIGEST_RLC + N_ROWS_DIGEST_BYTES;
@@ -186,7 +186,7 @@ impl BlobData {
 
     /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
     pub(crate) fn get_coefficients(&self) -> [U256; BLOB_WIDTH] {
-        let mut coefficients = [[0u8; N_BYTES_32]; BLOB_WIDTH];
+        let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
         // We only consider the data from `valid` chunks and ignore the padded chunks.
         let metadata_bytes = self.to_metadata_bytes();
