@@ -198,10 +198,10 @@ impl BlobData {
         );
 
         for (i, &byte) in blob_bytes.enumerate() {
-            coefficients[i / 31][i % 31] = byte;
+            coefficients[i / 31][1 + (i % 31)] = byte;
         }
 
-        coefficients.map(|coeff| U256::from_little_endian(&coeff))
+        coefficients.map(|coeff| U256::from_big_endian(&coeff))
     }
 
     /// Get the list of preimages that need to go through the keccak hashing function, and
@@ -551,6 +551,80 @@ impl BlobDataRow<Fr> {
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: Value::known(Fr::zero()),
             ..Default::default()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{blob::BlobAssignments, MAX_AGG_SNARKS};
+
+    use super::{BlobData, N_ROWS_DATA};
+
+    #[test]
+    #[ignore = "only required for logging challenge digest"]
+    fn log_challenge() {
+        for (annotation, tcase) in [
+            ("single empty chunk", vec![vec![]]),
+            ("single non-empty chunk", vec![vec![1, 2, 3]]),
+            ("multiple empty chunks", vec![vec![], vec![]]),
+            (
+                "multiple non-empty chunks",
+                vec![vec![1, 2, 3], vec![7, 8, 9]],
+            ),
+            (
+                "empty chunk followed by non-empty chunk",
+                vec![vec![], vec![1, 2, 3]],
+            ),
+            (
+                "non-empty chunk followed by empty chunk",
+                vec![vec![7, 8, 9], vec![]],
+            ),
+            (
+                "max number of chunks all empty",
+                vec![vec![]; MAX_AGG_SNARKS],
+            ),
+            (
+                "max number of chunkks all non-empty",
+                (0..MAX_AGG_SNARKS)
+                    .map(|i| (10u8..11 + u8::try_from(i).unwrap()).collect())
+                    .collect(),
+            ),
+            ("single chunk blob full", vec![vec![123; N_ROWS_DATA]]),
+            (
+                "multiple chunks blob full",
+                vec![vec![123; 1111], vec![231; N_ROWS_DATA - 1111]],
+            ),
+            (
+                "max number of chunks only last one non-empty not full blob",
+                std::iter::repeat(vec![])
+                    .take(MAX_AGG_SNARKS - 1)
+                    .chain(std::iter::once(vec![132; N_ROWS_DATA - 1111]))
+                    .collect(),
+            ),
+            (
+                "max number of chunks only last one non-empty full blob",
+                std::iter::repeat(vec![])
+                    .take(MAX_AGG_SNARKS - 1)
+                    .chain(std::iter::once(vec![132; N_ROWS_DATA]))
+                    .collect(),
+            ),
+            (
+                "max number of chunks but last is empty",
+                std::iter::repeat(vec![111; 100])
+                    .take(MAX_AGG_SNARKS - 1)
+                    .chain(std::iter::once(vec![]))
+                    .collect(),
+            ),
+        ]
+        .iter()
+        {
+            let blob: BlobData = tcase.into();
+            let blob_assignments = BlobAssignments::from(&blob);
+            println!(
+                "{:64}: challenge (z) = {:x}, evaluation (y) = {:x}",
+                annotation, blob_assignments.challenge, blob_assignments.evaluation
+            );
         }
     }
 }

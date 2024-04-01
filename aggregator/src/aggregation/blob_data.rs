@@ -59,7 +59,6 @@ pub struct BlobDataConfig {
 
 pub struct AssignedBlobDataExport {
     pub num_valid_chunks: AssignedCell<Fr, Fr>,
-    pub blob_fields: Vec<Vec<AssignedCell<Fr, Fr>>>,
     pub challenge_digest: Vec<AssignedCell<Fr, Fr>>,
     pub chunk_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
 }
@@ -859,14 +858,17 @@ impl BlobDataConfig {
                 //////////////////////////////////// EXPORT ////////////////////////////////////
                 ////////////////////////////////////////////////////////////////////////////////
 
-                let mut blob_fields = Vec::with_capacity(BLOB_WIDTH);
+                let mut blob_fields: Vec<Vec<AssignedCell<Fr, Fr>>> =
+                    Vec::with_capacity(BLOB_WIDTH);
                 let blob_bytes = assigned_rows
                     .iter()
                     .take(N_ROWS_METADATA + N_ROWS_DATA)
                     .map(|row| row.byte.clone())
                     .collect::<Vec<_>>();
                 for chunk in blob_bytes.chunks_exact(N_BYTES_31) {
-                    blob_fields.push(chunk.to_vec());
+                    // blob bytes are supposed to be deserialised in big-endianness. However, we
+                    // have the export from BarycentricConfig in little-endian bytes.
+                    blob_fields.push(chunk.iter().rev().cloned().collect());
                 }
                 let mut chunk_data_digests = Vec::with_capacity(MAX_AGG_SNARKS);
                 let chunk_data_digests_bytes = assigned_rows
@@ -880,7 +882,6 @@ impl BlobDataConfig {
                 }
                 let export = AssignedBlobDataExport {
                     num_valid_chunks,
-                    blob_fields,
                     challenge_digest: assigned_rows
                         .iter()
                         .rev()
@@ -933,7 +934,7 @@ impl BlobDataConfig {
                     challenge_digest_limb3.cell(),
                     challenge_digest_crt.truncation.limbs[2].cell(),
                 )?;
-                for (blob_crt, blob_field) in blob_crts.iter().zip_eq(export.blob_fields.iter()) {
+                for (blob_crt, blob_field) in blob_crts.iter().zip_eq(blob_fields.iter()) {
                     let limb1 = rlc_config.inner_product(
                         &mut region,
                         &blob_field[0..11],
