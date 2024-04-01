@@ -45,7 +45,7 @@ dependencies = [
  "ark-std 0.3.0",
  "env_logger",
  "eth-types",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite)",
  "halo2_proofs",
  "hex",
  "itertools 0.11.0",
@@ -541,7 +541,7 @@ dependencies = [
  "ctor",
  "env_logger",
  "eth-types",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite)",
  "ethers-providers",
  "ethers-signers",
  "gadgets",
@@ -1568,7 +1568,7 @@ dependencies = [
 name = "eth-types"
 version = "0.1.0"
 dependencies = [
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite)",
  "ethers-signers",
  "halo2-base",
  "halo2_proofs",
@@ -1643,7 +1643,7 @@ source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd6
 dependencies = [
  "ethers-addressbook",
  "ethers-contract",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "ethers-etherscan",
  "ethers-middleware",
  "ethers-providers",
@@ -1656,7 +1656,7 @@ name = "ethers-addressbook"
 version = "2.0.7"
 source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd62e7cdec31160b91c5a646883594a586ba"
 dependencies = [
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "once_cell",
  "serde",
  "serde_json",
@@ -1669,7 +1669,7 @@ source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd6
 dependencies = [
  "ethers-contract-abigen",
  "ethers-contract-derive",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "ethers-providers",
  "futures-util",
  "hex",
@@ -1687,7 +1687,7 @@ source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd6
 dependencies = [
  "Inflector",
  "dunce",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "ethers-etherscan",
  "eyre",
  "hex",
@@ -1710,7 +1710,7 @@ source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd6
 dependencies = [
  "Inflector",
  "ethers-contract-abigen",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "hex",
  "proc-macro2",
  "quote",
@@ -1748,11 +1748,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "ethers-core"
+version = "2.0.7"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite#13d46e5b9e3f657110f030ef39d5f0f5189e803b"
+dependencies = [
+ "arrayvec",
+ "bytes",
+ "chrono",
+ "elliptic-curve 0.13.8",
+ "ethabi",
+ "generic-array",
+ "hex",
+ "k256 0.13.3",
+ "num_enum 0.6.1",
+ "open-fastrlp",
+ "rand",
+ "rlp",
+ "serde",
+ "serde_json",
+ "strum 0.24.1",
+ "tempfile",
+ "thiserror",
+ "tiny-keccak",
+ "unicode-xid",
+]
+
+[[package]]
 name = "ethers-etherscan"
 version = "2.0.7"
 source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd62e7cdec31160b91c5a646883594a586ba"
 dependencies = [
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "ethers-solc",
  "reqwest",
  "semver 1.0.22",
@@ -1770,7 +1796,7 @@ dependencies = [
  "async-trait",
  "auto_impl",
  "ethers-contract",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "ethers-etherscan",
  "ethers-providers",
  "ethers-signers",
@@ -1798,7 +1824,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "enr",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "futures-channel",
  "futures-core",
  "futures-timer",
@@ -1834,7 +1860,7 @@ dependencies = [
  "coins-bip39",
  "elliptic-curve 0.13.8",
  "eth-keystore",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "hex",
  "rand",
  "sha2",
@@ -1849,7 +1875,7 @@ source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7#e32dfd6
 dependencies = [
  "cfg-if 1.0.0",
  "dunce",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "glob",
  "hex",
  "home",
@@ -2397,7 +2423,7 @@ version = "0.1.0"
 source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.7#db07d50418d681893ac6b1ed1b1f9237d3b9fd15"
 dependencies = [
  "env_logger",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7)",
  "halo2_proofs",
  "hex",
  "itertools 0.10.5",
@@ -3121,7 +3147,7 @@ name = "mock"
 version = "0.1.0"
 dependencies = [
  "eth-types",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite)",
  "ethers-signers",
  "external-tracer",
  "itertools 0.11.0",
@@ -3852,7 +3878,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "eth-types",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite)",
  "git-version",
  "halo2_proofs",
  "hex",
@@ -5020,7 +5046,7 @@ dependencies = [
  "ctor",
  "env_logger",
  "eth-types",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite)",
  "ethers-signers",
  "external-tracer",
  "glob",
@@ -5917,7 +5943,7 @@ dependencies = [
  "either",
  "env_logger",
  "eth-types",
- "ethers-core",
+ "ethers-core 2.0.7 (git+https://github.com/scroll-tech/ethers-rs.git?branch=v2.0.7-patch-tungstenite)",
  "ethers-signers",
  "ff 0.13.0",
  "gadgets",
