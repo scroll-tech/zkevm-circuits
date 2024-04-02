@@ -948,13 +948,19 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("lookup into Keccak table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let is_tag_sign = sum::expr([and::expr([
-                is_sign_length(meta),
-                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-            ])]);
+            let is_tag_sign_or_l1_hash = sum::expr([
+                and::expr([
+                    is_sign_length(meta),
+                    not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                ]),
+                and::expr([
+                    is_hash_length(meta),
+                    meta.query_advice(is_l1_msg, Rotation::cur()),
+                ]),
+            ]);
             cb.require_equal(
                 "condition",
-                is_tag_sign,
+                is_tag_sign_or_l1_hash,
                 meta.query_advice(lookup_conditions[&LookupCondition::Keccak], Rotation::cur()),
             );
 
@@ -2505,7 +2511,7 @@ impl<F: Field> TxCircuitConfig<F> {
         // lookup Keccak table for tx sign data hash, i.e. the sighash that has to be
         // signed.
         // lookup Keccak table for tx hash too.
-        meta.lookup_any("Keccak table lookup for TxSign", |meta| {
+        meta.lookup_any("Keccak table lookup for TxSign and L1 TxHash", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(lookup_conditions[&LookupCondition::Keccak], Rotation::cur()),
@@ -3071,10 +3077,11 @@ impl<F: Field> TxCircuitConfig<F> {
                 let is_tag_in_set = hash_set.into_iter().filter(|tag| tx_tag == *tag).count() == 1;
                 F::from((is_l1_msg && is_tag_in_set) as u64)
             });
-            // 6. lookup to Keccak table for tx_sign_hash
+            // 6. lookup to Keccak table for tx_sign_hash and l1 tx_hash
             conditions.insert(LookupCondition::Keccak, {
                 let case1 = (tx_tag == TxSignLength) && !is_l1_msg;
-                F::from(case1 as u64)
+                let case2 = (tx_tag == TxHashLength) && is_l1_msg;
+                F::from((case1 || case2) as u64)
             });
 
             // lookup conditions are 1st phase cols
