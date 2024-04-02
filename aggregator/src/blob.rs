@@ -22,7 +22,7 @@ pub const LOG_BLOB_WIDTH: usize = 12;
 /// The number of bytes to represent an unsigned 256 bit number.
 pub const N_BYTES_U256: usize = 32;
 
-/// The number data bytes we pack into each BLS12-381 scalar. The most 32nd byte is is 0.
+/// The number data bytes we pack each BLS12-381 scalar into. The most-significant byte is 0.
 pub const N_DATA_BYTES_PER_COEFFICIENT: usize = 31;
 
 /// The number of rows to encode number of valid chunks (num_valid_snarks) in a batch, in the Blob
