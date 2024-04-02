@@ -898,6 +898,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
 
     let hash_datas = txs
         .iter()
+        .filter(|&tx| tx.tx_type == TxType::L1Msg)
         .map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<Vec<u8>>>();
     let dummy_hash_data = {
@@ -910,7 +911,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
 
     let chunk_txbytes = txs
         .iter()
-        .filter(|tx| tx.tx_type != TxType::L1Msg)
+        .filter(|&tx| tx.tx_type != TxType::L1Msg)
         .flat_map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<u8>>();
     inputs.push(chunk_txbytes);
