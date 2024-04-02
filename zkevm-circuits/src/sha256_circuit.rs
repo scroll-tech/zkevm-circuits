@@ -71,10 +71,19 @@ impl<F: Field> SHA256Circuit<F> {
     fn expected_rows(&self) -> usize {
         self.0
             .iter()
-            .map(|evnt| (evnt.input.len()) + 9 / BLOCK_SIZE_IN_BYTES + 1)
+            .map(|evnt| {
+                let blks = (evnt.input.len() + BLOCK_SIZE_IN_BYTES - 1) / BLOCK_SIZE_IN_BYTES;
+                let paddings = blks * BLOCK_SIZE_IN_BYTES - evnt.input.len();
+                if paddings < 9 {
+                    blks + 1
+                } else {
+                    blks
+                }
+            })
             .reduce(|acc, v| acc + v)
             .unwrap_or_default()
             * TABLE16_BLOCK_ROWS
+            + 20 // we have an additional region for initialization
     }
 
     fn with_row_limit(self, row_limit: usize) -> Self {
