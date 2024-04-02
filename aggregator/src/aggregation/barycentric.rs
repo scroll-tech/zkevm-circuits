@@ -18,9 +18,12 @@ use num_bigint::{BigInt, Sign};
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
-    blob::{BLOB_WIDTH, LOG_BLOB_WIDTH},
+    blob::BLOB_WIDTH,
     constants::{BITS, LIMBS},
 };
+
+/// Base 2 logarithm of BLOB_WIDTH.
+const LOG_BLOB_WIDTH: usize = 12;
 
 pub static BLS_MODULUS: LazyLock<U256> = LazyLock::new(|| {
     U256::from_str_radix(Scalar::MODULUS, 16).expect("BLS_MODULUS from bls crate")
@@ -346,7 +349,21 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
+    use crate::blob::BlobData;
+    use c_kzg::{Blob as RethBlob, KzgProof, KzgSettings};
+    use once_cell::sync::Lazy;
+    use std::{collections::BTreeSet, sync::Arc};
+
+    /// KZG trusted setup
+    pub static MAINNET_KZG_TRUSTED_SETUP: Lazy<Arc<KzgSettings>> = Lazy::new(|| {
+        Arc::new(
+            c_kzg::KzgSettings::load_trusted_setup(
+                &revm_primitives::kzg::G1_POINTS.0,
+                &revm_primitives::kzg::G2_POINTS.0,
+            )
+            .expect("failed to load trusted setup"),
+        )
+    });
 
     #[test]
     fn log_blob_width() {
@@ -377,5 +394,67 @@ mod tests {
             ROOTS_OF_UNITY.iter().collect::<BTreeSet<_>>().len(),
             BLOB_WIDTH
         );
+    }
+
+    #[test]
+    fn interpolate_matches_reth_implementation() {
+        let blob = BlobData::from(&vec![
+            vec![30; 56],
+            vec![200; 100],
+            vec![0; 340],
+            vec![10; 23],
+        ]);
+
+        for z in 0..10 {
+            let z = Scalar::from(u64::try_from(13241234 + z).unwrap());
+            assert_eq!(
+                reth_point_evaluation(z, &blob.get_coefficients().map(|c| Scalar::from_raw(c.0))),
+                interpolate(z, &blob.get_coefficients().map(|c| Scalar::from_raw(c.0)))
+            );
+        }
+    }
+
+    fn reth_point_evaluation(z: Scalar, coefficients: &[Scalar]) -> Scalar {
+        assert_eq!(coefficients.len(), BLOB_WIDTH);
+        let blob = RethBlob::from_bytes(
+            &coefficients
+                .iter()
+                .cloned()
+                .flat_map(to_be_bytes)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let (_proof, y) =
+            KzgProof::compute_kzg_proof(&blob, &to_be_bytes(z).into(), &MAINNET_KZG_TRUSTED_SETUP)
+                .unwrap();
+        from_canonical_be_bytes(*y)
+    }
+
+    #[test]
+    fn reth_kzg_implementation() {
+        // check that we are calling the reth implementation correctly
+        for z in 0..10 {
+            let z = Scalar::from(u64::try_from(z).unwrap());
+            assert_eq!(reth_point_evaluation(z, &ROOTS_OF_UNITY), z)
+        }
+    }
+
+    fn to_be_bytes(x: Scalar) -> [u8; 32] {
+        let mut bytes = x.to_bytes();
+        bytes.reverse();
+        bytes
+    }
+
+    fn from_canonical_be_bytes(bytes: [u8; 32]) -> Scalar {
+        let mut bytes = bytes;
+        bytes.reverse();
+        Scalar::from_bytes(&bytes).expect("non-canonical bytes")
+    }
+
+    #[test]
+    fn test_be_bytes() {
+        let mut be_bytes_one = [0; 32];
+        be_bytes_one[31] = 1;
+        assert_eq!(to_be_bytes(Scalar::one()), be_bytes_one);
     }
 }
