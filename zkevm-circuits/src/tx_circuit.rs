@@ -964,6 +964,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 meta.query_advice(lookup_conditions[&LookupCondition::Keccak], Rotation::cur()),
             );
 
+            // For L2 tx hash, it should be assigned 0 (not included in Keccak lookup in this case)
+            let is_l2_hash = and::expr([
+                is_hash(meta),
+                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+            ]);
+            cb.condition(is_l2_hash, |cb| {
+                cb.require_zero(
+                    "L2 tx hash value is 0",
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                )
+            });
+
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
@@ -2599,7 +2611,11 @@ impl<F: Field> TxCircuitConfig<F> {
         let sign_hash = keccak256(tx.rlp_unsigned.as_slice());
         let hash = keccak256(tx.rlp_signed.as_slice());
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
-        let hash_rlc = rlc_be_bytes(&hash, evm_word);
+        let hash_rlc = if tx.tx_type != L1Msg {
+            Value::known(F::zero())
+        } else {
+            rlc_be_bytes(&hash, evm_word)
+        };
         let mut supplemental_data: Vec<Value<F>> = vec![];
         let mut txbytes_hash_assignment: Option<AssignedCell<F, F>> = None;
         let mut tx_value_cells = vec![];
