@@ -1808,7 +1808,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         );
 
         meta.create_gate(
-            "Decoding table depth, operation and key change indicators",
+            "Correct id calculation for stack op",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 

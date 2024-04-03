@@ -107,7 +107,6 @@ fn test_l1_msg_tx() {
     mock_prover.assert_satisfied_par();
 }
 
-// 1559_debug
 #[test]
 fn test_eip1559_tx() {
     let test_bytes = vec![
