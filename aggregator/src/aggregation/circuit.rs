@@ -519,6 +519,8 @@ impl CircuitExt<Fr> for AggregationCircuit {
                     config.0.rlc_config.selector,
                     config.0.rlc_config.enable_challenge1,
                     config.0.rlc_config.enable_challenge2,
+                    config.0.blob_data_config.data_selector,
+                    config.0.blob_data_config.hash_selector,
                 ]
                 .iter()
                 .cloned(),

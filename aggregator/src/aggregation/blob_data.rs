@@ -48,9 +48,9 @@ pub struct BlobDataConfig {
     /// only at the rows where we actually do the Keccak lookup.
     digest_rlc: Column<Advice>,
     /// Boolean to let us know we are in the data section.
-    data_selector: Selector,
+    pub data_selector: Selector,
     /// Boolean to let us know we are in the hash section.
-    hash_selector: Selector,
+    pub hash_selector: Selector,
     /// Fixed table that consists of [0, 256).
     u8_table: U8Table,
     /// Fixed table that consists of [0, MAX_AGG_SNARKS).
