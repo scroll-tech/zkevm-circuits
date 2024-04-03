@@ -1807,35 +1807,32 @@ impl<F: Field> RlpCircuitConfig<F> {
             },
         );
 
-        meta.create_gate(
-            "Correct id calculation for stack op",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("Correct id calculation for stack op", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
-                let id = [
-                    meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
-                    meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
-                    meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
-                    meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
-                    meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
-                ]
-                .iter()
-                .fold(0.expr(), |acc, expr| {
-                    acc * keccak_input_rand.expr() + expr.clone()
-                });
+            let id = [
+                meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
+            ]
+            .iter()
+            .fold(0.expr(), |acc, expr| {
+                acc * keccak_input_rand.expr() + expr.clone()
+            });
 
-                cb.require_equal(
-                    "id in the rlp_decoding_table is calculated correctly",
-                    meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
-                    id,
-                );
+            cb.require_equal(
+                "id in the rlp_decoding_table is calculated correctly",
+                meta.query_advice(rlp_decoding_table.id, Rotation::cur()),
+                id,
+            );
 
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enabled, Rotation::cur()),
-                    not::expr(is_end(meta)),
-                ]))
-            },
-        );
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                not::expr(is_end(meta)),
+            ]))
+        });
 
         meta.create_gate("Conditions for when key = (tx_id, format, depth, al_idx, sk_idx) stays the same", |meta| {
             let mut cb = BaseConstraintBuilder::default();
