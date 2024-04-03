@@ -342,16 +342,7 @@ impl BlobDataConfig {
 
         let assigned_rows = layouter.assign_region(
             || "BlobData rows",
-            |mut region| {
-                self.assign_rows(
-                    &mut region,
-                    challenge_value,
-                    rlc_config,
-                    chunks_are_padding,
-                    blob,
-                    barycentric_assignments,
-                )
-            },
+            |mut region| self.assign_rows(&mut region, challenge_value, blob),
         )?;
         layouter.assign_region(
             || "BlobData internal checks",
@@ -361,7 +352,6 @@ impl BlobDataConfig {
                     challenge_value,
                     rlc_config,
                     chunks_are_padding,
-                    blob,
                     barycentric_assignments,
                     &assigned_rows,
                 )
@@ -373,12 +363,7 @@ impl BlobDataConfig {
         &self,
         region: &mut Region<Fr>,
         challenge_value: Challenges<Value<Fr>>,
-        rlc_config: &RlcConfig,
-        // The chunks_are_padding assigned cells are exports from the conditional constraints in
-        // `core.rs`. Since these are already constrained, we can just use them as is.
-        chunks_are_padding: &[AssignedCell<Fr, Fr>],
         blob: &BlobData,
-        barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<Vec<AssignedBlobDataConfig>, Error> {
         let rows = blob.to_rows(challenge_value);
         assert_eq!(rows.len(), N_ROWS_BLOB_DATA_CONFIG);
@@ -470,7 +455,6 @@ impl BlobDataConfig {
         // The chunks_are_padding assigned cells are exports from the conditional constraints in
         // `core.rs`. Since these are already constrained, we can just use them as is.
         chunks_are_padding: &[AssignedCell<Fr, Fr>],
-        blob: &BlobData,
         barycentric_assignments: &[CRTInteger<Fr>],
         assigned_rows: &[AssignedBlobDataConfig],
     ) -> Result<AssignedBlobDataExport, Error> {
