@@ -2311,7 +2311,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                         tag_bits.value_equals(Tag::Nonce, Rotation::next())(meta),
                         // Case 2: For EIP2930/1559, the first field is ChainId.
                         tag_bits.value_equals(Tag::ChainId, Rotation::next())(meta),
-                    ]),                    
+                    ]),
                     state_bits.value_equals(State::DecodeTagStart, Rotation::next())(meta),
                 ]),
                 // Depth 2: Begin decoding an access list.
