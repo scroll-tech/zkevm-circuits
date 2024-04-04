@@ -489,7 +489,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         is_tag!(is_tag_end_vector, EndVector);
         is_tag!(is_access_list_address, AccessListAddress);
         is_tag!(is_access_list_storage_key, AccessListStorageKey);
-        is_tag!(is_tag_chain_id, ChainId);
 
         //////////////////////////////////////////////////////////
         //////////// data table checks. //////////////////////////
