@@ -516,7 +516,7 @@ impl BlobDataConfig {
         };
 
         // load cells representing the keccak digest of empty bytes.
-        let mut empty_digest_cells = Vec::with_capacity(N_BYTES_32);
+        let mut empty_digest_cells = Vec::with_capacity(N_BYTES_U256);
         for (i, &byte) in keccak256([]).iter().enumerate() {
             let cell =
                 rlc_config.load_private(region, &Fr::from(byte as u64), &mut rlc_config_offset)?;
@@ -778,8 +778,8 @@ impl BlobDataConfig {
         {
             let digest_rows = rows
                 .iter()
-                .skip(N_BYTES_32 * i)
-                .take(N_BYTES_32)
+                .skip(N_BYTES_U256 * i)
+                .take(N_BYTES_U256)
                 .collect::<Vec<_>>();
             let digest_bytes = digest_rows
                 .iter()
@@ -818,7 +818,7 @@ impl BlobDataConfig {
             .take(N_ROWS_METADATA + N_ROWS_DATA)
             .map(|row| row.byte.clone())
             .collect::<Vec<_>>();
-        for chunk in blob_bytes.chunks_exact(N_BYTES_31) {
+        for chunk in blob_bytes.chunks_exact(N_DATA_BYTES_PER_COEFFICIENT) {
             // blob bytes are supposed to be deserialised in big-endianness. However, we
             // have the export from BarycentricConfig in little-endian bytes.
             blob_fields.push(chunk.iter().rev().cloned().collect());
@@ -826,11 +826,11 @@ impl BlobDataConfig {
         let mut chunk_data_digests = Vec::with_capacity(MAX_AGG_SNARKS);
         let chunk_data_digests_bytes = assigned_rows
             .iter()
-            .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC + N_BYTES_32)
-            .take(MAX_AGG_SNARKS * N_BYTES_32)
+            .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC + N_BYTES_U256)
+            .take(MAX_AGG_SNARKS * N_BYTES_U256)
             .map(|row| row.byte.clone())
             .collect::<Vec<_>>();
-        for chunk in chunk_data_digests_bytes.chunks_exact(N_BYTES_32) {
+        for chunk in chunk_data_digests_bytes.chunks_exact(N_BYTES_U256) {
             chunk_data_digests.push(chunk.to_vec());
         }
         let export = AssignedBlobDataExport {
@@ -838,7 +838,7 @@ impl BlobDataConfig {
             challenge_digest: assigned_rows
                 .iter()
                 .rev()
-                .take(N_BYTES_32)
+                .take(N_BYTES_U256)
                 .map(|row| row.byte.clone())
                 .collect(),
             chunk_data_digests,
