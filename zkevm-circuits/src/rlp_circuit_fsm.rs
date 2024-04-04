@@ -2289,7 +2289,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // denoting new state machine values.
                 // meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()) + 1.expr(),
                 meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
-
                 1.expr(), // PUSH op increases depth
                 // List scenario on each depth.
                 // Sufficiency is achieved by listing all possible depth.
@@ -2307,7 +2306,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // Depth 1: Begin decoding actual payload (with out the tx type envelope). Starting
                 // at ChainId
                 and::expr([
-                    // is_tag_chain_id(meta), 
+                    // is_tag_chain_id(meta),
                     tag_bits.value_equals(Tag::ChainId, Rotation::next())(meta),
                     // is_decode_tag_start(meta),
                     state_bits.value_equals(State::DecodeTagStart, Rotation::next())(meta),
@@ -2315,7 +2314,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // Depth 2: Begin decoding an access list.
                 and::expr([
                     sum::expr([
-                        // Case 1: The access list is completely empty. The very first row after PUSH is EndVector.
+                        // Case 1: The access list is completely empty. The very first row after
+                        // PUSH is EndVector.
                         tag_bits.value_equals(Tag::EndVector, Rotation::next())(meta),
                         // Case 2: A regular access list.
                         tag_bits.value_equals(Tag::BeginObject, Rotation::next())(meta),
