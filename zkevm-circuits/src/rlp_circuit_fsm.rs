@@ -2306,9 +2306,12 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // Depth 1: Begin decoding actual payload (with out the tx type envelope). Starting
                 // at ChainId
                 and::expr([
-                    // is_tag_chain_id(meta),
-                    tag_bits.value_equals(Tag::ChainId, Rotation::next())(meta),
-                    // is_decode_tag_start(meta),
+                    sum::expr([
+                        // Case 1: For pre-EIP2930/1559 and L1 Tx, the first field is Nonce.
+                        tag_bits.value_equals(Tag::Nonce, Rotation::next())(meta),
+                        // Case 2: For EIP2930/1559, the first field is ChainId.
+                        tag_bits.value_equals(Tag::ChainId, Rotation::next())(meta),
+                    ]),                    
                     state_bits.value_equals(State::DecodeTagStart, Rotation::next())(meta),
                 ]),
                 // Depth 2: Begin decoding an access list.
