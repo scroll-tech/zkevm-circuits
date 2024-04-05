@@ -63,7 +63,7 @@ pub struct AssignedBlobDataExport {
     pub chunk_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
 }
 
-struct AssignedBlobDataConfig {
+pub struct AssignedBlobDataConfig {
     pub byte: AssignedCell<Fr, Fr>,
     pub accumulator: AssignedCell<Fr, Fr>,
     pub chunk_idx: AssignedCell<Fr, Fr>,
@@ -336,9 +336,7 @@ impl BlobDataConfig {
         blob: &BlobData,
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
-        // load tables
-        self.u8_table.load(layouter)?;
-        self.chunk_idx_range_table.load(layouter)?;
+        self.load_range_tables(layouter)?;
 
         let assigned_rows = layouter.assign_region(
             || "BlobData rows",
@@ -359,7 +357,12 @@ impl BlobDataConfig {
         )
     }
 
-    fn assign_rows(
+    pub fn load_range_tables(&self, layouter: &mut impl Layouter<Fr>) -> Result<(), Error> {
+        self.u8_table.load(layouter)?;
+        self.chunk_idx_range_table.load(layouter)
+    }
+
+    pub fn assign_rows(
         &self,
         region: &mut Region<Fr>,
         challenge_value: Challenges<Value<Fr>>,
@@ -447,7 +450,7 @@ impl BlobDataConfig {
         Ok(assigned_rows)
     }
 
-    fn assign_internal_checks(
+    pub fn assign_internal_checks(
         &self,
         region: &mut Region<Fr>,
         challenge_value: Challenges<Value<Fr>>,

@@ -11,7 +11,7 @@ use halo2_base::{
     Context, ContextParams,
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
@@ -21,8 +21,16 @@ use zkevm_circuits::{
     util::Challenges,
 };
 
+#[derive(Default)]
 struct BlobCircuit {
     data: BlobData,
+
+    overwrite_num_valid_chunks: bool,
+    overwrite_challenge_digest: Option<usize>,
+    overwrite_chunk_data_digests: Option<(usize, usize)>,
+    // overwrite_chunk_id: Option<usize>,
+    // overwrite_preimage_rlc: Option<Fr>,
+    // overwrite_sum_chunk_sizes: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -145,23 +153,66 @@ impl Circuit<Fr> for BlobCircuit {
             },
         )?;
 
-        config.blob_data.assign(
-            &mut layouter,
-            challenge_values,
-            &config.rlc,
-            &chunks_are_padding,
-            &self.data,
-            &barycentric_assignments.barycentric_assignments,
-        )?;
+        config.blob_data.load_range_tables(&mut layouter)?;
 
-        Ok(())
+        layouter.assign_region(
+            || "BlobDataConfig",
+            |mut region| {
+                let assigned_rows =
+                    config
+                        .blob_data
+                        .assign_rows(&mut region, challenge_values, &self.data)?;
+                let assigned_blob_data_export = config.blob_data.assign_internal_checks(
+                    &mut region,
+                    challenge_values,
+                    &config.rlc,
+                    &chunks_are_padding,
+                    &barycentric_assignments.barycentric_assignments,
+                    &assigned_rows,
+                )?;
+
+                if self.overwrite_num_valid_chunks {
+                    increment_cell(&mut region, &assigned_blob_data_export.num_valid_chunks)?;
+                }
+                if let Some(i) = self.overwrite_challenge_digest {
+                    increment_cell(&mut region, &assigned_blob_data_export.challenge_digest[i])?;
+                }
+                if let Some((i, j)) = self.overwrite_chunk_data_digests {
+                    increment_cell(
+                        &mut region,
+                        &assigned_blob_data_export.chunk_data_digests[i][j],
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 
-fn check_circuit(data: BlobData) -> Result<(), Vec<VerifyFailure>> {
+fn increment_cell(
+    region: &mut Region<Fr>,
+    assigned_cell: &AssignedCell<Fr, Fr>,
+) -> Result<AssignedCell<Fr, Fr>, Error> {
+    let cell = assigned_cell.cell();
+    region.assign_advice(
+        || "incrementing previously assigned cell",
+        cell.column.try_into().expect("assigned cell not advice"),
+        cell.row_offset,
+        || assigned_cell.value() + Value::known(Fr::one()),
+    )
+}
+
+fn check_data(data: BlobData) -> Result<(), Vec<VerifyFailure>> {
+    let circuit = BlobCircuit {
+        data,
+        ..Default::default()
+    };
+    check_circuit(&circuit)
+}
+
+fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
     let k = 20;
-    let mock_prover =
-        MockProver::<Fr>::run(k, &BlobCircuit { data }, vec![]).expect("failed to run mock prover");
+    let mock_prover = MockProver::<Fr>::run(k, circuit, vec![]).expect("failed to run mock prover");
     mock_prover.verify_par()
 }
 
@@ -200,7 +251,7 @@ fn blob_circuit_completeness() {
         empty_and_nonempty_chunks,
         all_empty_except_last,
     ] {
-        assert_eq!(check_circuit(BlobData::from(&blob)), Ok(()), "{:?}", blob);
+        assert_eq!(check_data(BlobData::from(&blob)), Ok(()), "{:?}", blob);
     }
 }
 
@@ -217,29 +268,77 @@ fn generic_blob_data() -> BlobData {
 }
 
 #[test]
+fn generic_blob_data_is_valid() {
+    assert_eq!(check_data(generic_blob_data()), Ok(()));
+}
+
+#[test]
 fn inconsistent_chunk_size() {
     let mut blob_data = generic_blob_data();
     blob_data.chunk_sizes[4] += 1;
-    assert!(check_circuit(blob_data).is_err());
+    assert!(check_data(blob_data).is_err());
 }
 
 #[test]
 fn too_many_empty_chunks() {
     let mut blob_data = generic_blob_data();
     blob_data.num_valid_chunks += 1;
-    assert!(check_circuit(blob_data).is_err());
+    assert!(check_data(blob_data).is_err());
 }
 
 #[test]
 fn too_few_empty_chunks() {
     let mut blob_data = generic_blob_data();
     blob_data.num_valid_chunks -= 1;
-    assert!(check_circuit(blob_data).is_err());
+    assert!(check_data(blob_data).is_err());
 }
 
 #[test]
 fn inconsistent_chunk_bytes() {
     let mut blob_data = generic_blob_data();
     blob_data.chunk_data[0].push(128);
-    assert!(check_circuit(blob_data).is_err());
+    assert!(check_data(blob_data).is_err());
 }
+
+#[test]
+fn overwrite_num_valid_chunks() {
+    let circuit = BlobCircuit {
+        data: generic_blob_data(),
+        overwrite_num_valid_chunks: true,
+        ..Default::default()
+    };
+    assert!(check_circuit(&circuit).is_err())
+}
+
+#[test]
+fn overwrite_challenge_digest_byte() {
+    for i in [0, 1, 10, 31] {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_challenge_digest: Some(i),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
+
+#[test]
+fn overwrite_chunk_data_digest_byte() {
+    for indices in [(0, 0), (4, 30), (10, 31), (MAX_AGG_SNARKS - 1, 2)] {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_chunk_data_digests: Some(indices),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
+
+// #[test]
+// fn overwrite_chunk_id() {}
+
+// #[test]
+// fn overwrite_preimage_rlc() {}
+
+// #[test]
+// fn overwrite_sum_chunk_sizes() {}
