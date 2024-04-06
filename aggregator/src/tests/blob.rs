@@ -2,7 +2,7 @@ use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
     },
-    blob::{BlobAssignments, BlobData, N_ROWS_DATA},
+    blob::{BlobAssignments, BlobData, N_ROWS_DATA, N_ROWS_METADATA},
     param::ConfigParams,
     MAX_AGG_SNARKS,
 };
@@ -28,7 +28,7 @@ struct BlobCircuit {
     overwrite_num_valid_chunks: bool,
     overwrite_challenge_digest: Option<usize>,
     overwrite_chunk_data_digests: Option<(usize, usize)>,
-    // overwrite_chunk_id: Option<usize>,
+    overwrite_chunk_idx: Option<usize>,
     // overwrite_preimage_rlc: Option<Fr>,
     // overwrite_sum_chunk_sizes: bool,
 }
@@ -171,6 +171,9 @@ impl Circuit<Fr> for BlobCircuit {
                     &assigned_rows,
                 )?;
 
+                if let Some(i) = self.overwrite_chunk_idx {
+                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                }
                 if self.overwrite_num_valid_chunks {
                     increment_cell(&mut region, &assigned_blob_data_export.num_valid_chunks)?;
                 }
@@ -334,8 +337,31 @@ fn overwrite_chunk_data_digest_byte() {
     }
 }
 
+const OVERWRITE_ROWS: [usize; 7] = [
+    0,
+    10,
+    N_ROWS_METADATA - 1,
+    N_ROWS_METADATA,
+    N_ROWS_METADATA + 100,
+    N_ROWS_METADATA + N_ROWS_DATA,
+    N_ROWS_METADATA + N_ROWS_DATA + 30,
+];
+
+#[test]
+fn overwrite_chunk_idx() {
+    for row in OVERWRITE_ROWS {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_chunk_idx: Some(row),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
+
 // #[test]
-// fn overwrite_chunk_id() {}
+// fn overwrite_accumulator() {
+// }
 
 // #[test]
 // fn overwrite_preimage_rlc() {}

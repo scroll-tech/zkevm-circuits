@@ -613,26 +613,27 @@ impl BlobDataConfig {
         let not_all_chunks_empty =
             rlc_config.not(region, &all_chunks_empty, &mut rlc_config_offset)?;
 
-        // on the last row of the "metadata" section we want to ensure the keccak table
-        // lookup would be enabled for the metadata digest
-        //
-        // and boundary_count must be 0
-        region.constrain_equal(
-            assigned_rows
-                .get(N_ROWS_METADATA - 1)
-                .unwrap()
-                .is_boundary
-                .cell(),
-            one.cell(),
-        )?;
-        region.constrain_equal(
-            assigned_rows
-                .get(N_ROWS_METADATA - 1)
-                .unwrap()
-                .boundary_count
-                .cell(),
-            zero.cell(),
-        )?;
+        for (i, row) in assigned_rows.iter().enumerate().take(N_ROWS_METADATA) {
+            let cells = [
+                &row.chunk_idx,
+                &row.is_boundary,
+                &row.boundary_count,
+                &row.is_padding,
+            ]
+            .map(AssignedCell::cell);
+
+            // The cells in these columns are 0 in the metadata section, except for is_boundary in
+            // the final row of the metadata section. On the last row of the "metadata" section we
+            // want to ensure the keccak table lookup would be enabled for the metadata
+            // digest
+            let mut expected_cells = [zero.cell(); 4];
+            if i == N_ROWS_METADATA - 1 {
+                expected_cells[1] = one.cell();
+            }
+            for (cell, expected_cell) in cells.into_iter().zip_eq(expected_cells) {
+                region.constrain_equal(cell, expected_cell)?;
+            }
+        }
 
         ////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// CHUNK_DATA //////////////////////////////////
