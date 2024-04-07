@@ -336,7 +336,6 @@ impl MockTransaction {
         }else if self.transaction_type == U64::from(1) {
             return self.build_2930();
         }
-        // TODO: handle eip2930 type later when add eip2930 tests.
 
         let tx = TransactionRequest::new()
             .from(self.from.address())
@@ -451,6 +450,11 @@ impl MockTransaction {
         .chain_id(self.chain_id);
 
         println!("hit 2930 type tx");
+        let legacy_tx = if let Some(gas_price) = self.gas_price {
+            legacy_tx.gas_price(gas_price)
+        } else {
+            legacy_tx
+        };
         let legacy_tx = if let Some(to_addr) = self.to.clone() {
             legacy_tx.to(to_addr.address())
         } else {
