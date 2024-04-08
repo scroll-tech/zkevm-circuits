@@ -490,16 +490,27 @@ impl<
     }
     /// Return the minimum number of rows required to prove the block
     pub fn min_num_rows_block_subcircuits(block: &Block<Fr>) -> Vec<SubcircuitRowUsage> {
+        let warning_limit = 1_000_000;
         log::debug!("start min_num_rows_block_subcircuits");
         let mut rows = Vec::new();
-        let mut push = |name, usage| {
-            log::debug!("{name} circuit row: {usage:?}");
-            rows.push((name, usage));
+        let mut push = |name, (usage, full_usage)| {
+            if usage > warning_limit {
+                log::error!("{name} circuit row: {usage:?}, overflow!");
+            } else {
+                log::debug!("{name} circuit row: {usage:?}");
+            }
+            rows.push((name, (usage, full_usage)));
         };
         let evm = EvmCircuit::min_num_rows_block(block);
         push("evm", evm);
+        if evm.0 >= warning_limit {
+            block.print_evm_circuit_row_usage();
+        }
         let state = StateCircuit::min_num_rows_block(block);
         push("state", state);
+        if state.0 >= warning_limit {
+            block.print_rw_usage();
+        }
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
         push("bytecode", bytecode);
         let copy = CopyCircuit::min_num_rows_block(block);
