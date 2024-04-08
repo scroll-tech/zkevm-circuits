@@ -57,14 +57,85 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
-
-        Ok(ExecStep::new(
+        let step = ExecStep::new(
             geth_step,
             call_ctx,
             self.block_ctx.rwc,
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,
-        ))
+        );
+
+        #[cfg(feature = "enable-stack")]
+        let step = {
+
+            fn calc_tx_refund(
+                tx_refund_old: u64,
+                value: &Word,
+                value_prev: &Word,
+                original_value: &Word,
+            ) -> u64 {
+                // copied from zkevm-circuits/src/evm_circuit/execution/sstores.rs
+                // the refund protocol is EIP-2929
+            
+                let mut tx_refund_new = tx_refund_old;
+        
+                if value_prev != value {
+                    // refund related to clearing slot
+                    // "delete slot (2.1.2b)" can be safely merged in "delete slot (2.2.1.2)"
+                    if !original_value.is_zero() {
+                        if value_prev.is_zero() {
+                            // recreate slot (2.2.1.1)
+                            tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                        }
+                        if value.is_zero() {
+                            // delete slot (2.2.1.2)
+                            tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                        }
+                    }
+            
+                    // refund related to resetting value
+                    if original_value == value {
+                        if original_value.is_zero() {
+                            // reset to original inexistent slot (2.2.2.1)
+                            tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                        } else {
+                            // reset to original existing slot (2.2.2.2)
+                            tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                        }
+                    }
+                }
+            
+                tx_refund_new
+            }
+        
+            let mut step = step;
+            match step.exec_state {
+                ExecState::Op(OpcodeId::SSTORE) => {
+                    let stack = &self.call_ctx()?.stack;
+                    let key = stack.last()?;
+                    let value = stack.nth_last(1)?;
+                    let contract_addr = &self.call()?.address;
+                    let (_, value_prev) = self.sdb.get_storage(contract_addr, &key);
+                    let (_, committed_value) = self.sdb.get_committed_storage(contract_addr, &key);
+
+                    step.gas_refund = Gas(calc_tx_refund(
+                        self.sdb.refund(),
+                        &value,
+                        value_prev,
+                        committed_value,
+                    ));
+                    log::trace!("fix refund: {} -> {}, before: {}",
+                        geth_step.refund.0,
+                        self.sdb.refund(),
+                        step.gas_refund.0,
+                    );
+                },
+                _ => (),
+            }
+            step
+        };
+
+        Ok(step)
     }
 
     /// Create a new BeginTx step

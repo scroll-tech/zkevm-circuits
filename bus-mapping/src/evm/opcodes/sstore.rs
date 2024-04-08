@@ -109,12 +109,13 @@ impl Opcode for Sstore {
             },
         )?;
 
+        let refund = exec_step.gas_refund.0;
         state.push_op_reversible(
             &mut exec_step,
             TxRefundOp {
                 tx_id: state.tx_ctx.id(),
                 value_prev: state.sdb.refund(),
-                value: geth_step.refund.0,
+                value: refund,
             },
         )?;
 
