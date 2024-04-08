@@ -348,7 +348,7 @@ impl Block {
         self.copy_events.push(event);
         // Each byte needs 2 rows
         // TODO: magic num
-        if self.copy_counter > 500_000 {
+        if self.copy_counter > 500_000 && cfg!(feature = "strict-ccc") {
             log::error!("copy event len overflow {}", self.copy_counter);
             panic!("copy event len overflow");
         }

@@ -66,12 +66,17 @@ pub struct SHA256Circuit<F: Field>(Vec<SHA256>, usize, std::marker::PhantomData<
 
 const TABLE16_BLOCK_ROWS: usize = 2114;
 const BLOCK_SIZE_IN_BYTES: usize = BLOCK_SIZE * 4;
+const MIN_PADDING_BYTES: usize = 9; // the additional bytes (a 0x80 byte)
+                                    // and 8-byte length
 
 impl<F: Field> SHA256Circuit<F> {
     fn expected_rows(&self) -> usize {
         self.0
             .iter()
-            .map(|evnt| (evnt.input.len()) + 9 / BLOCK_SIZE_IN_BYTES + 1)
+            .map(|evnt| {
+                (evnt.input.len() + MIN_PADDING_BYTES + BLOCK_SIZE_IN_BYTES - 1)
+                    / BLOCK_SIZE_IN_BYTES
+            })
             .reduce(|acc, v| acc + v)
             .unwrap_or_default()
             * TABLE16_BLOCK_ROWS

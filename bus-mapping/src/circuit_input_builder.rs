@@ -522,7 +522,9 @@ impl<'a> CircuitInputBuilder {
                     total_rws,
                     max_rws
                 );
-                return Err(Error::InternalError("rws not enough"));
+                if cfg!(feature = "strict-ccc") {
+                    return Err(Error::InternalError("rws not enough"));
+                }
             };
         }
         push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
