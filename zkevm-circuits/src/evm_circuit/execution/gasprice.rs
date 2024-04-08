@@ -90,7 +90,10 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
-    use mock::{gwei, test_ctx::{helpers::*, TestContext}};
+    use mock::{
+        gwei,
+        test_ctx::{helpers::*, TestContext},
+    };
 
     #[test]
     fn gasprice_gadget_test() {
