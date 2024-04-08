@@ -41,6 +41,10 @@ pub(crate) struct GethLoggerConfig {
     /// enable memory capture
     #[serde(rename = "EnableMemory")]
     enable_memory: bool,
+    /// disable memory capture, Erigo client
+    /// use this flag rather than 'enable'
+    #[serde(rename = "DisableMemory")]
+    disable_memory: bool,
     /// disable stack capture
     #[serde(rename = "DisableStack")]
     disable_stack: bool,
@@ -59,6 +63,8 @@ impl Default for GethLoggerConfig {
     fn default() -> Self {
         Self {
             enable_memory: cfg!(feature = "enable-memory") || GETH_TRACE_CHECK_LEVEL.should_check(),
+            disable_memory: !(cfg!(feature = "enable-memory") 
+                || GETH_TRACE_CHECK_LEVEL.should_check()),
             disable_stack: !(cfg!(feature = "enable-stack")
                 || GETH_TRACE_CHECK_LEVEL.should_check()),
             disable_storage: !(cfg!(feature = "enable-storage")
@@ -208,9 +214,9 @@ impl<P: JsonRpcClient> GethClient<P> {
     /// ...
     pub async fn trace_tx_by_hash_legacy(&self, hash: H256) -> Result<GethExecTrace, Error> {
         let hash = serialize(&hash);
-        let cfg = serialize(&serde_json::json! ({
-            "timeout": "60s",
-        }));
+        let mut cfg = GethLoggerConfig::default();
+        cfg.timeout = Some("60s".to_string());
+        let cfg = serialize(&cfg);
         let mut struct_logs: serde_json::Value = self
             .0
             .request("debug_traceTransaction", [hash.clone(), cfg])
@@ -250,7 +256,8 @@ impl<P: JsonRpcClient> GethClient<P> {
     /// ..
     pub async fn trace_tx_by_hash(&self, hash: H256) -> Result<GethExecTrace, Error> {
         let hash = serialize(&hash);
-        let cfg = GethLoggerConfig::default();
+        let mut cfg = GethLoggerConfig::default();
+        cfg.timeout = Some("60s".to_string());
         let cfg = serialize(&cfg);
         let mut struct_logs: serde_json::Value = self
             .0
