@@ -26,7 +26,7 @@ hex.workspace = true
 strum_macros.workspace = true
 
 # precompile related crates
-revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-fix" }
+revm-precompile.workspace = true
 
 [dev-dependencies]
 hex.workspace = true
@@ -45,6 +45,7 @@ test = ["mock", "rand"]
 scroll = ["eth-types/scroll", "mock?/scroll"]
 # Enable shanghai feature of mock only if mock is enabled (by test).
 shanghai = ["eth-types/shanghai", "mock?/shanghai"]
+strict-ccc = []
 tracer-tests = ["enable-memory"]
 enable-stack = ["eth-types/enable-stack", "mock?/enable-stack"]
 enable-memory = ["eth-types/enable-memory", "mock?/enable-memory"]

@@ -162,8 +162,7 @@ pub fn recover_pk2(
     msg_hash: &[u8; 32],
 ) -> Result<Secp256k1Affine, Error> {
     debug_assert!(v == 0 || v == 1, "recovery ID (v) is boolean");
-    let recovery_id = RecoveryId::from_byte(v).expect("normalized recovery id always valid");
-    let recoverable_sig = {
+    let mut recoverable_sig = {
         let mut r_bytes = [0u8; 32];
         let mut s_bytes = [0u8; 32];
         r.to_big_endian(&mut r_bytes);
@@ -172,6 +171,12 @@ pub fn recover_pk2(
         let gas: &GenericArray<u8, U32> = GenericArray::from_slice(&s_bytes);
         K256Signature::from_scalars(*gar, *gas).map_err(|_| Error::Signature)?
     };
+    let mut v = v;
+    if let Some(sig_normalized) = recoverable_sig.normalize_s() {
+        recoverable_sig = sig_normalized;
+        v ^= 1;
+    };
+    let recovery_id = RecoveryId::from_byte(v).expect("normalized recovery id always valid");
     let verify_key =
         VerifyingKey::recover_from_prehash(msg_hash.as_ref(), &recoverable_sig, recovery_id)
             .map_err(|_| Error::Signature)?;

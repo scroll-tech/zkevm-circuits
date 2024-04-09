@@ -10,21 +10,27 @@ license.workspace = true
 eth-types = { path = "../eth-types" }
 zkevm-circuits = { path = "../zkevm-circuits" }
 
-
 ark-std.workspace = true
 env_logger.workspace = true
 ethers-core.workspace = true
 hex.workspace = true
 log.workspace = true
 itertools.workspace = true
+once_cell.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
-
+halo2-base.workspace = true
+halo2-ecc.workspace = true
 halo2_proofs.workspace = true
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
+revm-precompile.workspace = true
+c-kzg.workspace = true
+num-bigint.workspace = true
+
+revm-primitives = "3.1.0"
 
 [features]
 default = [ ]
