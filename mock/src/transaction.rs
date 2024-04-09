@@ -7,7 +7,9 @@ use eth_types::{
 };
 use ethers_core::{
     rand::{CryptoRng, RngCore},
-    types::{Eip1559TransactionRequest, Eip2930TransactionRequest, OtherFields, TransactionRequest},
+    types::{
+        Eip1559TransactionRequest, Eip2930TransactionRequest, OtherFields, TransactionRequest,
+    },
 };
 use ethers_signers::{LocalWallet, Signer};
 use rand::SeedableRng;
@@ -333,7 +335,7 @@ impl MockTransaction {
     pub fn build(&mut self) -> Self {
         if self.transaction_type == U64::from(2) {
             return self.build_1559();
-        }else if self.transaction_type == U64::from(1) {
+        } else if self.transaction_type == U64::from(1) {
             return self.build_2930();
         }
 
@@ -442,14 +444,13 @@ impl MockTransaction {
     /// build eip 2930 type tx
     pub fn build_2930(&mut self) -> Self {
         let legacy_tx = TransactionRequest::new()
-        .from(self.from.address())
-        .nonce(self.nonce)
-        .value(self.value)
-        .data(self.input.clone())
-        .gas(self.gas)
-        .chain_id(self.chain_id);
+            .from(self.from.address())
+            .nonce(self.nonce)
+            .value(self.value)
+            .data(self.input.clone())
+            .gas(self.gas)
+            .chain_id(self.chain_id);
 
-        println!("hit 2930 type tx");
         let legacy_tx = if let Some(gas_price) = self.gas_price {
             legacy_tx.gas_price(gas_price)
         } else {
@@ -496,7 +497,7 @@ impl MockTransaction {
         }
 
         self.to_owned()
-    }    
+    }
 
     // helper `sign_transaction_sync` in ethers-rs lib compute V using legacy tx pattern(V =
     // recover_id + 2 * chain_id + 35), this method converts above V value to origin recover_id.

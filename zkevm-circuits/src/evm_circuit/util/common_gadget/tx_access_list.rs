@@ -158,7 +158,7 @@ impl<F: Field> TxAccessListGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{Error, Word, AccessList, AccessListItem, address, H256};
+    use eth_types::{address, AccessList, AccessListItem, Error, Word, H256};
     use ethers_signers::Signer;
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS, MOCK_WALLETS};
 
@@ -169,16 +169,15 @@ mod test {
         let ctx = build_ctx(gwei(80_000), None).unwrap();
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
 
-        // CASE2: tx set empty (neither address nor storage keys at all) access list into `access_list` field. 
-        // this field is not none.
-        let test_access_list: AccessList = AccessList(vec![
-            ]);
-      
+        // CASE2: tx set empty (neither address nor storage keys at all) access list into
+        // `access_list` field. this field is not none.
+        let test_access_list: AccessList = AccessList(vec![]);
+
         let ctx = build_ctx(gwei(80_000), Some(test_access_list)).unwrap();
-         CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-   // test with non empty access list(address + storage keys list)
+    // test with non empty access list(address + storage keys list)
     #[test]
     fn test_eip2930_non_empty_access_list() {
         let test_access_list: AccessList = AccessList(vec![
@@ -203,31 +202,31 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-  // test with non empty access list(only address list)
-  #[test]
-  fn test_eip2930_only_address_access_list() {
-      let test_access_list: AccessList = AccessList(vec![
-          AccessListItem {
-              address: address!("0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241"),
-              // no storage keys
-              storage_keys: Vec::new(),
-          },
-          AccessListItem {
-              address: address!("0x0000000000000000000000000000000000001111"),
-              // no storage keys
-              storage_keys: Vec::new(),
-          },
-      ]);
+    // test with non empty access list(only address list)
+    #[test]
+    fn test_eip2930_only_address_access_list() {
+        let test_access_list: AccessList = AccessList(vec![
+            AccessListItem {
+                address: address!("0xEeFca179F40D3B8b3D941E6A13e48835a3aF8241"),
+                // no storage keys
+                storage_keys: Vec::new(),
+            },
+            AccessListItem {
+                address: address!("0x0000000000000000000000000000000000001111"),
+                // no storage keys
+                storage_keys: Vec::new(),
+            },
+        ]);
 
-      let ctx = build_ctx(gwei(80_000), Some(test_access_list)).unwrap();
-      CircuitTestBuilder::new_from_test_ctx(ctx).run();
-  }
+        let ctx = build_ctx(gwei(80_000), Some(test_access_list)).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
 
     // TODO: check if other types' test required.
 
     fn build_ctx(
         sender_balance: Word,
-        access_list: Option<AccessList>
+        access_list: Option<AccessList>,
     ) -> Result<TestContext<2, 1>, Error> {
         TestContext::new(
             None,
@@ -245,10 +244,10 @@ mod test {
                     .gas_price(30_000.into())
                     .value(gwei(20_000))
                     .transaction_type(1); // Set tx type to EIP-2930.
-                
-                if access_list.is_some(){
+
+                if access_list.is_some() {
                     txs[0].access_list(access_list.unwrap());
-                } 
+                }
             },
             |block, _tx| block.number(0xcafeu64),
         )
