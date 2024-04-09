@@ -1059,6 +1059,7 @@ impl From<u8> for OpcodeId {
             0x45u8 => OpcodeId::GASLIMIT,
             0x46u8 => OpcodeId::CHAINID,
             0x47u8 => OpcodeId::SELFBALANCE,
+            #[cfg(not(feature = "scroll"))]
             0x48u8 => OpcodeId::BASEFEE,
             0x54u8 => OpcodeId::SLOAD,
             0x55u8 => OpcodeId::SSTORE,
@@ -1235,12 +1236,12 @@ impl FromStr for OpcodeId {
             #[cfg(not(feature = "scroll"))]
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
+            #[cfg(not(feature = "scroll"))]
             "BASEFEE" => OpcodeId::BASEFEE,
-            "BLOBHASH" => OpcodeId::INVALID(0x49),
-            "BLOBBASEFEE" => OpcodeId::INVALID(0x4a),
-            "TLOAD" => OpcodeId::INVALID(0x5c),
-            "TSTORE" => OpcodeId::INVALID(0x5d),
-            "MCOPY" => OpcodeId::INVALID(0x5e),
+            #[cfg(feature = "scroll")]
+            "BASEFEE" => OpcodeId::INVALID(0x48),
+            "TLOAD" => OpcodeId::INVALID(0xb3),
+            "TSTORE" => OpcodeId::INVALID(0xb4),
             _ => {
                 // Parse an invalid opcode value as reported by geth
                 static RE: LazyLock<Regex> = LazyLock::new(|| {
