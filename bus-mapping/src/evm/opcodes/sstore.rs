@@ -130,15 +130,17 @@ impl Opcode for Sstore {
                         tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
                     }
                 }
-        
+
                 // refund related to resetting value
                 if original_value == value {
                     if original_value.is_zero() {
                         // reset to original inexistent slot (2.2.2.1)
-                        tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                        tx_refund_new +=
+                            GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
                     } else {
                         // reset to original existing slot (2.2.2.2)
-                        tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                        tx_refund_new +=
+                            GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
                     }
                 }
             }
@@ -146,15 +148,23 @@ impl Opcode for Sstore {
             tx_refund_new
         };
         #[cfg(not(feature = "fix-refund"))]
-        assert_eq!(refund, refund_expected, 
-            "expected refund {refund_expected} is not equal to current {refund}");
+        assert_eq!(
+            refund, refund_expected,
+            "expected refund {refund_expected} is not equal to current {refund}"
+        );
         #[cfg(feature = "fix-refund")]
         let refund = if refund != refund_expected {
             exec_step.gas_refund.0 = refund_expected;
-            log::debug!("correct sstore refund from {} -> {}, prev {}",
-                refund, refund_expected, state.sdb.refund());
+            log::debug!(
+                "correct sstore refund from {} -> {}, prev {}",
+                refund,
+                refund_expected,
+                state.sdb.refund()
+            );
             refund_expected
-        } else { refund };
+        } else {
+            refund
+        };
 
         state.push_op_reversible(
             &mut exec_step,

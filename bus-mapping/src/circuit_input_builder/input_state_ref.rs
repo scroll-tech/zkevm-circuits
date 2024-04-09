@@ -68,8 +68,11 @@ impl<'a> CircuitInputStateRef<'a> {
         let step = {
             let mut step = step;
             if geth_step.refund.0 != self.sdb.refund() {
-                log::trace!("correct op refund to {} trace: {}", 
-                    self.sdb.refund(), geth_step.refund.0);
+                log::trace!(
+                    "correct op refund to {} trace: {}",
+                    self.sdb.refund(),
+                    geth_step.refund.0
+                );
                 step.gas_refund = Gas(self.sdb.refund());
             }
             step

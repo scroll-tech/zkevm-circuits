@@ -63,7 +63,7 @@ impl Default for GethLoggerConfig {
     fn default() -> Self {
         Self {
             enable_memory: cfg!(feature = "enable-memory") || GETH_TRACE_CHECK_LEVEL.should_check(),
-            disable_memory: !(cfg!(feature = "enable-memory") 
+            disable_memory: !(cfg!(feature = "enable-memory")
                 || GETH_TRACE_CHECK_LEVEL.should_check()),
             disable_stack: !(cfg!(feature = "enable-stack")
                 || GETH_TRACE_CHECK_LEVEL.should_check()),
@@ -214,8 +214,10 @@ impl<P: JsonRpcClient> GethClient<P> {
     /// ...
     pub async fn trace_tx_by_hash_legacy(&self, hash: H256) -> Result<GethExecTrace, Error> {
         let hash = serialize(&hash);
-        let mut cfg = GethLoggerConfig::default();
-        cfg.timeout = Some("60s".to_string());
+        let cfg = GethLoggerConfig {
+            timeout: Some("60s".to_string()),
+            ..Default::default()
+        };
         let cfg = serialize(&cfg);
         let mut struct_logs: serde_json::Value = self
             .0
@@ -231,7 +233,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             .0
             .request("debug_traceTransaction", [hash.clone(), cfg])
             .await
-            .map_err(|e| Error::JSONRpcError(e.into()))?;            
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
         let cfg = serialize(&serde_json::json! ({
             "tracer": "callTracer",
             "timeout": "60s",
@@ -247,17 +249,19 @@ impl<P: JsonRpcClient> GethClient<P> {
                 "prestate": prestate,
                 "callTrace": calls,
             }),
-        ); 
+        );
         let resp =
             serde_json::from_value(struct_logs).map_err(|e| Error::JSONRpcError(e.into()))?;
-        Ok(resp)  
+        Ok(resp)
     }
 
     /// ..
     pub async fn trace_tx_by_hash(&self, hash: H256) -> Result<GethExecTrace, Error> {
         let hash = serialize(&hash);
-        let mut cfg = GethLoggerConfig::default();
-        cfg.timeout = Some("60s".to_string());
+        let cfg = GethLoggerConfig {
+            timeout: Some("60s".to_string()),
+            ..Default::default()
+        };
         let cfg = serialize(&cfg);
         let mut struct_logs: serde_json::Value = self
             .0

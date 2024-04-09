@@ -1112,7 +1112,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     /// (of which has include the prestate tracing inside)
     /// the account state is limited since proof is not included,
     /// but it is enough to build the sdb/cdb
-    /// for a block, it would handle exec traces of every tx in sequence 
+    /// for a block, it would handle exec traces of every tx in sequence
+    #[allow(clippy::type_complexity)]
     pub fn get_pre_state<'a>(
         &self,
         traces: impl Iterator<Item = &'a GethExecTrace>,
@@ -1123,12 +1124,11 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ),
         Error,
     > {
-
         let mut account_set =
             HashMap::<Address, (eth_types::EIP1186ProofResponse, HashMap<Word, Word>)>::new();
         let mut code_set = HashMap::new();
 
-        for trace in traces.map(|tr|tr.prestate.clone()) {
+        for trace in traces.map(|tr| tr.prestate.clone()) {
             for (addr, prestate) in trace.into_iter() {
                 let (_, storages) = account_set.entry(addr).or_insert_with(|| {
                     let code_size =
@@ -1188,15 +1188,14 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ))
     }
 
-    /// Yet-another Step 3-1. (hacking?) replenish the pre state proof 
-    /// with coinbase account 
+    /// Yet-another Step 3-1. (hacking?) replenish the pre state proof
+    /// with coinbase account
     /// since current the coibase is not touched in prestate tracing
     pub async fn complete_prestate(
         &self,
         eth_block: &EthBlock,
         mut proofs: Vec<eth_types::EIP1186ProofResponse>,
     ) -> Result<Vec<eth_types::EIP1186ProofResponse>, Error> {
-
         // a hacking? since the coinbase address is not touch in prestate
         let coinbase_addr = eth_block
             .author
@@ -1209,8 +1208,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             0,
             "is not expected to access genesis block"
         );
-        
-        if proofs.iter().find(|pr|pr.address == coinbase_addr).is_none() {
+
+        if !proofs.iter().any(|pr| pr.address == coinbase_addr) {
             let coinbase_proof = self
                 .cli
                 .get_proof(coinbase_addr, Vec::new(), (block_num - 1).into())
