@@ -110,6 +110,52 @@ impl Opcode for Sstore {
         )?;
 
         let refund = exec_step.gas_refund.0;
+        let refund_expected = {
+            use eth_types::evm_types::GasCost;
+            let mut tx_refund_new = state.sdb.refund();
+            let original_value = &committed_value;
+            let value = &value;
+            let value_prev = &value_prev;
+
+            if value_prev != value {
+                // refund related to clearing slot
+                // "delete slot (2.1.2b)" can be safely merged in "delete slot (2.2.1.2)"
+                if !original_value.is_zero() {
+                    if value_prev.is_zero() {
+                        // recreate slot (2.2.1.1)
+                        tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                    }
+                    if value.is_zero() {
+                        // delete slot (2.2.1.2)
+                        tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                    }
+                }
+        
+                // refund related to resetting value
+                if original_value == value {
+                    if original_value.is_zero() {
+                        // reset to original inexistent slot (2.2.2.1)
+                        tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                    } else {
+                        // reset to original existing slot (2.2.2.2)
+                        tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                    }
+                }
+            }
+
+            tx_refund_new
+        };
+        #[cfg(not(feature = "fix-refund"))]
+        assert_eq!(refund, refund_expected, 
+            "expected refund {refund_expected} is not equal to current {refund}");
+        #[cfg(feature = "fix-refund")]
+        let refund = if refund != refund_expected {
+            exec_step.gas_refund.0 = refund_expected;
+            log::debug!("correct sstore refund from {} -> {}, prev {}",
+                refund, refund_expected, state.sdb.refund());
+            refund_expected
+        } else { refund };
+
         state.push_op_reversible(
             &mut exec_step,
             TxRefundOp {
