@@ -245,8 +245,8 @@ mod test {
                     .value(gwei(20_000))
                     .transaction_type(1); // Set tx type to EIP-2930.
 
-                if access_list.is_some() {
-                    txs[0].access_list(access_list.unwrap());
+                if let Some(acc_list) = access_list {
+                    txs[0].access_list(acc_list);
                 }
             },
             |block, _tx| block.number(0xcafeu64),
