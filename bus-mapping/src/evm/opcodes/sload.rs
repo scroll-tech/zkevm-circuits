@@ -58,16 +58,14 @@ impl Opcode for Sload {
 
         // Storage read
         let value_from_statedb = *state.sdb.get_storage(&contract_addr, &key).1;
-        {
-            let value_from_step = geth_step.storage.get_or_err(&key)?;
 
-            // 1. value_from_step == value_from_statedb
-            assert_eq!(value_from_step, value_from_statedb, "inconsistent sload: step proof {value_from_step:?}, local statedb {value_from_statedb:?} in contract {contract_addr:?}, key {key:?}",);
+        #[cfg(feature = "enable-stack")]
+        assert_eq!(
+            value_from_statedb,
+            geth_steps[1].stack.last()?,
+            "inconsistent sload: step proof {value_from_statedb:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?,
+        );
 
-            // 2. value_from_step == value_from_stack
-            #[cfg(feature = "enable-stack")]
-            assert_eq!(value_from_step, geth_steps[1].stack.last()?, "inconsistent sload: step proof {value_from_step:?}, result {:?} in contract {contract_addr:?}, key {key:?}", geth_steps[1].stack.last()?);
-        }
         let value = value_from_statedb;
 
         let is_warm = state

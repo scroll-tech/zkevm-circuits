@@ -10,7 +10,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use rand::Rng;
 use snark_verifier::{
-    loader::{halo2::halo2_ecc::halo2_base, native::NativeLoader},
+    loader::native::NativeLoader,
     pcs::{
         kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
@@ -33,13 +33,16 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    constants::{CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS},
+    constants::{
+        BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE,
+        MAX_AGG_SNARKS,
+    },
     util::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
-    AggregationConfig, RlcConfig, BITS, CHUNK_DATA_HASH_INDEX, LIMBS, POST_STATE_ROOT_INDEX,
-    PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
+    AggregationConfig, RlcConfig, BITS, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS,
+    POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
 /// Subroutine for the witness generations.
@@ -155,6 +158,20 @@ pub(crate) struct ExtractedHashCells {
     is_final_cells: Vec<AssignedCell<Fr, Fr>>,
 }
 
+#[derive(Default)]
+pub(crate) struct ExpectedBlobCells {
+    pub(crate) z: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) y: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) chunk_tx_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
+}
+
+pub(crate) struct AssignedBatchHash {
+    pub(crate) hash_output: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) blob: ExpectedBlobCells,
+    pub(crate) num_valid_snarks: AssignedCell<Fr, Fr>,
+    pub(crate) chunks_are_padding: Vec<AssignedCell<Fr, Fr>>,
+}
+
 /// Input the hash input bytes,
 /// assign the circuit for the hash function,
 /// return
@@ -173,7 +190,8 @@ pub(crate) struct ExtractedHashCells {
 // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
 // padded
 // 7. the hash input length are correct
-// - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+// - hashes[0] has 200 bytes
+// - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
@@ -183,7 +201,7 @@ pub(crate) fn assign_batch_hashes(
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     preimages: &[Vec<u8>],
-) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+) -> Result<AssignedBatchHash, Error> {
     let extracted_hash_cells = extract_hash_cells(
         &config.keccak_circuit_config,
         layouter,
@@ -208,7 +226,7 @@ pub(crate) fn assign_batch_hashes(
     // - batch's data_hash length is 32 * number_of_valid_snarks
     // 8. batch data hash is correct w.r.t. its RLCs
     // 9. is_final_cells are set correctly
-    conditional_constraints(
+    let (num_valid_snarks, chunks_are_padding) = conditional_constraints(
         &config.rlc_config,
         layouter,
         challenges,
@@ -216,7 +234,25 @@ pub(crate) fn assign_batch_hashes(
         &extracted_hash_cells,
     )?;
 
-    Ok(extracted_hash_cells.hash_output_cells)
+    let batch_pi_input = &extracted_hash_cells.hash_input_cells[0..INPUT_LEN_PER_ROUND * 2];
+    let expected_blob_cells = ExpectedBlobCells {
+        z: batch_pi_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + 32].to_vec(),
+        y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + 32].to_vec(),
+        chunk_tx_data_digests: (0..MAX_AGG_SNARKS)
+            .map(|i| {
+                let chunk_pi_input = &extracted_hash_cells.hash_input_cells
+                    [INPUT_LEN_PER_ROUND * (2 + 2 * i)..INPUT_LEN_PER_ROUND * (2 + 2 * (i + 1))];
+                chunk_pi_input[CHUNK_TX_DATA_HASH_INDEX..CHUNK_TX_DATA_HASH_INDEX + 32].to_vec()
+            })
+            .collect(),
+    };
+
+    Ok(AssignedBatchHash {
+        hash_output: extracted_hash_cells.hash_output_cells,
+        blob: expected_blob_cells,
+        num_valid_snarks,
+        chunks_are_padding,
+    })
 }
 
 pub(crate) fn extract_hash_cells(
@@ -237,11 +273,14 @@ pub(crate) fn extract_hash_cells(
     //      chunk[0].prev_state_root ||
     //      chunk[k-1].post_state_root ||
     //      chunk[k-1].withdraw_root ||
-    //      batch_data_hash)
+    //      batch_data_hash ||
+    //      z ||
+    //      y)
     // (2) chunk[i].piHash preimage =
     //      (chain id ||
     //      chunk[i].prevStateRoot || chunk[i].postStateRoot ||
-    //      chunk[i].withdrawRoot || chunk[i].datahash)
+    //      chunk[i].withdrawRoot || chunk[i].datahash ||
+    //      chunk[i].tx_data_hash)
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
@@ -316,7 +355,12 @@ pub(crate) fn extract_hash_cells(
                     hash_input_cells.len(),
                     max_keccak_updates * INPUT_LEN_PER_ROUND
                 );
-                assert_eq!(hash_output_cells.len(), (MAX_AGG_SNARKS + 5) * DIGEST_LEN);
+                let num_digests =
+                    (MAX_AGG_SNARKS * DIGEST_LEN + INPUT_LEN_PER_ROUND - 1) / INPUT_LEN_PER_ROUND;
+                assert_eq!(
+                    hash_output_cells.len(),
+                    (MAX_AGG_SNARKS + 1 + num_digests) * DIGEST_LEN
+                );
 
                 keccak_config
                     .keccak_table
@@ -385,7 +429,10 @@ fn copy_constraints(
                 //      chunk[0].prev_state_root ||
                 //      chunk[k-1].post_state_root ||
                 //      chunk[k-1].withdraw_root ||
-                //      batchData_hash )
+                //      batch_data_hash ||
+                //      z ||
+                //      y
+                //   )
                 //
                 // chunk[i].piHash =
                 //   keccak(
@@ -393,7 +440,9 @@ fn copy_constraints(
                 //        chunk[i].prevStateRoot ||
                 //        chunk[i].postStateRoot ||
                 //        chunk[i].withdrawRoot  ||
-                //        chunk[i].datahash)
+                //        chunk[i].datahash ||
+                //        chunk[i].tx_data_hash
+                //   )
                 //
                 // PREV_STATE_ROOT_INDEX, POST_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
                 // used below are byte positions for
@@ -487,18 +536,19 @@ fn copy_constraints(
 // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
 // padded
 // 7. the hash input length are correct
-// - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+// - hashes[0] has 200 bytes
+// - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
+#[allow(clippy::type_complexity)]
 pub(crate) fn conditional_constraints(
     rlc_config: &RlcConfig,
     layouter: &mut impl Layouter<Fr>,
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     extracted_hash_cells: &ExtractedHashCells,
-) -> Result<(), Error> {
-    let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+) -> Result<(AssignedCell<Fr, Fr>, Vec<AssignedCell<Fr, Fr>>), Error> {
     let ExtractedHashCells {
         hash_input_cells,
         hash_output_cells,
@@ -510,12 +560,10 @@ pub(crate) fn conditional_constraints(
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<(), halo2_proofs::plonk::Error> {
-                if first_pass {
-                    first_pass = false;
-                    return Ok(());
-                }
-
+            |mut region| -> Result<
+                (AssignedCell<Fr, Fr>, Vec<AssignedCell<Fr, Fr>>),
+                halo2_proofs::plonk::Error,
+            > {
                 rlc_config.init(&mut region)?;
                 let mut offset = 0;
                 // ====================================================
@@ -650,7 +698,10 @@ pub(crate) fn conditional_constraints(
                 //      chunk[0].prev_state_root ||
                 //      chunk[k-1].post_state_root ||
                 //      chunk[k-1].withdraw_root ||
-                //      batch_data_hash )
+                //      batch_data_hash ||
+                //      z ||
+                //      y
+                //  )
                 //
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
                 //
@@ -725,7 +776,9 @@ pub(crate) fn conditional_constraints(
                 //        chunk[i].prevStateRoot ||
                 //        chunk[i].postStateRoot ||
                 //        chunk[i].withdrawRoot  ||
-                //        chunk[i].datahash)
+                //        chunk[i].datahash ||
+                //        chunk[i].tx_data_hash
+                //     )
                 for i in 0..MAX_AGG_SNARKS {
                     for j in 0..DIGEST_LEN {
                         assert_conditional_equal(
@@ -805,14 +858,23 @@ pub(crate) fn conditional_constraints(
                 }
 
                 // 7. the hash input length are correct
-                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                // - hashes[0] has 200 bytes
+                // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
                 // - batch's data_hash length is 32 * number_of_valid_snarks
 
-                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                // - hashes[0] has 200 bytes
+                // note: hash_input_len_cells[0] is from dummy rows of keccak circuit.
+                let batch_pi_hash_input_cell = hash_input_len_cells[2].cell();
+                region.constrain_equal(
+                    batch_pi_hash_input_cell,
+                    rlc_config.two_hundred_cell(batch_pi_hash_input_cell.region_index),
+                )?;
+
+                // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
                 hash_input_len_cells
                     .iter()
-                    .skip(1)
-                    .take((MAX_AGG_SNARKS + 1) * 2)
+                    .skip(3) // dummy (1) and batch pi hash (2)
+                    .take(MAX_AGG_SNARKS * 2)
                     .chunks(2)
                     .into_iter()
                     .try_for_each(|chunk| {
@@ -820,7 +882,7 @@ pub(crate) fn conditional_constraints(
                         region.constrain_equal(
                             cur_hash_len.cell(),
                             rlc_config
-                                .one_hundred_and_thirty_six_cell(cur_hash_len.cell().region_index),
+                                .one_hundred_and_sixty_eight_cell(cur_hash_len.cell().region_index),
                         )
                     })?;
 
@@ -907,7 +969,7 @@ pub(crate) fn conditional_constraints(
                 // 8. batch data hash is correct w.r.t. its RLCs
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
                 let challenge_cell =
-                    rlc_config.read_challenge(&mut region, challenges, &mut offset)?;
+                    rlc_config.read_challenge1(&mut region, challenges, &mut offset)?;
 
                 let flags = chunk_is_valid_cells
                     .iter()
@@ -1037,11 +1099,10 @@ pub(crate) fn conditional_constraints(
                     .constrain_equal(left.cell(), rlc_config.one_cell(left.cell().region_index))?;
 
                 log::trace!("rlc chip uses {} rows", offset);
-                Ok(())
+                Ok((num_valid_snarks, chunks_are_padding))
             },
         )
-        .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
-    Ok(())
+        .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))
 }
 
 /// Input a list of flags whether the snark is valid

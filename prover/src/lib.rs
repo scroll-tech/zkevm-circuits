@@ -13,6 +13,7 @@ pub mod types;
 pub mod utils;
 pub mod zkevm;
 
+pub use aggregator::{BatchHash, MAX_AGG_SNARKS};
 pub use common::{ChunkHash, CompressionCircuit};
 pub use eth_types::l2_types::BlockTrace;
 pub use proof::{BatchProof, ChunkProof, EvmProof, Proof};
