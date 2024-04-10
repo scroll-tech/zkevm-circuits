@@ -1,6 +1,5 @@
 //! The SHA256 circuit is a wrapper for the circuit in sha256 crate and serve for precompile SHA-256
 //! calls
-
 use halo2_proofs::{
     circuit::{Layouter, Value},
     halo2curves::bn256::Fr,
@@ -148,6 +147,7 @@ impl SubCircuit<Fr> for SHA256Circuit<Fr> {
                 return Err(Error::Synthesis);
             }
         }
+        log::info!("sha256 circuit assigned {} blocks", hasher.blocks());
 
         // paddings
         for _i in hasher.blocks()..self.1 {
