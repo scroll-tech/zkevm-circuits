@@ -2229,6 +2229,11 @@ impl<F: Field> RlpCircuitConfig<F> {
         // Therefore, to prevent malicious injection of stack ops that don't correspond to
         // actual bytes in the RLP circuit, lookups are added to ensure correct correspondence.
 
+        // How to ensure that every row in the state machine is also present in the decoding table:
+        // For each decoding table row that's not padding, a stack op (INIT, PUSH, POP or UPDATE) must be present.
+        // Then for each stack op that's present, it must correspond to a row in the state machine by below constraint (for INIT) and lookups (for PUSH, POP, UPDATE).
+        // This two-way constraint system creates a one-to-one relationship between state machine and the decoding table.
+
         // The Init Op is not affected by sorting and stays at first position in decoding table.
         // For this reason, its correctness and correspondence is constrained using a gate instead
         // of lookup.
@@ -2279,15 +2284,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        // Lookup strategies for PUSH:
+        // 1. The input expressions include the indicators for each depth level.
+        // 2. For each active depth indicator, it's checked against the allowable transitional scenarios in the state machine for that depth.
+        // 3. The byte_idx and depth transition are included.
         meta.lookup_any("Decoding table stack op PUSH correspondence", |meta| {
             let enable = meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur());
 
             let input_exprs = vec![
                 meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
                 meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
-                // The byte_idx position that triggers the PUSH op is 1 position before the row
-                // denoting new state machine values.
-                // meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()) + 1.expr(),
                 meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
                 1.expr(), // PUSH op increases depth
                 // List scenario on each depth.
@@ -2303,8 +2309,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(byte_idx, Rotation::cur()),
                 meta.query_advice(depth, Rotation::next())
                     - meta.query_advice(depth, Rotation::cur()),
-                // Depth 1: Begin decoding actual payload (with out the tx type envelope). Starting
-                // at ChainId
+                // Depth 1: Begin decoding actual payload (with out the tx type envelope).
                 and::expr([
                     sum::expr([
                         // Case 1: For pre-EIP2930/1559 and L1 Tx, the first field is Nonce.
