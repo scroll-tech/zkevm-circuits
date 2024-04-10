@@ -2230,9 +2230,11 @@ impl<F: Field> RlpCircuitConfig<F> {
         // actual bytes in the RLP circuit, lookups are added to ensure correct correspondence.
 
         // How to ensure that every row in the state machine is also present in the decoding table:
-        // For each decoding table row that's not padding, a stack op (INIT, PUSH, POP or UPDATE) must be present.
-        // Then for each stack op that's present, it must correspond to a row in the state machine by below constraint (for INIT) and lookups (for PUSH, POP, UPDATE).
-        // This two-way constraint system creates a one-to-one relationship between state machine and the decoding table.
+        // For each decoding table row that's not padding, a stack op (INIT, PUSH, POP or UPDATE)
+        // must be present. Then for each stack op that's present, it must correspond to a
+        // row in the state machine by below constraint (for INIT) and lookups (for PUSH, POP,
+        // UPDATE). This two-way constraint system creates a one-to-one relationship between
+        // state machine and the decoding table.
 
         // The Init Op is not affected by sorting and stays at first position in decoding table.
         // For this reason, its correctness and correspondence is constrained using a gate instead
@@ -2286,7 +2288,8 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // Lookup strategies for PUSH:
         // 1. The input expressions include the indicators for each depth level.
-        // 2. For each active depth indicator, it's checked against the allowable transitional scenarios in the state machine for that depth.
+        // 2. For each active depth indicator, it's checked against the allowable transitional
+        //    scenarios in the state machine for that depth.
         // 3. The byte_idx and depth transition are included.
         meta.lookup_any("Decoding table stack op PUSH correspondence", |meta| {
             let enable = meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur());
