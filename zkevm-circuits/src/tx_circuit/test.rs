@@ -21,7 +21,7 @@ use crate::{
 use eth_types::{
     address,
     evm_types::gas_utils::{tx_access_list_gas_cost, tx_data_gas_cost},
-    word, H256, U256, U64,
+    word, H160, H256, U256, U64,
 };
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -146,7 +146,12 @@ fn build_eip1559_tx(id: usize) -> Transaction {
     tx.max_priority_fee_per_gas = eth_tx.max_priority_fee_per_gas.unwrap_or(U256::zero());
     tx.call_data = eth_tx.input.to_vec();
     tx.callee_address = eth_tx.to;
-    tx.caller_address = eth_tx.from;
+
+    tx.caller_address = H160::from_slice(&[
+        0x20, 0x2b, 0xB2, 0xfa, 0xB1, 0xe3, 0x5D, 0x94, 0x0F, 0xde, 0x99, 0xb2, 0x14, 0xba, 0x49,
+        0xDA, 0xfb, 0xce, 0xf6, 0x2A,
+    ]);
+
     tx.is_create = eth_tx.to.is_none();
     tx.call_data_length = tx.call_data.len();
     tx.call_data_gas_cost = tx_data_gas_cost(&tx.call_data);

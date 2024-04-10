@@ -98,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
             rw_counter: Transition::Same,
             // We propagate call_id so that EndBlock can get the last tx_id
             // in order to count processed txs.
-            call_id: Transition::Same,
+            // call_id: Transition::Same,
             ..StepStateTransition::any()
         });
 
