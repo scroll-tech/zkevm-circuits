@@ -2475,7 +2475,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.7#db07d50418d681893ac6b1ed1b1f9237d3b9fd15"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.7#6ba2b36271cbe1f6df1f794c3340763dd846f46f"
 dependencies = [
  "env_logger",
  "ethers-core",
@@ -3819,7 +3819,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-1201#c6f058bcf3bb0c7933d1979563c414f5cc480f25"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=main#babf5f6a69bec40b2e6523df317c073dcd0b1f97"
 dependencies = [
  "bitvec",
  "ff 0.13.0",

@@ -166,6 +166,7 @@ pub struct TxCircuitConfig<F: Field> {
     is_tag_block_num: Column<Advice>,
     is_calldata: Column<Advice>,
     is_caller_address: Column<Advice>,
+    is_row_hash_rlc: Column<Advice>,
     is_l1_msg: Column<Advice>,
     is_eip2930: Column<Advice>,
     is_eip1559: Column<Advice>,
@@ -338,6 +339,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_calldata = meta.advice_column();
         let is_tx_id_zero = meta.advice_column();
         let is_caller_address = meta.advice_column();
+        let is_row_hash_rlc = meta.advice_column();
         let is_chain_id = meta.advice_column();
         let is_tag_block_num = meta.advice_column();
         let lookup_conditions = [
@@ -733,6 +735,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 "is_caller_address",
                 is_caller_addr(meta),
                 meta.query_advice(is_caller_address, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("is_row_hash_rlc", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_row_hash_rlc",
+                is_hash_rlc(meta),
+                meta.query_advice(is_row_hash_rlc, Rotation::cur()),
             );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1859,13 +1873,11 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.lookup_any("Correct pow_of_rand for HashLen", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_row_hash_rlc, Rotation::cur()),
                 // A valid chunk txbytes tx is determined by: (tx.tx_type != TxType::L1Msg) &&
                 // !tx.caller_address.is_zero()
                 not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-                not::expr(value_is_zero.expr(Rotation(
-                    -((HASH_RLC_OFFSET - CALLER_ADDRESS_OFFSET) as i32),
-                ))(meta)),
-                is_hash_rlc(meta),
+                not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
             ]);
 
             vec![
@@ -1942,6 +1954,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_l1_msg,
             is_eip2930,
             is_eip1559,
+            is_row_hash_rlc,
             is_chain_id,
             is_final,
             calldata_gas_cost_acc,
@@ -2965,6 +2978,11 @@ impl<F: Field> TxCircuitConfig<F> {
                     F::from((tx_tag == BlockNumber) as u64),
                 ),
                 (
+                    "is_tag_hash_rlc",
+                    self.is_row_hash_rlc,
+                    F::from((tx_tag == TxHashRLC) as u64),
+                ),
+                (
                     "is_tag_chain_id",
                     self.is_chain_id,
                     F::from((tx_tag == ChainID) as u64),
@@ -3924,7 +3942,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
-        10
+        9
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
