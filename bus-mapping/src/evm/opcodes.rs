@@ -40,6 +40,7 @@ mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
 mod gasprice;
+mod jumpi;
 mod logs;
 mod mload;
 mod mstore;
@@ -78,7 +79,7 @@ mod memory_expansion_test;
 #[cfg(feature = "test")]
 pub use callop::tests::PrecompileCallArgs;
 
-use self::{pushn::PushN, sha3::Sha3};
+use self::{jumpi::Jumpi, pushn::PushN, sha3::Sha3};
 
 use address::Address;
 use arithmetic::ArithmeticOpcode;
@@ -234,7 +235,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SLOAD => Sload::gen_associated_ops,
         OpcodeId::SSTORE => Sstore::gen_associated_ops,
         OpcodeId::JUMP => StackPopOnlyOpcode::<1>::gen_associated_ops,
-        OpcodeId::JUMPI => StackPopOnlyOpcode::<2>::gen_associated_ops,
+        OpcodeId::JUMPI => Jumpi::gen_associated_ops,
         OpcodeId::PC => Pc::gen_associated_ops,
         OpcodeId::MSIZE => Msize::gen_associated_ops,
         OpcodeId::GAS => Gas::gen_associated_ops,

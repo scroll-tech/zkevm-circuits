@@ -118,11 +118,14 @@ fn build_new_aggregation_circuit(num_real_chunks: usize) -> AggregationCircuit {
         let circuits = chunks_with_padding
             .iter()
             .take(num_real_chunks)
-            .map(|&chunk| MockChunkCircuit::new(true, chunk))
+            .map(|chunk| MockChunkCircuit::new(true, chunk.clone()))
             .collect_vec();
         circuits
             .iter()
-            .map(|&circuit| layer_0!(circuit, MockChunkCircuit, params, k0, path))
+            .map(|circuit| {
+                let circuit = circuit.clone();
+                layer_0!(circuit, MockChunkCircuit, params, k0, path)
+            })
             .collect_vec()
     };
 

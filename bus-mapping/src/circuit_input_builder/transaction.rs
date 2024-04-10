@@ -454,6 +454,7 @@ impl Transaction {
                 step.exec_state,
                 ExecState::Op(OpcodeId::SELFDESTRUCT)
                     | ExecState::Op(OpcodeId::INVALID(0xff))
+                    | ExecState::Op(OpcodeId::INVALID(0x48)) // basefee
                     | ExecState::Op(OpcodeId::DIFFICULTY)
                     | ExecState::Precompile(PrecompileCalls::Modexp)
                     | ExecState::Precompile(PrecompileCalls::Bn128Pairing)

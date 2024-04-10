@@ -20,8 +20,8 @@ impl ConfigParams {
         Self {
             strategy: FpStrategy::Simple,
             degree: 19,
-            num_advice: vec![64],
-            num_lookup_advice: vec![8],
+            num_advice: vec![75],
+            num_lookup_advice: vec![10],
             num_fixed: 2,
             lookup_bits: 18,
             limb_bits: BITS,

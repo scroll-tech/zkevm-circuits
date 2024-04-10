@@ -169,6 +169,8 @@ github.com/scroll-tech/go-ethereum v1.10.14-0.20240305174138-f128f349ba07 h1:6kY
 github.com/scroll-tech/go-ethereum v1.10.14-0.20240305174138-f128f349ba07/go.mod h1:7Rz2bh9pn42rGuxjh51CG7HL9SKMG3ZugJkL3emdZx8=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20240311135752-ccec84ce63c8 h1:H7LzbJMrmkFkyPAl+F0NMMg0Wiq/qQv/iKKmuo/7/Yc=
 github.com/scroll-tech/go-ethereum v1.10.14-0.20240311135752-ccec84ce63c8/go.mod h1:7Rz2bh9pn42rGuxjh51CG7HL9SKMG3ZugJkL3emdZx8=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20240405034809-0bccb7bc50a9 h1:PE69sw7WI3rWCP9ES2x1RYln6SYtLkhQdTj4L0DWfLc=
+github.com/scroll-tech/go-ethereum v1.10.14-0.20240405034809-0bccb7bc50a9/go.mod h1:7Rz2bh9pn42rGuxjh51CG7HL9SKMG3ZugJkL3emdZx8=
 github.com/scroll-tech/zktrie v0.6.0 h1:xLrMAO31Yo2BiPg1jtYKzcjpEFnXy8acbB7iIsyshPs=
 github.com/scroll-tech/zktrie v0.6.0/go.mod h1:XvNo7vAk8yxNyTjBDj5WIiFzYW4bx/gJ78+NK6Zn6Uk=
 github.com/scroll-tech/zktrie v0.7.1 h1:NrmZNjuBzsbrKePqdHDG+t2cXnimbtezPAFS0+L9ElE=

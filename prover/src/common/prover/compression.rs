@@ -24,8 +24,7 @@ impl Prover {
         let circuit =
             CompressionCircuit::new(self.params(degree), prev_snark, has_accumulator, &mut rng)
                 .map_err(|err| anyhow!("Failed to construct compression circuit: {err:?}"))?;
-
-        self.gen_snark(id, degree, &mut rng, circuit)
+        self.gen_snark(id, degree, &mut rng, circuit, "gen_comp_snark")
     }
 
     pub fn load_or_gen_comp_snark(

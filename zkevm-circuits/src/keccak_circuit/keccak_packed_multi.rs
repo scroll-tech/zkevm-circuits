@@ -894,6 +894,7 @@ pub fn multi_keccak<F: Field>(
     capacity: Option<usize>,
 ) -> Result<Vec<KeccakRow<F>>, Error> {
     log::info!("multi_keccak assign with capacity: {:?}", capacity);
+
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
     if let Some(capacity) = capacity {
         rows.reserve((1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round());

@@ -49,6 +49,8 @@ fn super_circuit_created_from_dummy_block() {
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
     SuperCircuit::<Fr, 1, 32, 64, 0x100>::configure(&mut cs);
+    cs = cs.chunk_lookups();
+
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
