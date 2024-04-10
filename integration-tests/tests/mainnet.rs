@@ -65,7 +65,7 @@ async fn test_mock_prove_tx() {
         max_bytecode: 500_000,
         max_mpt_rows: 100_000,
         max_poseidon_rows: 1_000_000,
-        max_keccak_rows: 0,
+        max_keccak_rows: 1_000_000,
         max_exp_steps: 5_000,
         max_evm_rows: 0,
         max_rlp_rows: 800_000,
