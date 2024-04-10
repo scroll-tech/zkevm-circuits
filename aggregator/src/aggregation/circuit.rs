@@ -1,4 +1,6 @@
+use crate::blob::BlobData;
 use ark_std::{end_timer, start_timer};
+use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -7,6 +9,8 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
+#[cfg(not(feature = "disable_proof_aggregation"))]
+use std::rc::Rc;
 use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
@@ -14,10 +18,7 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
 use snark_verifier::pcs::kzg::KzgSuccinctVerifyingKey;
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::{
-    loader::halo2::{
-        halo2_ecc::halo2_base::{AssignedValue, Context, ContextParams},
-        Halo2Loader,
-    },
+    loader::halo2::{halo2_ecc::halo2_base::AssignedValue, Halo2Loader},
     pcs::kzg::{Bdfg21, Kzg},
 };
 #[cfg(not(feature = "disable_proof_aggregation"))]
@@ -30,7 +31,7 @@ use crate::{
     constants::{ACC_LEN, DIGEST_LEN, MAX_AGG_SNARKS},
     core::{assign_batch_hashes, extract_proof_and_instances_with_pairing_check},
     util::parse_hash_digest_cells,
-    ConfigParams,
+    AssignedBarycentricEvaluationConfig, ConfigParams,
 };
 
 use super::AggregationConfig;
@@ -157,24 +158,63 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "aggregation");
 
+        // load lookup table in range config
+        config
+            .range()
+            .load_lookup_table(&mut layouter)
+            .expect("load range lookup table");
         // ==============================================
         // Step 1: snark aggregation circuit
         // ==============================================
-        #[cfg(not(feature = "disable_proof_aggregation"))]
-        let (accumulator_instances, snark_inputs) = {
-            config
-                .range()
-                .load_lookup_table(&mut layouter)
-                .expect("load range lookup table");
-
+        #[cfg(feature = "disable_proof_aggregation")]
+        let barycentric = {
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
-
-            let (accumulator_instances, snark_inputs) = layouter.assign_region(
-                || "aggregation",
-                |region| -> Result<(Vec<AssignedValue<Fr>>, Vec<AssignedValue<Fr>>), Error> {
+            layouter.assign_region(
+                || "barycentric evaluation",
+                |region| {
                     if first_pass {
                         first_pass = false;
-                        return Ok((vec![], vec![]));
+                        return Ok(AssignedBarycentricEvaluationConfig::default());
+                    }
+
+                    let mut ctx = Context::new(
+                        region,
+                        ContextParams {
+                            max_rows: config.flex_gate().max_rows,
+                            num_context_ids: 1,
+                            fixed_columns: config.flex_gate().constants.clone(),
+                        },
+                    );
+
+                    let barycentric = config.barycentric.assign(
+                        &mut ctx,
+                        &self.batch_hash.blob.coefficients,
+                        self.batch_hash.blob.challenge_digest,
+                        self.batch_hash.blob.evaluation,
+                    );
+
+                    config.barycentric.scalar.range.finalize(&mut ctx);
+                    ctx.print_stats(&["barycentric evaluation"]);
+
+                    Ok(barycentric)
+                },
+            )?
+        };
+
+        #[cfg(not(feature = "disable_proof_aggregation"))]
+        let (accumulator_instances, snark_inputs, barycentric) = {
+            let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+
+            let (accumulator_instances, snark_inputs, barycentric) = layouter.assign_region(
+                || "aggregation",
+                |region| {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok((
+                            vec![],
+                            vec![],
+                            AssignedBarycentricEvaluationConfig::default(),
+                        ));
                     }
 
                     // stores accumulators for all snarks, including the padded ones
@@ -215,23 +255,34 @@ impl Circuit<Fr> for AggregationCircuit {
                     // - the public inputs from each snark
                     accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
                     // the snark is not a fresh one, assigned_instances already contains an
-                    // accumulator so we want to skip the first 12 elements from the public input
+                    // accumulator so we want to skip the first 12 elements from the public
+                    // input
                     snark_inputs.extend(
                         assigned_aggregation_instances
                             .iter()
                             .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                     );
 
-                    config.range().finalize(&mut loader.ctx_mut());
+                    loader.ctx_mut().print_stats(&["snark aggregation"]);
 
-                    loader.ctx_mut().print_stats(&["Range"]);
+                    let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
+                    let barycentric = config.barycentric.assign(
+                        &mut ctx,
+                        &self.batch_hash.blob.coefficients,
+                        self.batch_hash.blob.challenge_digest,
+                        self.batch_hash.blob.evaluation,
+                    );
 
-                    Ok((accumulator_instances, snark_inputs))
+                    ctx.print_stats(&["barycentric"]);
+
+                    config.range().finalize(&mut ctx);
+
+                    Ok((accumulator_instances, snark_inputs, barycentric))
                 },
             )?;
 
             assert_eq!(snark_inputs.len(), MAX_AGG_SNARKS * DIGEST_LEN);
-            (accumulator_instances, snark_inputs)
+            (accumulator_instances, snark_inputs, barycentric)
         };
         end_timer!(timer);
         // ==============================================
@@ -242,7 +293,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let hash_digest_cells = {
+        let assigned_batch_hash = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -253,10 +304,13 @@ impl Circuit<Fr> for AggregationCircuit {
             // - batch_public_input_hash
             // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
             // - batch_data_hash_preimage
+            // - preimage for blob metadata
+            // - preimage of chunk data digest (only for valid chunks)
+            // - preimage of challenge digest
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                MAX_AGG_SNARKS + 2,
+                4 + MAX_AGG_SNARKS + self.batch_hash.number_of_valid_chunks,
                 "error extracting preimages"
             );
             end_timer!(timer);
@@ -268,7 +322,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 .iter()
                 .map(|chunk| !chunk.is_padding)
                 .collect::<Vec<_>>();
-            let hash_digest_cells = assign_batch_hashes(
+            let assigned_batch_hash = assign_batch_hashes(
                 &config,
                 &mut layouter,
                 challenges,
@@ -276,12 +330,14 @@ impl Circuit<Fr> for AggregationCircuit {
                 &preimages,
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
+
             end_timer!(timer);
-            hash_digest_cells
+
+            assigned_batch_hash
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
-            parse_hash_digest_cells(&hash_digest_cells);
+            parse_hash_digest_cells(&assigned_batch_hash.hash_output);
 
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
@@ -372,7 +428,64 @@ impl Circuit<Fr> for AggregationCircuit {
             }
         }
 
+        // blob data config
+        {
+            let barycentric_assignments = &barycentric.barycentric_assignments;
+            let challenge_le = &barycentric.z_le;
+            let evaluation_le = &barycentric.y_le;
+
+            let blob_data = BlobData::from(&self.batch_hash);
+            let blob_data_exports = config.blob_data_config.assign(
+                &mut layouter,
+                challenges,
+                &config.rlc_config,
+                &assigned_batch_hash.chunks_are_padding,
+                &blob_data,
+                barycentric_assignments,
+            )?;
+
+            layouter.assign_region(
+                || "blob checks",
+                |mut region| -> Result<(), Error> {
+                    region.constrain_equal(
+                        assigned_batch_hash.num_valid_snarks.cell(),
+                        blob_data_exports.num_valid_chunks.cell(),
+                    )?;
+
+                    for (chunk_data_digest, expected_chunk_data_digest) in blob_data_exports
+                        .chunk_data_digests
+                        .iter()
+                        .zip_eq(assigned_batch_hash.blob.chunk_tx_data_digests.iter())
+                    {
+                        for (c, ec) in chunk_data_digest
+                            .iter()
+                            .zip_eq(expected_chunk_data_digest.iter())
+                        {
+                            region.constrain_equal(c.cell(), ec.cell())?;
+                        }
+                    }
+
+                    for (c, ec) in evaluation_le
+                        .iter()
+                        .zip_eq(assigned_batch_hash.blob.y.iter().rev())
+                    {
+                        region.constrain_equal(c.cell(), ec.cell())?;
+                    }
+
+                    for (c, ec) in challenge_le
+                        .iter()
+                        .zip_eq(assigned_batch_hash.blob.z.iter().rev())
+                    {
+                        region.constrain_equal(c.cell(), ec.cell())?;
+                    }
+
+                    Ok(())
+                },
+            )?;
+        }
+
         end_timer!(witness_time);
+
         Ok(())
     }
 }
@@ -397,14 +510,17 @@ impl CircuitExt<Fr> for AggregationCircuit {
 
     fn selectors(config: &Self::Config) -> Vec<Selector> {
         // - advice columns from flex gate
-        // - selector from RLC gate
+        // - selectors from RLC gate
         config.0.flex_gate().basic_gates[0]
             .iter()
             .map(|gate| gate.q_enable)
             .chain(
                 [
                     config.0.rlc_config.selector,
-                    config.0.rlc_config.enable_challenge,
+                    config.0.rlc_config.enable_challenge1,
+                    config.0.rlc_config.enable_challenge2,
+                    config.0.blob_data_config.data_selector,
+                    config.0.blob_data_config.hash_selector,
                 ]
                 .iter()
                 .cloned(),

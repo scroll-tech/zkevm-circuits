@@ -73,15 +73,25 @@ pub fn calculate_row_usage_of_witness_block(
     let mut rows = <super::SuperCircuit as TargetCircuit>::Inner::min_num_rows_block_subcircuits(
         witness_block,
     );
-    assert_eq!(rows[10].name, "poseidon");
-    assert_eq!(rows[13].name, "mpt");
-    // empirical estimation is each row in mpt cost 1.5 hash (aka 12 rows)
-    let mpt_poseidon_rows = rows[13].row_num_real * 12;
+    assert_eq!(rows[11].name, "poseidon");
+    assert_eq!(rows[14].name, "mpt");
+    // We collected real metrics from Scroll mainnet, and here is the graph
+    // https://ibb.co/gVfvW7h
+    // 6 is already very very conservative. Besides, considering a chunk consists of many txs,
+    // using this number is safe.
+    let poseidon_estimate_ratio = if witness_block.txs.len() > 1 {
+        // follower ccc
+        6
+    } else {
+        // singer ccc or single tx block follower ccc,
+        // even i think 6 is safe, here we still keep the old value
+        12
+    };
+    let mpt_poseidon_rows = rows[14].row_num_real * poseidon_estimate_ratio;
     if witness_block.mpt_updates.smt_traces.is_empty() {
-        rows[10].row_num_real += mpt_poseidon_rows;
+        rows[11].row_num_real += mpt_poseidon_rows;
         log::debug!("calculate_row_usage_of_witness_block light mode, adding {mpt_poseidon_rows} poseidon rows");
     } else {
-        //rows[10].row_num_real += mpt_poseidon_rows;
         log::debug!("calculate_row_usage_of_witness_block normal mode, skip adding {mpt_poseidon_rows} poseidon rows");
     }
 
