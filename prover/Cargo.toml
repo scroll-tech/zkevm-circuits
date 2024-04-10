@@ -17,7 +17,7 @@ snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
 anyhow.workspace = true
-base64 = "0.13.0"
+base64.workspace = true
 blake2 = "0.10.3"
 chrono = "0.4.19"
 dotenvy = "0.15.7"
@@ -41,4 +41,5 @@ default = []
 parallel_syn = ["halo2_proofs/parallel_syn", "zkevm-circuits/parallel_syn"]
 scroll = ["bus-mapping/scroll", "eth-types/scroll", "zkevm-circuits/scroll"]
 shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "zkevm-circuits/shanghai"]
+strict-ccc = ["bus-mapping/strict-ccc", "zkevm-circuits/strict-ccc"]
 test = []

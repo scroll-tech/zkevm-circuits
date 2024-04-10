@@ -53,6 +53,7 @@ impl RowUsage {
             (MAX_BYTECODE, 0.95),      // bytecode
             (MAX_RWS, 0.95),           // copy
             (MAX_KECCAK_ROWS, 0.95),   // keccak
+            (MAX_KECCAK_ROWS, 0.95),   // sha256
             (MAX_VERTICAL_ROWS, 0.95), // tx
             (MAX_CALLDATA, 0.95),      // rlp
             (7 * MAX_EXP_STEPS, 0.95), // exp
@@ -216,8 +217,8 @@ impl CircuitCapacityChecker {
             if code_db.0.insert(hash, bytes).is_some() {
                 assert_eq!(rows[2].name, "bytecode");
                 rows[2].row_num_real -= bytes_len + 1;
-                assert_eq!(rows[10].name, "poseidon");
-                rows[10].row_num_real -= bytes_len / (31 * 2) * 9;
+                assert_eq!(rows[11].name, "poseidon");
+                rows[11].row_num_real -= bytes_len / (31 * 2) * 9;
             }
         }
 

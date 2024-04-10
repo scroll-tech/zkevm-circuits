@@ -53,7 +53,7 @@ pub struct EvmCircuitConfig<F> {
     sig_table: SigTable,
     modexp_table: ModExpTable,
     ecc_table: EccTable,
-    pow_of_rand_table: PowOfRandTable,
+    pub(crate) pow_of_rand_table: PowOfRandTable,
 }
 
 /// Circuit configuration arguments
@@ -334,7 +334,6 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
         config.load_byte_table(layouter)?;
-        config.pow_of_rand_table.assign(layouter, challenges)?;
         let export = config.execution.assign_block(layouter, block, challenges)?;
         self.exports.borrow_mut().replace(export);
         Ok(())
@@ -551,7 +550,9 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &block.get_ec_pairing_ops(),
             &challenges,
         )?;
-
+        config
+            .pow_of_rand_table
+            .assign(&mut layouter, &challenges, 2048)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

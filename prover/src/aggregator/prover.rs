@@ -132,7 +132,7 @@ impl Prover {
 
         if real_chunk_count < MAX_AGG_SNARKS {
             let padding_snark = layer2_snarks.last().unwrap().clone();
-            let mut padding_chunk_hash = *chunk_hashes.last().unwrap();
+            let mut padding_chunk_hash = chunk_hashes.last().unwrap().clone();
             padding_chunk_hash.is_padding = true;
 
             // Extend to MAX_AGG_SNARKS for both chunk hashes and layer-2 snarks.
@@ -188,7 +188,7 @@ macro_rules! compare_field {
 
 fn check_chunk_hashes(name: &str, chunk_hashes_proofs: &[(ChunkHash, ChunkProof)]) -> Result<()> {
     for (idx, (in_arg, chunk_proof)) in chunk_hashes_proofs.iter().enumerate() {
-        if let Some(in_proof) = chunk_proof.chunk_hash {
+        if let Some(in_proof) = &chunk_proof.chunk_hash {
             compare_field!(name, idx, chain_id, in_arg, in_proof);
             compare_field!(name, idx, prev_state_root, in_arg, in_proof);
             compare_field!(name, idx, post_state_root, in_arg, in_proof);

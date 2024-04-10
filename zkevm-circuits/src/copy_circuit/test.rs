@@ -15,13 +15,14 @@ use bus_mapping::{
 use eth_types::{
     address, bytecode, geth_types::GethData, word, AccessList, AccessListItem, ToWord, Word, H256,
 };
+use ethers_signers::Signer;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
 use mock::{
     eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, MockTransaction, TestContext,
-    MOCK_ACCOUNTS,
+    MOCK_ACCOUNTS, MOCK_WALLETS,
 };
 
 const K: u32 = 20;
@@ -282,12 +283,12 @@ fn gen_access_list_data() -> CircuitInputBuilder {
     let test_ctx = TestContext::<1, 1>::new(
         None,
         |accs| {
-            accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            accs[0].address(MOCK_WALLETS[0].address()).balance(eth(20));
         },
         |mut txs, _accs| {
             txs[0]
-                .from(MOCK_ACCOUNTS[0])
-                .to(MOCK_ACCOUNTS[1])
+                .from(MOCK_WALLETS[0].clone())
+                .to(MOCK_ACCOUNTS[0])
                 .gas_price(gwei(2))
                 .gas(Word::from(0x10000))
                 .value(eth(2))

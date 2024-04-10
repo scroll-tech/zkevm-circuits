@@ -7,7 +7,8 @@ pub use super::TxCircuit;
 use crate::{
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     table::{
-        BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, U16Table, U8Table,
+        BlockTable, KeccakTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable,
+        U16Table, U8Table,
     },
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
@@ -35,6 +36,8 @@ pub struct TxCircuitTesterConfigArgs<F: Field> {
     pub u8_table: U8Table,
     /// u16 lookup table,
     pub u16_table: U16Table,
+    /// power of rand lookup table,
+    pub pow_of_rand_table: PowOfRandTable,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
 }
@@ -64,6 +67,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
             sig_table,
             u8_table,
             u16_table,
+            pow_of_rand_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -85,6 +89,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
                 sig_table,
                 u8_table,
                 u16_table,
+                pow_of_rand_table,
                 challenges,
             },
         );
@@ -172,6 +177,9 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         let u16_table = U16Table::construct(meta);
         let challenges = Challenges::construct(meta);
 
+        let challenges_expr = challenges.exprs(meta);
+        let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+
         let config = {
             let challenges = challenges.exprs(meta);
             let sig_config = SigCircuitConfig::new(
@@ -192,6 +200,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                     sig_table,
                     u8_table,
                     u16_table,
+                    pow_of_rand_table,
                     challenges,
                 },
             );
@@ -228,6 +237,11 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             &self.tx_circuit.keccak_inputs()?,
             &challenges,
         )?;
+
+        config
+            .tx_config
+            .pow_of_rand_table
+            .assign(&mut layouter, &challenges, 4094 * 31)?;
         config.tx_config.rlp_table.dev_load(
             &mut layouter,
             self.tx_circuit

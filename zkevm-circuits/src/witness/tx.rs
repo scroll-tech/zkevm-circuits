@@ -131,6 +131,11 @@ impl Transaction {
         }
     }
 
+    /// Return whether the transaction is included in the chunk txbytes (not l1Msg and not padding)
+    pub fn is_chunk_l2_tx(&self) -> bool {
+        self.tx_type != TxType::L1Msg && !self.caller_address.is_zero()
+    }
+
     /// Sign data
     pub fn sign_data(&self) -> Result<SignData, Error> {
         if self.r.is_zero() && self.s.is_zero() && self.v == 0 {

@@ -27,7 +27,7 @@ impl Prover {
             AggregationCircuit::new(self.params(degree), previous_snarks, &mut rng, batch_hash)
                 .map_err(|err| anyhow!("Failed to construct aggregation circuit: {err:?}"))?;
 
-        self.gen_snark(id, degree, &mut rng, circuit)
+        self.gen_snark(id, degree, &mut rng, circuit, "gen_agg_snark")
     }
 
     pub fn load_or_gen_agg_snark(
