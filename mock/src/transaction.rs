@@ -476,7 +476,7 @@ impl MockTransaction {
                         .expect("sign mock eip 2930 tx");
 
                     // helper `sign_transaction_sync` in ethers-rs lib does not handle correctly
-                    // about v for non legacy tx, here correct it for z930 type.
+                    // about v for non legacy tx, here correct it for 2930 type.
                     sig.v = Self::normalize_v(sig.v, self.chain_id); // convert v to [0, 1]
 
                     self.sig_data((sig.v, sig.r, sig.s));
