@@ -23,6 +23,7 @@ num-bigint.workspace = true
 strum_macros.workspace = true
 strum.workspace = true
 hash-circuit.workspace = true
+base64.workspace = true
 
 [features]
 default = ["warn-unimplemented"]

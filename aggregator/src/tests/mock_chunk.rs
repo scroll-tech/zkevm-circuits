@@ -27,7 +27,7 @@ pub struct MockConfig {
     pub(crate) instance: Column<Instance>,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 /// A mock chunk circuit
 ///
 /// This mock chunk circuit simulates a zkEVM circuit.

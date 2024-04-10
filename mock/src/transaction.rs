@@ -7,7 +7,9 @@ use eth_types::{
 };
 use ethers_core::{
     rand::{CryptoRng, RngCore},
-    types::{Eip1559TransactionRequest, OtherFields, TransactionRequest},
+    types::{
+        Eip1559TransactionRequest, Eip2930TransactionRequest, OtherFields, TransactionRequest,
+    },
 };
 use ethers_signers::{LocalWallet, Signer};
 use rand::SeedableRng;
@@ -333,8 +335,9 @@ impl MockTransaction {
     pub fn build(&mut self) -> Self {
         if self.transaction_type == U64::from(2) {
             return self.build_1559();
+        } else if self.transaction_type == U64::from(1) {
+            return self.build_2930();
         }
-        // TODO: handle eip2930 type later when add eip2930 tests.
 
         let tx = TransactionRequest::new()
             .from(self.from.address())
@@ -384,7 +387,7 @@ impl MockTransaction {
         self.to_owned()
     }
 
-    /// build 1559 type tx
+    /// build eip 1559 type tx
     pub fn build_1559(&mut self) -> Self {
         let tx = Eip1559TransactionRequest::new()
             .from(self.from.address())
@@ -422,6 +425,64 @@ impl MockTransaction {
                 } else {
                     #[cfg(feature = "scroll")]
                     panic!("1559 type tx must have signature data, otherwise will be treated as L1Msg type in trace.go of l2geth");
+                }
+            }
+            _ => panic!("Either all or none of the SigData params have to be set"),
+        }
+
+        // Compute tx hash in case is not already set
+        if self.hash.is_none() {
+            let tmp_tx = Transaction::from(self.to_owned());
+            // FIXME: Note that tmp_tx does not have sigs if self.from.is_wallet() = false.
+            //  This means tmp_tx.hash() is not correct.
+            self.hash(tmp_tx.hash());
+        }
+
+        self.to_owned()
+    }
+
+    /// build eip 2930 type tx
+    pub fn build_2930(&mut self) -> Self {
+        let legacy_tx = TransactionRequest::new()
+            .from(self.from.address())
+            .nonce(self.nonce)
+            .value(self.value)
+            .data(self.input.clone())
+            .gas(self.gas)
+            .chain_id(self.chain_id);
+
+        let legacy_tx = if let Some(gas_price) = self.gas_price {
+            legacy_tx.gas_price(gas_price)
+        } else {
+            legacy_tx
+        };
+        let legacy_tx = if let Some(to_addr) = self.to.clone() {
+            legacy_tx.to(to_addr.address())
+        } else {
+            legacy_tx
+        };
+
+        let tx = Eip2930TransactionRequest::new(legacy_tx, self.access_list.clone());
+
+        match (self.v, self.r, self.s) {
+            (None, None, None) => {
+                // Compute sig params and set them in case we have a wallet as `from` attr.
+                if self.from.is_wallet() && self.hash.is_none() {
+                    let mut sig = self
+                        .from
+                        .as_wallet()
+                        .with_chain_id(self.chain_id)
+                        .sign_transaction_sync(&tx.into())
+                        .expect("sign mock eip 2930 tx");
+
+                    // helper `sign_transaction_sync` in ethers-rs lib does not handle correctly
+                    // about v for non legacy tx, here correct it for 2930 type.
+                    sig.v = Self::normalize_v(sig.v, self.chain_id); // convert v to [0, 1]
+
+                    self.sig_data((sig.v, sig.r, sig.s));
+                } else {
+                    #[cfg(feature = "scroll")]
+                    panic!("2930 type tx must have signature data, otherwise will be treated as L1Msg type in trace.go of l2geth");
                 }
             }
             _ => panic!("Either all or none of the SigData params have to be set"),
