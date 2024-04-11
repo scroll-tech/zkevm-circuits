@@ -60,7 +60,7 @@ impl RlcConfig {
         }
         assert_eq!(offset, FIXED_OFFSET_32);
 
-        // [32, 168, 200, 1 << 32]
+        // [32, 168, 232, 1 << 32]
         for const_val in [32, 168, 232, 1 << 32] {
             region.assign_fixed(
                 || format!("const at offset={offset}"),
