@@ -158,7 +158,7 @@ impl BlobDataConfig {
             let is_padding = meta.query_advice(config.is_padding, Rotation::cur());
 
             vec![
-                cond.clone() * is_boundary.clone() * (1.expr() - is_boundary)
+                cond.clone() * is_boundary.clone() * (1.expr() - is_boundary),
                 cond * is_padding.clone() * (1.expr() - is_padding)
             ]
         });
@@ -225,11 +225,11 @@ impl BlobDataConfig {
 
         meta.create_gate("BlobDataConfig (\"chunk data\" section)", |meta| {
             let is_data = meta.query_selector(config.data_selector);
-            let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
             let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
             let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
             let diff = is_padding_next - is_padding_curr.expr();
             let byte = meta.query_advice(config.byte, Rotation::cur());
+            let chunk_idx = meta.query_advice(config.chunk_idx, Rotation::cur());
             let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
             let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
 
@@ -239,7 +239,9 @@ impl BlobDataConfig {
                 // diff is 0 or 1, i.e. is_padding transitions from 0 -> 1 only once.
                 is_data.expr() * diff.expr() * (1.expr() - diff.expr()),
                 // boundary count continues if padding
-                is_data.expr() * is_padding_curr * (boundary_count_curr - boundary_count_prev),
+                is_data.expr() * is_padding_curr.expr() * (boundary_count_curr - boundary_count_prev),
+                // chunk_idx is 0 when padding in the "chunk data" section.
+                is_data.expr() * is_padding_curr * chunk_idx,
             ]
         });
 
