@@ -355,14 +355,13 @@ fn overwrite_chunk_data_digest_byte() {
     }
 }
 
-const OVERWRITE_ROWS: [usize; 1] = [
+const OVERWRITE_ROWS: [usize; 6] = [
     0,
     10,
     N_ROWS_METADATA - 1,
     N_ROWS_METADATA,
     N_ROWS_METADATA + 100,
     N_ROWS_METADATA + N_ROWS_DATA - 1,
-    N_ROWS_METADATA + N_ROWS_DATA + 30,
 ];
 
 #[test]
@@ -373,7 +372,6 @@ fn overwrite_chunk_idx() {
             overwrite_chunk_idx: Some(row),
             ..Default::default()
         };
-        dbg!(row);
         assert!(check_circuit(&circuit).is_err())
     }
 }

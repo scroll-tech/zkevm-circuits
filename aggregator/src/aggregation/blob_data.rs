@@ -159,7 +159,7 @@ impl BlobDataConfig {
 
             vec![
                 cond.clone() * is_boundary.clone() * (1.expr() - is_boundary),
-                cond * is_padding.clone() * (1.expr() - is_padding)
+                cond * is_padding.clone() * (1.expr() - is_padding),
             ]
         });
 
@@ -239,7 +239,9 @@ impl BlobDataConfig {
                 // diff is 0 or 1, i.e. is_padding transitions from 0 -> 1 only once.
                 is_data.expr() * diff.expr() * (1.expr() - diff.expr()),
                 // boundary count continues if padding
-                is_data.expr() * is_padding_curr.expr() * (boundary_count_curr - boundary_count_prev),
+                is_data.expr()
+                    * is_padding_curr.expr()
+                    * (boundary_count_curr - boundary_count_prev),
                 // chunk_idx is 0 when padding in the "chunk data" section.
                 is_data.expr() * is_padding_curr * chunk_idx,
             ]
