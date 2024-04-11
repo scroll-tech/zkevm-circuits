@@ -51,10 +51,10 @@ pub const N_ROWS_METADATA: usize = N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES;
 pub const N_ROWS_DATA: usize = N_BLOB_BYTES - N_ROWS_METADATA;
 
 /// The number of rows in Blob Data config's layout to represent the "digest rlc" section.
-/// - metadata digest RLC
-/// - chunk_digests RLC for each chunk
-/// - blob versioned hash RLC
-/// - challenge digest RLC
+/// - metadata digest RLC (1 row)
+/// - chunk_digests RLC for each chunk (MAX_AGG_SNARKS rows)
+/// - blob versioned hash RLC (1 row)
+/// - challenge digest RLC (1 row)
 pub const N_ROWS_DIGEST_RLC: usize = 1 + MAX_AGG_SNARKS + 1 + 1;
 
 /// The number of rows in Blob Data config's layout to represent the "digest bytes" section.
