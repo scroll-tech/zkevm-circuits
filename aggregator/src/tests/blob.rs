@@ -29,8 +29,11 @@ struct BlobCircuit {
     overwrite_challenge_digest: Option<usize>,
     overwrite_chunk_data_digests: Option<(usize, usize)>,
     overwrite_chunk_idx: Option<usize>,
-    // overwrite_preimage_rlc: Option<Fr>,
-    // overwrite_sum_chunk_sizes: bool,
+    overwrite_accumulator: Option<usize>,
+    overwrite_preimage_rlc: Option<usize>,
+    overwrite_digest_rlc: Option<usize>,
+    overwrite_is_boundary: Option<usize>,
+    overwrite_is_padding: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -172,6 +175,21 @@ impl Circuit<Fr> for BlobCircuit {
                 )?;
 
                 if let Some(i) = self.overwrite_chunk_idx {
+                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                }
+                if let Some(i) = self.overwrite_accumulator {
+                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                }
+                if let Some(i) = self.overwrite_preimage_rlc {
+                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                }
+                if let Some(i) = self.overwrite_digest_rlc {
+                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                }
+                if let Some(i) = self.overwrite_is_boundary {
+                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                }
+                if let Some(i) = self.overwrite_is_padding {
                     increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
                 }
                 if self.overwrite_num_valid_chunks {
@@ -337,13 +355,13 @@ fn overwrite_chunk_data_digest_byte() {
     }
 }
 
-const OVERWRITE_ROWS: [usize; 7] = [
+const OVERWRITE_ROWS: [usize; 1] = [
     0,
     10,
     N_ROWS_METADATA - 1,
     N_ROWS_METADATA,
     N_ROWS_METADATA + 100,
-    N_ROWS_METADATA + N_ROWS_DATA,
+    N_ROWS_METADATA + N_ROWS_DATA - 1,
     N_ROWS_METADATA + N_ROWS_DATA + 30,
 ];
 
@@ -355,16 +373,67 @@ fn overwrite_chunk_idx() {
             overwrite_chunk_idx: Some(row),
             ..Default::default()
         };
+        dbg!(row);
         assert!(check_circuit(&circuit).is_err())
     }
 }
 
-// #[test]
-// fn overwrite_accumulator() {
-// }
+#[test]
+fn overwrite_accumulator() {
+    for row in OVERWRITE_ROWS {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_accumulator: Some(row),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
 
-// #[test]
-// fn overwrite_preimage_rlc() {}
+#[test]
+fn overwrite_preimage_rlc() {
+    for row in OVERWRITE_ROWS {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_preimage_rlc: Some(row),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
 
-// #[test]
-// fn overwrite_sum_chunk_sizes() {}
+#[test]
+fn overwrite_digest_rlc() {
+    for row in OVERWRITE_ROWS {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_digest_rlc: Some(row),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
+
+#[test]
+fn overwrite_is_boundary() {
+    for row in OVERWRITE_ROWS {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_is_boundary: Some(row),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
+
+#[test]
+fn overwrite_is_padding() {
+    for row in OVERWRITE_ROWS {
+        let circuit = BlobCircuit {
+            data: generic_blob_data(),
+            overwrite_is_padding: Some(row),
+            ..Default::default()
+        };
+        assert!(check_circuit(&circuit).is_err())
+    }
+}
