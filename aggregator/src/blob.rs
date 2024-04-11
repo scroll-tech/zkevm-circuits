@@ -473,7 +473,7 @@ impl BlobData {
         // - challenge digest rlc
         // - metadata digest bytes
         // - chunks[i].chunk_data_digest bytes for each chunk
-        // - versioned hash
+        // - versioned hash bytes
         // - challenge digest bytes
         once(BlobDataRow {
             preimage_rlc: Value::known(Fr::zero()),
