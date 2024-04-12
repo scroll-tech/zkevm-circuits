@@ -721,6 +721,7 @@ impl BlobDataConfig {
 
         let challenge_digest_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
         let challenge_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
+        let versioned_hash_rlc = &rows.get(N_ROWS_DIGEST_RLC - 2).unwrap().digest_rlc;
 
         // ensure that on the last row of this section the is_boundary is turned on
         // which would enable the keccak table lookup for challenge_digest
@@ -793,6 +794,7 @@ impl BlobDataConfig {
             .collect::<Vec<_>>();
         for (i, digest_rlc_specified) in std::iter::once(metadata_digest_rlc_specified)
             .chain(chunk_digest_evm_rlcs)
+            .chain(std::iter::once(versioned_hash_rlc))
             .chain(std::iter::once(challenge_digest_rlc_specified))
             .enumerate()
         {
@@ -811,7 +813,7 @@ impl BlobDataConfig {
 
             // compute the keccak input RLC:
             // we do this only for the metadata and chunks, not for the blob row itself.
-            if i < MAX_AGG_SNARKS + 1 {
+            if i < MAX_AGG_SNARKS + 1 + 1 {
                 let digest_keccak_rlc =
                     rlc_config.rlc(region, &digest_bytes, &r_keccak, &mut rlc_config_offset)?;
                 challenge_digest_preimage_keccak_rlc = rlc_config.mul_add(
@@ -853,16 +855,22 @@ impl BlobDataConfig {
         for chunk in chunk_data_digests_bytes.chunks_exact(N_BYTES_U256) {
             chunk_data_digests.push(chunk.to_vec());
         }
+        let challenge_digest = assigned_rows
+            .iter()
+            .rev()
+            .take(N_BYTES_U256)
+            .map(|row| row.byte.clone())
+            .collect::<Vec<AssignedCell<Fr, Fr>>>();
         let export = AssignedBlobDataExport {
             num_valid_chunks,
             versioned_hash: assigned_rows
-                        .iter()
-                        .rev()
-                        .skip(N_BYTES_U256)
-                        .take(N_BYTES_U256)
-                        .map(|row| row.byte.clone())
-                        .rev()
-                        .collect(),
+                .iter()
+                .rev()
+                .skip(N_BYTES_U256)
+                .take(N_BYTES_U256)
+                .map(|row| row.byte.clone())
+                .rev()
+                .collect(),
             chunk_data_digests,
         };
 
@@ -881,19 +889,19 @@ impl BlobDataConfig {
 
         let challenge_digest_limb1 = rlc_config.inner_product(
             region,
-            &export.challenge_digest[0..11],
+            &challenge_digest[0..11],
             &pows_of_256,
             &mut rlc_config_offset,
         )?;
         let challenge_digest_limb2 = rlc_config.inner_product(
             region,
-            &export.challenge_digest[11..22],
+            &challenge_digest[11..22],
             &pows_of_256,
             &mut rlc_config_offset,
         )?;
         let challenge_digest_limb3 = rlc_config.inner_product(
             region,
-            &export.challenge_digest[22..32],
+            &challenge_digest[22..32],
             &pows_of_256[0..10],
             &mut rlc_config_offset,
         )?;

@@ -2,7 +2,10 @@ use crate::{
     aggregation::{
         AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
     },
-    blob::{BlobAssignments, BlobData, N_ROWS_DATA, N_ROWS_METADATA},
+    blob::{
+        BlobAssignments, BlobData, N_BYTES_U256, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA,
+        N_ROWS_METADATA,
+    },
     param::ConfigParams,
     MAX_AGG_SNARKS,
 };
@@ -177,6 +180,7 @@ impl Circuit<Fr> for BlobCircuit {
                 if let Some(i) = self.overwrite_chunk_idx {
                     increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
                 }
+                // TODO: fix these!!!!
                 if let Some(i) = self.overwrite_accumulator {
                     increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
                 }
@@ -196,7 +200,10 @@ impl Circuit<Fr> for BlobCircuit {
                     increment_cell(&mut region, &assigned_blob_data_export.num_valid_chunks)?;
                 }
                 if let Some(i) = self.overwrite_challenge_digest {
-                    increment_cell(&mut region, &assigned_blob_data_export.challenge_digest[i])?;
+                    increment_cell(
+                        &mut region,
+                        &assigned_rows[N_ROWS_BLOB_DATA_CONFIG - N_BYTES_U256 + i].byte,
+                    )?;
                 }
                 if let Some((i, j)) = self.overwrite_chunk_data_digests {
                     increment_cell(
