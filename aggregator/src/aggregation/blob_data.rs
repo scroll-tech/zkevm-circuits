@@ -59,7 +59,7 @@ pub struct BlobDataConfig {
 
 pub struct AssignedBlobDataExport {
     pub num_valid_chunks: AssignedCell<Fr, Fr>,
-    pub challenge_digest: Vec<AssignedCell<Fr, Fr>>,
+    pub versioned_hash: Vec<AssignedCell<Fr, Fr>>,
     pub chunk_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
 }
 
@@ -319,7 +319,8 @@ impl BlobDataConfig {
 
                 // - metadata_digest: 32 bytes
                 // - chunk[i].chunk_data_digest: 32 bytes each
-                let preimage_len = 32.expr() * (MAX_AGG_SNARKS + 1).expr();
+                // - versioned_hash: 32 bytes
+                let preimage_len = 32.expr() * (MAX_AGG_SNARKS + 1 + 1).expr();
 
                 [
                     1.expr(),                                                // q_enable
@@ -854,12 +855,14 @@ impl BlobDataConfig {
         }
         let export = AssignedBlobDataExport {
             num_valid_chunks,
-            challenge_digest: assigned_rows
-                .iter()
-                .rev()
-                .take(N_BYTES_U256)
-                .map(|row| row.byte.clone())
-                .collect(),
+            versioned_hash: assigned_rows
+                        .iter()
+                        .rev()
+                        .skip(N_BYTES_U256)
+                        .take(N_BYTES_U256)
+                        .map(|row| row.byte.clone())
+                        .rev()
+                        .collect(),
             chunk_data_digests,
         };
 
