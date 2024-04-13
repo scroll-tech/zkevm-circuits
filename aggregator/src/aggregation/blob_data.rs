@@ -210,6 +210,7 @@ impl BlobDataConfig {
             let byte_next = meta.query_advice(config.byte, Rotation::next());
             let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
             let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
+            let digest_rlc = meta.query_advice(config.digest_rlc, Rotation::cur());
 
             vec![
                 // chunk idx unchanged.
@@ -220,6 +221,8 @@ impl BlobDataConfig {
                 cond.expr() * (preimage_rlc_curr * r + byte_next - preimage_rlc_next),
                 // boundary count continues.
                 cond.expr() * (boundary_count_curr - boundary_count_prev),
+                // digest_rlc is 0.
+                cond.expr() * digest_rlc,
             ]
         });
 
