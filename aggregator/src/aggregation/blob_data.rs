@@ -47,7 +47,7 @@ pub struct BlobDataConfig {
     /// Represents the random linear combination of the Keccak digest. This has meaningful values
     /// only at the rows where we actually do the Keccak lookup.
     digest_rlc: Column<Advice>,
-    /// Boolean to let us know we are in the data section.
+    /// Boolean to let us know we are in the chunk data section.
     pub data_selector: Selector,
     /// Boolean to let us know we are in the hash section.
     pub hash_selector: Selector,
@@ -230,20 +230,26 @@ impl BlobDataConfig {
             let diff = is_padding_next - is_padding_curr.expr();
             let byte = meta.query_advice(config.byte, Rotation::cur());
             let chunk_idx = meta.query_advice(config.chunk_idx, Rotation::cur());
+            let accumulator = meta.query_advice(config.accumulator, Rotation::cur());
+            let preimage_rlc = meta.query_advice(config.preimage_rlc, Rotation::cur());
+            let digest_rlc = meta.query_advice(config.digest_rlc, Rotation::cur());
             let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
             let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
 
             vec![
-                // byte is 0 when padding in the "chunk data" section.
+                // byte, accumulator, digest_rlc, preimage_rlc, chunk_idx iare 0 when padding in
+                // the "chunk data" section.
                 is_data.expr() * is_padding_curr.expr() * byte,
+                is_data.expr() * is_padding_curr.expr() * accumulator,
+                is_data.expr() * is_padding_curr.expr() * digest_rlc,
+                is_data.expr() * is_padding_curr.expr() * preimage_rlc,
+                is_data.expr() * is_padding_curr.expr() * chunk_idx,
                 // diff is 0 or 1, i.e. is_padding transitions from 0 -> 1 only once.
                 is_data.expr() * diff.expr() * (1.expr() - diff.expr()),
                 // boundary count continues if padding
                 is_data.expr()
                     * is_padding_curr.expr()
                     * (boundary_count_curr - boundary_count_prev),
-                // chunk_idx is 0 when padding in the "chunk data" section.
-                is_data.expr() * is_padding_curr * chunk_idx,
             ]
         });
 
@@ -629,27 +635,48 @@ impl BlobDataConfig {
         let not_all_chunks_empty =
             rlc_config.not(region, &all_chunks_empty, &mut rlc_config_offset)?;
 
-        for (i, row) in assigned_rows.iter().enumerate().take(N_ROWS_METADATA) {
-            let cells = [
-                &row.chunk_idx,
-                &row.is_boundary,
-                &row.boundary_count,
-                &row.is_padding,
-            ]
-            .map(AssignedCell::cell);
+        // constrain preimage_rlc column
+        let metadata_rows = &assigned_rows[..N_ROWS_METADATA];
+        region.constrain_equal(
+            metadata_rows[0].byte.cell(),
+            metadata_rows[0].preimage_rlc.cell(),
+        )?;
+        for (i, row) in metadata_rows.iter().enumerate().skip(1) {
+            let preimage_rlc = rlc_config.mul_add(
+                region,
+                &metadata_rows[i - 1].preimage_rlc,
+                &r_keccak,
+                &row.byte,
+                &mut rlc_config_offset,
+            )?;
+            region.constrain_equal(preimage_rlc.cell(), row.preimage_rlc.cell())?;
+        }
 
-            // The cells in these columns are 0 in the metadata section, except for is_boundary in
-            // the final row of the metadata section. On the last row of the "metadata" section we
-            // want to ensure the keccak table lookup would be enabled for the metadata
-            // digest
-            let mut expected_cells = [zero.cell(); 4];
-            if i == N_ROWS_METADATA - 1 {
-                expected_cells[1] = one.cell();
-            }
-            for (cell, expected_cell) in cells.into_iter().zip_eq(expected_cells) {
-                region.constrain_equal(cell, expected_cell)?;
+        // these columns are always 0 in the metadata section.
+        for row in metadata_rows.iter() {
+            let cells =
+                [&row.chunk_idx, &row.boundary_count, &row.is_padding].map(AssignedCell::cell);
+
+            for cell in cells {
+                region.constrain_equal(cell, zero.cell())?;
             }
         }
+
+        // in the metadata section, these columns are 0 except (possibly) on the last row.
+        for row in metadata_rows.iter().take(N_ROWS_METADATA - 1) {
+            let cells = [&row.is_boundary, &row.digest_rlc].map(AssignedCell::cell);
+
+            for cell in cells {
+                region.constrain_equal(cell, zero.cell())?;
+            }
+        }
+
+        // in the final row of the metadata section, boundary is 1. note that this triggers a keccak
+        // lookup which constrains digest_rlc.
+        region.constrain_equal(
+            metadata_rows[N_ROWS_METADATA - 1].is_boundary.cell(),
+            one.cell(),
+        )?;
 
         ////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// CHUNK_DATA //////////////////////////////////
