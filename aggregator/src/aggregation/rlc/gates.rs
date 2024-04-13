@@ -13,8 +13,8 @@ use super::RlcConfig;
 
 const FIXED_OFFSET_32: usize = MAX_AGG_SNARKS + 1;
 const FIXED_OFFSET_168: usize = FIXED_OFFSET_32 + 1;
-const FIXED_OFFSET_200: usize = FIXED_OFFSET_168 + 1;
-const FIXED_OFFSET_2_POW_32: usize = FIXED_OFFSET_200 + 1;
+const FIXED_OFFSET_232: usize = FIXED_OFFSET_168 + 1;
+const FIXED_OFFSET_2_POW_32: usize = FIXED_OFFSET_232 + 1;
 const FIXED_OFFSET_256: usize = FIXED_OFFSET_2_POW_32 + 1;
 const FIXED_OFFSET_EMPTY_KECCAK: usize = FIXED_OFFSET_256 + POWS_OF_256;
 
@@ -33,7 +33,7 @@ impl RlcConfig {
     /// | MAX_AGG_SNARKS         | MAX_AGG_SNARKS       |
     /// | MAX_AGG_SNARKS + 1     | 32                   |
     /// | MAX_AGG_SNARKS + 2     | 168                  |
-    /// | MAX_AGG_SNARKS + 3     | 200                  |
+    /// | MAX_AGG_SNARKS + 3     | 232                  |
     /// | MAX_AGG_SNARKS + 4     | 2 ^ 32               |
     /// | MAX_AGG_SNARKS + 5     | 256                  |
     /// | MAX_AGG_SNARKS + 6     | 256 ^ 2              |
@@ -60,8 +60,8 @@ impl RlcConfig {
         }
         assert_eq!(offset, FIXED_OFFSET_32);
 
-        // [32, 168, 200, 1 << 32]
-        for const_val in [32, 168, 200, 1 << 32] {
+        // [32, 168, 232, 1 << 32]
+        for const_val in [32, 168, 232, 1 << 32] {
             region.assign_fixed(
                 || format!("const at offset={offset}"),
                 self.fixed,
@@ -189,10 +189,10 @@ impl RlcConfig {
     }
 
     #[inline]
-    pub(crate) fn two_hundred_cell(&self, region_index: RegionIndex) -> Cell {
+    pub(crate) fn two_hundred_and_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
-            row_offset: FIXED_OFFSET_200,
+            row_offset: FIXED_OFFSET_232,
             column: self.fixed.into(),
         }
     }
