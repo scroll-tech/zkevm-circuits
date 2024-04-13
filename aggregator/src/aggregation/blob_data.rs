@@ -152,7 +152,9 @@ impl BlobDataConfig {
             let is_data = meta.query_selector(config.data_selector);
             let is_hash = meta.query_selector(config.hash_selector);
 
-            let cond = is_data.clone() + is_hash.clone() - is_data * is_hash;
+            // is_data is never 1 when is_hash is 1, so we can add these selectors and still have a
+            // boolean condition.
+            let cond = is_data.clone() + is_hash.clone();
 
             let is_boundary = meta.query_advice(config.is_boundary, Rotation::cur());
             let is_padding = meta.query_advice(config.is_padding, Rotation::cur());
