@@ -180,21 +180,20 @@ impl Circuit<Fr> for BlobCircuit {
                 if let Some(i) = self.overwrite_chunk_idx {
                     increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
                 }
-                // TODO: fix these!!!!
                 if let Some(i) = self.overwrite_accumulator {
-                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                    increment_cell(&mut region, &assigned_rows[i].accumulator)?;
                 }
                 if let Some(i) = self.overwrite_preimage_rlc {
-                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                    increment_cell(&mut region, &assigned_rows[i].preimage_rlc)?;
                 }
                 if let Some(i) = self.overwrite_digest_rlc {
-                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                    increment_cell(&mut region, &assigned_rows[i].digest_rlc)?;
                 }
                 if let Some(i) = self.overwrite_is_boundary {
-                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                    increment_cell(&mut region, &assigned_rows[i].is_boundary)?;
                 }
                 if let Some(i) = self.overwrite_is_padding {
-                    increment_cell(&mut region, &assigned_rows[i].chunk_idx)?;
+                    increment_cell(&mut region, &assigned_rows[i].is_padding)?;
                 }
                 if self.overwrite_num_valid_chunks {
                     increment_cell(&mut region, &assigned_blob_data_export.num_valid_chunks)?;
