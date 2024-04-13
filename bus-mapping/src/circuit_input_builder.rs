@@ -1371,7 +1371,11 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         let mut tx: eth_types::Transaction = self.cli.get_tx_by_hash(tx_hash).await?;
         tx.transaction_index = Some(0.into());
-        let geth_trace = self.cli.trace_tx_by_hash_legacy(tx_hash).await?;
+        let geth_trace = if cfg!(features = "rpc-legacy-tracer") {
+            self.cli.trace_tx_by_hash_legacy(tx_hash).await
+        } else {
+            self.cli.trace_tx_by_hash(tx_hash).await
+        }?;
         let mut eth_block = self
             .cli
             .get_block_by_number(tx.block_number.unwrap().into())

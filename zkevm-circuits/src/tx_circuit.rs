@@ -2502,7 +2502,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 + is_pre_eip155(meta) * (sig_v.expr() - 27.expr())
                 + meta.query_advice(is_eip1559, Rotation::cur()) * sig_v.expr();
 
-
             let input_exprs = vec![
                 1.expr(),     // q_enable = true
                 msg_hash_rlc, // msg_hash_rlc
