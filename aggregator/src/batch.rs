@@ -5,7 +5,7 @@ use eth_types::{Field, ToBigEndian, H256};
 use ethers_core::utils::keccak256;
 
 use crate::{
-    blob::{BlobAssignments, BlobData},
+    blob::{BatchData, PointEvaluationAssignments},
     chunk::ChunkHash,
     constants::MAX_AGG_SNARKS,
 };
@@ -34,8 +34,8 @@ pub struct BatchHash {
     pub(crate) public_input_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
-    /// 4844-Blob related fields.
-    pub(crate) blob: BlobAssignments,
+    /// 4844 point evaluation check related assignments.
+    pub(crate) point_evaluation_assignments: PointEvaluationAssignments,
     /// The 4844 versioned hash for the blob.
     pub(crate) versioned_hash: H256,
 }
@@ -118,9 +118,9 @@ impl BatchHash {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
-        let blob_data = BlobData::new(number_of_valid_chunks, chunks_with_padding);
-        let blob_assignments = BlobAssignments::from(&blob_data);
-        let versioned_hash = blob_data.get_versioned_hash();
+        let batch_data = BatchData::new(number_of_valid_chunks, chunks_with_padding);
+        let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
+        let versioned_hash = batch_data.get_versioned_hash();
 
         // public input hash is build as
         // keccak(
@@ -143,18 +143,26 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             batch_data_hash.as_slice(),
-            blob_assignments.challenge.to_be_bytes().as_ref(),
-            blob_assignments.evaluation.to_be_bytes().as_ref(),
+            point_evaluation_assignments
+                .challenge
+                .to_be_bytes()
+                .as_ref(),
+            point_evaluation_assignments
+                .evaluation
+                .to_be_bytes()
+                .as_ref(),
             versioned_hash.as_bytes(),
         ]
         .concat();
         let public_input_hash: H256 = keccak256(preimage).into();
+
         log::info!(
-            "batch pihash {:?}, datahash {}, z {} y {}",
+            "batch pi hash {:?}, datahash {}, z {}, y {}, versioned hash {:x}",
             public_input_hash,
             hex::encode(batch_data_hash),
-            hex::encode(blob_assignments.challenge.to_be_bytes()),
-            hex::encode(blob_assignments.evaluation.to_be_bytes())
+            hex::encode(point_evaluation_assignments.challenge.to_be_bytes()),
+            hex::encode(point_evaluation_assignments.evaluation.to_be_bytes()),
+            versioned_hash,
         );
 
         Self {
@@ -163,14 +171,14 @@ impl BatchHash {
             data_hash: batch_data_hash.into(),
             public_input_hash,
             number_of_valid_chunks,
-            blob: blob_assignments,
+            point_evaluation_assignments,
             versioned_hash,
         }
     }
 
     /// Return the blob polynomial and its evaluation at challenge
-    pub fn blob_assignments(&self) -> BlobAssignments {
-        self.blob.clone()
+    pub fn point_evaluation_assignments(&self) -> PointEvaluationAssignments {
+        self.point_evaluation_assignments.clone()
     }
 
     /// Extract all the hash inputs that will ever be used.
@@ -207,8 +215,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             self.data_hash.as_bytes(),
-            &self.blob.challenge.to_be_bytes(),
-            &self.blob.evaluation.to_be_bytes(),
+            &self.point_evaluation_assignments.challenge.to_be_bytes(),
+            &self.point_evaluation_assignments.evaluation.to_be_bytes(),
             self.versioned_hash.as_bytes(),
         ]
         .concat();
@@ -242,11 +250,11 @@ impl BatchHash {
         // size. We now move to the part where the preimage is dynamic.
         //
         // These include:
-        // - preimage for blob metadata
+        // - preimage for batch metadata
         // - preimage for each chunk's flattened L2 signed tx data
         // - preimage for the challenge digest
-        let blob_data = BlobData::from(self);
-        let dynamic_preimages = blob_data.preimages();
+        let batch_data = BatchData::from(self);
+        let dynamic_preimages = batch_data.preimages();
         for dynamic_preimage in dynamic_preimages {
             res.push(dynamic_preimage);
         }

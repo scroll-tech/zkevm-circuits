@@ -1,4 +1,4 @@
-use crate::blob::BlobData;
+use crate::blob::BatchData;
 use ark_std::{end_timer, start_timer};
 use halo2_base::{Context, ContextParams};
 use halo2_proofs::{
@@ -268,9 +268,11 @@ impl Circuit<Fr> for AggregationCircuit {
                     let mut ctx = Rc::into_inner(loader).unwrap().into_ctx();
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
-                        &self.batch_hash.blob.coefficients,
-                        self.batch_hash.blob.challenge_digest,
-                        self.batch_hash.blob.evaluation,
+                        &self.batch_hash.point_evaluation_assignments.coefficients,
+                        self.batch_hash
+                            .point_evaluation_assignments
+                            .challenge_digest,
+                        self.batch_hash.point_evaluation_assignments.evaluation,
                     );
 
                     ctx.print_stats(&["barycentric"]);
@@ -434,25 +436,36 @@ impl Circuit<Fr> for AggregationCircuit {
             let challenge_le = &barycentric.z_le;
             let evaluation_le = &barycentric.y_le;
 
-            let blob_data = BlobData::from(&self.batch_hash);
+            let batch_data = BatchData::from(&self.batch_hash);
+
             let blob_data_exports = config.blob_data_config.assign(
                 &mut layouter,
                 challenges,
                 &config.rlc_config,
-                &assigned_batch_hash.chunks_are_padding,
-                &blob_data,
+                &batch_data,
                 barycentric_assignments,
             )?;
 
+            let batch_data_exports = config.batch_data_config.assign(
+                &mut layouter,
+                challenges,
+                &config.rlc_config,
+                &assigned_batch_hash.chunks_are_padding,
+                &batch_data,
+                barycentric_assignments,
+            )?;
+
+            let decoder_exports = config.decoder_config.assign(&mut layouter)?;
+
             layouter.assign_region(
-                || "blob checks",
+                || "batch checks",
                 |mut region| -> Result<(), Error> {
                     region.constrain_equal(
                         assigned_batch_hash.num_valid_snarks.cell(),
-                        blob_data_exports.num_valid_chunks.cell(),
+                        batch_data_exports.num_valid_chunks.cell(),
                     )?;
 
-                    for (chunk_data_digest, expected_chunk_data_digest) in blob_data_exports
+                    for (chunk_data_digest, expected_chunk_data_digest) in batch_data_exports
                         .chunk_data_digests
                         .iter()
                         .zip_eq(assigned_batch_hash.blob.chunk_tx_data_digests.iter())
@@ -479,13 +492,25 @@ impl Circuit<Fr> for AggregationCircuit {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
-                    for (c, ec) in blob_data_exports
+                    for (c, ec) in batch_data_exports
                         .versioned_hash
                         .iter()
                         .zip_eq(assigned_batch_hash.blob.versioned_hash.iter())
                     {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
+
+                    // equate rlc (from blob data) with decoder's encoded_rlc
+                    region.constrain_equal(
+                        blob_data_exports.bytes_rlc.cell(),
+                        decoder_exports.encoded_rlc.cell(),
+                    )?;
+
+                    // equate rlc (from batch data) with decoder's decoded_rlc
+                    region.constrain_equal(
+                        batch_data_exports.bytes_rlc.cell(),
+                        decoder_exports.decoded_rlc.cell(),
+                    )?;
 
                     Ok(())
                 },
@@ -527,8 +552,8 @@ impl CircuitExt<Fr> for AggregationCircuit {
                     config.0.rlc_config.selector,
                     config.0.rlc_config.enable_challenge1,
                     config.0.rlc_config.enable_challenge2,
-                    config.0.blob_data_config.data_selector,
-                    config.0.blob_data_config.hash_selector,
+                    config.0.batch_data_config.data_selector,
+                    config.0.batch_data_config.hash_selector,
                 ]
                 .iter()
                 .cloned(),

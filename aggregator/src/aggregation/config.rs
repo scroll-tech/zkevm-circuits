@@ -19,7 +19,7 @@ use zkevm_circuits::{
 use crate::{
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
+    BarycentricEvaluationConfig, BatchDataConfig, BlobDataConfig, DecoderConfig, RlcConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -35,6 +35,10 @@ pub struct AggregationConfig {
     pub rlc_config: RlcConfig,
     /// The blob data's config.
     pub blob_data_config: BlobDataConfig,
+    /// The batch data's config.
+    pub batch_data_config: BatchDataConfig,
+    /// The zstd decoder's config.
+    pub decoder_config: DecoderConfig,
     /// Config to do the barycentric evaluation on blob polynomial.
     pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores
@@ -90,6 +94,7 @@ impl AggregationConfig {
             params.degree as usize,
         );
 
+        // Barycentric.
         let barycentric = BarycentricEvaluationConfig::construct(base_field_config.range.clone());
 
         let columns = keccak_circuit_config.cell_manager.columns();
@@ -106,12 +111,16 @@ impl AggregationConfig {
         // enable equality for the is_final column
         meta.enable_equality(keccak_circuit_config.keccak_table.is_final);
 
-        // Blob data.
+        // Batch data and Blob data.
         let u8_table = U8Table::construct(meta);
         let range_table = RangeTable::construct(meta);
         let challenges_expr = challenges.exprs(meta);
-        let blob_data_config =
-            BlobDataConfig::configure(meta, challenges_expr, u8_table, range_table, &keccak_table);
+        let blob_data_config = BlobDataConfig::configure(meta, u8_table);
+        let batch_data_config =
+            BatchDataConfig::configure(meta, challenges_expr, u8_table, range_table, &keccak_table);
+
+        // Zstd decoder.
+        let decoder_config = DecoderConfig::configure(meta);
 
         // Instance column stores public input column
         // - the accumulator
@@ -127,6 +136,8 @@ impl AggregationConfig {
             keccak_circuit_config,
             instance,
             barycentric,
+            batch_data_config,
+            decoder_config,
         }
     }
 

@@ -1,6 +1,8 @@
 /// Config to evaluate blob polynomial at a random challenge.
 mod barycentric;
-/// Config to constrain blob data
+/// Config to constrain batch data (decoded blob data)
+mod batch_data;
+/// Config to constrain blob data (encoded batch data)
 mod blob_data;
 /// Circuit implementation of aggregation circuit.
 mod circuit;
@@ -14,7 +16,10 @@ mod rlc;
 pub(crate) use barycentric::{
     interpolate, AssignedBarycentricEvaluationConfig, BarycentricEvaluationConfig, BLS_MODULUS,
 };
+pub(crate) use batch_data::BatchDataConfig;
 pub(crate) use blob_data::BlobDataConfig;
+pub(crate) use decompression::decoder::DecoderConfig;
+pub(crate) use rlc::RlcConfig;
+
 pub use circuit::AggregationCircuit;
 pub use config::AggregationConfig;
-pub(crate) use rlc::RlcConfig;

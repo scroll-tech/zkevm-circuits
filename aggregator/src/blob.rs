@@ -16,6 +16,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use revm_primitives::VERSIONED_HASH_VERSION_KZG;
 use std::{
+    io::Write,
     iter::{once, repeat},
     sync::Arc,
 };
@@ -44,11 +45,19 @@ pub const N_ROWS_CHUNK_SIZES: usize = MAX_AGG_SNARKS * 4;
 /// we explicitly set the most-significant byte to 0, effectively utilising only 31 bytes.
 pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 
+/// The maximum number of bytes we will support in a single batch.
+///
+/// For now, we assume that the zstd encoding can give us a maximum compression ratio of 5, i.e. we
+/// allow up to 5 times the number of bytes in a single blob to be in a batch.
+///
+/// TODO: revisit
+pub const N_BATCH_BYTES: usize = N_BLOB_BYTES * 5;
+
 /// The number of rows in Blob Data config's layout to represent the "blob metadata" section.
 pub const N_ROWS_METADATA: usize = N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES;
 
 /// The number of rows in Blob Data config's layout to represent the "chunk data" section.
-pub const N_ROWS_DATA: usize = N_BLOB_BYTES - N_ROWS_METADATA;
+pub const N_ROWS_DATA: usize = N_BATCH_BYTES - N_ROWS_METADATA;
 
 /// The number of rows in Blob Data config's layout to represent the "digest rlc" section.
 /// - metadata digest RLC (1 row)
@@ -63,8 +72,8 @@ pub const N_ROWS_DIGEST_BYTES: usize = N_ROWS_DIGEST_RLC * N_BYTES_U256;
 /// The total number of rows in "digest rlc" and "digest bytes" sections.
 pub const N_ROWS_DIGEST: usize = N_ROWS_DIGEST_RLC + N_ROWS_DIGEST_BYTES;
 
-/// The total number of rows used in Blob Data config's layout.
-pub const N_ROWS_BLOB_DATA_CONFIG: usize = N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST;
+/// The total number of rows used in Batch Data config's layout.
+pub const N_ROWS_BATCH_DATA_CONFIG: usize = N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST;
 
 /// KZG trusted setup
 pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
@@ -77,9 +86,33 @@ pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
     )
 });
 
-/// Helper struct to generate witness for the Blob Data Config.
+/// Zstd encoder configuration
+pub fn init_zstd_encoder() -> zstd::stream::Encoder<'static, Vec<u8>> {
+    let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 0).expect("infallible");
+    // disable compression of literals, i.e. literals will be raw bytes.
+    encoder
+        .set_parameter(zstd::stream::raw::CParameter::LiteralCompressionMode(
+            zstd::zstd_safe::ParamSwitch::Disable,
+        ))
+        .expect("infallible");
+    // set target block size to fit within a single block.
+    encoder
+        .set_parameter(zstd::stream::raw::CParameter::TargetCBlockSize(124 * 1024))
+        .expect("infallible");
+    // do not include the checksum at the end of the encoded data.
+    encoder.include_checksum(false).expect("infallible");
+    // do not include magic bytes at the start of the frame since we will have a single
+    // frame.
+    encoder.include_magicbytes(false).expect("infallible");
+    // include the content size to know at decode time the expected size of decoded
+    // data.
+    encoder.include_contentsize(true).expect("infallible");
+    encoder
+}
+
+/// Helper struct to generate witness for the Batch Data Config.
 #[derive(Clone, Debug)]
-pub struct BlobData {
+pub struct BatchData {
     /// The number of valid chunks in the batch. This could be any number between:
     /// [1, MAX_AGG_SNARKS]
     pub num_valid_chunks: u16,
@@ -89,14 +122,14 @@ pub struct BlobData {
     pub chunk_sizes: [u32; MAX_AGG_SNARKS],
     /// Flattened L2 signed transaction data, for each chunk.
     ///
-    /// Note that in BlobData struct, only `num_valid_chunks` number of chunks' bytes are supposed
+    /// Note that in BatchData struct, only `num_valid_chunks` number of chunks' bytes are supposed
     /// to be read (for witness generation). For simplicity, the last valid chunk's bytes are
     /// copied over for the padded chunks. The `chunk_data_digest` for padded chunks is the
     /// `chunk_data_digest` of the last valid chunk (from Aggregation Circuit's perspective).
     pub chunk_data: [Vec<u8>; MAX_AGG_SNARKS],
 }
 
-impl From<&BatchHash> for BlobData {
+impl From<&BatchHash> for BatchData {
     fn from(batch_hash: &BatchHash) -> Self {
         Self::new(
             batch_hash.number_of_valid_chunks,
@@ -106,8 +139,8 @@ impl From<&BatchHash> for BlobData {
 }
 
 // If the chunk data is represented as a vector of u8's this implementation converts data from
-// dynamic number of chunks into BlobData.
-impl From<&Vec<Vec<u8>>> for BlobData {
+// dynamic number of chunks into BatchData.
+impl From<&Vec<Vec<u8>>> for BatchData {
     fn from(chunks: &Vec<Vec<u8>>) -> Self {
         let num_valid_chunks = chunks.len();
         assert!(num_valid_chunks > 0);
@@ -141,7 +174,7 @@ impl From<&Vec<Vec<u8>>> for BlobData {
     }
 }
 
-impl Default for BlobData {
+impl Default for BatchData {
     fn default() -> Self {
         // default value corresponds to a batch with 1 chunk with no transactions
         Self::from(&vec![vec![]])
@@ -154,7 +187,7 @@ fn kzg_to_versioned_hash(commitment: &c_kzg::KzgCommitment) -> H256 {
     H256::from_slice(&res[..])
 }
 
-impl BlobData {
+impl BatchData {
     pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkHash]) -> Self {
         assert!(num_valid_chunks > 0);
         assert!(num_valid_chunks <= MAX_AGG_SNARKS);
@@ -193,7 +226,7 @@ impl BlobData {
     }
 }
 
-impl BlobData {
+impl BatchData {
     /// Get the versioned hash as per EIP-4844.
     pub(crate) fn get_versioned_hash(&self) -> H256 {
         let coefficients = self.get_coefficients();
@@ -237,20 +270,41 @@ impl BlobData {
         U256::from_big_endian(&challenge_digest)
     }
 
+    /// Get the batch data bytes that will be populated in BatchDataConfig.
+    pub(crate) fn get_batch_data_bytes(&self) -> Vec<u8> {
+        let metadata_bytes = self.to_metadata_bytes();
+        metadata_bytes
+            .iter()
+            .chain(
+                self.chunk_data
+                    .iter()
+                    .take(self.num_valid_chunks as usize)
+                    .flatten(),
+            )
+            .cloned()
+            .collect()
+    }
+
     /// Get the BLOB_WIDTH number of scalar field elements, as 32-bytes unsigned integers.
     pub(crate) fn get_coefficients(&self) -> [U256; BLOB_WIDTH] {
         let mut coefficients = [[0u8; N_BYTES_U256]; BLOB_WIDTH];
 
         // We only consider the data from `valid` chunks and ignore the padded chunks.
-        let metadata_bytes = self.to_metadata_bytes();
-        let blob_bytes = metadata_bytes.iter().chain(
-            self.chunk_data
-                .iter()
-                .take(self.num_valid_chunks as usize)
-                .flatten(),
+        let batch_bytes = self.get_batch_data_bytes();
+        let blob_bytes = {
+            let mut encoder = init_zstd_encoder();
+            encoder
+                .set_pledged_src_size(Some(batch_bytes.len() as u64))
+                .expect("infallible");
+            encoder.write_all(&batch_bytes).expect("infallible");
+            encoder.finish().expect("infallible")
+        };
+        assert!(
+            blob_bytes.len() < N_BLOB_BYTES,
+            "too many bytes in batch data"
         );
 
-        for (i, &byte) in blob_bytes.enumerate() {
+        for (i, &byte) in blob_bytes.iter().enumerate() {
             coefficients[i / 31][1 + (i % 31)] = byte;
         }
 
@@ -278,9 +332,9 @@ impl BlobData {
     }
 }
 
-impl BlobData {
+impl BatchData {
     /// Get the witness rows for assignment to the BlobDataConfig.
-    pub(crate) fn to_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
+    pub(crate) fn to_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BatchDataRow<Fr>> {
         let metadata_rows = self.to_metadata_rows(challenge);
         assert_eq!(metadata_rows.len(), N_ROWS_METADATA);
 
@@ -294,7 +348,7 @@ impl BlobData {
             .into_iter()
             .chain(data_rows)
             .chain(digest_rows)
-            .collect::<Vec<BlobDataRow<Fr>>>()
+            .collect::<Vec<BatchDataRow<Fr>>>()
     }
 
     /// Get the blob bytes that encode the batch's metadata.
@@ -321,7 +375,7 @@ impl BlobData {
     }
 
     /// Get the witness rows for the "metadata" section of Blob data config.
-    fn to_metadata_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
+    fn to_metadata_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BatchDataRow<Fr>> {
         // metadata bytes.
         let bytes = self.to_metadata_bytes();
 
@@ -366,7 +420,7 @@ impl BlobData {
             .zip_eq(digest_rlc_iter)
             .enumerate()
             .map(
-                |(i, (((&byte, accumulator), preimage_rlc), digest_rlc))| BlobDataRow {
+                |(i, (((&byte, accumulator), preimage_rlc), digest_rlc))| BatchDataRow {
                     byte,
                     accumulator,
                     preimage_rlc,
@@ -381,7 +435,7 @@ impl BlobData {
     }
 
     /// Get the witness rows for the "chunk data" section of Blob data config.
-    fn to_data_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
+    fn to_data_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BatchDataRow<Fr>> {
         // consider only the `valid` chunks while constructing rows for the "chunk data" section.
         self.chunk_data
             .iter()
@@ -402,7 +456,7 @@ impl BlobData {
                         acc.0 += 1;
                         acc.1 =
                             acc.1 * challenge.keccak_input() + Value::known(Fr::from(byte as u64));
-                        Some(BlobDataRow {
+                        Some(BatchDataRow {
                             byte,
                             accumulator: acc.0,
                             chunk_idx,
@@ -418,13 +472,13 @@ impl BlobData {
                     },
                 )
             })
-            .chain(repeat(BlobDataRow::padding_row()))
+            .chain(repeat(BatchDataRow::padding_row()))
             .take(N_ROWS_DATA)
             .collect()
     }
 
     /// Get the witness rows for both "digest rlc" and "digest bytes" sections of Blob data config.
-    fn to_digest_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
+    fn to_digest_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BatchDataRow<Fr>> {
         let zero = Value::known(Fr::zero());
 
         // metadata
@@ -475,7 +529,7 @@ impl BlobData {
         // - chunks[i].chunk_data_digest bytes for each chunk
         // - versioned hash bytes
         // - challenge digest bytes
-        once(BlobDataRow {
+        once(BatchDataRow {
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: metadata_digest_rlc,
             // this is_padding assignment does not matter as we have already crossed the "chunk
@@ -489,7 +543,7 @@ impl BlobData {
                 .iter()
                 .zip_eq(self.chunk_sizes.iter())
                 .enumerate()
-                .map(|(i, (&digest_rlc, &chunk_size))| BlobDataRow {
+                .map(|(i, (&digest_rlc, &chunk_size))| BatchDataRow {
                     preimage_rlc: Value::known(Fr::zero()),
                     digest_rlc,
                     chunk_idx: (i + 1) as u64,
@@ -498,26 +552,26 @@ impl BlobData {
                 }),
         )
         // versioned hash RLC
-        .chain(once(BlobDataRow {
+        .chain(once(BatchDataRow {
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: versioned_hash_rlc,
             ..Default::default()
         }))
-        .chain(once(BlobDataRow {
+        .chain(once(BatchDataRow {
             preimage_rlc: challenge_digest_preimage_rlc,
             digest_rlc: challenge_digest_rlc,
             accumulator: 32 * (MAX_AGG_SNARKS + 1 + 1) as u64,
             is_boundary: true,
             ..Default::default()
         }))
-        .chain(metadata_digest.iter().map(|&byte| BlobDataRow {
+        .chain(metadata_digest.iter().map(|&byte| BatchDataRow {
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: Value::known(Fr::zero()),
             byte,
             ..Default::default()
         }))
         .chain(chunk_digests.iter().flat_map(|digest| {
-            digest.iter().map(|&byte| BlobDataRow {
+            digest.iter().map(|&byte| BatchDataRow {
                 preimage_rlc: Value::known(Fr::zero()),
                 digest_rlc: Value::known(Fr::zero()),
                 byte,
@@ -525,13 +579,13 @@ impl BlobData {
             })
         }))
         // bytes of versioned hash
-        .chain(versioned_hash.as_bytes().iter().map(|&byte| BlobDataRow {
+        .chain(versioned_hash.as_bytes().iter().map(|&byte| BatchDataRow {
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: Value::known(Fr::zero()),
             byte,
             ..Default::default()
         }))
-        .chain(challenge_digest.iter().map(|&byte| BlobDataRow {
+        .chain(challenge_digest.iter().map(|&byte| BatchDataRow {
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: Value::known(Fr::zero()),
             byte,
@@ -542,7 +596,7 @@ impl BlobData {
 }
 
 #[derive(Clone, Debug)]
-pub struct BlobAssignments {
+pub struct PointEvaluationAssignments {
     /// The random challenge scalar z.
     pub challenge: U256,
     /// The 32-bytes keccak digest for the challenge. We have the relation:
@@ -554,7 +608,7 @@ pub struct BlobAssignments {
     pub coefficients: [U256; BLOB_WIDTH],
 }
 
-impl Default for BlobAssignments {
+impl Default for PointEvaluationAssignments {
     fn default() -> Self {
         Self {
             challenge: U256::default(),
@@ -565,18 +619,18 @@ impl Default for BlobAssignments {
     }
 }
 
-impl From<&BlobData> for BlobAssignments {
-    fn from(blob: &BlobData) -> Self {
+impl From<&BatchData> for PointEvaluationAssignments {
+    fn from(batch_data: &BatchData) -> Self {
         // blob polynomial in evaluation form.
         //
         // also termed P(x)
-        let coefficients = blob.get_coefficients();
+        let coefficients = batch_data.get_coefficients();
         let coefficients_as_scalars = coefficients.map(|coeff| Scalar::from_raw(coeff.0));
 
         // challenge := challenge_digest % BLS_MODULUS
         //
         // also termed z
-        let challenge_digest = blob.get_challenge_digest();
+        let challenge_digest = batch_data.get_challenge_digest();
         let (_, challenge) = challenge_digest.div_mod(*BLS_MODULUS);
 
         // y = P(z)
@@ -595,7 +649,7 @@ impl From<&BlobData> for BlobAssignments {
 
 /// Witness row to the Blob Data Config.
 #[derive(Clone, Copy, Default, Debug)]
-pub struct BlobDataRow<Fr> {
+pub struct BatchDataRow<Fr> {
     /// Byte value at this row.
     pub byte: u8,
     /// Multi-purpose accumulator value.
@@ -612,7 +666,7 @@ pub struct BlobDataRow<Fr> {
     pub digest_rlc: Value<Fr>,
 }
 
-impl BlobDataRow<Fr> {
+impl BatchDataRow<Fr> {
     fn padding_row() -> Self {
         Self {
             is_padding: true,
@@ -685,26 +739,30 @@ mod tests {
         ]
         .iter()
         {
-            let blob: BlobData = tcase.into();
-            let blob_assignments = BlobAssignments::from(&blob);
+            let batch_data: BatchData = tcase.into();
+            let point_evaluation_assignments = PointEvaluationAssignments::from(&batch_data);
+            let versioned_hash = batch_data.get_versioned_hash();
             println!(
-                "{:60}: challenge (z) = {:0>64x}, evaluation (y) = {:0>64x}",
-                annotation, blob_assignments.challenge, blob_assignments.evaluation
+                "[[ {:60} ]]\nchallenge (z) = {:0>64x}, evaluation (y) = {:0>64x}, versioned hash = {:0>64x}\n\n",
+                annotation,
+                point_evaluation_assignments.challenge,
+                point_evaluation_assignments.evaluation,
+                versioned_hash,
             );
         }
     }
 
     #[test]
-    fn default_blob_data() {
+    fn default_batch_data() {
         let mut default_metadata = [0u8; 62];
         default_metadata[1] = 1;
         let default_metadata_digest = keccak256(default_metadata);
         let default_chunk_digests = [keccak256([]); MAX_AGG_SNARKS];
 
-        let default_blob = BlobData::default();
-        let versioned_hash = default_blob.get_versioned_hash();
+        let default_batch = BatchData::default();
+        let versioned_hash = default_batch.get_versioned_hash();
         assert_eq!(
-            default_blob.get_challenge_digest(),
+            default_batch.get_challenge_digest(),
             U256::from(keccak256(
                 default_metadata_digest
                     .into_iter()
@@ -713,14 +771,5 @@ mod tests {
                     .collect::<Vec<u8>>()
             )),
         )
-    }
-
-    #[test]
-    fn coefficients_endianness() {
-        // Check that the blob bytes are being packed into coefficients in big endian order.
-        let coefficients = BlobData::default().get_coefficients();
-
-        assert_eq!(coefficients[0], U256::one() << 232);
-        assert_eq!(coefficients[1..], vec![U256::zero(); BLOB_WIDTH - 1]);
     }
 }
