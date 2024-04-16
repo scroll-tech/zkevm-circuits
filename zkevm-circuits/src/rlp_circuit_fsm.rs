@@ -2232,9 +2232,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-
-
-
         // ///////////////////////////////////////////////////////////////////
         // /////// Rlp Decoding Table and RLP Circuit Correspondence /////////
         // ///////////////////////////////////////////////////////////////////
@@ -2266,9 +2263,94 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(is_update_op_lookup, Rotation::cur()),
             );
 
+            // Correct state machine condition for PUSH op
+            cb.require_equal(
+                "is_push_op_lookup is the last row of a begin tag", 
+                meta.query_advice(is_push_op_lookup, Rotation::cur()),
+                and::expr([
+                    meta.query_advice(is_tag_begin, Rotation::cur()),
+                    meta.query_advice(rlp_table.is_output, Rotation::cur()),
+                ])
+            );
+            cb.condition(
+                meta.query_advice(is_push_op_lookup, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "PUSH op within state machine should increase depth",
+                    meta.query_advice(depth, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(depth, Rotation::next()),
+                );
+            });
+
+            // Correct state machine condition for POP op
+            cb.require_equal(
+                "is_pop_op_lookup is the last row of an end tag", 
+                meta.query_advice(is_pop_op_lookup, Rotation::cur()),
+                meta.query_advice(is_tag_end, Rotation::cur()),
+            );
+            cb.condition(
+                meta.query_advice(is_pop_op_lookup, Rotation::cur()),
+                |cb| {
+                cb.require_zero(
+                    "POP op within state machine should decrease depth, except the last byte of an instance.",
+                    (
+                        meta.query_advice(depth, Rotation::next()) + 1.expr()
+                        - meta.query_advice(depth, Rotation::cur())
+                    ) * (
+                        meta.query_advice(byte_rev_idx, Rotation::cur()) - 1.expr()
+                    ),
+                );
+            });
+
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 not::expr(is_end(meta)),
+            ]))
+        });
+
+        meta.create_gate("Decoding table stack op INIT correspondence", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "stack init pushes all remaining_bytes onto depth 0",
+                meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                meta.query_advice(byte_rev_idx, Rotation::cur()),
+            );
+            cb.require_equal(
+                "stack can only init once with the first byte",
+                meta.query_advice(byte_idx, Rotation::cur()),
+                1.expr(),
+            );
+            cb.require_zero(
+                "stack inits at depth 0",
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+            );
+            cb.require_zero(
+                "stack inits with al_idx at 0",
+                meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
+            );
+            cb.require_zero(
+                "stack inits with sk_idx at 0",
+                meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
+            );
+            cb.condition(
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                |cb| {
+                    cb.require_boolean(
+                        "tx_id can only stay the same or increment by 1",
+                        meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur())
+                            - meta.query_advice(rlp_decoding_table.tx_id, Rotation::prev()),
+                    );
+                },
+            );
+            cb.require_equal(
+                "Init Op has DecodeTagStart in the state machine",
+                is_decode_tag_start(meta),
+                1.expr(),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
             ]))
         });
 
@@ -2277,62 +2359,16 @@ impl<F: Field> RlpCircuitConfig<F> {
         // // Therefore, to prevent malicious injection of stack ops that don't correspond to
         // // actual bytes in the RLP circuit, lookups are added to ensure correct correspondence.
 
-        // // How to ensure that every row in the state machine is also present in the decoding table:
-        // // For each decoding table row that's not padding, a stack op (INIT, PUSH, POP or UPDATE)
-        // // must be present. Then for each stack op that's present, it must correspond to a
-        // // row in the state machine by below constraint (for INIT) and lookups (for PUSH, POP,
-        // // UPDATE). This two-way constraint system creates a one-to-one relationship between
-        // // state machine and the decoding table.
+        // // How to ensure that every row in the state machine is also present in the decoding
+        // table: // For each decoding table row that's not padding, a stack op (INIT, PUSH,
+        // POP or UPDATE) // must be present. Then for each stack op that's present, it must
+        // correspond to a // row in the state machine by below constraint (for INIT) and
+        // lookups (for PUSH, POP, // UPDATE). This two-way constraint system creates a
+        // one-to-one relationship between // state machine and the decoding table.
 
         // // The Init Op is not affected by sorting and stays at first position in decoding table.
-        // // For this reason, its correctness and correspondence is constrained using a gate instead
-        // // of lookup.
-        // meta.create_gate("Decoding table stack op INIT correspondence", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
-
-        //     cb.require_equal(
-        //         "stack init pushes all remaining_bytes onto depth 0",
-        //         meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
-        //         meta.query_advice(byte_rev_idx, Rotation::cur()),
-        //     );
-        //     cb.require_equal(
-        //         "stack can only init once with the first byte",
-        //         meta.query_advice(byte_idx, Rotation::cur()),
-        //         1.expr(),
-        //     );
-        //     cb.require_zero(
-        //         "stack inits at depth 0",
-        //         meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
-        //     );
-        //     cb.require_zero(
-        //         "stack inits with al_idx at 0",
-        //         meta.query_advice(rlp_decoding_table.al_idx, Rotation::cur()),
-        //     );
-        //     cb.require_zero(
-        //         "stack inits with sk_idx at 0",
-        //         meta.query_advice(rlp_decoding_table.sk_idx, Rotation::cur()),
-        //     );
-        //     cb.condition(
-        //         not::expr(meta.query_fixed(q_first, Rotation::cur())),
-        //         |cb| {
-        //             cb.require_boolean(
-        //                 "tx_id can only stay the same or increment by 1",
-        //                 meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur())
-        //                     - meta.query_advice(rlp_decoding_table.tx_id, Rotation::prev()),
-        //             );
-        //         },
-        //     );
-        //     cb.require_equal(
-        //         "Init Op has DecodeTagStart in the state machine",
-        //         is_decode_tag_start(meta),
-        //         1.expr(),
-        //     );
-
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enabled, Rotation::cur()),
-        //         meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur()),
-        //     ]))
-        // });
+        // // For this reason, its correctness and correspondence is constrained using a gate
+        // instead // of lookup.
 
         // // Lookup strategies for PUSH:
         // // 1. The input expressions include the indicators for each depth level.
@@ -2391,8 +2427,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         //         // The difference between current storage_key_idx (in rlp_table) and the previous
         //         // one is either 0 or 1. By multiplying the difference with the new
         //         // storage_key_idx, it guarantees that storage_key_idx::next = 1
-        //         // (which indicates the first storage key in an access list addresses's storage key
-        //         // list)
+        //         // (which indicates the first storage key in an access list addresses's storage
+        // key         // list)
         //         (meta.query_advice(rlp_table.storage_key_idx, Rotation::next())
         //             - meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()))
         //             * meta.query_advice(rlp_table.storage_key_idx, Rotation::next()),
@@ -2567,20 +2603,17 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // Assign lookup indicators from state machine into decoding table
         let is_init = matches!(witness.rlp_decoding_table.stack_op, StackOp::Init);
-        let is_begin = 
-            witness.rlp_table.is_output &&
-            (witness.state_machine.tag == Tag::BeginObject ||
-            witness.state_machine.tag == Tag::BeginVector);
+        let is_begin = witness.rlp_table.is_output
+            && (witness.state_machine.tag == Tag::BeginObject
+                || witness.state_machine.tag == Tag::BeginVector);
         region.assign_advice(
             || "is_push_op_lookup",
             self.is_push_op_lookup,
             row,
             || Value::known(F::from(is_begin as u64)),
         )?;
-        let is_end =
-            witness.rlp_table.is_output &&
-            (witness.state_machine.tag == Tag::EndVector ||
-            witness.state_machine.tag == Tag::EndObject);
+        let is_end = witness.state_machine.tag == Tag::EndVector
+            || witness.state_machine.tag == Tag::EndObject;
         region.assign_advice(
             || "is_pop_op_lookup",
             self.is_pop_op_lookup,
