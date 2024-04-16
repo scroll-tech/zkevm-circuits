@@ -2354,6 +2354,38 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        meta.lookup_any("Decoding table stack op PUSH correspondence", |meta| {
+            let enable = meta.query_advice(is_push_op_lookup, Rotation::cur());
+
+            let input_exprs = vec![
+                meta.query_advice(tx_id, Rotation::cur()),
+                meta.query_advice(format, Rotation::cur()),
+                meta.query_advice(byte_idx, Rotation::cur()),
+                meta.query_advice(depth, Rotation::cur()) + 1.expr(),
+                1.expr(),
+                select::expr(
+                    is_decode_tag_start(meta),
+                    meta.query_advice(byte_value, Rotation::cur()) - 248.expr(),
+                    meta.query_advice(tag_value_acc, Rotation::cur()),
+                ),
+                0.expr(),
+            ];
+            let table_exprs = vec![
+                meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.value, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.value_prev, Rotation::cur()),
+            ];
+            input_exprs
+                .into_iter()
+                .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+
         // // RLP Decoding Table is sorted using an id = (tx_id, format, depth, access_list_idx,
         // // storage_key_idx) but bytes in the RLP circuit (rlp_table) is processed in order.
         // // Therefore, to prevent malicious injection of stack ops that don't correspond to
@@ -2375,70 +2407,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         // // 2. For each active depth indicator, it's checked against the allowable transitional
         // //    scenarios in the state machine for that depth.
         // // 3. The byte_idx and depth transition are included.
-        // meta.lookup_any("Decoding table stack op PUSH correspondence", |meta| {
-        //     let enable = meta.query_advice(rlp_decoding_table.is_stack_push, Rotation::cur());
-
-        //     let input_exprs = vec![
-        //         meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
-        //         meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
-        //         meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
-        //         1.expr(), // PUSH op increases depth
-        //         // List scenario on each depth.
-        //         // Sufficiency is achieved by listing all possible depth.
-        //         meta.query_advice(is_stack_depth_one, Rotation::cur()),
-        //         meta.query_advice(is_stack_depth_two, Rotation::cur()),
-        //         meta.query_advice(is_stack_depth_three, Rotation::cur()),
-        //         meta.query_advice(is_stack_depth_four, Rotation::cur()),
-        //     ];
-        //     let table_exprs = vec![
-        //         meta.query_advice(tx_id, Rotation::cur()),
-        //         meta.query_advice(format, Rotation::cur()),
-        //         meta.query_advice(byte_idx, Rotation::cur()),
-        //         meta.query_advice(depth, Rotation::next())
-        //             - meta.query_advice(depth, Rotation::cur()),
-        //         // Depth 1: Begin decoding actual payload (with out the tx type envelope).
-        //         and::expr([
-        //             sum::expr([
-        //                 // Case 1: For pre-EIP2930/1559 and L1 Tx, the first field is Nonce.
-        //                 tag_bits.value_equals(Tag::Nonce, Rotation::next())(meta),
-        //                 // Case 2: For EIP2930/1559, the first field is ChainId.
-        //                 tag_bits.value_equals(Tag::ChainId, Rotation::next())(meta),
-        //             ]),
-        //             state_bits.value_equals(State::DecodeTagStart, Rotation::next())(meta),
-        //         ]),
-        //         // Depth 2: Begin decoding an access list.
-        //         and::expr([
-        //             sum::expr([
-        //                 // Case 1: The access list is completely empty. The very first row after
-        //                 // PUSH is EndVector.
-        //                 tag_bits.value_equals(Tag::EndVector, Rotation::next())(meta),
-        //                 // Case 2: A regular access list.
-        //                 tag_bits.value_equals(Tag::BeginObject, Rotation::next())(meta),
-        //             ]),
-        //             state_bits.value_equals(State::DecodeTagStart, Rotation::next())(meta),
-        //         ]),
-        //         // Depth 3: A new access list address item
-        //         meta.query_advice(rlp_table.access_list_idx, Rotation::next())
-        //             - meta.query_advice(rlp_table.access_list_idx, Rotation::cur()),
-        //         // Depth 4: The first storage key item.
-        //         // Only the first storage key corresponds to a PUSH op. The rest correspond to
-        //         // UPDATE ops.
-
-        //         // The difference between current storage_key_idx (in rlp_table) and the previous
-        //         // one is either 0 or 1. By multiplying the difference with the new
-        //         // storage_key_idx, it guarantees that storage_key_idx::next = 1
-        //         // (which indicates the first storage key in an access list addresses's storage
-        // key         // list)
-        //         (meta.query_advice(rlp_table.storage_key_idx, Rotation::next())
-        //             - meta.query_advice(rlp_table.storage_key_idx, Rotation::cur()))
-        //             * meta.query_advice(rlp_table.storage_key_idx, Rotation::next()),
-        //     ];
-        //     input_exprs
-        //         .into_iter()
-        //         .zip(table_exprs)
-        //         .map(|(input, table)| (input * enable.expr(), table))
-        //         .collect()
-        // });
+        
 
         // meta.lookup_any("Decoding table stack op POP correspondence", |meta| {
         //     let enable = meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur());
