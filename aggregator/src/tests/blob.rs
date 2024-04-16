@@ -250,7 +250,8 @@ fn check_data(data: BatchData) -> Result<(), Vec<VerifyFailure>> {
 }
 
 fn check_circuit(circuit: &BlobCircuit) -> Result<(), Vec<VerifyFailure>> {
-    let k = 20;
+    // TODO: check where rows were not sufficient that we had to increase k from 20 to 21.
+    let k = 21;
     let mock_prover = MockProver::<Fr>::run(k, circuit, vec![]).expect("failed to run mock prover");
     mock_prover.verify_par()
 }

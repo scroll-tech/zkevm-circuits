@@ -48,10 +48,10 @@ pub const N_BLOB_BYTES: usize = BLOB_WIDTH * N_DATA_BYTES_PER_COEFFICIENT;
 /// The maximum number of bytes we will support in a single batch.
 ///
 /// For now, we assume that the zstd encoding can give us a maximum compression ratio of 5, i.e. we
-/// allow up to 5 times the number of bytes in a single blob to be in a batch.
+/// allow up to 3 times the number of bytes in a single blob to be in a batch.
 ///
 /// TODO: revisit
-pub const N_BATCH_BYTES: usize = N_BLOB_BYTES * 5;
+pub const N_BATCH_BYTES: usize = N_BLOB_BYTES * 3;
 
 /// The number of rows in Blob Data config's layout to represent the "blob metadata" section.
 pub const N_ROWS_METADATA: usize = N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES;

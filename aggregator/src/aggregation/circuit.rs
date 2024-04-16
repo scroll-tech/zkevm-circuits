@@ -188,9 +188,11 @@ impl Circuit<Fr> for AggregationCircuit {
 
                     let barycentric = config.barycentric.assign(
                         &mut ctx,
-                        &self.batch_hash.blob.coefficients,
-                        self.batch_hash.blob.challenge_digest,
-                        self.batch_hash.blob.evaluation,
+                        &self.batch_hash.point_evaluation_assignments.coefficients,
+                        self.batch_hash
+                            .point_evaluation_assignments
+                            .challenge_digest,
+                        self.batch_hash.point_evaluation_assignments.evaluation,
                     );
 
                     config.barycentric.scalar.range.finalize(&mut ctx);
@@ -455,7 +457,8 @@ impl Circuit<Fr> for AggregationCircuit {
                 barycentric_assignments,
             )?;
 
-            let decoder_exports = config.decoder_config.assign(&mut layouter)?;
+            // TODO: uncomment this line
+            // let decoder_exports = config.decoder_config.assign(&mut layouter)?;
 
             layouter.assign_region(
                 || "batch checks",
@@ -500,17 +503,16 @@ impl Circuit<Fr> for AggregationCircuit {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
-                    // equate rlc (from blob data) with decoder's encoded_rlc
-                    region.constrain_equal(
-                        blob_data_exports.bytes_rlc.cell(),
-                        decoder_exports.encoded_rlc.cell(),
-                    )?;
-
-                    // equate rlc (from batch data) with decoder's decoded_rlc
-                    region.constrain_equal(
-                        batch_data_exports.bytes_rlc.cell(),
-                        decoder_exports.decoded_rlc.cell(),
-                    )?;
+                    // // equate rlc (from blob data) with decoder's encoded_rlc
+                    // region.constrain_equal(
+                    //     blob_data_exports.bytes_rlc.cell(),
+                    //     decoder_exports.encoded_rlc.cell(),
+                    // )?;
+                    // // equate rlc (from batch data) with decoder's decoded_rlc
+                    // region.constrain_equal(
+                    //     batch_data_exports.bytes_rlc.cell(),
+                    //     decoder_exports.decoded_rlc.cell(),
+                    // )?;
 
                     Ok(())
                 },

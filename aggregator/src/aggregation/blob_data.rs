@@ -30,8 +30,6 @@ use crate::{
 pub struct BlobDataConfig {
     /// The byte value at this row.
     byte: Column<Advice>,
-    /// Fixed table that consists of [0, 256).
-    u8_table: U8Table,
 }
 
 pub struct AssignedBlobDataExport {
@@ -42,8 +40,9 @@ impl BlobDataConfig {
     pub fn configure(meta: &mut ConstraintSystem<Fr>, u8_table: U8Table) -> Self {
         let config = Self {
             byte: meta.advice_column(),
-            u8_table,
         };
+
+        meta.enable_equality(config.byte);
 
         meta.lookup("BlobDataConfig (0 < byte < 256)", |meta| {
             let byte_value = meta.query_advice(config.byte, Rotation::cur());
@@ -63,8 +62,6 @@ impl BlobDataConfig {
         batch_data: &BatchData,
         barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
-        self.u8_table.load(layouter)?;
-
         let assigned_bytes = layouter.assign_region(
             || "BlobData bytes",
             |mut region| self.assign_rows(&mut region, batch_data),
@@ -103,7 +100,12 @@ impl BlobDataConfig {
         assert!(blob_bytes.len() <= N_BLOB_BYTES, "too many blob bytes");
 
         let mut assigned_bytes = Vec::with_capacity(N_BLOB_BYTES);
-        for (i, &byte) in blob_bytes.iter().enumerate() {
+        for (i, &byte) in blob_bytes
+            .iter()
+            .chain(std::iter::repeat(&0))
+            .take(N_BLOB_BYTES)
+            .enumerate()
+        {
             assigned_bytes.push(region.assign_advice(
                 || "byte",
                 self.byte,
@@ -197,7 +199,7 @@ impl BlobDataConfig {
         ////////////////////////////////////////////////////////////////////////////////
 
         let bytes_rlc =
-            rlc_config.rlc(region, &assigned_bytes, &r_keccak, &mut rlc_config_offset)?;
+            rlc_config.rlc(region, assigned_bytes, &r_keccak, &mut rlc_config_offset)?;
         Ok(AssignedBlobDataExport { bytes_rlc })
     }
 }

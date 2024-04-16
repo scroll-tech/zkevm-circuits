@@ -49,9 +49,9 @@ pub struct BatchDataConfig {
     /// Represents the random linear combination of the Keccak digest. This has meaningful values
     /// only at the rows where we actually do the Keccak lookup.
     digest_rlc: Column<Advice>,
-    /// Boolean to let us know we are in the chunk data section.
+    /// Boolean to let us know we are in the "chunk data" section.
     pub data_selector: Selector,
-    /// Boolean to let us know we are in the hash section.
+    /// Boolean to let us know we are in the "digest rlc" section.
     pub hash_selector: Selector,
     /// Fixed table that consists of [0, 256).
     u8_table: U8Table,
@@ -109,6 +109,7 @@ impl BatchDataConfig {
         meta.enable_equality(config.boundary_count);
         meta.enable_equality(config.is_padding);
         meta.enable_equality(config.chunk_idx);
+        meta.enable_equality(config.bytes_rlc);
         meta.enable_equality(config.preimage_rlc);
         meta.enable_equality(config.digest_rlc);
 
@@ -225,7 +226,7 @@ impl BatchDataConfig {
                 // length is accumulated.
                 cond.expr() * (len_next - len_curr - 1.expr()),
                 // preimage rlc is updated.
-                cond.expr() * (preimage_rlc_curr * r + byte_next - preimage_rlc_next),
+                cond.expr() * (preimage_rlc_curr * r.expr() + byte_next - preimage_rlc_next),
                 // boundary count continues.
                 cond.expr() * (boundary_count_curr - boundary_count_prev),
                 // digest_rlc is 0.
@@ -245,11 +246,13 @@ impl BatchDataConfig {
             let digest_rlc = meta.query_advice(config.digest_rlc, Rotation::cur());
             let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
             let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
+            let bytes_rlc_curr = meta.query_advice(config.bytes_rlc, Rotation::cur());
+            let bytes_rlc_prev = meta.query_advice(config.bytes_rlc, Rotation::prev());
 
             vec![
                 // byte, accumulator, digest_rlc, preimage_rlc, chunk_idx iare 0 when padding in
                 // the "chunk data" section.
-                is_data.expr() * is_padding_curr.expr() * byte,
+                is_data.expr() * is_padding_curr.expr() * byte.expr(),
                 is_data.expr() * is_padding_curr.expr() * accumulator,
                 is_data.expr() * is_padding_curr.expr() * digest_rlc,
                 is_data.expr() * is_padding_curr.expr() * preimage_rlc,
@@ -260,10 +263,10 @@ impl BatchDataConfig {
                 is_data.expr()
                     * is_padding_curr.expr()
                     * (boundary_count_curr - boundary_count_prev),
+                // bytes rlc is accumulated appropriately
+                is_data.expr() * (bytes_rlc_prev * r + byte - bytes_rlc_curr),
             ]
         });
-
-        // TODO: custom gate for validation of bytes_rlc accumulation
 
         // lookup metadata and chunk data digests in keccak table.
         meta.lookup_any(
@@ -474,8 +477,18 @@ impl BatchDataConfig {
             )?;
             let digest_rlc =
                 region.assign_advice(|| "digest_rlc", self.digest_rlc, i, || row.digest_rlc)?;
-            let bytes_rlc =
-                region.assign_advice(|| "bytes_rlc", self.bytes_rlc, i, || bytes_rlc_acc)?;
+            let bytes_rlc = region.assign_advice(
+                || "bytes_rlc",
+                self.bytes_rlc,
+                i,
+                || {
+                    if i < N_ROWS_METADATA + N_ROWS_DATA {
+                        bytes_rlc_acc
+                    } else {
+                        Value::known(Fr::zero())
+                    }
+                },
+            )?;
             assigned_rows.push(AssignedBatchDataConfig {
                 byte,
                 accumulator,
@@ -697,6 +710,14 @@ impl BatchDataConfig {
             one.cell(),
         )?;
 
+        // also check that the preimage_rlc at the last row of "metadata" section is equal to the
+        // bytes_rlc at that row. This value is later used in the custom gate in the "chunk data"
+        // section to compute the running accumulator bytes_rlc.
+        region.constrain_equal(
+            metadata_rows[N_ROWS_METADATA - 1].preimage_rlc.cell(),
+            metadata_rows[N_ROWS_METADATA - 1].bytes_rlc.cell(),
+        )?;
+
         ////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// CHUNK_DATA //////////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////
@@ -907,7 +928,12 @@ impl BatchDataConfig {
                 .rev()
                 .collect(),
             chunk_data_digests,
-            bytes_rlc: assigned_rows.last().unwrap().bytes_rlc.clone(),
+            // bytes rlc is from the last row of the "chunk data" section.
+            bytes_rlc: assigned_rows
+                .get(N_ROWS_METADATA + N_ROWS_DATA - 1)
+                .unwrap()
+                .bytes_rlc
+                .clone(),
         };
 
         ////////////////////////////////////////////////////////////////////////////////
