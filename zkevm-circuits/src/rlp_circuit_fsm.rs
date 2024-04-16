@@ -2386,6 +2386,37 @@ impl<F: Field> RlpCircuitConfig<F> {
                 .collect()
         });
 
+        meta.lookup_any("Decoding table stack op POP correspondence", |meta| {
+            let enable = select::expr(
+                sum::expr([
+                    meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::next()),
+                    is_padding_in_dt.expr(Rotation::next())(meta),
+                ]),
+                0.expr(),
+                meta.query_advice(is_pop_op_lookup, Rotation::cur()),
+            );
+
+            let input_exprs = vec![
+                meta.query_advice(tx_id, Rotation::cur()),
+                meta.query_advice(format, Rotation::cur()),
+                meta.query_advice(byte_idx, Rotation::cur()),
+                meta.query_advice(depth, Rotation::cur()) - 1.expr(),
+                1.expr(),
+            ];
+            let table_exprs = vec![
+                meta.query_advice(rlp_decoding_table.tx_id, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.format, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.byte_idx, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.depth, Rotation::cur()),
+                meta.query_advice(rlp_decoding_table.is_stack_pop, Rotation::cur()),
+            ];
+            input_exprs
+                .into_iter()
+                .zip(table_exprs)
+                .map(|(input, table)| (input * enable.expr(), table))
+                .collect()
+        });
+
         // // RLP Decoding Table is sorted using an id = (tx_id, format, depth, access_list_idx,
         // // storage_key_idx) but bytes in the RLP circuit (rlp_table) is processed in order.
         // // Therefore, to prevent malicious injection of stack ops that don't correspond to
