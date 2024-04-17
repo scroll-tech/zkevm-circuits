@@ -1529,37 +1529,31 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.require_equal(
                 "is_new_access_list_address",
                 meta.query_advice(is_new_access_list_address, Rotation::cur()),
-                is_access_list_address(meta),
+                and::expr([is_access_list_address(meta), is_decode_tag_start(meta)]),
             );
             cb.require_equal(
                 "is_new_access_list_storage_key",
                 meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
-                is_access_list_storage_key(meta),
+                and::expr([is_access_list_storage_key(meta), is_decode_tag_start(meta)]),
             );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                is_decode_tag_start(meta),
-            ]))
-        });
-        meta.create_gate("boolean for reducing degree (part five)", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
             cb.require_equal(
                 "is_access_list_end",
                 meta.query_advice(is_access_list_end, Rotation::cur()),
-                depth_eq_two.is_equal_expression.expr(),
+                and::expr([
+                    depth_eq_two.is_equal_expression.expr(),
+                    is_tag_end_vector(meta),
+                ]),
             );
             cb.require_equal(
                 "is_storage_key_list_end",
                 meta.query_advice(is_storage_key_list_end, Rotation::cur()),
-                depth_eq_four.is_equal_expression.expr(),
+                and::expr([
+                    depth_eq_four.is_equal_expression.expr(),
+                    is_tag_end_vector(meta),
+                ]),
             );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                is_tag_end_vector(meta),
-            ]))
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
 
         // Access List Init
