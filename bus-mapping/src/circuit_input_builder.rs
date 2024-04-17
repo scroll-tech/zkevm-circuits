@@ -1134,14 +1134,15 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         Ok((proofs, codes))
     }
 
-    /// Yet-another Step 3. Get the account state and codes from pre-state tracing
+    /// Yet-another Step 3. Build account state and codes from geth tracing
+    /// (of which has include the prestate tracing inside)
     /// the account state is limited since proof is not included,
     /// but it is enough to build the sdb/cdb
-    /// if a hash for tx is provided, would return the prestate for this tx
-    pub async fn get_pre_state(
+    /// for a block, it would handle exec traces of every tx in sequence
+    #[allow(clippy::type_complexity)]
+    pub fn get_pre_state<'a>(
         &self,
-        eth_block: &EthBlock,
-        tx_hash: Option<H256>,
+        traces: impl Iterator<Item = &'a GethExecTrace>,
     ) -> Result<
         (
             Vec<eth_types::EIP1186ProofResponse>,
@@ -1149,23 +1150,11 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ),
         Error,
     > {
-        let traces = if let Some(tx_hash) = tx_hash {
-            vec![self.cli.trace_tx_prestate_by_hash(tx_hash).await?]
-        } else {
-            self.cli
-                .trace_block_prestate_by_hash(
-                    eth_block
-                        .hash
-                        .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-                )
-                .await?
-        };
-
         let mut account_set =
             HashMap::<Address, (eth_types::EIP1186ProofResponse, HashMap<Word, Word>)>::new();
         let mut code_set = HashMap::new();
 
-        for trace in traces.into_iter() {
+        for trace in traces.map(|tr| tr.prestate.clone()) {
             for (addr, prestate) in trace.into_iter() {
                 let (_, storages) = account_set.entry(addr).or_insert_with(|| {
                     let code_size =
@@ -1206,26 +1195,6 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             }
         }
 
-        // a hacking? since the coinbase address is not touch in prestate
-        let coinbase_addr = eth_block
-            .author
-            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
-        let block_num = eth_block
-            .number
-            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
-        assert_ne!(
-            block_num.as_u64(),
-            0,
-            "is not expected to access genesis block"
-        );
-        if let std::collections::hash_map::Entry::Vacant(e) = account_set.entry(coinbase_addr) {
-            let coinbase_proof = self
-                .cli
-                .get_proof(coinbase_addr, Vec::new(), (block_num - 1).into())
-                .await?;
-            e.insert((coinbase_proof, HashMap::new()));
-        }
-
         Ok((
             account_set
                 .into_iter()
@@ -1243,6 +1212,37 @@ impl<P: JsonRpcClient> BuilderClient<P> {
                 .collect::<Vec<_>>(),
             code_set,
         ))
+    }
+
+    /// Yet-another Step 3-1. (hacking?) replenish the pre state proof
+    /// with coinbase account
+    /// since current the coibase is not touched in prestate tracing
+    pub async fn complete_prestate(
+        &self,
+        eth_block: &EthBlock,
+        mut proofs: Vec<eth_types::EIP1186ProofResponse>,
+    ) -> Result<Vec<eth_types::EIP1186ProofResponse>, Error> {
+        // a hacking? since the coinbase address is not touch in prestate
+        let coinbase_addr = eth_block
+            .author
+            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
+        let block_num = eth_block
+            .number
+            .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?;
+        assert_ne!(
+            block_num.as_u64(),
+            0,
+            "is not expected to access genesis block"
+        );
+
+        if !proofs.iter().any(|pr| pr.address == coinbase_addr) {
+            let coinbase_proof = self
+                .cli
+                .get_proof(coinbase_addr, Vec::new(), (block_num - 1).into())
+                .await?;
+            proofs.push(coinbase_proof);
+        }
+        Ok(proofs)
     }
 
     /// Step 4. Build a partial StateDB from step 3
@@ -1312,7 +1312,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
         //let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
-        let (proofs, codes) = self.get_pre_state(&eth_block, None).await?;
+        let (proofs, codes) = self.get_pre_state(geth_traces.iter())?;
+        let proofs = self.complete_prestate(&eth_block, proofs).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         if eth_block.transactions.len() > self.circuits_params.max_txs {
             log::error!(
@@ -1370,7 +1371,11 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         let mut tx: eth_types::Transaction = self.cli.get_tx_by_hash(tx_hash).await?;
         tx.transaction_index = Some(0.into());
-        let geth_trace = self.cli.trace_tx_by_hash(tx_hash).await?;
+        let geth_trace = if cfg!(features = "rpc-legacy-tracer") {
+            self.cli.trace_tx_by_hash_legacy(tx_hash).await
+        } else {
+            self.cli.trace_tx_by_hash(tx_hash).await
+        }?;
         let mut eth_block = self
             .cli
             .get_block_by_number(tx.block_number.unwrap().into())
@@ -1378,7 +1383,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         eth_block.transactions = vec![tx.clone()];
 
-        let (proofs, codes) = self.get_pre_state(&eth_block, Some(tx_hash)).await?;
+        let (proofs, codes) = self.get_pre_state(std::iter::once(&geth_trace))?;
+        let proofs = self.complete_prestate(&eth_block, proofs).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(
             state_db,

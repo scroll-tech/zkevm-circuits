@@ -349,21 +349,9 @@ pub fn interpolate(z: Scalar, coefficients: &[Scalar; BLOB_WIDTH]) -> Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blob::BlobData;
-    use c_kzg::{Blob as RethBlob, KzgProof, KzgSettings};
-    use once_cell::sync::Lazy;
-    use std::{collections::BTreeSet, sync::Arc};
-
-    /// KZG trusted setup
-    pub static MAINNET_KZG_TRUSTED_SETUP: Lazy<Arc<KzgSettings>> = Lazy::new(|| {
-        Arc::new(
-            c_kzg::KzgSettings::load_trusted_setup(
-                &revm_primitives::kzg::G1_POINTS.0,
-                &revm_primitives::kzg::G2_POINTS.0,
-            )
-            .expect("failed to load trusted setup"),
-        )
-    });
+    use crate::blob::{BlobData, KZG_TRUSTED_SETUP};
+    use c_kzg::{Blob as RethBlob, KzgProof};
+    use std::collections::BTreeSet;
 
     #[test]
     fn log_blob_width() {
@@ -425,8 +413,7 @@ mod tests {
         )
         .unwrap();
         let (_proof, y) =
-            KzgProof::compute_kzg_proof(&blob, &to_be_bytes(z).into(), &MAINNET_KZG_TRUSTED_SETUP)
-                .unwrap();
+            KzgProof::compute_kzg_proof(&blob, &to_be_bytes(z).into(), &KZG_TRUSTED_SETUP).unwrap();
         from_canonical_be_bytes(*y)
     }
 

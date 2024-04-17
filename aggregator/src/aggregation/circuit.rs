@@ -479,6 +479,14 @@ impl Circuit<Fr> for AggregationCircuit {
                         region.constrain_equal(c.cell(), ec.cell())?;
                     }
 
+                    for (c, ec) in blob_data_exports
+                        .versioned_hash
+                        .iter()
+                        .zip_eq(assigned_batch_hash.blob.versioned_hash.iter())
+                    {
+                        region.constrain_equal(c.cell(), ec.cell())?;
+                    }
+
                     Ok(())
                 },
             )?;
