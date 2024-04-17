@@ -2277,7 +2277,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(is_push_op_lookup, Rotation::cur()),
                 and::expr([
                     meta.query_advice(is_tag_begin, Rotation::cur()),
-                    state_bits.value_equals(State::DecodeTagStart, Rotation::next())(meta)
+                    state_bits.value_equals(State::DecodeTagStart, Rotation::next())(meta),
+                    // Backward compatibility for EIP155 and pre-155 txs. The first begin tag corresponds to INIT
+                    not::expr(meta.query_advice(rlp_decoding_table.is_stack_init, Rotation::cur())),
                 ])
             );
             cb.condition(
@@ -2560,8 +2562,9 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // Assign lookup indicators from state machine into decoding table
         let is_init = matches!(witness.rlp_decoding_table.stack_op, StackOp::Init);
-        let is_begin = (witness_next.is_none()
-            || witness_next.unwrap().state_machine.state == State::DecodeTagStart)
+        let is_begin = !is_init
+            && (witness_next.is_none()
+                || witness_next.unwrap().state_machine.state == State::DecodeTagStart)
             && (witness.state_machine.tag == Tag::BeginObject
                 || witness.state_machine.tag == Tag::BeginVector);
         region.assign_advice(
