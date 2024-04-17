@@ -2560,9 +2560,8 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // Assign lookup indicators from state machine into decoding table
         let is_init = matches!(witness.rlp_decoding_table.stack_op, StackOp::Init);
-        let is_begin = (
-            witness_next.is_none() || witness_next.unwrap().state_machine.state == State::DecodeTagStart
-        )
+        let is_begin = (witness_next.is_none()
+            || witness_next.unwrap().state_machine.state == State::DecodeTagStart)
             && (witness.state_machine.tag == Tag::BeginObject
                 || witness.state_machine.tag == Tag::BeginVector);
         region.assign_advice(
