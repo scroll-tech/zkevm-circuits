@@ -1529,18 +1529,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.require_equal(
                 "is_new_access_list_address",
                 meta.query_advice(is_new_access_list_address, Rotation::cur()),
-                and::expr([
-                    is_access_list_address(meta),
-                    is_decode_tag_start(meta),
-                ]),
+                and::expr([is_access_list_address(meta), is_decode_tag_start(meta)]),
             );
             cb.require_equal(
                 "is_new_access_list_storage_key",
                 meta.query_advice(is_new_access_list_storage_key, Rotation::cur()),
-                and::expr([
-                    is_access_list_storage_key(meta),
-                    is_decode_tag_start(meta),
-                ]),
+                and::expr([is_access_list_storage_key(meta), is_decode_tag_start(meta)]),
             );
             cb.require_equal(
                 "is_access_list_end",
