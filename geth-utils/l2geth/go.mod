@@ -1,6 +1,6 @@
 module l2gethutil
 
-go 1.18
+go 1.21
 
 require (
 	github.com/imdario/mergo v0.3.16
