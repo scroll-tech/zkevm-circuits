@@ -1739,8 +1739,6 @@ pub struct CopyTable {
     /// The number of non-masked bytes left to be copied.
     pub real_bytes_left: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
-    pub value_wrod_rlc: Column<Advice>, // TODO: rm
-    /// mask indicates the byte is actual coped or padding to memory word
     //pub mask: Column<Advice>,
     /// An accumulator value in the RLC representation. This is used for
     /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
@@ -1785,7 +1783,6 @@ impl CopyTable {
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             real_bytes_left: meta.advice_column(),
-            value_wrod_rlc: meta.advice_column(), // TODO: rm
             rlc_acc: meta.advice_column_in(SecondPhase),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
