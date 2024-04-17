@@ -1,7 +1,7 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use eth_types::{Field, ToBigEndian, H256, U256};
+use eth_types::{Field, ToBigEndian, H256};
 use ethers_core::utils::keccak256;
 
 use crate::{
@@ -34,7 +34,10 @@ pub struct BatchHash {
     pub(crate) public_input_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
+    /// 4844-Blob related fields.
     pub(crate) blob: BlobAssignments,
+    /// The 4844 versioned hash for the blob.
+    pub(crate) versioned_hash: H256,
 }
 
 impl BatchHash {
@@ -117,6 +120,7 @@ impl BatchHash {
 
         let blob_data = BlobData::new(number_of_valid_chunks, chunks_with_padding);
         let blob_assignments = BlobAssignments::from(&blob_data);
+        let versioned_hash = blob_data.get_versioned_hash();
 
         // public input hash is build as
         // keccak(
@@ -126,7 +130,8 @@ impl BatchHash {
         //     chunk[k-1].withdraw_root ||
         //     batch_data_hash ||
         //     z ||
-        //     y
+        //     y ||
+        //     versioned_hash
         // )
         let preimage = [
             chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
@@ -140,6 +145,7 @@ impl BatchHash {
             batch_data_hash.as_slice(),
             blob_assignments.challenge.to_be_bytes().as_ref(),
             blob_assignments.evaluation.to_be_bytes().as_ref(),
+            versioned_hash.as_bytes(),
         ]
         .concat();
         let public_input_hash: H256 = keccak256(preimage).into();
@@ -155,9 +161,10 @@ impl BatchHash {
             chain_id: chunks_with_padding[0].chain_id,
             chunks_with_padding: chunks_with_padding.to_vec(),
             data_hash: batch_data_hash.into(),
-            blob: blob_assignments,
             public_input_hash,
             number_of_valid_chunks,
+            blob: blob_assignments,
+            versioned_hash,
         }
     }
 
@@ -187,15 +194,9 @@ impl BatchHash {
         //      chunk[k-1].withdraw_root ||
         //      batch_data_hash ||
         //      z ||
-        //      y )
-        // TODO: make BLS_MODULUS into a static variable using lazy_static!()
-        let (_, z) = self.blob.challenge_digest.div_mod(
-            U256::from_str_radix(
-                "0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001",
-                16,
-            )
-            .unwrap(),
-        );
+        //      y ||
+        //      blob_versioned_hash
+        //  )
         let batch_public_input_hash_preimage = [
             self.chain_id.to_be_bytes().as_ref(),
             self.chunks_with_padding[0].prev_state_root.as_bytes(),
@@ -206,8 +207,9 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             self.data_hash.as_bytes(),
-            &z.to_be_bytes(),
+            &self.blob.challenge.to_be_bytes(),
             &self.blob.evaluation.to_be_bytes(),
+            self.versioned_hash.as_bytes(),
         ]
         .concat();
         res.push(batch_public_input_hash_preimage);

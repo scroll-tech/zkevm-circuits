@@ -50,3 +50,8 @@ tracer-tests = ["enable-memory"]
 enable-stack = ["eth-types/enable-stack", "mock?/enable-stack"]
 enable-memory = ["eth-types/enable-memory", "mock?/enable-memory"]
 enable-storage = ["eth-types/enable-storage", "mock?/enable-storage"]
+# Do not use some custom tracer like "mux" in rpc call
+rpc-legacy-tracer = []
+# For the trace obtained from erigon node, refund field is missed
+# and must be rebuild
+fix-refund = ["rpc-legacy-tracer"]
