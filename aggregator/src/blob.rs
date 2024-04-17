@@ -3,14 +3,22 @@ use crate::{
     BatchHash, ChunkHash, MAX_AGG_SNARKS,
 };
 
-use eth_types::U256;
-use ethers_core::utils::keccak256;
+use eth_types::{ToBigEndian, H256, U256};
+use ethers_core::{
+    k256::sha2::{Digest, Sha256},
+    utils::keccak256,
+};
 use halo2_proofs::{
     circuit::Value,
     halo2curves::{bls12_381::Scalar, bn256::Fr},
 };
 use itertools::Itertools;
-use std::iter::{once, repeat};
+use once_cell::sync::Lazy;
+use revm_primitives::VERSIONED_HASH_VERSION_KZG;
+use std::{
+    iter::{once, repeat},
+    sync::Arc,
+};
 use zkevm_circuits::util::Challenges;
 
 /// The number of coefficients (BLS12-381 scalars) to represent the blob polynomial in evaluation
@@ -43,7 +51,11 @@ pub const N_ROWS_METADATA: usize = N_ROWS_NUM_CHUNKS + N_ROWS_CHUNK_SIZES;
 pub const N_ROWS_DATA: usize = N_BLOB_BYTES - N_ROWS_METADATA;
 
 /// The number of rows in Blob Data config's layout to represent the "digest rlc" section.
-pub const N_ROWS_DIGEST_RLC: usize = 1 + 1 + MAX_AGG_SNARKS;
+/// - metadata digest RLC (1 row)
+/// - chunk_digests RLC for each chunk (MAX_AGG_SNARKS rows)
+/// - blob versioned hash RLC (1 row)
+/// - challenge digest RLC (1 row)
+pub const N_ROWS_DIGEST_RLC: usize = 1 + MAX_AGG_SNARKS + 1 + 1;
 
 /// The number of rows in Blob Data config's layout to represent the "digest bytes" section.
 pub const N_ROWS_DIGEST_BYTES: usize = N_ROWS_DIGEST_RLC * N_BYTES_U256;
@@ -53,6 +65,17 @@ pub const N_ROWS_DIGEST: usize = N_ROWS_DIGEST_RLC + N_ROWS_DIGEST_BYTES;
 
 /// The total number of rows used in Blob Data config's layout.
 pub const N_ROWS_BLOB_DATA_CONFIG: usize = N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST;
+
+/// KZG trusted setup
+pub static KZG_TRUSTED_SETUP: Lazy<Arc<c_kzg::KzgSettings>> = Lazy::new(|| {
+    Arc::new(
+        c_kzg::KzgSettings::load_trusted_setup(
+            &revm_primitives::kzg::G1_POINTS.0,
+            &revm_primitives::kzg::G2_POINTS.0,
+        )
+        .expect("failed to load trusted setup"),
+    )
+});
 
 /// Helper struct to generate witness for the Blob Data Config.
 #[derive(Clone, Debug)]
@@ -125,6 +148,12 @@ impl Default for BlobData {
     }
 }
 
+fn kzg_to_versioned_hash(commitment: &c_kzg::KzgCommitment) -> H256 {
+    let mut res = Sha256::digest(commitment.as_slice());
+    res[0] = VERSIONED_HASH_VERSION_KZG;
+    H256::from_slice(&res[..])
+}
+
 impl BlobData {
     pub(crate) fn new(num_valid_chunks: usize, chunks_with_padding: &[ChunkHash]) -> Self {
         assert!(num_valid_chunks > 0);
@@ -165,21 +194,40 @@ impl BlobData {
 }
 
 impl BlobData {
+    /// Get the versioned hash as per EIP-4844.
+    pub(crate) fn get_versioned_hash(&self) -> H256 {
+        let coefficients = self.get_coefficients();
+        let blob = c_kzg::Blob::from_bytes(
+            &coefficients
+                .iter()
+                .cloned()
+                .flat_map(|coeff| coeff.to_be_bytes())
+                .collect::<Vec<_>>(),
+        )
+        .expect("blob-coefficients to 4844 blob should succeed");
+        let c = c_kzg::KzgCommitment::blob_to_kzg_commitment(&blob, &KZG_TRUSTED_SETUP)
+            .expect("blob to kzg commitment should succeed");
+        kzg_to_versioned_hash(&c)
+    }
+
     /// Get the preimage of the challenge digest.
     pub(crate) fn get_challenge_digest_preimage(&self) -> Vec<u8> {
         let metadata_digest = keccak256(self.to_metadata_bytes());
         let chunk_digests = self.chunk_data.iter().map(keccak256);
+        let blob_versioned_hash = self.get_versioned_hash();
 
         // preimage =
         //     metadata_digest ||
         //     chunk[0].chunk_data_digest || ...
-        //     chunk[MAX_AGG_SNARKS-1].chunk_data_digest
+        //     chunk[MAX_AGG_SNARKS-1].chunk_data_digest ||
+        //     blob_versioned_hash
         //
         // where chunk_data_digest for a padded chunk is set equal to the "last valid chunk"'s
         // chunk_data_digest.
         metadata_digest
             .into_iter()
             .chain(chunk_digests.flatten())
+            .chain(blob_versioned_hash.to_fixed_bytes())
             .collect::<Vec<_>>()
     }
 
@@ -413,15 +461,23 @@ impl BlobData {
             acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
         });
 
+        // blob versioned hash
+        let versioned_hash = self.get_versioned_hash();
+        let versioned_hash_rlc = versioned_hash.as_bytes().iter().fold(zero, |acc, &byte| {
+            acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
+        });
+
         // - metadata digest rlc
         // - chunks[i].chunk_data_digest rlc for each chunk
+        // - versioned hash rlc
         // - challenge digest rlc
         // - metadata digest bytes
         // - chunks[i].chunk_data_digest bytes for each chunk
+        // - versioned hash bytes
         // - challenge digest bytes
         once(BlobDataRow {
-            digest_rlc: metadata_digest_rlc,
             preimage_rlc: Value::known(Fr::zero()),
+            digest_rlc: metadata_digest_rlc,
             // this is_padding assignment does not matter as we have already crossed the "chunk
             // data" section. This assignment to 1 is simply to allow the custom gate to check:
             // - padding transitions from 0 -> 1 only once.
@@ -434,38 +490,51 @@ impl BlobData {
                 .zip_eq(self.chunk_sizes.iter())
                 .enumerate()
                 .map(|(i, (&digest_rlc, &chunk_size))| BlobDataRow {
+                    preimage_rlc: Value::known(Fr::zero()),
                     digest_rlc,
                     chunk_idx: (i + 1) as u64,
                     accumulator: chunk_size as u64,
-                    preimage_rlc: Value::known(Fr::zero()),
                     ..Default::default()
                 }),
         )
+        // versioned hash RLC
+        .chain(once(BlobDataRow {
+            preimage_rlc: Value::known(Fr::zero()),
+            digest_rlc: versioned_hash_rlc,
+            ..Default::default()
+        }))
         .chain(once(BlobDataRow {
             preimage_rlc: challenge_digest_preimage_rlc,
             digest_rlc: challenge_digest_rlc,
-            accumulator: 32 * (MAX_AGG_SNARKS + 1) as u64,
+            accumulator: 32 * (MAX_AGG_SNARKS + 1 + 1) as u64,
             is_boundary: true,
             ..Default::default()
         }))
         .chain(metadata_digest.iter().map(|&byte| BlobDataRow {
-            byte,
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: Value::known(Fr::zero()),
+            byte,
             ..Default::default()
         }))
         .chain(chunk_digests.iter().flat_map(|digest| {
             digest.iter().map(|&byte| BlobDataRow {
-                byte,
                 preimage_rlc: Value::known(Fr::zero()),
                 digest_rlc: Value::known(Fr::zero()),
+                byte,
                 ..Default::default()
             })
         }))
-        .chain(challenge_digest.iter().map(|&byte| BlobDataRow {
-            byte,
+        // bytes of versioned hash
+        .chain(versioned_hash.as_bytes().iter().map(|&byte| BlobDataRow {
             preimage_rlc: Value::known(Fr::zero()),
             digest_rlc: Value::known(Fr::zero()),
+            byte,
+            ..Default::default()
+        }))
+        .chain(challenge_digest.iter().map(|&byte| BlobDataRow {
+            preimage_rlc: Value::known(Fr::zero()),
+            digest_rlc: Value::known(Fr::zero()),
+            byte,
             ..Default::default()
         }))
         .collect()
@@ -512,11 +581,7 @@ impl From<&BlobData> for BlobAssignments {
 
         // y = P(z)
         let evaluation = U256::from_little_endian(
-            &interpolate(
-                Scalar::from_raw(challenge_digest.0),
-                &coefficients_as_scalars,
-            )
-            .to_bytes(),
+            &interpolate(Scalar::from_raw(challenge.0), &coefficients_as_scalars).to_bytes(),
         );
 
         Self {
@@ -636,12 +701,15 @@ mod tests {
         let default_metadata_digest = keccak256(default_metadata);
         let default_chunk_digests = [keccak256([]); MAX_AGG_SNARKS];
 
+        let default_blob = BlobData::default();
+        let versioned_hash = default_blob.get_versioned_hash();
         assert_eq!(
-            BlobData::default().get_challenge_digest(),
+            default_blob.get_challenge_digest(),
             U256::from(keccak256(
                 default_metadata_digest
                     .into_iter()
                     .chain(default_chunk_digests.into_iter().flatten())
+                    .chain(versioned_hash.to_fixed_bytes())
                     .collect::<Vec<u8>>()
             )),
         )

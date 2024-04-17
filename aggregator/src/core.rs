@@ -34,8 +34,8 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE,
-        MAX_AGG_SNARKS,
+        BATCH_VH_OFFSET, BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN,
+        INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS,
     },
     util::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
@@ -162,6 +162,7 @@ pub(crate) struct ExtractedHashCells {
 pub(crate) struct ExpectedBlobCells {
     pub(crate) z: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) y: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) versioned_hash: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) chunk_tx_data_digests: Vec<Vec<AssignedCell<Fr, Fr>>>,
 }
 
@@ -238,6 +239,7 @@ pub(crate) fn assign_batch_hashes(
     let expected_blob_cells = ExpectedBlobCells {
         z: batch_pi_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + 32].to_vec(),
         y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + 32].to_vec(),
+        versioned_hash: batch_pi_input[BATCH_VH_OFFSET..BATCH_VH_OFFSET + 32].to_vec(),
         chunk_tx_data_digests: (0..MAX_AGG_SNARKS)
             .map(|i| {
                 let chunk_pi_input = &extracted_hash_cells.hash_input_cells
@@ -858,16 +860,16 @@ pub(crate) fn conditional_constraints(
                 }
 
                 // 7. the hash input length are correct
-                // - hashes[0] has 200 bytes
-                // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
+                // - hashes[0] has 232 bytes (preimage of batch pi hash)
+                // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input (preimage of chunk pi hash)
                 // - batch's data_hash length is 32 * number_of_valid_snarks
 
-                // - hashes[0] has 200 bytes
                 // note: hash_input_len_cells[0] is from dummy rows of keccak circuit.
                 let batch_pi_hash_input_cell = hash_input_len_cells[2].cell();
                 region.constrain_equal(
                     batch_pi_hash_input_cell,
-                    rlc_config.two_hundred_cell(batch_pi_hash_input_cell.region_index),
+                    rlc_config
+                        .two_hundred_and_thirty_two_cell(batch_pi_hash_input_cell.region_index),
                 )?;
 
                 // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input

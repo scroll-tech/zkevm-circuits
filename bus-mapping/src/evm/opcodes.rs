@@ -128,6 +128,8 @@ use stackonlyop::StackPopOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
 
+pub use sstore::calc_expected_tx_refund;
+
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for one
 /// or multiple [`ExecStep`](crate::circuit_input_builder::ExecStep) depending

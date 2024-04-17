@@ -57,18 +57,18 @@ async fn test_mock_prove_tx() {
     }
     let cli = get_client();
     let params = CircuitsParams {
-        max_rws: 1_000_000,
-        max_copy_rows: 1_000_000, // dynamic
+        max_rws: 2_000_000,
+        max_copy_rows: 2_000_000, // dynamic
         max_txs: 10,
-        max_calldata: 500_000,
+        max_calldata: 1_000_000,
         max_inner_blocks: 8,
-        max_bytecode: 500_000,
-        max_mpt_rows: 100_000,
-        max_poseidon_rows: 1_000_000,
-        max_keccak_rows: 0,
+        max_bytecode: 1_000_000,
+        max_mpt_rows: 200_000,
+        max_poseidon_rows: 2_000_000,
+        max_keccak_rows: 2_000_000,
         max_exp_steps: 5_000,
         max_evm_rows: 0,
-        max_rlp_rows: 800_000,
+        max_rlp_rows: 1_500_000,
         ..Default::default()
     };
 

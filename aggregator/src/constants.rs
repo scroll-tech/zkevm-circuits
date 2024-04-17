@@ -44,9 +44,11 @@ pub(crate) const CHUNK_TX_DATA_HASH_INDEX: usize = 136;
 // - chunk_data_hash    32 bytes
 // - z                  32 bytes
 // - y                  32 bytes
+// - versioned_hash     32 bytes
 
 pub(crate) const BATCH_Z_OFFSET: usize = 136;
 pub(crate) const BATCH_Y_OFFSET: usize = 168;
+pub(crate) const BATCH_VH_OFFSET: usize = 200;
 
 // ================================
 // aggregator parameters

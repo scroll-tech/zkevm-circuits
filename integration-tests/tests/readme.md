@@ -30,3 +30,6 @@ To support most txs in mainnet some features are still missed:
 And for support most blocks in mainnet require more features:
 - [ ] Support >128 max txs for rlp / sig circuit
 - [ ] large copy data (> 500,000 which is hardcoded currently, 1.5M is adviced)
+
+### Note when testing with common rpc node provider
+Currently most rpc node provider would provide their trace API from erigon ndoe instead of geth. You need to add `fix-refund` feature while running tests above: `--features=scroll,fix-refund`
