@@ -9,7 +9,7 @@ mod circuit;
 /// Config for aggregation circuit
 mod config;
 /// Config for decoding zstd-encoded data.
-mod decompression;
+mod decoder;
 /// config for RLC circuit
 mod rlc;
 
@@ -18,7 +18,7 @@ pub(crate) use barycentric::{
 };
 pub(crate) use batch_data::BatchDataConfig;
 pub(crate) use blob_data::BlobDataConfig;
-pub(crate) use decompression::decoder::DecoderConfig;
+pub(crate) use decoder::DecoderConfig;
 pub(crate) use rlc::RlcConfig;
 
 pub use circuit::AggregationCircuit;

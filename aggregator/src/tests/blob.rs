@@ -82,7 +82,7 @@ impl Circuit<Fr> for BlobCircuit {
         let challenge_expressions = challenges.exprs(meta);
         let batch_data_config = BatchDataConfig::configure(
             meta,
-            challenge_expressions,
+            &challenge_expressions,
             u8_table,
             range_table,
             &keccak_table,

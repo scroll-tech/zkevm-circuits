@@ -33,6 +33,7 @@ use execution::ExecutionConfig;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
 use table::FixedTableTag;
+pub use util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
 use witness::Block;
 
 /// EvmCircuitConfig implements verification of execution trace of a block.

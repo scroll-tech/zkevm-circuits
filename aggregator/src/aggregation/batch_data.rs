@@ -81,7 +81,7 @@ pub struct AssignedBatchDataConfig {
 impl BatchDataConfig {
     pub fn configure(
         meta: &mut ConstraintSystem<Fr>,
-        challenge: Challenges<Expression<Fr>>,
+        challenge: &Challenges<Expression<Fr>>,
         u8_table: U8Table,
         range_table: RangeTable<MAX_AGG_SNARKS>,
         keccak_table: &KeccakTable,
@@ -357,7 +357,7 @@ impl BatchDataConfig {
             },
         );
 
-        assert!(meta.degree() <= 5);
+        assert!(meta.degree() <= 4);
 
         config
     }

@@ -174,7 +174,7 @@ impl<F: Field> ReversionInfo<F> {
     }
 }
 
-pub(crate) trait ConstrainBuilderCommon<F: Field> {
+pub trait ConstrainBuilderCommon<F: Field> {
     fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>);
 
     fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
@@ -236,7 +236,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn condition<R>(
+    pub fn condition<R>(
         &mut self,
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
@@ -263,7 +263,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn gate(&self, selector: Expression<F>) -> Vec<(&'static str, Expression<F>)> {
+    pub fn gate(&self, selector: Expression<F>) -> Vec<(&'static str, Expression<F>)> {
         self.constraints
             .clone()
             .into_iter()

@@ -18,7 +18,7 @@ use super::{
 /// A read-only memory table (fixed table) for decompression circuit to verify that the next tag
 /// fields are assigned correctly.
 #[derive(Clone, Debug)]
-pub struct TagRomTableRow {
+pub struct RomTagTableRow {
     /// The current tag.
     tag: ZstdTag,
     /// The tag that will be processed after the current tag is finished processing.
@@ -33,7 +33,7 @@ pub struct TagRomTableRow {
     is_reverse: bool,
 }
 
-impl TagRomTableRow {
+impl RomTagTableRow {
     pub(crate) fn rows() -> Vec<Self> {
         use ZstdTag::{
             BlockHeader, FrameContentSize, FrameHeaderDescriptor, Null, RawBlockBytes,

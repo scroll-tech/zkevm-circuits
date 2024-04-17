@@ -49,7 +49,7 @@ impl BlobDataConfig {
             vec![(byte_value, u8_table.into())]
         });
 
-        assert!(meta.degree() <= 5);
+        assert!(meta.degree() <= 4);
 
         config
     }
