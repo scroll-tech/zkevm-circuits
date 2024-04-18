@@ -69,6 +69,8 @@ pub struct DecoderConfig {
 
 #[derive(Clone, Debug)]
 struct TagConfig {
+    /// Marks all enabled rows.
+    q_enable: Column<Fixed>,
     /// The ZstdTag being processed at the current row.
     tag: Column<Advice>,
     /// Tag decomposed as bits. This is useful in constructing conditional checks against the tag
@@ -115,6 +117,7 @@ impl TagConfig {
         let tag_len = meta.advice_column();
 
         Self {
+            q_enable,
             tag,
             tag_bits: BinaryNumberChip::configure(meta, q_enable, Some(tag.into())),
             tag_next: meta.advice_column(),
@@ -410,6 +413,12 @@ impl DecoderConfig {
 
             let mut cb = BaseConstraintBuilder::default();
 
+            // The first row is not padded row.
+            cb.require_zero(
+                "is_padding is False on the first row",
+                meta.query_advice(config.is_padding, Rotation::cur()),
+            );
+
             // byte_idx initialises at 1.
             cb.require_equal(
                 "byte_idx == 1",
@@ -448,6 +457,24 @@ impl DecoderConfig {
                 "decoded_len_acc == 0",
                 meta.query_advice(config.decoded_len_acc, Rotation::cur()),
             );
+
+            cb.gate(condition)
+        });
+
+        meta.create_gate("DecoderConfig: all rows except the first row", |meta| {
+            let condition = not::expr(meta.query_fixed(config.q_first, Rotation::cur()));
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            let is_padding_curr = meta.query_advice(config.is_padding, Rotation::cur());
+            let is_padding_prev = meta.query_advice(config.is_padding, Rotation::prev());
+
+            // is_padding is boolean.
+            cb.require_boolean("is_padding is boolean", is_padding_curr.expr());
+
+            // is_padding transitions from 0 -> 1 only once, i.e. is_padding_delta is boolean.
+            let is_padding_delta = is_padding_curr - is_padding_prev;
+            cb.require_boolean("is_padding_delta is boolean", is_padding_delta);
 
             cb.gate(condition)
         });
@@ -515,47 +542,72 @@ impl DecoderConfig {
             cb.gate(condition)
         });
 
-        meta.create_gate("DecoderConfig: all except the first row", |meta| {
+        meta.create_gate(
+            "DecoderConfig: all non-padded rows except the first row",
+            |meta| {
+                let condition = and::expr([
+                    not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
+                    not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                ]);
+
+                let mut cb = BaseConstraintBuilder::default();
+
+                // byte_idx either remains the same or increments by 1.
+                let byte_idx_delta = meta.query_advice(config.byte_idx, Rotation::cur())
+                    - meta.query_advice(config.byte_idx, Rotation::prev());
+                cb.require_boolean(
+                    "(byte_idx::cur - byte_idx::prev) in [0, 1]",
+                    byte_idx_delta.expr(),
+                );
+
+                // If byte_idx has not incremented, we see the same byte.
+                cb.condition(not::expr(byte_idx_delta.expr()), |cb| {
+                    cb.require_equal(
+                        "if byte_idx::cur == byte_idx::prev then byte::cur == byte::prev",
+                        meta.query_advice(config.byte, Rotation::cur()),
+                        meta.query_advice(config.byte, Rotation::prev()),
+                    );
+                });
+
+                // If the previous tag was done processing, verify that the is_change boolean was
+                // set.
+                let tag_idx_eq_tag_len = config.tag_config.tag_idx_eq_tag_len.expr();
+                cb.condition(and::expr([byte_idx_delta, tag_idx_eq_tag_len]), |cb| {
+                    cb.require_equal(
+                        "is_change is set",
+                        meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                        1.expr(),
+                    );
+                });
+
+                // decoded_len is unchanged.
+                cb.require_equal(
+                    "decoded_len::cur == decoded_len::prev",
+                    meta.query_advice(config.decoded_len, Rotation::cur()),
+                    meta.query_advice(config.decoded_len, Rotation::prev()),
+                );
+
+                cb.gate(condition)
+            },
+        );
+
+        meta.create_gate("DecoderConfig: padded rows", |meta| {
             let condition = and::expr([
-                not::expr(meta.query_fixed(config.q_first, Rotation::cur())),
-                not::expr(meta.query_advice(config.is_padding, Rotation::cur())),
+                meta.query_advice(config.is_padding, Rotation::prev()),
+                meta.query_advice(config.is_padding, Rotation::cur()),
             ]);
 
             let mut cb = BaseConstraintBuilder::default();
 
-            // byte_idx either remains the same or increments by 1.
-            let byte_idx_delta = meta.query_advice(config.byte_idx, Rotation::cur())
-                - meta.query_advice(config.byte_idx, Rotation::prev());
-            cb.require_boolean(
-                "(byte_idx::cur - byte_idx::prev) in [0, 1]",
-                byte_idx_delta.expr(),
-            );
-
-            // If byte_idx has not incremented, we see the same byte.
-            cb.condition(not::expr(byte_idx_delta.expr()), |cb| {
+            // Fields that do not change until the end of the layout once we have encountered
+            // padded rows.
+            for column in [config.encoded_rlc, config.decoded_rlc, config.decoded_len] {
                 cb.require_equal(
-                    "if byte_idx::cur == byte_idx::prev then byte::cur == byte::prev",
-                    meta.query_advice(config.byte, Rotation::cur()),
-                    meta.query_advice(config.byte, Rotation::prev()),
+                    "unchanged column in padded rows",
+                    meta.query_advice(column, Rotation::cur()),
+                    meta.query_advice(column, Rotation::prev()),
                 );
-            });
-
-            // If the previous tag was done processing, verify that the is_change boolean was set.
-            let tag_idx_eq_tag_len = config.tag_config.tag_idx_eq_tag_len.expr();
-            cb.condition(and::expr([byte_idx_delta, tag_idx_eq_tag_len]), |cb| {
-                cb.require_equal(
-                    "is_change is set",
-                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
-                    1.expr(),
-                );
-            });
-
-            // decoded_len is unchanged.
-            cb.require_equal(
-                "decoded_len::cur == decoded_len::prev",
-                meta.query_advice(config.decoded_len, Rotation::cur()),
-                meta.query_advice(config.decoded_len, Rotation::prev()),
-            );
+            }
 
             cb.gate(condition)
         });
