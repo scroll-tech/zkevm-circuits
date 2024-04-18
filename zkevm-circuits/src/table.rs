@@ -3186,3 +3186,114 @@ impl<const MAX: usize> From<RangeTable<MAX>> for TableColumn {
         table.0
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+/// Bitwise operation types.
+pub enum BitwiseOp {
+    /// AND
+    AND = 0,
+    /// OR
+    OR,
+    /// XOR
+    XOR,
+}
+
+impl_expr!(BitwiseOp);
+
+/// Lookup table for bitwise AND/OR/XOR operations.
+#[derive(Clone, Copy, Debug)]
+pub struct BitwiseOpTable {
+    /// Denotes op: AND == 0, OR == 1, XOR == 2.
+    pub op: Column<Fixed>,
+    /// Denotes the left operand.
+    pub lhs: Column<Fixed>,
+    /// Denotes the right operand.
+    pub rhs: Column<Fixed>,
+    /// Denotes the bitwise operation on lhs and rhs.
+    pub output: Column<Fixed>,
+}
+
+impl BitwiseOpTable {
+    /// Construct the bitwise ops table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            op: meta.fixed_column(),
+            lhs: meta.fixed_column(),
+            rhs: meta.fixed_column(),
+            output: meta.fixed_column(),
+        }
+    }
+
+    /// Assign values to the BitwiseOp table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "BitwiseOp table",
+            |mut region| {
+                let mut offset = 0;
+                for op in [BitwiseOp::AND, BitwiseOp::OR, BitwiseOp::XOR] {
+                    for [lhs, rhs, out] in (0..256).flat_map(move |lhs| {
+                        (0..256).map(move |rhs| {
+                            [
+                                lhs,
+                                rhs,
+                                match op {
+                                    BitwiseOp::AND => lhs & rhs,
+                                    BitwiseOp::OR => lhs | rhs,
+                                    BitwiseOp::XOR => lhs ^ rhs,
+                                },
+                            ]
+                        })
+                    }) {
+                        region.assign_fixed(
+                            || "op",
+                            self.op,
+                            offset,
+                            || Value::known(F::from(op as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "lhs",
+                            self.lhs,
+                            offset,
+                            || Value::known(F::from(lhs as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "rhs",
+                            self.rhs,
+                            offset,
+                            || Value::known(F::from(rhs as u64)),
+                        )?;
+                        region.assign_fixed(
+                            || "output",
+                            self.output,
+                            offset,
+                            || Value::known(F::from(out as u64)),
+                        )?;
+                        offset += 1;
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field> LookupTable<F> for BitwiseOpTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.op.into(),
+            self.lhs.into(),
+            self.rhs.into(),
+            self.output.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("op"),
+            String::from("lhs"),
+            String::from("rhs"),
+            String::from("output"),
+        ]
+    }
+}

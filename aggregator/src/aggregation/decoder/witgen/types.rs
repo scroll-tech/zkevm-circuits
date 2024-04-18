@@ -27,50 +27,33 @@ pub struct RomTagTableRow {
     max_len: u64,
     /// Whether this tag outputs a decoded byte or not.
     is_output: bool,
-    /// Whether this tag belongs to a ``block`` in zstd or not.
-    is_block: bool,
     /// Whether this tag is processed from back-to-front or not.
     is_reverse: bool,
+    /// Whether this tag belongs to a ``block`` in zstd or not.
+    is_block: bool,
 }
 
 impl RomTagTableRow {
     pub(crate) fn rows() -> Vec<Self> {
         use ZstdTag::{
-            BlockHeader, FrameContentSize, FrameHeaderDescriptor, Null, RawBlockBytes,
-            RleBlockBytes, ZstdBlockFseCode, ZstdBlockHuffmanCode, ZstdBlockJumpTable,
-            ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, ZstdBlockLiteralsRleBytes,
-            ZstdBlockLstream, ZstdBlockSequenceHeader,
+            BlockHeader, FrameContentSize, FrameHeaderDescriptor, ZstdBlockLiteralsHeader,
+            ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader,
         };
 
         [
             (FrameHeaderDescriptor, FrameContentSize, 1),
             (FrameContentSize, BlockHeader, 8),
-            (BlockHeader, RawBlockBytes, 3),
-            (BlockHeader, RleBlockBytes, 3),
             (BlockHeader, ZstdBlockLiteralsHeader, 3),
-            (RawBlockBytes, BlockHeader, 8388607), // (1 << 23) - 1
-            (RawBlockBytes, Null, 8388607),
-            (RleBlockBytes, BlockHeader, 8388607),
-            (RleBlockBytes, Null, 8388607),
             (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRawBytes, 5),
-            (ZstdBlockLiteralsHeader, ZstdBlockLiteralsRleBytes, 5),
             (ZstdBlockLiteralsRawBytes, ZstdBlockSequenceHeader, 1048575), // (1 << 20) - 1
-            (ZstdBlockLiteralsRleBytes, ZstdBlockSequenceHeader, 1048575),
-            (ZstdBlockLiteralsHeader, ZstdBlockFseCode, 5),
-            (ZstdBlockFseCode, ZstdBlockHuffmanCode, 128),
-            (ZstdBlockHuffmanCode, ZstdBlockJumpTable, 128), // header_byte < 128
-            (ZstdBlockHuffmanCode, ZstdBlockLstream, 128),
-            (ZstdBlockJumpTable, ZstdBlockLstream, 6),
-            (ZstdBlockLstream, ZstdBlockLstream, 1000), // 1kB hard-limit
-            (ZstdBlockLstream, ZstdBlockSequenceHeader, 1000),
         ]
         .map(|(tag, tag_next, max_len)| Self {
             tag,
             tag_next,
             max_len,
             is_output: tag.is_output(),
-            is_block: tag.is_block(),
             is_reverse: tag.is_reverse(),
+            is_block: tag.is_block(),
         })
         .to_vec()
     }
@@ -81,8 +64,8 @@ impl RomTagTableRow {
             Value::known(F::from(usize::from(self.tag_next) as u64)),
             Value::known(F::from(self.max_len)),
             Value::known(F::from(self.is_output as u64)),
-            Value::known(F::from(self.is_block as u64)),
             Value::known(F::from(self.is_reverse as u64)),
+            Value::known(F::from(self.is_block as u64)),
         ]
     }
 }

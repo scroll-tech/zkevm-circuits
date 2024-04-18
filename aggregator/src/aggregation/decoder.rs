@@ -18,11 +18,13 @@ use itertools::Itertools;
 use witgen::{ZstdTag, N_BITS_PER_BYTE, N_BITS_ZSTD_TAG};
 use zkevm_circuits::{
     evm_circuit::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, PowOfRandTable, U8Table},
+    table::{LookupTable, PowOfRandTable, RangeTable, U8Table},
     util::Challenges,
 };
 
-use self::tables::RomTagTable;
+use crate::aggregation::decoder::witgen::N_BLOCK_HEADER_BYTES;
+
+use self::tables::{LiteralsHeaderTable, RomTagTable};
 
 #[derive(Clone, Debug)]
 pub struct DecoderConfig {
@@ -50,6 +52,14 @@ pub struct DecoderConfig {
     is_padding: Column<Advice>,
     /// Zstd tag related config.
     tag_config: TagConfig,
+    /// Block related config.
+    block_config: BlockConfig,
+    /// Range Table for [0, 8).
+    range8: RangeTable<8>,
+    /// Range Table for [0, 16).
+    range16: RangeTable<16>,
+    /// Helper tables for decoding the regenerated size from LiteralsHeader.
+    literals_header_table: LiteralsHeaderTable,
     /// ROM table for validating tag transition.
     rom_tag_table: RomTagTable,
 }
@@ -119,6 +129,28 @@ impl TagConfig {
     }
 }
 
+#[derive(Clone, Debug)]
+struct BlockConfig {
+    /// The number of bytes in this block.
+    block_len: Column<Advice>,
+    /// Whether this block is the last block in the zstd encoded data.
+    is_last_block: Column<Advice>,
+    /// Helper boolean column to tell us whether we are in the block's contents. This field is not
+    /// set for FrameHeaderDescriptor, FrameContentSize and BlockHeader. For the tags that occur
+    /// while decoding the block's contents, this field is set.
+    is_block: Column<Advice>,
+}
+
+impl BlockConfig {
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
+        Self {
+            block_len: meta.advice_column(),
+            is_last_block: meta.advice_column(),
+            is_block: meta.advice_column(),
+        }
+    }
+}
+
 pub struct AssignedDecoderConfigExports {
     /// The RLC of the zstd encoded bytes, i.e. blob bytes.
     pub encoded_rlc: AssignedCell<Fr, Fr>,
@@ -132,12 +164,18 @@ impl DecoderConfig {
         challenges: &Challenges<Expression<Fr>>,
         pow_rand_table: PowOfRandTable,
         u8_table: U8Table,
+        range8: RangeTable<8>,
+        range16: RangeTable<16>,
     ) -> Self {
         // Fixed tables
         let rom_tag_table = RomTagTable::construct(meta);
 
+        // Helper tables
+        let literals_header_table = LiteralsHeaderTable::configure(meta, range8, range16);
+
         // Peripheral configs
         let tag_config = TagConfig::configure(meta);
+        let block_config = BlockConfig::configure(meta);
 
         // Main config
         let config = Self {
@@ -156,6 +194,10 @@ impl DecoderConfig {
             decoded_len_acc: meta.advice_column(),
             is_padding: meta.advice_column(),
             tag_config,
+            block_config,
+            range8,
+            range16,
+            literals_header_table,
             rom_tag_table,
         };
 
@@ -322,6 +364,7 @@ impl DecoderConfig {
                 meta.query_advice(config.tag_config.max_len, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_output, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_reverse, Rotation::cur()),
+                meta.query_advice(config.block_config.is_block, Rotation::cur()),
             ]
             .into_iter()
             .zip_eq(config.rom_tag_table.table_exprs(meta))
@@ -415,6 +458,7 @@ impl DecoderConfig {
                 config.tag_config.rpow_tag_len,
                 config.tag_config.is_output,
                 config.tag_config.is_reverse,
+                config.block_config.is_block,
                 config.encoded_rlc,
             ] {
                 cb.require_equal(
@@ -535,8 +579,8 @@ impl DecoderConfig {
         is_tag!(_is_null, Null);
         is_tag!(is_frame_header_descriptor, FrameHeaderDescriptor);
         is_tag!(is_frame_content_size, FrameContentSize);
-        is_tag!(_is_block_header, BlockHeader);
-        is_tag!(_is_zb_literals_header, ZstdBlockLiteralsHeader);
+        is_tag!(is_block_header, BlockHeader);
+        is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
         is_tag!(_is_zb_raw_block, ZstdBlockLiteralsRawBytes);
         is_tag!(_is_zb_sequence_header, ZstdBlockSequenceHeader);
 
@@ -672,6 +716,196 @@ impl DecoderConfig {
         });
 
         debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// ZstdTag::BlockHeader ///////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        meta.create_gate("DecoderConfig: tag BlockHeader", |meta| {
+            let condition = and::expr([
+                is_block_header(meta),
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+            ]);
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            // BlockHeader is fixed-sized tag.
+            cb.require_equal(
+                "tag_len(BlockHeader) is fixed-sized",
+                meta.query_advice(config.tag_config.tag_len, Rotation::cur()),
+                N_BLOCK_HEADER_BYTES.expr(),
+            );
+
+            // Structure of Block_Header is as follows:
+            //
+            // | Last_Block | Block_Type | Block_Size |
+            // |------------|------------|------------|
+            // | bit 0      | bits 1-2   | bits 3-23  |
+            //
+            let is_last_block = meta.query_advice(config.bits[0], Rotation::cur());
+            let block_type_bit1 = meta.query_advice(config.bits[1], Rotation::cur());
+            let block_type_bit2 = meta.query_advice(config.bits[2], Rotation::cur());
+
+            // We expect a Block_Type of Compressed_Block, i.e. Block_Type == 2.
+            cb.require_equal(
+                "Block_Type is Compressed_Block (bit 1)",
+                block_type_bit1,
+                0.expr(),
+            );
+            cb.require_equal(
+                "Block_Type is Compressed_Block (bit 2)",
+                block_type_bit2,
+                1.expr(),
+            );
+
+            // is_last_block is assigned correctly.
+            cb.require_equal(
+                "is_last_block assigned correctly",
+                meta.query_advice(
+                    config.block_config.is_last_block,
+                    Rotation(N_BLOCK_HEADER_BYTES as i32),
+                ),
+                is_last_block,
+            );
+
+            cb.gate(condition)
+        });
+
+        meta.lookup("DecoderConfig: tag BlockHeader (Block_Size)", |meta| {
+            let condition = and::expr([
+                is_block_header(meta),
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+            ]);
+
+            // block_size == block_header >> 3
+            //
+            // i.e. block_header - (block_size * (2^3)) < 8
+            let block_header_lc = meta.query_advice(config.byte, Rotation(2)) * 65536.expr()
+                + meta.query_advice(config.byte, Rotation(1)) * 256.expr()
+                + meta.query_advice(config.byte, Rotation(0));
+            let block_size = meta.query_advice(
+                config.block_config.block_len,
+                Rotation(N_BLOCK_HEADER_BYTES as i32),
+            );
+            let diff = block_header_lc - (block_size * 8.expr());
+
+            vec![(condition * diff, config.range8.into())]
+        });
+
+        meta.create_gate("DecoderConfig: processing block content", |meta| {
+            let condition = meta.query_advice(config.block_config.is_block, Rotation::cur());
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            // is_last_block remains unchanged.
+            cb.require_equal(
+                "is_last_block::cur == is_last_block::prev",
+                meta.query_advice(config.block_config.is_last_block, Rotation::cur()),
+                meta.query_advice(config.block_config.is_last_block, Rotation::prev()),
+            );
+
+            // block_len remains unchanged.
+            cb.require_equal(
+                "block_len::cur == block_len::prev",
+                meta.query_advice(config.block_config.block_len, Rotation::cur()),
+                meta.query_advice(config.block_config.block_len, Rotation::prev()),
+            );
+
+            cb.gate(condition)
+        });
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        ///////////////////////////// ZstdTag::ZstdBlockLiteralsHeader ////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        meta.create_gate("DecoderConfig: tag ZstdBlockLiteralsHeader", |meta| {
+            let condition = and::expr([
+                is_zb_literals_header(meta),
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+            ]);
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            let literals_block_type_bit0 = meta.query_advice(config.bits[0], Rotation::cur());
+            let literals_block_type_bit1 = meta.query_advice(config.bits[1], Rotation::cur());
+
+            // We expect a Raw_Literals_Block, i.e. bit0 and bit1 are both 0.
+            cb.require_zero("Raw_Literals_Block: bit0", literals_block_type_bit0);
+            cb.require_zero("Raw_Literals_Block: bit1", literals_block_type_bit1);
+
+            let size_format_bit0 = meta.query_advice(config.bits[2], Rotation::cur());
+            let size_format_bit1 = meta.query_advice(config.bits[3], Rotation::cur());
+
+            // - Size_Format is 00 or 10: Size_Format uses 1 bit, literals header is 1 byte
+            // - Size_Format is 01: Size_Format uses 2 bits, literals header is 2 bytes
+            // - Size_Format is 10: Size_Format uses 2 bits, literals header is 3 bytes
+            let expected_tag_len = select::expr(
+                not::expr(size_format_bit0),
+                1.expr(),
+                select::expr(size_format_bit1, 3.expr(), 2.expr()),
+            );
+            cb.require_equal(
+                "ZstdBlockLiteralsHeader: tag_len == expected_tag_len",
+                meta.query_advice(config.tag_config.tag_len, Rotation::cur()),
+                expected_tag_len,
+            );
+
+            cb.gate(condition)
+        });
+
+        meta.lookup_any(
+            "DecoderConfig: tag ZstdBlockLiteralsHeader decomposition to regen size",
+            |meta| {
+                let condition = and::expr([
+                    is_zb_literals_header(meta),
+                    meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+                ]);
+
+                let size_format_bit0 = meta.query_advice(config.bits[2], Rotation::cur());
+                let size_format_bit1 = meta.query_advice(config.bits[3], Rotation::cur());
+
+                // - byte0 is the first byte of the literals header
+                // - byte1 is either the second byte of the literals header or 0
+                // - byte2 is either the third byte of the literals header or 0
+                let byte0 = meta.query_advice(config.byte, Rotation(0));
+                let byte1 = select::expr(
+                    size_format_bit0.expr(),
+                    meta.query_advice(config.byte, Rotation(1)),
+                    0.expr(),
+                );
+                let byte2 = select::expr(
+                    size_format_bit1.expr() * size_format_bit1.expr(),
+                    meta.query_advice(config.byte, Rotation(2)),
+                    0.expr(),
+                );
+
+                // The regenerated size is in fact the tag length of the ZstdBlockLiteralsRawBytes
+                // tag. But depending on how many bytes are in the literals header, we select the
+                // appropriate offset to read the tag_len from.
+                let regen_size = select::expr(
+                    size_format_bit0.expr() * not::expr(size_format_bit1.expr()),
+                    meta.query_advice(config.tag_config.tag_len, Rotation(2)),
+                    select::expr(
+                        size_format_bit1.expr() * not::expr(size_format_bit0.expr()),
+                        meta.query_advice(config.tag_config.tag_len, Rotation(3)),
+                        meta.query_advice(config.tag_config.tag_len, Rotation(1)),
+                    ),
+                );
+
+                [
+                    meta.query_advice(config.byte_idx, Rotation::cur()),
+                    byte0,
+                    byte1,
+                    byte2,
+                    size_format_bit0,
+                    size_format_bit1,
+                    regen_size,
+                    0.expr(), // not padding
+                ]
+                .into_iter()
+                .zip_eq(config.literals_header_table.table_exprs(meta))
+                .map(|(value, table)| (condition.expr() * value, table))
+                .collect()
+            },
+        );
 
         config
     }

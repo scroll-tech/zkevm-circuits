@@ -126,8 +126,16 @@ impl AggregationConfig {
 
         // Zstd decoder.
         let pow_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
-        let decoder_config =
-            DecoderConfig::configure(meta, &challenges_expr, pow_rand_table, u8_table);
+        let range8 = RangeTable::construct(meta);
+        let range16 = RangeTable::construct(meta);
+        let decoder_config = DecoderConfig::configure(
+            meta,
+            &challenges_expr,
+            pow_rand_table,
+            u8_table,
+            range8,
+            range16,
+        );
 
         // Instance column stores public input column
         // - the accumulator

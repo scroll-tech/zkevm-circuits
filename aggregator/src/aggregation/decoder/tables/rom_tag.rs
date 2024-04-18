@@ -21,10 +21,10 @@ pub struct RomTagTable {
     pub max_len: Column<Fixed>,
     /// Whether this tag outputs a decoded byte or not.
     pub is_output: Column<Fixed>,
-    /// Whether this tag belongs to a ``block`` in zstd or not.
-    pub is_block: Column<Fixed>,
     /// Whether this tag is processed back-to-front, i.e. in reverse order.
     pub is_reverse: Column<Fixed>,
+    /// Whether this tag belongs to a ``block`` in zstd or not.
+    pub is_block: Column<Fixed>,
 }
 
 impl LookupTable<Fr> for RomTagTable {
@@ -34,8 +34,8 @@ impl LookupTable<Fr> for RomTagTable {
             self.tag_next.into(),
             self.max_len.into(),
             self.is_output.into(),
-            self.is_block.into(),
             self.is_reverse.into(),
+            self.is_block.into(),
         ]
     }
 
@@ -45,8 +45,8 @@ impl LookupTable<Fr> for RomTagTable {
             String::from("tag_next"),
             String::from("max_len"),
             String::from("is_output"),
-            String::from("is_block"),
             String::from("is_reverse"),
+            String::from("is_block"),
         ]
     }
 }
@@ -59,8 +59,8 @@ impl RomTagTable {
             tag_next: meta.fixed_column(),
             max_len: meta.fixed_column(),
             is_output: meta.fixed_column(),
-            is_block: meta.fixed_column(),
             is_reverse: meta.fixed_column(),
+            is_block: meta.fixed_column(),
         }
     }
 
