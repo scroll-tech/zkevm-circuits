@@ -98,6 +98,10 @@ struct TagConfig {
     /// not set this boolean value. We instead use the q_first fixed column to conditionally
     /// constrain the first row.
     is_change: Column<Advice>,
+    /// Degree reduction: FrameContentSize
+    is_frame_content_size: Column<Advice>,
+    /// Degree reduction: BlockHeader
+    is_block_header: Column<Advice>,
 }
 
 impl TagConfig {
@@ -125,6 +129,9 @@ impl TagConfig {
             is_output: meta.advice_column(),
             is_reverse: meta.advice_column(),
             is_change: meta.advice_column(),
+            // degree reduction.
+            is_frame_content_size: meta.advice_column(),
+            is_block_header: meta.advice_column(),
         }
     }
 }
@@ -200,6 +207,25 @@ impl DecoderConfig {
             literals_header_table,
             rom_tag_table,
         };
+
+        macro_rules! is_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<Fr>| {
+                    config
+                        .tag_config
+                        .tag_bits
+                        .value_equals(ZstdTag::$tag_variant, Rotation::cur())(meta)
+                };
+            };
+        }
+
+        is_tag!(_is_null, Null);
+        is_tag!(is_frame_header_descriptor, FrameHeaderDescriptor);
+        is_tag!(is_frame_content_size, FrameContentSize);
+        is_tag!(is_block_header, BlockHeader);
+        is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
+        is_tag!(_is_zb_raw_block, ZstdBlockLiteralsRawBytes);
+        is_tag!(_is_zb_sequence_header, ZstdBlockSequenceHeader);
 
         meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
             vec![(
@@ -305,6 +331,22 @@ impl DecoderConfig {
                 "TagConfig::is_change in [0, 1]",
                 meta.query_advice(config.tag_config.is_change, Rotation::cur()),
             );
+
+            // Degree reduction columns.
+            macro_rules! degree_reduction_check {
+                ($column:expr, $expr:expr) => {
+                    cb.require_equal(
+                        "Degree reduction column check",
+                        meta.query_advice($column, Rotation::cur()),
+                        $expr,
+                    );
+                };
+            }
+            degree_reduction_check!(
+                config.tag_config.is_frame_content_size,
+                is_frame_content_size(meta)
+            );
+            degree_reduction_check!(config.tag_config.is_block_header, is_block_header(meta));
 
             cb.gate(condition)
         });
@@ -565,25 +607,6 @@ impl DecoderConfig {
 
         debug_assert!(meta.degree() <= 9);
 
-        macro_rules! is_tag {
-            ($var:ident, $tag_variant:ident) => {
-                let $var = |meta: &mut VirtualCells<Fr>| {
-                    config
-                        .tag_config
-                        .tag_bits
-                        .value_equals(ZstdTag::$tag_variant, Rotation::cur())(meta)
-                };
-            };
-        }
-
-        is_tag!(_is_null, Null);
-        is_tag!(is_frame_header_descriptor, FrameHeaderDescriptor);
-        is_tag!(is_frame_content_size, FrameContentSize);
-        is_tag!(is_block_header, BlockHeader);
-        is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
-        is_tag!(_is_zb_raw_block, ZstdBlockLiteralsRawBytes);
-        is_tag!(_is_zb_sequence_header, ZstdBlockSequenceHeader);
-
         ///////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////// ZstdTag::FrameHeaderDescriptor /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
@@ -659,7 +682,7 @@ impl DecoderConfig {
         ///////////////////////////////////////////////////////////////////////////////////////////
         meta.create_gate("DecoderConfig: tag FrameContentSize", |meta| {
             let condition = and::expr([
-                is_frame_content_size(meta),
+                meta.query_advice(config.tag_config.is_frame_content_size, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_change, Rotation::cur()),
             ]);
 
@@ -722,7 +745,7 @@ impl DecoderConfig {
         ///////////////////////////////////////////////////////////////////////////////////////////
         meta.create_gate("DecoderConfig: tag BlockHeader", |meta| {
             let condition = and::expr([
-                is_block_header(meta),
+                meta.query_advice(config.tag_config.is_block_header, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_change, Rotation::cur()),
             ]);
 
@@ -772,7 +795,7 @@ impl DecoderConfig {
 
         meta.lookup("DecoderConfig: tag BlockHeader (Block_Size)", |meta| {
             let condition = and::expr([
-                is_block_header(meta),
+                meta.query_advice(config.tag_config.is_block_header, Rotation::cur()),
                 meta.query_advice(config.tag_config.is_change, Rotation::cur()),
             ]);
 
@@ -812,6 +835,8 @@ impl DecoderConfig {
 
             cb.gate(condition)
         });
+
+        debug_assert!(meta.degree() <= 9);
 
         ///////////////////////////////////////////////////////////////////////////////////////////
         ///////////////////////////// ZstdTag::ZstdBlockLiteralsHeader ////////////////////////////
@@ -906,6 +931,8 @@ impl DecoderConfig {
                 .collect()
             },
         );
+
+        debug_assert!(meta.degree() <= 9);
 
         config
     }
