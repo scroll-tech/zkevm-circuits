@@ -140,6 +140,8 @@ impl TagConfig {
 struct BlockConfig {
     /// The number of bytes in this block.
     block_len: Column<Advice>,
+    /// The index within the zstd block of the current byte.
+    block_idx: Column<Advice>,
     /// Whether this block is the last block in the zstd encoded data.
     is_last_block: Column<Advice>,
     /// Helper boolean column to tell us whether we are in the block's contents. This field is not
@@ -152,6 +154,7 @@ impl BlockConfig {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
         Self {
             block_len: meta.advice_column(),
+            block_idx: meta.advice_column(),
             is_last_block: meta.advice_column(),
             is_block: meta.advice_column(),
         }
@@ -224,7 +227,7 @@ impl DecoderConfig {
         is_tag!(is_frame_content_size, FrameContentSize);
         is_tag!(is_block_header, BlockHeader);
         is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
-        is_tag!(_is_zb_raw_block, ZstdBlockLiteralsRawBytes);
+        is_tag!(is_zb_raw_block, ZstdBlockLiteralsRawBytes);
         is_tag!(_is_zb_sequence_header, ZstdBlockSequenceHeader);
 
         meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
@@ -790,6 +793,26 @@ impl DecoderConfig {
                 is_last_block,
             );
 
+            // block_idx initialises at 1.
+            cb.require_equal(
+                "block_idx == 1 after Block_Header",
+                meta.query_advice(
+                    config.block_config.block_idx,
+                    Rotation(N_BLOCK_HEADER_BYTES as i32),
+                ),
+                1.expr(),
+            );
+
+            // Check that the last block ended correctly.
+            //
+            // Note: even if this is the first block, the below constraint would be satisfied
+            // because both block_idx and block_len would be 0.
+            cb.require_equal(
+                "block_idx::prev == block_len::prev",
+                meta.query_advice(config.block_config.block_idx, Rotation::prev()),
+                meta.query_advice(config.block_config.block_len, Rotation::prev()),
+            );
+
             cb.gate(condition)
         });
 
@@ -833,8 +856,23 @@ impl DecoderConfig {
                 meta.query_advice(config.block_config.block_len, Rotation::prev()),
             );
 
+            // block_idx increments with byte_idx.
+            let block_idx_delta = meta.query_advice(config.byte_idx, Rotation::cur())
+                - meta.query_advice(config.byte_idx, Rotation::prev());
+            cb.require_equal(
+                "block_idx::cur - block_idx::prev == byte_idx::cur - byte_idx::prev",
+                meta.query_advice(config.block_config.block_idx, Rotation::cur()),
+                meta.query_advice(config.block_config.block_idx, Rotation::prev())
+                    + block_idx_delta,
+            );
+
             cb.gate(condition)
         });
+
+        // TODO: handling end of blocks:
+        // - next tag is BlockHeader or Null (if last block)
+        // - blocks can end only on certain zstd tags
+        // - decoded_len_acc has reached decoded_len
 
         debug_assert!(meta.degree() <= 9);
 
@@ -931,6 +969,25 @@ impl DecoderConfig {
                 .collect()
             },
         );
+
+        debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////// ZstdTag::ZstdBlockLiteralsRawBytes ////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        meta.create_gate("DecoderConfig: ZstdBlockLiteralsRawBytes", |meta| {
+            let condition = is_zb_raw_block(meta);
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "byte_idx::cur == byte_idx::prev + 1",
+                meta.query_advice(config.byte_idx, Rotation::cur()),
+                meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
+            );
+
+            cb.gate(condition)
+        });
 
         debug_assert!(meta.degree() <= 9);
 
