@@ -4,6 +4,7 @@ mod witgen;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     is_equal::{IsEqualChip, IsEqualConfig},
+    less_than::{LtChip, LtConfig},
     util::{and, not, select, Expr},
 };
 use halo2_proofs::{
@@ -54,11 +55,13 @@ pub struct DecoderConfig {
     tag_config: TagConfig,
     /// Block related config.
     block_config: BlockConfig,
+    /// Decoding helpers for the sequences section header.
+    sequences_header_decoder: SequencesHeaderDecoder,
     /// Range Table for [0, 8).
     range8: RangeTable<8>,
     /// Range Table for [0, 16).
     range16: RangeTable<16>,
-    /// Helper tables for decoding the regenerated size from LiteralsHeader.
+    /// Helper table for decoding the regenerated size from LiteralsHeader.
     literals_header_table: LiteralsHeaderTable,
     /// ROM table for validating tag transition.
     rom_tag_table: RomTagTable,
@@ -161,6 +164,160 @@ impl BlockConfig {
     }
 }
 
+#[derive(Clone, Debug)]
+struct SequencesHeaderDecoder {
+    /// Helper gadget to evaluate byte0 < 128.
+    pub byte0_lt_0x80: LtConfig<Fr, 8>,
+    /// Helper gadget to evaluate byte0 < 255.
+    pub byte0_lt_0xff: LtConfig<Fr, 8>,
+}
+
+struct DecodedSequencesHeader {
+    /// The number of sequences in the sequences section.
+    num_sequences: Expression<Fr>,
+    /// The number of bytes in the sequences section header.
+    tag_len: Expression<Fr>,
+    /// The compression mode's bit0 for literals length.
+    comp_mode_bit0_ll: Expression<Fr>,
+    /// The compression mode's bit1 for literals length.
+    comp_mode_bit1_ll: Expression<Fr>,
+    /// The compression mode's bit0 for offsets.
+    comp_mode_bit0_om: Expression<Fr>,
+    /// The compression mode's bit1 for offsets.
+    comp_mode_bit1_om: Expression<Fr>,
+    /// The compression mode's bit0 for match lengths.
+    comp_mode_bit0_ml: Expression<Fr>,
+    /// The compression mode's bit1 for match lengths.
+    comp_mode_bit1_ml: Expression<Fr>,
+}
+
+impl SequencesHeaderDecoder {
+    fn configure(
+        meta: &mut ConstraintSystem<Fr>,
+        byte: Column<Advice>,
+        is_padding: Column<Advice>,
+        u8_table: U8Table,
+    ) -> Self {
+        Self {
+            byte0_lt_0x80: LtChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(byte, Rotation::cur()),
+                |_| 0x80.expr(),
+                u8_table.into(),
+            ),
+            byte0_lt_0xff: LtChip::configure(
+                meta,
+                |meta| not::expr(meta.query_advice(is_padding, Rotation::cur())),
+                |meta| meta.query_advice(byte, Rotation::cur()),
+                |_| 0xff.expr(),
+                u8_table.into(),
+            ),
+        }
+    }
+
+    // Decodes the sequences section header.
+    fn decode(
+        &self,
+        meta: &mut VirtualCells<Fr>,
+        byte: Column<Advice>,
+        bits: &[Column<Advice>; N_BITS_PER_BYTE],
+    ) -> DecodedSequencesHeader {
+        let byte0_lt_0x80 = self.byte0_lt_0x80.is_lt(meta, None);
+        let byte0_lt_0xff = self.byte0_lt_0xff.is_lt(meta, None);
+
+        // - if byte0 < 128: byte0
+        let branch0_num_seq = meta.query_advice(byte, Rotation(0));
+        // - if byte0 < 255: ((byte0 - 0x80) << 8) + byte1
+        let branch1_num_seq = ((meta.query_advice(byte, Rotation(0)) - 0x80.expr()) * 256.expr())
+            + meta.query_advice(byte, Rotation(1));
+        // - if byte0 == 255: byte1 + (byte2 << 8) + 0x7f00
+        let branch2_num_seq = meta.query_advice(byte, Rotation(1))
+            + (meta.query_advice(byte, Rotation(2)) * 256.expr())
+            + 0x7f00.expr();
+
+        let decoded_num_sequences = select::expr(
+            byte0_lt_0x80.expr(),
+            branch0_num_seq,
+            select::expr(byte0_lt_0xff.expr(), branch1_num_seq, branch2_num_seq),
+        );
+
+        let decoded_tag_len = select::expr(
+            byte0_lt_0x80.expr(),
+            2.expr(),
+            select::expr(byte0_lt_0xff.expr(), 3.expr(), 4.expr()),
+        );
+
+        let comp_mode_bit0_ll = select::expr(
+            byte0_lt_0x80.expr(),
+            meta.query_advice(bits[0], Rotation(1)),
+            select::expr(
+                byte0_lt_0xff.expr(),
+                meta.query_advice(bits[0], Rotation(2)),
+                meta.query_advice(bits[0], Rotation(3)),
+            ),
+        );
+        let comp_mode_bit1_ll = select::expr(
+            byte0_lt_0x80.expr(),
+            meta.query_advice(bits[1], Rotation(1)),
+            select::expr(
+                byte0_lt_0xff.expr(),
+                meta.query_advice(bits[1], Rotation(2)),
+                meta.query_advice(bits[1], Rotation(3)),
+            ),
+        );
+
+        let comp_mode_bit0_om = select::expr(
+            byte0_lt_0x80.expr(),
+            meta.query_advice(bits[2], Rotation(1)),
+            select::expr(
+                byte0_lt_0xff.expr(),
+                meta.query_advice(bits[2], Rotation(2)),
+                meta.query_advice(bits[2], Rotation(3)),
+            ),
+        );
+        let comp_mode_bit1_om = select::expr(
+            byte0_lt_0x80.expr(),
+            meta.query_advice(bits[3], Rotation(1)),
+            select::expr(
+                byte0_lt_0xff.expr(),
+                meta.query_advice(bits[3], Rotation(2)),
+                meta.query_advice(bits[3], Rotation(3)),
+            ),
+        );
+
+        let comp_mode_bit0_ml = select::expr(
+            byte0_lt_0x80.expr(),
+            meta.query_advice(bits[4], Rotation(1)),
+            select::expr(
+                byte0_lt_0xff.expr(),
+                meta.query_advice(bits[4], Rotation(2)),
+                meta.query_advice(bits[4], Rotation(3)),
+            ),
+        );
+        let comp_mode_bit1_ml = select::expr(
+            byte0_lt_0x80.expr(),
+            meta.query_advice(bits[5], Rotation(1)),
+            select::expr(
+                byte0_lt_0xff.expr(),
+                meta.query_advice(bits[5], Rotation(2)),
+                meta.query_advice(bits[5], Rotation(3)),
+            ),
+        );
+
+        DecodedSequencesHeader {
+            num_sequences: decoded_num_sequences,
+            tag_len: decoded_tag_len,
+            comp_mode_bit0_ll,
+            comp_mode_bit1_ll,
+            comp_mode_bit0_om,
+            comp_mode_bit1_om,
+            comp_mode_bit0_ml,
+            comp_mode_bit1_ml,
+        }
+    }
+}
+
 pub struct AssignedDecoderConfigExports {
     /// The RLC of the zstd encoded bytes, i.e. blob bytes.
     pub encoded_rlc: AssignedCell<Fr, Fr>,
@@ -186,12 +343,15 @@ impl DecoderConfig {
         // Peripheral configs
         let tag_config = TagConfig::configure(meta);
         let block_config = BlockConfig::configure(meta);
+        let (byte, is_padding) = (meta.advice_column(), meta.advice_column());
+        let sequences_header_decoder =
+            SequencesHeaderDecoder::configure(meta, byte, is_padding, u8_table);
 
         // Main config
         let config = Self {
             q_first: meta.fixed_column(),
             byte_idx: meta.advice_column(),
-            byte: meta.advice_column(),
+            byte,
             bits: (0..N_BITS_PER_BYTE)
                 .map(|_| meta.advice_column())
                 .collect::<Vec<_>>()
@@ -202,9 +362,10 @@ impl DecoderConfig {
             decoded_rlc: meta.advice_column_in(SecondPhase),
             decoded_len: meta.advice_column(),
             decoded_len_acc: meta.advice_column(),
-            is_padding: meta.advice_column(),
+            is_padding,
             tag_config,
             block_config,
+            sequences_header_decoder,
             range8,
             range16,
             literals_header_table,
@@ -228,7 +389,7 @@ impl DecoderConfig {
         is_tag!(is_block_header, BlockHeader);
         is_tag!(is_zb_literals_header, ZstdBlockLiteralsHeader);
         is_tag!(is_zb_raw_block, ZstdBlockLiteralsRawBytes);
-        is_tag!(_is_zb_sequence_header, ZstdBlockSequenceHeader);
+        is_tag!(is_zb_sequence_header, ZstdBlockSequenceHeader);
 
         meta.lookup("DecoderConfig: 0 <= encoded byte < 256", |meta| {
             vec![(
@@ -967,7 +1128,7 @@ impl DecoderConfig {
         ///////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////// ZstdTag::ZstdBlockLiteralsRawBytes ////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////
-        meta.create_gate("DecoderConfig: ZstdBlockLiteralsRawBytes", |meta| {
+        meta.create_gate("DecoderConfig: tag ZstdBlockLiteralsRawBytes", |meta| {
             let condition = is_zb_raw_block(meta);
 
             let mut cb = BaseConstraintBuilder::default();
@@ -976,6 +1137,57 @@ impl DecoderConfig {
                 "byte_idx::cur == byte_idx::prev + 1",
                 meta.query_advice(config.byte_idx, Rotation::cur()),
                 meta.query_advice(config.byte_idx, Rotation::prev()) + 1.expr(),
+            );
+
+            cb.gate(condition)
+        });
+
+        debug_assert!(meta.degree() <= 9);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        //////////////////////////// ZstdTag::ZstdBlockSequenceHeader /////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        meta.create_gate("DecoderConfig: tag ZstdBlockSequenceHeader", |meta| {
+            let condition = and::expr([
+                is_zb_sequence_header(meta),
+                meta.query_advice(config.tag_config.is_change, Rotation::cur()),
+            ]);
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            // The Sequences_Section_Header consists of 2 items:
+            // - Number of Sequences (1-3 bytes)
+            // - Symbol Compression Mode (1 byte)
+            let decoded_sequences_header =
+                config
+                    .sequences_header_decoder
+                    .decode(meta, config.byte, &config.bits);
+
+            cb.require_equal(
+                "sequences header tag_len check",
+                meta.query_advice(config.tag_config.tag_len, Rotation::cur()),
+                decoded_sequences_header.tag_len,
+            );
+
+            // The compression modes for literals length, match length and offsets are expected to
+            // be FSE, i.e. compression mode == 2, i.e. bit0 == 0 and bit1 == 1.
+            cb.require_zero("ll: bit0 == 0", decoded_sequences_header.comp_mode_bit0_ll);
+            cb.require_zero("om: bit0 == 0", decoded_sequences_header.comp_mode_bit0_om);
+            cb.require_zero("ml: bit0 == 0", decoded_sequences_header.comp_mode_bit0_ml);
+            cb.require_equal(
+                "ll: bit1 == 1",
+                decoded_sequences_header.comp_mode_bit1_ll,
+                1.expr(),
+            );
+            cb.require_equal(
+                "om: bit1 == 1",
+                decoded_sequences_header.comp_mode_bit1_om,
+                1.expr(),
+            );
+            cb.require_equal(
+                "ml: bit1 == 1",
+                decoded_sequences_header.comp_mode_bit1_ml,
+                1.expr(),
             );
 
             cb.gate(condition)
