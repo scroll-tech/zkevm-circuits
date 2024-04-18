@@ -90,7 +90,10 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{
+        gwei,
+        test_ctx::{helpers::*, TestContext},
+    };
 
     #[test]
     fn gasprice_gadget_test() {
@@ -111,6 +114,36 @@ mod test {
                     .from(mock::MOCK_WALLETS[0].clone())
                     .to(accs[0].address)
                     .gas_price(two_gwei);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    #[test]
+    fn gasprice_gadget_1559_test() {
+        let bytecode = bytecode! {
+            #[start]
+            GASPRICE
+            STOP
+        };
+
+        // Get the execution steps from the external tracer
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_wallet_0_no_code(bytecode),
+            |mut txs, accs| {
+                txs[0]
+                    .from(mock::MOCK_WALLETS[0].clone())
+                    .to(accs[0].address)
+                    //.gas_price(two_gwei);
+                    .gas(30_000.into())
+                    .value(gwei(20_000))
+                    .max_fee_per_gas(gwei(20))
+                    .max_priority_fee_per_gas(gwei(20))
+                    .transaction_type(2); // Set tx type to EIP-1559.
             },
             |block, _tx| block.number(0xcafeu64),
         )

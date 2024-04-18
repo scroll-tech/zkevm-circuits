@@ -12,14 +12,14 @@ use snark_verifier::{
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
-    table::KeccakTable,
+    table::{KeccakTable, RangeTable, U8Table},
     util::{Challenges, SubCircuitConfig},
 };
 
 use crate::{
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    RlcConfig,
+    BarycentricEvaluationConfig, BlobDataConfig, RlcConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -33,6 +33,10 @@ pub struct AggregationConfig {
     pub keccak_circuit_config: KeccakCircuitConfig<Fr>,    
     /// RLC config
     pub rlc_config: RlcConfig,
+    /// The blob data's config.
+    pub blob_data_config: BlobDataConfig,
+    /// Config to do the barycentric evaluation on blob polynomial.
+    pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
     /// - batch_public_input_hash (32 elements)
@@ -56,16 +60,19 @@ impl AggregationConfig {
         let rlc_config = RlcConfig::configure(meta, challenges);
 
         // hash configuration for aggregation circuit
-        let keccak_circuit_config = {
+        let (keccak_table, keccak_circuit_config) = {
             let keccak_table = KeccakTable::construct(meta);
 
             let challenges_exprs = challenges.exprs(meta);
             let keccak_circuit_config_args = KeccakCircuitConfigArgs {
-                keccak_table,
+                keccak_table: keccak_table.clone(),
                 challenges: challenges_exprs,
             };
 
-            KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
+            (
+                keccak_table,
+                KeccakCircuitConfig::new(meta, keccak_circuit_config_args),
+            )
         };
 
         // base field configuration for aggregation circuit
@@ -83,6 +90,8 @@ impl AggregationConfig {
             params.degree as usize,
         );
 
+        let barycentric = BarycentricEvaluationConfig::construct(base_field_config.range.clone());
+
         let columns = keccak_circuit_config.cell_manager.columns();
         log::info!("keccak uses {} columns", columns.len(),);
 
@@ -97,6 +106,13 @@ impl AggregationConfig {
         // enable equality for the is_final column
         meta.enable_equality(keccak_circuit_config.keccak_table.is_final);
 
+        // Blob data.
+        let u8_table = U8Table::construct(meta);
+        let range_table = RangeTable::construct(meta);
+        let challenges_expr = challenges.exprs(meta);
+        let blob_data_config =
+            BlobDataConfig::configure(meta, challenges_expr, u8_table, range_table, &keccak_table);
+
         // Instance column stores public input column
         // - the accumulator
         // - the batch public input hash
@@ -107,8 +123,10 @@ impl AggregationConfig {
         Self {
             base_field_config,
             rlc_config,
+            blob_data_config,
             keccak_circuit_config,
             instance,
+            barycentric,
         }
     }
 

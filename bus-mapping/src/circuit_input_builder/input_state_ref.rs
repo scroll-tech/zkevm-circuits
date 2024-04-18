@@ -57,14 +57,27 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
-
-        Ok(ExecStep::new(
+        let step = ExecStep::new(
             geth_step,
             call_ctx,
             self.block_ctx.rwc,
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,
-        ))
+        );
+        #[cfg(feature = "fix-refund")]
+        let step = {
+            let mut step = step;
+            if geth_step.refund.0 != self.sdb.refund() {
+                log::trace!(
+                    "correct op refund to {} trace: {}",
+                    self.sdb.refund(),
+                    geth_step.refund.0
+                );
+                step.gas_refund = Gas(self.sdb.refund());
+            }
+            step
+        };
+        Ok(step)
     }
 
     /// Create a new BeginTx step
@@ -175,6 +188,7 @@ impl<'a> CircuitInputStateRef<'a> {
             max_rws
         };
         let rwc = self.block_ctx.rwc.0;
+
         if rwc > effective_limit && cfg!(feature = "strict-ccc") {
             log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
             return Err(Error::InternalError("rws not enough"));

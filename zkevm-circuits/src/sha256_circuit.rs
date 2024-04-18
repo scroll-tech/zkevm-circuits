@@ -1,6 +1,5 @@
 //! The SHA256 circuit is a wrapper for the circuit in sha256 crate and serve for precompile SHA-256
 //! calls
-
 use halo2_proofs::{
     circuit::{Layouter, Value},
     halo2curves::bn256::Fr,
@@ -66,12 +65,17 @@ pub struct SHA256Circuit<F: Field>(Vec<SHA256>, usize, std::marker::PhantomData<
 
 const TABLE16_BLOCK_ROWS: usize = 2114;
 const BLOCK_SIZE_IN_BYTES: usize = BLOCK_SIZE * 4;
+const MIN_PADDING_BYTES: usize = 9; // the additional bytes (a 0x80 byte)
+                                    // and 8-byte length
 
 impl<F: Field> SHA256Circuit<F> {
     fn expected_rows(&self) -> usize {
         self.0
             .iter()
-            .map(|evnt| (evnt.input.len()) + 9 / BLOCK_SIZE_IN_BYTES + 1)
+            .map(|evnt| {
+                (evnt.input.len() + MIN_PADDING_BYTES + BLOCK_SIZE_IN_BYTES - 1)
+                    / BLOCK_SIZE_IN_BYTES
+            })
             .reduce(|acc, v| acc + v)
             .unwrap_or_default()
             * TABLE16_BLOCK_ROWS
@@ -79,12 +83,19 @@ impl<F: Field> SHA256Circuit<F> {
 
     fn with_row_limit(self, row_limit: usize) -> Self {
         if row_limit != 0 {
+            let totalbytes: usize = self.0.iter().map(|ent| ent.input.len()).sum();
+            let inputs = self.0.len();
             let expected_rows = self.expected_rows();
+            log::info!(
+                "sha256 circuit work with {} input ({} bytes), set with maxium {} rows",
+                inputs,
+                totalbytes,
+                row_limit
+            );
             assert!(
                 expected_rows <= row_limit,
                 "no enough rows for sha256 circuit, expected {expected_rows}, limit {row_limit}",
             );
-            log::info!("sha256 circuit work with maxium {} rows", row_limit);
         }
         let inp = self.0;
         let block_limit = row_limit / TABLE16_BLOCK_ROWS;
@@ -143,6 +154,7 @@ impl SubCircuit<Fr> for SHA256Circuit<Fr> {
                 return Err(Error::Synthesis);
             }
         }
+        log::info!("sha256 circuit assigned {} blocks", hasher.blocks());
 
         // paddings
         for _i in hasher.blocks()..self.1 {
