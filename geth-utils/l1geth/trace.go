@@ -21,6 +21,10 @@ import (
 	"github.com/imdario/mergo"
 )
 
+func init() {
+	tracers.DefaultDirectory.Register("structLogTracer", newStructLogTracer, false)
+}
+
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
 // ExecutionResult groups all structured logs emitted by the EVM
 // while replaying a transaction in debug mode as well as transaction
@@ -251,7 +255,6 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		executionResult ExecutionResult
 	)
 
-	tracers.DefaultDirectory.Register("structLogTracer", newStructLogTracer, false)
 	loggerConfig, err := json.Marshal(config.LoggerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to marshal configLoggerConfig, %w", err)
